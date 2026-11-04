@@ -129,6 +129,10 @@ cross-device acceptance of this new local entry point is still pending.
 
 ## Connection changes and active tools
 
+SSH forwarding rules show **Stopping** while a stop is in progress. If the local
+process exit cannot be confirmed, the rule shows **Status unknown** and offers
+**Retry stop** before it can be started or removed again.
+
 When a Host connection is blocked, the conversation shows one connection recovery
 notice. Use **Reconnect** there to verify the saved machine and open a fresh
 connection. The conversation, queue and workspace reload after recovery; a failed

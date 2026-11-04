@@ -125,7 +125,10 @@ export function ServerForwards({
           {matchingRules.map((rule) => {
             const runtimeId = forwardRuntimeId(server.id, rule.id);
             const status = statuses.find((item) => item.id === runtimeId);
-            const running = status?.state === "running" || status?.state === "starting";
+            const stopping = status?.state === "stopping";
+            const unknown = status?.state === "unknown";
+            const running =
+              status?.state === "running" || status?.state === "starting" || stopping || unknown;
             return (
               <div
                 key={rule.id}
@@ -133,7 +136,11 @@ export function ServerForwards({
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                   <span className="min-w-0 break-all font-medium">{rule.name}</span>
-                  {running ? (
+                  {stopping || unknown ? (
+                    <Badge size="sm" tone="neutral">
+                      {t(stopping ? "Stopping" : "Status unknown")}
+                    </Badge>
+                  ) : running ? (
                     <StatusBadge status="running" />
                   ) : status?.state === "failed" ? (
                     <StatusBadge status="failed" />
@@ -152,7 +159,7 @@ export function ServerForwards({
                 <div className="flex flex-wrap gap-2">
                   <Button
                     loading={busy === rule.id}
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy) || stopping}
                     onClick={() =>
                       void run(rule.id, async () => {
                         if (running) return stopSshForward(runtimeId);
@@ -178,7 +185,13 @@ export function ServerForwards({
                       })
                     }
                   >
-                    {running ? t("Stop") : t("Start")}
+                    {stopping
+                      ? t("Stopping")
+                      : unknown
+                        ? t("Retry stop")
+                        : running
+                          ? t("Stop")
+                          : t("Start")}
                   </Button>
                   <span className="ms-auto">
                     <ConfirmMorph

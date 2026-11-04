@@ -8,7 +8,7 @@ export type ForwardStatus = {
   kind?: "local" | "dynamic";
   targetHost: string;
   targetPort: number;
-  state: "starting" | "running" | "failed" | "stopped";
+  state: "starting" | "running" | "stopping" | "unknown" | "failed" | "stopped";
   error?: string;
 };
 

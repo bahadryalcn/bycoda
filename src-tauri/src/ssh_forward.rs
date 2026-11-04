@@ -25,9 +25,11 @@ struct LiveForward {
     _jump_config: Option<std::sync::Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
     generation: uuid::Uuid,
     owner: String,
+    owner_lease: ForwardOwner,
     identity: String,
     status: ForwardStatus,
     child: Option<Child>,
+    stopping: bool,
 }
 #[derive(Default)]
 pub struct SshForwards {
@@ -35,17 +37,124 @@ pub struct SshForwards {
 }
 type ForwardOwner = crate::ssh_window_lifecycle::Lease;
 
-fn stop_child(live: &mut LiveForward) {
-    if let Some(mut child) = live.child.take() {
+fn reap_child(child: Option<Child>) -> Result<(), Option<Child>> {
+    if let Some(mut child) = child {
         if !matches!(child.try_wait(), Ok(Some(_))) {
             crate::harness::terminate_all(&[child.id()]);
             let _ = child.kill();
         }
-        let _ = child.wait();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20))
+                }
+                _ => return Err(Some(child)),
+            }
+        }
     }
-    live.status.state = "stopped".into();
-    live._jump_config = None;
-    live._http_proxy = None;
+    Ok(())
+}
+struct PendingForwardStop {
+    id: String,
+    generation: uuid::Uuid,
+    child: Option<Child>,
+}
+fn mark_stopping(id: &str, live: &mut LiveForward) -> Option<PendingForwardStop> {
+    if live.stopping || (live.status.state == "unknown" && live.child.is_none()) {
+        return None;
+    }
+    live.stopping = true;
+    live.status.state = "stopping".into();
+    live.status.error = None;
+    Some(PendingForwardStop {
+        id: id.into(),
+        generation: live.generation,
+        child: live.child.take(),
+    })
+}
+type ForwardResources = (
+    Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+    Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+);
+// Keep resources outside the FnOnce capture: an early return must not run their
+// filesystem/socket cleanup while the shared window lifecycle lock is held.
+fn with_start_resources<R, T>(
+    owner: &ForwardOwner,
+    mut resources: R,
+    start: impl FnOnce(&mut R) -> Result<T, String>,
+) -> Result<T, String> {
+    owner.with_live(|| start(&mut resources))
+}
+
+fn finish_stopping(
+    state: &SshForwards,
+    pending: PendingForwardStop,
+    result: Result<(), Option<Child>>,
+) -> Result<(), String> {
+    finish_stopping_with(state, pending, result, drop)
+}
+fn finish_stopping_with(
+    state: &SshForwards,
+    pending: PendingForwardStop,
+    result: Result<(), Option<Child>>,
+    release: impl FnOnce(ForwardResources),
+) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(live) = sessions
+        .get_mut(&pending.id)
+        .filter(|live| live.generation == pending.generation && live.stopping)
+    else {
+        return Err("Forward ownership changed during stop".into());
+    };
+    match result {
+        Ok(()) => {
+            let resources = (live._http_proxy.take(), live._jump_config.take());
+            drop(sessions);
+            release(resources);
+            let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            if !sessions
+                .get(&pending.id)
+                .is_some_and(|live| live.generation == pending.generation && live.stopping)
+            {
+                return Err("Forward ownership changed during cleanup".into());
+            }
+            let removed = sessions.remove(&pending.id);
+            drop(sessions);
+            drop(removed);
+            Ok(())
+        }
+        Err(child) => {
+            live.child = child;
+            live.stopping = false;
+            live.status.state = "unknown".into();
+            live.status.error = Some(
+                "Forward stop could not be confirmed. Retry stop before starting again.".into(),
+            );
+            Err("Forward stop could not be confirmed".into())
+        }
+    }
+}
+fn stop_pending(state: &SshForwards, mut pending: PendingForwardStop) -> Result<(), String> {
+    let result = reap_child(pending.child.take());
+    finish_stopping(state, pending, result)
+}
+fn stop_generation(state: &SshForwards, id: &str, generation: uuid::Uuid) -> Result<(), String> {
+    let pending = {
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        match sessions
+            .get_mut(id)
+            .filter(|live| live.generation == generation)
+        {
+            Some(live) => mark_stopping(id, live),
+            None => return Ok(()),
+        }
+    };
+    match pending {
+        Some(pending) => stop_pending(state, pending),
+        None => Err("Forward stop is already in progress".into()),
+    }
 }
 impl SshForwards {
     /// Native window creation only. A recreated label gets a fresh generation;
@@ -58,20 +167,28 @@ impl SshForwards {
         crate::ssh_window_lifecycle::capture(owner)
     }
     pub(crate) fn kill_window(&self, owner: &str) {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        sessions.retain(|_, live| {
-            if live.owner == owner {
-                stop_child(live);
-                false
-            } else {
-                true
-            }
-        });
+        let pending = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            sessions
+                .iter_mut()
+                .filter(|(_, live)| live.owner == owner && !live.owner_lease.is_alive())
+                .filter_map(|(id, live)| mark_stopping(id, live))
+                .collect::<Vec<_>>()
+        };
+        for item in pending {
+            let _ = stop_pending(self, item);
+        }
     }
     pub(crate) fn kill_all(&self) {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        for (_, mut live) in sessions.drain() {
-            stop_child(&mut live);
+        let pending = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            sessions
+                .iter_mut()
+                .filter_map(|(id, live)| mark_stopping(id, live))
+                .collect::<Vec<_>>()
+        };
+        for item in pending {
+            let _ = stop_pending(self, item);
         }
     }
 }
@@ -239,10 +356,40 @@ fn start_for_owner(
     let owner = lifetime.owner();
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), local_port);
     let generation = uuid::Uuid::new_v4();
-    let existing = lifetime.with_live(|| {
+    // A dead prior generation may own slow-dropping proxy resources. Reserve
+    // its ID under both locks, then release both before waiting or dropping.
+    let retired = lifetime.with_live(|| {
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(live) = sessions.get_mut(&id) else {
+            return Ok(None);
+        };
+        if live.stopping || live.status.state == "unknown" {
+            return Err("Forward stop is pending or could not be confirmed".into());
+        }
+        if !live.owner_lease.same_generation(lifetime) || live.identity != identity {
+            return Err("Forward belongs to another window or target".into());
+        }
+        if let Some(child) = &mut live.child {
+            if child
+                .try_wait()
+                .map_err(|_| "Unable to inspect forwarding process")?
+                .is_none()
+            {
+                return Ok(None);
+            }
+        }
+        Ok(mark_stopping(&id, live))
+    })?;
+    if let Some(pending) = retired {
+        stop_pending(state, pending)?;
+    }
+    let existing = with_start_resources(lifetime, (http_proxy, jump_config), |resources| {
         let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(live) = sessions.get_mut(&id) {
-            if live.owner != owner || live.identity != identity {
+            if live.stopping || live.status.state == "unknown" {
+                return Err("Forward stop is pending or could not be confirmed".into());
+            }
+            if !live.owner_lease.same_generation(lifetime) || live.identity != identity {
                 return Err("Forward belongs to another window or target".into());
             }
             if let Some(child) = &mut live.child {
@@ -254,11 +401,11 @@ fn start_for_owner(
                     return Ok(Some(live.status.clone()));
                 }
             }
-            sessions.remove(&id);
+            return Err("Forward changed during startup; retry.".into());
         }
         drop(TcpListener::bind(address).map_err(|_| "Local port is already in use")?);
         let mut command = Command::new("ssh");
-        if let Some(proxy) = &http_proxy {
+        if let Some(proxy) = &resources.0 {
             command.envs(proxy.environment());
         }
         command
@@ -279,12 +426,14 @@ fn start_for_owner(
         let spawned = command.spawn();
         let child = spawned.map_err(|_| "Could not launch SSH forwarding process")?;
         let live = LiveForward {
-            _http_proxy: http_proxy,
-            _jump_config: jump_config,
+            _http_proxy: resources.0.take(),
+            _jump_config: resources.1.take(),
             generation,
             owner: owner.into(),
+            owner_lease: lifetime.clone(),
             identity,
             child: Some(child),
+            stopping: false,
             status: ForwardStatus {
                 id: id.clone(),
                 connection_id,
@@ -316,14 +465,16 @@ fn start_for_owner(
             .get_mut(&id)
             .filter(|live| live.generation == generation)
             .ok_or("SSH forwarding was cancelled")?;
+        if live.stopping || live.status.state == "unknown" {
+            return Err("SSH forwarding was cancelled".into());
+        }
         let failed = !matches!(
             live.child.as_mut().map(|child| child.try_wait()),
             Some(Ok(None))
         );
         if failed {
-            let mut live = sessions.remove(&id).unwrap();
             drop(sessions);
-            stop_child(&mut live);
+            let _ = stop_generation(state, &id, generation);
             return Err("SSH forwarding failed. Check host trust, agent/key authentication and destination.".into());
         }
         if listening {
@@ -341,15 +492,7 @@ fn start_for_owner(
         drop(sessions);
         std::thread::sleep(Duration::from_millis(30));
     }
-    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-    if sessions
-        .get(&id)
-        .is_some_and(|live| live.generation == generation)
-    {
-        let mut live = sessions.remove(&id).unwrap();
-        drop(sessions);
-        stop_child(&mut live);
-    }
+    let _ = stop_generation(state, &id, generation);
     Err("SSH forwarding timed out before opening the loopback listener".into())
 }
 
@@ -419,42 +562,313 @@ pub fn ssh_forward_stop(
     stop_owned(&state, window.label(), &id)
 }
 pub(crate) fn stop_owned(state: &SshForwards, owner: &str, id: &str) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-    if sessions.get(id).is_some_and(|live| live.owner != owner) {
-        return Err("Forward belongs to another window".into());
-    }
-    if let Some(mut live) = sessions.remove(id) {
-        stop_child(&mut live);
-    }
-    Ok(())
+    stop_owned_with(state, owner, id, reap_child)
+}
+fn stop_owned_with(
+    state: &SshForwards,
+    owner: &str,
+    id: &str,
+    reap: impl FnOnce(Option<Child>) -> Result<(), Option<Child>>,
+) -> Result<(), String> {
+    let lease = state.owner(owner)?;
+    let pending = lease.with_live(|| {
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(live) = sessions.get_mut(id) else {
+            return Ok(None);
+        };
+        if !live.owner_lease.same_generation(&lease) {
+            return Err("Forward belongs to another window".into());
+        }
+        Ok(Some(
+            mark_stopping(id, live).ok_or("Forward stop is already in progress")?,
+        ))
+    })?;
+    let Some(pending) = pending else {
+        return Ok(());
+    };
+    let mut pending = pending;
+    let result = reap(pending.child.take());
+    finish_stopping(state, pending, result)
 }
 #[tauri::command(async)]
 pub fn ssh_forward_list(
     window: tauri::Window,
     state: State<'_, SshForwards>,
-) -> Vec<ForwardStatus> {
+) -> Result<Vec<ForwardStatus>, String> {
+    list_window(&state, window.label())
+}
+fn list_window(state: &SshForwards, label: &str) -> Result<Vec<ForwardStatus>, String> {
+    let owner = state.owner(label)?;
+    Ok(list_owned(state, &owner))
+}
+fn list_owned(state: &SshForwards, owner: &ForwardOwner) -> Vec<ForwardStatus> {
     let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-    sessions
-        .values_mut()
-        .filter(|live| live.owner == window.label())
-        .map(|live| {
+    let mut retired = Vec::new();
+    let statuses = sessions
+        .iter_mut()
+        .filter(|(_, live)| live.owner_lease.same_generation(owner) && owner.is_alive())
+        .map(|(id, live)| {
             if let Some(child) = &mut live.child {
                 if let Ok(Some(_)) = child.try_wait() {
                     live.child = None;
-                    live._jump_config = None;
-                    live._http_proxy = None;
-                    live.status.state = "failed".into();
-                    live.status.error = Some("SSH forwarding process exited".into());
+                    live.stopping = true;
+                    live.status.state = "stopping".into();
+                    retired.push((
+                        id.clone(),
+                        live.generation,
+                        (live._http_proxy.take(), live._jump_config.take()),
+                    ));
                 }
             }
             live.status.clone()
         })
-        .collect()
+        .collect();
+    drop(sessions);
+    for (id, generation, resources) in retired {
+        drop(resources);
+        let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(live) = sessions
+            .get_mut(&id)
+            .filter(|live| live.generation == generation && live.stopping)
+        {
+            live.stopping = false;
+            live.status.state = "failed".into();
+            live.status.error = Some("SSH forwarding process exited".into());
+        }
+    }
+    statuses
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn placeholder(id: &str, owner: &str) -> LiveForward {
+        LiveForward {
+            _http_proxy: None,
+            _jump_config: None,
+            generation: uuid::Uuid::new_v4(),
+            owner: owner.into(),
+            owner_lease: crate::ssh_window_lifecycle::register(owner).unwrap(),
+            identity: "fixture".into(),
+            child: None,
+            stopping: false,
+            status: ForwardStatus {
+                id: id.into(),
+                connection_id: "server".into(),
+                local_port: 1234,
+                kind: "local".into(),
+                target_host: "localhost".into(),
+                target_port: 22,
+                state: "running".into(),
+                error: None,
+            },
+        }
+    }
+
+    #[test]
+    fn failed_or_reused_start_drops_resources_after_window_lifecycle_unlocks() {
+        struct Resource {
+            dropping: std::sync::mpsc::Sender<()>,
+            release: std::sync::mpsc::Receiver<()>,
+        }
+        impl Drop for Resource {
+            fn drop(&mut self) {
+                self.dropping.send(()).unwrap();
+                self.release.recv().unwrap();
+            }
+        }
+        for reused in [false, true] {
+            let owner = crate::ssh_window_lifecycle::register("start-resource-owner").unwrap();
+            let (dropping_tx, dropping_rx) = std::sync::mpsc::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                with_start_resources(
+                    &owner,
+                    Some(Resource {
+                        dropping: dropping_tx,
+                        release: release_rx,
+                    }),
+                    |_| {
+                        if reused {
+                            Ok(Some(()))
+                        } else {
+                            Err("port or spawn failed".into())
+                        }
+                    },
+                )
+            });
+            dropping_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            let (checked_tx, checked_rx) = std::sync::mpsc::channel();
+            let checker = std::thread::spawn(move || {
+                let result = crate::ssh_window_lifecycle::capture("start-resource-owner");
+                checked_tx.send(result.is_ok()).unwrap();
+            });
+            let unlocked = checked_rx.recv_timeout(Duration::from_secs(2));
+            release_tx.send(()).unwrap();
+            let result = worker.join().unwrap();
+            checker.join().unwrap();
+            assert_eq!(
+                unlocked.unwrap(),
+                true,
+                "cleanup held the shared lifecycle lock"
+            );
+            assert_eq!(result.is_ok(), reused);
+        }
+    }
+
+    #[test]
+    fn pending_stop_does_not_lock_other_operations_or_release_the_same_id() {
+        let state = Arc::new(SshForwards::default());
+        state.register_window("stop-owner").unwrap();
+        let lease = state.owner("stop-owner").unwrap();
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("id".into(), placeholder("id", "stop-owner"));
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_state = state.clone();
+        let worker = std::thread::spawn(move || {
+            stop_owned_with(&worker_state, "stop-owner", "id", |_| {
+                ready_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                Ok(())
+            })
+            .unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            state
+                .sessions
+                .try_lock()
+                .unwrap()
+                .get("id")
+                .unwrap()
+                .status
+                .state,
+            "stopping"
+        );
+        assert!(stop_owned(&state, "other", "id").is_err());
+        assert!(stop_owned(&state, "stop-owner", "id").is_err());
+        assert!(start_for_owner(
+            &state,
+            &lease,
+            "id".into(),
+            "server".into(),
+            1234,
+            "localhost".into(),
+            22,
+            vec![],
+            None,
+            None,
+            None
+        )
+        .unwrap_err()
+        .contains("pending"));
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(!state.sessions.lock().unwrap().contains_key("id"));
+    }
+
+    #[test]
+    fn unconfirmed_stop_retains_the_owner_fence() {
+        let state = SshForwards::default();
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("id".into(), placeholder("id", "owner"));
+        let pending = {
+            let mut sessions = state.sessions.lock().unwrap();
+            mark_stopping("id", sessions.get_mut("id").unwrap()).unwrap()
+        };
+        assert!(finish_stopping(&state, pending, Err(None)).is_err());
+        let sessions = state.sessions.lock().unwrap();
+        let live = sessions.get("id").unwrap();
+        assert_eq!(live.status.state, "unknown");
+        assert_eq!(live.owner, "owner");
+        drop(sessions);
+        assert!(stop_owned(&state, "owner", "id").is_err());
+    }
+
+    #[test]
+    fn reused_window_label_cannot_touch_old_unknown_generation() {
+        let state = SshForwards::default();
+        let mut old = placeholder("old", "reused-window");
+        old.status.state = "unknown".into();
+        state.sessions.lock().unwrap().insert("old".into(), old);
+        crate::ssh_window_lifecycle::close("reused-window");
+        let fresh = placeholder("new", "reused-window");
+        state.sessions.lock().unwrap().insert("new".into(), fresh);
+        state.kill_window("reused-window");
+        let lease = state.owner("reused-window").unwrap();
+        assert_eq!(
+            list_owned(&state, &lease)
+                .iter()
+                .map(|status| status.id.as_str())
+                .collect::<Vec<_>>(),
+            ["new"]
+        );
+        assert!(stop_owned(&state, "reused-window", "old").is_err());
+        assert!(start_for_owner(
+            &state,
+            &lease,
+            "old".into(),
+            "server".into(),
+            1234,
+            "localhost".into(),
+            22,
+            vec![],
+            None,
+            None,
+            None
+        )
+        .is_err());
+        stop_owned(&state, "reused-window", "new").unwrap();
+        assert!(state.sessions.lock().unwrap().contains_key("old"));
+    }
+
+    #[test]
+    fn resource_release_runs_without_registry_lock_and_keeps_the_fence() {
+        let state = Arc::new(SshForwards::default());
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("id".into(), placeholder("id", "owner"));
+        let pending = {
+            let mut sessions = state.sessions.lock().unwrap();
+            mark_stopping("id", sessions.get_mut("id").unwrap()).unwrap()
+        };
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let other = state.clone();
+        let worker = std::thread::spawn(move || {
+            finish_stopping_with(&other, pending, Ok(()), |resources| {
+                ready_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                drop(resources);
+            })
+            .unwrap()
+        });
+        ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            state
+                .sessions
+                .try_lock()
+                .unwrap()
+                .get("id")
+                .unwrap()
+                .status
+                .state,
+            "stopping"
+        );
+        assert!(stop_owned(&state, "owner", "id").is_err());
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(!state.sessions.lock().unwrap().contains_key("id"));
+    }
     #[test]
     fn pending_start_cannot_spawn_after_close_or_recreated_window_label() {
         let state = Arc::new(SshForwards::default());
@@ -519,10 +933,12 @@ mod tests {
     fn unregistered_closed_and_shutdown_owners_have_no_forwarding_capability() {
         let state = SshForwards::default();
         assert!(state.owner("never-registered").is_err());
+        assert!(list_window(&state, "never-registered").is_err());
         state.register_window("closed-native-window").unwrap();
         crate::ssh_window_lifecycle::close("closed-native-window");
         state.kill_window("closed-native-window");
         assert!(state.owner("closed-native-window").is_err());
+        assert!(list_window(&state, "closed-native-window").is_err());
         state.register_window("closed-native-window").unwrap();
         crate::ssh_window_lifecycle::close("closed-native-window");
         state.kill_all();
@@ -657,6 +1073,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         let before = Instant::now();
+        crate::ssh_window_lifecycle::close("owner");
         state.kill_window("owner");
         assert!(
             before.elapsed() < Duration::from_secs(3),
@@ -745,6 +1162,7 @@ mod tests {
         assert_eq!(echo.join().unwrap(), payload.len());
         state.kill_window("other-window");
         assert!(TcpStream::connect(("127.0.0.1", local_port)).is_ok());
+        crate::ssh_window_lifecycle::close("main");
         state.kill_window("main");
         assert!(TcpStream::connect(("127.0.0.1", local_port)).is_err());
         let restarted = start(
@@ -919,6 +1337,7 @@ mod tests {
             .state,
             "running"
         );
+        crate::ssh_window_lifecycle::close("socks-owner");
         state.kill_window("socks-owner");
         assert!(TcpListener::bind(("127.0.0.1", local_port)).is_ok());
         assert!(state.sessions.lock().unwrap().is_empty());

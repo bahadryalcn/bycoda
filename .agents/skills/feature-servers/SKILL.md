@@ -22,6 +22,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- A stopping SSH forward retains its exact ID, owner and proxy leases until local process exit is confirmed. Unknown stop outcomes stay fenced and offer a stop retry; process waits and proxy/config cleanup run outside the shared forward registry and native window lifecycle locks.
+
 - Do not infer health from a saved entry, terminal existence or failed read. Machine connectivity and SSH capability remain distinct.
 - Keep free group/tag/name entry, optional ephemeral names, search/selection/filter persistence and unsaved form drafts across purpose navigation.
 - Retain identity cancellation, trust/configuration review, explicit submits, permission gates and duplicate-operation guards.

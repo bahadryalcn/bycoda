@@ -4023,6 +4023,8 @@
   "Starting": "起動中",
   "Starts a managed development server on this project's host.": "このプロジェクトのホストで管理対象の開発サーバーを起動します。",
   "Stopping": "停止中",
+  "Status unknown": "状態不明",
+  "Retry stop": "停止を再試行",
   "The process is still running. You can force terminate it.": "プロセスはまだ実行中です。強制終了できます。",
   "The web address provides the expected server port. Open the discovered URL from Conversation tools.": "Web アドレスから想定サーバーポートを取得します。検出された URL は会話ツールから開いてください。",
   "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.": "別のポートを使うには、そのポート用のサーバーコマンドを入力し、想定ポートを変更してください。オプションは自動追加されません。",

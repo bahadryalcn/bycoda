@@ -4550,6 +4550,8 @@
   "Starting": "Starting",
   "Starts a managed development server on this project's host.": "Starts a managed development server on this project's host.",
   "Stopping": "Stopping",
+  "Status unknown": "Status unknown",
+  "Retry stop": "Retry stop",
   "The process is still running. You can force terminate it.": "The process is still running. You can force terminate it.",
   "The web address provides the expected server port. Open the discovered URL from Conversation tools.": "The web address provides the expected server port. Open the discovered URL from Conversation tools.",
   "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.": "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",

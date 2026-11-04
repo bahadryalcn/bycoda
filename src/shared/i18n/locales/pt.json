@@ -4023,6 +4023,8 @@
   "Starting": "Iniciando",
   "Starts a managed development server on this project's host.": "Inicia um servidor de desenvolvimento gerenciado no host deste projeto.",
   "Stopping": "Parando",
+  "Status unknown": "Status desconhecido",
+  "Retry stop": "Tentar parar novamente",
   "The process is still running. You can force terminate it.": "O processo ainda está em execução. Você pode forçar seu encerramento.",
   "The web address provides the expected server port. Open the discovered URL from Conversation tools.": "O endereço web indica a porta esperada do servidor. Abra a URL detectada nas ferramentas da conversa.",
   "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.": "Para usar outra porta, insira o comando correspondente e atualize a porta esperada. Nenhuma opção é adicionada automaticamente.",

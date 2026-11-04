@@ -4023,6 +4023,8 @@
   "Starting": "正在启动",
   "Starts a managed development server on this project's host.": "在此项目的主机上启动受管理的开发服务器。",
   "Stopping": "正在停止",
+  "Status unknown": "状态未知",
+  "Retry stop": "重试停止",
   "The process is still running. You can force terminate it.": "进程仍在运行。您可以强制终止它。",
   "The web address provides the expected server port. Open the discovered URL from Conversation tools.": "网页地址提供预期的服务器端口。请从会话工具打开已发现的 URL。",
   "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.": "要使用其他端口，请输入对应端口的服务器命令并更新预期端口。系统不会自动添加参数。",

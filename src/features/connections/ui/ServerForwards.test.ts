@@ -112,6 +112,30 @@ it("running rule stops explicitly and cannot be removed while active", async () 
   expect(mocks.stop).toHaveBeenCalledWith("s1:r1");
   expect(mocks.start).not.toHaveBeenCalled();
 });
+
+it("keeps a stopping forward fenced and offers a stop retry for an unknown outcome", async () => {
+  mocks.list.mockResolvedValue([{ id: "s1:r1", connectionId: "s1", state: "stopping" }]);
+  await render();
+  expect(container.textContent).toContain("Stopping");
+  const stopping = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Stopping"),
+  );
+  expect(stopping?.disabled).toBe(true);
+  expect(
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Remove")
+      ?.disabled,
+  ).toBe(true);
+  await act(async () => root.render(null));
+  mocks.list.mockResolvedValue([
+    { id: "s1:r1", connectionId: "s1", state: "unknown", error: "Stop not confirmed" },
+  ]);
+  await render();
+  expect(container.textContent).toContain("Status unknown");
+  expect(container.textContent).toContain("Stop not confirmed");
+  await click("Retry stop");
+  expect(mocks.stop).toHaveBeenCalledWith("s1:r1");
+  expect(mocks.start).not.toHaveBeenCalled();
+});
 it("saving metadata never connects and patches only forward rules", async () => {
   await render();
   await setInput("Local port", "12222");

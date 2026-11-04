@@ -4306,6 +4306,8 @@
   "Starting": "Başlatılıyor",
   "Starts a managed development server on this project's host.": "Bu projenin host'unda yönetilen bir geliştirme sunucusu başlatır.",
   "Stopping": "Durduruluyor",
+  "Status unknown": "Durum bilinmiyor",
+  "Retry stop": "Durdurmayı yeniden dene",
   "The process is still running. You can force terminate it.": "Süreç hâlâ çalışıyor. Zorla sonlandırabilirsiniz.",
   "The web address provides the expected server port. Open the discovered URL from Conversation tools.": "Web adresi beklenen sunucu portunu belirtir. Keşfedilen URL'yi Konuşma araçlarından açın.",
   "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.": "Başka bir port kullanmak için o porta uygun sunucu komutunu girin ve beklenen portu güncelleyin. Komuta otomatik parametre eklenmez.",
