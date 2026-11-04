@@ -110,6 +110,11 @@ on the Host; changing or clearing the account uses the Host's settings. Closing
 the tab or losing the connection does not stop an accepted turn. An uncertain
 send retains its command ID for receipt recovery.
 
+Unreadable saved requests remain held for review. Archived recovery evidence also
+uses local storage, so new requests can be refused when that storage budget is
+full. A refused request is not sent; retain its draft while recovering earlier
+requests.
+
 This is an explicit option for new conversations. Existing local conversations
 and the ordinary new-conversation action keep their current execution behavior.
 It does not migrate an existing conversation.

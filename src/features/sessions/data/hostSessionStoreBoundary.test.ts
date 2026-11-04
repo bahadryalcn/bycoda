@@ -8,6 +8,8 @@ import {
   getSession,
   listSessionsByProject,
   listRecentSessions,
+  listRecentSessionsSince,
+  listLinkedSessions,
   setSessionArchived,
   setSessionPinned,
   shouldPersistSession,
@@ -45,6 +47,42 @@ function bound() {
     created: true,
   });
 }
+
+it.each(["", "{broken", "null", "false", JSON.stringify({ binding: null, shell: { id: "bad" } })])(
+  "isolates corrupt Host ownership while preserving its native routing fence: %s",
+  async (raw) => {
+    const good = bound();
+    localStorage.setItem("bycoda.host-session-binding.v1:bad", raw);
+    const base = {
+      cwd: "G:/repo",
+      title: "Native",
+      harness: "codex",
+      model: "m",
+      runtimeMode: "supervised",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    vi.mocked(invoke).mockResolvedValue([
+      { ...base, id: "bad" },
+      { ...base, id: "native-good" },
+    ]);
+    for (const list of [
+      () => listSessionsByProject("G:/repo"),
+      () => listRecentSessions(20),
+      () => listRecentSessionsSince(0),
+      () => listLinkedSessions(),
+    ]) {
+      const rows = await list();
+      expect(rows.map((row) => row.id)).toContain("native-good");
+      expect(rows.map((row) => row.id)).not.toContain("bad");
+    }
+    expect((await listRecentSessions(20)).map((row) => row.id)).toContain(good.id);
+    expect(() => shouldPersistSession({ ...newSession("codex", "G:/repo"), id: "bad" })).toThrow(
+      "Invalid stored session owner",
+    );
+    expect(localStorage.getItem("bycoda.host-session-binding.v1:bad")).toBe(raw);
+  },
+);
 
 it("restores and lists a local Host shell without writing an authoritative Native transcript", async () => {
   const session = bound();

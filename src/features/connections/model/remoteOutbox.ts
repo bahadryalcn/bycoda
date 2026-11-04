@@ -284,7 +284,8 @@ export function useRemoteOutboxIssues(project?: string, environment?: string): O
 
 function subscribeOutbox(listener: () => void) {
   const storage = (event: StorageEvent) => {
-    if (event.key === null || event.key.startsWith(PREFIX)) listener();
+    if (event.key === null || event.key.startsWith(PREFIX) || event.key.startsWith(ARCHIVE_PREFIX))
+      listener();
   };
   window.addEventListener(CHANGE, listener);
   window.addEventListener("storage", storage);
@@ -303,7 +304,32 @@ export function archiveRemoteOutboxIssue(key: string) {
     throw new Error("This request no longer needs recovery.");
   const value = localStorage.getItem(key);
   if (value === null) return;
-  localStorage.setItem(`${ARCHIVE_PREFIX}${key}`, value);
+  let preserved = localStorage.getItem(`${ARCHIVE_PREFIX}${key}`) === value;
+  for (let index = 0; !preserved && index < localStorage.length; index++) {
+    const archiveKey = localStorage.key(index);
+    if (!archiveKey?.startsWith(`${ARCHIVE_PREFIX}[`)) continue;
+    let identity: unknown;
+    try {
+      identity = JSON.parse(archiveKey.slice(ARCHIVE_PREFIX.length));
+    } catch {
+      // Keep unknown archive identities untouched.
+      continue;
+    }
+    preserved =
+      Array.isArray(identity) &&
+      identity.length === 2 &&
+      identity[0] === key &&
+      typeof identity[1] === "string" &&
+      localStorage.getItem(archiveKey) === value;
+  }
+  if (!preserved) {
+    const archiveKey = `${ARCHIVE_PREFIX}${JSON.stringify([key, crypto.randomUUID()])}`;
+    if (localStorage.getItem(archiveKey) !== null)
+      throw new Error("Cannot safely archive this request. Try recovery again.");
+    localStorage.setItem(archiveKey, value);
+  }
+  if (localStorage.getItem(key) !== value)
+    throw new Error("The request changed during recovery. Review it again before continuing.");
   localStorage.removeItem(key);
   changed();
 }
@@ -397,10 +423,10 @@ export function savePendingRemoteCommand(
         "An unfinished request needs recovery. Check the host and review the request above before sending again.",
       ),
     );
-  const existing = readPendingEntry(
-    localStorage.getItem(`${pendingPrefix(project, environment)}${command.commandId}`) ?? "",
-    command.commandId,
+  const existingRaw = localStorage.getItem(
+    `${pendingPrefix(project, environment)}${command.commandId}`,
   );
+  const existing = readPendingEntry(existingRaw ?? "", command.commandId);
   if (
     existing &&
     (canonicalJson(existing.command) !== canonicalJson(command) ||
@@ -419,6 +445,8 @@ export function savePendingRemoteCommand(
     followup: followup ?? pendingRemoteFollowup(project, environment, command.commandId),
   };
   const json = JSON.stringify(entry);
+  if (existing && existingRaw && canonicalJson(JSON.parse(existingRaw)) === canonicalJson(entry))
+    return;
   if (json.length * 2 > 2 * 1024 * 1024)
     throw new Error(t("Remote request is too large to save safely."));
   let pendingBytes = 0;
@@ -426,14 +454,15 @@ export function savePendingRemoteCommand(
   for (let index = 0; index < localStorage.length; index++) {
     const key = localStorage.key(index);
     if (
-      !key?.startsWith(PREFIX) ||
+      !(key?.startsWith(PREFIX) || key?.startsWith(ARCHIVE_PREFIX)) ||
       key === `${pendingPrefix(project, environment)}${command.commandId}`
     )
       continue;
     pendingCount++;
-    pendingBytes += (localStorage.getItem(key)?.length ?? 0) * 2;
+    pendingBytes += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2;
   }
-  if (pendingCount >= 100 || pendingBytes + json.length * 2 > 8 * 1024 * 1024)
+  const pendingKey = `${pendingPrefix(project, environment)}${command.commandId}`;
+  if (pendingCount >= 100 || pendingBytes + (pendingKey.length + json.length) * 2 > 8 * 1024 * 1024)
     throw new Error(t("Remote outbox is full. Recover pending requests before sending more."));
   if (!readPendingEntry(json, command.commandId))
     throw new Error(t("Cannot save an invalid remote request."));

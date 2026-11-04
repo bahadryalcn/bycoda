@@ -8,6 +8,7 @@ import { parseHead, type ConversationHead } from "../../sync/model/conversationH
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
   hostSessionBinding,
+  hasHostSessionOwnerFence,
   restoreHostSessionShell,
   hostSessionShellSummaries,
   patchHostSessionShellMetadata,
@@ -1023,8 +1024,8 @@ export async function listSessionsByProject(cwd: string): Promise<SessionSummary
     (entry) => normalizeProjectPath(entry.cwd) === normalizeProjectPath(cwd),
   );
   if (!owned.length)
-    return rows.filter((row) => !hostSessionBinding({ id: row.id })).map(normalizeSummary);
-  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned]
+    return rows.filter((row) => !hasHostSessionOwnerFence(row.id)).map(normalizeSummary);
+  return [...rows.filter((row) => !hasHostSessionOwnerFence(row.id)), ...owned]
     .sort(
       (a, b) =>
         Number(!!b.pinned) - Number(!!a.pinned) || summaryActivityAt(b) - summaryActivityAt(a),
@@ -1044,7 +1045,7 @@ export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<v
 export async function listLinkedSessions(): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_linked");
   const owned = hostSessionShellSummaries().filter((entry) => entry.linkedWorkItem);
-  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned].map(
+  return [...rows.filter((row) => !hasHostSessionOwnerFence(row.id)), ...owned].map(
     normalizeSummary,
   );
 }
@@ -1053,7 +1054,7 @@ export async function listLinkedSessions(): Promise<SessionSummary[]> {
 export async function listRecentSessions(limit: number): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
   const owned = hostSessionShellSummaries();
-  const native = rows.filter((row) => !hostSessionBinding({ id: row.id }));
+  const native = rows.filter((row) => !hasHostSessionOwnerFence(row.id));
   if (!owned.length) return native.map(normalizeSummary);
   const combined = [...native, ...owned].sort(
     (a, b) => summaryActivityAt(b) - summaryActivityAt(a),
@@ -1068,7 +1069,7 @@ export async function listRecentSessions(limit: number): Promise<SessionSummary[
 export async function listRecentSessionsSince(since: number): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_recent_since", { since });
   return [
-    ...rows.filter((row) => !hostSessionBinding({ id: row.id })),
+    ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
     ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
   ].map(normalizeSummary);
 }

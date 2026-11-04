@@ -24,11 +24,21 @@ type StoredHostShell = {
   pinned?: boolean;
   deleted?: boolean;
 };
+class InvalidStoredSessionOwner extends Error {
+  constructor() {
+    super("Invalid stored session owner; reconnect this conversation before sending.");
+  }
+}
 function read(shellId: string): StoredHostShell | undefined {
   if (typeof localStorage === "undefined") return;
   const raw = localStorage.getItem(PREFIX + shellId);
-  if (!raw) return;
-  const value = JSON.parse(raw);
+  if (raw === null) return;
+  let value: ReturnType<typeof JSON.parse>;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new InvalidStoredSessionOwner();
+  }
   const b = value?.binding;
   if (
     b?.kind !== "local-host" ||
@@ -38,10 +48,20 @@ function read(shellId: string): StoredHostShell | undefined {
     (b.authorityGeneration !== null &&
       (!Number.isSafeInteger(b.authorityGeneration) || b.authorityGeneration < 1)) ||
     typeof b.created !== "boolean" ||
-    value.shell?.id !== shellId
+    value?.shell?.id !== shellId
   )
-    throw new Error("Invalid stored session owner; reconnect this conversation before sending.");
+    throw new InvalidStoredSessionOwner();
   return value;
+}
+
+/** A malformed owner remains a fence for list projection, never an unowned row. */
+export function hasHostSessionOwnerFence(shellId: string): boolean {
+  try {
+    return !!read(shellId);
+  } catch (error) {
+    if (error instanceof InvalidStoredSessionOwner) return true;
+    throw error;
+  }
 }
 
 export function hostSessionBinding(
@@ -159,7 +179,13 @@ export function hostSessionShellSummaries() {
   for (let index = 0; index < localStorage.length; index++) {
     const key = localStorage.key(index);
     if (!key?.startsWith(PREFIX)) continue;
-    const stored = read(key.slice(PREFIX.length));
+    let stored: StoredHostShell | undefined;
+    try {
+      stored = read(key.slice(PREFIX.length));
+    } catch (error) {
+      if (error instanceof InvalidStoredSessionOwner) continue;
+      throw error;
+    }
     if (!stored?.binding.created || stored.deleted) continue;
     const { shell, createdAt, updatedAt, archived, pinned } = stored;
     summaries.push({

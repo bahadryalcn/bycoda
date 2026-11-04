@@ -96,9 +96,72 @@ it("preserves the original bytes in quarantine before releasing sending", () => 
   localStorage.setItem(`${prefix}bad`, original);
   archiveRemoteOutboxIssue(`${prefix}bad`);
   expect(localStorage.getItem(`${prefix}bad`)).toBeNull();
-  expect(localStorage.getItem(`bycoda.remote-command-quarantine.v1:${prefix}bad`)).toBe(original);
+  const archives = Object.keys(localStorage).filter((key) =>
+    key.startsWith("bycoda.remote-command-quarantine.v1:"),
+  );
+  expect(archives).toHaveLength(1);
+  expect(localStorage.getItem(archives[0])).toBe(original);
   expect(remoteOutboxIssues()).toEqual([]);
   expect(() => savePendingRemoteCommand("project", "env", create)).not.toThrow();
+});
+
+it("preserves distinct historical raw bytes and deduplicates identical recovery", () => {
+  const key = `${prefix}bad`;
+  const archiveKeys = () =>
+    Object.keys(localStorage).filter((name) =>
+      name.startsWith("bycoda.remote-command-quarantine.v1:"),
+    );
+  for (const raw of ["null", "{different", "null"]) {
+    localStorage.setItem(key, raw);
+    archiveRemoteOutboxIssue(key);
+  }
+  const archives = archiveKeys();
+  expect(archives).toHaveLength(2);
+  expect(archives.map((name) => localStorage.getItem(name)).sort()).toEqual(
+    ["null", "{different"].sort(),
+  );
+});
+
+it("counts quarantined bytes and records before admitting a new request", () => {
+  for (let i = 0; i < 100; i++)
+    localStorage.setItem(`bycoda.remote-command-quarantine.v1:fixture-${i}`, "retained");
+  expect(() => savePendingRemoteCommand("project", "env", create)).toThrow("Remote outbox is full");
+  expect(localStorage.getItem(`${prefix}good`)).toBeNull();
+  expect(localStorage.getItem("bycoda.remote-command-quarantine.v1:fixture-0")).toBe("retained");
+});
+
+it("keeps an identical durable request idempotent when the archive budget is full", () => {
+  savePendingRemoteCommand("project", "env", create, "shell");
+  const before = localStorage.getItem(`${prefix}good`);
+  for (let i = 0; i < 100; i++)
+    localStorage.setItem(`bycoda.remote-command-quarantine.v1:fixture-${i}`, "retained");
+  expect(() => savePendingRemoteCommand("project", "env", create, "shell")).not.toThrow();
+  expect(localStorage.getItem(`${prefix}good`)).toBe(before);
+  expect(pendingRemoteCommand("project", "env", null, "shell")).toEqual(create);
+});
+
+it("retains a request changed during archival while keeping the earlier evidence", () => {
+  const key = `${prefix}bad`;
+  const store = localStorage;
+  store.setItem(key, "null");
+  vi.stubGlobal("localStorage", {
+    get length() {
+      return store.length;
+    },
+    key: store.key.bind(store),
+    getItem: store.getItem.bind(store),
+    removeItem: store.removeItem.bind(store),
+    setItem: (name: string, value: string) => {
+      store.setItem(name, value);
+      if (name.startsWith("bycoda.remote-command-quarantine.v1:")) store.setItem(key, "{newer");
+    },
+  });
+  expect(() => archiveRemoteOutboxIssue(key)).toThrow("changed during recovery");
+  expect(store.getItem(key)).toBe("{newer");
+  const archive = Object.keys(store).find((name) =>
+    name.startsWith("bycoda.remote-command-quarantine.v1:"),
+  );
+  expect(archive && store.getItem(archive)).toBe("null");
 });
 
 it("does not release an unreadable request when its archive cannot be saved", () => {

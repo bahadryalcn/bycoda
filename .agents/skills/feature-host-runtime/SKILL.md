@@ -33,6 +33,8 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Corrupt stored session owners remain routing fences even when excluded from list rendering. Quarantined outbox evidence counts toward admission; preserve distinct original bytes and never resend uncertain commands.
+
 - Missing/corrupt lifecycle metadata or an unreachable endpoint never proves a Host stopped. Probe the kernel lease; live legacy owners without verified identity remain unknown. Keep corrupt policy, tunnel and credential state until explicitly repaired.
 - Workspace saves retain expected-content checks, permission checks at publication, rooted target identity and original file permissions. Preserve uncertain replacement candidates; private-state atomic helpers do not preserve arbitrary workspace ACLs.
 
