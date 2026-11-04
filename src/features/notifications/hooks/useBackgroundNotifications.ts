@@ -20,6 +20,16 @@ import { loadNotificationsEnabled, notifyBackground } from "../model/notificatio
 
 const POLL_MS = 60_000;
 
+// Keep in sync with src-tauri/src/window.rs::is_workspace_window.
+function isWorkspaceWindow(label: string): boolean {
+  return (
+    label !== "quick-composer" &&
+    label !== "quick-composer-git" &&
+    !label.startsWith("voice-overlay-") &&
+    label !== "desktop-control-indicator"
+  );
+}
+
 /** Only one workspace window watches, so each change is announced once. */
 export async function isLeadWindow(): Promise<boolean> {
   let own: string;
@@ -28,10 +38,11 @@ export async function isLeadWindow(): Promise<boolean> {
   } catch {
     return false;
   }
+  if (!isWorkspaceWindow(own)) return false;
   try {
     const labels = (await getAllWebviewWindows())
       .map((window) => window.label)
-      .filter((label) => !label.startsWith("quick-composer"))
+      .filter(isWorkspaceWindow)
       .sort();
     return (labels[0] ?? own) === own;
   } catch {

@@ -94,6 +94,10 @@ provider, model and run limits before saving. Creation saves the schedule withou
 starting a run. Open its confirmed result in Automations to inspect or change it.
 An unconfirmed result keeps its original identity for reconciliation.
 
+After the desktop has been offline, scheduled automations consider only the newest
+missed occurrence. It runs only within its configured grace period; the schedule
+then advances to a future occurrence instead of replaying every missed run.
+
 Plan approval can be required always, only for big jobs, or never. Big jobs have
 four or more planned tasks or span multiple projects. The selected policy is
 saved with the goal and checked before its tasks are created.

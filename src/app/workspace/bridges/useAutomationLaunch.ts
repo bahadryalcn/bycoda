@@ -97,8 +97,12 @@ export function useAutomationLaunch({
       );
       let watchdog: number | undefined;
       let breach: string | null = null;
+      let admitted = false;
       try {
         await earlier;
+        // Claim before session side effects, including retries after a lost reply.
+        await updateAutomationRun(run.id, "running");
+        admitted = true;
         const skip = isProjectPasswordLocked(automation.cwd)
           ? LOCKED_PROJECT_SKIP
           : run.trigger === "manual"
@@ -252,11 +256,13 @@ export function useAutomationLaunch({
           },
         });
       } catch (reason: unknown) {
-        await updateAutomationRun(run.id, "failed", {
-          error: reason instanceof Error ? reason.message : String(reason),
-        }).catch((error) => {
-          console.warn("App operation failed", error);
-        });
+        if (admitted) {
+          await updateAutomationRun(run.id, "failed", {
+            error: reason instanceof Error ? reason.message : String(reason),
+          }).catch((error) => {
+            console.warn("App operation failed", error);
+          });
+        }
         throw reason;
       } finally {
         started();

@@ -300,17 +300,20 @@ export function overdueTriggerOccurrences(
   triggers: readonly AutomationTrigger[],
   firstRunAt: number,
   now: number,
-  limit = 100,
 ): Array<{ scheduledFor: number; nextRunAt: number }> {
-  const occurrences: Array<{ scheduledFor: number; nextRunAt: number }> = [];
-  let scheduledFor = firstRunAt;
-  while (scheduledFor <= now && occurrences.length < limit) {
+  if (firstRunAt > now) return [];
+  // All supported schedules recur at least weekly. Start within nine days of
+  // now to bound work after a long offline period, including DST changes.
+  const anchor = Math.max(firstRunAt, now - 9 * 24 * 60 * 60 * 1000);
+  let scheduledFor = anchor === firstRunAt ? firstRunAt : nextTriggersRunAt(triggers, anchor);
+  let latest: { scheduledFor: number; nextRunAt: number } | undefined;
+  while (scheduledFor <= now) {
     const nextRunAt = nextTriggersRunAt(triggers, scheduledFor);
-    if (nextRunAt <= scheduledFor) break;
-    occurrences.push({ scheduledFor, nextRunAt });
+    if (!Number.isFinite(nextRunAt) || nextRunAt <= scheduledFor) break;
+    latest = { scheduledFor, nextRunAt };
     scheduledFor = nextRunAt;
   }
-  return occurrences;
+  return latest ? [latest] : [];
 }
 
 export function gmtOffsetLabel(date = new Date()): string {
@@ -516,14 +519,13 @@ export async function claimDueAutomations(now = Date.now()): Promise<DueAutomati
   const claimed: DueAutomationRun[] = [];
   for (const automation of due) {
     const triggers = automationTriggers(automation);
-    // Bound each polling pass so a long offline period cannot monopolize the
-    // webview. Any remaining overdue occurrences stay due for the next pass.
     for (const occurrence of overdueTriggerOccurrences(triggers, automation.nextRunAt, now)) {
       let result: DueAutomationRun | null;
       try {
         result = await invoke<DueAutomationRun | null>("automations_claim_due", {
           automationId: automation.id,
-          expectedNextRunAt: occurrence.scheduledFor,
+          expectedNextRunAt: automation.nextRunAt,
+          scheduledFor: occurrence.scheduledFor,
           nextRunAt: occurrence.nextRunAt,
           now,
         });

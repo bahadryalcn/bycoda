@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,27 @@ use uuid::Uuid;
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
 pub(crate) const CHANGED: &str = "bycoda:automations-changed";
+static RECOVERY_DONE: Mutex<Option<(String, Vec<DueAutomationRun>)>> = Mutex::new(None);
+
+fn recover_once<T: Clone>(
+    guard: &Mutex<Option<(String, Vec<T>)>>,
+    owner: &str,
+    recover: impl FnOnce() -> Result<Vec<T>, String>,
+) -> Result<Vec<T>, String> {
+    let mut done = guard
+        .lock()
+        .map_err(|_| "Automation recovery unavailable".to_string())?;
+    if let Some((original_owner, result)) = &*done {
+        return Ok(if original_owner == owner {
+            result.clone()
+        } else {
+            Vec::new()
+        });
+    }
+    let result = recover()?;
+    *done = Some((owner.to_owned(), result.clone()));
+    Ok(result)
+}
 
 const MAX_NAME: usize = 200;
 const MAX_PROMPT: usize = 1_000_000;
@@ -892,8 +914,10 @@ pub fn automation_runs_recover(
     now: i64,
 ) -> Result<Vec<DueAutomationRun>, String> {
     crate::native_window_lifecycle::persistence_write(&window, || {
-        automation_runs_recover_with(&store, started_before, now, || {
-            let _ = window.app_handle().emit(CHANGED, ());
+        recover_once(&RECOVERY_DONE, window.label(), || {
+            automation_runs_recover_with(&store, started_before, now, || {
+                let _ = window.app_handle().emit(CHANGED, ());
+            })
         })
     })
 }
@@ -1024,6 +1048,7 @@ pub fn automations_claim_due(
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_next_run_at: i64,
+    scheduled_for: Option<i64>,
     next_run_at: i64,
     now: i64,
 ) -> Result<Option<DueAutomationRun>, String> {
@@ -1032,6 +1057,7 @@ pub fn automations_claim_due(
             &store,
             automation_id,
             expected_next_run_at,
+            scheduled_for.unwrap_or(expected_next_run_at),
             next_run_at,
             now,
             || {
@@ -1045,12 +1071,13 @@ fn automations_claim_due_with(
     store: &SessionStore,
     automation_id: String,
     expected_next_run_at: i64,
+    scheduled_for: i64,
     next_run_at: i64,
     now: i64,
     notify: impl FnOnce(),
 ) -> Result<Option<DueAutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
-    if next_run_at <= expected_next_run_at {
+    if scheduled_for < expected_next_run_at || scheduled_for > now || next_run_at <= now {
         return Err("The following automation occurrence must advance the schedule.".into());
     }
     let mut conn = store.lock_conn()?;
@@ -1078,12 +1105,12 @@ fn automations_claim_due_with(
     let mut run = new_run(
         &automation_id,
         "scheduled",
-        expected_next_run_at,
+        scheduled_for,
         now,
         &automation.prompt,
     );
     let grace_ms = automation.missed_run_grace_minutes.saturating_mul(60_000);
-    let missed = now.saturating_sub(expected_next_run_at);
+    let missed = now.saturating_sub(scheduled_for);
     let dispatch = missed <= grace_ms;
     if !dispatch {
         run.status = "skipped".into();
@@ -1251,6 +1278,19 @@ fn automation_run_update_with(
     let mut run: AutomationRun = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
     if run.executor == Some(crate::ssh_runbooks::Executor::Ssh) || run.ssh_execution.is_some() {
         return Err("SSH execution outcomes are owned by the native execution engine".into());
+    }
+    let attach_session = run.status == "running"
+        && status == "running"
+        && run.session_id.is_none()
+        && session_id.is_some();
+    if !attach_session
+        && !matches!(
+            (run.status.as_str(), status.as_str()),
+            ("pending", "running" | "failed" | "skipped" | "cancelled")
+                | ("running", "succeeded" | "failed" | "skipped" | "cancelled")
+        )
+    {
+        return Err("Invalid automation run status transition.".into());
     }
     run.status = status;
     if run.status == "running" && run.started_at.is_none() {
