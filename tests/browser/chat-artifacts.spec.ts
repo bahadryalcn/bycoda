@@ -154,14 +154,28 @@ test("chat messages, attachment references and running work keep a readable hier
       expect(new Set(thumbnailTops).size).toBe(1);
       const card = rail.locator('[data-attachment-chip="image"]').first();
       // Image cards retain filename, type/size and reference rows below a 72px
-      // thumbnail. The rail stays one card high, plus its horizontal scrollbar.
+      // thumbnail. Compare the usable content height with the tallest card;
+      // native scrollbars and the rail's padding are not another row.
       await expect(card.getByText("screenshot-1.png", { exact: true })).toBeVisible();
       await expect(card.getByText("Image · 42 B", { exact: true })).toBeVisible();
       await expect(card.getByText("image1", { exact: true })).toBeVisible();
       const cardBox = (await card.boundingBox())!;
       expect(cardBox.width).toBe(144);
       expect((await image.boundingBox())!.height).toBe(72);
-      expect((await rail.boundingBox())!.height).toBeLessThanOrEqual(cardBox.height + 8);
+      const railContent = await rail.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          height:
+            node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+          tallestCard: Math.max(
+            ...Array.from(node.querySelectorAll('[data-attachment-chip="image"]')).map(
+              (card) => card.getBoundingClientRect().height,
+            ),
+          ),
+        };
+      });
+      // clientHeight is integer-rounded while card rectangles can be fractional.
+      expect(Math.abs(railContent.height - railContent.tallestCard)).toBeLessThanOrEqual(1);
       const token = bubble.getByRole("button", {
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
