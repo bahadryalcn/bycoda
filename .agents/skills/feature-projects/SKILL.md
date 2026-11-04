@@ -21,6 +21,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Mounted rail snapshots observe cross-window project and tab-group appearance storage keys, including removal/reset. Reuse unchanged collection identities while refreshing labels, colors and mascots.
 - Project identity, selected workspace and actual execution directory are different. Preserve worktree/remote identity, full paths and duplicate-name context.
 - Retain groups, ordering/pinning, selection, drafts, keyboard/context menus, drag/drop and compact/wide navigation capabilities.
 - Remove/archive/delete/open are distinct operations with their own dirty/busy/count/confirmation/lock gates. UI filtering grants no new operation scope.

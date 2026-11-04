@@ -79,7 +79,11 @@ if (typeof window !== "undefined") {
   subscribeProjectPathsChanged(invalidate);
   // Another window moved a group or a project: its writes arrive as storage events.
   window.addEventListener("storage", (event: StorageEvent) => {
-    if (event.key === null || event.key.startsWith("bycoda.project")) invalidate();
+    if (
+      event.key === null ||
+      event.key.startsWith("bycoda.project") ||
+      event.key.startsWith("bycoda:tab-group:")
+    ) invalidate();
   });
 }
 
