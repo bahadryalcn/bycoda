@@ -79,10 +79,7 @@ for (const width of [1280, 800])
         });
         await form.getByRole("button", { name: "Cancel", exact: true }).click();
       }
-      const goalList = page.locator("details.task-goals-disclosure");
-      await expect(goalList).toBeVisible();
-      if (!(await goalList.evaluate((node: HTMLDetailsElement) => node.open)))
-        await goalList.locator("summary").first().click();
+      await openGoals(page);
       await page.getByRole("button", { name: "Edit goal settings", exact: true }).click();
       const settings = page.getByRole("form", { name: "Edit goal settings", exact: true });
       await expect(settings).toContainText("Delivery requires approval");
@@ -200,8 +197,17 @@ async function openTasks(page: Page, url: string) {
     .getByRole("button", { name: /^Project:/ });
   await projectScope.click();
   await page.getByRole("option", { name: "All projects", exact: true }).click();
+  // boardControls seeds an existing goal through asynchronous Host reads. A
+  // synchronous DOM count can miss it, leaving every existing-goal action hidden.
+  if (new URLSearchParams(url.split("?")[1]).has("boardControls")) await openGoals(page);
+}
+
+async function openGoals(page: Page) {
   const goals = page.locator("details.task-goals-disclosure");
-  if (await goals.count()) await goals.locator("summary").first().click();
+  await expect(goals).toBeVisible();
+  if (!(await goals.evaluate((node: HTMLDetailsElement) => node.open)))
+    await goals.locator("summary").first().click();
+  await expect(goals).toHaveJSProperty("open", true);
 }
 test("worktree creation keeps the active button visible and focused", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 950 });
