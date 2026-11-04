@@ -128,7 +128,14 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     await expect(progress).toContainText("Waiting for provider confirmation");
     await page.clock.runFor(1000);
     await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
-    await expect(card).toContainText("Queue paused");
+    await expect(card.getByRole("alert")).toHaveText(
+      "The send was cancelled or rejected. The message remains queued and the queue is paused.",
+    );
+    await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
+    await expect(
+      card.getByText("Queued task waiting for the current turn", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     await expect(card.getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
   }
 });
