@@ -1,3 +1,9 @@
+import { prepareOutputVerification } from "./nativeOutputVerificationClient";
+import {
+  MAX_OUTPUT_ITEMS as MAX_ITEMS,
+  MAX_OUTPUT_BYTES as MAX_BYTES,
+} from "./nativeOutputVerification";
+export { frameNativeOutputItems } from "./nativeOutputVerification";
 import { z } from "zod";
 import { isHarnessConstructionId } from "../../../shared/model/harnessProcess";
 
@@ -176,11 +182,7 @@ if (constructionHistoryMissing) {
     unavailable(stream, runtime.constructionInvalidationFailure);
 }
 if (hot) hot.data.nativeOutputDelivery = runtime;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const MAX_STREAMS = 512;
-const MAX_ITEMS = 4096;
-const MAX_BYTES = 1024 * 1024;
 const MAX_HASH_JOBS = 32;
 const MAX_PENDING_BATCHES = 128;
 const MAX_CAUSAL_WORK = 1024;
@@ -333,38 +335,6 @@ function advance(stream: Stream) {
   }
 }
 
-/** Binary framing matches Native; no JSON reserialization or newline joining. */
-export function frameNativeOutputItems(
-  channel: NativeOutputChannel,
-  items: readonly string[],
-): Uint8Array<ArrayBuffer> {
-  if (items.length < 1 || items.length > MAX_ITEMS) throw new Error("NATIVE_OUTPUT_ITEMS_CAPACITY");
-  let length = 0;
-  const bytes = items.map((item) => {
-    if (typeof item !== "string" || item.length > MAX_BYTES)
-      throw new Error("NATIVE_OUTPUT_BYTES_CAPACITY");
-    const value = encoder.encode(item);
-    length += value.byteLength;
-    if (length > MAX_BYTES) throw new Error("NATIVE_OUTPUT_BYTES_CAPACITY");
-    if (decoder.decode(value) !== item) throw new Error("NATIVE_OUTPUT_INVALID_UTF8");
-    return value;
-  });
-  const prefix = encoder.encode("bycoda-native-output-items-v1\0");
-  const result = new Uint8Array(prefix.length + 5 + items.length * 8 + length);
-  result.set(prefix);
-  result[prefix.length] = channel === "stdout" ? 1 : channel === "stderr" ? 2 : 3;
-  const view = new DataView(result.buffer);
-  view.setUint32(prefix.length + 1, items.length, true);
-  let offset = prefix.length + 5;
-  for (const item of bytes) {
-    view.setUint32(offset, item.byteLength, true);
-    view.setUint32(offset + 4, 0, true);
-    result.set(item, offset + 8);
-    offset += 8 + item.byteLength;
-  }
-  return result;
-}
-
 /** Always preserve ordinary provider delivery, even when metadata is unusable. */
 export function observeNativeOutputBatch(
   sessionId: string,
@@ -401,12 +371,9 @@ export function observeNativeOutputBatch(
   if (stream.pending.size >= MAX_PENDING_BATCHES || runtime.hashJobs >= MAX_HASH_JOBS)
     unavailable(stream, "renderer-capacity");
   if (stream.unavailable) return;
-  let framed: Uint8Array<ArrayBuffer>;
+  let verify: () => Promise<string>;
   try {
-    framed = frameNativeOutputItems(channel, items);
-    const overhead =
-      encoder.encode("bycoda-native-output-items-v1\0").length + 5 + items.length * 8;
-    if (framed.byteLength - overhead !== value.utf8Bytes) throw new Error("byte-count");
+    verify = prepareOutputVerification(channel, items, value.utf8Bytes);
   } catch {
     unavailable(stream, "invalid-payload");
     return;
@@ -472,18 +439,22 @@ export function observeNativeOutputBatch(
   });
   runtime.hashJobs++;
   void Promise.resolve()
-    .then(() => crypto.subtle.digest("SHA-256", framed))
-    .then((digest) => {
-      const actual = [...new Uint8Array(digest)]
-        .map((part) => part.toString(16).padStart(2, "0"))
-        .join("");
+    .then(verify)
+    .then((actual) => {
       if (actual !== value.payloadSha256) unavailable(stream, "payload-digest");
       else {
         batch.digestVerified = true;
         advance(stream);
       }
     })
-    .catch(() => unavailable(stream, "digest-unavailable"))
+    .catch((error) =>
+      unavailable(
+        stream,
+        error instanceof Error && error.message === "invalid-payload"
+          ? "invalid-payload"
+          : "digest-unavailable",
+      ),
+    )
     .finally(() => {
       runtime.hashJobs--;
     });

@@ -1058,3 +1058,47 @@ it("keeps existing comparison claims ineligible after the bounded stream invento
   );
   expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
 });
+
+it.each([false, true])(
+  "keeps worker proof pending and compares exact original digest (wrong=%s)",
+  async (wrong) => {
+    const worker = {
+      onmessage: null as null | ((event: MessageEvent<unknown>) => void),
+      onerror: null as null | (() => void),
+      onmessageerror: null as null | (() => void),
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+    };
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          return worker;
+        }
+      },
+    );
+    const api = await load();
+    const items = ["original"];
+    const metadata = wire("stdout", items);
+    const expectedDigest = metadata.payloadSha256;
+    const tokens = api.observeNativeOutputBatch("session", "stdout", items, metadata)!;
+    const handler = vi.fn();
+    api.deliverNativeOutputItem(tokens[0], handler);
+    items[0] = "changed";
+    metadata.payloadSha256 = "f".repeat(64);
+    await Promise.resolve();
+    expect(worker.postMessage).toHaveBeenCalledTimes(1);
+    expect(worker.postMessage.mock.calls[0][0].items).toEqual(["original"]);
+    expect(api.inspectNativeOutputDelivery("session").streams[0].receivedThrough).toBe(0);
+    const id = worker.postMessage.mock.calls[0][0].id;
+    worker.onmessage?.({
+      data: { id, digest: wrong ? "0".repeat(64) : expectedDigest },
+    } as MessageEvent<unknown>);
+    await vi.waitFor(() => {
+      const stream = api.inspectNativeOutputDelivery("session").streams[0];
+      if (wrong) expect(stream.unavailableReason).toBe("payload-digest");
+      else expect(stream.deliveredThrough).toBe(1);
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+  },
+);
