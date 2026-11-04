@@ -72,7 +72,7 @@ function retainedPayloadWeight(value: unknown): number {
         for (const entry of current) pending.push(entry);
       } else {
         for (const key in current) {
-          if (Object.hasOwn(current, key))
+          if (Object.prototype.hasOwnProperty.call(current, key))
             pending.push((current as Record<string, unknown>)[key]);
         }
       }

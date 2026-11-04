@@ -14,10 +14,11 @@ import {
 type Open = z.infer<typeof SubscriptionOpenParamsSchema>;
 export type HostStreamTarget = Open["target"];
 export type HostStreamSnapshot =
-  | { kind?: "snapshot" | "delta"; revision?: number; baseRevision?: number; data: JsonValue }
-  | { kind: "unchanged"; revision: number };
+  | { kind?: "snapshot" | "delta"; revision?: number; baseRevision?: number; sourceEpoch?: string; data: JsonValue }
+  | { kind: "unchanged"; revision: number; sourceEpoch?: string };
 export type HostStreamLoadContext = {
   revision?: number;
+  sourceEpoch?: string;
   forceSnapshot: boolean;
   authorized: () => Promise<boolean>;
 };
@@ -51,6 +52,7 @@ type Stream = {
   generation: number;
   fingerprint?: string;
   revision?: number;
+  sourceEpoch?: string;
   forceSnapshot: boolean;
   events: Retained[];
   bytes: number;
@@ -263,6 +265,7 @@ export class HostSubscriptionHub {
       stream.events = [];
       stream.fingerprint = undefined;
       stream.revision = undefined;
+      stream.sourceEpoch = undefined;
       stream.epoch = randomUUID();
       stream.sequence = 0;
       stream.forceSnapshot = true;
@@ -490,6 +493,7 @@ export class HostSubscriptionHub {
         {
           forceSnapshot,
           revision: forceSnapshot ? undefined : stream.revision,
+          sourceEpoch: forceSnapshot ? undefined : stream.sourceEpoch,
           authorized: owner.executionAuthorized ?? owner.authorized,
         },
       );
@@ -532,7 +536,8 @@ export class HostSubscriptionHub {
       if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
         throw new Error("Stream snapshot requires a bounded bulk descriptor.");
       const fingerprint = createHash("sha256").update(text).digest("hex");
-      if (!forceSnapshot && fingerprint === stream.fingerprint && stream.events.length) return;
+      if (!forceSnapshot && fingerprint === stream.fingerprint &&
+          snapshot.revision === stream.revision && stream.events.length) return;
       stream.sequence++;
       if (!Number.isSafeInteger(stream.sequence)) throw new Error("Stream cursor exhausted.");
       const revision =
@@ -552,6 +557,7 @@ export class HostSubscriptionHub {
       this.bytes += retained.bytes;
       stream.fingerprint = fingerprint;
       stream.revision = revision;
+      stream.sourceEpoch = snapshot.sourceEpoch;
       stream.touched = this.now();
       this.prune();
       for (const consumer of stream.consumers.values()) {

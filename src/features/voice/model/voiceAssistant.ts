@@ -11,6 +11,11 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 import { personaBlock } from "./voicePrompt";
 import { homeDir } from "../../../platform/tauri/fs";
 import { voiceModelSettings } from "./voiceConversation";
+import {
+  voiceRuntimeDeadline,
+  voiceToolWaitsForOwner,
+  type VoiceToolWait,
+} from "./voiceRuntimeDeadline";
 
 export type VoiceAssistantTool = {
   name: string;
@@ -26,7 +31,12 @@ export type VoiceAssistantInput = {
   history?: readonly { role: string; text: string }[];
   signal: AbortSignal;
   tools: readonly VoiceAssistantTool[];
-  execute: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  execute: (
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+    wait?: VoiceToolWait,
+  ) => Promise<unknown>;
   maxToolCalls?: number;
   /** Owner persona block from voicePersonaInstructions; style only. */
   persona?: string;
@@ -192,7 +202,15 @@ export async function converseWithAssistant(
     else {
       input.signal.throwIfAborted();
       try {
-        result = observedResult(await input.execute(decision.name, decision.args));
+        result = observedResult(
+          await voiceRuntimeDeadline(
+            (wait) =>
+              voiceToolWaitsForOwner(decision.name)
+                ? input.execute(decision.name, decision.args, input.signal, wait)
+                : input.execute(decision.name, decision.args, input.signal),
+            input.signal,
+          ),
+        );
       } catch (error) {
         result = {
           status: "uncertain",

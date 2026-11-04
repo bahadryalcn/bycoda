@@ -12,10 +12,12 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { lstat, open, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DiscoveredSkill } from "../src/platform/tauri/fs";
 import { skillInvocationFlags } from "../src/integrations/harness/core/skillPolicy";
+import { readStateFile, readStateFileSync } from "./storage/atomic-write";
 
 /**
  * The file skills on this machine for a project, found the way the desktop
@@ -70,10 +72,12 @@ export function listHostSkills(
   project: string | null,
   home = homedir(),
   disabledPaths: string[] = [],
+  provider?: string,
 ): DiscoveredSkill[] {
   const byName = new Map<string, DiscoveredSkill>();
   const disabled = new Set(disabledPaths.map((path) => canonical(path)).filter(Boolean));
   for (const skill of listSkillRootsInOrder(project, home)) {
+    if (!skillMatchesProvider(skill, provider)) continue;
     if (byName.size >= MAX_SKILLS) break;
     if (disabled.has(canonical(skill.path))) continue;
     if (!byName.has(skill.name)) byName.set(skill.name, skill);
@@ -91,11 +95,13 @@ export type HostSkillCandidate = DiscoveredSkill & { active: boolean };
 export function listHostSkillCandidates(
   project: string | null,
   home = homedir(),
+  provider?: string,
 ): { skills: HostSkillCandidate[]; truncated: boolean } {
   const names = new Set<string>();
   const skills: HostSkillCandidate[] = [];
   let truncated = false;
   for (const skill of listSkillRootsInOrder(project, home)) {
+    if (!skillMatchesProvider(skill, provider)) continue;
     if (skills.length >= MAX_CANDIDATES) {
       truncated = true;
       break;
@@ -106,6 +112,52 @@ export function listHostSkillCandidates(
     skills.push({ ...skill, active });
   }
   return { skills, truncated };
+}
+
+/** Inventory has no provider; conversation discovery filters before precedence. */
+export function skillMatchesProvider(
+  skill: Pick<DiscoveredSkill, "installProvider">,
+  provider?: string,
+): boolean {
+  return (
+    !provider ||
+    !skill.installProvider ||
+    skill.installProvider === "all" ||
+    skill.installProvider === provider
+  );
+}
+
+function installedProvider(dir: string): string | undefined | null {
+  const marker = join(dir, ".bycoda-install.json");
+  try {
+    const info = lstatSync(marker);
+    if (!info.isFile() || info.size > MAX_FRONTMATTER_BYTES) return null;
+    const result = readStateFileSync(marker, (text) => JSON.parse(text), { quarantine: false });
+    if (result.status !== "ok") return null;
+    const value = result.value;
+    if (
+      value.schemaVersion !== 1 ||
+      typeof value.provider !== "string" ||
+      ![
+        "all",
+        "claude",
+        "codex",
+        "cursor",
+        "opencode",
+        "pi",
+        "omp",
+        "fx",
+        "grok",
+        "hermes",
+        "antigravity",
+      ].includes(value.provider)
+    )
+      return null;
+    return value.provider;
+  } catch (error) {
+    // A malformed or unreadable marker must never broaden provider visibility.
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : null;
+  }
 }
 
 /** App-owned skills; `.system` keeps them out of deletion. */
@@ -138,6 +190,7 @@ function* listSkillRootsInOrder(project: string | null, home: string) {
   yield* add(join(home, ".pi/agent/skills"), "user", "pi");
   yield* add(join(home, ".omp/agent/skills"), "user", "omp");
   yield* add(join(home, ".codex/skills/.system"), "user", "codex");
+  if (project) yield* add(join(project, ".gemini/antigravity/skills"), "project", "antigravity");
   const antigravity = join(home, ".gemini/antigravity/skills");
   if (isDir(antigravity)) yield* add(antigravity, "user", "antigravity");
   for (const plugin of claudePluginRoots(home, project)) {
@@ -157,6 +210,8 @@ function scanRoot(root: string, scope: string, source: string): DiscoveredSkill[
     if (folder.startsWith(".") || folder === "skills-cursor") continue;
     const dir = join(root, folder);
     if (!isDir(dir)) continue;
+    const installProvider = installedProvider(dir);
+    if (installProvider === null) continue;
     const file = [join(dir, "SKILL.md"), join(dir, "skill.md")].find(isFile);
     if (!file) continue;
     const fallback = slugName(folder);
@@ -170,6 +225,7 @@ function scanRoot(root: string, scope: string, source: string): DiscoveredSkill[
     const { name, description } = parseFrontmatter(text, fallback);
     if (!name) continue;
     out.push({
+      ...(installProvider ? { installProvider } : {}),
       ...skillInvocationFlags(text),
       name,
       description,
@@ -297,6 +353,238 @@ export function claudePluginRoots(
   const roots: { root: string; scope: string; namespace: string }[] = [];
   for (const [id, installed] of Object.entries(plugins)) {
     if (!enabled(id)) continue;
+    const namespace = id.includes("@") ? id.slice(0, id.lastIndexOf("@")) : id;
+    if (!validName(namespace)) continue;
+    const entries = Array.isArray(installed)
+      ? installed
+      : installed && typeof installed === "object"
+        ? [installed]
+        : [];
+    for (const entry of entries as Record<string, unknown>[]) {
+      if (typeof entry?.installPath !== "string") continue;
+      const scopeValue = entry.scope;
+      let scope = "user";
+      if (scopeValue === "project" || scopeValue === "local") {
+        if (!project || typeof entry.projectPath !== "string") continue;
+        const owner = resolve(resolveHome(entry.projectPath));
+        const inside = resolve(project);
+        const child = relative(owner, inside);
+        if (child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child)) continue;
+        scope = "project";
+      } else if (scopeValue !== undefined && scopeValue !== "user") continue;
+      roots.push({ root: join(resolveHome(entry.installPath), "skills"), scope, namespace });
+    }
+  }
+  return roots.sort((a, b) => (a.scope === "project" ? 0 : 1) - (b.scope === "project" ? 0 : 1));
+}
+
+type DiscoveryBudget = { remaining: number; truncated: boolean; stamps: Map<string, string> };
+const discoveryStamp = (value: Awaited<ReturnType<typeof lstat>>) => `${value.dev}:${value.ino}:${value.mode}:${value.size}:${value.mtimeMs}:${value.ctimeMs}`;
+async function discoveryStat(path: string, budget: DiscoveryBudget) {
+  try {
+    const value = await lstat(path);
+    budget.stamps.set(path, value.isSymbolicLink() ? `${discoveryStamp(value)}:target:${discoveryStamp(await stat(path))}` : discoveryStamp(value));
+    return value;
+  } catch (error) {
+    budget.stamps.set(path, `error:${(error as NodeJS.ErrnoException).code}`);
+    return undefined;
+  }
+}
+
+
+/** Async, lazy metadata discovery for execution paths; no bodies or policy cached. */
+export async function listHostSkillCandidatesAsync(project: string | null, home = homedir(), provider?: string) {
+  const budget: DiscoveryBudget = { remaining: 10_000, truncated: false, stamps: new Map() };
+  const names = new Set<string>();
+  const skills: HostSkillCandidate[] = [];
+  for await (const skill of listSkillRootsInOrderAsync(project, home, budget)) {
+    if (!skillMatchesProvider(skill, provider)) continue;
+    if (skills.length >= MAX_CANDIDATES) { budget.truncated = true; break; }
+    const active = !names.has(skill.name) && names.size < MAX_SKILLS;
+    if (active) names.add(skill.name);
+    skills.push({ ...skill, active });
+  }
+  // No installation discovered during an await may silently broaden a prepared
+  // operation. Changed directory/marker/frontmatter identity requires a fresh try.
+  for (const [path, expected] of budget.stamps) {
+    const value = await lstat(path).then(async (info) => info.isSymbolicLink() ? `${discoveryStamp(info)}:target:${discoveryStamp(await stat(path))}` : discoveryStamp(info), (error: NodeJS.ErrnoException) => `error:${error.code}`);
+    if (value !== expected) throw new Error("Skill inventory changed during discovery; retry preparation.");
+  }
+  return { skills, truncated: budget.truncated };
+}
+
+async function readPrefixAsync(path: string, max: number): Promise<string> {
+  const file = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(max);
+    const { bytesRead } = await file.read(buffer, 0, max, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally { await file.close(); }
+}
+
+async function installedProviderAsync(dir: string, budget: DiscoveryBudget): Promise<string | undefined | null> {
+  const marker = join(dir, ".bycoda-install.json");
+  try {
+    const info = await discoveryStat(marker, budget);
+    if (!info) return budget.stamps.get(marker) === "error:ENOENT" ? undefined : null;
+    if (!info.isFile() || info.size > MAX_FRONTMATTER_BYTES) return null;
+    const result = await readStateFile(marker, (text) => JSON.parse(text), { quarantine: false });
+    if (result.status !== "ok") return null;
+    const value = result.value;
+    if (
+      value.schemaVersion !== 1 ||
+      typeof value.provider !== "string" ||
+      ![
+        "all",
+        "claude",
+        "codex",
+        "cursor",
+        "opencode",
+        "pi",
+        "omp",
+        "fx",
+        "grok",
+        "hermes",
+        "antigravity",
+      ].includes(value.provider)
+    )
+      return null;
+    return value.provider;
+  } catch (error) {
+    // A malformed or unreadable marker must never broaden provider visibility.
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : null;
+  }
+}
+
+/** Highest priority first; the same real root is scanned once. */
+async function* listSkillRootsInOrderAsync(project: string | null, home: string, budget: DiscoveryBudget) {
+  const seen = new Set<string>();
+  async function* add(root: string, scope: string, source: string, namespace?: string) {
+    if (budget.remaining <= 0) { budget.truncated = true; return; }
+    let key = root;
+    try {
+      key = await realpath(root);
+    } catch {
+      /* missing root: nothing to scan */
+    }
+    if (seen.has(key)) return;
+    seen.add(key);
+    await discoveryStat(root, budget);
+    for await (const skill of scanRootAsync(root, scope, source, budget))
+      yield namespace ? { ...skill, name: `${namespace}:${skill.name}` } : skill;
+  }
+
+  // App-owned name: first, so the skill cap or a stale copy cannot hide this version.
+  yield* add(appSkillsRoot(home), "user", "bycoda");
+  if (project) yield* add(join(project, ".agents/skills"), "project", "agents");
+  yield* add(join(home, ".agents/skills"), "user", "agents");
+  for (const [dir, source] of HARNESS_DIRS) {
+    if (project) yield* add(join(project, dir), "project", source);
+    yield* add(join(home, dir), "user", source);
+  }
+  yield* add(join(home, ".pi/agent/skills"), "user", "pi");
+  yield* add(join(home, ".omp/agent/skills"), "user", "omp");
+  yield* add(join(home, ".codex/skills/.system"), "user", "codex");
+  if (project) yield* add(join(project, ".gemini/antigravity/skills"), "project", "antigravity");
+  const antigravity = join(home, ".gemini/antigravity/skills");
+  yield* add(antigravity, "user", "antigravity");
+  if (budget.remaining <= 0) { budget.truncated = true; return; }
+  for (const plugin of await claudePluginRootsAsync(home, project, budget)) {
+    if (budget.remaining <= 0) { budget.truncated = true; return; }
+    yield* add(plugin.root, plugin.scope, "claude", plugin.namespace);
+  }
+}
+
+async function* scanRootAsync(root: string, scope: string, source: string, budget: DiscoveryBudget): AsyncGenerator<DiscoveredSkill> {
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return;
+  }
+  for (const folder of entries) {
+    if (folder.startsWith(".") || folder === "skills-cursor") continue;
+    if (budget.remaining-- <= 0) { budget.truncated = true; return; }
+    const dir = join(root, folder);
+    const entry = await discoveryStat(dir, budget);
+    if (!entry || !(await stat(dir).catch(() => undefined))?.isDirectory()) continue;
+    const installProvider = await installedProviderAsync(dir, budget);
+    if (installProvider === null) continue;
+    let file: string | undefined;
+    for (const candidate of [join(dir, "SKILL.md"), join(dir, "skill.md")])
+      if (await discoveryStat(candidate, budget)) {
+        if ((await stat(candidate).catch(() => undefined))?.isFile()) { file = candidate; break; }
+      }
+    if (!file) continue;
+    const fallback = slugName(folder);
+    if (!fallback) continue;
+    let text: string;
+    try {
+      text = await readPrefixAsync(file, MAX_FRONTMATTER_BYTES);
+    } catch {
+      continue;
+    }
+    const { name, description } = parseFrontmatter(text, fallback);
+    if (!name) continue;
+    yield {
+      ...(installProvider ? { installProvider } : {}),
+      ...skillInvocationFlags(text),
+      name,
+      description,
+      path: file.replace(/\\/g, "/"),
+      scope,
+      source,
+    } as DiscoveredSkill;
+  }
+}
+
+async function claudePluginRootsAsync(
+  home: string,
+  project: string | null,
+  budget: DiscoveryBudget,
+): Promise<{ root: string; scope: string; namespace: string }[]> {
+  let registry: unknown;
+  try {
+    const registryPath = join(home, ".claude/plugins/installed_plugins.json");
+    await discoveryStat(registryPath, budget);
+    registry = JSON.parse(
+      await readFile(registryPath, "utf8"),
+    );
+  } catch {
+    return [];
+  }
+  const plugins = (registry as { plugins?: Record<string, unknown> })?.plugins;
+  if (!plugins || typeof plugins !== "object") return [];
+  const settings = [
+    ...(project
+      ? [join(project, ".claude/settings.local.json"), join(project, ".claude/settings.json")]
+      : []),
+    join(home, ".claude/settings.json"),
+  ];
+  const enabled = async (id: string) => {
+    for (const path of settings) {
+      try {
+        await discoveryStat(path, budget);
+        const value = JSON.parse(await readFile(path, "utf8"))?.enabledPlugins?.[id];
+        if (typeof value === "boolean") return value;
+      } catch {
+        /* no such settings file */
+      }
+    }
+    return true;
+  };
+  const resolveHome = (raw: string) =>
+    raw === "~"
+      ? home
+      : raw.startsWith("~/")
+        ? join(home, raw.slice(2))
+        : isAbsolute(raw)
+          ? raw
+          : join(home, raw);
+  const roots: { root: string; scope: string; namespace: string }[] = [];
+  for (const [id, installed] of Object.entries(plugins)) {
+    if (budget.remaining-- <= 0) { budget.truncated = true; break; }
+    if (!(await enabled(id))) continue;
     const namespace = id.includes("@") ? id.slice(0, id.lastIndexOf("@")) : id;
     if (!validName(namespace)) continue;
     const entries = Array.isArray(installed)

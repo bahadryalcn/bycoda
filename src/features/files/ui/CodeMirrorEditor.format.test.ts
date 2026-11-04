@@ -168,8 +168,125 @@ it.each(["unsupported", "invalid", "exception"])(
       expect(host.querySelector('[role="alert"]')?.textContent).toContain(
         kind === "exception" ? "Invalid project formatter" : "syntax is invalid",
       );
+    if (kind !== "unsupported")
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        "Saved, but formatting failed: ",
+      );
   },
 );
+
+async function formatOnSaveEditor() {
+  localStorage.setItem("bycoda.formatOnSave", "1");
+  const saveRequestRef: { current: (() => Promise<boolean>) | null } = { current: null };
+  await act(async () =>
+    root.render(
+      createElement(CodeMirrorEditor, {
+        path: "/repo/Page.tsx",
+        cwd: "/repo",
+        value: "source",
+        showDiff: false,
+        gitOriginal: null,
+        active: true,
+        formatOnSave: true,
+        onSave,
+        onDirtyChange: vi.fn(),
+        onErrorCountChange: vi.fn(),
+        canAutosave: () => false,
+        saveRequestRef,
+      }),
+    ),
+  );
+  view = EditorView.findFromDOM(host.querySelector(".cm-editor")!)!;
+  return () => saveRequestRef.current!();
+}
+
+it("only reports saved with a format warning after disk save succeeds, and clears that claim on edits", async () => {
+  let finish!: () => void;
+  onSave.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+  format.mockRejectedValue(new Error("NATIVE_DELIVERY_CAPACITY"));
+  const save = await formatOnSaveEditor();
+  let pending!: Promise<boolean>;
+  await act(async () => {
+    pending = save();
+  });
+  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).not.toContain("Saved, but formatting failed");
+  await act(async () => {
+    finish();
+    expect(await pending).toBe(true);
+  });
+  expect(host.textContent).toContain("Saved, but formatting failed: NATIVE_DELIVERY_CAPACITY");
+  act(() => view.dispatch({ changes: { from: 0, insert: "unsaved " } }));
+  expect(host.textContent).not.toContain("Saved, but formatting failed");
+});
+
+it("does not claim a saved file when the disk save fails after a formatter failure", async () => {
+  onSave.mockRejectedValue(new Error("Disk write denied"));
+  format.mockRejectedValue(new Error("NATIVE_DELIVERY_CAPACITY"));
+  const save = await formatOnSaveEditor();
+  await act(async () => expect(await save()).toBe(false));
+  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).not.toContain("Saved, but formatting failed");
+});
+
+it("does not claim newer editor changes were saved when an older save completes", async () => {
+  let finish!: () => void;
+  onSave.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+  format.mockRejectedValue(new Error("NATIVE_DELIVERY_CAPACITY"));
+  const save = await formatOnSaveEditor();
+  let pending!: Promise<boolean>;
+  await act(async () => {
+    pending = save();
+  });
+  act(() => view.dispatch({ changes: { from: 0, insert: "newer " } }));
+  await act(async () => {
+    finish();
+    expect(await pending).toBe(true);
+  });
+  expect(onSave).toHaveBeenCalledWith("source");
+  expect(host.textContent).not.toContain("Saved, but formatting failed");
+});
+
+it("keeps manual formatter failures separate from an earlier successful save", async () => {
+  onSave.mockResolvedValue(undefined);
+  format.mockRejectedValue(new Error("NATIVE_DELIVERY_CAPACITY"));
+  const save = await formatOnSaveEditor();
+  await act(async () => expect(await save()).toBe(true));
+  expect(host.textContent).toContain("Saved, but formatting failed");
+  await shortcut();
+  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).not.toContain("Saved, but formatting failed");
+  expect(onSave).toHaveBeenCalledTimes(1);
+});
+
+it("does not let a superseded save overwrite a newer failed save outcome", async () => {
+  let finish!: () => void;
+  onSave
+    .mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)))
+    .mockRejectedValueOnce(new Error("Disk write denied"));
+  format.mockRejectedValue(new Error("NATIVE_DELIVERY_CAPACITY"));
+  const save = await formatOnSaveEditor();
+  let older!: Promise<boolean>;
+  await act(async () => {
+    older = save();
+  });
+  await act(async () => expect(await save()).toBe(false));
+  await act(async () => {
+    finish();
+    expect(await older).toBe(true);
+  });
+  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).not.toContain("Saved, but formatting failed");
+});
+
+it("does not show a stale formatter failure after the document changes", async () => {
+  let fail!: (error: Error) => void;
+  format.mockImplementation(() => new Promise((_, reject) => (fail = reject)));
+  await shortcut();
+  act(() => view.dispatch({ changes: { from: 0, insert: "newer " } }));
+  await act(async () => fail(new Error("Old format failed")));
+  expect(host.textContent).not.toContain("Old format failed");
+});
 it("formats with Alt+Shift+F despite format-on-save being disabled, without saving, and supports undo", async () => {
   const original = view.state.doc.toString();
   format.mockResolvedValue({ formatted: "const Page = () => <div />;\n", cursorOffset: 10 });

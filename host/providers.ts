@@ -1,4 +1,6 @@
 import * as codex from "../src/integrations/harness/providers/codex/codex";
+import { listHostSkillCandidatesAsync } from "./skills";
+import { withInstalledSkillScope } from "../src/features/skills/model/skillProviderScope";
 import * as claude from "../src/integrations/harness/providers/claude/claude";
 import * as cursor from "../src/integrations/harness/providers/cursor/cursor";
 import * as grok from "../src/integrations/harness/providers/grok/grok";
@@ -37,11 +39,16 @@ import { PI_FLAVOR, OMP_FLAVOR } from "../src/integrations/harness/providers/pi/
 import { respondQuestion as respondPiQuestion } from "../src/integrations/harness/providers/pi/piFamily";
 import { readSkillPolicy } from "./skill-policy";
 import { withSkillPolicy } from "../src/integrations/harness/core/skillPolicy";
+import { getReportedCommands, reportedSkillRestrictions } from "../src/integrations/harness/core/reportedCommands";
+
+export type HostPolicyInput = SendTurnInput | CompactContextInput | RewindLastTurnInput | SteerTurnInput;
 
 export interface HostProvider {
   send(input: SendTurnInput): Promise<void>;
   /** Capture machine restrictions for one handoff's budget and final provider input. */
-  prepareSendPolicy?(): (input: SendTurnInput) => SendTurnInput;
+  prepareSendPolicy?(): (input: SendTurnInput) => SendTurnInput | Promise<SendTurnInput>;
+  /** Async metadata preparation must precede the caller's final authority guard. */
+  prepareOperationPolicy?<T extends HostPolicyInput>(input: T): Promise<T>;
   steer?(input: SteerTurnInput): Promise<void>;
   compact?(input: CompactContextInput): Promise<void>;
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
@@ -63,6 +70,8 @@ export interface HostProvider {
     sessionId: string;
     cwd: string;
     message: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
     providerAccountId?: string;
     operationContext?: HarnessOperationContext;
   }): Promise<GeneratedSessionTitle | null>;
@@ -199,52 +208,60 @@ export function withMachineSkillPolicy(
   id: RemoteProvider,
   provider: HostProvider,
   readPolicy = readSkillPolicy,
+  installedSkills: (cwd: string) => readonly import("../src/features/skills/model/skillProviderScope").ProviderScopedSkill[] | Promise<readonly import("../src/features/skills/model/skillProviderScope").ProviderScopedSkill[]> = async (cwd) => {
+    const result = await listHostSkillCandidatesAsync(cwd);
+    if (result.truncated) throw new Error("Skill discovery is incomplete; provider admission refused.");
+    return result.skills;
+  },
 ): HostProvider {
-  const preparedInputs = new WeakSet<SendTurnInput>();
+  type Candidates = readonly import("../src/features/skills/model/skillProviderScope").ProviderScopedSkill[];
+  const preparedInputs = new WeakMap<HostPolicyInput, { original: HostPolicyInput; candidates: Candidates }>();
+  const apply = <T extends HostPolicyInput>(input: T, candidates: Candidates, mode: string = id): T => {
+    const machine = readPolicy();
+    const native = reportedSkillRestrictions(getReportedCommands(input.sessionId));
+    const policy = withInstalledSkillScope({
+      disabledNames: [...new Set([...machine.disabledNames, ...native.disabledNames])],
+      disabledPaths: [...new Set([...machine.disabledPaths, ...native.disabledPaths])],
+    }, id, candidates);
+    return "text" in input && typeof input.text === "string"
+      ? withSkillPolicy(mode, { ...input, text: input.text }, policy) as T
+      : { ...input, skillPolicy: policy };
+  };
+  const prepare = async <T extends HostPolicyInput>(input: T): Promise<T> => {
+    const candidates = (await installedSkills(input.cwd)).map((skill) => ({ ...skill }));
+    const original = { ...input };
+    const prepared = apply(original, candidates);
+    preparedInputs.set(prepared, { original, candidates });
+    return prepared;
+  };
+  const finish = <T extends HostPolicyInput>(input: T, mode: string = id): T => {
+    const receipt = preparedInputs.get(input);
+    if (!receipt) throw new Error("Skill policy preparation identity is missing.");
+    preparedInputs.delete(input);
+    // Preserve exact prepared-object identity while refreshing restrictions from
+    // original prose; an appended preparation instruction is never appended twice.
+    Object.assign(input, apply(receipt.original, receipt.candidates, mode));
+    return input;
+  };
+  const dispatch = <T extends HostPolicyInput, R>(input: T, action: (prepared: T) => R, mode: string = id): R | Promise<R> => {
+    if (preparedInputs.has(input)) return action(finish(input, mode));
+    const unprepared = async (): Promise<R> => action(finish(await prepare(input), mode));
+    return unprepared();
+  };
   return {
     ...provider,
-    prepareSendPolicy: () => {
-      // Freeze this accepted send's machine settings through preparation/dispatch.
-      // The next send takes a fresh snapshot, including unattended entry points.
-      const current = readPolicy();
-      const policy = {
-        disabledNames: [...current.disabledNames],
-        disabledPaths: [...current.disabledPaths],
-      };
-      return (input) => {
-        const prepared = withSkillPolicy(id, input, policy);
-        preparedInputs.add(prepared);
-        return prepared;
-      };
-    },
-    send: (input) =>
-      provider.send(
-        preparedInputs.delete(input) ? input : withSkillPolicy(id, input, readPolicy()),
-      ),
-    ...(provider.compact
-      ? {
-          compact: (input: CompactContextInput) =>
-            provider.compact!({ ...input, skillPolicy: readPolicy() }),
-        }
-      : {}),
-    ...(provider.rewind
-      ? {
-          rewind: (input: RewindLastTurnInput) => {
-            const policy = readPolicy();
-            return provider.rewind!(
-              input.text === undefined
-                ? { ...input, skillPolicy: policy }
-                : withSkillPolicy(id, { ...input, text: input.text }, policy),
-            );
-          },
-        }
-      : {}),
-    ...(provider.steer
-      ? {
-          steer: (input: SteerTurnInput) =>
-            provider.steer!(withSkillPolicy("steer", input, readPolicy())),
-        }
-      : {}),
+    prepareOperationPolicy: prepare,
+    prepareSendPolicy: () => prepare,
+    send: (input) => Promise.resolve(dispatch(input, (prepared) => provider.send(prepared))),
+    ...(provider.compact ? {
+      compact: (input: CompactContextInput) => Promise.resolve(dispatch(input, (prepared) => provider.compact!(prepared))),
+    } : {}),
+    ...(provider.rewind ? {
+      rewind: (input: RewindLastTurnInput) => Promise.resolve(dispatch(input, (prepared) => provider.rewind!(prepared))),
+    } : {}),
+    ...(provider.steer ? {
+      steer: (input: SteerTurnInput) => Promise.resolve(dispatch(input, (prepared) => provider.steer!(prepared), "steer")),
+    } : {}),
   };
 }
 

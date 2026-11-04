@@ -30,7 +30,7 @@
     {
       "id": "conversation-tool-catalog",
       "layer": "mcp-context",
-      "source": "host/conversation-tools.ts#conversationToolCatalog",
+      "source": "host/conversation/conversation-tools.ts#conversationToolCatalog",
       "serialization": "JSON.stringify({tools:conversationToolCatalog()})",
       "utf8Bytes": 176330,
       "sha256": "fdccffed8b1e7aeea3135c68000f39ae1782bdb7f447694e2c3c8d6c1c119ad7"

@@ -52,11 +52,11 @@ it("validates finite canonical params before invoking the actual owner and retai
     retainResultAuthority: retain,
   };
   await expect(
-    service.call("devices.action", { deviceId: "phone", action: { type: "shell" } }, context),
+    service.call("devices.action", { deviceId: "phone", leaseId: "lease", requestId: "request", action: { type: "shell" } }, context),
   ).rejects.toThrow();
   expect(call).not.toHaveBeenCalled();
   expect(
-    await service.call("devices.action", { deviceId: "phone", action: { type: "home" } }, context),
+    await service.call("devices.action", { deviceId: "phone", leaseId: "lease", requestId: "request", action: { type: "home" } }, context),
   ).toBe("done");
   expect(retain).toHaveBeenCalledExactlyOnceWith(original);
 });

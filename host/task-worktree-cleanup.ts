@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { hostWorktrees, invalidateHostWorktrees } from "./git-worktrees";
+import { hostWorktrees, invalidateHostWorktrees } from "./git/git-worktrees";
 import { guardedRemoveWorkspace, sameWorkspacePath } from "./workspace-cleanup";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import {

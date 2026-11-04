@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
+const environment = vi.hoisted(() => ({ native: false }));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => environment.native }));
 import { createSyncWindowOwner } from "./syncWindowOwner";
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => { environment.native = false; vi.useRealTimers(); });
 
 it("runs one background owner and transfers ownership after its window closes", async () => {
   vi.useFakeTimers();
@@ -56,5 +58,21 @@ it("preserves background functionality when Web Locks are unavailable or denied"
   await Promise.resolve();
   expect(denied.isOwner()).toBe(true);
   expect(acquired).toHaveBeenCalledTimes(1);
+  denied.stop();
+});
+
+it("does not grant native sync ownership when the lock service is unavailable", async () => {
+  environment.native = true;
+  const acquired = vi.fn();
+  const unavailable = createSyncWindowOwner(acquired, undefined);
+  expect(unavailable.isOwner()).toBe(false);
+  const denied = createSyncWindowOwner(acquired, {
+    request: async () => { throw new Error("Denied"); },
+  } as unknown as LockManager);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(denied.isOwner()).toBe(false);
+  expect(acquired).not.toHaveBeenCalled();
+  unavailable.stop();
   denied.stop();
 });

@@ -586,7 +586,7 @@ impl RegisteredConnection {
         Ok(file)
     }
 
-    pub(super) fn recovery_lease_state(&self, id: &str) -> Result<LeaseState, String> {
+    pub(crate) fn recovery_lease_state(&self, id: &str) -> Result<LeaseState, String> {
         let id = uuid::Uuid::parse_str(id).map_err(|_| "Invalid recovery lease identity")?;
         let file = os::safe_file(
             &self.recovery_directory()?.join(id.to_string()),

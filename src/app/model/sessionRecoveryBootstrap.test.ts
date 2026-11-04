@@ -22,6 +22,7 @@ vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
   ...(await original<typeof import("../../features/sessions/data/sessionStore")>()),
   loadWorkspaceSnapshot: vi.fn(),
   listInFlightSessions: vi.fn().mockResolvedValue([]),
+  listDeletedSessionIds: vi.fn().mockResolvedValue([]),
   getSession: vi.fn(),
 }));
 

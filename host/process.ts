@@ -315,6 +315,35 @@ const SHIM_LAUNCH = new RegExp(
   "gi",
 );
 
+/** pnpm may link a package outside the shim directory. Accept only the package's
+ * declared bin for this exact command, and keep its target inside that package. */
+async function declaredShimEntry(root: string, target: string, command: string): Promise<string | undefined> {
+  const inside = relative(root, target);
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) return;
+  const parts = inside.split(/[\\/]+/);
+  const marker = parts.lastIndexOf("node_modules");
+  if (marker < 0 || !parts[marker + 1]) return;
+  const count = parts[marker + 1].startsWith("@") ? 2 : 1;
+  if (parts.length <= marker + count + 1) return;
+  const packageRoot = join(root, ...parts.slice(0, marker + count + 1));
+  try {
+    const metadata = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+      name?: unknown; bin?: unknown;
+    };
+    if (typeof metadata.name !== "string") return;
+    const commandName = basename(command, extname(command)).toLowerCase();
+    const bin = typeof metadata.bin === "string"
+      ? (metadata.name.split("/").at(-1)?.toLowerCase() === commandName ? metadata.bin : undefined)
+      : metadata.bin && typeof metadata.bin === "object"
+        ? (metadata.bin as Record<string, unknown>)[commandName]
+        : undefined;
+    if (typeof bin !== "string" || resolve(packageRoot, bin) !== resolve(target)) return;
+    return await containedFile(packageRoot, target);
+  } catch {
+    return;
+  }
+}
+
 /** Read the target of an npm/installer `.cmd` shim instead of running it through cmd.exe.
  * Only targets inside the shim's directory are accepted; nested shims are not followed. */
 async function npmShimLaunch(
@@ -326,7 +355,8 @@ async function npmShimLaunch(
   if (!match) return;
   const root = dirname(command);
   const local = (path: string) => resolve(root, path.replace(/\\/g, "/"));
-  const entry = await containedFile(root, local(match[3]));
+  const target = local(match[3]);
+  const entry = await containedFile(root, target) ?? await declaredShimEntry(root, target, command);
   if (!entry || /\.(cmd|bat)$/i.test(entry)) return;
   if (match[2]) {
     // Installer shims that ship their own node.exe next to the script.

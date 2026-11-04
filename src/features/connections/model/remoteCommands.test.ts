@@ -13,7 +13,7 @@ vi.mock("./connections", () => ({ remoteRequest, remoteMachineFor }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeLocal }));
 
 import { WORKSPACE_COMMANDS } from "../../../../host/workspace-commands";
-import { GIT_ACTION_COMMANDS } from "../../../../host/git-actions";
+import { GIT_ACTION_COMMANDS } from "../../../../host/git/git-actions";
 import { HOST_COMMANDS, runMachineCommand, runRemoteCommand } from "./remoteCommands";
 import { parseRemotePath, remotePath } from "./remoteProjects";
 import {

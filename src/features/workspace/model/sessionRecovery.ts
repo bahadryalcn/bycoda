@@ -1,5 +1,9 @@
 import { sessionNeedsInput, type Session } from "../../sessions/model/session";
-import { isOwnerStopNotice, isTurnInterruptionNotice } from "../../sessions/model/turnInterruption";
+import {
+  isOwnerStopNotice,
+  isOwnerStoppedTurn,
+  isTurnInterruptionNotice,
+} from "../../sessions/model/turnInterruption";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import { parseWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspaceSnapshot";
@@ -253,6 +257,7 @@ export function recoveryStatus(
   if (issue) return issue;
   if (session.busy || session.continuingElsewhere) return "working";
   if (sessionNeedsInput(session)) return "input";
+  if (isOwnerStoppedTurn(session.blocks)) return "idle";
   // An interrupt remains meaningful through later status/metadata rows, but
   // never carries into a newer submitted user turn.
   for (let index = session.blocks.length - 1; index >= 0; index--) {

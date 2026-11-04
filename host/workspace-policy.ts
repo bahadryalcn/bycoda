@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import { hostGitRepositoryKey } from "./git-mutations";
+import { hostGitRepositoryKey } from "./git/git-mutations";
 import type { HostStore } from "./store";
 import {
   DEFAULT_WORKSPACE_POLICY,

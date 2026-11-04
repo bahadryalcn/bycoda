@@ -28,6 +28,9 @@ An empty or unavailable catalog postpones initialization until a later owner
 read with an available model. Merely opening Crews never starts an agent,
 generates an asset, probes a paid tool or changes provider permissions.
 
+Team rows show each member's name, role, model and groups. Select a member to
+read or edit their full instructions.
+
 | Profile                      | Crew responsibility  | Main handoff                                                     |
 | ---------------------------- | -------------------- | ---------------------------------------------------------------- |
 | Team Lead                    | Coordinator          | Scoped assignments, dependencies and integration acceptance      |
@@ -321,6 +324,14 @@ a separate coordinator. `tasks.create` with `crewDefinitionId` and
 `status: "queued"` schedules a board task, inheriting caller permissions and using
 the task ID as its idempotency key. A fixed coordinator must match an attached
 conversation. Starting a new coordinator avoids that attachment constraint.
+
+An attached coordinator may be a Host conversation or a native desktop
+conversation on the same machine. The host verifies its project, model and
+permission mode from that conversation's metadata. Crew events wait while the
+desktop owns a running turn. Delivery to an idle coordinator uses the normal
+command ownership and writer-retirement checks; Stop uses the current turn's
+owner. A session on another machine is never used as a fallback. Pending events
+keep their original command identity when delivery must be reconciled.
 
 Interrupted work is retained. Unknown runtime outcomes are not completed work;
 inspect the authoritative run before retrying. A missing coordinator pauses its

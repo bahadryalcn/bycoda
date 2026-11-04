@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import type { PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import { type Session } from "../../../features/sessions/model/session";
 import { forgetHarnessSession } from "../../../integrations/harness";
@@ -25,7 +26,7 @@ export interface OpenSessionTargetsDeps {
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   setActiveTabId: (id: string) => void;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
-  followProject: (cwd: string | null | undefined) => void;
+  followProject: (cwd: string | null | undefined, token?: PrivacyMutationToken) => void;
 }
 
 /** Focuses an already-open session tab, or puts a session into a blank pane. */
@@ -42,7 +43,7 @@ export function useOpenSessionTargets({
   followProject,
 }: OpenSessionTargetsDeps) {
   const focusOpenSession = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, token?: PrivacyMutationToken) => {
       const tab = findOpenSessionTab(tabsRef.current, sessionsRef.current, sessionId);
       if (!tab) return false;
       loadedSessionCache.current.delete(sessionId);
@@ -54,12 +55,11 @@ export function useOpenSessionTargets({
             : entry,
         ),
       );
-      followProject(
-        focusedWorkspaceTabCwd(
+      const cwd = focusedWorkspaceTabCwd(
           { ...tab, layout: selectPaneTab(tab.layout, sessionId), focusedId: sessionId },
           sessionsRef.current,
-        ),
       );
+      if (token) followProject(cwd, token); else followProject(cwd);
       setComposerFocused(true);
       return true;
     },

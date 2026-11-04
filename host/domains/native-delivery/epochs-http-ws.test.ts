@@ -5,7 +5,7 @@ import { fixture } from "../../native-devices.test-support";
 import { deliveryIdentity, deliverySha } from "../../native-delivery.test-support";
 import { nativeDeliveryConsumedResult } from "../../native-delivery-store";
 import { WorkspaceCommands } from "../../workspace-commands";
-import { ConversationDesktopRelay } from "../../conversation-tools";
+import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
 import {
   nativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochRef,

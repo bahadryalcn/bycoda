@@ -12,6 +12,7 @@ import { DesktopLive } from "./desktopLive";
 import { verifyRemoteProjectAlias } from "../src/features/connections/model/remoteProjects";
 import { blockDigest, conversationHead } from "../src/features/sync/model/conversationDigest";
 import type { Block } from "../src/features/sessions/model/session";
+import { SessionSyncSchema } from "../src/shared/model/host-contracts/session-reads";
 
 // The Host answers these over real HTTP and SQLite; busy Windows CI runners need
 // more than the 1 s default, while staying under DESKTOP_WRITER_TRANSFER_MS (12 s).
@@ -129,6 +130,61 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it.each([
+    { partial: false, digests: false },
+    { partial: false, digests: true },
+    { partial: true, digests: false },
+    { partial: true, digests: true },
+  ])("keeps normalized desktop revisions out of wire deltas ($partial, $digests)", async ({ partial, digests }) => {
+    const s = await setup();
+    s.seed({ id: "normalized-delta", cwd: s.projectDir, updated: 100 });
+    const blocks = [
+      { id: "b1", role: "user", text: "hi" },
+      { id: "b2", role: "assistant", text: "working" },
+    ];
+    s.desktopDb.exec(`
+      CREATE TABLE session_block_state(session_id TEXT PRIMARY KEY, revision INTEGER, length INTEGER);
+      CREATE TABLE session_blocks(session_id TEXT, block_id TEXT, ordinal INTEGER, revision INTEGER, block_json TEXT);
+      CREATE VIEW session_transcripts AS SELECT * FROM sessions;
+      INSERT INTO session_block_state VALUES ('normalized-delta', 1, 2);
+    `);
+    for (const [ordinal, block] of blocks.entries())
+      s.desktopDb.prepare("INSERT INTO session_blocks VALUES (?, ?, ?, ?, ?)")
+        .run("normalized-delta", block.id, ordinal, 1, JSON.stringify(block));
+    s.desktopDb.prepare("UPDATE sessions SET blocks_json=? WHERE id='normalized-delta'")
+      .run(JSON.stringify(blocks));
+    s.desktopDb.prepare("INSERT INTO in_flight_sessions VALUES (?, ?, 0)")
+      .run("normalized-delta", s.projectDir);
+
+    const first = await s.call("sessions.sync", { sessionId: "normalized-delta", digests });
+    expect(first.error).toBeUndefined();
+    expect(first.result.kind).toBe("snapshot");
+    expect(first.result.value.executionOwner).toBe("desktop");
+    SessionSyncSchema.parse(first.result);
+
+    blocks[1].text = "still working";
+    s.desktopDb.prepare("UPDATE sessions SET blocks_json=?, updated_at=200 WHERE id='normalized-delta'")
+      .run(JSON.stringify(blocks));
+    s.desktopDb.prepare("UPDATE session_blocks SET revision=2, block_json=? WHERE block_id='b2'")
+      .run(JSON.stringify(blocks[1]));
+    s.desktopDb.exec("UPDATE session_block_state SET revision=2 WHERE session_id='normalized-delta'");
+
+    const next = await s.call("sessions.sync", {
+      sessionId: "normalized-delta", revision: first.result.value.revision,
+      partial, digests, ...(partial ? { loadedBlockIds: ["b1", "b2"] } : {}),
+    });
+    expect(next.error).toBeUndefined();
+    expect(next.result.kind).toBe("delta");
+    expect(next.result.value).not.toHaveProperty("blockRevisions");
+    expect(next.result.value.executionOwner).toBe("desktop");
+    expect(next.result.blocks.map((block: Block) => block.id)).toEqual(["b2"]);
+    expect(next.result.blocks[0].text).toBe("still working");
+    SessionSyncSchema.parse(next.result);
+    expect((await s.call("sessions.sync", {
+      sessionId: "normalized-delta", revision: next.result.value.revision,
+    })).result).toEqual({ kind: "unchanged", revision: next.result.value.revision });
+  });
+
   it("uses the native list projection for activity, interruption and provider history", async () => {
     const s = await setup();
     s.seed({ id: "projection", cwd: s.projectDir, updated: 200 });
@@ -207,7 +263,7 @@ describe("desktop sessions on the host", () => {
       }
       const desktop = new DesktopSessions(() => [s.dbPath]);
       try {
-        for (const [notice, text, status] of [
+        for (const [notice, text, status, previousStop] of [
           ["interrupt", "Stopped by you.", "idle"],
           ["interrupt", "  Stopped by you.\n", "idle"],
           ["info", "Stopped by you.", "idle"],
@@ -215,13 +271,22 @@ describe("desktop sessions on the host", () => {
           ["interrupt", "Connection lost.", "interrupted"],
           [undefined, "Turn interrupted when bycoda quit.", "interrupted"],
           [undefined, "Turn interrupted when Bycoda quit.", "interrupted"],
+          ["interrupt", "Turn interrupted when bycoda quit.", "idle", true],
+          [undefined, "Turn interrupted when Bycoda quit.", "idle", true],
+          ["interrupt", "Host restarted while this turn was running.", "interrupted", true],
         ] as const) {
           const blocks = [
             { id: "u", role: "user", text: "hello" },
+            ...(previousStop
+              ? [{ id: "owner-stop", role: "system", notice: "interrupt", text: "Stopped by you." }]
+              : []),
             { id: "stop", role: "system", notice, text },
           ];
           if (storage === "normalized") {
             s.desktopDb.exec("DELETE FROM session_blocks WHERE session_id='stopped'");
+            s.desktopDb
+              .prepare("UPDATE session_block_state SET length=? WHERE session_id='stopped'")
+              .run(blocks.length);
             for (const [ordinal, block] of blocks.entries()) {
               s.desktopDb
                 .prepare("INSERT INTO session_blocks VALUES ('stopped',?,?)")
@@ -239,6 +304,47 @@ describe("desktop sessions on the host", () => {
       }
     },
   );
+  it("uses authoritative empty normalized history and falls back for legacy sentinel state", async () => {
+    const s = await setup();
+    s.seed({ id: "tail-authority", cwd: s.projectDir });
+    s.desktopDb
+      .exec(`CREATE TABLE session_block_state(session_id TEXT PRIMARY KEY, revision INTEGER, length INTEGER);
+      CREATE TABLE session_blocks(session_id TEXT, ordinal INTEGER, block_json TEXT);
+      CREATE INDEX session_blocks_roles ON session_blocks(session_id,json_extract(block_json,'$.role'),json_extract(block_json,'$.draft'));
+      INSERT INTO session_block_state VALUES ('tail-authority',1,0);`);
+    const stop = { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." };
+    const quit = {
+      id: "quit",
+      role: "system",
+      notice: "interrupt",
+      text: "Turn interrupted when bycoda quit.",
+    };
+    s.desktopDb
+      .prepare("UPDATE sessions SET blocks_json=? WHERE id='tail-authority'")
+      .run(JSON.stringify([quit]));
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    try {
+      // A normalized zero-length transcript owns its empty tail over an old blob.
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].status).toBe("idle");
+      s.desktopDb.exec(
+        "UPDATE session_block_state SET length=-1 WHERE session_id='tail-authority'",
+      );
+      s.desktopDb
+        .prepare("INSERT INTO session_blocks VALUES ('tail-authority',0,?)")
+        .run(JSON.stringify(stop));
+      // Legacy sentinel invalidates normalized rows, including a stale owner Stop.
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].status).toBe("interrupted");
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=? WHERE id='tail-authority'")
+        .run(JSON.stringify([stop, quit]));
+      s.desktopDb
+        .prepare("UPDATE session_blocks SET block_json=? WHERE session_id='tail-authority'")
+        .run(JSON.stringify(quit));
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].status).toBe("idle");
+    } finally {
+      desktop.close();
+    }
+  });
   it("projects the latest desktop interruption and its separate activity time", async () => {
     const s = await setup();
     s.seed({ id: "interrupted", cwd: s.projectDir, updated: 200 });

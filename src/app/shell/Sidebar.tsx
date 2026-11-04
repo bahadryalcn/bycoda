@@ -32,7 +32,7 @@ import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
-import { t, useLocale, useT } from "../../shared/i18n";
+import { formatDate, t, useLocale, useT } from "../../shared/i18n";
 import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { prefetchGithubWorkItem } from "../../features/inbox/model/githubTasks";
@@ -195,7 +195,6 @@ import {
   loadReminderSessionsCollapsed,
   loadSessionFolders,
   mergeFolderSessionSummaries,
-  pruneSessionFolders,
   removeSessionFromFolder,
   removeSessionsFromFolders,
   renameFolder,
@@ -212,6 +211,12 @@ import {
   type SessionListDropTarget,
   type SessionListEntry,
 } from "../../features/sessions/model/sessionFolders";
+import { executeOrganizationOperation, folderPosition, organizationFoldersForProject, organizationOrderForProject, previewOrganizationOperation, type OrganizationOperation } from "../../features/sessions/model/sessionOrganizationOperations";
+import { cachedSessionOrganization, hydrateSessionOrganization, NATIVE_SESSION_ORGANIZATION_ACTIVE, subscribeSessionOrganization, unresolvedSessionOrganizationGestures, type SessionOrganizationState } from "../../features/sessions/model/sessionOrganizationStore";
+import { isProjectPasswordLocked } from "../../features/group-lock/model/groupLock";
+import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
+import { pinState, resolvePinTarget, samePinTarget, type PinTarget } from "../../features/sessions/data/sessionPinReceipts";
+import { acknowledgePartialPinSaga, listPinSagas, preparePinSaga, resumePinSaga, type PinSaga, type PinSagaStep } from "../../features/sessions/model/sessionPinSaga";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../shared/lib/listWindow";
 import { folderSessionWindow } from "../../features/sessions/model/folderWindow";
 import {
@@ -389,10 +394,13 @@ type Props = {
   /** Opens several sessions together as a grid in one new tab. */
   onOpenSessionsSideBySide?: (sessionIds: string[]) => void;
   onRenameSession?: (sessionId: string, title: string) => void | Promise<void>;
+  onRegenerateSessionTitle?: (sessionId: string, cwd?: string) => Promise<void>;
   onArchiveSession?: (sessionId: string, archived: boolean) => void;
   onArchiveSessions?: (sessionIds: readonly string[], archived: boolean) => void;
   onPinSession?: (sessionId: string, pinned: boolean) => void;
   onPinSessions?: (sessionIds: readonly string[], pinned: boolean) => void;
+  onConfirmedPin?: (sessionId: string, cwd: string, pinned: boolean, target: PinTarget) => Promise<void>;
+  onPreparePin?: (sessionId: string, cwd: string) => Promise<void>;
   onSetSessionLinkedWorkItem?: (sessionId: string, item: LinkedWorkItem | undefined) => void;
   reminders?: readonly SessionReminder[];
   onSetReminders?: (sessionIds: readonly string[], dueAt: number) => void;
@@ -514,10 +522,13 @@ function SidebarComponent({
   onPopOutSession: onPopOutLocalSession,
   onOpenSessionsSideBySide: onOpenLocalSessionsSideBySide,
   onRenameSession: onRenameLocalSession,
+  onRegenerateSessionTitle,
   onArchiveSession: onArchiveLocalSession,
   onArchiveSessions: onArchiveLocalSessions,
   onPinSession: onPinLocalSession,
   onPinSessions: onPinLocalSessions,
+  onConfirmedPin,
+  onPreparePin,
   onSetSessionLinkedWorkItem: onSetLocalSessionLinkedWorkItem,
   reminders = EMPTY_REMINDERS,
   onSetReminders,
@@ -862,11 +873,44 @@ function SidebarComponent({
     folderId: string;
   } | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const regeneratingTitles = useRef(new Set<string>());
+  const [titleActions, setTitleActions] = useState<
+    Record<string, { pending: boolean; error?: string }>
+  >({});
+  const regenerateTitle = async (session: SessionSummary) => {
+    if (!onRegenerateSessionTitle || regeneratingTitles.current.has(session.id)) return;
+    regeneratingTitles.current.add(session.id);
+    setTitleActions((current) => ({ ...current, [session.id]: { pending: true } }));
+    try {
+      await onRegenerateSessionTitle(session.id, session.cwd);
+      setTitleActions((current) => {
+        const next = { ...current };
+        delete next[session.id];
+        return next;
+      });
+    } catch (reason) {
+      setTitleActions((current) => ({
+        ...current,
+        [session.id]: {
+          pending: false,
+          error: reason instanceof Error ? reason.message : String(reason),
+        },
+      }));
+    } finally {
+      regeneratingTitles.current.delete(session.id);
+    }
+  };
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-  const [sessionOrder, setSessionOrder] = useState<SessionOrder>(() => loadSessionOrder(cwd));
+  const [sessionOrder, setSessionOrder] = useState<SessionOrder>(() => NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
   const [listNotice, setListNotice] = useState<{ message: string; undo: () => void } | null>(null);
+  const [organizationNotice, setOrganizationNotice] = useState<string | null>(null);
+  const [partialPinSagas, setPartialPinSagas] = useState<PinSaga[]>([]);
+  const organizationBusy = useRef(false);
+  const organizationUnresolved = useRef(false);
+  const organizationRefreshRequired = useRef(false);
+  const organizationReady = useRef(!NATIVE_SESSION_ORGANIZATION_ACTIVE);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(() =>
-    loadSessionFolders(cwd),
+    NATIVE_SESSION_ORGANIZATION_ACTIVE ? [] : loadSessionFolders(cwd),
   );
   const [pinnedSessionsCollapsed, setPinnedSessionsCollapsed] = useState(() =>
     loadPinnedSessionsCollapsed(cwd),
@@ -1229,8 +1273,9 @@ function SidebarComponent({
   // retries this component immediately instead of committing stale folder rows.
   if (sessionStateCwd !== cwd) {
     setSessionStateCwd(cwd);
-    setSessionFolders(loadSessionFolders(cwd));
-    setSessionOrder(loadSessionOrder(cwd));
+    organizationReady.current = !NATIVE_SESSION_ORGANIZATION_ACTIVE;
+    setSessionFolders(NATIVE_SESSION_ORGANIZATION_ACTIVE ? [] : loadSessionFolders(cwd));
+    setSessionOrder(NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
     setListNotice(null);
     setPinnedSessionsCollapsed(loadPinnedSessionsCollapsed(cwd));
     setReminderSessionsCollapsed(loadReminderSessionsCollapsed(cwd));
@@ -1242,13 +1287,74 @@ function SidebarComponent({
     pendingFolderSessionIds.current.clear();
   }, [cwd]);
 
+  useEffect(() => {
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
+    setOrganizationNotice(t("Loading folders…"));
+    let alive = true;
+    let reconciliation = 0;
+    const unsubscribe = subscribeSessionOrganization(() => {
+      const snapshot = cachedSessionOrganization();
+      if (!snapshot) return;
+      try {
+        setSessionFolders(organizationFoldersForProject(snapshot, cwd));
+        setSessionOrder(organizationOrderForProject(snapshot, cwd));
+        organizationRefreshRequired.current = false;
+        if (!organizationBusy.current) {
+          const generation = ++reconciliation;
+          void Promise.all([unresolvedSessionOrganizationGestures(), listPinSagas()]).then(([pending, sagas]) => {
+            if (!alive || organizationBusy.current || generation !== reconciliation) return;
+            const openSagas = sagas.filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
+            setPartialPinSagas(openSagas.filter((saga) => saga.state === "partial"));
+            organizationUnresolved.current = pending.length > 0 || openSagas.length > 0;
+            organizationReady.current = true;
+            if (pending.length) setOrganizationNotice(`Folder change outcome is unknown: ${pending[0].operationId}`);
+            else if (openSagas.length) setOrganizationNotice(`Pin change needs review: ${openSagas[0].id}`);
+            else setOrganizationNotice((current) => current === t("Loading folders…") ? null : current);
+          }).catch((error: unknown) => { if (alive && generation === reconciliation) setOrganizationNotice(String(error)); });
+        }
+      } catch (error) { setOrganizationNotice(String(error)); }
+    }, (error) => setOrganizationNotice(String(error)));
+    return () => { alive = false; unsubscribe(); };
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
+    const onFeedback = (event: Event) => {
+      const detail = (event as CustomEvent<{ cwd: string; sessionId: string; runId: string; result?: { state: string; operationId?: string }; error?: string }>).detail;
+      if (!detail || !sameProjectPath(detail.cwd, cwd)) return;
+      if (detail.result?.state === "unknown") organizationUnresolved.current = true;
+      if (isProjectPasswordLocked(detail.cwd)) { setOrganizationNotice("Folder placement needs review after unlocking the project."); return; }
+      setOrganizationNotice(detail.result?.state === "unknown"
+        ? `Automation session ${detail.sessionId} retained; folder outcome is unknown: ${detail.result.operationId}`
+        : detail.result?.state === "applied-unavailable"
+          ? `Automation session ${detail.sessionId} retained; folder change was applied but refresh failed.`
+          : `Automation session ${detail.sessionId} retained; folder placement needs review${detail.error ? `: ${detail.error}` : "."}`);
+    };
+    window.addEventListener("bycoda:organization-operation-feedback", onFeedback);
+    return () => window.removeEventListener("bycoda:organization-operation-feedback", onFeedback);
+  }, [cwd]);
+
   useEffect(
-    () =>
+    () => NATIVE_SESSION_ORGANIZATION_ACTIVE ? undefined :
       subscribeSessionFolders(cwd, () => {
         setSessionFolders(loadSessionFolders(cwd));
       }),
     [cwd],
   );
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (!NATIVE_SESSION_ORGANIZATION_ACTIVE && (event.key === null || event.key === "bycoda.sessionFolders"))
+        setSessionFolders(loadSessionFolders(cwd));
+      if (!NATIVE_SESSION_ORGANIZATION_ACTIVE && (event.key === null || event.key === "bycoda.sessionOrder"))
+        setSessionOrder(loadSessionOrder(cwd));
+      if (event.key === null || event.key === "bycoda.pinnedSessionsCollapsed")
+        setPinnedSessionsCollapsed(loadPinnedSessionsCollapsed(cwd));
+      if (event.key === null || event.key === "bycoda.reminderSessionsCollapsed")
+        setReminderSessionsCollapsed(loadReminderSessionsCollapsed(cwd));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [cwd]);
 
   useEffect(() => {
     if (pending || status === "error") return;
@@ -1289,8 +1395,14 @@ function SidebarComponent({
           sessionIds: folder.sessionIds.map((id) => completedFolderSessions.get(id) ?? id),
         }))
       : sessionFolders;
-    const next = pruneSessionFolders(migrated, known);
+    // Session history may be partial. Absence from this view does not prove
+    // deletion, so retain unknown IDs until an explicit operation removes them.
+    const next = migrated;
     if (next === sessionFolders) return;
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      void performOrganizationOperation({ kind: "replaceSessionIds", cwd, aliases: [...completedFolderSessions].map(([from, to]) => ({ from, to })) }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     setSessionFolders(next);
     // StrictMode replays this effect with the same snapshot. Storage already holding
     // the pruned value means the write and its cross-window event already happened.
@@ -1337,11 +1449,51 @@ function SidebarComponent({
     saveSessionFolders(cwd, next);
   };
 
+  const performOrganizationOperation = async (operation: OrganizationOperation, onApplied?: (state: SessionOrganizationState, previous?: SessionOrganizationState) => void): Promise<boolean> => {
+    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current || organizationRefreshRequired.current) return false;
+    organizationBusy.current = true;
+    setOrganizationNotice(t("Saving…"));
+    const gestureId = crypto.randomUUID();
+    let admitted = false;
+    try {
+      const result = await withRoomPrivacyMutation(() => {
+        if (isProjectPasswordLocked(operation.cwd)) throw new Error("Project is locked.");
+        admitted = true;
+        return executeOrganizationOperation(gestureId, operation);
+      });
+      if (result.state === "applied") {
+        setOrganizationNotice(null);
+        try { onApplied?.(result.value, result.previous); }
+        catch (error) { setOrganizationNotice(`Change was applied, but the display could not be updated: ${String(error)}`); }
+        return true;
+      }
+      if (result.state === "unknown") organizationUnresolved.current = true;
+      if (result.state === "applied-unavailable") organizationRefreshRequired.current = true;
+      setOrganizationNotice(result.state === "unknown"
+        ? `Folder change outcome is unknown: ${result.operationId}`
+        : result.state === "applied-unavailable" ? `Folder change was applied, but refresh failed: ${result.operationId}`
+          : "Folder change conflicted; refresh before retrying.");
+      return false;
+    } catch (error) {
+      if (admitted) organizationUnresolved.current = true;
+      setOrganizationNotice(admitted ? `Folder change outcome needs verification: ${gestureId}` : String(error));
+      return false;
+    }
+    finally { organizationBusy.current = false; }
+  };
+
   const onNewInFolder = (folderId: string) => {
     const sessionId = onNew?.();
     if (!sessionId) return;
     pendingFolderSessionIds.current.add(sessionId);
     setSearchQuery("");
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      void performOrganizationOperation({ kind: "batch", cwd, operations: [
+        { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
+        { kind: "folderCollapsed", cwd, folderId, collapsed: false },
+      ] }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     commitSessionFolders(
       setFolderCollapsed(
         addSessionToFolder(sessionFoldersRef.current, folderId, sessionId),
@@ -1484,10 +1636,21 @@ function SidebarComponent({
               {
                 kind: "item" as const,
                 id: "rename",
+                disabled: !!titleActions[menuSessions[0]?.id]?.pending,
                 get label() {
                   return t("Rename");
                 },
                 shortcut: "F2",
+              },
+            ]
+          : []),
+        ...(!multipleMenuSessions && onRegenerateSessionTitle
+          ? [
+              {
+                kind: "item" as const,
+                id: "regenerate-title",
+                label: t("Regenerate title"),
+                disabled: !!titleActions[menuSessions[0]?.id]?.pending,
               },
             ]
           : []),
@@ -1743,6 +1906,11 @@ function SidebarComponent({
       setRenamingSessionId(sessionId);
       return;
     }
+    if (id === "regenerate-title") {
+      const session = listedSessions.find((entry) => entry.id === sessionId);
+      if (session) void regenerateTitle(session).catch(() => {});
+      return;
+    }
     if (id === "copy-harness-session-id" || id === "copy-bycoda-session-id") {
       const value = id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
@@ -1757,6 +1925,13 @@ function SidebarComponent({
       return;
     }
     if (id === "folder-new") {
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        const folderId = crypto.randomUUID();
+        void performOrganizationOperation({ kind: "create", cwd, folderId, sessionIds }).then((applied) => {
+          if (applied) setRenamingFolderId(folderId);
+        }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        return;
+      }
       const { folders, id: createdId } = createFolderWithSessions(sessionFolders, sessionIds);
       if (!createdId) return;
       commitSessionFolders(folders);
@@ -1765,6 +1940,13 @@ function SidebarComponent({
     }
     if (id.startsWith("folder-add:")) {
       const folderId = id.slice("folder-add:".length);
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        void performOrganizationOperation({ kind: "batch", cwd, operations: [
+          { kind: "assign", cwd, folderId, sessionIds },
+          { kind: "folderCollapsed", cwd, folderId, collapsed: false },
+        ] }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        return;
+      }
       const folders = sessionIds.reduce(
         (current, id) => addSessionToFolder(current, folderId, id),
         sessionFolders,
@@ -1773,6 +1955,10 @@ function SidebarComponent({
       return;
     }
     if (id === "folder-remove") {
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        void performOrganizationOperation({ kind: "assign", cwd, folderId: null, sessionIds }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        return;
+      }
       commitSessionFolders(
         sessionIds.reduce((current, id) => removeSessionFromFolder(current, id), sessionFolders),
       );
@@ -1800,6 +1986,10 @@ function SidebarComponent({
   };
 
   const pinSessions = (sessionIds: readonly string[], pinned: boolean) => {
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      void performPinSaga(null, [...sessionIds], pinned, false).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     if (sessionIds.length > 1 && onPinSessions) {
       onPinSessions(sessionIds, pinned);
     } else {
@@ -1829,26 +2019,34 @@ function SidebarComponent({
       return;
     }
     if (id === "move-out") {
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "moveFolderOut", cwd, folderId }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
       commitSessionFolders(moveFolderOut(sessionFolders, folderId));
       return;
     }
     if (id === "pin-folder") {
       const folder = sessionFolders.find((entry) => entry.id === folderId);
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        if (folder) void performOrganizationOperation({ kind: "folderPinned", cwd, folderId, pinned: !folder.pinned }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        return;
+      }
       if (folder) commitSessionFolders(setFolderPinned(sessionFolders, folderId, !folder.pinned));
       return;
     }
     if (id === "ungroup") {
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "deleteFolder", cwd, folderId }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
       commitSessionFolders(dissolveFolder(sessionFolders, folderId));
     }
   };
 
   const onFolderColorChange = (colorIndex: number | null) => {
     if (!folderMenu) return;
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "folderColor", cwd, folderId: folderMenu.folderId, colorIndex }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
     commitSessionFolders(setFolderColor(sessionFolders, folderMenu.folderId, colorIndex));
   };
 
   const onFolderCustomColorChange = (color: string) => {
     if (!folderMenu) return;
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "folderCustomColor", cwd, folderId: folderMenu.folderId, color }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
     commitSessionFolders(setFolderCustomColor(sessionFolders, folderMenu.folderId, color));
   };
 
@@ -1873,6 +2071,115 @@ function SidebarComponent({
       ),
       sessionOrder[list],
     ).map((session) => session.id);
+
+  const sessionDropUndo = (previous: SessionOrganizationState, state: SessionOrganizationState): OrganizationOperation => {
+    const beforeFolders = organizationFoldersForProject(previous, cwd);
+    const afterFolders = organizationFoldersForProject(state, cwd);
+    const changed = new Set([...beforeFolders, ...afterFolders].map((folder) => folder.id).filter((id) =>
+      JSON.stringify(beforeFolders.find((folder) => folder.id === id) ?? null) !== JSON.stringify(afterFolders.find((folder) => folder.id === id) ?? null)));
+    const patches = [...changed].map((id) => {
+      const index = beforeFolders.findIndex((folder) => folder.id === id);
+      return { id, restore: beforeFolders[index] ?? null, expected: afterFolders.find((folder) => folder.id === id) ?? null,
+        beforeId: index < 0 ? undefined : beforeFolders.slice(index + 1).find((folder) => !changed.has(folder.id))?.id };
+    });
+    const beforeOrder = organizationOrderForProject(previous, cwd);
+    const afterOrder = organizationOrderForProject(state, cwd);
+    const changedList = (["loose", "pinned"] as const).find((list) => JSON.stringify(beforeOrder[list]) !== JSON.stringify(afterOrder[list]));
+    return { kind: "undoSessionDrop", cwd, folders: patches,
+      ...(changedList ? { order: { list: changedList, expected: afterOrder[changedList], restore: beforeOrder[changedList] } } : {}) };
+  };
+
+  const performPinSaga = async (operation: OrganizationOperation | null, sessionIds: string[], desiredPinned: boolean, offerUndo = true) => {
+    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current || organizationRefreshRequired.current) return;
+    organizationBusy.current = true;
+    setOrganizationNotice(t("Saving…"));
+    let sagaPrepared = false;
+    let pinConfirmed = false;
+    try {
+      await withRoomPrivacyMutation(async () => {
+      if (isProjectPasswordLocked(cwd)) throw new Error("Project is locked.");
+      const steps: PinSagaStep[] = [];
+      for (const sessionId of sessionIds) {
+        let target: PinTarget;
+        if (remoteProject) {
+          if (!remote.machine || !hostProject) throw new Error("The session's machine is unavailable.");
+          const authorityGeneration = remote.sessions.find((item) => item.id === sessionId)?.authorityGeneration;
+          target = { kind: "host", machineId: remote.machine.id, environmentId: hostProject.environmentId, projectId: hostProject.projectId, sessionId,
+            ...(authorityGeneration == null ? {} : { authorityGeneration }) };
+        } else {
+          if (!onPreparePin || !onConfirmedPin) throw new Error("Pin owner is unavailable.");
+          const sessionCwd = summaryById.get(sessionId)?.cwd;
+          if (!sessionCwd) throw new Error("Session project identity is unavailable.");
+          target = await resolvePinTarget(sessionId, sessionCwd);
+          await onPreparePin(sessionId, sessionCwd);
+          if (!samePinTarget(target, await resolvePinTarget(sessionId, sessionCwd))) throw new Error("The pin owner changed; refresh before retrying.");
+        }
+        const current = await pinState(target);
+        if (current.state !== "current" || current.pinned === null) throw new Error("Pin state is unavailable.");
+        steps.push({ viewSessionId: sessionId, viewCwd: remoteProject ? cwd : summaryById.get(sessionId)!.cwd, viewKind: remoteProject ? "remote" : "local", target, operationId: crypto.randomUUID(), desiredPinned,
+          expectedVersion: current.version, expectedAuthority: current.authority ?? null, previousPinned: current.pinned, state: "not-started" });
+      }
+      const saga: PinSaga = { id: crypto.randomUUID(), organizationId: crypto.randomUUID(), organization: operation, steps, state: "prepared" };
+      const prepared = await preparePinSaga(saga);
+      if (prepared !== "applied") {
+        organizationUnresolved.current = prepared === "unknown";
+        setOrganizationNotice(prepared === "unknown" ? "Pin preparation outcome is unknown. Check again before another change." : "Pin preparation conflicted; refresh before retrying.");
+        return;
+      }
+      sagaPrepared = true;
+      const result = await resumePinSaga(saga.id);
+      pinConfirmed = result.saga.steps.some((step) => step.state === "applied");
+      for (const step of result.saga.steps) if (step.state === "applied") {
+        if (step.viewKind === "remote") { if (remoteProject) refreshRemoteProjectSessions(); }
+        else await onConfirmedPin!(step.viewSessionId, step.viewCwd, step.desiredPinned, step.target);
+      }
+      if (result.state !== "applied" || (operation && result.organization?.state !== "applied")) {
+        organizationUnresolved.current = result.state !== "conflict";
+        setOrganizationNotice(result.state === "unknown" ? `Pin change outcome is unknown: ${result.operationId ?? saga.id}`
+          : result.state === "applied-unavailable" ? `${operation ? "Pin and folder changes were" : "Pin changes were"} applied, but final confirmation failed: ${result.operationId ?? saga.id}`
+            : "Pin change is partial. Review the confirmed state before continuing.");
+        return;
+      }
+      setOrganizationNotice(null);
+      if (!offerUndo) return;
+      if (!result.organization || result.organization.state !== "applied") return;
+      const previous = result.organization.previous;
+      if (!previous) return;
+      const undo = sessionDropUndo(previous, result.organization.value);
+      const reverse = result.saga.steps.map((step) => ({ ...step, operationId: crypto.randomUUID(), desiredPinned: step.previousPinned,
+        previousPinned: step.desiredPinned, expectedVersion: step.receipt!.version, expectedAuthority: step.receipt!.authority ?? null, state: "not-started" as const, receipt: undefined, attempts: undefined }));
+      setListNotice({ message: t("Moved"), undo: () => { void performPreparedPinUndo(undo, reverse).catch((error: unknown) => setOrganizationNotice(String(error))); } });
+      });
+    } catch (error) { if (sagaPrepared) organizationUnresolved.current = true; setOrganizationNotice(pinConfirmed ? `A pin was applied; final confirmation failed: ${String(error)}` : String(error)); }
+    finally { organizationBusy.current = false; }
+  };
+
+  const performPreparedPinUndo = async (operation: OrganizationOperation, steps: PinSagaStep[]) => {
+    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current) return;
+    organizationBusy.current = true;
+    setOrganizationNotice(t("Saving…"));
+    let sagaPrepared = false;
+    try {
+      await withRoomPrivacyMutation(async () => {
+      if (isProjectPasswordLocked(cwd) || steps.some((step) => isProjectPasswordLocked(step.viewCwd))) throw new Error("Project is locked.");
+      previewOrganizationOperation(await hydrateSessionOrganization(), operation);
+      const saga: PinSaga = { id: crypto.randomUUID(), organizationId: crypto.randomUUID(), organization: operation, steps, state: "prepared" };
+      const prepared = await preparePinSaga(saga);
+      if (prepared !== "applied") { organizationUnresolved.current = prepared === "unknown"; setOrganizationNotice("Undo preparation could not be confirmed."); return; }
+      sagaPrepared = true;
+      const result = await resumePinSaga(saga.id);
+      for (const step of result.saga.steps) if (step.state === "applied") {
+        if (step.viewKind === "remote") { if (remoteProject) refreshRemoteProjectSessions(); }
+        else await onConfirmedPin?.(step.viewSessionId, step.viewCwd, step.desiredPinned, step.target);
+      }
+      if (result.state !== "applied" || result.organization?.state !== "applied") {
+        organizationUnresolved.current = true;
+        setOrganizationNotice(result.state === "applied-unavailable" ? "Undo was applied, but refresh failed. Check again before continuing." : "Undo is partial or unconfirmed. Review the current state before continuing.");
+      } else setOrganizationNotice(null);
+      });
+    } catch (error) { if (sagaPrepared) organizationUnresolved.current = true; setOrganizationNotice(String(error)); }
+    finally { organizationBusy.current = false; }
+  };
 
   const onSessionListDrop = (draggedId: string, target: SessionListDropTarget) => {
     // A selected card carries the whole selection along.
@@ -1944,6 +2251,39 @@ function SidebarComponent({
     const pinChanges =
       pinTo === null ? [] : dragged.filter((id) => !!summaryById.get(id)?.pinned !== pinTo);
     if (folders === sessionFolders && order === sessionOrder && pinChanges.length === 0) return;
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      let operation: OrganizationOperation;
+      if (target.kind === "session") {
+        const host = folderContaining(sessionFolders, target.id);
+        operation = host && folderDepth(sessionFolders, host.id) >= MAX_FOLDER_DEPTH
+          ? { kind: "folderInsert", cwd, folderId: host.id, sessionIds: dragged, anchorId: target.id, place: "after", seedOrder: folderMemberIds(host) }
+          : { kind: "create", cwd, folderId: createdId, sessionIds: [target.id, ...dragged], parentId: host?.id, pinned: !host && !!summaryById.get(target.id)?.pinned };
+      } else if (target.kind === "folder") {
+        const host = sessionFolders.find((folder) => folder.id === target.id);
+        if (!host) return;
+        operation = { kind: "folderInsert", cwd, folderId: host.id, sessionIds: dragged, seedOrder: folderMemberIds(host), preserveUnordered: true };
+      } else if (target.kind === "pinned") {
+        operation = { kind: "assign", cwd, folderId: null, sessionIds: dragged };
+      } else {
+        const host = folderContaining(sessionFolders, target.id);
+        operation = host
+          ? { kind: "folderInsert", cwd, folderId: host.id, sessionIds: dragged, anchorId: target.id, place: target.place, seedOrder: folderMemberIds(host) }
+          : { kind: "looseInsert", cwd, list: summaryById.get(target.id)?.pinned ? "pinned" : "loose", sessionIds: dragged, anchorId: target.id, place: target.place, seedOrder: orderListIds(summaryById.get(target.id)?.pinned ? "pinned" : "loose") };
+      }
+      if (pinChanges.length) {
+        void performPinSaga(operation, pinChanges, pinTo!).catch((error: unknown) => setOrganizationNotice(String(error)));
+        return;
+      }
+      void performOrganizationOperation(operation, (state, previous) => {
+        if (createdId) setRenamingFolderId(createdId);
+        if (!previous) return;
+        const undo = sessionDropUndo(previous, state);
+        setListNotice({ message: t("Moved"), undo: () => {
+          void performOrganizationOperation(undo).catch((error: unknown) => setOrganizationNotice(String(error)));
+        } });
+      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     const leftFolder = dragged.some(
       (id) => folderContaining(sessionFolders, id)?.id !== destFolderId,
     );
@@ -2029,7 +2369,7 @@ function SidebarComponent({
     onArchiveSession,
     setRenamingSessionId,
     onSessionCardDelete,
-    onPinSession,
+    onPinSession: NATIVE_SESSION_ORGANIZATION_ACTIVE ? (sessionId: string, pinned: boolean) => pinSessions([sessionId], pinned) : onPinSession,
   });
   cardHandlers.current = {
     onSessionCardSelect,
@@ -2043,7 +2383,7 @@ function SidebarComponent({
     onArchiveSession,
     setRenamingSessionId,
     onSessionCardDelete,
-    onPinSession,
+    onPinSession: NATIVE_SESSION_ORGANIZATION_ACTIVE ? (sessionId: string, pinned: boolean) => pinSessions([sessionId], pinned) : onPinSession,
   };
   const cardActions = useMemo(
     () => ({
@@ -2078,62 +2418,96 @@ function SidebarComponent({
     [liveAgents],
   );
 
-  const renderSessionCard = (session: SessionSummary, inPinnedSection = false) =>
-    renamingSessionId === session.id && onRenameSession ? (
-      <SessionRenameRow
-        session={session}
-        isActive={session.id === activeListedSessionId}
-        onCommit={(title) => {
-          const result = onRenameSession(session.id, title);
-          if (result) return result.then(() => setRenamingSessionId(null));
-          setRenamingSessionId(null);
-        }}
-        onCancel={() => setRenamingSessionId(null)}
-      />
-    ) : (
-      <SessionCard
-        session={session}
-        isActive={session.id === activeListedSessionId}
-        isSelected={selectedSessionIds.has(session.id)}
-        selectionMode={showBulkBar}
-        busy={listedBusySessionIds.has(session.id)}
-        startedAt={liveAgentsById.get(session.id)?.startedAt}
-        opening={openingSessionId === session.id}
-        done={unseenFinishedIds.has(session.id)}
-        linkedUpdate={linkedSessionUpdateIds.has(session.id)}
-        needsApproval={listedApprovalSessionIds.has(session.id)}
-        inputKind={liveAgentsById.get(session.id)?.inputKind}
-        dropTarget={isSessionDrop("session", session.id)}
-        dropDwell={
-          sessionDrop?.kind === "insert" && sessionDrop.id === session.id && !!sessionDrop.dwell
-        }
-        groupDelayMs={listDisplay.groupDelayMs}
-        density={listDisplay.density}
-        showModel={listDisplay.showModel}
-        showBranch={listDisplay.showBranch}
-        inPinnedSection={inPinnedSection}
-        onPin={onPinSession ? cardActions.pin : undefined}
-        onSelect={cardActions.select}
-        onLongPress={cardActions.longPress}
-        onOpenWorkItem={onOpenInboxItem && !remoteProject ? cardActions.openWorkItem : undefined}
-        onPrefetch={onPrefetchSession ? cardActions.prefetch : undefined}
-        onPlaceOnPane={onPlaceSessionOnPane ? cardActions.placeOnPane : undefined}
-        onPopOut={onPopOutSession ? cardActions.popOut : undefined}
-        onListDrop={
-          reminderIds.has(session.id) || searchNarrowed ? undefined : cardActions.listDrop
-        }
-        onListDropTargetChange={setSessionDrop}
-        onContextMenu={cardActions.contextMenu}
-        onArchive={onArchiveSession ? cardActions.archive : undefined}
-        onRename={onRenameSession ? cardActions.rename : undefined}
-        onDelete={onDeleteSession ? cardActions.delete : undefined}
-      />
-    );
+  const renderSessionCard = (session: SessionSummary, inPinnedSection = false) => (
+    <SessionCard
+      session={session}
+      renameEditor={
+        renamingSessionId === session.id && onRenameSession ? (
+          <SessionRenameRow
+            session={session}
+            onCommit={(title) => {
+              const result = onRenameSession(session.id, title);
+              if (result) return result.then(() => setRenamingSessionId(null));
+              setRenamingSessionId(null);
+            }}
+            onCancel={() => setRenamingSessionId(null)}
+          />
+        ) : undefined
+      }
+      titleFeedback={
+        titleActions[session.id] ? (
+          titleActions[session.id].pending ? (
+            <span className="text-ui-caption text-(--ui-text-secondary)">
+              {t("Regenerating title…")}
+            </span>
+          ) : (
+            <Alert tone="danger">
+              {titleActions[session.id].error}
+              <Button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void regenerateTitle(session).catch(() => {});
+                }}
+              >
+                {t("Retry")}
+              </Button>
+            </Alert>
+          )
+        ) : undefined
+      }
+      isActive={session.id === activeListedSessionId}
+      isSelected={selectedSessionIds.has(session.id)}
+      selectionMode={showBulkBar}
+      busy={listedBusySessionIds.has(session.id)}
+      startedAt={liveAgentsById.get(session.id)?.startedAt}
+      opening={openingSessionId === session.id}
+      done={unseenFinishedIds.has(session.id)}
+      linkedUpdate={linkedSessionUpdateIds.has(session.id)}
+      needsApproval={listedApprovalSessionIds.has(session.id)}
+      inputKind={liveAgentsById.get(session.id)?.inputKind}
+      dropTarget={isSessionDrop("session", session.id)}
+      dropDwell={
+        sessionDrop?.kind === "insert" && sessionDrop.id === session.id && !!sessionDrop.dwell
+      }
+      groupDelayMs={listDisplay.groupDelayMs}
+      density={listDisplay.density}
+      showModel={listDisplay.showModel}
+      showBranch={listDisplay.showBranch}
+      inPinnedSection={inPinnedSection}
+      onPin={onPinSession ? cardActions.pin : undefined}
+      onSelect={cardActions.select}
+      onLongPress={cardActions.longPress}
+      onOpenWorkItem={onOpenInboxItem && !remoteProject ? cardActions.openWorkItem : undefined}
+      onPrefetch={onPrefetchSession ? cardActions.prefetch : undefined}
+      onPlaceOnPane={onPlaceSessionOnPane ? cardActions.placeOnPane : undefined}
+      onPopOut={onPopOutSession ? cardActions.popOut : undefined}
+      onListDrop={reminderIds.has(session.id) || searchNarrowed ? undefined : cardActions.listDrop}
+      onListDropTargetChange={setSessionDrop}
+      onContextMenu={cardActions.contextMenu}
+      onArchive={onArchiveSession ? cardActions.archive : undefined}
+      onRename={
+        onRenameSession && !titleActions[session.id]?.pending ? cardActions.rename : undefined
+      }
+      onDelete={onDeleteSession ? cardActions.delete : undefined}
+    />
+  );
 
   const onFolderMove = (folderId: string, target: FolderMoveTarget) => {
     const before = sessionFolders;
     const next = moveFolder(before, folderId, target);
     if (next === before) return;
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      void performOrganizationOperation({ kind: "moveFolder", cwd, folderId, target }, (state, previous) => {
+        if (!previous) return;
+        const original = folderPosition(organizationFoldersForProject(previous, cwd), folderId);
+        const applied = organizationFoldersForProject(state, cwd);
+        const expected = folderPosition(applied, folderId);
+        setListNotice({ message: t("Folder moved"), undo: () => {
+          void performOrganizationOperation({ kind: "undoFolderMove", cwd, folderId, expected, restore: original }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        } });
+      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     const prev = before.find((folder) => folder.id === folderId);
     const moved = next.find((folder) => folder.id === folderId);
     captureListMotion();
@@ -2281,6 +2655,12 @@ function SidebarComponent({
               folder={entry.folder}
               memberCount={entry.allSessions.length}
               onCommit={(name) => {
+                if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+                  void performOrganizationOperation({ kind: "rename", cwd, folderId: entry.folder.id, name }).then((applied) => {
+                    if (applied) setRenamingFolderId(null);
+                  }).catch((error: unknown) => setOrganizationNotice(String(error)));
+                  return;
+                }
                 commitSessionFolders(renameFolder(sessionFolders, entry.folder.id, name));
                 setRenamingFolderId(null);
               }}
@@ -2302,6 +2682,10 @@ function SidebarComponent({
               onToggle={() => {
                 if (performance.now() < skipFolderClickUntil.current) return;
                 if (searchNarrowed) return;
+                if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+                  void performOrganizationOperation({ kind: "folderCollapsed", cwd, folderId: entry.folder.id, collapsed: !entry.folder.collapsed }).catch((error: unknown) => setOrganizationNotice(String(error)));
+                  return;
+                }
                 commitSessionFolders(
                   setFolderCollapsed(sessionFolders, entry.folder.id, !entry.folder.collapsed),
                 );
@@ -3444,6 +3828,51 @@ function SidebarComponent({
           onDismiss={() => setListNotice(null)}
         />
       ) : null}
+      {organizationNotice ? <TransientNotice message={organizationNotice}
+        action={organizationUnresolved.current ? { label: t("Check and continue"), onClick: () => {
+          void (async () => {
+            const sagas = (await listPinSagas()).filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
+            for (const saga of sagas) {
+              const result = await withRoomPrivacyMutation(() => {
+                if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)) || (saga.organization && isProjectPasswordLocked(saga.organization.cwd))) throw new Error("Project is locked.");
+                return resumePinSaga(saga.id);
+              });
+              for (const step of result.saga.steps) if (step.state === "applied" && step.viewKind === "local") await onConfirmedPin?.(step.viewSessionId, step.viewCwd, step.desiredPinned, step.target);
+            }
+            if (remoteProject) refreshRemoteProjectSessions();
+            const remaining = (await listPinSagas()).filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
+            setPartialPinSagas(remaining.filter((saga) => saga.state === "partial"));
+            if (remaining.length) { setOrganizationNotice(`Pin change needs review: ${remaining[0].id}`); return; }
+            const pending = await unresolvedSessionOrganizationGestures();
+            if (pending.length) { setOrganizationNotice(`Folder change outcome is unknown: ${pending[0].operationId}`); return; }
+            await hydrateSessionOrganization();
+            organizationUnresolved.current = false;
+            setOrganizationNotice("Folder state refreshed. Review your change.");
+          })().catch((error: unknown) => setOrganizationNotice(String(error)));
+        } } : undefined}
+        actions={partialPinSagas.length ? <Button variant="ghost" size="sm" onClick={() => {
+          void (async () => {
+            for (const saga of partialPinSagas) {
+              const acknowledged = await withRoomPrivacyMutation(() => {
+                if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd))) throw new Error("Project is locked.");
+                return acknowledgePartialPinSaga(saga.id);
+              });
+              if (acknowledged !== "applied") throw new Error("Pin acknowledgement could not be confirmed.");
+            }
+            setPartialPinSagas([]);
+            const remaining = (await listPinSagas()).filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
+            if (!remaining.length && !(await unresolvedSessionOrganizationGestures()).length) {
+              await hydrateSessionOrganization();
+              organizationUnresolved.current = false;
+              setOrganizationNotice("Confirmed pin changes kept. Review the folder state.");
+            }
+          })().catch((error: unknown) => setOrganizationNotice(String(error)));
+        }}>{t("Keep confirmed changes")}</Button> : undefined}
+        onDismiss={() => { if (!organizationUnresolved.current) setOrganizationNotice(null); }}>
+        {partialPinSagas.flatMap((saga) => saga.steps.filter((step) => !isProjectPasswordLocked(step.viewCwd)).map((step) => <div key={`${saga.id}:${step.operationId}`}>
+          {step.viewSessionId}: {step.state} ({step.desiredPinned ? t("Pinned") : t("Unpinned")})
+        </div>))}
+      </TransientNotice> : null}
       {filterMenu ? (
         <SessionFiltersMenu
           x={filterMenu.x}
@@ -5148,6 +5577,8 @@ const SessionCard = memo(function SessionCard({
   onArchive,
   onRename,
   onDelete,
+  renameEditor,
+  titleFeedback,
 }: {
   showProjectAppearance?: boolean;
   session: SessionSummary;
@@ -5189,6 +5620,8 @@ const SessionCard = memo(function SessionCard({
   onArchive?: (sessionId: string, archived: boolean) => void;
   onRename?: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
+  renameEditor?: ReactNode;
+  titleFeedback?: ReactNode;
 }) {
   "use memo";
   const t = useT();
@@ -5237,9 +5670,15 @@ const SessionCard = memo(function SessionCard({
       ? resolveModel(session.harness, session.model).name
       : HARNESS_TITLE[providerHistory.activeHarness];
   const worktree = !!session.worktreeCwd && !session.worktreeRemoved;
-  // Standard rows name the branch only; the repo prefix needs its own line.
+  // Standard rows name the branch only; detailed rows add the repository only when it
+  // differs from the project already named above the title (owner 2026-11-04: the
+  // "bycoda/" prefix repeated the project). The detail card keeps the full label.
+  const repoRepeatsProject =
+    !!session.repo && session.repo.toLowerCase() === project.name.toLowerCase();
   const branchText =
-    density === "detailed" || session.worktreeRemoved ? gitLabel : session.branch || gitLabel;
+    session.worktreeRemoved || (density === "detailed" && !repoRepeatsProject)
+      ? gitLabel
+      : session.branch || gitLabel;
   const issue = session.issue;
   const interrupted = !!session.interrupted && !busy && !needsApproval && !opening;
   const statusTone: BadgeTone =
@@ -5282,17 +5721,19 @@ const SessionCard = memo(function SessionCard({
       {issue ? (
         <>
           <CircleAlert className="icon-xs" strokeWidth={1.75} />
-          <span>{t(issue === "retrying" ? "Retrying" : "Failed")}</span>
+          <span className="session-row-status-label">
+            {t(issue === "retrying" ? "Retrying" : "Failed")}
+          </span>
         </>
       ) : interrupted ? (
         <>
           <CircleAlert className="icon-xs" strokeWidth={1.75} />
-          <span>{t("Interrupted")}</span>
+          <span className="session-row-status-label">{t("Interrupted")}</span>
         </>
       ) : needsApproval ? (
         <>
           <CircleAlert className="icon-xs" strokeWidth={1.75} />
-          <span>
+          <span className="session-row-status-label">
             {orchestration
               ? t("Needs input")
               : t(inputKind === "question" ? "Question" : "Need approval")}
@@ -5301,17 +5742,17 @@ const SessionCard = memo(function SessionCard({
       ) : opening ? (
         <>
           <Loader className="icon-xs motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
-          <span>{t("Opening…")}</span>
+          <span className="session-row-status-label">{t("Opening…")}</span>
         </>
       ) : done ? (
         <>
           <Check className="icon-xs" strokeWidth={2} />
-          <span>{t("Done")}</span>
+          <span className="session-row-status-label">{t("Done")}</span>
         </>
       ) : draft ? (
         <>
           <PenLine className="icon-xs" strokeWidth={1.75} />
-          <span>{t("Draft")}</span>
+          <span className="session-row-status-label">{t("Draft")}</span>
         </>
       ) : (
         <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
@@ -5804,7 +6245,10 @@ const SessionCard = memo(function SessionCard({
               : "session-provider-inactive text-(--ui-text-muted)"
           }
         >
-          <HarnessIcon harness={harness} className="icon-xs shrink-0" />
+          <HarnessIcon
+            harness={harness}
+            className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
+          />
         </span>
       ))}
     </span>
@@ -5816,14 +6260,18 @@ const SessionCard = memo(function SessionCard({
         data-session-row-branch
         className="session-row-branch flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
       >
-        <BranchIcon className="icon-xs shrink-0" strokeWidth={1.75} />
+        <span className="sr-only">{t(worktree ? "Worktree" : "Branch")}</span>
         <span className="min-w-0 truncate">
           <SessionSearchText text={branchText} />
         </span>
       </span>
     ) : null;
-  const actions = (
-    <span data-session-row-actions className="relative flex shrink-0 items-center gap-px">
+  const rowCommands = (
+    <span
+      data-session-row-actions
+      data-action-slot={compact ? undefined : "collapse"}
+      className="relative flex shrink-0 items-center gap-px"
+    >
       {onArchive ? (
         <InlineAction
           label={`${archiveLabel} ${title}`}
@@ -5859,6 +6307,11 @@ const SessionCard = memo(function SessionCard({
           <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
         </InlineAction>
       ) : null}
+    </span>
+  );
+  const actions = (
+    <span className="relative flex shrink-0 items-center gap-px">
+      {compact ? rowCommands : null}
       {workItemBadge}
       {session.automationId ? (
         <Tooltip label={t("Started by an automation")}>
@@ -5939,6 +6392,7 @@ const SessionCard = memo(function SessionCard({
           hideDetail();
         }}
         onClick={(event) => {
+          if (renameEditor) return;
           if (skipNextClick.current) {
             skipNextClick.current = false;
             return;
@@ -5968,31 +6422,37 @@ const SessionCard = memo(function SessionCard({
             data-session-row-project
             className="relative flex min-h-5 min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
           >
-            {showProjectAppearance ? (
-              project.icon
-            ) : (
-              <FolderTree className="icon-xs shrink-0" aria-hidden="true" />
-            )}
-            {onPin ? (
-              <InlineAction
-                reveal="always"
-                label={t(session.pinned ? "Unpin" : "Pin")}
-                tooltip={t(session.pinned ? "Unpin" : "Pin")}
-                aria-pressed={!!session.pinned}
-                motion="none"
-                data-no-drag
-                data-tauri-drag-region="false"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onPin(session.id, !session.pinned);
-                }}
-              >
-                <Pin className="icon-xs" strokeWidth={1.75} />
-              </InlineAction>
-            ) : null}
+            <span
+              data-session-project-slot
+              data-pinned={session.pinned ? "true" : undefined}
+              className="session-project-slot relative grid size-5 shrink-0 place-items-center"
+            >
+              <span data-session-project-mark className="col-start-1 row-start-1">
+                {project.icon}
+              </span>
+              {onPin ? (
+                <InlineAction
+                  className="col-start-1 row-start-1"
+                  reveal={session.pinned ? "always" : "interaction"}
+                  label={t(session.pinned ? "Unpin" : "Pin")}
+                  tooltip={t(session.pinned ? "Unpin" : "Pin")}
+                  aria-pressed={!!session.pinned}
+                  motion="none"
+                  data-no-drag
+                  data-tauri-drag-region="false"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPin(session.id, !session.pinned);
+                  }}
+                >
+                  <Pin className="icon-xs" strokeWidth={1.75} />
+                </InlineAction>
+              ) : null}
+            </span>
             <span className="min-w-0 flex-1 truncate">
               <SessionSearchText text={project.name} />
             </span>
+            {rowCommands}
             <span className="flex shrink-0 items-center gap-1.5">
               {linkedUpdateDot}
               {status}
@@ -6000,70 +6460,74 @@ const SessionCard = memo(function SessionCard({
           </span>
         ) : null}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
-          <div
-            role="button"
-            tabIndex={0}
-            aria-current={isActive ? "true" : undefined}
-            aria-pressed={isSelected}
-            aria-describedby={detailVisible ? detailId : undefined}
-            data-session-select={session.id}
-            onKeyDown={onKeyDown}
-            // Only keyboard focus lands here (mouse presses blur it), so focus opens the details.
-            onFocus={(event) => {
-              if (event.target === event.currentTarget && !orchestration && !selectionMode) {
-                detailFromFocus.current = true;
-                setDetailOpen(true);
-              }
-            }}
-            onBlur={hideDetail}
-            onMouseDown={(event) => {
-              if (event.button !== 0) return;
-              // Shift-click can trigger :focus-visible. Mouse selection should
-              // only highlight the card; Tab can still focus this button.
-              event.preventDefault();
-              // Clear prior focus too, so shortcuts cannot target another card.
-              const focused = event.currentTarget.ownerDocument.activeElement;
-              if (focused instanceof HTMLElement) focused.blur();
-            }}
-            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color)"
-          >
-            {selectionMode ? (
-              <span
-                aria-hidden
-                data-session-checkbox={isSelected ? "checked" : "unchecked"}
-                className={`grid size-3.5 shrink-0 place-items-center rounded-sm border ${
-                  isSelected ? "border-active bg-active text-on-solid" : "border-(--ui-text-muted)"
-                }`}
-              >
-                {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
-              </span>
-            ) : null}
-            {compact && session.pinned && !inPinnedSection ? (
-              <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-            ) : null}
-            {titleHit ? (
-              <span className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content">
-                <MatchText text={title} positions={titleHit.positions} active />
-              </span>
-            ) : (
-              <ParticleText
-                text={title}
-                className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
+          {renameEditor ?? (
+            <div
+              role="button"
+              tabIndex={0}
+              aria-current={isActive ? "true" : undefined}
+              aria-pressed={isSelected}
+              aria-describedby={detailVisible ? detailId : undefined}
+              data-session-select={session.id}
+              onKeyDown={onKeyDown}
+              // Only keyboard focus lands here (mouse presses blur it), so focus opens the details.
+              onFocus={(event) => {
+                if (event.target === event.currentTarget && !orchestration && !selectionMode) {
+                  detailFromFocus.current = true;
+                  setDetailOpen(true);
+                }
+              }}
+              onBlur={hideDetail}
+              onMouseDown={(event) => {
+                if (event.button !== 0) return;
+                // Shift-click can trigger :focus-visible. Mouse selection should
+                // only highlight the card; Tab can still focus this button.
+                event.preventDefault();
+                // Clear prior focus too, so shortcuts cannot target another card.
+                const focused = event.currentTarget.ownerDocument.activeElement;
+                if (focused instanceof HTMLElement) focused.blur();
+              }}
+              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color)"
+            >
+              {selectionMode ? (
+                <span
+                  aria-hidden
+                  data-session-checkbox={isSelected ? "checked" : "unchecked"}
+                  className={`grid size-3.5 shrink-0 place-items-center rounded-sm border ${
+                    isSelected
+                      ? "border-active bg-active text-on-solid"
+                      : "border-(--ui-text-muted)"
+                  }`}
+                >
+                  {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
+                </span>
+              ) : null}
+              {compact && session.pinned && !inPinnedSection ? (
+                <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+              ) : null}
+              {titleHit ? (
+                <span className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content">
+                  <MatchText text={title} positions={titleHit.positions} active />
+                </span>
+              ) : (
+                <ParticleText
+                  text={title}
+                  className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
+                />
+              )}
+              <AssistantManagedBadge
+                management={session.managedBy}
+                compact
+                local={!isRemoteProjectPath(session.cwd)}
               />
-            )}
-            <AssistantManagedBadge
-              management={session.managedBy}
-              compact
-              local={!isRemoteProjectPath(session.cwd)}
-            />
-            {compact ? modelLabel : null}
-            {!compact ? null : (
-              <span className="flex shrink-0 items-center gap-1.5">
-                {linkedUpdateDot}
-                {status}
-              </span>
-            )}
-          </div>
+              {compact ? modelLabel : null}
+              {!compact ? null : (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {linkedUpdateDot}
+                  {status}
+                </span>
+              )}
+            </div>
+          )}
           {compact && showProjectAppearance && onPin ? (
             <InlineAction
               reveal="always"
@@ -6093,6 +6557,11 @@ const SessionCard = memo(function SessionCard({
               </>,
             )
           : null}
+        {titleFeedback ? (
+          <div data-no-drag className="min-w-0">
+            {titleFeedback}
+          </div>
+        ) : null}
         {orchestrationExpanded ? (
           <OrchestrationSidebarAgents leadId={session.id} summary={orchestration!} />
         ) : null}
@@ -6193,6 +6662,17 @@ const SessionCard = memo(function SessionCard({
               </>
             ) : null}
           </dl>
+          <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
+            {t("Last activity: {p0}", {
+              p0: formatDate(session.lastActivityAt ?? session.updatedAt, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            })}
+          </p>
           <div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-(--ui-frosted-divider) pt-2 text-ui-caption text-(--ui-text-secondary)">
             <span className="sr-only">{t("Status")}</span>
             {idle ? (
@@ -6272,12 +6752,10 @@ const SessionCard = memo(function SessionCard({
 
 function SessionRenameRow({
   session,
-  isActive,
   onCommit,
   onCancel,
 }: {
   session: SessionSummary;
-  isActive: boolean;
   onCommit: (title: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
@@ -6331,6 +6809,8 @@ function SessionRenameRow({
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter") {
       e.preventDefault();
       finish(true);
@@ -6344,13 +6824,16 @@ function SessionRenameRow({
 
   return (
     <div
-      className={`flex w-full flex-col rounded-md px-2.5 py-2 ${
-        isActive ? "bg-(--ui-surface-selected) text-content" : "text-(--ui-text-secondary)"
-      }`}
+      data-session-rename
+      data-no-drag
+      className="flex min-w-0 flex-1 flex-col"
+      onPointerDown={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
     >
       <TextField
         fieldClassName="min-w-0 flex-1"
         hideLabel
+        fieldVariant="compact"
         label={t("Name")}
         ref={inputRef}
         value={value}
@@ -6360,11 +6843,7 @@ function SessionRenameRow({
         onKeyDown={onKeyDown}
         className="w-full leading-snug"
       />
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
     </div>
   );
 }

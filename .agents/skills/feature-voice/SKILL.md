@@ -1,20 +1,19 @@
 ---
 name: feature-voice
-description: Change voice audio, microphone capture, dictation, recognition admission, local/cloud playback, setup or companion visuals. Preserve speech sequencing and composer drafts; application management is a separate feature.
+description: Change microphone capture, dictation, local/cloud voice, setup and companion UI. Preserve speech order and drafts; management has a separate owner.
 ---
 
 # Voice
 
 Audio, dictation and companion UI. [Management](../feature-voice-management/SKILL.md)
-owns actions; composer owns drafts/send. Paths are repository-relative.
+owns actions; composer owns drafts/send.
 
 ## Start and workflow
 
 1. Identify route, mic lifetime, target, candidate/accepted sequence and playback owner.
-2. Trace the UI/controller into the relevant model and Host worker using
-   [the source map and audio contracts](references/surfaces.md).
+2. Trace UI/model/Host ownership in [the source map](references/surfaces.md).
 3. Preserve keys, cancellation and recovery; test rejection during pending speech.
-4. Report protocol, recorded audio, real mic/provider and installed proof separately.
+4. Separate protocol, recorded audio, real mic/provider and installed proof.
 
 ## Preserve
 
@@ -44,12 +43,15 @@ owns actions; composer owns drafts/send. Paths are repository-relative.
 - Manual mode bypasses silence/Smart Turn commits in both runtimes; only owner Finish
   commits. Bound audio without auto-answering at its cap. Only acknowledged owner rules
   can enable it; conscious owner changes win over pending acknowledgements.
+- Bound discovery, context, tool and speech waits. Timeout of an effect is uncertain, never permission to replay it. Quiet session feedback is observation, never provider completion.
 - Silence is not Stop work. Preserve accepted-job tracking, abortable side replies,
   pin/follow behavior and the existing permission gates.
 - Preserve the speech admission, played-history and engagement contracts in the
   [source map](references/surfaces.md#conversation-policy-and-delivery).
 - Dictation inserts through the composer draft/selection owner, preserving IME,
   attachments and cancellation. It does not implicitly submit a message.
+  Independent toggles, recognition-only setup and platform permission recovery:
+  [source map](references/surfaces.md#dictation-and-microphone-permissions).
   Fast start (mic during load, warm recognizer): [source map](references/surfaces.md).
 - Visuals start on actual playback. Muted/closed mic RMS is zero; stale playback
   cannot reactivate after silence.

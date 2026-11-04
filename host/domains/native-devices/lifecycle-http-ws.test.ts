@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { DeviceHost } from "../../device-host";
-import { DevicePreviews } from "../../device-preview";
+import { DeviceHost } from "../../devices/device-host";
+import { DevicePreviews } from "../../devices/device-preview";
 import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts";
 import { fixture, sha } from "../../native-devices.test-support";
 

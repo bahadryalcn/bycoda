@@ -50,7 +50,7 @@ export function contextMetrics() {
       {
         id: "conversation-tool-catalog",
         layer: "mcp-context",
-        source: "host/conversation-tools.ts#conversationToolCatalog",
+        source: "host/conversation/conversation-tools.ts#conversationToolCatalog",
         serialization: "JSON.stringify({tools:conversationToolCatalog()})",
         serialized: JSON.stringify({ tools: fullToolCatalog }),
       },

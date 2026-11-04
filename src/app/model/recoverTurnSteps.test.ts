@@ -4,13 +4,14 @@ vi.mock("./sessionWindowOwnership", () => ({
   abortRestoredSession: vi.fn().mockResolvedValue(undefined),
   remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
 }));
-import { newSession } from "../../features/sessions/model/session";
+import { newSession, type Session } from "../../features/sessions/model/session";
 import { newTab } from "../../features/workspace/model/layout";
 import { collectWorkspaceSnapshot } from "../../features/workspace/model/workspaceSnapshot";
 
 const store = vi.hoisted(() => ({
   loadWorkspaceSnapshot: vi.fn(),
   listInFlightSessions: vi.fn(),
+  listDeletedSessionIds: vi.fn(),
   getSession: vi.fn(),
   upsertSession: vi.fn(),
 }));
@@ -55,10 +56,11 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   store.upsertSession.mockResolvedValue(null);
+  store.listDeletedSessionIds.mockResolvedValue([]);
 });
 
 function inFlightChat() {
-  const session = {
+  const session: Session = {
     ...newSession("claude", "/repo"),
     id: "s1",
     providerSessionId: "p1",
@@ -71,7 +73,38 @@ function inFlightChat() {
   );
   store.listInFlightSessions.mockResolvedValue([{ sessionId: session.id, cwd: "/repo" }]);
   store.getSession.mockResolvedValue(session);
+  return session;
 }
+
+it("preserves owner Stop when an old in-flight reference survives a restart", async () => {
+  const session = inFlightChat();
+  session.blocks.push({
+    id: "stop",
+    role: "system",
+    text: "Stopped by you.",
+    notice: "interrupt",
+  });
+  probe.probeTurnTail.mockResolvedValue({ state: "missing" });
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  const restored = await loadResumedWorkspace();
+  expect(restored?.sessions[0].blocks).toEqual(session.blocks);
+  expect(restored?.sessions[0].busy).toBe(false);
+  expect(probe.probeTurnTail).not.toHaveBeenCalled();
+  expect(probe.readTurnSteps).not.toHaveBeenCalled();
+});
+
+it("preserves legacy Stop plus erroneous quit marker without probing or resuming", async () => {
+  const session = inFlightChat();
+  session.blocks.push(
+    { id: "stop", role: "system", text: "Stopped by you.", notice: "interrupt" },
+    { id: "quit", role: "system", text: "Turn interrupted when bycoda quit.", notice: "interrupt" },
+  );
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  const restored = await loadResumedWorkspace();
+  expect(restored?.sessions[0].blocks).toEqual(session.blocks);
+  expect(probe.probeTurnTail).not.toHaveBeenCalled();
+  expect(probe.readTurnSteps).not.toHaveBeenCalled();
+});
 
 it("shows what a finished turn did while the app was closed, once", async () => {
   inFlightChat();

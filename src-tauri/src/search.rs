@@ -233,7 +233,7 @@ fn git_grep_capped(
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(1);
-        let preview = String::from_utf8_lossy(preview_bytes).to_string();
+        let preview = String::from_utf8_lossy(preview_bytes);
         let path = crate::fs::path_to_js(&root.join(&relative));
         let column = match_column(
             &preview,
@@ -247,7 +247,7 @@ fn git_grep_capped(
             relative,
             line,
             column,
-            preview,
+            preview: bounded_preview(&preview, column),
         });
         if matches.len() >= MAX_MATCHES {
             truncated = true;
@@ -331,7 +331,7 @@ fn scan_files(
                     relative: file.relative.clone(),
                     line: (index + 1) as u32,
                     column,
-                    preview: line.to_string(),
+                    preview: bounded_preview(line, column),
                 });
                 if matches.len() >= MAX_MATCHES {
                     truncated = true;
@@ -394,6 +394,27 @@ fn is_word_boundary(line: &str, start: usize, len: usize) -> bool {
     let after = line[start + len..].chars().next();
     let word = |ch: char| ch.is_alphanumeric() || ch == '_';
     !before.is_some_and(word) && !after.is_some_and(word)
+}
+
+/// Keep the original UTF-16 column for navigation while bounding displayed text.
+fn bounded_preview(line: &str, column: u32) -> String {
+    const LIMIT: usize = 512;
+    let target = column.saturating_sub(1) as usize;
+    let mut units = 0usize;
+    let mut match_byte = line.len();
+    for (index, ch) in line.char_indices() {
+        if units >= target { match_byte = index; break; }
+        units += ch.len_utf16();
+    }
+    let start = line[..match_byte].char_indices().rev().nth(LIMIT / 4)
+        .map_or(0, |(index, _)| index);
+    let mut preview = String::new();
+    if start > 0 { preview.push('…'); }
+    let tail = &line[start..];
+    let end = tail.char_indices().nth(LIMIT).map_or(tail.len(), |(index, _)| index);
+    preview.push_str(&tail[..end]);
+    if end < tail.len() { preview.push('…'); }
+    preview
 }
 
 fn match_column(

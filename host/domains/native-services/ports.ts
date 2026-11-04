@@ -7,6 +7,14 @@ export type NativeAssistantPresence = {
 /** Captured by actual paired-device composition; no token/hash is supplied by
  * method params, and scoped tool/peer credentials cannot acquire this port. */
 export interface NativeServiceOwnerPorts {
+  browserPanel?(input: Record<string, unknown>): Promise<unknown>;
+  observationsIngest?(input: Record<string, unknown>): Promise<unknown>;
+  delegation?(action: "publicKey" | "origin" | "nativeChallenge" | "attest" | "issue" | "issue.status" | "challenge" | "call" | "revoke", input: Record<string, unknown>): Promise<unknown>;
+  visibilityEpoch?(): Promise<{ epoch: number }>;
+  visibilityRevoke?(): Promise<{ epoch: number }>;
+  visibilityReopen?(input: Record<string, unknown>): Promise<{ epoch: number }>;
+  authorizeAssistantNotification?(input: { threadId: string; notificationId: string; operationHash: string }): Promise<{ authorized: boolean }>;
+  authorizeAssistantWorkspace?(input: { threadId: string; requestId: string; operationHash: string }): Promise<{ authorized: boolean }>;
   assistantPresence?(): Promise<NativeAssistantPresence>;
   setAssistantPresence?(state: "present" | "away" | "dnd"): Promise<NativeAssistantPresence>;
   desktopStatus?(): Promise<{

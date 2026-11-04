@@ -20,7 +20,7 @@ import { durableWrite, refComponent } from "./turn-git-history";
 
 // Synthetic external ports only: the real temp SQLite Host floor is exercised,
 // while no provider, Git repository, checkpoint or native writer is launched.
-vi.mock("./git-mutations", () => ({
+vi.mock("./git/git-mutations", () => ({
   withHostGitMutation: async (_cwd: string, work: () => Promise<unknown>) => work(),
 }));
 const cleanups: Array<() => Promise<unknown>> = [];

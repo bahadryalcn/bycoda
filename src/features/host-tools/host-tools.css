@@ -1,6 +1,6 @@
 .host-tools {
   color: var(--color-content);
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   font-size: var(--ui-font-secondary);
   font-family: var(--font-sans, system-ui, sans-serif);
   line-height: 1.5;
@@ -33,7 +33,7 @@
   padding: 2px 4px;
   flex: none;
   min-block-size: 2rem;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
 }
 .host-tools-nav {
   display: flex;
@@ -63,7 +63,7 @@
 .host-tools-nav {
   display: none;
 }
-@container (min-width: 36rem) {
+@container (min-width: 48rem) {
   .host-tools-nav {
     display: flex;
   }
@@ -100,7 +100,7 @@
   flex-direction: column;
   overflow: hidden;
 }
-.host-tools-content-devices > .device-panel {
+.host-tools-content-devices .device-panel {
   min-block-size: 0;
 }
 .host-tools-content {

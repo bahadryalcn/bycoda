@@ -22,8 +22,8 @@ import { HostEngine } from "./engine";
 import { HostGoals } from "./goals";
 import { HostStore } from "./store";
 import { HostTasks } from "./tasks";
-import { AssistantTurnPolicyDeferredError } from "./assistant-turn-policy";
-import * as assistantTurnPolicy from "./assistant-turn-policy";
+import { AssistantTurnPolicyDeferredError } from "./assistant/core/assistant-turn-policy";
+import * as assistantTurnPolicy from "./assistant/core/assistant-turn-policy";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -775,18 +775,28 @@ describe("integrated final goal acceptance", () => {
     expect((await f.goal()).budgetUsage?.attempts).toBe(2);
   });
   it("stops an active final reviewer when total agent time is exhausted", async () => {
-    const f = await ready({ budget: { maxAgentMinutes: 0.5 } });
-    const sessionId = (await f.goal()).finalAcceptance!.sessionId!;
-    await f.advance();
-    expect(await f.goal()).toMatchObject({
-      status: "blocked",
-      finalAcceptance: { status: "failed" },
-    });
-    expect((await f.goal()).budgetStop).toContain("agent-time budget");
-    expect(vi.mocked(f.provider.cancel).mock.calls.some((call) => call[0] === sessionId)).toBe(
-      true,
-    );
-    expect((await f.task("delivered")).status).toBe("done");
+    const f = await ready({ budget: { maxAgentMinutes: 0.5 } }, true);
+    // Both Engine admission and budget samples must observe the same clocks.
+    // Advancing only scheduler wall time intentionally counts as unknown time.
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => f.clock.now);
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => f.clock.now);
+    try {
+      await f.advance();
+      const sessionId = (await f.goal()).finalAcceptance!.sessionId!;
+      await f.advance();
+      expect(await f.goal()).toMatchObject({
+        status: "blocked",
+        finalAcceptance: { status: "failed" },
+      });
+      expect((await f.goal()).budgetStop).toContain("agent-time budget");
+      expect(vi.mocked(f.provider.cancel).mock.calls.some((call) => call[0] === sessionId)).toBe(
+        true,
+      );
+      expect((await f.task("delivered")).status).toBe("done");
+    } finally {
+      wall.mockRestore();
+      monotonic.mockRestore();
+    }
   });
   it("rejects changed delivered files even when task metadata did not change", async () => {
     const f = await ready();
@@ -1191,6 +1201,23 @@ describe("editing goal settings", () => {
       (async () => await goals.update("goal", { ...settings, runtimeMode: "full-access" }, 2))(),
     ).rejects.toThrow("Invalid goal settings");
     expect(await tasks.list()).toEqual(before);
+  });
+  it("retains goal edits racing settings admission even when the timestamp is unchanged", async () => {
+    const { goals, tasks, store, original } = await seeded();
+    const before = await tasks.list();
+    const transaction = tasks.transaction.bind(tasks);
+    vi.spyOn(tasks, "transaction").mockImplementationOnce(async (operation) => {
+      await store.db
+        .prepare("UPDATE goals SET value=? WHERE id=?")
+        .run(JSON.stringify({ ...original, title: "Concurrent owner title" }), "goal");
+      return transaction(operation);
+    });
+    await expect(goals.update("goal", settings, original.updatedAt)).rejects.toThrow(
+      "This goal changed",
+    );
+    expect(await tasks.list()).toEqual(before);
+    const row = await store.db.prepare("SELECT value FROM goals WHERE id=?").get("goal");
+    expect(JSON.parse(String(row?.value)).title).toBe("Concurrent owner title");
   });
   it("preserves individual task settings when the corresponding goal setting is unchanged", async () => {
     const { goals, tasks } = await seeded();
@@ -1661,6 +1688,111 @@ describe("goal planning", () => {
       "Only a goal whose plan was not started can be planned again.",
     );
   });
+  it("rejects a reviewed replan when configuration changes before planning admission", async () => {
+    const { goals, plan, goal, store, turns } = await setup();
+    const reviewed = await plan("No plan, sorry.");
+    const before = turns.length;
+    const transaction = store.transaction.bind(store);
+    vi.spyOn(store, "transaction").mockImplementationOnce(async (operation) => {
+      const current = await goal("goal");
+      await store.db
+        .prepare("UPDATE goals SET value=? WHERE id=?")
+        .run(JSON.stringify({ ...current, prompt: "Concurrent owner instructions" }), "goal");
+      return transaction(operation);
+    });
+    await expect(goals.replan("goal", "Retry planning", reviewed)).rejects.toThrow(
+      "planning admission",
+    );
+    expect(turns).toHaveLength(before);
+    expect(await goal("goal")).toMatchObject({
+      status: "blocked",
+      prompt: "Concurrent owner instructions",
+    });
+  });
+  it("admits only one concurrent goal creation for the same ID", async () => {
+    const { goals, input, turns, providersStarted } = await setup();
+    const results = await Promise.allSettled([
+      goals.create(input({ expectedAbsent: true, prompt: "First owner request" })),
+      goals.create(input({ expectedAbsent: true, prompt: "Second owner request" })),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected && rejected.reason).toMatchObject({ message: "This goal already exists." });
+    await providersStarted();
+    expect(turns).toHaveLength(1);
+  });
+  it("starts a reviewed replan and preserves its admission through provider dispatch", async () => {
+    const { goals, plan, turns, providersStarted } = await setup();
+    const reviewed = await plan("No plan, sorry.");
+    const again = await goals.replan("goal", "Retry planning", reviewed);
+    await providersStarted();
+    expect(again.status).toBe("planning");
+    expect(turns).toHaveLength(2);
+    expect(turns[1].input.text).toContain("Retry planning");
+  });
+  it("retains cancellation during reviewed replan preparation without provider dispatch", async () => {
+    const { goals, plan, goal, engine, turns } = await setup();
+    const reviewed = await plan("No plan, sorry.");
+    const before = turns.length;
+    const updateSession = engine.updateSession.bind(engine);
+    vi.spyOn(engine, "updateSession").mockImplementationOnce(async (...args) => {
+      const result = await updateSession(...args);
+      await goals.cancel("goal");
+      return result;
+    });
+    await expect(goals.replan("goal", "Retry planning", reviewed)).rejects.toThrow(
+      "planning admission",
+    );
+    expect(turns).toHaveLength(before);
+    expect((await goal("goal")).status).toBe("cancelled");
+  });
+  it.each([false, true])(
+    "retires only the accepted planner when goal cancellation races final persistence (receipt fails: %s)",
+    async (receiptFails) => {
+      const { goals, plan, goal, engine, store } = await setup();
+      const reviewed = await plan("No plan, sorry.");
+      if (receiptFails) {
+        const query = store.db.query.bind(store.db);
+        vi.spyOn(store.db, "query").mockImplementation(async (...args) => {
+          if (args[0] === "run" && String(args[2][0]).startsWith("goal-planner-retirement:"))
+            throw new Error("Injected receipt storage failure");
+          return query(...args);
+        });
+      }
+      const command = engine.command.bind(engine);
+      let accepted: { sessionId: string; runId?: string } | undefined;
+      const observed = vi.spyOn(engine, "command").mockImplementation(async (raw) => {
+        const result = await command(raw);
+        if (!accepted && (raw as { type?: string }).type === "send") {
+          accepted = result;
+          await goals.cancel("goal");
+        }
+        return result;
+      });
+      await expect(goals.replan("goal", "Retry planning", reviewed)).rejects.toThrow(
+        receiptFails ? "not persisted" : "retirement receipt",
+      );
+      expect(accepted?.runId).toBeTruthy();
+      expect(observed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "cancel",
+          sessionId: accepted!.sessionId,
+          runId: accepted!.runId,
+        }),
+      );
+      expect((await goal("goal")).status).toBe("cancelled");
+      const row = await store.db
+        .prepare("SELECT value FROM metadata WHERE key=?")
+        .get(`goal-planner-retirement:goal:${accepted!.runId}`);
+      if (receiptFails) expect(row).toBeUndefined();
+      else
+        expect(JSON.parse(String(row?.value))).toMatchObject({
+          state: "cancellation-requested",
+          sessionId: accepted!.sessionId,
+          runId: accepted!.runId,
+        });
+    },
+  );
   it("rejects a goal for a project this machine does not have", async () => {
     const { goals, input, lead } = await setup();
     await expect(

@@ -1,0 +1,5 @@
+.social-view .social-form .social-assistant-checks label:not(.bycoda-arc):not(.bycoda-arc label) {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}

@@ -92,7 +92,7 @@ export function ServersConnectionTools({
           {sshEndpointPreview(endpoint.httpProxy)}
         </p>
       ) : null}
-      <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--color-background-base) pbe-2">
+      <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--ui-workspace-reading-base) pbe-2">
         {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
           <Button
             variant="primary"

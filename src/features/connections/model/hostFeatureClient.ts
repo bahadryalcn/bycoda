@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import { backgroundMachineFor, hostProjectFor } from "../../automations/model/hostAutomationClient";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "./connections";
@@ -49,7 +50,7 @@ export async function featureHost(cwd: string, capability: string) {
   if (!cwd.trim()) throw new Error("Choose a project before opening host tools.");
   let pending = resolved.get(cwd);
   if (!pending) {
-    pending = resolveHost(cwd);
+    pending = withTimeout(resolveHost(cwd), 20_000, "Host discovery");
     resolved.set(cwd, pending);
     pending.catch(() => {
       if (resolved.get(cwd) === pending) resolved.delete(cwd);
@@ -91,17 +92,21 @@ async function explicitToolHost(target: Exclude<HostToolTarget, { kind: "project
   const key = hostToolTargetKey(target);
   let pending = toolHosts.get(key);
   if (!pending) {
-    pending = (async () => {
-      if (target.kind === "local") {
-        const machine = await invoke<RemoteMachine | null>("local_host_connect");
-        if (!machine) throw new Error("This computer's bycoda Host is not connected.");
-        return { ...machine, localHost: true };
-      }
-      const machines = await invoke<RemoteMachine[]>("remote_machines");
-      const machine = machines.find((entry) => entry.id === target.machineId);
-      if (!machine) throw new Error("The selected computer is no longer connected.");
-      return machine;
-    })();
+    pending = withTimeout(
+      (async () => {
+        if (target.kind === "local") {
+          const machine = await invoke<RemoteMachine | null>("local_host_connect");
+          if (!machine) throw new Error("This computer's bycoda Host is not connected.");
+          return { ...machine, localHost: true };
+        }
+        const machines = await invoke<RemoteMachine[]>("remote_machines");
+        const machine = machines.find((entry) => entry.id === target.machineId);
+        if (!machine) throw new Error("The selected computer is no longer connected.");
+        return machine;
+      })(),
+      20_000,
+      "Host discovery",
+    );
     toolHosts.set(key, pending);
     pending.catch(() => {
       if (toolHosts.get(key) === pending) toolHosts.delete(key);
@@ -142,6 +147,11 @@ const HOST_SCOPED_TOOL_METHODS = new Set([
   "devices.list",
   "devices.boot",
   "devices.capture",
+  "devices.control.status",
+  "devices.control.claim",
+  "devices.control.release",
+  "devices.control.renew",
+  "devices.inspect",
   "devices.action",
   "resources.read",
 ]);
@@ -149,12 +159,16 @@ const PROJECT_BROWSER_METHODS = new Set([
   "browser.annotation.start",
   "browser.annotation.hover",
   "browser.annotation.select",
+  "browser.annotation.parent",
+  "browser.annotation.traverse",
   "browser.annotation.clear",
   "browser.annotation.read",
   "browser.annotation.cancel",
 ]);
 const OWNER_HOST_METHOD_CAPABILITIES: Readonly<Record<string, string>> = {
   "assistant.request": "assistant.v1",
+  "voice.tools.list": "voice.tools.v1",
+  "voice.tools.call": "voice.tools.v1",
   "desktop.request": "desktop.control.v1",
   "desktop.helper.request": "desktop.control.v1",
 };
@@ -175,6 +189,23 @@ async function ownerToolMachine(
   )
     throw new Error("The captured Host is no longer available. Retry its original connection.");
   return structuredClone(machine);
+}
+
+/** Global assistant authority belongs to this exact Host, independent of a project. */
+export async function captureVoiceToolHost(expectedEnvironmentId?: string) {
+  const target = { kind: "local" } as const;
+  const machine = await withTimeout(
+    ownerToolMachine(target, expectedEnvironmentId),
+    20_000,
+    "Host discovery",
+  );
+  return {
+    machine,
+    request: <T>(
+      method: "voice.tools.list" | "voice.tools.call",
+      params: Record<string, unknown>,
+    ) => hostToolRequest<T>("", "voice.tools.v1", method, params, target, machine.environmentId),
+  };
 }
 
 /** Browser/device/resource operations may use an explicitly selected paired host.

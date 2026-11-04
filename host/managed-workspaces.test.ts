@@ -19,7 +19,7 @@ import {
   invalidateHostWorktrees,
   managedWorkspaceNames,
   materializeManagedWorkspace,
-} from "./git-worktrees";
+} from "./git/git-worktrees";
 import type { ManagedWorkspace, WorkspaceCreateOperation } from "./workspace-contracts";
 import type { DurableRewindOperation } from "./session-rewind";
 

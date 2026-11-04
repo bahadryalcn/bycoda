@@ -192,7 +192,7 @@ fn source(
         return Err("NATIVE_TURN_SOURCE_CHANGED".into());
     }
     Ok((
-        output.target().into(),
+        live.native_session_capability.as_ref().map_or_else(|| output.target().to_owned(), |capability| capability.shell_id().to_owned()),
         crate::control::canonical_child_cwd(&live.cwd)?,
     ))
 }
@@ -468,9 +468,13 @@ pub async fn harness_write_controlled(
     binding: ChildTurnBinding,
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
+    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_process_purpose: Option<crate::session_store::canonical_store::NativeProcessPurpose>,
 ) -> Result<(), String> {
     let issuer = crate::control::receipts::existing(&window)?;
     let live = host.get_original(&session_id, Some(&construction_id))?;
+    if live.management_input_policy.is_some() != live.management_route_id.is_some() { return Err("NATIVE_MANAGEMENT_ROUTE_INVALID".into()); }
+    if let Some(policy) = live.management_input_policy { super::management_authority::validate_input(policy, &line, &live.cwd)?; }
     let (original, admission) = admit_original(
         &host,
         &control,
@@ -484,9 +488,21 @@ pub async fn harness_write_controlled(
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;
     // Strict turn admission has no JSON-shape bypass. Existing byte authority is
     // independent; a stale/closed turn is rejected before these rewrites/effects.
-    let target = original.output.target().to_owned();
+    let target = live.native_session_capability.as_ref().map_or_else(|| original.output.target().to_owned(), |capability| capability.shell_id().to_owned());
     // Lease SQL must not run on the async command thread.
     tauri::async_runtime::spawn_blocking(move || {
+        if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED && live.native_session_capability != native_session_capability {
+            return Err("CANONICAL_SESSION_CONSTRUCTION_MISMATCH".into());
+        }
+        if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED && live.native_process_purpose != native_process_purpose {
+            return Err("NATIVE_PROCESS_PURPOSE_MISMATCH".into());
+        }
+        let _purpose_admission = native_process_purpose.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|purpose| {
+            crate::session_store::canonical_store::admit_process_purpose(&window.as_ref().window(), purpose)
+        }).transpose()?;
+        let _session_admission = native_session_capability.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|capability| {
+            crate::session_store::canonical_store::admit_session_effect(&app, &window.as_ref().window(), &target, capability)
+        }).transpose()?;
         // The write deadline starts before the lease wait, as in `harness_write`.
         let deadline = Instant::now() + CONTROLLED_WRITE_BUDGET;
         // Queue behind earlier writes to this child (FIFO) before taking a lease.

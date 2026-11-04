@@ -246,10 +246,11 @@ export function useCompactAndRewind({
         current.busy ||
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||
-        retiringTurns.current.has(sessionId) ||
-        !editedResends.start(sessionId)
+        retiringTurns.current.has(sessionId)
       )
         throw new Error(t("Wait for this session to finish before undoing the rewind."));
+      const editToken = editedResends.start(sessionId);
+      if (!editToken) throw new Error(t("Wait for this session to finish before undoing the rewind."));
       const authorityGeneration = current.adoptedAuthorityGeneration;
       try {
         await stopHarnessSession(current.harness, sessionId);
@@ -281,7 +282,7 @@ export function useCompactAndRewind({
           sessionId,
         );
       } finally {
-        editedResends.finish(sessionId);
+        editedResends.finish(sessionId, editToken);
       }
     },
     [editedResends, reconcileManaged],
@@ -318,7 +319,8 @@ export function useCompactAndRewind({
         );
         return false;
       }
-      if (!editedResends.start(sessionId)) {
+      const editToken = editedResends.start(sessionId);
+      if (!editToken) {
         say(
           sessionId,
           "Another change to this conversation is still finishing. Try again in a moment.",
@@ -389,7 +391,7 @@ export function useCompactAndRewind({
         }
         throw error;
       } finally {
-        editedResends.finish(sessionId);
+        editedResends.finish(sessionId, editToken);
       }
     },
     [editedResends, enqueueHarnessEvent, flushHarnessEvents, persistSession, say],

@@ -4,7 +4,7 @@ import { deliveryIdentity } from "../../native-delivery.test-support";
 import { deliverySha } from "../../native-delivery.test-support";
 import { nativeDeliveryConsumedResult } from "../../native-delivery-store";
 import { WorkspaceCommands } from "../../workspace-commands";
-import { ConversationDesktopRelay } from "../../conversation-tools";
+import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
 import { NATIVE_BUFFER_UPLOAD_LIMITS } from "../../../src/shared/model/host-contracts/native-buffer-upload";
 
 async function pendingFinish(

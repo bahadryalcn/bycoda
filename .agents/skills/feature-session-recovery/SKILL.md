@@ -35,6 +35,8 @@ Code paths below are repository-root relative.
 - Open all/Restore includes eligible filter-hidden rows; selected actions intersect selected IDs with shown rows while retaining hidden selections.
 - Restore concerns saved chat splits, preserving unrelated new work; do not silently recreate stale editor/terminal panes or promise the entire workbench.
 - Preserve alias/existing-tab dedup, exact remote cwd/session identity, authored titles and provider context without restarting. A missing local session must not become a fabricated shell.
+- Explicit conversation deletion is durable across restart. Native and Host deletion markers reject late saves/adoption; boot removes confirmed deleted IDs from saved layouts, in-flight references and recovery entries before claiming them. A failed deletion lookup remains unknown and retains the restore retry. Never expire renderer deletion guards on a timer.
+- Stale in-flight references cannot override owner Stop. An existing adjacent Stop + exact app-quit notice also remains stopped without erasing history; native summaries and recovery/list classifiers must agree. Unsent-draft disposal retains its guarded same-ID editing flow.
 - Retain serialized journal writes/rollback, pending duplicate guards and lock/privacy rechecks. Conversation maintenance cannot clear original file copies; unknown file-open/save outcomes retain their original identity.
 - Native editor copies may carry exact `serializedText` for mixed line endings. Validate its normalized text, digest and byte charge through capture, recovery and checkpoint proof; missing legacy values retain their original uniform-EOL interpretation. Existing record limits still apply, and rejected captures cannot claim durable recovery or a completed save.
 

@@ -313,7 +313,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       aria-label={t("Session notes")}
       data-notes-panel
       onKeyDown={onKeyDown}
-      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-(--ui-surface-panel) text-content"
+      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-(--ui-workspace-panel) text-content"
     >
       <Sash
         {...sashProps}

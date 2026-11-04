@@ -51,6 +51,11 @@ fn wire_method(method: &str) -> Option<String> {
             | "devices.start"
             | "devices.boot"
             | "devices.capture"
+            | "devices.control.status"
+            | "devices.control.claim"
+            | "devices.control.release"
+            | "devices.control.renew"
+            | "devices.inspect"
             | "devices.action"
     )
     .then(|| method.to_owned())

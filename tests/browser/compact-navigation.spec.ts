@@ -62,7 +62,7 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
   await installNavigationFixture(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/tests/browser/compact-navigation.html", { waitUntil: "domcontentloaded" });
+  await page.goto("/tests/browser/compact-navigation.html?activityDate", { waitUntil: "domcontentloaded" });
   const row = page.locator("[data-session-card]").first();
   await expect(row).toBeVisible({ timeout: 90_000 });
   const select = row.locator("[data-session-select]");
@@ -87,6 +87,7 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
     await page.mouse.move(1200, 700);
     await row.hover();
     await expect(detail).toBeVisible();
+    await expect(detail).toContainText("Last activity: Oct 17, 2026, 03:37 PM");
     await page.screenshot({ path: testInfo.outputPath(`session-detail-open-${theme}.png`) });
     // An unrelated pane scrolling must not dismiss the session's detail.
     await page.locator("main").dispatchEvent("scroll");

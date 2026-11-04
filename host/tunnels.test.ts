@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ExternalTunnels } from "./tunnels";
 import * as atomicWrite from "./storage/atomic-write";
 import type { TunnelEvent } from "./tunnel-providers";
-import type { SocialCredential } from "./social-credentials";
+import type { SocialCredential } from "./social/social-credentials";
 
 const directories: string[] = [];
 afterEach(async () => {

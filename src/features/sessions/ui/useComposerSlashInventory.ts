@@ -4,6 +4,7 @@ import {
   loadPromptTemplates,
   subscribePromptTemplates,
   templateSkill,
+  type PromptTemplate,
 } from "../model/promptTemplates";
 import { BTW_COMMAND, supportsBtwHarness } from "../model/btw";
 import { COMPACT_COMMAND } from "../model/compact";
@@ -19,6 +20,9 @@ import { SESSION_FOLDER_COMMAND } from "../model/sessionFolderCommand";
 import type { HarnessId } from "../model/session";
 import { useCliCommands } from "./useCliCommands";
 import { useComposerSkills } from "./useComposerSkills";
+
+const noPromptTemplates: PromptTemplate[] = [];
+const emptyPromptTemplates = () => noPromptTemplates;
 
 /**
  * Read-only slash / `$` inventory for the composer menus: file and native
@@ -62,7 +66,7 @@ export function useComposerSlashInventory(input: {
   const promptTemplates = useSyncExternalStore(
     subscribePromptTemplates,
     loadPromptTemplates,
-    () => [],
+    emptyPromptTemplates,
   );
   const templateItems = useMemo(() => promptTemplates.map(templateSkill), [promptTemplates]);
   // The CLI's own commands never replace a Bycoda command or a skill that

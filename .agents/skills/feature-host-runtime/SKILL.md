@@ -12,12 +12,12 @@ Own common authority and transport contracts across domain services and desktop/
 Code paths below are repository-root relative.
 
 - `host/engine.ts`
-- `src/features/connections/model/remoteOutbox.ts` and `remoteOutboxDatabase.ts` for desktop remote-command evidence.
 - `host/server.ts`
 - `host/owner.ts`, `host/lifecycle-state.ts` and `host/storage/atomic-write.ts`
+- `src/features/connections/model/remoteOutbox.ts` and `remoteOutboxDatabase.ts` for desktop remote-command evidence.
 - `host/workspace.ts` and `host/storage/workspace-publication.ts`
-- `host/storage/request-fence.ts`, `host/terminals.ts`, `host/device-preview.ts`
-- `host/conversation-preview.ts`
+- `host/storage/request-fence.ts`, `host/terminals.ts`, `host/devices/device-preview.ts`
+- `host/conversation/conversation-preview.ts`
 - `host/desktop-command-delivery.ts`, `host/desktopLive.ts`, `host/domains/commands/service.ts`
 - `host/transport/read-budget.ts`, `host/transport/dispatch.ts`, `host/transport/ws/server.ts`
 - `src/shared/lib/host-runtime/environmentRuntime.ts`, `src-tauri/src/host_ws/`
@@ -49,6 +49,7 @@ Code paths below are repository-root relative.
 - Subscription resume requires committed cursor proof bound to the exact live page, owner, target and resource. Unproven or changed membership takes a fresh snapshot; renderer cursor input alone grants no replay authority.
 - Desktop control admission persists the original receipt and delivery identity before offering it. Offered/unknown work is never reoffered after a lost response or restart; ACK proves handling only. Native page tokens route existing authority and never replace exact original turn/process grants.
 - Retire only proven settled receipts using monotonic time. Fence their original authority/request identity before removing exact records; a fence match refuses execution. Keep pending effects, failed cleanup and unknown physical completion retained. Resource retirement requires its own proof, not only a fulfilled request.
+- A settled warm Host turn retains only its original provider, activity, operation context and authority needed for explicit retirement. Empty provider sets may be removed after exact retirement; warm or unknown owners remain fenced.
 - Persist remote commands before dispatch; retain exact ID, payload and unknown outcomes. IndexedDB settlements and quarantine preserve reviewed raw evidence; legacy localStorage bytes remain until a qualified writer-cohort retirement proves safe. Storage failures hold dispatch and attachment cleanup.
 - Browser preview settlement includes verified presentation when requested. Read-only status failures can retire; uncertain claim/navigation/presentation work cannot. Token revocation removes disclosure authority, not evidence of an accepted effect. Recheck both original and current authority after delayed waits.
 - Keep drafts, queues, approvals, attachments, exact source bytes and recovery copies. Detach does not Stop; new migration/default authority requires its complete admission contract.
@@ -60,4 +61,7 @@ Code paths below are repository-root relative.
 - Native ownership changes require relevant Rust/interop/lifecycle cases; transport changes need auth revocation, stale callbacks, reconnect, duplicate/uncertain outcome and old-client coverage. Run only checks justified by the change.
 - Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
 - [Canonical Host architecture](../../../docs/reference/host-runtime.md)
+- [Assistant native admission](../../../docs/reference/assistant-native-admission.md):
+  paired-device authentication is not WindowIssuer proof; key enrollment stays
+  owner-only and effects retain exact signed scope and revocation ordering.
 - [Workspace/delivery contract](../../../docs/reference/managed-workspaces.md)

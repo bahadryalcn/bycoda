@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { fixture } from "../../native-devices.test-support";
 import { deliveryIdentity, deliverySha } from "../../native-delivery.test-support";
 import { nativeDeliveryConsumedResult } from "../../native-delivery-store";
-import { createNativeBufferPersistenceStore } from "../../native-buffer-persistence-store";
+import { createNativeBufferPersistenceStore } from "../../native-buffer/native-buffer-persistence-store";
 import type { NativeBufferDeliveryProof } from "../native-delivery/ports";
 import type { NativeBufferClockState } from "../../ports/native-buffer-persistence";
 

@@ -1,5 +1,78 @@
 # Personal assistant
 
+The Room's **Conversations** starts in **Global** scope. Its management history
+and draft belong to the Assistant, even when no project or coding session is
+open. Name the target project in requests about project work; the global
+conversation keeps its identity. Project-scoped conversation history remains
+separately selectable, but managing a project does not require switching to it.
+
+When the Assistant is enabled and setup is complete, the main application window
+keeps that global Room registered in the background. Registration does not start
+a model turn, open a microphone or select a project. An open interactive Room
+takes precedence over its background registration. Closing the application or
+losing the native Host connection makes that source unavailable.
+
+Application preferences, provider metadata and visible project discovery can use
+the registered Room conversation directly. Native review, revision checks and
+operation receipts still apply to changes. Closing voice does not stop already
+accepted Host work. A disconnected Host or unavailable native owner remains
+unavailable; the Assistant does not borrow another session to continue.
+
+Typed Conversations can discover and call the supported application tools through
+the same Room identity. Project work still names an explicit visible target;
+native approvals and account policies remain in force. Each turn has a bounded
+step and token allowance. If a tool times out or its acknowledgement is lost,
+inspect the reported original operation before requesting it again. The Host
+retains that operation's identity and does not automatically replay the effect.
+
+For canonical Host conversations, the Room can create an unsent session with
+explicit provider, model and execution settings, submit reviewed work to an idle
+session without a draft, and stop an exact run. Read the current revision before
+submitting. A sent message records its real Room author; it does not invent a job
+or manual-supervision grant. After an uncertain acknowledgement, use the original
+submission ID to read its receipt. A missing receipt means unknown, never safe to
+send again. Accepted work belongs to its Host run and can continue after voice
+closes. Native desktop sessions retain a separate execution-owner path.
+
+Global scope does not grant every account or remote Host. In a social account's
+settings, **Assistant account access** separately permits reading and preparing
+drafts without choosing a project. Access starts off and can be revoked there.
+Sending still requires the account's policy and exact owner approval. Revoking or
+changing access invalidates earlier grant versions, including retained results.
+
+The personal notebook uses existing Notes storage without choosing a project.
+Typed or voice requests can list, read, create, update and delete Assistant
+notebook entries. Changes retain native review, revisions and operation receipts;
+deletion retains recovery. **Save personal note** remains available directly.
+Project notes and ordinary notes outside the Assistant notebook retain their
+existing scope.
+
+In **Conversations**, **Remote access** shows the Room registration state and
+lets you choose a paired Host, target project ID, scope and duration. **Connect**
+opens Native review of that exact request. The target must have a qualified Native
+Room, visible project and trusted installation identity. The grant retains the
+original project directory; moving the project requires a new review. Inspect
+the original request after an uncertain reply before starting another connection.
+**Show native identity for owner enrollment** displays
+the public installation identity; it does not enroll it or grant access. Headless
+access needs a separate owner decision.
+
+Task observation has separate, default-off completion and needs-input settings
+under **Settings > Schedule**. They apply only to explicitly supervised projects.
+Preferences can be saved while the source is unavailable; notifications wait
+until this Host can verify the source and transfer an exact notification to its
+native owner. Native acceptance and actual notification display are separate.
+Unknown delivery is never automatically retried. These settings do not request
+operating-system notification permission; saved preferences do not imply an
+active subscription.
+The observation journal stores bounded change metadata rather than task text.
+Retention gaps require an authorized resnapshot before the cursor can advance.
+Personal Native Notes and saved Servers use their original installation scope,
+separate from project and Social account events. Their initial state and any
+source gap require a verified, fully delivered metadata baseline. Pending or
+uncertain completion remains incomplete. Observation never opens the microphone
+or approves a new action.
+
 **Room > Sessions** separates job-created sessions from manual conversation
 supervision. Search narrows both lists; the status filter applies to job sessions.
 Clear filters when no sessions match, or choose **View jobs** when no job sessions

@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
-import { listHostSkillCandidates } from "./skills";
+import { listHostSkillCandidatesAsync } from "./skills";
 import { readSkillPolicy } from "./skill-policy";
 import { skillDisabled } from "../src/integrations/harness/core/skillPolicy";
 import {
@@ -30,16 +30,17 @@ const words = (text: string) =>
  * Ranks by how much of the task each candidate covers, and keeps shadowed
  * same-name copies so callers compare alternatives instead of the first hit.
  */
-export function searchHarnessSkills(
+export async function searchHarnessSkills(
   cwd: string,
   input: { query?: string; offset?: number; limit?: number },
   home = homedir(),
   sessionId?: string,
   explicitNames: readonly string[] = [],
+  provider?: string,
 ) {
   const query = (input.query ?? "").trim().toLowerCase();
   const terms = [...new Set(words(query))];
-  const { skills: candidates, truncated } = listHostSkillCandidates(cwd, home);
+  const { skills: candidates, truncated } = await listHostSkillCandidatesAsync(cwd, home, provider);
   const policy = effectivePolicy(home, sessionId);
   const matches = candidates
     .filter(
@@ -110,9 +111,12 @@ export async function readHarnessSkill(
   home = homedir(),
   sessionId?: string,
   explicitNames: readonly string[] = [],
+  provider?: string,
 ) {
   // Without a selector, read the copy that /name resolves to.
-  const named = listHostSkillCandidates(cwd, home).skills.filter(
+  const inventory = await listHostSkillCandidatesAsync(cwd, home, provider);
+  if (inventory.truncated) throw new Error("Skill discovery is incomplete; exact read refused.");
+  const named = inventory.skills.filter(
     (entry) => entry.name === input.name,
   );
   const matches = named.filter(
@@ -139,6 +143,8 @@ export async function readHarnessSkill(
   try {
     const size = (await file.stat()).size;
     if (size > 2 * 1024 * 1024) throw new Error("Skill exceeds 2 MiB.");
+    if (skillDisabled(effectivePolicy(home, sessionId), skill))
+      throw new Error(`Skill "${input.name}" is disabled for this conversation.`);
     const buffer = Buffer.alloc(size + 1);
     const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
     if (bytesRead > size) throw new Error("Skill changed while reading; retry discovery.");
@@ -146,6 +152,8 @@ export async function readHarnessSkill(
   } finally {
     await file.close();
   }
+  if (skillDisabled(effectivePolicy(home, sessionId), skill))
+    throw new Error(`Skill "${input.name}" is disabled for this conversation.`);
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
   const maxChars = Math.min(16000, Math.max(200, Math.trunc(input.maxChars ?? 6000)));
   const text = body.slice(offset, offset + maxChars);

@@ -8,9 +8,9 @@ import {
   toolAuthorizationScope,
 } from "./mcp-http";
 import { MCP_GROUPS, type McpGrant } from "./mcp-tokens";
-import { runSocialMcp } from "./social-tools";
+import { runSocialMcp } from "./social/social-tools";
 import { describeManagedTools, searchManagedTools } from "./tool-management";
-import { DESKTOP_CONTROL_CONVERSATION_TOOLS } from "./conversation-desktop-control-tools";
+import { DESKTOP_CONTROL_CONVERSATION_TOOLS } from "./conversation/conversation-desktop-control-tools";
 
 const grant: McpGrant = {
   id: "inventory-test",

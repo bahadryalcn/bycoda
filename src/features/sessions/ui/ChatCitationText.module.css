@@ -18,7 +18,9 @@
   max-inline-size: 100%;
 }
 .label {
-  overflow: clip;
+  display: inline-block;
+  min-inline-size: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-inline-size: 48ch;

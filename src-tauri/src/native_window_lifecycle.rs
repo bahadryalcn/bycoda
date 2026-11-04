@@ -758,6 +758,7 @@ pub(crate) fn on_page_load(webview: &Webview, payload: &tauri::webview::PageLoad
         return;
     }
     if let Some(issuer) = crate::control::receipts::page_reloaded(webview) {
+        crate::window_transfer::page_reloaded(webview.app_handle(), webview.window().label());
         crate::control::page_reloaded(webview.app_handle(), &issuer);
         crate::harness::page_retired(webview.app_handle(), &issuer);
         crate::session_window_ownership::release_issuer(&issuer);

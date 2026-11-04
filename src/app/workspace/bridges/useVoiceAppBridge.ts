@@ -46,16 +46,17 @@ type Deps = {
   launch: (launch: QuickLaunch, id: string) => Promise<void>;
   appendEmpty: (session: Session) => void;
   onOpenRemote?: (projectPath: string, sessionId: string) => void;
+  onOpen?: (sessionId: string, options?: { workspaceRequestId?: string }) => void | Promise<void>;
 } & Pick<
   VoiceWorkspaceActionsDeps,
   | "onSelectProject"
-  | "onOpen"
   | "onClose"
   | "onRename"
   | "onArchive"
   | "onDelete"
   | "onSubmit"
   | "onStop"
+  | "onStopForRoom"
 >;
 
 /** Match the rail's project directory, including a not-yet-remembered current folder. */
@@ -134,6 +135,7 @@ export function useVoiceAppBridge(deps: Deps) {
   };
   const onCreate = async (request: VoiceSessionCreate) => {
     assertVisible(request.projectPath);
+    if (request.workspaceRequestId && request.submit) throw new Error("Room desktop session creation cannot submit work.");
     const choice = newDefaultSession(request.projectPath);
     if (request.harness !== undefined && !HARNESSES.includes(request.harness as Session["harness"]))
       throw new Error("Unknown voice session provider.");
@@ -145,7 +147,13 @@ export function useVoiceAppBridge(deps: Deps) {
       request.projectPath,
       request.model ?? (harness === choice.harness ? choice.model : undefined),
     );
-    if (!request.prompt.trim() && !request.submit) {
+    if (request.workspaceRequestId) {
+      const { createRoomSession } = await import("../../../features/sessions/data/sessionStore");
+      const created = request.prompt.trim() ? (await import("../sessions/useSessionDraftActions")).addSessionDraft(session, request.prompt, [], request.requestId) : session;
+      await createRoomSession(created);
+      assertVisible(request.projectPath);
+      latest.current.appendEmpty(created);
+    } else if (!request.prompt.trim() && !request.submit) {
       latest.current.appendEmpty(session);
     } else {
       await latest.current.launch(
@@ -211,12 +219,14 @@ export function useVoiceAppBridge(deps: Deps) {
     listSessions,
     onCreate,
     onSelectProject: deps.onSelectProject,
-    onOpen: async (id) => {
+    onOpen: async (id, workspaceRequestId) => {
       const remote = listedSessions.current.get(id);
       if (remote && isRemoteProjectPath(remote.cwd) && latest.current.onOpenRemote) {
+        if (workspaceRequestId) throw new Error("Room desktop session must belong to the native workspace.");
         assertVisible(remote.cwd);
         latest.current.onOpenRemote(remote.cwd, id);
-      } else await latest.current.onOpen?.(id);
+      } else if (workspaceRequestId) await latest.current.onOpen?.(id, { workspaceRequestId });
+      else await latest.current.onOpen?.(id);
     },
     onClose: deps.onClose ? (id) => latest.current.onClose!(actionId(id)) : undefined,
     onRename: deps.onRename
@@ -230,6 +240,7 @@ export function useVoiceAppBridge(deps: Deps) {
       ? (id, prompt) => latest.current.onSubmit!(actionId(id), prompt)
       : undefined,
     onStop: deps.onStop ? (id) => latest.current.onStop!(actionId(id)) : undefined,
+    onStopForRoom: deps.onStopForRoom ? (id) => latest.current.onStopForRoom!(actionId(id)) : undefined,
   });
   return {
     workspace,

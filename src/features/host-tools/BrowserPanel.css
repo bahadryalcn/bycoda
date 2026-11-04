@@ -19,7 +19,7 @@
   flex: none;
   gap: 4px 8px;
   padding: 2px 4px;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
 }
 
 .host-browser-bar > .host-browser-toolbar {
@@ -72,6 +72,65 @@
   white-space: nowrap;
   font-size: var(--ui-font-micro);
   color: var(--ui-text-secondary);
+}
+
+.host-browser-panel .host-browser-control-icon svg {
+  color: var(--ui-tone-info-fg);
+}
+
+.host-browser-panel .host-browser-control-icon[data-controlling="true"] svg {
+  color: var(--ui-tone-success-fg);
+}
+
+.host-browser-highlight-label {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-start: 0;
+  max-inline-size: 240px;
+  inline-size: max-content;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--ui-surface-raised);
+  color: var(--color-content);
+  font-size: var(--ui-font-micro);
+  padding: 2px 4px;
+}
+
+.host-browser-highlight-label[data-align="end"] {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+.host-browser-box-model {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--ui-tone-info-fg);
+}
+
+.host-browser-box-model[data-part="margin"] {
+  border-style: dashed;
+  border-color: var(--ui-tone-warning-fg);
+}
+
+.host-browser-box-model[data-part="padding"] {
+  border-style: dotted;
+  border-color: var(--ui-tone-success-fg);
+}
+
+.host-browser-child-bound {
+  border-style: dotted;
+  border-color: var(--ui-tone-info-fg);
+}
+
+.host-browser-input-receiver {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .host-browser-panel > .host-browser-workspace {

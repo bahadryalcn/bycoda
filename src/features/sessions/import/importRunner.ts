@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { forgetHarnessSession } from "../../../integrations/harness/core/registry";
 import {
   importPlaceholderDir,
@@ -395,9 +396,10 @@ export async function runSessionImport(input: {
       path: target.cwd,
       lastUsedAt,
     }));
-    rememberImportedProjects(entries);
-    summary.projects = entries.length;
-    if (input.groupProjects) {
+    await withRoomPrivacyMutation(() => {
+      rememberImportedProjects(entries);
+      summary.projects = entries.length;
+      if (input.groupProjects) {
       const real = [...folders.values()]
         .filter(({ target }) => target.real)
         .map(({ target }) => target.cwd);
@@ -409,7 +411,8 @@ export async function runSessionImport(input: {
           summary.groups.push(group.name);
         }
       }
-    }
+      }
+    });
   }
 
   summary.imported = progress.imported;

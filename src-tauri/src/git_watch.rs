@@ -231,7 +231,6 @@ fn resolve(cwd: &str) -> Result<(PathBuf, PathBuf), String> {
         root,
         &[
             "rev-parse",
-            "--path-format=absolute",
             "--git-dir",
             "--git-common-dir",
         ],

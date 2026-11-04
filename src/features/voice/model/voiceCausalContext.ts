@@ -1,3 +1,4 @@
+import { bindVoiceGeneration } from "./voiceGenerationRetirement";
 import {
   AssistantVoiceContextSchema,
   type AssistantVoiceContext,
@@ -9,6 +10,7 @@ import {
 } from "../../../shared/model/assistantVoiceContext";
 import type { VoiceHistoryBinding } from "./voiceHistory";
 import type { VoiceThreadTranscript } from "./voiceThreads";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 
 type Port = (
   input: AssistantVoiceContextOpen | AssistantVoiceContextInvalidate,
@@ -24,6 +26,11 @@ export class VoiceContextScopeUnavailable extends Error {
 /** One actual provider connection (or one isolated local reasoning turn).
  * A new owner utterance cannot clean an unknown retained provider context. */
 export class VoiceCausalGeneration {
+  retirementIdentity() {
+    return this.initialThread && this.environmentId
+      ? { threadId: this.initialThread, environmentId: this.environmentId }
+      : undefined;
+  }
   readonly generationKey: string;
   private head?: AssistantVoiceContext;
   private work: Promise<AssistantVoiceContext | undefined> = Promise.resolve(undefined);
@@ -42,6 +49,33 @@ export class VoiceCausalGeneration {
   ) {
     this.generationKey = id();
     this.seedMessageIds = Object.freeze([...seedMessageIds]);
+  }
+  /** Bind and durably register this exact runtime before any seed reaches a provider. */
+  async bindRuntimeIdentity(history: VoiceHistoryBinding) {
+    if (!this.active() || history.current?.() === false || history.remote)
+      throw new Error("Voice runtime source unavailable.");
+    const [opened, scope, environmentId] = await Promise.all([
+      history.open(), history.scope?.(), history.environmentId?.(),
+    ]);
+    // The Host qualifies each exact seed independently. A partial directory can
+    // still contain visible personal turns; it cannot certify tool provenance.
+    if (!this.active() || history.current?.() === false || !scope || !scope.current() || !environmentId)
+      throw new Error("Voice runtime source unavailable.");
+    const threadId = opened.thread.id;
+    if ((this.initialThread && this.initialThread !== threadId) || (this.environmentId && this.environmentId !== environmentId))
+      throw new Error("Voice runtime source changed.");
+    this.initialThread = threadId;
+    this.environmentId = environmentId;
+    await bindVoiceGeneration(this.generationKey, { threadId, environmentId });
+    if (!this.active() || history.current?.() === false || !scope.current())
+      throw new Error("Voice runtime source changed.");
+    const response = await history.request({
+      op: "voice.runtime.register", threadId, generationKey: this.generationKey,
+      seedMessageIds: [...this.seedMessageIds],
+      ...(this.summaryUsed && this.summaryProofId ? { summaryProofId: this.summaryProofId } : {}),
+    });
+    if (!response.ok || !this.active() || history.current?.() === false || !scope.current())
+      throw new Error("Voice runtime registration was not confirmed.");
   }
   accept(history: VoiceHistoryBinding, source: OwnerSource, ownerText: string) {
     const previous = this.work;
@@ -78,6 +112,8 @@ export class VoiceCausalGeneration {
           throw new Error("The captured question Host changed.");
         this.initialThread = owner.message.threadId;
         this.environmentId = environmentId;
+        await bindVoiceGeneration(this.generationKey, { threadId: this.initialThread, environmentId });
+        if (!this.active() || history.current?.() === false) return;
         this.visible = (ids) =>
           this.active() &&
           scope.current() &&
@@ -138,6 +174,7 @@ export class VoiceCausalGeneration {
     if (!head || !this.active()) return;
     return {
       id: head.id,
+      environmentId: head.environmentId,
       receive: (
         value: unknown,
         rawDisclosure: unknown,
@@ -168,9 +205,12 @@ export class VoiceCausalGeneration {
                     expectedSource[key as keyof AssistantVoiceDisclosureSource],
                 ) ||
                 disclosure.source.sessionId !== expectedSource.sessionId ||
+                disclosure.source.projectId !== expectedSource.projectId ||
+                disclosure.source.accountId !== expectedSource.accountId ||
                 disclosure.source.environmentId !== receipt.environmentId ||
                 disclosure.source.threadId !== head.threadId ||
-                !this.visible?.([disclosure.source.projectId])))
+                (disclosure.source.projectId !== undefined &&
+                  !this.visible?.([disclosure.source.projectId]))))
           )
             throw new Error(
               "The voice tool result could not be verified. Check its original operation.",
@@ -215,8 +255,14 @@ export class VoiceCausalGeneration {
   async invalidate(reason: AssistantVoiceContextReason = "unverified-tool") {
     // Close the local proof synchronously, before awaiting any tool/disclosure.
     this.unknown = true;
-    await this.work;
-    await this.markUnknown(reason);
+    // Losing Host provenance must not freeze the audio connection. Unknown is
+    // already monotonic locally; late completions cannot grant save authority.
+    try {
+      await withTimeout(this.work, 5000, "Voice context");
+      await withTimeout(this.markUnknown(reason), 5000, "Voice context invalidation");
+    } catch (error) {
+      if (this.active()) this.failed(error);
+    }
   }
   private async markUnknown(reason: AssistantVoiceContextReason) {
     const head = this.head;

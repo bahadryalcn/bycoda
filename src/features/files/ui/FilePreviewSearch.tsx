@@ -386,7 +386,7 @@ export function FilePreviewSearch({
         <div
           role="search"
           aria-label={t("Find in preview")}
-          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 py-1 text-content"
+          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading-panel) px-2 py-1 text-content"
           onKeyDown={onKeyDown}
         >
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">

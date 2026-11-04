@@ -14,20 +14,13 @@ import {
   type Session,
 } from "../model/session";
 import { shouldPersistSession, type SessionSummary } from "./sessionStore";
+import { compareSessionSummaries } from "../model/compareSessionSummaries";
+export { compareSessionSummaries } from "../model/compareSessionSummaries";
 
 export type SessionGitHint = {
   repo?: string;
   branch?: string;
 };
-
-export function compareSessionSummaries(a: SessionSummary, b: SessionSummary): number {
-  const pin = Number(!!b.pinned) - Number(!!a.pinned);
-  if (pin !== 0) return pin;
-  return (
-    (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt) ||
-    a.id.localeCompare(b.id)
-  );
-}
 
 export function mergeHistorySummary(
   current: SessionSummary[],

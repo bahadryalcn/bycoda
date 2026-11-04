@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
-const captures = "temp/verification/attachment-cards";
+const captures = "temp/verification/2026-11-04-chat-thumbnails";
 
 test("attachment surfaces retain native caret, insertion and removal", async ({ page }) => {
   await page.goto("/tests/browser/attachment-cards.html");
@@ -37,6 +37,29 @@ test("image preview opens and Escape returns focus", async ({ page }) => {
   await expect(image).toBeFocused();
 });
 
+test("persisted message images show thumbnails before opening and retain them after Escape", async ({ page }) => {
+  await page.goto("/tests/browser/attachment-cards.html");
+  const message = page.getByRole("region", { name: "Message", exact: true });
+  const trigger = message.getByRole("button", {
+    name: "Open saved-mountain-reference.svg full screen",
+    exact: true,
+  });
+  await trigger.scrollIntoViewIfNeeded();
+  const thumbnail = trigger.locator("img");
+  await expect(thumbnail).toBeVisible();
+  await expect(thumbnail).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
+  await expect.poll(() => thumbnail.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(400);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const source = await thumbnail.getAttribute("src");
+  await trigger.click();
+  await expect(page.getByRole("dialog").locator("img")).toHaveAttribute("src", source!);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(thumbnail).toBeVisible();
+  await expect(thumbnail).toHaveAttribute("src", source!);
+});
+
 test("broken thumbnail falls back to image identity", async ({ page }) => {
   await page.goto("/tests/browser/attachment-cards.html?broken");
   const composer = page.getByRole("region", { name: "Composer", exact: true });
@@ -60,7 +83,7 @@ test("attachment card themes and widths", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const theme of ["dark", "light"])
     for (const width of [1280, 800]) {
-      await page.setViewportSize({ width, height: 1000 });
+      await page.setViewportSize({ width, height: 1400 });
       await page.goto(`/tests/browser/attachment-cards.html?theme=${theme}`);
       await expect(page.getByRole("heading", { name: "Attachments", exact: true })).toBeVisible();
       await expect(
@@ -68,6 +91,12 @@ test("attachment card themes and widths", async ({ page }) => {
           .getByRole("region", { name: "Composer", exact: true })
           .locator("[data-attachment-kind]"),
       ).toHaveCount(10);
+      const persistedThumbnail = page
+        .getByRole("region", { name: "Message", exact: true })
+        .getByRole("button", { name: "Open saved-mountain-reference.svg full screen", exact: true })
+        .locator("img");
+      await expect(persistedThumbnail).toBeVisible();
+      await expect.poll(() => persistedThumbnail.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(400);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

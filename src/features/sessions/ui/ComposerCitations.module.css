@@ -22,7 +22,8 @@
 }
 .excerpt {
   display: block;
-  overflow: clip;
+  min-inline-size: 0;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--ui-tone-info-fg);

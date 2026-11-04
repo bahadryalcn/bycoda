@@ -1,5 +1,5 @@
 .project-terminal-dock {
-  --terminal-canvas: var(--color-background-base);
+  --terminal-canvas: var(--ui-workspace-canvas, var(--color-background-base));
   --terminal-text: var(--color-content);
   --terminal-muted: var(--ui-text-secondary);
   --terminal-border: var(--color-stroke);
@@ -10,7 +10,7 @@
   color: var(--terminal-text);
 }
 .terminal-header {
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel, var(--ui-surface-panel));
 }
 .terminal-body {
   position: relative;
@@ -27,7 +27,7 @@
   /* The list width is an explicit, user-resizable size, so its rows adapt to it rather
      than to the window (container query below). */
   container: terminal-list / inline-size;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel, var(--ui-surface-panel));
 }
 .terminal-list {
   min-block-size: 0;

@@ -86,7 +86,7 @@ const ANSI_LIGHT = {
 
 export function terminalColors(light: boolean, scope: HTMLElement) {
   const fallbackCanvas = cssColor(
-    "var(--terminal-canvas, var(--ui-surface))",
+    "var(--color-background-base, var(--ui-surface))",
     light ? themePalette.hexfafafa : themePalette.hex171717,
     scope,
   );
@@ -230,6 +230,10 @@ export function createTerminalTheme(options: {
     });
   };
   window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
+  const media = ["(prefers-reduced-transparency: reduce)", "(forced-colors: active)"]
+    .map((query) => window.matchMedia?.(query))
+    .filter((query): query is MediaQueryList => !!query);
+  for (const query of media) query.addEventListener?.("change", onSchemeChange);
   const observer = new MutationObserver(onSchemeChange);
   for (let node: HTMLElement | null = outer; node; node = node.parentElement) {
     observer.observe(node, {
@@ -245,6 +249,7 @@ export function createTerminalTheme(options: {
     dispose() {
       disposed = true;
       window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
+      for (const query of media) query.removeEventListener?.("change", onSchemeChange);
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
     },

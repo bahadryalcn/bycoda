@@ -135,9 +135,9 @@ async function seedIndex(cwd: string, index: string): Promise<boolean> {
       ?.toString()
       .trim();
     if (split === "true") return false;
-    const real = (await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]))
+    const real = resolve(cwd, (await git(cwd, ["rev-parse", "--git-path", "index"]))
       .toString()
-      .trim();
+      .trim());
     // `ls-files -v` tags assume-unchanged entries in lower case, skip-worktree as S.
     const listing = (await git(cwd, ["ls-files", "-v", "-z"])).toString().split("\0");
     if (listing.some((entry) => /^[a-zS]/.test(entry))) return false;
@@ -194,6 +194,15 @@ export class HostCheckpoints {
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
     this.fileHistory = new SessionFileRevert(root, undefined, authority);
+  }
+  /** Run after the session's provider and desktop writers are retired. */
+  retireDeletedSessionHistory(session: string, cwd: string) {
+    return this.queue(session, [cwd], async () => {
+      if (await this.leases.hasSession(session)) throw new Error("Checkpoint lease is still present; file history retained");
+      const record = await this.load(session);
+      if (record?.active || record?.error) throw new Error("Checkpoint outcome is unresolved; file history retained");
+      return this.fileHistory.retireDeletedSession(session, await realpath(cwd));
+    });
   }
   /** Lightweight default turn hooks: no private Git index, tree or refs. Call
    * with the actual user block ID, which differs from the provider run ID. */

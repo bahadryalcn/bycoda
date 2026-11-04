@@ -6,7 +6,7 @@ import type {
   HostTerminalRead,
 } from "../src/shared/model/host-contracts/terminals";
 import { listShellProfiles, type ShellProfiles } from "./shellProfiles";
-import { resolveHostWorktreeAsync } from "./git-worktrees";
+import { resolveHostWorktreeAsync } from "./git/git-worktrees";
 import { startTerminalProcess, type OwnedTerminalProcess } from "./terminal-process";
 import { RetiredRequestFence } from "./storage/request-fence";
 
@@ -16,6 +16,7 @@ const MAX_CREATIONS = 256;
 const SETTLED_TTL = 10 * 60 * 1000;
 type TerminalEntry = {
   value: HostTerminal;
+  owner: string;
   process?: OwnedTerminalProcess;
   output: OutputBuffer;
   end: number;
@@ -73,11 +74,11 @@ export class HostTerminals {
     }
   }
 
-  list(projectId: string): HostTerminalList {
+  list(projectId: string, owner?: string): HostTerminalList {
     this.prune();
     return {
       terminals: [...this.entries.values()]
-        .filter((entry) => entry.value.projectId === projectId)
+        .filter((entry) => entry.value.projectId === projectId && (owner === undefined || entry.owner === owner))
         .map((entry) => ({ ...entry.value })),
       writable: true,
       profiles: this.profiles().profiles.map(({ id, name }) => ({ id, name })),
@@ -140,7 +141,7 @@ export class HostTerminals {
       launchAttempted: false,
       cleanupUncertain: false,
     };
-    creation.result = this.open(project, params, authorized, creation).catch((error) => {
+    creation.result = this.open(project, params, authorized, creation, owner).catch((error) => {
       if (!creation.launchAttempted && !creation.cleanupUncertain) creation.settledAt = this.now();
       throw error;
     });
@@ -156,6 +157,7 @@ export class HostTerminals {
     params: Record<string, unknown>,
     authorized: () => boolean | Promise<boolean>,
     creation: Creation,
+    owner: string,
   ): Promise<HostTerminal> {
     const cwd = await this.locate(project.cwd, params.cwd);
     if (!(await authorized())) throw new Error("Device credential is invalid or revoked");
@@ -176,6 +178,7 @@ export class HostTerminals {
           profiles.profiles[0]);
     if (!profile) throw new Error("That shell is not installed on this machine");
     const entry: TerminalEntry = {
+      owner,
       value: {
         id: randomUUID(),
         projectId: project.id,
@@ -243,8 +246,8 @@ export class HostTerminals {
     return entry.value;
   }
 
-  read(projectId: string, params: Record<string, unknown>): HostTerminalRead {
-    const entry = this.owned(projectId, params.id);
+  read(projectId: string, params: Record<string, unknown>, owner?: string): HostTerminalRead {
+    const entry = this.owned(projectId, params.id, owner);
     const after = params.after ?? 0;
     const limit = params.limit ?? 32768;
     if (
@@ -271,8 +274,8 @@ export class HostTerminals {
     };
   }
 
-  async write(projectId: string, params: Record<string, unknown>) {
-    const entry = this.owned(projectId, params.id);
+  async write(projectId: string, params: Record<string, unknown>, owner?: string) {
+    const entry = this.owned(projectId, params.id, owner);
     if (
       typeof params.data !== "string" ||
       !params.data.length ||
@@ -284,8 +287,8 @@ export class HostTerminals {
     return { accepted: true as const };
   }
 
-  async interrupt(projectId: string, id: unknown) {
-    const entry = this.owned(projectId, id);
+  async interrupt(projectId: string, id: unknown, owner?: string) {
+    const entry = this.owned(projectId, id, owner);
     // Anonymous pipes cannot deliver console Ctrl+C reliably on Windows. Stop the owned tree.
     await entry.process?.stop();
     if (entry.exitedAt === undefined) throw new Error("Terminal stop was not confirmed");
@@ -293,8 +296,8 @@ export class HostTerminals {
     return { accepted: true as const };
   }
 
-  async remove(projectId: string, id: unknown) {
-    const entry = this.owned(projectId, id);
+  async remove(projectId: string, id: unknown, owner?: string) {
+    const entry = this.owned(projectId, id, owner);
     await entry.process?.stop();
     if (entry.exitedAt === undefined) throw new Error("Terminal stop was not confirmed");
     await this.releaseActivity(entry);
@@ -302,9 +305,9 @@ export class HostTerminals {
     return { closed: true as const };
   }
 
-  private owned(projectId: string, id: unknown): TerminalEntry {
+  private owned(projectId: string, id: unknown, owner?: string): TerminalEntry {
     const entry = typeof id === "string" ? this.entries.get(id) : undefined;
-    if (!entry || entry.value.projectId !== projectId)
+    if (!entry || entry.value.projectId !== projectId || (owner !== undefined && entry.owner !== owner))
       throw new Error("Terminal is unavailable in this project");
     return entry;
   }

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>bycoda uses the microphone when you start a voice conversation.</string>
+        <string>bycoda uses the microphone when you start dictation, a microphone test, or a voice conversation.</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>NSDesktopFolderUsageDescription</key>

@@ -1,6 +1,6 @@
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import type { TaskWorkspace } from "../src/features/tasks/model/taskWorkspace";
-import { hostWorktrees, resolveHostWorktreeAsync } from "./git-worktrees";
+import { hostWorktrees, resolveHostWorktreeAsync } from "./git/git-worktrees";
 
 export async function taskWorkspace(projectCwd: string, selected?: TaskWorkspace) {
   let cwd = await resolveHostWorktreeAsync(projectCwd, selected?.checkoutCwd);

@@ -129,6 +129,64 @@ describe("inFlightRefs", () => {
 });
 
 describe("markTurnInterrupted", () => {
+  it("keeps legacy Stop plus quit-marker bytes without advertising interruption", () => {
+    const session = chat("/tmp/a", {
+      providerSessionId: "p1",
+      blocks: [
+        { id: "u1", role: "user", text: "hello" },
+        { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+        { id: "quit", role: "system", notice: "interrupt", text: INTERRUPT_MESSAGE },
+      ],
+    });
+    expect(wasTurnInterrupted(session)).toBe(false);
+    expect(canAutoContinue(session)).toBe(false);
+    expect(markTurnInterrupted(session).blocks).toEqual(session.blocks);
+  });
+
+  it("retains real Host interruption and a new interrupted turn after owner Stop", () => {
+    const stopped = {
+      id: "stop",
+      role: "system" as const,
+      notice: "interrupt" as const,
+      text: "Stopped by you.",
+    };
+    const host = chat("/tmp/a", {
+      blocks: [
+        stopped,
+        {
+          id: "host",
+          role: "system",
+          notice: "interrupt",
+          text: "Host restarted while this turn was running.",
+        },
+      ],
+    });
+    expect(wasTurnInterrupted(host)).toBe(true);
+    const laterTurn = chat("/tmp/a", {
+      blocks: [
+        stopped,
+        { id: "new", role: "user", text: "Continue" },
+        { id: "quit", role: "system", notice: "interrupt", text: INTERRUPT_MESSAGE },
+      ],
+    });
+    expect(wasTurnInterrupted(laterTurn)).toBe(true);
+  });
+  it.each(["Stopped by you.", "  Stopped by you.\n"])(
+    "does not replace an explicit owner Stop from stale in-flight recovery: %s",
+    (text) => {
+      const session = chat("/tmp/a", {
+        providerSessionId: "p1",
+        blocks: [
+          { id: "u1", role: "user", text: "hello" },
+          { id: "stop", role: "system", notice: "interrupt", text },
+        ],
+      });
+      const recovered = markTurnInterrupted(session);
+      expect(recovered.blocks).toEqual(session.blocks);
+      expect(wasTurnInterrupted(recovered)).toBe(false);
+      expect(canAutoContinue(recovered)).toBe(false);
+    },
+  );
   it("seals the stream, cancels open tools, and appends a system note", () => {
     const interrupted = markTurnInterrupted(
       chat("/tmp/a", {

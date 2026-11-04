@@ -38,9 +38,11 @@ export function AssistantProfileFields({
   section,
   value,
   onChange,
+  observationTasksAvailable = false,
 }: {
   section: ProfileSection;
   value: AssistantProfilePatch;
+  observationTasksAvailable?: boolean;
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const [advancedRoles, setAdvancedRoles] = useState(false);
@@ -424,6 +426,7 @@ export function AssistantProfileFields({
       )}
       {section === "behavior" && (
         <>
+          <Switch label={t("Speak job updates while voice is connected")} checked={value.voiceNarration === true} onCheckedChange={(voiceNarration) => onChange({ voiceNarration })} />
           {choice("proactiveSpeech", "Start a conversation", [
             ["never", "Never"],
             ["return", "Only when I return"],
@@ -486,6 +489,9 @@ export function AssistantProfileFields({
             )}
           </p>
 
+          <p className={styles.muted}>{observationTasksAvailable ? t("Task observations use only projects enabled for manual supervision. Notifications still follow presence and quiet hours.") : t("Task observation readiness is not confirmed. Saved preferences take effect when the source is ready.")}</p>
+          <Switch label={t("Notify when an observed task completes")} checked={policy.observationTaskDone} onCheckedChange={(observationTaskDone) => onChange({ observationTaskDone })} />
+          <Switch label={t("Notify when an observed task needs input")} checked={policy.observationTaskNeedsInput} onCheckedChange={(observationTaskNeedsInput) => onChange({ observationTaskNeedsInput })} />
           {choice(
             "notificationPresent",
             "Notifications when present",

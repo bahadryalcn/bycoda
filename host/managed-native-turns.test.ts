@@ -6,7 +6,7 @@ import { HostStore } from "./store";
 import { createManagedWorkspaceRegistry } from "./managed-workspaces";
 import { createWorkspacePolicyResolver } from "./workspace-policy";
 import { createExecutionActivityReservations } from "./workspace-cleanup";
-import { hostGitRepositoryKey } from "./git-mutations";
+import { hostGitRepositoryKey } from "./git/git-mutations";
 import { GitTurnHistory, gitText, turnGit } from "./turn-git-history";
 import { createManagedNativeTurns } from "./managed-native-turns";
 

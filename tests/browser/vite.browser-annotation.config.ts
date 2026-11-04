@@ -1,9 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fixtureSourceScan } from "./fixtureSourceScan.ts";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  cacheDir: "temp/build/browser-annotation-cache",
+  plugins: [fixtureSourceScan(), react(), tailwindcss()],
   resolve: {
     alias: [
       {

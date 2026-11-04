@@ -662,7 +662,7 @@ function SubagentPanel({
 
   // Identity row: the name takes the room it needs and gives the rest back, so
   // a provider that names a run with its whole brief cannot push the row off the
-  // pane. State, clock and model sit on the line below, as in the detached sheet.
+  // pane. State, clock and model share the row before its disclosure control.
   const label = active ? (
     <Shimmer className="min-w-0 flex-1 truncate text-start font-sans text-ui-body" duration={1.6}>
       {name}
@@ -684,7 +684,8 @@ function SubagentPanel({
       busy={live}
       steps={steps}
       model={model}
-      className="pb-0.5 ps-6"
+      inline
+      className="max-w-[65%] shrink-0"
     />
   );
 
@@ -704,9 +705,9 @@ function SubagentPanel({
         >
           <SubagentMascot name={name} state={state} active={active} />
           {label}
+          {stateLine}
           <span className="icon-sm shrink-0" />
         </Button>
-        {stateLine}
       </div>
     );
   }
@@ -731,6 +732,7 @@ function SubagentPanel({
         >
           <SubagentMascot name={name} state={state} active={active} />
           {label}
+          {stateLine}
           <ChevronRight
             className={`icon-sm shrink-0 text-(--ui-text-secondary) transition-transform duration-200 group-hover:text-(--ui-text-secondary) ${
               open ? "rotate-90" : ""
@@ -752,7 +754,6 @@ function SubagentPanel({
           <ExternalLink className="icon-sm" aria-hidden />
         </Button>
       </div>
-      {stateLine}
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           /*

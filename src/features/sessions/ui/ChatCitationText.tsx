@@ -5,7 +5,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { BlockQuote, Copy, Info, X } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import type { ChatCitation } from "../model/chatCitation";
+import { chatCitationPreview, type ChatCitation } from "../model/chatCitation";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ChatCitationText.module.css";
 
@@ -24,6 +24,7 @@ function Citation({ citation }: { citation: ChatCitation }) {
           layout="text"
           motion="none"
           className={styles.source}
+          aria-label={label}
           tooltip={citation.text}
           onPointerEnter={() => highlightChatCitation(citation)}
           onFocus={() => highlightChatCitation(citation)}
@@ -38,7 +39,7 @@ function Citation({ citation }: { citation: ChatCitation }) {
           }}
         >
           <BlockQuote className="icon-sm shrink-0" />
-          <span className={styles.label}>{label}</span>
+          <span className={styles.label}>{chatCitationPreview(citation)}</span>
         </Button>
         <Button
           iconOnly

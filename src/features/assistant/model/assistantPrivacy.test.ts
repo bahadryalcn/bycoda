@@ -7,6 +7,43 @@ import {
 } from "./assistantPrivacy";
 const visible = [{ id: "visible", path: "/visible", name: "Visible" }],
   hidden = { id: "hidden", path: "/hidden", name: "Secret" };
+it("keeps Room tool privacy taint separate from trusted contributor scope", () => {
+  const raw = source();
+  const scoped = assistantPrivacyScope([...visible, hidden], visible, raw);
+  const messages = [
+    {
+      id: "unknown-target",
+      threadId: "global",
+      jobIds: [],
+      visibilityProjectIds: ["hidden"],
+      unverifiedToolContext: true,
+    },
+    {
+      id: "unknown-global",
+      threadId: "global",
+      jobIds: [],
+      visibilityProjectIds: [],
+      unverifiedToolContext: true,
+    },
+    {
+      id: "verified-visible",
+      threadId: "global",
+      jobIds: [],
+      visibilityProjectIds: ["visible"],
+      projectIds: ["visible"],
+    },
+  ] as any;
+  expect(visibleAssistantMessages(messages, raw, scoped).map((message) => message.id)).toEqual([
+    "verified-visible",
+  ]);
+  const all = assistantPrivacyScope([...visible, hidden], [...visible, hidden], raw);
+  expect(all.unrestricted).toBe(true);
+  expect(visibleAssistantMessages(messages, raw, all)).toHaveLength(3);
+  expect(messages[0].projectIds).toBeUndefined();
+  expect(
+    visibleAssistantMessages(messages, raw, assistantPrivacyScope(null, [...visible, hidden], raw)),
+  ).toHaveLength(1);
+});
 it("keeps verified global quick jobs and their proven global events, trash and messages without project disclosure", () => {
   const raw = source();
   raw.jobs = [

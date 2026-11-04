@@ -10,6 +10,13 @@ import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import { pathKey } from "../../shared/lib/paths";
 import { useEffect, useRef, useState } from "react";
+import {
+  peekToolsDraftPart,
+  subscribeToolsDraftTransfer,
+  writeToolsDraftPart,
+  holdToolsDraftTransfer,
+  type ToolsDraftScope,
+} from "./toolsDraftTransfer";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
 import { BrowserPanel } from "./BrowserPanel";
@@ -99,12 +106,41 @@ function pollDelay(failures: number, quietScans: number): number {
   return base * Math.min(4, 2 ** failures);
 }
 
-export function DevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch }) {
-  return <ProjectDevServersPanel key={cwd} cwd={cwd} launch={launch} />;
+export function DevServersPanel({
+  cwd,
+  launch,
+  active = true,
+  transferScope,
+}: {
+  cwd: string;
+  launch?: Launch;
+  active?: boolean;
+  transferScope?: ToolsDraftScope;
+}) {
+  return (
+    <ProjectDevServersPanel
+      key={cwd}
+      cwd={cwd}
+      launch={launch}
+      active={active}
+      transferScope={transferScope}
+    />
+  );
 }
 
-function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch }) {
+function ProjectDevServersPanel({
+  cwd,
+  launch,
+  active,
+  transferScope,
+}: {
+  cwd: string;
+  launch?: Launch;
+  active: boolean;
+  transferScope?: ToolsDraftScope;
+}) {
   useLocale();
+  const saved = transferScope ? peekToolsDraftPart(transferScope, "servers") : undefined;
   const [scan, setScan] = useState<DevServerScan>();
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<string>();
@@ -112,10 +148,12 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const [scanError, setScanError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [search, setSearch] = useRetainedState(`dev-servers:${pathKey(cwd)}:search`, "");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [selectedId, setSelectedId] = useState<string>();
-  const [selectedEndpoint, setSelectedEndpoint] = useState<string>();
+  const [error, setError] = useState(saved?.error ?? "");
+  const [notice, setNotice] = useState(saved?.notice ?? "");
+  const [selectedId, setSelectedId] = useState<string | undefined>(saved?.selectedId);
+  const [selectedEndpoint, setSelectedEndpoint] = useState<string | undefined>(
+    saved?.selectedEndpoint,
+  );
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [details, setDetails] = useState<DevServerDetails>();
   const [intent, setIntent] = useState<Intent>("details");
@@ -124,23 +162,83 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const [logs, setLogs] = useState<{ available: boolean; output: string }>();
   const [preview, setPreview] = useState<string>();
   const [sharing, setSharing] = useState<string>();
-  const [showStart, setShowStart] = useState(!!launch);
-  const [name, setName] = useState(launch?.input.name ?? "");
-  const [command, setCommand] = useState(launch?.input.command ?? "");
-  const [workingDirectory, setWorkingDirectory] = useState(launch?.input.cwd ?? "");
-  const [port, setPort] = useState(launch?.input.expectedPort?.toString() ?? "");
-  const [restartCommand, setRestartCommand] = useState("");
-  const [restartCwd, setRestartCwd] = useState("");
+  const [showStart, setShowStart] = useState(saved?.showStart ?? !!launch);
+  const [name, setName] = useState(saved?.name ?? launch?.input.name ?? "");
+  const [command, setCommand] = useState(saved?.command ?? launch?.input.command ?? "");
+  const [workingDirectory, setWorkingDirectory] = useState(
+    saved?.workingDirectory ?? launch?.input.cwd ?? "",
+  );
+  const [port, setPort] = useState(saved?.port ?? launch?.input.expectedPort?.toString() ?? "");
+  const [restartCommand, setRestartCommand] = useState(saved?.restartCommand ?? "");
+  const [restartCwd, setRestartCwd] = useState(saved?.restartCwd ?? "");
+  const [localStart, setLocalStart] = useState<
+    | {
+        base: DevServerStartResult | undefined;
+        result: DevServerStartResult | undefined;
+      }
+    | undefined
+  >(() => (saved?.startResult ? { base: launch?.result, result: saved.startResult } : undefined));
+  useEffect(() => {
+    if (!transferScope) return;
+    return subscribeToolsDraftTransfer(transferScope, ({ servers }) => {
+      if (!servers) return;
+      setShowStart(servers.showStart);
+      setName(servers.name);
+      setCommand(servers.command);
+      setWorkingDirectory(servers.workingDirectory);
+      setPort(servers.port);
+      setRestartCommand(servers.restartCommand);
+      setRestartCwd(servers.restartCwd);
+      setSelectedId(servers.selectedId);
+      setSelectedEndpoint(servers.selectedEndpoint);
+      setError(servers.error ?? "");
+      setNotice(servers.notice ?? "");
+      if (servers.startResult) setLocalStart({ base: launch?.result, result: servers.startResult });
+    });
+  }, [transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
+    if (active && transferScope)
+      writeToolsDraftPart(transferScope, "servers", {
+        showStart,
+        name,
+        command,
+        workingDirectory,
+        port,
+        restartCommand,
+        restartCwd,
+        selectedId,
+        selectedEndpoint,
+        error,
+        notice,
+        startResult: localStart?.result ?? launch?.result,
+      });
+  }, [
+    active,
+    transferScope?.cwd,
+    transferScope?.sessionId,
+    transferScope?.targetValue,
+    showStart,
+    name,
+    command,
+    workingDirectory,
+    port,
+    restartCommand,
+    restartCwd,
+    selectedId,
+    selectedEndpoint,
+    error,
+    notice,
+    localStart?.result,
+    launch?.result,
+  ]);
   // A start result from this panel replaces the launch's result until the next launch result.
-  const [localStart, setLocalStart] = useState<{
-    base: DevServerStartResult | undefined;
-    result: DevServerStartResult | undefined;
-  }>();
   const setStartResult = (result: DevServerStartResult | undefined) =>
     setLocalStart({ base: launch?.result, result });
   const startResult =
     localStart && localStart.base === launch?.result ? localStart.result : launch?.result;
   const alive = useRef(false);
+  const visible = useRef(active);
+  visible.current = active;
   const pending = useRef(false);
   const scanFlight = useRef<Promise<boolean> | undefined>(undefined);
   const failures = useRef(0);
@@ -151,6 +249,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const actionError = useRef<HTMLDivElement>(null);
 
   const reveal = (element: HTMLElement | null) => {
+    if (!visible.current) return;
     element?.focus({ preventScroll: true });
     element?.scrollIntoView({ block: "nearest" });
   };
@@ -201,6 +300,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const action = async (name: string, work: () => Promise<unknown>, waitForScan = true) => {
     if (!alive.current || pending.current || launch?.pending) return;
     pending.current = true;
+    const releaseTransfer = transferScope ? holdToolsDraftTransfer(transferScope) : undefined;
     setBusy(true);
     setOperation(name);
     setError("");
@@ -214,6 +314,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     } catch (cause) {
       if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      releaseTransfer?.();
       pending.current = false;
       if (alive.current) {
         setBusy(false);
@@ -222,13 +323,17 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     }
   };
   useEffect(() => {
+    if (!launch?.pending || !transferScope) return;
+    return holdToolsDraftTransfer(transferScope);
+  }, [launch?.pending, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !active) return;
     let stopped = false;
     let polling = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -259,7 +364,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     // The wrapper remounts for a new project. Polls share one flight and wait
     // until the previous scan completes; hidden windows do no discovery work.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh]);
+  }, [autoRefresh, active]);
   useEffect(() => {
     // A finished launch started a server outside this panel's own requests; rescan for it.
     if (launch?.result?.server) void action("refresh", () => refresh(true));

@@ -5,9 +5,10 @@ import {
   type ModelSetting,
   type ModelSettingChoice,
 } from "../../../../features/sessions/model/models";
-import { execChild, resolveOpenCodeBinary } from "../../core/child";
+import { execChild, hasHeadlessChildBackend, resolveOpenCodeBinary } from "../../core/child";
 import { OpenCodeClient } from "./opencodeClient";
-import { resolveOpenCodeV2Service } from "./opencodeService";
+import { resolveOpenCodeV2Service, resolveOwnedOpenCodeCatalog } from "./opencodeService";
+import { isTauri } from "@tauri-apps/api/core";
 import {
   asRecord,
   assertSupportedOpenCodeVersion,
@@ -71,18 +72,18 @@ export function refreshOpenCodeCatalog(): Promise<void> {
 export async function discoverOpenCodeModels(workingDirectory?: string): Promise<AgentModel[]> {
   const { path } = await resolveOpenCodeBinary();
   const cwd = workingDirectory ?? (await homeDir());
-  const versionOut = await execChild(path, ["--version"], cwd, "opencode");
+  const versionOut = await execChild(path, ["--version"], cwd, "opencode", undefined, "management");
   const version = parseOpenCodeVersion(versionOut);
   const generation = assertSupportedOpenCodeVersion(version);
   if (generation === "v2") {
     return discoverOpenCodeV2Models(path, cwd);
   }
 
-  const modelsOut = await execChild(path, ["models", "--verbose"], cwd, "opencode");
+  const modelsOut = await execChild(path, ["models", "--verbose"], cwd, "opencode", undefined, "management");
   const parsed = parseModelsCliOutput(modelsOut);
   let agents: OpenCodeAgent[] = [];
   try {
-    const agentsOut = await execChild(path, ["agent", "list"], cwd, "opencode");
+    const agentsOut = await execChild(path, ["agent", "list"], cwd, "opencode", undefined, "management");
     agents = parseAgentListCliOutput(agentsOut);
   } catch (error) {
     console.debug("[bycoda] opencode agents", error);
@@ -91,11 +92,13 @@ export async function discoverOpenCodeModels(workingDirectory?: string): Promise
 }
 
 async function discoverOpenCodeV2Models(path: string, cwd: string): Promise<AgentModel[]> {
-  const service = await resolveOpenCodeV2Service(path, cwd);
+  const service = typeof isTauri === "function" && isTauri() && !hasHeadlessChildBackend()
+    ? await resolveOwnedOpenCodeCatalog(path, cwd)
+    : await resolveOpenCodeV2Service(path, cwd);
   // Catalog requests stay on the server's default location: location-scoped
   // requests return an empty model snapshot for some projects on 2.x and a
   // 500 for directories the server has not registered.
-  const client = new OpenCodeClient(service.url, "", "v2", service.password);
+  const client = new OpenCodeClient(service.url, "", "v2", service.password, undefined, undefined, undefined, service.nativeOwnedService);
   const [rawModels, rawProviders, rawAgents] = await Promise.all([
     client.listModels(),
     client.listProviders(),

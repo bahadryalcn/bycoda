@@ -1,5 +1,6 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
+import { createProbeGrantWarningFilter } from "./probe-grant-warning";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import {
@@ -7,9 +8,9 @@ import {
   type SessionToolGroup,
   type SessionToolCapability,
 } from "./session-tools-relay";
-import { authorizeSocialAcpFrame } from "./social-tools";
+import { authorizeSocialAcpFrame } from "./social/social-tools";
 import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
-import { authorizeConversationAcpFrame } from "./conversation-tools";
+import { authorizeConversationAcpFrame } from "./conversation/conversation-tools";
 import { join, basename, dirname, extname, isAbsolute, relative } from "node:path";
 import {
   readFile,
@@ -192,6 +193,7 @@ type ToolPreparation = {
 };
 
 export class HostChildBackend implements ChildBackend {
+  private readonly reportGrantWarning = createProbeGrantWarningFilter();
   private readonly toolRelay = new SessionToolsRelay();
   private readonly preparedTools = new Map<string, ToolPreparation>();
   private readonly activeTools = new Map<string, ToolPreparation>();
@@ -206,8 +208,8 @@ export class HostChildBackend implements ChildBackend {
   setRuntimeLogAccess(service: RuntimeLogAccess, endpoint: string): void {
     this.runtimeLogAccess = { service, endpoint };
   }
-  private socialAccess?: { service: import("./social").SocialService; endpoint: string };
-  setSocialAccess(service: import("./social").SocialService, endpoint: string): void {
+  private socialAccess?: { service: import("./social/social").SocialService; endpoint: string };
+  setSocialAccess(service: import("./social/social").SocialService, endpoint: string): void {
     this.socialAccess = { service, endpoint };
   }
   private genericAcp?: GenericAcpService;
@@ -1279,7 +1281,7 @@ export class HostChildBackend implements ChildBackend {
         check();
         // Helpers without an authoritative session must not inherit any access.
         if (error instanceof ProviderStartupCancelled) throw error;
-        console.warn(
+        if (this.reportGrantWarning(sessionId, group)) console.warn(
           `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
           error,
         );

@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen, emit: mocks.emit }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
+vi.mock("../../../platform/tauri/workspaceWindows", () => ({ isLeadWindow: async () => true }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   probeHarnessAvailability: mocks.probe,
 }));

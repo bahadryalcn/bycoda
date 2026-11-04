@@ -146,7 +146,8 @@ export function useWorkspaceSnapshotSync({
       .then((cwd) => {
         if (!looksLikeProject(cwd)) return;
         setProjectCwd(cwd);
-        setRecents((prev) => (prev.length > 0 ? prev : rememberProject(cwd)));
+        void rememberProject(cwd).then((next) => setRecents((prev) => (prev.length > 0 ? prev : next)))
+          .catch((error: unknown) => console.error("Could not remember project", error));
         setSessions((prev) => prev.map((s) => (s.cwd === "~" ? { ...s, cwd } : s)));
       })
       .catch((error) => {

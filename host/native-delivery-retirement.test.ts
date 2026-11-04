@@ -106,7 +106,7 @@ it("reserves each finite maximum durably before its actual effect and converts i
   f.setFormat(async () => {
     expect(await reserved(identity.originalId)).toEqual({
       state: "admitted",
-      reserved_bytes: maximum,
+      reserved_bytes: 4 * 1024 * 1024,
     });
     return null;
   });
@@ -130,11 +130,15 @@ it("retires exact32MiB results by stored consumed digest, reclaims capacity and 
     ...empty,
     formatted: "x".repeat(maximum - Buffer.byteLength(JSON.stringify(empty))),
   };
-  f.setFormat(async () => result);
-  const status = await f.call("native.services.delivery.apply", {
+  // Model an already admitted legacy original, whose immutable reservation was32MiB.
+  await f.journal.admit(f.principal, format, identity);
+  await f.store.db
+    .prepare("UPDATE native_delivery_receipts SET reserved_bytes=? WHERE original_id=?")
+    .run(maximum, identity.originalId);
+  await f.journal.record(f.principal, format, identity, result);
+  const status = await f.call("native.services.delivery.status", {
     ...identity,
     target: format,
-    paramsJson,
   });
   expect(status).toMatchObject({ state: "recorded", resultSource: { byteLength: maximum } });
   const source = (status as { resultSource: { sha256: string; byteLength: number } }).resultSource;
@@ -151,7 +155,7 @@ it("retires exact32MiB results by stored consumed digest, reclaims capacity and 
   await expect(
     f.call("native.services.delivery.apply", { ...next, target: format, paramsJson }),
   ).rejects.toThrow("before admission");
-  expect(f.counts.format).toBe(1);
+  expect(f.counts.format).toBe(0);
   expect(await f.journal.readMetadata(f.principal, format, next)).toBeNull();
   await expect(
     f.call("native.services.delivery.ack", { ...identity, target: format, consumedResult: source }),
@@ -202,12 +206,12 @@ it("retires exact32MiB results by stored consumed digest, reclaims capacity and 
   expect(
     await f.call("native.services.delivery.apply", { ...identity, target: format, paramsJson }),
   ).toEqual(retired);
-  expect(f.counts.format).toBe(1);
+  expect(f.counts.format).toBe(0);
   f.setFormat(async () => null);
   expect(
     await f.call("native.services.delivery.apply", { ...next, target: format, paramsJson }),
   ).toMatchObject({ state: "recorded", result: null });
-  expect(f.counts.format).toBe(2);
+  expect(f.counts.format).toBe(1);
 });
 
 it("keeps an unresolved admitted service reservation across reopen and rejects ACK without an actual result", async () => {
@@ -220,6 +224,8 @@ it("keeps an unresolved admitted service reservation across reopen and rejects A
   expect(
     await f.call("native.services.delivery.apply", { ...identity, target: format, paramsJson }),
   ).toMatchObject({ state: "unknown" });
+  for (let index = 0; index < 7; index++)
+    await f.journal.admit(f.principal, format, deliveryIdentity(paramsJson));
   await f.reopen();
   await expect(
     f.call("native.services.delivery.ack", {
@@ -245,10 +251,10 @@ it("keeps an unresolved admitted service reservation across reopen and rejects A
         .prepare("SELECT reserved_bytes FROM native_delivery_receipts WHERE original_id=?")
         .get(identity.originalId)
     )?.reserved_bytes,
-  ).toBe(maximum);
+  ).toBe(4 * 1024 * 1024);
 });
 
-it("enforces the global reservation bound across principals before any third formatter enters", async () => {
+it("enforces the global reservation bound across principals before a seventeenth formatter enters", async () => {
   const f = await fixture(),
     paramsJson = formatJson();
   const ids = [
@@ -258,6 +264,10 @@ it("enforces the global reservation bound across principals before any third for
   ];
   await f.journal.admit("first-paired-principal", format, ids[0]);
   await f.journal.admit("second-paired-principal", format, ids[1]);
+  for (let index = 0; index < 7; index++) {
+    await f.journal.admit("first-paired-principal", format, deliveryIdentity(paramsJson));
+    await f.journal.admit("second-paired-principal", format, deliveryIdentity(paramsJson));
+  }
   await expect(
     f.call("native.services.delivery.apply", { ...ids[2], target: format, paramsJson }),
   ).rejects.toThrow("before admission");

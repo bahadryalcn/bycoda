@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { voiceToolCatalog } from "../../../../host/voice-tools";
+import { voiceToolCatalog } from "../../../../host/voice/voice-tools";
 import {
   readVoiceToolCatalog,
   selectVoiceTools,

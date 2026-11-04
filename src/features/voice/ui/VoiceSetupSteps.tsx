@@ -19,6 +19,7 @@ import { LocalVoice } from "../model/localVoice";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceSettings } from "./VoiceSettings";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import styles from "./VoiceSetupSteps.module.css";
 
 export function VoiceSetupSteps({
@@ -317,7 +318,7 @@ export function VoiceSetupSteps({
           ) : null}
         </>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError action={<MicrophoneRecoveryAction message={error} />}>{error}</InlineError> : null}
     </div>
   );
 }

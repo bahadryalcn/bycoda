@@ -161,7 +161,7 @@ export function createHostDispatcher(services: HostServices) {
       !getHostRpcMethod(method) ||
       getHostRpcMethod(method)!.scope !== "device"
     )
-      throw new Error("Invalid Host domain route.");
+      throw new Error(`Invalid Host domain route: ${method}.`);
   const methods = [...implementedMethods, ...operations.keys()];
   return {
     methods,

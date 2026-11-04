@@ -840,7 +840,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
     return <img {...props} src={url} alt={alt ?? ""} />;
   }
   if (isNoteImagePath(url)) {
-    return <NoteAssetImage {...props} asset={url} alt={alt} />;
+    return <NoteAssetImage key={url} {...props} asset={url} alt={alt} />;
   }
   const file = localMedia && url ? resolveFile(url, cwd) : undefined;
   if (file && isLocalMediaPath(file.path)) {
@@ -1347,6 +1347,8 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
   );
 }
 
+let mermaidRenderSequence = 0;
+
 function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean }) {
   useLocale();
   // A render result belongs to the code and scheme it was made for: anything
@@ -1366,7 +1368,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   useEffect(() => {
     if (incomplete) return;
     let cancelled = false;
-    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${Date.now().toString(36)}`;
+    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${++mermaidRenderSequence}`;
     void mermaid
       .getMermaid({
         ...MERMAID_BASE_CONFIG,

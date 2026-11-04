@@ -632,9 +632,17 @@ fn validate_copy_paths(
         check_path: &impl Fn(&Path, bool) -> Result<PathBuf, String>,
         ancestors: &mut HashSet<PathBuf>,
     ) -> Result<(), String> {
+        let metadata = std::fs::symlink_metadata(from).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_symlink() {
+            // Copy the link itself, not its target or descendants. Authorize the
+            // containing directory and the new link location.
+            check_path(from.parent().ok_or("Link has no parent")?, false)?;
+            check_path(to, true)?;
+            return Ok(());
+        }
         let source = check_path(from, false)?;
         check_path(to, true)?;
-        if from.is_dir() {
+        if metadata.is_dir() {
             if !ancestors.insert(source.clone()) {
                 return Err("Cannot copy a cyclic symbolic link".into());
             }

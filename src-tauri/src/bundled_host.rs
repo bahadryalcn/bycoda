@@ -71,7 +71,6 @@ impl RetryState {
     }
 }
 /// Another window's or a crashed run's lock is ignored after this long.
-const STALE_LOCK: Duration = Duration::from_secs(10 * 60);
 /// A coordinator job that has not changed for this long is not running.
 const STALE_JOB: Duration = Duration::from_secs(30 * 60);
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -471,38 +470,19 @@ struct InstallLock(PathBuf);
 
 /// Whether this app's own host installer holds its lock right now.
 pub(crate) fn install_running(base: &Path) -> bool {
-    std::fs::metadata(base.join("app-install.lock"))
-        .and_then(|meta| meta.modified())
-        .ok()
-        .and_then(|time| SystemTime::now().duration_since(time).ok())
-        .is_some_and(|age| age <= STALE_LOCK)
+    match std::fs::metadata(base.join("app-install.lock")) {
+        Ok(_) => true,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
 }
 
 impl InstallLock {
     fn acquire(base: &Path) -> Option<Self> {
         std::fs::create_dir_all(base).ok()?;
         let path = base.join("app-install.lock");
-        for _ in 0..2 {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(_) => return Some(Self(path)),
-                Err(_) => {
-                    let stale = std::fs::metadata(&path)
-                        .and_then(|meta| meta.modified())
-                        .ok()
-                        .and_then(|time| SystemTime::now().duration_since(time).ok())
-                        .is_some_and(|age| age > STALE_LOCK);
-                    if !stale {
-                        return None;
-                    }
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
-        }
-        None
+        // Age alone cannot prove that a slow or orphaned installer retired.
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&path).ok()?;
+        Some(Self(path))
     }
 }
 
@@ -513,7 +493,7 @@ impl Drop for InstallLock {
 }
 
 /// Runs the bootstrap script against the bundled archive.
-fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Result<(), String> {
+fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool, lock: std::sync::Arc<InstallLock>) -> Result<(), String> {
     let windows = cfg!(windows);
     let platform = if windows {
         HostPlatform::Windows
@@ -566,15 +546,14 @@ fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Re
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let result = run_with_timeout(command, SCRIPT_TIMEOUT);
-    let _ = std::fs::remove_file(&script);
-    result
+    run_with_timeout(command, SCRIPT_TIMEOUT, lock, script)
 }
 
-fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), String> {
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Could not start the host installer: {error}"))?;
+fn run_with_timeout(mut command: Command, timeout: Duration, lock: std::sync::Arc<InstallLock>, script: std::path::PathBuf) -> Result<(), String> {
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => { let _ = std::fs::remove_file(&script); return Err(format!("Could not start the host installer: {error}")); }
+    };
     let mut stderr = child.stderr.take();
     let reader = std::thread::spawn(move || {
         let mut text = String::new();
@@ -588,6 +567,7 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), Strin
         match child.try_wait() {
             Ok(Some(status)) => {
                 let errors = reader.join().unwrap_or_default();
+                let _ = std::fs::remove_file(&script);
                 if status.success() {
                     return Ok(());
                 }
@@ -598,11 +578,35 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), Strin
                     .to_string());
             }
             Ok(None) if started.elapsed() > timeout => {
-                let _ = child.kill();
+                std::thread::spawn(move || {
+                    let _lock = lock;
+                    crate::harness::terminate_all(&[child.id()]);
+                    let _ = child.kill();
+                    // Keep the lock and script until actual process and pipe retirement.
+                    if child.wait().is_ok() {
+                        let _ = reader.join();
+                        let _ = std::fs::remove_file(&script);
+                    }
+                    // Parent exit and closed stderr do not prove every descendant
+                    // retired after a bounded tree-kill attempt.
+                    std::mem::forget(_lock);
+                });
                 return Err("The host installer did not finish in time.".into());
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(200)),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => {
+                std::thread::spawn(move || {
+                    let _lock = lock;
+                    crate::harness::terminate_all(&[child.id()]);
+                    let _ = child.kill();
+                    if child.wait().is_ok() {
+                        let _ = reader.join();
+                        let _ = std::fs::remove_file(&script);
+                    }
+                    std::mem::forget(_lock);
+                });
+                return Err(error.to_string());
+            }
         }
     }
 }
@@ -637,9 +641,10 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
         });
         return None;
     };
-    let Some(_lock) = InstallLock::acquire(&base) else {
+    let Some(lock) = InstallLock::acquire(&base) else {
         return Some(RETRY_INTERVAL);
     };
+    let lock = std::sync::Arc::new(lock);
     let installed = installed_version(&base);
     let decision = plan(
         installed.as_deref(),
@@ -696,7 +701,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
             // downgrading a newer installed release. Bootstrap reuses intact
             // extracted bytes on later attempts.
             let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
-            let result = run_installer(&base, &archive, replace, repair).and_then(|()| {
+            let result = run_installer(&base, &archive, replace, repair, lock.clone()).and_then(|()| {
                 if installation_confirmed(
                     installed_version(&base).as_deref(),
                     &bundled,

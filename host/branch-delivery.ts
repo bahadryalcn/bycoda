@@ -3,7 +3,7 @@ import { lstat, readFile, readlink, mkdtemp, writeFile, rm } from "node:fs/promi
 import { join, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
-import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
+import { hostGitRepositoryKey, withHostGitMutation } from "./git/git-mutations";
 import type {
   BranchDeliveryPlan,
   BranchMergeReceipt,

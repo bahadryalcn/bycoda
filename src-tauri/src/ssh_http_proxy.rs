@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 const TLS_READY_SLICE: Duration = Duration::from_millis(100);
 
 #[cfg(unix)]
-fn wait_tcp_ready(
-    interests: &[(&TcpStream, bool, bool)],
+pub(crate) fn wait_tcp_ready<T: std::os::fd::AsRawFd>(
+    interests: &[(&T, bool, bool)],
     timeout: Duration,
 ) -> std::io::Result<usize> {
     use std::os::fd::AsRawFd;
@@ -40,8 +40,8 @@ fn wait_tcp_ready(
 }
 
 #[cfg(windows)]
-fn wait_tcp_ready(
-    interests: &[(&TcpStream, bool, bool)],
+pub(crate) fn wait_tcp_ready<T: std::os::windows::io::AsRawSocket>(
+    interests: &[(&T, bool, bool)],
     timeout: Duration,
 ) -> std::io::Result<usize> {
     use std::os::windows::io::AsRawSocket;
@@ -348,7 +348,13 @@ impl HttpProxyLease {
                         return;
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(20))
+                        // Listener is owned by this lease. Recheck its captured
+                        // stop state and expiry after each bounded readiness wait.
+                        // Tracked stream shutdown retains its existing wake path.
+                        let remaining = expiry.saturating_duration_since(Instant::now());
+                        if remaining.is_zero() || wait_tcp_ready(&[(&listener, true, false)], remaining).is_err() {
+                            break;
+                        }
                     }
                     Err(_) => break,
                 }

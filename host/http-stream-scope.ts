@@ -86,7 +86,7 @@ export class HttpStreamScope {
     } else if (body) {
       this.cancellation = Promise.resolve().then(() => body.cancel(this.signal.reason));
     }
-    void this.cancellation?.catch(() => {});
+    if (this.cancellation) void this.cancellation.catch(() => {});
   }
 
   close(): void {

@@ -103,6 +103,8 @@ import {
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
 export type SessionSummary = {
+  /** Exact authority captured for Last Sessions pin actions. Null means unidentified. */
+  recentPinTarget?: import("./sessionPinReceipts").PinTarget | null;
   interrupted?: boolean;
   lastActivityAt?: number;
   providerHistory?: import("../model/sessionProviderHistory").SessionProviderHistory;
@@ -507,6 +509,14 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
   )
     throw new Error("Invalid cleared conversation");
   return persistSession(session, undefined, true);
+}
+
+/** Explicit Room creation persists its empty conversation before reporting its ID. */
+export async function createRoomSession(session: Session): Promise<SessionSummary> {
+  if (session.blocks.length > 1 || session.blocks.some(block => block.role !== "user" || !block.draft || !block.appRequestId) || session.providerSessionId || session.pendingContextReplay || session.historyPartial || session.historyLoading || session.inboxAsk || hostSessionBinding(session) || isRemoteProjectPath(session.cwd) || session.cwd === "~") throw new Error("Invalid Room conversation");
+  const summary = await persistSession(session, { expectMissing: true }, true);
+  if (!summary || summary.id !== session.id) throw new Error("Room conversation creation outcome is unknown");
+  return summary;
 }
 
 /**
@@ -1056,14 +1066,22 @@ export async function listRecentSessions(limit: number): Promise<SessionSummary[
   const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
   const owned = hostSessionShellSummaries();
   const native = rows.filter((row) => !hasHostSessionOwnerFence(row.id));
-  if (!owned.length) return native.map(normalizeSummary);
-  const combined = [...native, ...owned].sort(
+  const nativeRows = native.map((row): SessionSummary => ({ ...normalizeSummary(row), recentPinTarget: !row.cwd || row.cwd === "~" || isRemoteProjectPath(row.cwd)
+    ? null : { kind: "native", sessionId: row.id, cwd: row.cwd } }));
+  const ownedRows = owned.map((row): SessionSummary => {
+    const owner = hostSessionBinding({ id: row.id });
+    return { ...normalizeSummary(row), recentPinTarget: owner?.created ? { kind: "host", sessionId: owner.sessionId,
+      machineId: owner.machineId, environmentId: owner.environmentId, projectId: owner.projectId,
+      ...(owner.authorityGeneration === null ? {} : { authorityGeneration: owner.authorityGeneration }) } : null };
+  });
+  if (!ownedRows.length) return nativeRows;
+  const combined = [...nativeRows, ...ownedRows].sort(
     (a, b) => summaryActivityAt(b) - summaryActivityAt(a),
   );
   return [
     ...combined.filter((entry) => entry.pinned),
     ...combined.filter((entry) => !entry.pinned).slice(0, limit),
-  ].map(normalizeSummary);
+  ];
 }
 
 /** All local summaries at or after the cutoff. No pin or row-count limit. */
@@ -1223,13 +1241,46 @@ export function getSession(
   sessionId: string,
   options: SessionHydrationOptions = {},
 ): Promise<Session | null> {
+  if (deletedSessionIds.has(sessionId)) return Promise.resolve(null);
   const hostShell = restoreHostSessionShell(sessionId);
   if (hostShell) return Promise.resolve(hostShell);
   return sessionPersistence.run([sessionId], "hydration", async (work) => {
-    const result = await loadStoredSession(sessionId, options, work);
+    let result: Session | null;
+    try {
+      result = await loadStoredSession(sessionId, options, work);
+    } catch (error) {
+      if ((error instanceof Error ? error.message : String(error)) !== "Session was deleted")
+        throw error;
+      deletedSessionIds.add(sessionId);
+      work.confirmRecovery();
+      return null;
+    }
     work.confirmRecovery();
-    return result;
+    return deletedSessionIds.has(sessionId) ? null : result;
   });
+}
+
+export function isSessionDeleted(sessionId: string): boolean {
+  return deletedSessionIds.has(sessionId);
+}
+
+/** Check layout references without hydrating every inactive transcript. */
+export async function listDeletedSessionIds(sessionIds: string[]): Promise<string[]> {
+  const deleted: string[] = [];
+  for (let offset = 0; offset < sessionIds.length; offset += 500) {
+    const batch = sessionIds.slice(offset, offset + 500);
+    const result = await invoke<unknown>("session_deleted_ids", { sessionIds: batch });
+    if (
+      !Array.isArray(result) ||
+      result.some((id) => typeof id !== "string" || !batch.includes(id))
+    )
+      throw new Error("Deleted conversation status could not be verified.");
+    for (const id of result as string[]) {
+      deletedSessionIds.add(id);
+      deleted.push(id);
+    }
+  }
+  return deleted;
 }
 
 async function loadStoredSession(
@@ -1243,7 +1294,7 @@ async function loadStoredSession(
   if (!options.onHydrated) {
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
-      if (!record) return null;
+      if (!record || deletedSessionIds.has(sessionId)) return null;
       const session = recoverTaggedOrchestrationProposals(recordToSession(record));
       persistenceBaselines.set(sessionId, {
         blocks: incrementalBlocks(session),
@@ -1264,7 +1315,7 @@ async function loadStoredSession(
     finish();
     throw error;
   }
-  if (!page) {
+  if (!page || deletedSessionIds.has(sessionId)) {
     finish();
     return null;
   }
@@ -1560,7 +1611,7 @@ export function backfillCodexShellCommands(blocks: Block[]): Block[] {
 }
 
 export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
-  await flushHostSessionBindings();
+  await flushHostSessionBindings(sessionId);
   const owner = hostSessionBinding({ id: sessionId });
   if (owner) {
     if (!owner.created)
@@ -1572,7 +1623,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       owner.authorityGeneration ?? undefined,
     );
     forgetHostSessionShell(sessionId);
-    await flushHostSessionBindings();
+    await flushHostSessionBindings(sessionId);
     clearComposerDraft(sessionId);
     return;
   }
@@ -1605,8 +1656,9 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       removeSessionAdditionalDirs(sessionId);
       // The cache's change listener deletes the saved draft row.
       clearComposerDraft(sessionId, work);
-      const tombstone = setTimeout(() => deletedSessionIds.delete(sessionId), 60_000);
-      if (typeof tombstone === "object") tombstone.unref();
+      // IDs are never reused after explicit deletion. A delayed hydration,
+      // recovery or sibling snapshot may still arrive long after one minute.
+      // Native deletion also retains this decision across renderer restarts.
       work.confirmRecovery();
     } catch (error) {
       deletedSessionIds.delete(sessionId);
@@ -1621,7 +1673,7 @@ export async function discardDraftSessionRecord(sessionId: string): Promise<void
   await enqueueSessionWrite(
     sessionId,
     async (work) => {
-      await invoke<void>("session_delete", { sessionId, imagePaths: [] });
+      await invoke<void>("session_delete", { sessionId, imagePaths: [], allowRecreate: true });
       work.confirmRecovery();
     },
     false,
@@ -1655,7 +1707,7 @@ export async function updateOwnedSessionMetadata(
     linkedWorkItem?: LinkedWorkItem | null;
   },
 ): Promise<boolean> {
-  await flushHostSessionBindings();
+  await flushHostSessionBindings(sessionId);
   const owner = hostSessionBinding({ id: sessionId });
   if (!owner) return false;
   if (!owner.created)
@@ -1687,7 +1739,7 @@ export async function updateOwnedSessionMetadata(
       },
       owner,
     );
-  await flushHostSessionBindings();
+  await flushHostSessionBindings(sessionId);
   return true;
 }
 
@@ -1977,15 +2029,10 @@ function sanitizeShellRun(value: Block["shell"]): Block["shell"] {
   return {
     command: value.command,
     output: typeof value.output === "string" ? value.output : "",
-    exitCode:
-      typeof value.exitCode === "number" && !value.running && !value.terminationFailed
-        ? value.exitCode
-        : null,
+    exitCode: typeof value.exitCode === "number" && !value.running && !value.terminationFailed ? value.exitCode : null,
     ...(value.timedOut ? { timedOut: true } : {}),
     ...(value.truncated ? { truncated: true } : {}),
-    ...(typeof value.terminationFailed === "string" && value.terminationFailed
-      ? { terminationFailed: value.terminationFailed }
-      : {}),
+    ...(typeof value.terminationFailed === "string" && value.terminationFailed ? { terminationFailed: value.terminationFailed } : {}),
   };
 }
 

@@ -458,6 +458,10 @@ export function useSocialWorkspaceController({
       }
       return true;
     } catch (value) {
+      if (lastAction.current === "accounts.assistantGrant" && currentMachine.current === id) {
+        try { await refresh(id, true); }
+        catch (cause) { if (currentMachine.current === id) setLoadError(cause instanceof Error ? cause.message : String(cause)); }
+      }
       if (currentMachine.current === id)
         setError(value instanceof Error ? value.message : String(value));
       return false;

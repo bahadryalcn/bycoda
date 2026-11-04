@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { withTimeout } from "../../../shared/lib/withTimeout";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 
 export type VoicePresence = "active" | "idle" | "away" | "unknown";
 export type UserPresence = { idleMs: number; locked: boolean; supported: boolean };
@@ -35,7 +37,10 @@ export async function readNativeVoicePresence(minutes: number): Promise<VoicePre
   if (!("__TAURI_INTERNALS__" in window)) return "unknown";
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    return classifyVoicePresence(await invoke<UserPresence>("get_user_presence"), minutes);
+    return classifyVoicePresence(
+      await withTimeout(invoke<UserPresence>("get_user_presence"), 3000, "Native presence"),
+      minutes,
+    );
   } catch {
     return "unknown";
   }
@@ -49,23 +54,22 @@ export function useVoicePresence(enabled: boolean, minutes: number): VoicePresen
     if (!enabled) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
-    let lastInput = Date.now();
+    let lastInput = monotonicNow();
     const input = () => {
-      lastInput = Date.now();
+      lastInput = monotonicNow();
       if (!("__TAURI_INTERNALS__" in window)) setPresence("active");
     };
     const poll = async () => {
       let next: VoicePresence = "unknown";
       if ("__TAURI_INTERNALS__" in window) {
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
-          next = classifyVoicePresence(await invoke<UserPresence>("get_user_presence"), minutes);
+          next = await readNativeVoicePresence(minutes);
         } catch {
           /* Missing/failed native evidence is unknown, never active. */
         }
       } else if (document.visibilityState !== "hidden") {
         next = classifyVoicePresence(
-          { idleMs: Date.now() - lastInput, locked: false, supported: true },
+          { idleMs: elapsedSince(lastInput), locked: false, supported: true },
           minutes,
         );
       }

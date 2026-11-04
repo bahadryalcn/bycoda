@@ -75,6 +75,9 @@ fn fetch_resource(mut url: Url, accept: &str, max_bytes: usize) -> Result<Fetche
     let agent = ureq::AgentBuilder::new()
         .timeout(HTTP_TIMEOUT)
         .redirects(0)
+        // A proxy could resolve a different destination outside our checks.
+        .try_proxy_from_env(false)
+        .resolver(resolve_public_target)
         .build();
 
     for _ in 0..=MAX_REDIRECTS {
@@ -176,17 +179,34 @@ fn validate_public_target(url: &Url) -> Result<(), String> {
         return Err("Local addresses cannot be previewed".into());
     }
 
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| "Link preview target has no port".to_string())?;
-    let addresses: Vec<_> = (host.as_str(), port)
-        .to_socket_addrs()
-        .map_err(|_| "Could not resolve link preview host".to_string())?
-        .collect();
-    if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
-        return Err("Private addresses cannot be previewed".into());
-    }
     Ok(())
+}
+
+// Resolve once per actual connection and return exactly the checked addresses.
+// DNS calls can outlive their caller, so also cap outstanding resolver threads.
+fn resolve_public_target(netloc: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+    ACTIVE.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < 8).then_some(n + 1))
+        .map_err(|_| std::io::Error::other("Link preview DNS capacity reached"))?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let name = netloc.to_owned();
+    if let Err(error) = std::thread::Builder::new().spawn(move || {
+        struct Slot;
+        impl Drop for Slot { fn drop(&mut self) { ACTIVE.fetch_sub(1, Ordering::AcqRel); } }
+        let _slot = Slot;
+        let result = name.to_socket_addrs().map(|addresses| addresses.collect::<Vec<_>>());
+        let _ = tx.send(result);
+    }) {
+        ACTIVE.fetch_sub(1, Ordering::AcqRel);
+        return Err(error);
+    }
+    let addresses = rx.recv_timeout(HTTP_TIMEOUT)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Link preview DNS timed out"))??;
+    if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Private addresses cannot be previewed"));
+    }
+    Ok(addresses)
 }
 
 fn public_ip_result(ip: IpAddr) -> Result<(), String> {

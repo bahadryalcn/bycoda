@@ -10,11 +10,20 @@ import "../../src/styles/index.css";
 
 const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("dark", params.has("dark"));
+document.documentElement.classList.toggle("theme-light", !params.has("dark"));
 const blocks: Block[] = Array.from({ length: Number(params.get("count") ?? 120) }, (_, i) => ({
   id: `prompt-${i}`,
   role: "user",
   text: `Prompt ${i}`,
 }));
+if (params.has("preview")) {
+  blocks[0].text = "duruma bakarmısın çalışıyorlar bir kaç tane uzun konuşma başlığı";
+  blocks.splice(1, 0, {
+    id: "reply-0",
+    role: "assistant",
+    text: "Failed to authenticate: OAuth session\nexpired and could not be refreshed",
+  });
+}
 
 function Fixture() {
   const scope = useRef<HTMLDivElement>(null);
@@ -42,7 +51,7 @@ function Fixture() {
       <div ref={scope} data-outline-scope className="@container relative min-h-0 flex-1">
         <div ref={setScroller} className="agent-transcript h-full overflow-auto">
           {blocks.map((block) => (
-            <div key={block.id} className="transcript-turn h-20" data-prompt-anchor={block.id}>
+            <div key={block.id} className="transcript-turn h-20" data-prompt-anchor={block.role === "user" ? block.id : undefined}>
               {block.text}
             </div>
           ))}

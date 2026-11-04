@@ -2,7 +2,7 @@ import type { HostStore } from "../store";
 import type { AssistantJob, AssistantNote } from "../../src/shared/model/host-contracts/assistant";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
-import { assertAssistantGoalProjects } from "../assistant-job-scope";
+import { assertAssistantGoalProjects } from "./work/assistant-job-scope";
 import { assistantJobProjectIds } from "../../src/shared/model/assistantProjects";
 import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 

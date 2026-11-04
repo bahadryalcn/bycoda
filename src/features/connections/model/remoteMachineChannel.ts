@@ -29,7 +29,7 @@ import { z } from "zod";
 export type MachineChannelDemand = {
   active?: { projectId: string; sessionId: string; lastActiveAt: number };
   inlineSync?: boolean;
-  sessions?: readonly { sessionId: string; revision: number }[];
+  sessions?: readonly { sessionId: string; revision: number; sourceEpoch?: string }[];
   projects?: readonly { projectId: string; known?: string }[];
   git?: readonly { cwd: string; known?: string }[];
   tasksKnown?: string;
@@ -47,6 +47,7 @@ type Subscriber = {
   onError?: (error: unknown) => void;
   responseSequence: number;
   committedRevisions: Map<string, number>;
+  streamEpochs: Map<string, string>;
 };
 type Channel = {
   subscribers: Set<Subscriber>;
@@ -229,16 +230,19 @@ function startWake() {
 
 function mergedDemand(channel: Channel): MachineChangesRequest {
   const sessions = new Map<string, number>();
+  const sessionEpochs = new Map<string, string | undefined>();
   const projects = new Map<string, string | undefined>();
   const git = new Map<string, string | undefined>();
   const taskEtags = new Set<string>();
   let inlineSync = false;
   const inlineSessionIds = new Set<string>();
   const activeSessions = new Map<string, number>();
+  const activeProjectIds = new Set<string>();
   for (const { demand: source } of channel.subscribers) {
     const demand = typeof source === "function" ? source() : source;
     if (demand.active) {
       const { projectId, sessionId, lastActiveAt } = demand.active;
+      activeProjectIds.add(projectId);
       channel.recentProjects.set(
         projectId,
         Math.max(channel.recentProjects.get(projectId) ?? 0, lastActiveAt),
@@ -247,6 +251,9 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
     }
     inlineSync ||= demand.inlineSync === true;
     for (const session of demand.sessions ?? []) {
+      if (!sessionEpochs.has(session.sessionId)) sessionEpochs.set(session.sessionId, session.sourceEpoch);
+      else if (sessionEpochs.get(session.sessionId) !== session.sourceEpoch)
+        sessionEpochs.set(session.sessionId, undefined);
       if (demand.inlineSync === true) inlineSessionIds.add(session.sessionId);
       sessions.set(
         session.sessionId,
@@ -263,6 +270,16 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
       else if (git.get(checkout.cwd) !== checkout.known) git.set(checkout.cwd, undefined);
     }
     if (demand.tasksKnown !== undefined) taskEtags.add(demand.tasksKnown);
+  }
+  // Recency is advisory metadata. Keep every active project and bound inactive history.
+  if (channel.recentProjects.size > 512) {
+    const inactive = [...channel.recentProjects]
+      .filter(([id]) => !activeProjectIds.has(id))
+      .sort((a, b) => a[1] - b[1]);
+    for (const [id] of inactive) {
+      if (channel.recentProjects.size <= 512) break;
+      channel.recentProjects.delete(id);
+    }
   }
   return {
     subscriptionId: channel.subscriptionId,
@@ -286,6 +303,9 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
     sessions: [...sessions].map(([sessionId, revision]) => ({
       sessionId,
       revision: channel.refreshPending ? 0 : revision,
+      ...(!channel.refreshPending && sessionEpochs.get(sessionId)
+        ? { sourceEpoch: sessionEpochs.get(sessionId) }
+        : {}),
     })),
     projects: [...projects].map(([projectId, known]) => ({
       projectId,
@@ -399,6 +419,8 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
     const sessions = new Set(current.sessions?.map((session) => session.sessionId));
     for (const id of subscriber.committedRevisions.keys())
       if (!sessions.has(id)) subscriber.committedRevisions.delete(id);
+    for (const id of subscriber.streamEpochs.keys())
+      if (!sessions.has(id)) subscriber.streamEpochs.delete(id);
   }
   const demand = mergedDemand(channel);
   const environmentId = environmentForMachine(machineId);
@@ -454,14 +476,18 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       const session = current.sessions?.find((session) => session.sessionId === id);
                       if (!session) continue;
                       const value = update.value;
+                      const epochChanged = subscriber.streamEpochs.get(id) !== input.cursor.epoch ||
+                        (!!update.value.sourceEpoch && update.value.sourceEpoch !== session.sourceEpoch);
+                      if (epochChanged && update.kind !== "snapshot")
+                        throw new Error("Host stream epoch requires a snapshot");
                       const committed = subscriber.committedRevisions.get(id);
                       const base =
-                        committed !== undefined && committed >= session.revision
+                        epochChanged ? 0 : committed !== undefined && committed >= session.revision
                           ? committed
                           : session.revision;
                       if (
                         current.inlineSync === true &&
-                        (value.revision < base ||
+                        ((!epochChanged && value.revision < base) ||
                           (update.kind === "delta" &&
                             (update.base !== base ||
                               (committed !== undefined && session.revision > committed))))
@@ -470,7 +496,7 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       const receipt = await subscriber.listener(
                         {
                           instanceId: channel.instanceId ?? `ws:${environmentId}`,
-                          reset: false,
+                          reset: epochChanged,
                           checkedSessions: [id],
                           checkedProjects: [],
                           projects: [],
@@ -478,6 +504,7 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                             {
                               sessionId: id,
                               revision: value.revision,
+                              ...(value.sourceEpoch ? { sourceEpoch: value.sourceEpoch } : {}),
                               ...(current.inlineSync === true
                                 ? {
                                     sync:
@@ -507,6 +534,7 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                           throw new Error("Host transcript was not committed by this consumer");
                         subscriber.committedRevisions.set(id, receipt.appliedRevision);
                       }
+                      subscriber.streamEpochs.set(id, input.cursor.epoch);
                     }
                   },
                   closed: async () => {
@@ -626,6 +654,10 @@ function deliver(channel: Channel, changes: MachineChanges, reset: boolean, sequ
   for (const subscriber of subscribers) {
     try {
       if (sequence < subscriber.responseSequence) continue;
+      if (reset) {
+        subscriber.committedRevisions.clear();
+        subscriber.streamEpochs.clear();
+      }
       if (!reset && checkedSessions && checkedProjects) {
         const demand =
           typeof subscriber.demand === "function" ? subscriber.demand() : subscriber.demand;
@@ -816,6 +848,7 @@ export function subscribeRemoteMachineChannel(
     onError,
     responseSequence: 0,
     committedRevisions: new Map(),
+    streamEpochs: new Map(),
   };
   channel.subscribers.add(subscriber);
   if (channel.timer) clearTimeout(channel.timer);

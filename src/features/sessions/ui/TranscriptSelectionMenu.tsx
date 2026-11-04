@@ -125,6 +125,20 @@ export function TranscriptSelectionMenu({
       ])
     : null;
 
+  const rail = useRef<HTMLDivElement>(null);
+  const [menuWidth, setMenuWidth] = useState<number>();
+  useLayoutEffect(() => {
+    const toolbar = rail.current?.firstElementChild;
+    if (!(toolbar instanceof HTMLElement)) return;
+    // Targets arrive asynchronously. Measure the intrinsic tray, not the already
+    // viewport-clamped popup. Include menu padding (8) and frame border (2).
+    const measure = () => setMenuWidth(toolbar.offsetWidth + 10);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, [selectionKey, citationDraft?.open]);
+
   const [targets, setTargets] = useState<{ text: string; values: TranslationTarget[] } | null>(
     null,
   );
@@ -149,8 +163,11 @@ export function TranscriptSelectionMenu({
   useEffect(() => {
     if (!selection) return;
     const dismiss = (event: Event) => {
-      // A scroll inside the comment itself must not discard its owner.
-      if (event.target instanceof Element && event.target.closest("[data-citation-comment]"))
+      // Scrolling the action rail or comment must not discard its selection.
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-citation-comment], [data-selection-menu]")
+      )
         return;
       setCitationDraft((current) => current && { ...current, open: false });
       dismissSelection();
@@ -339,17 +356,18 @@ export function TranscriptSelectionMenu({
       anchor={selection.rect}
       side="top"
       align="center"
-      width={420}
+      width={menuWidth}
       onDismiss={(reason) => {
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
       }}
       className={styles.menu}
+      data-selection-menu
     >
       {/* Raised popup family: the Popover owns surface, elevation and radius; the
           rows are compact and calm. This wrapper is the one scroll owner on
           short viewports. */}
-      <div className="max-h-[min(20rem,60vh)] overflow-y-auto overscroll-contain">
+      <div ref={rail} className={styles.rail}>
         <FloatingButtonGroup
           label={t("Selected text actions")}
           items={items}

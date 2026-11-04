@@ -15,7 +15,7 @@ import type {
 } from "./workspace-service-contracts";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import { durableWrite, GitTurnHistory, gitText, refComponent, rewindRef } from "./turn-git-history";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 
 /** Both HostStore and native SQLite must implement this boundary atomically. No provider file revert. */
 export interface ConversationRewindAdapter {

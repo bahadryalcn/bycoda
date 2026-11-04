@@ -42,7 +42,7 @@ import {
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
-import { normalizeProjectPath } from "../../../../features/projects/model/recents";
+import { normalizeProjectPath } from "../../../../shared/lib/paths";
 import {
   selectedAnswerLabels,
   type UserQuestionReply,

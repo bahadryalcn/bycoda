@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { syncNativeGlass } from "./appearance";
+import { readNativeGlassError, readNativeGlassPending, syncNativeGlass } from "./appearance";
 
 const platform = vi.hoisted(() => ({ isLinux: false }));
 vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
@@ -116,8 +116,10 @@ describe("native glass", () => {
     syncNativeGlass("dark");
     await Promise.resolve();
     expect(hasGlass()).toBe(false);
+    expect(readNativeGlassPending()).toBe(true);
     settle();
     await vi.waitFor(() => expect(hasGlass()).toBe(true));
+    expect(readNativeGlassPending()).toBe(false);
   });
 
   it("fades the page opaque before the window stops being transparent", async () => {
@@ -175,6 +177,8 @@ describe("native glass", () => {
     expect(hasGlass()).toBe(false);
 
     settle();
+    await Promise.resolve();
+    expect(readNativeGlassPending()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(hasGlass()).toBe(false);
     expect(invoke).toHaveBeenLastCalledWith(
@@ -183,12 +187,17 @@ describe("native glass", () => {
     );
   });
 
-  it("still flips the page when the window call fails", async () => {
+  it("keeps the page opaque when enabling the window fails and recovers on retry", async () => {
     invoke.mockRejectedValue(new Error("no window"));
     syncNativeGlass("light");
     await vi.waitFor(() => expect(hasGlass()).toBe(false));
     invoke.mockRejectedValue(new Error("no window"));
     syncNativeGlass("dark");
+    await vi.waitFor(() => expect(readNativeGlassError()).toBe(true));
+    expect(hasGlass()).toBe(false);
+    invoke.mockResolvedValue(undefined);
+    syncNativeGlass("dark");
     await vi.waitFor(() => expect(hasGlass()).toBe(true));
+    expect(readNativeGlassError()).toBe(false);
   });
 });

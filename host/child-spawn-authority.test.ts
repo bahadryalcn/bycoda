@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, access } from "node:fs/promise
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
-import type { SocialService } from "./social";
+import type { SocialService } from "./social/social";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:child_process")>();

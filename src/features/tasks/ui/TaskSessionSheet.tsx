@@ -46,7 +46,10 @@ export function TaskSessionSheet({
         setError("");
         if (known.status === "running") timer = setTimeout(load, 3000);
       } catch (reason) {
-        if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+        if (alive) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          if (!known || known.status === "running") timer = setTimeout(load, 3000);
+        }
       }
     };
     void load();

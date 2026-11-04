@@ -300,13 +300,13 @@ it("removes hidden group names and pinned projects while retaining settings acce
   );
   act(() => button("Secret group group options").click());
   act(() => button("Group privacy").click());
-  act(() => button("Hide group").click());
+  await act(async () => { button("Hide group").click(); await Promise.resolve(); });
   expect(container.textContent).not.toContain("Secret group");
   expect(container.querySelector('button[aria-label="personal"]')).toBeNull();
   expect(loadProjectGroupAssignments()[pathKey("/work/personal")]).toBe("private-hidden");
   act(() => button("Settings").click());
   expect(openSettings).toHaveBeenCalledOnce();
-  act(() => restoreHiddenGroup("private-hidden"));
+  await act(async () => { await restoreHiddenGroup("private-hidden"); });
   expect(container.textContent).toContain("Secret group");
   expect(button("personal")).toBeDefined();
 });
@@ -452,7 +452,7 @@ it("creates, styles, assigns, and deletes a group from the rail", async () => {
   const newGroup = [...moveMenu.querySelectorAll("button")].find(
     (item) => item.textContent === "New group…",
   )!;
-  act(() => newGroup.click());
+  await act(async () => { newGroup.click(); await Promise.resolve(); });
 
   const input = document.querySelector<HTMLInputElement>(
     '[role="menu"][aria-label="Project group actions"] input[aria-label="Group name"]',
@@ -476,7 +476,7 @@ it("creates, styles, assigns, and deletes a group from the rail", async () => {
   act(() => button("Project icon: Database / Analytics").click());
   expect(loadProjectGroups()[0].mascot).toBe("orbit");
   act(() => button("Delete").click());
-  act(() => button("Delete group").click());
+  await act(async () => { button("Delete group").click(); await Promise.resolve(); });
   expect(loadProjectGroups()).toEqual([]);
   expect(loadProjectGroupAssignments()).toEqual({});
   expect(button("personal")).toBeDefined();

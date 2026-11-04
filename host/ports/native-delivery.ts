@@ -274,6 +274,17 @@ export function bindNativeDeliveryOwner(
           const result = NATIVE_SERVICES_RPC_SCHEMAS[kind].result.parse(row.result);
           return { ...scope, state: "recorded" as const, result };
         }
+        if (kind === "native.services.workspace.format" && row.resultUnavailable) {
+          // This proves only that the exact original can never publish a result.
+          // Its execution remains unknown and cannot be replayed or ACKed.
+          retain(async () => {
+            if (!(await authorized())) return false;
+            const current = await journal.read(principal, kind, identity);
+            return current?.state === "admitted" && current.resultUnavailable === true;
+          });
+          await authorize();
+          return { ...scope, state: "unknown" as const, resultUnavailable: true as const };
+        }
         await authorize();
         return { ...scope, state: "unknown" as const };
       }),

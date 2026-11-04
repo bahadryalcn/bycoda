@@ -383,8 +383,9 @@ the current data and show a retry action.
 
 Start by connecting an account and granting the relevant project access. Prepare a
 campaign, save it, and check its current preview before approving it for the queue.
-Text counters use the account's effective character policy. In Inbox, assign the
-conversation to a project before saving a reply. Review drafts can be edited and
+Text counters use the account's effective character policy. Project replies use the
+assigned project. An owner-reviewed personal reply can instead remain attached to an
+unassigned conversation and its account. Review drafts can be edited and
 saved before approval. Editing a draft removes its previous approval and automatic
 rule authorization. Drafts already queued or dispatched cannot be edited.
 
@@ -528,7 +529,11 @@ session for the login window to appear.
 
 ## Project access and approval
 
-Account grants separately control reading, drafting, publishing, replies, outbound messages and comments for each project. A session's project and provider come from the host/native session registry, never the tool's JSON. Private threads from another project cannot be read or sent to. Unmatched conversations remain in owner review until explicitly assigned.
+Account grants separately control reading, drafting, publishing, replies, outbound messages and comments for each project. A session's project and provider come from the host/native session registry, never the tool's JSON. Private threads from another project cannot be read or sent to. Unmatched conversations remain in owner review until explicitly assigned or reviewed as personal replies.
+
+Assistant account access is separately configured in each account's **Assistant account access** section. It is denied by default; the owner can grant read and, separately, draft access. Account-scoped Assistant access covers only unassigned conversations on that account, never other accounts or project-assigned conversations. Revoking or changing the grant invalidates existing Assistant access. Personal drafts use no project facts and do not authorize sending. The owner must review the exact draft and use the existing send controls; account capabilities, consent, sending policy and uncertain-delivery recovery still apply.
+
+If an active voice generation has used an account, changing its Assistant grant first retires that generation on its original device. If retirement cannot be confirmed, Assistant access stays paused and the requested permissions remain pending across Host restarts. Reconnect the original device and save the pending permissions again to retry; the previous grant is not silently restored.
 
 Campaigns may select multiple projects/accounts and store independent content, media, links and publication times. Only explicitly entered, verified public project facts are offered to drafts/rules; project files and private transcripts are not scraped. Editing content invalidates its exact-content approval. Successful, pending and uncertain targets cannot be silently duplicated.
 
@@ -554,6 +559,7 @@ MCP tool names are `social_accounts_list`, `social_campaigns_create`, etc. CLI a
 policy.get           accounts.list        capabilities.get
 campaigns.create     campaigns.preview     campaigns.schedule     campaigns.status
 inbox.list           thread.read           replies.draft           replies.send
+drafts.read          drafts.update
 contacts.upsert      contacts.search       segments.create
 messages.draft       messages.send         comments.draft          comments.send
 automations.create   automations.pause     jobs.status             jobs.cancel

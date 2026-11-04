@@ -980,3 +980,44 @@ it("ignores an old OAuth poll started while a new begin request is in flight", a
   expect(container.textContent).toContain("Grant permission on the platform page that opened");
   expect(container.textContent).not.toContain("Hesap bağlandı");
 });
+
+it("saves explicit account Assistant permissions with current version", async () => {
+  const value = empty();
+  const account = { id: "x", platform: "x" as const, platformId: "", name: "Owner", accountType: "member" as const, scopes: [], accessApproved: false, connected: false, paused: false, executorId: "host", grants: {}, createdAt: 1 };
+  value.accounts = [account];
+  mocks.snapshot.mockResolvedValue(value);
+  mocks.request.mockImplementation(async (action: string, input: { permissions?: ("read" | "draft")[] }) => action === "accounts.assistantGrant" ? { ...account, assistantGrant: { permissions: input.permissions, version: "new-version" } } : { effective: {} });
+  await mount();
+  const details = Array.from(container.querySelectorAll("details")).find((item) => item.querySelector("summary")?.textContent === "Assistant account access")!;
+  expect(details).toBeTruthy();
+  const inputs = Array.from(details.querySelectorAll<HTMLInputElement>("input[type=checkbox]"));
+  expect(inputs.map((input) => input.checked)).toEqual([false, false]);
+  await act(async () => inputs[0].click());
+  await act(async () => inputs[1].click());
+  const form = details.querySelector("form")!;
+  await act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(mocks.request).toHaveBeenCalledWith("accounts.assistantGrant", { accountId: "x", permissions: ["read", "draft"], expectedVersion: null }, undefined);
+});
+
+it("reads back a held account grant after an uncertain save without replaying or losing the requested choice", async () => {
+  const value = empty();
+  const account = { id: "x", platform: "x" as const, platformId: "", name: "Owner", accountType: "member" as const, scopes: [], accessApproved: false, connected: false, paused: false, executorId: "host", grants: {}, createdAt: 1, assistantGrant: { permissions: ["read" as const], version: "v1" } };
+  value.accounts = [account];
+  mocks.snapshot.mockResolvedValue(value);
+  mocks.request.mockImplementation(async (action: string) => {
+    if (action === "accounts.assistantGrant") {
+      mocks.snapshot.mockResolvedValue({ ...value, accounts: [{ ...account, assistantGrantPending: { permissions: [] } }] });
+      throw new Error("Original device unavailable");
+    }
+    return { effective: {} };
+  });
+  await mount();
+  const details = Array.from(container.querySelectorAll("details")).find(item => item.querySelector("summary")?.textContent === "Assistant account access")!;
+  const read = details.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+  await act(async () => read.click());
+  await act(async () => details.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(details.textContent).toContain("Reconnect the original device");
+  expect(read.checked).toBe(false);
+  expect(mocks.request.mock.calls.filter(([action]) => action === "accounts.assistantGrant")).toHaveLength(1);
+  expect(mocks.workspaceSnapshot).toHaveBeenLastCalledWith("one", expect.anything(), true);
+});

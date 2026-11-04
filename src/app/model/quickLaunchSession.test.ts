@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { rememberProject } from "../../features/projects/model/recents";
+import { loadRecents, rememberProject } from "../../features/projects/model/recents";
 import { ProjectNotFoundError } from "../../features/projects/model/projectLocationError";
 import { launchReceiver } from "../../features/quick-composer/model/launchDelivery";
 import type { QuickLaunch } from "../../features/quick-composer/model/quickComposer";
@@ -35,11 +35,12 @@ afterEach(() => {
 function setup(reveal = false) {
   const oldSession = newSession("codex", "/old-project");
   const oldTab = newTab(oldSession.id);
+  void rememberProject(oldSession.cwd).catch(() => {});
   const state = {
     sessions: [oldSession],
     tabs: [oldTab],
     projectCwd: oldSession.cwd,
-    recents: rememberProject(oldSession.cwd),
+    recents: loadRecents(),
     activeTabId: oldTab.id,
   };
   const request: QuickLaunch = {

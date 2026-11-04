@@ -26,6 +26,23 @@ export function sessionMessageAuthor(value: unknown): SessionMessageAuthor | und
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   const row = value as Record<string, unknown>;
   if (!bounded(row.name, 200) || !bounded(row.reason, 200)) return;
+  if (row.kind === "assistant-room") {
+    if (
+      !bounded(row.threadId, 200) ||
+      !bounded(row.operationId, 1000) ||
+      row.reason !== "kickoff" ||
+      row.jobId !== undefined ||
+      row.supervisionId !== undefined
+    )
+      return;
+    return {
+      kind: "assistant-room",
+      name: row.name,
+      threadId: row.threadId,
+      reason: "kickoff",
+      operationId: row.operationId,
+    };
+  }
   if (row.kind === "assistant-manual") {
     if (
       !bounded(row.supervisionId, 200) ||

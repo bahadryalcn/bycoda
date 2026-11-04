@@ -52,6 +52,48 @@ it.each(["success", "known-empty", "missing", "pending", "failed", "wrong-token"
     }
   },
 );
+
+it("checks original authority after asynchronous skill preparation before provider entry", async () => {
+  const { engine, store, id, provider, turns } = await setup();
+  let entered!: () => void, release!: () => void;
+  const preparing = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  provider.prepareOperationPolicy = async (input) => {
+    entered();
+    await gate;
+    return input;
+  };
+  const receipt = await engine.command({ type: "send", commandId: "async-skill-authority", sessionId: id, text: "Continue" });
+  await preparing;
+  const authority = vi.spyOn(store, "assertAuthority").mockRejectedValueOnce(new Error("Original authority replaced"));
+  release();
+  try {
+    await engine.waitForRun(id, receipt.runId);
+    expect(authority).toHaveBeenCalled();
+    expect(turns).toHaveLength(0);
+    expect(provider.send).not.toHaveBeenCalled();
+  } finally {
+    authority.mockRestore();
+  }
+});
+
+it.each(["configure", "draft"] as const)("rejects stale %s revisions atomically and reuses an accepted receipt", async (type) => {
+  const { engine, store, id } = await setup();
+  const initial = await store.session(id);
+  const command = {
+    type, commandId: `revision-${type}`, sessionId: id, expectedRevision: initial.revision,
+    ...(type === "configure" ? { model: "codex:updated", modelSettings: {}, runtimeMode: "supervised" } : { text: "unsent draft" }),
+  };
+  await engine.updateSession(id, { title: "Changed by owner" });
+  await expect(engine.command(command)).rejects.toThrow("conversation changed");
+  const current = await store.session(id);
+  expect(current.session.model).toBe(initial.session.model);
+  expect(current.session.blocks).toEqual(initial.session.blocks);
+  const accepted = { ...command, commandId: `accepted-${type}`, expectedRevision: current.revision };
+  const receipt = await engine.command(accepted);
+  expect(await engine.command(accepted)).toEqual(receipt);
+  expect((await store.session(id)).revision).toBe(receipt.revision);
+});
 import { launchSessionRun } from "./sessionRuns";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments";
 import {
@@ -73,6 +115,29 @@ import { withChatCitations } from "../src/features/sessions/model/chatCitation";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 
 const cleanups: Array<() => Promise<void> | void> = [];
+it("regenerates only title metadata using the selected utility model and replays its receipt", async () => {
+  const { engine, store, id, provider, turns } = await setup();
+  const original = await store.session(id);
+  await store.save({ ...original, revision: original.revision + 1, session: { ...original.session, blocks: [{ id: "message", role: "user", text: "Fix title generation" }] } }, { type: "test.seed" });
+  provider.generateTitle = vi.fn(async () => ({ title: "Reliable title generation", workItem: null }));
+  const command = { type: "regenerateTitle", commandId: "regenerate-1", sessionId: id, expectedTitle: original.session.title, harness: "codex", model: "codex:terra", modelSettings: { effort: "low" } };
+  const receipt = await engine.command(command);
+  expect(await engine.command(command)).toEqual(receipt);
+  expect(provider.generateTitle).toHaveBeenCalledOnce();
+  expect(provider.generateTitle).toHaveBeenCalledWith(expect.objectContaining({ model: "codex:terra", modelSettings: { effort: "low" }, message: "user: Fix title generation" }));
+  const saved = await store.session(id);
+  expect(saved.session.title).toContain("Reliable title generation");
+  expect(saved.session.model).toBe(original.session.model);
+  expect(saved.session.blocks).toHaveLength(1);
+  expect(turns).toHaveLength(0);
+});
+
+it("rejects stale title regeneration without invoking the provider", async () => {
+  const { engine, id, provider } = await setup();
+  provider.generateTitle = vi.fn(async () => ({ title: "Other", workItem: null }));
+  await expect(engine.command({ type: "regenerateTitle", commandId: "stale-title", sessionId: id, expectedTitle: "Earlier title", harness: "codex", model: "codex:terra" })).rejects.toThrow("Conversation title changed");
+  expect(provider.generateTitle).not.toHaveBeenCalled();
+});
 it("projects citation-only prompts at the Host provider boundary while preserving raw history", async () => {
   const { engine, store, id, turns, waitForTurnStart } = await setup();
   const text = withChatCitations("Explain this passage.", [
@@ -1812,6 +1877,181 @@ describe("Host writer transfer after settled task review", () => {
     }
   });
 
+  it("does not delete while title generation is pending", async () => {
+    const { engine, store, id, provider } = await setup();
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: { ...original.session, blocks: [{ id: "message", role: "user", text: "Title" }] },
+      },
+      { type: "test.seed" },
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    provider.generateTitle = vi.fn(async (input) => {
+      entered.resolve();
+      await release.promise;
+      await runTextOperation(input.operationContext, async () => null);
+      return { title: "Title", workItem: null };
+    });
+    const title = engine.command({
+      type: "regenerateTitle",
+      commandId: "pending-title",
+      sessionId: id,
+      expectedTitle: original.session.title,
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+    });
+    await entered.promise;
+    const remove = vi.fn(async () => store.deleteSession(id));
+    const deletion = engine.withRetiredProviderWriterForDeletion(id, remove, async () => {});
+    void deletion.catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(remove).not.toHaveBeenCalled();
+    release.resolve();
+    await title;
+    await deletion;
+    await expect(store.session(id)).rejects.toThrow();
+  });
+
+  it.each([
+    "success",
+    "known-empty",
+    "unknown",
+    "custom",
+    "swallowed-failure",
+    "pending-second",
+    "wrong-token",
+  ] as const)("handles title-only %s before deletion", async (outcome) => {
+    const { engine, store, id, provider } = await setup();
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: { ...original.session, blocks: [{ id: "message", role: "user", text: "Title" }] },
+      },
+      { type: "test.seed" },
+    );
+    provider.generateTitle = vi.fn(async (input) => {
+      if (outcome === "success" || outcome === "known-empty")
+        await runTextOperation(input.operationContext, async () => null);
+      if (outcome === "swallowed-failure" || outcome === "pending-second") {
+        await runTextOperation(input.operationContext, async () => null);
+        if (outcome === "swallowed-failure") {
+          await runTextOperation(input.operationContext, async () => {
+            throw new Error("unknown utility cleanup");
+          }).catch(() => {});
+        } else {
+          input.operationContext?.onUtilityStarted?.({});
+        }
+      }
+      if (outcome === "wrong-token") {
+        input.operationContext?.onUtilityStarted?.({});
+        input.operationContext?.onUtilityCompleted?.({});
+      }
+      return outcome === "success" || outcome === "custom"
+        ? { title: "Title", workItem: null }
+        : null;
+    });
+    const command = {
+      type: "regenerateTitle",
+      commandId: `title-only-${outcome}`,
+      sessionId: id,
+      expectedTitle: original.session.title,
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+    };
+    if (outcome === "success" || outcome === "known-empty") {
+      if (outcome === "success") await engine.command(command);
+      else await expect(engine.command(command)).rejects.toThrow("Could not generate");
+      await engine.withRetiredProviderWriterForDeletion(
+        id,
+        async () => store.deleteSession(id),
+        async () => {},
+      );
+      await expect(store.session(id)).rejects.toThrow();
+    } else {
+      if (outcome === "custom") await engine.command(command);
+      else await expect(engine.command(command)).rejects.toThrow("Could not generate");
+      const remove = vi.fn(async () => store.deleteSession(id));
+      await expect(
+        engine.withRetiredProviderWriterForDeletion(id, remove, async () => {}),
+      ).rejects.toThrow("Other original provider work remains");
+      expect(remove).not.toHaveBeenCalled();
+      expect(await store.session(id)).toBeDefined();
+    }
+  });
+
+  it("ignores completion callbacks after the original utility context closes", async () => {
+    const { engine, store, id, provider } = await setup();
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: { ...original.session, blocks: [{ id: "message", role: "user", text: "Title" }] },
+      },
+      { type: "test.seed" },
+    );
+    let complete!: () => void;
+    provider.generateTitle = vi.fn(async (input) => {
+      const token = {};
+      input.operationContext?.onUtilityStarted?.(token);
+      complete = () => input.operationContext?.onUtilityCompleted?.(token);
+      return { title: "Title", workItem: null };
+    });
+    await engine.command({
+      type: "regenerateTitle",
+      commandId: "late-title",
+      sessionId: id,
+      expectedTitle: original.session.title,
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+    });
+    complete();
+    const remove = vi.fn(async () => store.deleteSession(id));
+    await expect(
+      engine.withRetiredProviderWriterForDeletion(id, remove, async () => {}),
+    ).rejects.toThrow("Other original provider work remains");
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("deletes after completed title and warm turn retirement", async () => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "title-before-delete",
+      sessionId: id,
+      text: "Review",
+    });
+    await waitForTurnStart();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    provider.generateTitle = vi.fn(async () => ({ title: "Reviewed", workItem: null }));
+    const current = await store.session(id);
+    await engine.command({
+      type: "regenerateTitle",
+      commandId: "title-before-delete-2",
+      sessionId: id,
+      expectedTitle: current.session.title,
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+    });
+    await engine.withRetiredProviderWriterForDeletion(
+      id,
+      async () => store.deleteSession(id),
+      async () => {},
+    );
+    await expect(store.session(id)).rejects.toThrow();
+  });
+
   it("holds deletion until the exact writer retires and never rebinds it", async () => {
     const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
     const receipt = await engine.command({
@@ -3307,7 +3547,7 @@ describe("handoff context capacity", () => {
     // Use the production enforcement wrapper around the fake provider transport.
     Object.assign(
       provider,
-      withMachineSkillPolicy("codex", { ...provider }, () => policy),
+      withMachineSkillPolicy("codex", { ...provider }, () => policy, () => []),
     );
     await engine.command({
       type: "send",

@@ -344,7 +344,11 @@ function StandardCodeMirrorEditor({
   const blameOnRef = useRef(blameOn);
   blameOnRef.current = blameOn;
   const [blameError, setBlameError] = useState<string | null>(null);
-  const [formatError, setFormatError] = useState<string | null>(null);
+  const [formatError, setFormatError] = useState<{
+    message: string;
+    generation: number;
+    saved: boolean;
+  } | null>(null);
   const [contextTarget, setContextTarget] = useState<EditorContextTarget | null>(null);
   const [contextError, setContextError] = useState<string | null>(null);
   const scheduleBlameRef = useRef<(() => void) | null>(null);
@@ -476,8 +480,12 @@ function StandardCodeMirrorEditor({
         if (disposed || generation !== formatGeneration || view.state.doc !== before) return;
         if (!result) {
           if (manual || hasBundledFormatter(path))
-            setFormatError(t("No formatter is available for this file, or its syntax is invalid."));
-          return;
+            setFormatError({
+              message: t("No formatter is available for this file, or its syntax is invalid."),
+              generation,
+              saved: false,
+            });
+          return generation;
         }
         const apply = () =>
           replaceEditorDoc(view, result.formatted, {
@@ -490,11 +498,16 @@ function StandardCodeMirrorEditor({
         if (settled) settled.apply(apply);
         else apply();
       } catch (error) {
-        if (!disposed && generation === formatGeneration)
-          setFormatError(error instanceof Error ? error.message : String(error));
+        if (!disposed && generation === formatGeneration && view.state.doc === before)
+          setFormatError({
+            message: error instanceof Error ? error.message : String(error),
+            generation,
+            saved: false,
+          });
       } finally {
         settled?.();
       }
+      return generation;
     };
 
     /** Resolves true once the document reached the disk. */
@@ -504,9 +517,11 @@ function StandardCodeMirrorEditor({
       const retryPendingAutosave = autosaveTimer !== 0 && loadAutosave();
       window.clearTimeout(autosaveTimer);
       const generation = ++saveGeneration;
+      setFormatError((current) => (current?.saved ? { ...current, saved: false } : current));
       return (async () => {
+        let savedFormatGeneration: number | undefined;
         if (formatOnSaveRef.current && loadFormatOnSave()) {
-          await formatDocument(false, settled ?? undefined);
+          savedFormatGeneration = await formatDocument(false, settled ?? undefined);
           if (disposed || generation !== saveGeneration) return false;
         }
 
@@ -532,6 +547,10 @@ function StandardCodeMirrorEditor({
           savedDocumentRef.current = document;
           initialDirtyRef.current = false;
           markDirty();
+          if (view.state.doc === document && savedFormatGeneration === formatGeneration)
+            setFormatError((current) =>
+              current?.generation === savedFormatGeneration ? { ...current, saved: true } : current,
+            );
         };
         if (settled) settled.apply(apply);
         else apply();
@@ -763,6 +782,7 @@ function StandardCodeMirrorEditor({
           setSelectionTarget(null);
         }
         if (!update.docChanged) return;
+        setFormatError((current) => (current?.saved ? { ...current, saved: false } : current));
         captureObserverRef.current?.changed();
         const blockCount = conflictBlocks(update.state).length;
         setConflictCount(blockCount);
@@ -1225,8 +1245,8 @@ function StandardCodeMirrorEditor({
         />
         {formatError ? (
           <InlineError className="shrink-0 px-3 py-1">
-            {t("Formatting failed: ")}
-            {formatError}
+            {t(formatError.saved ? "Saved, but formatting failed: " : "Formatting failed: ")}
+            {formatError.message}
           </InlineError>
         ) : null}
         {contextError ? (

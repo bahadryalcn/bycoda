@@ -31,6 +31,10 @@ Setup: [controls](references/setup.md).
 - Presence reads can fail. Unknown is never evidence of active presence.
 - Room uses one header and contextual toolbar. Disclose diagnostics; retain
   drafts, status, errors, owner decisions and emergency Stop.
+- Room management threads are project-independent. Keep an explicit operation
+  target separate from that durable identity; never borrow a coding session or
+  fabricate a project. Native UI effects bind the registered thread, Host and
+  live window issuer and recheck them after waits.
 - Presence uses shared labeled success/warning/danger/neutral roles; pending or
   failed reads/writes never show stale success.
 - Current visible project labels/aliases aid discovery. Ambiguity needs an exact
@@ -91,6 +95,17 @@ Setup: [controls](references/setup.md).
   mute, privacy and lead window. Background delivery cannot request mic/OS consent.
 
 ## Checks
+
+- Room notebook uses canonical Notes storage and exact native review; projectless
+  account grants are separate, versioned and default denied. Retain provenance
+  through provider calls, reply persistence, history and speech delivery.
+- Observation journal coverage is source-specific, bounded and metadata-only.
+  Cursor acknowledgement follows authorized delivery; gaps require resnapshot.
+  Missing live source permits mean unavailable, never an active subscription.
+  Follow [observation admission and recovery](../../../docs/reference/assistant-observations.md).
+- Privileged native proofs use independently provisioned trust. Follow the
+  [native admission contract](../../../docs/reference/assistant-native-admission.md);
+  paired-device authentication alone does not enroll a signing installation.
 
 Run focused suites and normal `tsc-rs`. Presence needs Rust tests and Windows
 lock/unlock acceptance. UI needs light/dark 1280/800 captures. Mock sockets do not

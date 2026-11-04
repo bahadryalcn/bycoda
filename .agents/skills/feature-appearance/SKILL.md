@@ -15,6 +15,7 @@ Use for Appearance controls, durable preference outcomes, live previews, global/
 
 - `src/features/settings/ui/AppearanceSettings.tsx`, `AppearancePreviews.tsx` and `useAppearanceSettings.tsx` own controls and previews.
 - `src/features/settings/model/appearance.ts`, `appearancePreferences.ts` and `appearancePersistence.ts` own application, normalization and durable receipts.
+- `GradientBackgroundCard.tsx` exposes workspace gradients; `model/workspaceBackground.ts` owns the separate record and recovery, while `src/shared/theme/workspaceBackground.ts` serializes safe decorative artwork. Shared CSS paints it once without requiring native glass.
 - Read [surfaces](references/surfaces.md) only for the affected background/native/platform path.
 
 ## Preserve
@@ -23,6 +24,7 @@ Use for Appearance controls, durable preference outcomes, live previews, global/
 - Keep System/Light/Dark, palette, custom accent, Accent readability and Pure/Tinted canvas as distinct choices. Preserve Pure fallback for records without canvasBackground and custom-surface handling.
 - Use shared semantic roles and real shared controls in previews; distinguish representative preview from native glass, installed-font, terminal-grid or GPU acceptance.
 - Retain platform capability gates, dark-mode values and light opaque policy for native glass; blur-radius applicability is platform-specific.
+- Workspace artwork is opt-in and separate from native translucency/Pure/Tinted preferences. Retain custom designs when disabled, merge independent sibling edits, hold conflicting retries, and preserve the last usable design when storage is unreadable. Images/scenes remain above the base artwork; accessibility can hide artwork without clearing the saved choice.
 - Preserve global/project image precedence, original asset access, choose/change/remove/cancel, validation, pending ownership and partial-write recovery.
 - Retain worker generations, error/retry, object-URL cleanup and canvas idle/visibility/reduced-motion/GPU lifecycle. Ambient crew appearance does not change executable Crew settings.
 - Live scenes follow the appear/hold/rest rhythm in `live-background/calmSignal.ts`: a shown scene stays 10–15 s through output pauses and after the reply ends, rests 8–16 s, returns with later output of the same turn, and mouths move only while output arrives. The canvas keeps painting while the driver is awake and still settles once the scene is hidden.

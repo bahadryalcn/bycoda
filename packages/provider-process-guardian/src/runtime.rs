@@ -361,7 +361,12 @@ fn supervise<W: Write + Send + 'static>(
         }
         match original.child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) => thread::sleep(Duration::from_millis(5)),
+            Ok(None) => {
+                #[cfg(windows)]
+                original.job.wait_for_activity(50);
+                #[cfg(not(windows))]
+                thread::sleep(Duration::from_millis(5));
+            }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => {
                 control.uncertain.store(true, Ordering::Release);

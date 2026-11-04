@@ -28,12 +28,13 @@ it("accepts only known legacy Prettier metadata for formatter recovery", () => {
   expect(schema.safeParse({ ...result, other: [] }).success).toBe(false);
 });
 
-it("declares20 actual private services and5 uploads without exposing old HTTP helper aliases", () => {
-  expect(NATIVE_SERVICE_METHODS).toHaveLength(20);
+it("registers private services and uploads without exposing old HTTP helper aliases", () => {
+  expect(NATIVE_SERVICE_METHODS).toHaveLength(35);
   expect(NATIVE_SERVICE_METHODS).toEqual(
     expect.arrayContaining([
       "native.services.assistant.presence.get",
       "native.services.assistant.presence.set",
+      "native.services.assistant.browser.panel",
       "native.services.desktop.status",
       "native.services.desktop.stop",
     ]),
@@ -41,6 +42,8 @@ it("declares20 actual private services and5 uploads without exposing old HTTP he
   expect(NATIVE_SERVICE_UPLOAD_METHODS).toHaveLength(5);
   for (const method of NATIVE_SERVICE_METHODS) {
     const definition = getHostRpcMethod(method)!;
+    expect(definition, method).toBeDefined();
+    expect(definition.scope, method).toBe("device");
     expect(definition.requiredCapability).toBe("native.services.v1");
     expect(definition.responseTimeoutMs).toBe(30000);
     expect(hostRpcHasEffect(method, definition.kind)).toBe(!nativeServiceReadOnly(method));

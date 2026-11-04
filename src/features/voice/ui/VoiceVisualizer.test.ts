@@ -94,3 +94,32 @@ it("leaves different still geometry for user and assistant speech", async () => 
   }
   expect(requestFrame).not.toHaveBeenCalled();
 });
+
+it("reacts to microphone RMS while listening in cloud mode and stays still in silence", async () => {
+  const level = { current: 0 };
+  await render("listening", "dots", level);
+  frameCallback(1500);
+  const bar = container.querySelector("[data-bar]")!;
+  const quiet = bar.getAttribute("height");
+  frameCallback(2500);
+  expect(bar.getAttribute("height")).toBe(quiet);
+  level.current = 0.7;
+  frameCallback(2500);
+  expect(Number(bar.getAttribute("height"))).toBeGreaterThan(Number(quiet));
+  expect(container.firstElementChild?.getAttribute("data-hearing")).toBe("true");
+  await render("muted", "dots", level);
+  expect(container.firstElementChild?.getAttribute("data-hearing")).toBe("false");
+});
+it("keeps reduced-motion input feedback reactive without animation frames", async () => {
+  vi.useFakeTimers();
+  reduced = true;
+  const level = { current: 0 };
+  await render("listening", "dots", level);
+  const bar = container.querySelector("[data-bar]")!;
+  const quiet = Number(bar.getAttribute("height"));
+  level.current = 0.8;
+  await act(async () => vi.advanceTimersByTime(120));
+  expect(Number(bar.getAttribute("height"))).toBeGreaterThan(quiet);
+  expect(requestFrame).not.toHaveBeenCalled();
+  vi.useRealTimers();
+});

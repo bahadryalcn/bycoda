@@ -19,7 +19,8 @@ export function submitClearConversation(ctx: SubmitDeps, sessionId: string): boo
     showSubmitNotice(sessionId, blocker);
     return false;
   }
-  if (!ctx.refs.editedResends.start(sessionId)) {
+  const editToken = ctx.refs.editedResends.start(sessionId);
+  if (!editToken) {
     showSubmitNotice(
       sessionId,
       t("Another change to this conversation is in progress. Try clearing again in a moment."),
@@ -53,7 +54,7 @@ export function submitClearConversation(ctx: SubmitDeps, sessionId: string): boo
       ctx.flushHarnessEvents();
     } finally {
       ctx.refs.retiringTurns.current.delete(sessionId);
-      ctx.refs.editedResends.finish(sessionId);
+      ctx.refs.editedResends.finish(sessionId, editToken);
     }
   })();
   return true;

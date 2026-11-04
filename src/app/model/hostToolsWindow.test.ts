@@ -70,3 +70,18 @@ it("preserves a remote browser destination when opening the owning-host preview"
     initialUrl: "https://localhost:5173/nested?x=1#here",
   });
 });
+
+it("bounds transfer drafts and ignores malformed draft payloads without loading tool UI", () => {
+  const context = { cwd: "/repo", sessionId: "one", title: "One" };
+  expect(
+    readHostToolsWindow(search({ ...context, browserDraft: { comment: 12 } }))?.browserDraft,
+  ).toBeUndefined();
+  expect(
+    readHostToolsWindow(
+      search({
+        ...context,
+        browserDraft: { comment: "draft", captures: [{ id: "capture", comment: "note" }, null] },
+      }),
+    )?.browserDraft,
+  ).toMatchObject({ comment: "draft", captures: [{ id: "capture", comment: "note" }] });
+});

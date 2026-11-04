@@ -1,6 +1,6 @@
 # Terms of use
 
-Last updated: 11 October 2026
+Last updated: 4 November 2026
 
 ## Software and license
 
@@ -24,7 +24,7 @@ To the fullest extent permitted by applicable law and consistent with the MIT li
 
 ## Privacy, security and contact
 
-The privacy policy explains local storage and connected services. Report vulnerabilities privately; do not publish secrets or exploitable details in public issues. For privacy, security or other questions, contact [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com) or visit the [maintainer's GitHub profile](https://github.com/bahadryalcn).
+The privacy policy explains local storage and connected services. Report vulnerabilities privately; do not publish secrets or exploitable details in public issues. For privacy, security or other questions, contact [info@bycoda.codes](mailto:info@bycoda.codes) or visit the [maintainer's GitHub profile](https://github.com/bahadryalcn).
 
 ## Changes
 

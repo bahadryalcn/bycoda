@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { resolve, join, sep } from "node:path";
 import { HostStore } from "./store";
-import { createNativeBufferReports } from "./native-buffer-reports";
+import { createNativeBufferReports } from "./native-buffer/native-buffer-reports";
 import { durableWrite } from "./turn-git-history";
 import { createNativeDeliveryStore } from "./native-delivery-store";
 import { bindNativeDeliveryOwner } from "./ports/native-delivery";

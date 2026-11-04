@@ -12,8 +12,8 @@ import { defaultCrewPolicy } from "../src/features/crews/model/crew";
 
 // Exercise real Git and crew state transitions without Windows' intentional
 // one-second launch spacing; the gate's timing has its own dedicated tests.
-vi.mock("./git-start-gate", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./git-start-gate")>();
+vi.mock("./git/git-start-gate", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./git/git-start-gate")>();
   return { ...original, hostGitStarts: new original.GitStartGate(0) };
 });
 
@@ -49,7 +49,7 @@ async function waitForReview(tasks: HostTasks, store: HostStore, taskId: string)
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
-async function setup() {
+async function setup(delayAssignment = false) {
   const root = resolve("temp/test-results");
   mkdirSync(root, { recursive: true });
   const directory = mkdtempSync(join(root, "crew-lifecycle-"));
@@ -136,7 +136,13 @@ async function setup() {
   });
   const principal = { projectId: project.id, sessionId: lead.sessionId };
   await crews.startRun(project.id, "crew", "Implement backend", "run", "supervised", principal);
-  const assignment = await crews.assign(
+  const launchGate = Promise.withResolvers<void>();
+  let permit = true;
+  if (delayAssignment) {
+    const tick = tasks.tick.bind(tasks);
+    vi.spyOn(tasks, "tick").mockImplementationOnce(async () => { await launchGate.promise; return tick(); });
+  }
+  const assign = () => crews.assign(
     project.id,
     {
       runId: "run",
@@ -148,9 +154,22 @@ async function setup() {
     },
     principal,
   );
+  const assignment = delayAssignment ? await store.db.withAuthorization(async () => permit, assign) : await assign();
+  if (delayAssignment) { permit = false; launchGate.resolve(); }
   await waitForReview(tasks, store, assignment.taskId);
   return { crews, tasks, project, principal, assignment, cwd, reviewer, worker, store };
 }
+
+it("runs accepted Crew assignment after its originating project permit closes", async () => {
+  const f = await setup(true);
+  const task = await f.tasks.get(f.assignment.taskId);
+  expect(task?.status).toBe("review");
+  expect(task?.crewRunId).toBe("run");
+  expect(task?.sessionId).toBeTruthy();
+  expect(task?.reviewerConfig?.harness).toBe("claude");
+  expect(f.worker.send).toHaveBeenCalled();
+  expect(f.reviewer.send).toHaveBeenCalled();
+}, 90000);
 
 it("runs a distinct selected reviewer and accepts scoped results despite unrelated edits", async () => {
   const f = await setup();

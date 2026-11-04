@@ -255,6 +255,10 @@ import {
   type SessionFolderTarget,
   type SessionFolder,
 } from "../model/sessionFolders";
+import { organizationFoldersForProject } from "../model/sessionOrganizationOperations";
+import { cachedSessionOrganization, hydrateSessionOrganization, NATIVE_SESSION_ORGANIZATION_ACTIVE, subscribeSessionOrganization, unresolvedSessionOrganizationGestures } from "../model/sessionOrganizationStore";
+import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
+import { listPinSagas } from "../model/sessionPinSaga";
 import { SessionFolderPicker } from "./SessionFolderPicker";
 import { MCP_COMMAND, isMcpCommand } from "../model/mcpCommand";
 import {
@@ -297,6 +301,7 @@ import { useComposerMentionSources } from "./useComposerMentionSources";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import { applyTextareaEdit, insertAtCaret } from "./composerTextareaEdit";
 import { DictationButton } from "../../voice/ui/DictationButton";
+import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
 import { useEditingLastTurn } from "./useEditingLastTurn";
 import {
   useAttachmentSink,
@@ -427,7 +432,7 @@ type Props = {
   onStop?: () => void;
   onCompactContext?: (parentAdmission?: ParentAdmission) => boolean;
   onNewSession?: (options?: NewSessionOptions, parentAdmission?: ParentAdmission) => void;
-  onPlaceInFolder?: (target: SessionFolderTarget) => void;
+  onPlaceInFolder?: (target: SessionFolderTarget) => void | false | Promise<void | SessionOrganizationResult>;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
   onDeleteQueuedMessage?: (messageId: string) => void;
@@ -1410,6 +1415,13 @@ export const Composer = memo(function Composer({
   const [creatingSkill, setCreatingSkill] = useState(false);
   const [sessionFolderOpen, setSessionFolderOpen] = useState(false);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
+  const [sessionFolderError, setSessionFolderError] = useState<string | null>(null);
+  const [sessionFolderPending, setSessionFolderPending] = useState(false);
+  const [sessionFolderSaving, setSessionFolderSaving] = useState(false);
+  const sessionFolderLoading = useRef(false);
+  const sessionFolderMutationBlocked = useRef(false);
+  const sessionFolderCwd = useRef(cwd);
+  sessionFolderCwd.current = cwd;
   const [sessionFolderSelected, setSessionFolderSelected] = useState(false);
   // The folder choice belongs to one working directory.
   const [folderScopeCwd, setFolderScopeCwd] = useState(cwd);
@@ -2004,9 +2016,33 @@ export const Composer = memo(function Composer({
   };
 
   const openSessionFolderPicker = useCallback(() => {
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      if (sessionFolderLoading.current) return;
+      sessionFolderLoading.current = true;
+      setSessionFolderPending(true);
+      setSessionFolderError(null);
+      void hydrateSessionOrganization().then((state) => {
+        if (sessionFolderCwd.current !== cwd) return;
+        setSessionFolders(organizationFoldersForProject(state, cwd));
+        setSessionFolderOpen(true);
+      }).catch((error: unknown) => {
+        if (sessionFolderCwd.current === cwd) setSessionFolderError(String(error));
+      }).finally(() => { sessionFolderLoading.current = false; setSessionFolderPending(false); });
+      return;
+    }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
   }, [cwd]);
+
+  useEffect(() => {
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
+    return subscribeSessionOrganization(() => {
+      const snapshot = cachedSessionOrganization();
+      if (!snapshot) return;
+      try { setSessionFolders(organizationFoldersForProject(snapshot, cwd)); }
+      catch (error) { setSessionFolderError(String(error)); }
+    }, (error) => setSessionFolderError(String(error)));
+  }, [cwd, sessionFolderOpen]);
 
   useEffect(() => {
     const el = ref.current;
@@ -3609,23 +3645,47 @@ export const Composer = memo(function Composer({
             <SessionFolderPicker
               folders={sessionFolders}
               onPick={(target) => {
-                if (!canMutateDraft()) return;
-                setSessionFolderOpen(false);
-                setSessionFolderSelected(true);
-                onPlaceInFolder?.(target);
-                const el = ref.current;
-                if (!el) return;
-                const cursor = el.selectionStart ?? el.value.length;
-                if (/^\s*\/add-to-folder$/i.test(el.value)) {
-                  el.value = `${el.value} `;
-                  resizeComposer(el);
-                  setDraft(el.value);
-                  syncHasText(el.value);
-                  el.setSelectionRange(el.value.length, el.value.length);
-                } else {
-                  el.setSelectionRange(cursor, cursor);
-                }
-                requestAnimationFrame(() => el.focus());
+                if (!canMutateDraft() || sessionFolderLoading.current || sessionFolderMutationBlocked.current) return;
+                sessionFolderLoading.current = true;
+                setSessionFolderPending(true);
+                setSessionFolderSaving(true);
+                setSessionFolderError(null);
+                void (async () => {
+                  const result = await onPlaceInFolder?.(target);
+                  if (result === false) return;
+                  if (result && result.state === "unknown") {
+                    sessionFolderMutationBlocked.current = true;
+                    setSessionFolderError(`Folder change outcome is unknown: ${result.operationId}`);
+                    return;
+                  }
+                  if (result && result.state === "conflict") {
+                    setSessionFolderError("Folder change conflicted; refresh before retrying.");
+                    return;
+                  }
+                  if (result && result.state === "applied-unavailable") {
+                    sessionFolderMutationBlocked.current = true;
+                    setSessionFolderError(`Folder change was applied, but refresh failed: ${result.operationId}`);
+                  }
+                  setSessionFolderOpen(false);
+                  setSessionFolderSelected(true);
+                  const el = ref.current;
+                  if (!el) return;
+                  const cursor = el.selectionStart ?? el.value.length;
+                  if (/^\s*\/add-to-folder$/i.test(el.value)) {
+                    el.value = `${el.value} `;
+                    resizeComposer(el);
+                    setDraft(el.value);
+                    syncHasText(el.value);
+                    el.setSelectionRange(el.value.length, el.value.length);
+                  } else {
+                    el.setSelectionRange(cursor, cursor);
+                  }
+                  requestAnimationFrame(() => el.focus());
+                })().catch((error: unknown) => setSessionFolderError(String(error))).finally(() => {
+                  sessionFolderLoading.current = false;
+                  setSessionFolderPending(false);
+                  setSessionFolderSaving(false);
+                });
               }}
               onDismiss={() => {
                 setSessionFolderOpen(false);
@@ -3767,10 +3827,21 @@ export const Composer = memo(function Composer({
           ) : null}
 
           {pasteError ? (
-            <Alert tone="danger" role="alert">
+            <Alert tone="danger" role="alert" action={<MicrophoneRecoveryAction message={pasteError} />}>
               {pasteError}
             </Alert>
           ) : null}
+          {sessionFolderError ? <Alert tone="danger" action={sessionFolderMutationBlocked.current ? <Button variant="ghost" size="sm" onClick={() => {
+            void unresolvedSessionOrganizationGestures().then(async (pending) => {
+              if (pending.length) { setSessionFolderError(`Folder change outcome is unknown: ${pending[0].operationId}`); return; }
+              const remaining = (await listPinSagas()).filter((entry) => entry.state !== "applied" && entry.state !== "accepted");
+              if (remaining.length) { setSessionFolderError(`Pin change needs review in the sidebar: ${remaining[0].id}`); return; }
+              await hydrateSessionOrganization();
+              sessionFolderMutationBlocked.current = false;
+              setSessionFolderError("Folder state refreshed. Review your change.");
+            }).catch((error: unknown) => setSessionFolderError(String(error)));
+          }}>{t("Check again")}</Button> : undefined}>{sessionFolderError}</Alert> : null}
+          {sessionFolderPending ? <Alert>{sessionFolderSaving ? t("Saving…") : t("Loading folders…")}</Alert> : null}
 
           {inboxCard ? (
             <InboxMiniCard

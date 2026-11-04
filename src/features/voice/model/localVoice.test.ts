@@ -23,12 +23,15 @@ const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), port: { onmessage: 
 const contexts: any[] = [];
 const playback: any[] = [];
 function setup() {
+  Reflect.set(track, "readyState", "live");
+  track.stop.mockImplementation(() => { Reflect.set(track, "readyState", "ended"); });
   vi.stubGlobal(
     "AudioContext",
     class {
       sampleRate = 16000;
       state = "running";
       destination = {};
+      createGain = vi.fn(() => ({ ...node(), gain: { value: 1 } }));
       currentTime = 0;
       createBuffer = vi.fn((_channels: number, length: number, sampleRate: number) => ({
         duration: length / sampleRate,
@@ -73,6 +76,8 @@ function setup() {
   }));
   Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
   vi.stubGlobal("speechSynthesis", {
+    speaking: false,
+    pending: false,
     cancel: vi.fn(),
     speak: vi.fn(),
     getVoices: () => [{ localService: false, lang: "tr-TR" }],
@@ -98,6 +103,107 @@ function callbacks() {
     playback: vi.fn(),
   };
 }
+
+it("retirement waits actual local backend lease release", async () => {
+  setup();
+  const voice = new LocalVoice(callbacks(), "tr");
+  await voice.connect();
+  const released = Promise.withResolvers<void>();
+  backend.release.mockImplementationOnce(() => released.promise);
+  Object.defineProperty(track, "readyState", { configurable: true, value: "live", writable: true });
+  track.stop.mockImplementation(() => { Reflect.set(track, "readyState", "ended"); });
+  let retired = false;
+  const retirement = voice.retire().then(() => { retired = true; });
+  try {
+    await Promise.resolve();
+    expect(retired).toBe(false);
+    expect(backend.release).toHaveBeenCalledWith("local");
+    released.resolve();
+    await retirement;
+    expect(retired).toBe(true);
+  } finally {
+    released.resolve(); await retirement;
+    track.stop.mockReset(); Reflect.deleteProperty(track, "readyState");
+  }
+});
+
+it("cannot certify retirement while native speech still reports pending output", async () => {
+  vi.useFakeTimers();
+  setup();
+  const voice = new LocalVoice(callbacks(), "tr");
+  await voice.connect();
+  Reflect.set(globalThis.speechSynthesis, "speaking", true);
+  let retired = false;
+  const retirement = voice.retire().then(() => { retired = true; });
+  try {
+    await vi.advanceTimersByTimeAsync(40);
+    expect(retired).toBe(false);
+    Reflect.set(globalThis.speechSynthesis, "speaking", false);
+    await vi.advanceTimersByTimeAsync(20);
+    await retirement;
+    expect(retired).toBe(true);
+  } finally {
+    Reflect.set(globalThis.speechSynthesis, "speaking", false);
+    await vi.advanceTimersByTimeAsync(20);
+    await retirement;
+  }
+});
+
+it("push-to-talk commits on release and accepts delayed recognition with capture paused", async () => {
+  const getUserMedia = setup(),
+    events = callbacks(),
+    voice = new LocalVoice(events, "tr");
+  expect(voice.beginPushToTalk()).toBe(false);
+  await voice.connect();
+  voice.mute(true);
+  let finish!: (value: any) => void;
+  backend.transcribe.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  expect(voice.beginPushToTalk()).toBe(true);
+  for (let i = 0; i < 6; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  for (let i = 0; i < 35; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  expect(backend.transcribe).not.toHaveBeenCalled();
+  voice.endPushToTalk();
+  expect(backend.transcribe).toHaveBeenCalledOnce();
+  expect(track.enabled).toBe(false);
+  expect(voice.level.current).toBe(0);
+  // A fresh key gesture without admitted words must not invalidate the first response.
+  expect(voice.beginPushToTalk()).toBe(true);
+  voice.endPushToTalk();
+  finish({ text: "İşi göster", language: "tr", inferenceMs: 1 });
+  await vi.waitFor(() => expect(events.transcript).toHaveBeenCalledOnce());
+  expect(events.transcript.mock.calls[0][1]).toEqual({ sessionId: "a", sequence: 1 });
+  expect(getUserMedia).toHaveBeenCalledOnce();
+  voice.close();
+  expect(voice.beginPushToTalk()).toBe(false);
+});
+
+it("explicit mute still cancels pending push-to-talk recognition", async () => {
+  setup();
+  const events = callbacks(),
+    voice = new LocalVoice(events, "tr");
+  await voice.connect();
+  voice.mute(true);
+  let finish!: (value: any) => void;
+  backend.transcribe.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  voice.beginPushToTalk();
+  for (let i = 0; i < 6; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  voice.endPushToTalk();
+  voice.mute(true);
+  finish({ text: "İşi başlat", language: "tr", inferenceMs: 1 });
+  await settleSpeech();
+  expect(events.transcript).not.toHaveBeenCalled();
+  voice.close();
+});
 it("keeps Smart Turn and ASR idle in manual mode until explicit Finish turn", async () => {
   setup();
   backend.start.mockResolvedValueOnce({
@@ -487,6 +593,42 @@ it("smooths normalized microphone RMS without state callbacks and resets on mute
 async function settleSpeech() {
   for (let i = 0; i < 15; i++) await Promise.resolve();
 }
+
+it("mutes natural playback gain without cancelling speech or disabling input", async () => {
+  setup();
+  backend.speechNext.mockResolvedValueOnce({ audio: btoa("\0\0".repeat(1600)), sampleRate: 16000 });
+  const events = callbacks(),
+    voice = new LocalVoice(events, "en", { natural: true });
+  voice.setOutputMuted(true);
+  await voice.connect();
+  voice.speak("Hello");
+  await settleSpeech();
+  const gain = contexts[1].createGain.mock.results[0].value;
+  expect(gain.gain.value).toBe(0);
+  expect(playback[0].connect).toHaveBeenCalledWith(gain);
+  voice.setOutputMuted(false);
+  expect(gain.gain.value).toBe(1);
+  expect(playback[0].stop).not.toHaveBeenCalled();
+  expect(track.enabled).toBe(true);
+  voice.close();
+});
+
+it("ends a suspended output wait instead of polling forever", async () => {
+  setup();
+  vi.useFakeTimers();
+  backend.speechNext.mockResolvedValueOnce({ audio: btoa("\0\0".repeat(1600)), sampleRate: 16000 });
+  const events = callbacks(),
+    voice = new LocalVoice(events, "en", { natural: true });
+  await voice.connect();
+  voice.speak("Hello");
+  await settleSpeech();
+  contexts[1].state = "suspended";
+  await vi.advanceTimersByTimeAsync(5_200);
+  expect(events.error).toHaveBeenCalledWith("Voice playback is suspended. Start voice again.");
+  expect(playback[0].stop).toHaveBeenCalledOnce();
+  expect(events.playback).not.toHaveBeenCalledWith(true);
+  voice.close();
+});
 
 it("reports natural playback only after its audio clock starts and until the final chunk ends", async () => {
   setup();

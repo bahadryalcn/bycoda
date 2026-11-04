@@ -29,6 +29,7 @@ import {
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
+import { nativeSessionCapability } from "../../core/controlTurn";
 import {
   COMPACTED_TEXT,
   COMPACTING_TEXT,
@@ -822,8 +823,9 @@ async function ensureLive(
     }
 
     const liveRef: { current: Live | null } = { current: null };
+    const capability = input.nativeControlTurn ? nativeSessionCapability(input.nativeControlTurn) : undefined;
     const service =
-      generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd) : undefined;
+      generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd, capability) : undefined;
     let serverUrl = service?.url ?? "";
     let serverExited: number | null | undefined;
 
@@ -888,6 +890,9 @@ async function ensureLive(
       generation,
       service?.password,
       input.sessionId,
+      undefined,
+      capability,
+      service?.nativeOwnedService,
     );
     const bootstrapClient = hostRun ? client.withHostRun(hostRun) : client;
     const openCodeSession = await resolveSession(
@@ -2171,7 +2176,7 @@ function unsupportedFileMediaType(error: unknown): string | undefined {
 }
 
 async function assertOpenCodeVersion(path: string, cwd: string): Promise<OpenCodeApiGeneration> {
-  const output = await execChild(path, ["--version"], cwd, "opencode").catch(() => "");
+  const output = await execChild(path, ["--version"], cwd, "opencode", undefined, "management").catch(() => "");
   const version = parseOpenCodeVersion(output);
   return assertSupportedOpenCodeVersion(version);
 }

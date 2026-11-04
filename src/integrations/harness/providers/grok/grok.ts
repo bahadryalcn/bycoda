@@ -14,6 +14,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { retireProviderEpoch } from "../turnWriter";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -377,6 +378,7 @@ export async function forgetGrokSession(
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
   await stopGrokSession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(sourceEpochByThread, turnsByThread, sessionId);
 }
 
 export function bindGrokSession(threadId: string, acpSessionId: string, cwd: string): void {

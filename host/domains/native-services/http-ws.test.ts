@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { HostEngine } from "../../engine";
 import { HostStore } from "../../store";
 import { createHostServer } from "../../server";
-import { ConversationDesktopRelay } from "../../conversation-tools";
+import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
 import {
   HOST_SCHEMA_VERSION,
   WS_SUBPROTOCOL,
@@ -26,7 +26,7 @@ vi.mock("../../provider-accounts", async (original) => {
   return { ...module, hostProviderAccounts: () => module.hostProviderAccounts([]) };
 });
 // Fixture-only credentials; never touch the OS vault or developer profile.
-vi.mock("../../social-credentials", () => ({
+vi.mock("../../social/social-credentials", () => ({
   OsSocialCredentials: class {
     private values = new Map<string, unknown>();
     async get(id: string) {

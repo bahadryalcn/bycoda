@@ -149,7 +149,7 @@ See the [getting-started guide](docs/guides/onboarding.md) for details.
 - [Software license](LICENSE) and [security reporting](SECURITY.md).
 
 These documents are bundled for offline reading in **Settings → Policies**, with
-English and Turkish policy text. Privacy contact: [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com).
+English and Turkish policy text. Privacy contact: [info@bycoda.codes](mailto:info@bycoda.codes).
 
 ## Help shape bycoda
 

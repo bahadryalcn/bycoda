@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "purpose": "Existing code-invariant findings counted per file and rule by scripts/checks/check-invariants.mjs. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
   "counts": {
-    "host/app-skills.ts": {
+    "host/app-skills/app-skills.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/assistant-keep-awake.ts": {
+    "host/assistant/core/assistant-keep-awake.ts": {
       "ts-void-promise-without-catch": 1
     },
     "host/assistant/service.ts": {
@@ -37,13 +37,13 @@
     "host/cli.ts": {
       "ts-void-promise-without-catch": 3
     },
-    "host/conversation-file-mutations.ts": {
+    "host/conversation/conversation-file-mutations.ts": {
       "ts-void-promise-without-catch": 1
     },
     "host/desktopSessions.ts": {
       "ts-void-promise-without-catch": 3
     },
-    "host/device-host.ts": {
+    "host/devices/device-host.ts": {
       "oxlint/no-restricted-imports": 1
     },
     "host/engine-operations.ts": {
@@ -61,7 +61,7 @@
     "host/generic-acp.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/git-actions.ts": {
+    "host/git/git-actions.ts": {
       "ts-void-promise-without-catch": 1
     },
     "host/handoff-history.ts": {
@@ -70,11 +70,11 @@
     "host/host-notes-async.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/mobile-lan.ts": {
+    "host/mobile/mobile-lan.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 2
     },
-    "host/mobile-pairing.ts": {
+    "host/mobile/mobile-pairing.ts": {
       "ts-date-toisostring-unguarded": 1
     },
     "host/native-authority/deployment.ts": {
@@ -89,7 +89,7 @@
     "host/native-authority/source-registry.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/native-buffer-catalog.ts": {
+    "host/native-buffer/native-buffer-catalog.ts": {
       "ts-void-promise-without-catch": 1
     },
     "host/native-devices.test-support.ts": {
@@ -128,25 +128,25 @@
     "host/skills.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/social-browser-platforms.ts": {
+    "host/social/social-browser-platforms.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 1
     },
-    "host/social-browser-workflows.ts": {
+    "host/social/social-browser-workflows.ts": {
       "ts-void-promise-without-catch": 2
     },
-    "host/social-browser.ts": {
+    "host/social/social-browser.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 4
     },
-    "host/social-program-schedule.ts": {
+    "host/social/social-program-schedule.ts": {
       "oxlint/no-restricted-properties": 1,
       "ts-date-toisostring-unguarded": 2
     },
-    "host/social-suggestions.ts": {
+    "host/social/social-suggestions.ts": {
       "ts-text-truncate-utf16": 1
     },
-    "host/social.ts": {
+    "host/social/social.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-date-toisostring-unguarded": 5,
       "ts-void-promise-without-catch": 1
@@ -172,7 +172,7 @@
     "host/turn-git-history.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/voice-python-install.ts": {
+    "host/voice/voice-python-install.ts": {
       "oxlint/no-restricted-imports": 1
     },
     "host/workspace-cleanup.ts": {
@@ -224,9 +224,6 @@
     "src-tauri/src/harness.rs": {
       "rust-command-output-without-timeout": 2,
       "rust-emit-broadcast": 2
-    },
-    "src-tauri/src/inbox_media.rs": {
-      "rust-command-output-without-timeout": 1
     },
     "src-tauri/src/lib.rs": {
       "rust-command-output-without-timeout": 1
@@ -569,7 +566,7 @@
       "ts-void-promise-without-catch": 1
     },
     "src/app/workspace/tabs/useCloseTabActions.ts": {
-      "ts-void-promise-without-catch": 3
+      "ts-void-promise-without-catch": 2
     },
     "src/app/workspace/tabs/usePaneDetachActions.ts": {
       "ts-void-promise-without-catch": 2
@@ -761,7 +758,7 @@
       "ts-void-promise-without-catch": 1
     },
     "src/features/connections/ui/RemoteSession.tsx": {
-      "ts-void-promise-without-catch": 16
+      "ts-void-promise-without-catch": 15
     },
     "src/features/connections/ui/ServerFiles.tsx": {
       "ts-locale-format-outside-shared": 2,
@@ -849,9 +846,6 @@
       "ts-locale-format-outside-shared": 3,
       "ts-void-promise-without-catch": 16
     },
-    "src/features/devices/deviceImageComposer.ts": {
-      "ts-void-promise-without-catch": 1
-    },
     "src/features/files/editor/editorConflicts.ts": {
       "ts-text-truncate-utf16": 1
     },
@@ -929,7 +923,7 @@
     },
     "src/features/host-tools/BrowserPanel.tsx": {
       "jsx-a11y/no-noninteractive-element-interactions": 1,
-      "ts-void-promise-without-catch": 23
+      "ts-void-promise-without-catch": 19
     },
     "src/features/host-tools/DesktopControlIndicatorStrip.tsx": {
       "oxlint/no-restricted-imports": 1,
@@ -1341,7 +1335,7 @@
       "ts-void-promise-without-catch": 1
     },
     "src/features/settings/model/appearance.ts": {
-      "ts-void-promise-without-catch": 2
+      "ts-void-promise-without-catch": 1
     },
     "src/features/settings/model/sounds.ts": {
       "ts-void-promise-without-catch": 1
@@ -1792,9 +1786,6 @@
       "ts-locale-format-outside-shared": 5
     },
     "src/features/voice/model/localVoice.ts": {
-      "ts-void-promise-without-catch": 5
-    },
-    "src/features/voice/model/realtimeVoice.ts": {
       "ts-void-promise-without-catch": 2
     },
     "src/features/voice/model/voiceDocumentContext.ts": {

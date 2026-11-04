@@ -82,7 +82,7 @@ async function runHarnessLogin(
   signal?.throwIfAborted();
   if (previous) await child.killChild(previous).catch(() => undefined);
   signal?.throwIfAborted();
-  const loginProcess = child.createChildProcessHandle(childId);
+  const loginProcess = child.createChildProcessHandle(childId, undefined, "management");
 
   return new Promise<void>((resolve, reject) => {
     let settled = false;

@@ -189,7 +189,7 @@
 }
 /* The list/context pane is a quiet panel; the work area beside it stays on the canvas. */
 .social-columns > section:first-child:not(:last-child) {
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
   border-radius: var(--ui-radius-card);
 }
 .social-columns > section:only-child {

@@ -1,9 +1,10 @@
+import { recoverRoomPrivacyProjection } from "../model/roomPrivacyProjection";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Lock } from "../../../shared/ui/icons";
 import "./GroupPrivacy.css";
 import { Badge } from "../../../shared/ui/Badge";
@@ -79,14 +80,21 @@ export function GroupLockSettings({
   const [groupQuery, setGroupQuery] = useState("");
   // Choices apply to this window at once; a save that did not reach storage stays visible with a retry.
   const [unsaved, setUnsaved] = useState<Record<string, () => void>>({});
-  const commit = (id: string, write: () => boolean) => {
-    const saved = write();
-    setUnsaved((current) => {
+  const [pendingWrites, setPendingWrites] = useState<Record<string, boolean>>({});
+  const writesInFlight = useRef(new Set<string>());
+  const commit = (id: string, write: () => boolean | Promise<boolean>) => {
+    if (writesInFlight.current.has(id)) return;
+    writesInFlight.current.add(id);
+    setPendingWrites((current) => ({ ...current, [id]: true }));
+    void Promise.resolve().then(write).catch(() => false).then((saved) => setUnsaved((current) => {
       const next = { ...current };
       if (saved) delete next[id];
       else next[id] = () => commit(id, write);
       return next;
-    });
+    })).finally(() => {
+      writesInFlight.current.delete(id);
+      setPendingWrites((current) => ({ ...current, [id]: false }));
+    }).catch((error: unknown) => console.error("Privacy settings feedback failed", error));
   };
   const unsavedNote = (id: string, applied = true) =>
     unsaved[id] ? (
@@ -98,7 +106,9 @@ export function GroupLockSettings({
               )
             : t("Could not save this change. It was not applied.")}
         </Alert>
-        <Button size="sm" variant="ghost" onClick={unsaved[id]}>
+        <Button size="sm" variant="ghost" onClick={() => {
+          void recoverRoomPrivacyProjection().then(() => unsaved[id]?.()).catch(() => {});
+        }}>
           {t("Retry")}
         </Button>
       </div>
@@ -229,18 +239,29 @@ export function GroupLockSettings({
           <Button
             className="shrink-0"
             disabled={!hasLockable}
+            loading={Boolean(pendingWrites["lock-all"])}
+            loadingLabel={t("Updating...")}
+            startIcon={<Lock className="icon-sm" />}
             tooltip={
               hasLockable
                 ? t("Also hides groups that are temporarily visible.")
                 : t("Protect or hide a group first to use Lock all groups.")
             }
-            onClick={lockAllGroups}
+            onClick={() => commit("lock-all", async () => { await lockAllGroups(); return true; })}
           >
-            <Lock aria-hidden className="icon-sm" />
             {t("Lock all groups")}
           </Button>
         }
       >
+        {unsaved["lock-all"] ? (
+          <div className="privacy-save-feedback">
+            <Alert tone="danger">{t("Groups remain concealed here. Protection could not be confirmed.")}</Alert>
+            <Button size="sm" variant="ghost" onClick={() => {
+              void recoverRoomPrivacyProjection().then(() => commit("lock-all", async () => { await lockAllGroups(); return true; }))
+                .catch(() => {});
+            }}>{t("Retry")}</Button>
+          </div>
+        ) : null}
         {listedGroups.length === 0 ? (
           <EmptyState
             size="inline"

@@ -13,6 +13,7 @@ import {
   parseVoiceAssistantDecision,
   type VoiceAssistantInput,
 } from "./voiceAssistant";
+import { VOICE_TOOL_TIMEOUT_MS } from "./voiceRuntimeDeadline";
 
 const session = {
   id: "source",
@@ -43,6 +44,39 @@ function input(overrides: Partial<VoiceAssistantInput> = {}): VoiceAssistantInpu
 beforeEach(() => {
   run.mockReset();
   supports.mockReturnValue(true);
+});
+
+it("bounds a never-settling tool and preserves uncertainty without a second effect", async () => {
+  vi.useFakeTimers();
+  try {
+    const decision =
+      '{"type":"tool","name":"app_tool_call","args":{"requestId":"same","action":"notes.create"}}';
+    run
+      .mockResolvedValueOnce(decision)
+      .mockResolvedValueOnce(decision)
+      .mockResolvedValueOnce('{"type":"reply","text":"Durum doğrulanamadı."}');
+    const request = input({ execute: vi.fn(() => new Promise(() => {})) });
+    const result = converseWithAssistant(request);
+    await vi.advanceTimersByTimeAsync(VOICE_TOOL_TIMEOUT_MS);
+    await expect(result).resolves.toMatchObject({ action: "reply" });
+    expect(request.execute).toHaveBeenCalledOnce();
+    expect(run.mock.calls[1][0].prompt).toContain("uncertain");
+    expect(run.mock.calls[1][0].prompt).toContain("same");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("cancels a pending tool wait before any later model continuation", async () => {
+  const controller = new AbortController();
+  run.mockResolvedValueOnce('{"type":"tool","name":"app_tool_call","args":{}}');
+  const request = input({ signal: controller.signal, execute: vi.fn(() => new Promise(() => {})) });
+  const result = converseWithAssistant(request);
+  const rejected = expect(result).rejects.toThrow("cancelled");
+  await vi.waitFor(() => expect(request.execute).toHaveBeenCalledOnce());
+  controller.abort(new Error("cancelled"));
+  await rejected;
+  expect(run).toHaveBeenCalledOnce();
 });
 
 it("accepts exact JSON decisions and rejects executable or extra output", () => {
@@ -121,7 +155,7 @@ it.each([
       execute,
     });
     expect(await converseWithAssistant(request)).toEqual({ action: "reply", reply });
-    expect(execute).toHaveBeenNthCalledWith(2, "submit_work", { text: brief });
+    expect(execute).toHaveBeenNthCalledWith(2, "submit_work", { text: brief }, request.signal);
     expect(brief).not.toBe(transcript);
     expect(request.transcript).toBe(transcript);
     const finalPrompt = run.mock.calls[2][0].prompt as string;

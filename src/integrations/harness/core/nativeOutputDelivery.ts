@@ -130,6 +130,7 @@ type Runtime = {
   constructionInvalidationFailure: string | null;
   origins: WeakMap<NativeOutputEventOrigin, readonly NativeOutputItem[]>;
   outcomes: Map<NativeOutputItem, Item>;
+  outcomesByStream: Map<Stream, Set<Item>>;
   works: WeakMap<NativeOutputWork, { active: boolean; origin: NativeOutputEventOrigin }>;
   lineageVersion: number;
   workJobs: number;
@@ -151,6 +152,7 @@ const runtime: Runtime = hot?.data.nativeOutputDelivery ?? {
   constructionInvalidationFailure: null,
   origins: new WeakMap(),
   outcomes: new Map(),
+  outcomesByStream: new Map(),
   works: new WeakMap(),
   lineageVersion: 2,
   workJobs: 0,
@@ -167,6 +169,16 @@ if (runtime.lineageVersion !== 2) {
   runtime.lineageVersion = 2;
 }
 runtime.outcomes ??= new Map();
+// Preserve diagnostics across hot replacement without rescanning the global
+// retained history on every stream inspection.
+if (!runtime.outcomesByStream) {
+  runtime.outcomesByStream = new Map();
+  for (const item of runtime.outcomes.values()) {
+    let items = runtime.outcomesByStream.get(item.batch.stream);
+    if (!items) runtime.outcomesByStream.set(item.batch.stream, (items = new Set()));
+    items.add(item);
+  }
+}
 runtime.works ??= new WeakMap();
 runtime.workJobs ??= 0;
 runtime.timers ??= new Map();
@@ -431,10 +443,17 @@ export function observeNativeOutputBatch(
     // Bounded diagnostic history; private token ownership lives in the WeakMap.
     if (runtime.outcomes.size >= MAX_RETAINED_OUTCOMES) {
       const oldest = runtime.outcomes.keys().next().value!;
-      runtime.outcomes.get(oldest)!.batch.stream.diagnosticsTruncated = true;
+      const removed = runtime.outcomes.get(oldest)!;
+      removed.batch.stream.diagnosticsTruncated = true;
+      const items = runtime.outcomesByStream.get(removed.batch.stream);
+      items?.delete(removed);
+      if (items?.size === 0) runtime.outcomesByStream.delete(removed.batch.stream);
       runtime.outcomes.delete(oldest);
     }
     runtime.outcomes.set(token, owned);
+    let streamOutcomes = runtime.outcomesByStream.get(stream);
+    if (!streamOutcomes) runtime.outcomesByStream.set(stream, (streamOutcomes = new Set()));
+    streamOutcomes.add(owned);
     return token;
   });
   runtime.hashJobs++;
@@ -1004,8 +1023,7 @@ export function inspectNativeOutputDelivery(sessionId: string) {
             nativeLastSequence: stream.terminal?.lastSequence ?? null,
             pendingBatches: stream.pending.size,
             outcomes: Object.freeze(
-              [...runtime.outcomes.values()]
-                .filter((item) => item.batch.stream === stream)
+              [...(runtime.outcomesByStream.get(stream) ?? [])]
                 .map((item) =>
                   Object.freeze({
                     sequence: item.batch.sequence,

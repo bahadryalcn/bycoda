@@ -71,9 +71,7 @@ export function createWorkspaceFeatureClaims(
         "Workspace changed; refresh before retrying.",
       );
     if (
-      (await store.workspaceOperations(value.id)).some(
-        (operation) => operation.phase !== "complete",
-      )
+      await store.workspaceHasPendingOperations(value.id, undefined, false)
     )
       throw workspacePolicyError(
         "WORKSPACE_RECOVERY_REQUIRED",

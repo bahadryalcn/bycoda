@@ -12,6 +12,8 @@ use tauri::window::{Effect, EffectsBuilder};
 use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(1);
+static TOOLS_WINDOW_CREATION: Mutex<()> = Mutex::new(());
+const TOOLS_WINDOW_LABEL: &str = "tools-hub";
 
 /// The floating quick composer. It is a webview window but not a workspace:
 /// it has no sessions, takes no part in quitting, and is never shown by the
@@ -119,6 +121,114 @@ pub fn open_tool_window(
 ) -> Result<(), String> {
     let url = tool_window_url(tool, cwd, grouped)?;
     build_session_window_with_url(app, true, None, Some(url)).map(|_| ())
+}
+
+fn host_tools_url(payload: &serde_json::Value) -> Result<tauri::WebviewUrl, String> {
+    const FIELDS: &[&str] = &[
+        "cwd",
+        "sessionId",
+        "title",
+        "projectName",
+        "branch",
+        "worktreeCwd",
+        "model",
+        "status",
+        "composerSessionId",
+        "composerWindow",
+        "onlyTab",
+        "initialMachine",
+        "initialTab",
+        "initialUrl",
+        "transferRequestId",
+    ];
+    let object = payload.as_object().ok_or("Invalid tools metadata")?;
+    for (key, value) in object {
+        if !FIELDS.contains(&key.as_str()) || !value.is_string() {
+            return Err("Invalid tools metadata field".into());
+        }
+        if value.as_str().unwrap_or_default().len() > 8192 {
+            return Err("Tools metadata field too large".into());
+        }
+    }
+    for key in ["cwd", "sessionId", "title"] {
+        if object
+            .get(key)
+            .and_then(|v| v.as_str())
+            .is_none_or(|v| v.trim().is_empty())
+        {
+            return Err("Missing tools metadata".into());
+        }
+    }
+    let json = serde_json::to_string(payload).map_err(|error| error.to_string())?;
+    if json.len() > 32768 {
+        return Err("Tools metadata too large".into());
+    }
+    let mut url = tauri::Url::parse("https://bycoda.invalid/index.html")
+        .map_err(|error| error.to_string())?;
+    url.query_pairs_mut().append_pair("hostTools", &json);
+    Ok(tauri::WebviewUrl::App(
+        format!("index.html?{}", url.query().unwrap_or_default()).into(),
+    ))
+}
+
+/// Returns false when a concurrent caller already created the hub.
+pub fn open_host_tools_window(
+    app: &AppHandle,
+    title: &str,
+    payload: &serde_json::Value,
+) -> Result<bool, String> {
+    let url = host_tools_url(payload)?;
+    if title.trim().is_empty() || title.len() > 1024 {
+        return Err("Invalid tools window title".into());
+    }
+    let _guard = TOOLS_WINDOW_CREATION
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if let Some(window) = app.get_webview_window(TOOLS_WINDOW_LABEL) {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(false);
+    }
+    let main = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .ok_or("missing main window config")?;
+    let config = configure_host_tools_window(main, title, url);
+    let creation = crate::native_window_lifecycle::admit_window(app, TOOLS_WINDOW_LABEL)?;
+    crate::ssh_window_lifecycle::register(TOOLS_WINDOW_LABEL)?;
+    let window = WebviewWindowBuilder::from_config(app, &config)
+        .map_err(|error| error.to_string())
+        .and_then(|builder| builder.build().map_err(|error| error.to_string()))
+        .inspect_err(|_| crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL))?;
+    creation.created(&window);
+    let _ = ensure_window_reachable(&window);
+    Ok(true)
+}
+
+fn configure_host_tools_window(
+    main: &tauri::utils::config::WindowConfig,
+    title: &str,
+    url: tauri::WebviewUrl,
+) -> tauri::utils::config::WindowConfig {
+    let mut config = main.clone();
+    config.label = TOOLS_WINDOW_LABEL.into();
+    config.url = url;
+    config.title = title.into();
+    config.width = 1000.0;
+    config.height = 760.0;
+    config.min_width = Some(360.0);
+    config.min_height = Some(320.0);
+    config.decorations = true;
+    config.title_bar_style = Default::default();
+    config.hidden_title = false;
+    config.transparent = true;
+    config.resizable = true;
+    config.visible = true;
+    config.focus = true;
+    config
 }
 
 fn tool_window_url(tool: &str, cwd: &str, grouped: bool) -> Result<tauri::WebviewUrl, String> {
@@ -494,11 +604,20 @@ impl Rgb {
 
 /// Desktop blur goes on after the first UI paint and only in dark mode.
 #[tauri::command]
-pub fn set_window_glass_enabled(window: WebviewWindow, enabled: bool, background: Rgb) {
+pub fn set_window_glass_enabled(
+    window: WebviewWindow,
+    enabled: bool,
+    background: Rgb,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        if crate::macos::ns_window(&window).is_none() {
+            return Err("Native window is unavailable".into());
+        }
         if enabled {
-            let _ = window.set_background_color(Some(Color(0, 0, 0, 3)));
+            window
+                .set_background_color(Some(Color(0, 0, 0, 3)))
+                .map_err(|e| e.to_string())?;
             crate::macos::enable_glass(&window);
         } else {
             crate::macos::disable_glass(&window, background.r, background.g, background.b);
@@ -507,27 +626,36 @@ pub fn set_window_glass_enabled(window: WebviewWindow, enabled: bool, background
     #[cfg(target_os = "windows")]
     {
         if enabled {
-            let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-            let _ = window.set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build());
+            window
+                .set_background_color(Some(Color(0, 0, 0, 0)))
+                .map_err(|e| e.to_string())?;
+            window
+                .set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build())
+                .map_err(|e| e.to_string())?;
         } else {
-            let _ = window.set_effects(None);
-            let _ = window.set_background_color(Some(background.fill()));
+            window.set_effects(None).map_err(|e| e.to_string())?;
+            window
+                .set_background_color(Some(background.fill()))
+                .map_err(|e| e.to_string())?;
         }
     }
     #[cfg(target_os = "linux")]
     {
         // No system blur API on Linux: transparency only. The compositor
         // (e.g. Mutter) blends the translucent CSS glass over the desktop.
-        let _ = window.set_background_color(Some(if enabled {
-            Color(0, 0, 0, 0)
-        } else {
-            background.fill()
-        }));
+        window
+            .set_background_color(Some(if enabled {
+                Color(0, 0, 0, 0)
+            } else {
+                background.fill()
+            }))
+            .map_err(|e| e.to_string())?;
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = (window, enabled, background);
     }
+    Ok(())
 }
 
 /// Close with a running chat hides the webview so the harness child keeps going.
@@ -1184,6 +1312,65 @@ pub fn confirm_quit(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn host_tools_url_accepts_only_bounded_metadata() {
+        let metadata = serde_json::json!({"cwd":"C:/project", "sessionId":"s", "title":"A & B", "transferRequestId":"r"});
+        let url = super::host_tools_url(&metadata).unwrap();
+        let tauri::WebviewUrl::App(path) = url else {
+            panic!("expected app URL")
+        };
+        let parsed =
+            tauri::Url::parse(&format!("https://bycoda.invalid/{}", path.display())).unwrap();
+        let value = parsed
+            .query_pairs()
+            .find(|(key, _)| key == "hostTools")
+            .unwrap()
+            .1;
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&value).unwrap(),
+            metadata
+        );
+        assert!(super::host_tools_url(
+            &serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "browserDraft":{}})
+        )
+        .is_err());
+        assert!(super::host_tools_url(&serde_json::json!({"cwd":"x", "sessionId":"s"})).is_err());
+        assert!(super::host_tools_url(
+            &serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "model":"x".repeat(8193)})
+        )
+        .is_err());
+        assert!(super::host_tools_url(
+            &serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "unknown":"x"})
+        )
+        .is_err());
+        assert!(super::host_tools_url(&serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "model":"x".repeat(8000), "branch":"x".repeat(8000), "status":"x".repeat(8000), "projectName":"x".repeat(8000), "worktreeCwd":"x".repeat(1000)})).is_err());
+    }
+
+    #[test]
+    fn host_tools_config_preserves_main_webview_profile_and_browser_args() {
+        let main = tauri::utils::config::WindowConfig {
+            additional_browser_args: Some("--remote-debugging-port=9222".into()),
+            data_directory: Some("profile".into()),
+            title_bar_style: tauri::TitleBarStyle::Overlay,
+            hidden_title: true,
+            transparent: true,
+            ..Default::default()
+        };
+        let url =
+            super::host_tools_url(&serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t"}))
+                .unwrap();
+        let config = super::configure_host_tools_window(&main, "Tools", url.clone());
+        assert_eq!(config.additional_browser_args, main.additional_browser_args);
+        assert_eq!(config.data_directory, main.data_directory);
+        assert_eq!(config.label, "tools-hub");
+        assert_eq!(config.title_bar_style, tauri::TitleBarStyle::Visible);
+        assert!(!config.hidden_title && config.transparent);
+        assert_eq!(config.url, url);
+        assert_eq!(
+            (config.min_width, config.min_height),
+            (Some(360.0), Some(320.0))
+        );
+    }
     use super::*;
 
     #[test]

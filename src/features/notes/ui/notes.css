@@ -273,7 +273,7 @@
 
 /* The document canvas is the reading ground. */
 .note-editor-pane[data-document] {
-  background: var(--color-background-base);
+  background: var(--ui-workspace-reading-base);
 }
 
 .note-pane-label {

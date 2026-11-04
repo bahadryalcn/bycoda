@@ -405,7 +405,7 @@ export function ServersTerminalWorkspace({
               {!IS_MAC ? <WindowControls /> : null}
             </div>
             <div
-              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-surface-panel) px-2 py-1"
+              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-workspace-panel) px-2 py-1"
               role="tablist"
               aria-label={t("SSH terminals")}
             >

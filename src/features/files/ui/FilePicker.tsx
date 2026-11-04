@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { projectFilesTruncated } from "../../../platform/tauri/fs";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
@@ -370,6 +371,13 @@ export function FilePicker({
               {t("Retry")}
             </Button>
           </div>
+        ) : null}
+        {!paletteMode && !loading && looksLikeProject(cwd) && projectFilesTruncated(files) !== false ? (
+          <p className="px-3 pb-2 text-ui-caption text-[var(--ui-text-secondary)]">
+            {projectFilesTruncated(files)
+              ? t("File index is incomplete; some files may not appear.")
+              : t("File index completeness is unknown; some files may not appear.")}
+          </p>
         ) : null}
         {empty && !(error && !files.length) ? (
           <p

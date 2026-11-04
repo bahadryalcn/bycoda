@@ -1327,7 +1327,9 @@ export class Orchestrator {
         const timer = setTimeout(finish, seconds * 1000);
       });
     }
-    return this.view(this.run(leadId)!);
+    const current = this.run(leadId);
+    if (!current) throw new Error("No orchestration run was found for this lead");
+    return this.view(current);
   }
   private async pump() {
     if (this.pumping) {

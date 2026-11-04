@@ -153,6 +153,7 @@ import {
   subscribeChatBackgroundPath,
 } from "../../settings/model/appearance";
 import type { SessionFolderTarget } from "../model/sessionFolders";
+import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/ui/RemoteSession";
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
@@ -210,7 +211,7 @@ export type SessionPaneProps = {
   onNewSession?: (sessionId: string, options?: NewSessionOptions) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (sessionId: string) => void;
-  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void;
+  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void | Promise<void | SessionOrganizationResult>;
   onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
   onEditQueuedMessage: (
     sessionId: string,
@@ -775,6 +776,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const decorativeMotionEnabled = useDecorativeMotionEnabled();
   const [modelWelcome, setModelWelcome] = useState<{
     run: number;
+    harness: HarnessId;
   } | null>(null);
   const dismissModelWelcome = useCallback(() => setModelWelcome(null), []);
   // A hidden pane, or one without decorative motion, shows no welcome.
@@ -995,7 +997,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (harness: HarnessId, model: string, accountId?: string) => {
       onModelChange(session.id, harness, model, accountId);
       // A new key restarts the animation and its cleanup timer on every pick.
-      setModelWelcome(decorativeMotionEnabled ? { run: ++modelWelcomeSequence.current } : null);
+      setModelWelcome(
+        decorativeMotionEnabled ? { run: ++modelWelcomeSequence.current, harness } : null,
+      );
     },
   );
   const composerModelSettingsChange = useStableCallback((settings: Record<string, string>) =>
@@ -1208,6 +1212,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         {/* Above the queue and the input, below any blocker. */}
         <ActivityDock
           sessionId={session.id}
+          harness={session.harness}
           blocks={stableBlocks}
           busy={sessionBusy}
           pendingQuestion={hasPendingQuestion}
@@ -1228,6 +1233,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     ),
     [
       session.id,
+      session.harness,
       stableBlocks,
       sessionBusy,
       hasPendingQuestion,
@@ -1494,7 +1500,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
         <GradientBlurBackground />
       ) : null}
       {modelWelcome && visible && decorativeMotionEnabled ? (
-        <BycodaWelcome key={modelWelcome.run} onDone={dismissModelWelcome} />
+        <BycodaWelcome
+          key={modelWelcome.run}
+          harness={modelWelcome.harness}
+          onDone={dismissModelWelcome}
+        />
       ) : null}
       {hasPaneHeader ? (
         <div

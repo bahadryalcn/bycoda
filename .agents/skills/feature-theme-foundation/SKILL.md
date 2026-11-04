@@ -23,6 +23,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 - Preserve saved theme/custom colors, accent pairs, tint/contrast/fonts/scale/density and native translucency capability gates.
 - Canvas, navigation panels, reading/forms and floating surfaces have distinct roles. Pane boundaries, control boundaries and focus are separate signals.
+- Workspace canvases/panels use the centralized `--ui-workspace-*` roles; the owning main pane paints glass opacity once. Preserve opaque theme tones through the existing canvas/reading variants, plus reduced-transparency and forced-color fallbacks with matching selector specificity. Embedded content and floating controls keep separate owners.
+- Sidebar chrome/cards/selection use `--ui-navigation-*` under the native-window gate independently of main-pane glass. Preserve readable status chips and opacity at actual overlapping/sticky text boundaries; verify scrolled content and colored backdrops before clearing a fill.
+- Opt-in workspace artwork uses one `has-workspace-background` root image and an adaptive theme veil, with identical preview composition. Decorative gradient serialization/presets live in `src/shared/theme/workspaceBackground.ts`; explicit reduced-transparency/forced-color overrides hide artwork without requiring support for a positive media query. Never substitute artwork colors for control/status roles.
 - User accent, running/on and status/diff meaning remain distinct. Derive new roles centrally; consumers do not copy mixing/opacity recipes.
 - Keep editor overlay glyphs transparent, specialized CodeMirror/PDF/terminal selection adapters, native content colors and forced-color fallbacks.
 - Shared semantic-role changes require representative consumers; color values or a successful typecheck alone cannot prove visual readability.

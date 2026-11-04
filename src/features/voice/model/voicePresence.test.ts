@@ -8,8 +8,19 @@ import {
   readNativeVoicePresence,
 } from "./voicePresence";
 afterEach(() => {
+  vi.useRealTimers();
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   vi.resetAllMocks();
+});
+it("returns unknown for a hung native read and accepts a fresh later sample", async () => {
+  vi.useFakeTimers();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  invoke.mockImplementationOnce(() => new Promise(() => {}));
+  const pending = readNativeVoicePresence(10);
+  await vi.advanceTimersByTimeAsync(3001);
+  expect(await pending).toBe("unknown");
+  invoke.mockResolvedValue({ idleMs: 0, locked: false, supported: true });
+  expect(await readNativeVoicePresence(10)).toBe("active");
 });
 it("requires fresh supported native presence for an explicit Away/DND capture override", async () => {
   expect(await readNativeVoicePresence(10)).toBe("unknown");

@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -98,12 +99,15 @@ export function ProjectMultiSelect({
     if (!range || anchor == null) setAnchor(path);
   };
   const moveTo = (groupId: string | null) => {
-    const assignments = loadProjectGroupAssignments();
-    for (const path of chosen) {
-      if (groupId == null) delete assignments[pathKey(path)];
-      else assignments[pathKey(path)] = groupId;
-    }
-    setError(!saveProjectGroupAssignments(assignments));
+    void withRoomPrivacyMutation(() => {
+      const assignments = loadProjectGroupAssignments();
+      if (groupId && !loadProjectGroups().some((group) => group.id === groupId)) return false;
+      for (const path of chosen) {
+        if (groupId == null) delete assignments[pathKey(path)];
+        else assignments[pathKey(path)] = groupId;
+      }
+      return saveProjectGroupAssignments(assignments);
+    }).then((saved) => setError(!saved), () => setError(true));
   };
   const groupItems: ExplorerMenuItem[] = [
     { kind: "item", id: "new", label: t("New group…") },
@@ -225,9 +229,10 @@ export function ProjectMultiSelect({
                 setError(true);
                 return;
               }
-              const saved = !!assignProjectsToNamedGroup(name, chosen);
-              setError(!saved);
-              if (saved) setNewGroupAnchor(null);
+              void withRoomPrivacyMutation(() => !!assignProjectsToNamedGroup(name, chosen)).then((saved) => {
+                setError(!saved);
+                if (saved) setNewGroupAnchor(null);
+              }, () => setError(true));
             }}
           >
             <label

@@ -350,6 +350,7 @@ describe("host crews", () => {
     await sending;
     await f.service.call("crews.stop", { runId: "launch-run" }, f.project.id);
     vi.mocked(f.store.session).mockResolvedValue({
+      projectId: f.project.id,
       status: "running",
       runId: "coordinator-run",
     } as Awaited<ReturnType<HostStore["session"]>>);
@@ -951,6 +952,7 @@ describe("crew work deletion", () => {
     });
     Object.assign(f.tasks, { move });
     vi.mocked(f.store.session).mockResolvedValue({
+      projectId: f.project.id,
       status: "running",
       runId: "lead-run",
     } as Awaited<ReturnType<HostStore["session"]>>);
@@ -1029,7 +1031,7 @@ describe("crew work deletion", () => {
       runId: "run",
       expectedUpdatedAt: (await f.service.list(f.project.id)).runs[0].updatedAt,
     };
-    vi.mocked(f.store.session).mockReturnValue({ status: "running" } as ReturnType<
+    vi.mocked(f.store.session).mockReturnValue({ projectId: f.project.id, status: "running" } as ReturnType<
       HostStore["session"]
     >);
     await expect(f.service.call("crews.deleteRun", input, f.project.id)).rejects.toThrow(

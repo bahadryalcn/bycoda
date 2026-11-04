@@ -23,6 +23,9 @@ export async function uploadRemoteAttachments(
     resumable?: boolean;
     ownership?: AttachmentOwnership;
     ownershipSource?: string;
+    questionSessionId?: string;
+    questionRequestId?: number;
+    questionRunId?: string;
     onProgress?: (id: string, offset: number, size: number) => void;
   } = {},
 ): Promise<RemoteAttachment[]> {
@@ -53,6 +56,11 @@ export async function uploadRemoteAttachments(
       const owner = options.ownership
         ? { ownerId: options.ownership.ownerId, claimId: options.ownership.claimId(file.id) }
         : {};
+      const question = options.questionSessionId === undefined ? {} : {
+        questionSessionId: options.questionSessionId,
+        questionRequestId: options.questionRequestId,
+        questionRunId: options.questionRunId,
+      };
       if (file.hostEnvironmentId && file.hostEnvironmentId === options.environmentId) {
         const { id, name, mimeType, kind, size, browserAnnotation } = file;
         uploaded[indexInBatch] = {
@@ -102,7 +110,7 @@ export async function uploadRemoteAttachments(
         const status = await remoteRequest<{ offset: number; hash?: string }>(
           machineId,
           "attachments.status",
-          { id: file.id, size: file.size, ...owner },
+          { id: file.id, size: file.size, ...owner, ...question },
         );
         if (!Number.isSafeInteger(status.offset) || status.offset < 0 || status.offset > file.size)
           throw new Error("Invalid upload status");
@@ -132,6 +140,7 @@ export async function uploadRemoteAttachments(
           size: file.size,
           data: "",
           ...owner,
+          ...question,
         });
         if (reply.offset !== 0) throw new Error("Invalid upload acknowledgement");
         options.onProgress?.(file.id, 0, 0);
@@ -144,6 +153,7 @@ export async function uploadRemoteAttachments(
           size: file.size,
           data: chunk.data,
           ...owner,
+          ...question,
         });
         if (reply.offset !== chunk.offset || reply.offset > file.size)
           throw new Error("Invalid upload acknowledgement");

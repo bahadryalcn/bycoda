@@ -97,6 +97,23 @@ it("transcribes the unfinished phrase on stop, then releases the microphone and 
   expect(events.state).toHaveBeenLastCalledWith("idle");
 });
 
+it("captures the selected input used by the microphone permission check", async () => {
+  const events = setup();
+  const dictation = new Dictation(events, "tr", { natural: false }, "selected-mic");
+  await dictation.start();
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      deviceId: { exact: "selected-mic" },
+    },
+    video: false,
+  });
+  dictation.cancel();
+  expect(track.stop).toHaveBeenCalled();
+});
+
 it("reports a start failure and leaves nothing running", async () => {
   const events = setup();
   backend.start.mockRejectedValueOnce("Voice setup is incomplete: Whisper model.");

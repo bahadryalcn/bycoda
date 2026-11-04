@@ -15,6 +15,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { retireProviderEpoch } from "../turnWriter";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -410,6 +411,7 @@ export async function forgetCursorSession(
     stopCursorSession(sessionId),
     stopCursorTitleGeneration(sessionId),
   ]);
+  retireProviderEpoch(sourceEpochByThread, turnsByThread, sessionId);
 }
 
 /** Seed ACP resume state for a restored Bycoda session. */
@@ -684,6 +686,18 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
     try {
       const blocks = promptBlocks(input.text, input.attachments);
       if (blocks.length === 0) return;
+      // Settled tools from earlier turns no longer need lookup state. Keep
+      // background agents and pending enrichment until their work has ended.
+      for (const [id, status] of live.toolStatuses) {
+        if (
+          (status === "completed" || status === "failed" || status === "cancelled") &&
+          !live.backgroundAgentTools.has(id) &&
+          !live.pendingToolEnrichments.has(id)
+        ) {
+          live.toolStatuses.delete(id);
+          live.enrichedTools.delete(id);
+        }
+      }
       live.agentTools.clear();
       nativeOutputSink(responseScope.work, retireCursorSubagentPolling)(live);
       live.subagentRuns.clear();

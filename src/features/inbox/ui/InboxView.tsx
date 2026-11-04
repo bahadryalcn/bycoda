@@ -28,6 +28,7 @@ import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
 import { visibleInboxItems } from "../model/inboxVisibleItems";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
+import { InlineError } from "../../../shared/ui/InlineError";
 import {
   ChevronsUpDown,
   ChevronLeft,
@@ -341,8 +342,14 @@ export function InboxView({
       ),
     [filters, projects],
   );
-  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope, searchInput])}`;
+  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope])}`;
   const [listLimit, setListLimit] = useRetainedState(`${listScope}:list-limit`, LIST_PAGE_SIZE);
+  const previousListSearch = useRef(searchInput);
+  useEffect(() => {
+    if (previousListSearch.current === searchInput) return;
+    previousListSearch.current = searchInput;
+    setListLimit(LIST_PAGE_SIZE);
+  }, [searchInput, setListLimit]);
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -706,7 +713,7 @@ export function InboxView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-surface-panel)"
+      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-workspace-panel)"
     >
       {sourceRow}
       {viewRow}
@@ -1074,7 +1081,7 @@ export function InboxView({
 
       {source === "jira" && jiraView === "board" ? (
         <>
-          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-(--ui-surface-panel)">
+          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-(--ui-workspace-panel)">
             <div className="min-w-0 max-w-sm flex-1 basis-72">{sourceRow}</div>
             {viewRow}
           </div>
@@ -1227,6 +1234,10 @@ export function LinkedWorkItemPanel({
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
   const { item, error, loading, setItem } = useGithubWorkItem(target, cwd);
+  const [openError, setOpenError] = useState("");
+  const targetUrlRef = useRef(target.url);
+  targetUrlRef.current = target.url;
+  useEffect(() => setOpenError(""), [target.url]);
   const resize = useDragResize({
     min: LINKED_PANEL_MIN_WIDTH,
     max: () =>
@@ -1313,7 +1324,14 @@ export function LinkedWorkItemPanel({
             <Alert tone="info" role="alert" className="max-w-sm">
               {error}
             </Alert>
-            <Button variant="secondary" type="button" onClick={() => openUrlSafely(target.url)}>
+            {openError ? <InlineError>{openError}</InlineError> : null}
+            <Button variant="secondary" type="button" onClick={() => {
+              setOpenError("");
+              const url = target.url;
+              openUrlSafely(url, () => {
+                if (targetUrlRef.current === url) setOpenError(t("Could not open the link. Try again."));
+              });
+            }}>
               <ExternalLink className="icon-sm" strokeWidth={1.75} />
               {t("Open on GitHub")}
             </Button>

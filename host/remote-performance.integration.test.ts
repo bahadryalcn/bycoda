@@ -7,7 +7,7 @@ import { HostEngine } from "./engine";
 import { HostStore, summary } from "./store";
 import { createHostServer } from "./server";
 import { DesktopSessions } from "./desktopSessions";
-import { branchCache } from "./git-actions";
+import { branchCache } from "./git/git-actions";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { applySessionSync, type HostSession } from "../src/features/connections/model/protocol";

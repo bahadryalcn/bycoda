@@ -442,7 +442,7 @@ function Projects({
     onBusy(true);
     try {
       const paths = await pickFolders();
-      for (const path of paths) rememberProject(path);
+      for (const path of paths) await rememberProject(path);
       setAddedFolders((current) => [...new Set([...current, ...paths])]);
       onImported();
     } catch (reason) {

@@ -327,30 +327,24 @@ async function attachmentFromBlob(file: File): Promise<Attachment | null> {
   const name = file.name.trim() || fallbackName(mimeType);
   const previewUrl = kind === "image" ? URL.createObjectURL(file) : undefined;
   const data = await readBlobBase64(file);
-  if (kind === "image" && isVisionImage(mimeType) && data) {
-    return {
-      id: crypto.randomUUID(),
-      name,
-      mimeType: normalizeImageMime(mimeType),
-      kind,
-      size: file.size,
-      data,
-      previewUrl,
-    };
-  }
   if (data === null) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     return null;
   }
   try {
     const path = await invoke<string>("write_attachment", { name, data });
+    if (!path?.trim()) throw new Error("Attachment storage returned no file path");
+    const visionImage = kind === "image" && isVisionImage(mimeType);
     return {
       id: crypto.randomUUID(),
       name,
-      mimeType,
+      mimeType: visionImage ? normalizeImageMime(mimeType) : mimeType,
       kind,
       size: file.size,
       path,
+      // Inline bytes feed vision providers; the saved path survives transcript
+      // sanitization and reopening after the process and blob URL are gone.
+      ...(visionImage ? { data } : {}),
       previewUrl,
     };
   } catch (error) {

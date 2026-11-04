@@ -14,6 +14,59 @@ const OPEN_EVENT: &str = "bycoda:tray-open-session";
 const PRESENCE_REFRESH: &str = "tray_presence_refresh";
 const PRESENCE_PREFIX: &str = "tray_presence_choice_";
 
+#[cfg(windows)]
+fn windows_tray_icon_size(width: i32, height: i32) -> Option<(u32, u32, u32)> {
+    let width = u32::try_from(width).ok().filter(|value| *value > 0)?;
+    let height = u32::try_from(height).ok().filter(|value| *value > 0)?;
+    let source = [16, 20, 24, 32, 40, 48, 64]
+        .into_iter()
+        .find(|size| *size >= width.max(height))?;
+    Some((width, height, source))
+}
+
+#[cfg(windows)]
+fn windows_tray_icon_for_size(width: i32, height: i32) -> Option<tauri::image::Image<'static>> {
+    let (width, height, source) = windows_tray_icon_size(width, height)?;
+    let bytes: &[u8] = match source {
+        16 => include_bytes!("../icons/windows/16.png"),
+        20 => include_bytes!("../icons/windows/20.png"),
+        24 => include_bytes!("../icons/windows/24.png"),
+        32 => include_bytes!("../icons/windows/32.png"),
+        40 => include_bytes!("../icons/windows/40.png"),
+        48 => include_bytes!("../icons/windows/48.png"),
+        64 => include_bytes!("../icons/windows/64.png"),
+        _ => return None,
+    };
+    let decoded = image::load_from_memory(bytes).ok()?.into_rgba8();
+    if decoded.dimensions() != (source, source) {
+        return None;
+    }
+    let pixels = if (width, height) == (source, source) {
+        decoded
+    } else {
+        // Nonstandard metrics scale once from the next larger optical asset.
+        image::imageops::resize(
+            &decoded,
+            width,
+            height,
+            image::imageops::FilterType::Lanczos3,
+        )
+    };
+    Some(tauri::image::Image::new_owned(
+        pixels.into_raw(),
+        width,
+        height,
+    ))
+}
+
+#[cfg(windows)]
+fn windows_tray_icon() -> Option<tauri::image::Image<'static>> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON, SM_CYSMICON};
+    // SAFETY: GetSystemMetrics reads system values and takes no pointers.
+    let (width, height) = unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+    windows_tray_icon_for_size(width, height)
+}
+
 #[derive(Clone, Deserialize, Debug)]
 #[serde(default)]
 pub struct PresenceLabels {
@@ -602,7 +655,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             }
         });
 
-    if let Some(icon) = app.default_window_icon().cloned() {
+    #[cfg(windows)]
+    let icon = windows_tray_icon().or_else(|| app.default_window_icon().cloned());
+    #[cfg(not(windows))]
+    let icon = app.default_window_icon().cloned();
+    if let Some(icon) = icon {
         tray = tray.icon(icon);
     }
     #[cfg(target_os = "macos")]
@@ -630,6 +687,39 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_tray_uses_exact_small_icon_assets_for_standard_dpi_sizes() {
+        for size in [16, 20, 24, 32, 40, 48, 64] {
+            let icon = windows_tray_icon_for_size(size, size).expect("valid native-size PNG");
+            assert_eq!((icon.width(), icon.height()), (size as u32, size as u32));
+            assert_eq!(icon.rgba().len(), size as usize * size as usize * 4);
+            assert_eq!(
+                windows_tray_icon_size(size, size),
+                Some((size as u32, size as u32, size as u32))
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_tray_nonstandard_metrics_never_upscale_a_smaller_asset() {
+        assert_eq!(windows_tray_icon_size(18, 18), Some((18, 18, 20)));
+        assert_eq!(windows_tray_icon_size(20, 24), Some((20, 24, 24)));
+        let icon = windows_tray_icon_for_size(18, 18).expect("resized optical PNG");
+        assert_eq!((icon.width(), icon.height()), (18, 18));
+        for (width, height) in [
+            (0, 16),
+            (16, 0),
+            (-1, 16),
+            (16, -1),
+            (65, 65),
+            (i32::MAX, 16),
+        ] {
+            assert!(windows_tray_icon_for_size(width, height).is_none());
+        }
+    }
 
     fn row(id: &str, key: &str, status: SessionStatus, owned: bool, updated_at: u64) -> SessionRow {
         SessionRow {

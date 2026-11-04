@@ -255,11 +255,17 @@ function ProductDetails() {
         address={PRODUCT_IDENTITY.websiteUrl}
         href={PRODUCT_IDENTITY.websiteUrl}
         displayAddress={PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
+        openLabel={t("Open website")}
       />
       <ProductLink
         label={t("Contact")}
         address={PRODUCT_IDENTITY.contactEmail}
         href={`mailto:${PRODUCT_IDENTITY.contactEmail}`}
+      />
+      <ProductLink
+        label={t("Developer contact")}
+        address={PRODUCT_IDENTITY.developerContactEmail}
+        href={`mailto:${PRODUCT_IDENTITY.developerContactEmail}`}
       />
     </>
   );
@@ -271,11 +277,13 @@ function ProductLink({
   address,
   href,
   displayAddress = address,
+  openLabel,
 }: {
   label: string;
   address: string;
   href: string;
   displayAddress?: string;
+  openLabel?: string;
 }) {
   const [pending, setPending] = useState<"open" | "retry" | "copy" | null>(null);
   const [failure, setFailure] = useState<"open" | "copy" | null>(null);
@@ -399,6 +407,17 @@ function ProductLink({
           )}
         </Button>
       )}
+      {openLabel ? (
+        <Button
+          size="sm"
+          disabled={pending !== null}
+          loading={pending === "open"}
+          loadingLabel={t("Opening…")}
+          onClick={() => void run("open")}
+        >
+          {openLabel}
+        </Button>
+      ) : null}
       <span role="status" className="sr-only">
         {copied ? t("Copied") : ""}
       </span>
@@ -420,10 +439,10 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
     void readAppVersion().then((currentVersion) => {
       if (cancelled) return;
       setSnapshot((current) => ({ ...current, currentVersion }));
-    });
+    }).catch(() => {});
     void isUpdaterEnabled().then((enabled) => {
       if (!cancelled) setUpdatesEnabled(enabled);
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };

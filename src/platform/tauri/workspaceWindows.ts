@@ -15,8 +15,9 @@ export async function isLeadWindow(): Promise<boolean> {
   try {
     const labels = (await getAllWebviewWindows()).map((window) => window.label)
       .filter(isWorkspaceWindow).sort();
-    return (labels[0] ?? "main") === own;
+    return labels.length > 0 && labels[0] === own;
   } catch {
-    return own === "main";
+    // A failed census is unknown, not evidence that another owner retired.
+    return false;
   }
 }

@@ -236,3 +236,15 @@ describe("session read domain", () => {
     await expect(service.get({ sessionId: "s" }, auth)).rejects.toThrow("unavailable");
   });
 });
+
+
+it("forwards original read cancellation through full stream ports and stops after accepted catch-up settles", async () => {
+  const f = setup();
+  const controller = new AbortController();
+  vi.mocked(f.ports.nativeProjection.watch).mockResolvedValue(undefined);
+  vi.mocked(f.ports.repository.catchUp).mockImplementation(async () => { controller.abort(); });
+  await expect(f.service.stream({ sessionId: "session" }, { ...f.auth, signal: controller.signal })).rejects.toThrow();
+  expect(f.ports.nativeProjection.watch).toHaveBeenCalledWith("session", false, controller.signal);
+  expect(f.ports.repository.catchUp).toHaveBeenCalledWith("session", controller.signal);
+  expect(f.ports.repository.session).not.toHaveBeenCalled();
+});

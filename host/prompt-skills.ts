@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
-import { listHostSkillCandidates } from "./skills";
+import { listHostSkillCandidatesAsync, skillMatchesProvider } from "./skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
 import { readSkillPolicy } from "./skill-policy";
@@ -24,6 +24,7 @@ export async function prepareHostSkillPrompt(
   cwd: string,
   home = homedir(),
   sessionId?: string,
+  provider?: string,
 ): Promise<string> {
   const { text: prose, citations } = extractChatCitations(text);
   const project = (prepared: string) =>
@@ -32,13 +33,34 @@ export async function prepareHostSkillPrompt(
   // invocations. Strip their markers before policy/token discovery and append
   // their readable provider projection only after genuine owner skills expand.
   text = prose;
-  const policy = readSkillPolicy(home);
-  const native = reportedSkillRestrictions(getReportedCommands(sessionId));
+  let policy = readSkillPolicy(home);
+  let native = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, policy);
   assertSkillInvocationsEnabled(text, native);
   const names = new Set(skillInvocationTokens(text).map((token) => token.name));
   if (!names.size) return project(text);
-  const named = listHostSkillCandidates(cwd, home).skills.filter((skill) => names.has(skill.name));
+  const inventory = await listHostSkillCandidatesAsync(cwd, home);
+  if (inventory.truncated) throw new Error("Skill discovery is incomplete; prompt preparation refused.");
+  policy = readSkillPolicy(home);
+  native = reportedSkillRestrictions(getReportedCommands(sessionId));
+  assertSkillInvocationsEnabled(text, policy);
+  assertSkillInvocationsEnabled(text, native);
+  const installed = inventory.skills;
+  const named = installed.filter((skill) => skillMatchesProvider(skill, provider) && names.has(skill.name));
+  if (provider) {
+    for (const name of names)
+      if (
+        !named.some((skill) => skill.name === name) &&
+        installed.some(
+          (skill) =>
+            skill.name === name &&
+            skill.installProvider &&
+            skill.installProvider !== "all" &&
+            skill.installProvider !== provider,
+        )
+      )
+        throw new Error(`Skill "${name}" is not installed for provider "${provider}".`);
+  }
   const picked = [
     ...new Map(
       named
@@ -57,11 +79,19 @@ export async function prepareHostSkillPrompt(
   const blocks = await Promise.all(
     picked.map(async (skill) => {
       try {
+        const assertCurrent = () => {
+          const current = readSkillPolicy(home);
+          const reported = reportedSkillRestrictions(getReportedCommands(sessionId));
+          if (skillDisabled(current, skill) || skillDisabled(reported, skill))
+            throw new Error("Skill policy changed while preparing the prompt.");
+        };
+        assertCurrent();
         const file = await open(skill.path, "r");
         let body: string;
         try {
           const size = (await file.stat()).size;
           if (size > 2 * 1024 * 1024) throw new Error("Skill exceeds 2 MiB");
+          assertCurrent();
           const buffer = Buffer.alloc(size + 1);
           const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
           if (bytesRead > size) throw new Error("Skill changed while reading");
@@ -75,6 +105,12 @@ export async function prepareHostSkillPrompt(
       }
     }),
   );
+  const finalPolicy = readSkillPolicy(home);
+  const finalNative = reportedSkillRestrictions(getReportedCommands(sessionId));
+  assertSkillInvocationsEnabled(text, finalPolicy);
+  assertSkillInvocationsEnabled(text, finalNative);
+  if (picked.some((skill) => skillDisabled(finalPolicy, skill) || skillDisabled(finalNative, skill)))
+    throw new Error("Skill policy changed while preparing the prompt.");
   return project(
     [SKILL_INVOCATION_GUIDANCE, "", blocks.join("\n\n"), "", "---", "", text].join("\n"),
   );

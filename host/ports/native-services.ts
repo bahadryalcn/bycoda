@@ -1,10 +1,10 @@
 import { basename } from "node:path";
 import type { HostStore } from "../store";
-import type { SocialService } from "../social";
-import type { SocialPeers } from "../social-peers";
+import type { SocialService } from "../social/social";
+import type { SocialPeers } from "../social/social-peers";
 import type { RuntimeLogAccess } from "../runtime-log-tools";
 import type { RuntimeTerminalLogs } from "../runtime-terminal-logs";
-import type { ConversationDesktopRelay } from "../conversation-tools";
+import type { ConversationDesktopRelay } from "../conversation/conversation-tools";
 import type { HostDesktopControl } from "../desktop-control-host";
 import type { WorkspaceCommands } from "../workspace-commands";
 import type {
@@ -16,6 +16,14 @@ import { HostDomainAuthorizationError } from "../domains/context";
 import { assertNativeDeliveryEffect } from "../native-delivery-epochs";
 
 export interface NativeServicesAdapters {
+  browserPanel?(input: Record<string, unknown>): Promise<unknown>;
+  observationsIngest?(input: Record<string, unknown>): Promise<unknown>;
+  delegation?(action: "publicKey" | "origin" | "nativeChallenge" | "attest" | "issue" | "issue.status" | "challenge" | "call" | "revoke", input: Record<string, unknown>, authorized: () => Promise<boolean>): Promise<unknown>;
+  visibilityEpoch?(): Promise<{ epoch: number }>;
+  visibilityRevoke?(): Promise<{ epoch: number }>;
+  visibilityReopen?(input: Record<string, unknown>, authorized: () => Promise<boolean>): Promise<{ epoch: number }>;
+  authorizeAssistantNotification?(input: { threadId: string; notificationId: string; operationHash: string }): Promise<boolean>;
+  authorizeAssistantWorkspace?(input: { threadId: string; requestId: string; operationHash: string }): Promise<boolean>;
   store: HostStore;
   social: SocialService;
   peers: SocialPeers;
@@ -63,6 +71,42 @@ export function bindNativeServicesOwner(
     };
   };
   return {
+    delegation: async (action, input) => {
+      if (!adapters.delegation || !(await authorized())) throw new HostDomainAuthorizationError();
+      const value = await adapters.delegation(action, input, authorized);
+      if (!(await authorized())) throw new HostDomainAuthorizationError();
+      return value;
+    },
+    // These callbacks never acquire the SQL owner: revoke must drain effects
+    // which may themselves be waiting on that owner.
+    visibilityEpoch: async () => {
+      if (!(await authorized()) || !adapters.visibilityEpoch) throw new HostDomainAuthorizationError();
+      return adapters.visibilityEpoch();
+    },
+    visibilityRevoke: async () => {
+      if (!(await authorized()) || !adapters.visibilityRevoke) throw new HostDomainAuthorizationError();
+      return adapters.visibilityRevoke();
+    },
+    visibilityReopen: async (input) => {
+      if (!(await authorized()) || !adapters.visibilityReopen) throw new HostDomainAuthorizationError();
+      return adapters.visibilityReopen(input, authorized);
+    },
+    authorizeAssistantNotification: async (input) => {
+      if (!(await authorized()) || !adapters.authorizeAssistantNotification) throw new HostDomainAuthorizationError();
+      return { authorized: await adapters.authorizeAssistantNotification(input) && await authorized() };
+    },
+    browserPanel: async input => {
+      if (!adapters.browserPanel) throw new Error("Room browser panel requires a scoped native response transport.");
+      return guarded(() => adapters.browserPanel!(input));
+    },
+    observationsIngest: async input => {
+      if (!adapters.observationsIngest) throw new Error("Native observation owner is unavailable.");
+      return guarded(() => adapters.observationsIngest!(input));
+    },
+    authorizeAssistantWorkspace: async (input) => {
+      if (!(await authorized()) || !adapters.authorizeAssistantWorkspace) throw new HostDomainAuthorizationError();
+      return { authorized: await adapters.authorizeAssistantWorkspace(input) && await authorized() };
+    },
     assistantPresence: () => guarded(presence),
     setAssistantPresence: (state) =>
       guarded(async () => {

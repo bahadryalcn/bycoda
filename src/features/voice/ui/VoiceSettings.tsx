@@ -26,11 +26,13 @@ import {
   Toggle,
 } from "../../settings/ui/settingsControls";
 import { VoiceCloudKey } from "./VoiceCloudKey";
+import { MicrophonePermissionSettings } from "./MicrophonePermissionSettings";
 import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
 import {
   localVoiceBackend,
   type VoiceDevice,
   type VoiceRuntimeStatus,
+  type VoiceRuntimeConfig,
   type VoiceSetupStatus,
 } from "../model/localVoiceClient";
 import {
@@ -50,6 +52,18 @@ import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/a
 
 type PathKey = "python" | "whisperPath" | "ttsPath";
 type Failure = { message: string; detail: string };
+/** Compare the frozen request, including omitted defaults, without current preferences leaking in. */
+function setupConfigKey(config: VoiceRuntimeConfig) {
+  return JSON.stringify([
+    config.natural !== false,
+    config.natural === false ? "" : (config.engine ?? "supertonic"),
+    config.natural === false ? "" : (config.voiceId ?? ""),
+    config.device ?? "auto",
+    config.python?.trim() ?? "",
+    config.whisperPath?.trim() ?? "",
+    config.ttsPath?.trim() ?? "",
+  ]);
+}
 function checkFailure(cause: unknown): Failure {
   const detail = cause instanceof Error ? cause.message : String(cause);
   return {
@@ -105,7 +119,11 @@ export function VoiceSettings() {
   const mounted = useRef(true);
   const starting = useRef(false);
   const setupAttempt = useRef(0);
-  const configKey = JSON.stringify(voiceRuntimeSettings(settings));
+  const speechEnabled = settings.enabled || settings.dictationEnabled;
+  const setupConfig = voiceRuntimeSettings(
+    settings.enabled ? settings : { ...settings, natural: false },
+  );
+  const configKey = JSON.stringify(setupConfig);
   const currentKey = useRef(configKey);
   currentKey.current = configKey;
   const installing = job.state === "installing";
@@ -144,31 +162,30 @@ export function VoiceSettings() {
   }, [configKey]);
   useEffect(() => {
     request.current++;
-    if (!settings.enabled || installing) return;
+    if (!speechEnabled || installing) return;
     const timer = setTimeout(() => void check(), 500);
     return () => {
       clearTimeout(timer);
       request.current++;
     };
-  }, [settings.enabled, check, installing]);
+  }, [speechEnabled, check, installing]);
   const acceptJob = useCallback((status: VoiceSetupStatus) => {
     if (!mounted.current) return;
     setJob(status);
     if (status.state === "ready" && status.config && status.requestedConfig) {
       const saved = loadVoiceSettings();
-      const original = voiceRuntimeSettings({
-        ...saved,
-        python: "",
-        whisperPath: "",
-        ttsPath: "",
-        ...status.requestedConfig,
-      });
-      if (JSON.stringify(voiceRuntimeSettings(saved)) === JSON.stringify(original))
-        saveVoiceSettings({ ...saved, ...status.config });
+      const current = voiceRuntimeSettings(saved.enabled ? saved : { ...saved, natural: false });
+      if (setupConfigKey(current) === setupConfigKey(status.requestedConfig))
+        saveVoiceSettings({
+          ...saved,
+          ...status.config,
+          // Recognition-only setup must not replace companion playback choices.
+          ...(!saved.enabled ? { natural: saved.natural, engine: saved.engine } : {}),
+        });
     }
   }, []);
   useEffect(() => {
-    if (!settings.enabled) {
+    if (!speechEnabled) {
       browseOwner.current++;
       return;
     }
@@ -188,7 +205,7 @@ export function VoiceSettings() {
     return () => {
       active = false;
     };
-  }, [settings.enabled, acceptJob]);
+  }, [speechEnabled, acceptJob]);
   useEffect(() => {
     if (!installing) return;
     let active = true;
@@ -283,14 +300,21 @@ export function VoiceSettings() {
           ? t("Install Python to continue.")
           : t("Voice setup couldn't finish. Try again.")
         : ready
-          ? t("Voice is ready")
+          ? settings.enabled
+            ? t("Voice is ready")
+            : t("Dictation is ready")
           : !checked || busy
-            ? t("Checking voice setup…")
-            : t("Voice setup is needed"));
+            ? settings.enabled
+              ? t("Checking voice setup…")
+              : t("Checking dictation setup…")
+            : settings.enabled
+              ? t("Voice setup is needed")
+              : t("Dictation setup is needed"));
   // A ready CPU-only install can still be accelerated on a detected NVIDIA GPU.
   // Only the High quality voice (VoxCPM2) uses PyTorch; Supertonic runs on the CPU.
   const gpuUpgrade =
     ready &&
+    settings.enabled &&
     settings.natural &&
     settings.engine === "voxcpm2" &&
     settings.device !== "cpu" &&
@@ -333,10 +357,20 @@ export function VoiceSettings() {
     </Row>
   ) : null;
   return (
-    <Group
-      title={assistantSnapshot?.profile.name ? assistantName : t("Voice companion")}
-      layout="full"
-    >
+    <Group title={t("Voice and dictation")} layout="full">
+      <Row
+        id="dictation-enabled"
+        label={t("Enable dictation")}
+        description={t(
+          "Speak to insert text in the message box. Works independently of voice companion; nothing is sent automatically.",
+        )}
+      >
+        <Toggle
+          label={t("Enable dictation")}
+          on={settings.dictationEnabled}
+          onChange={(dictationEnabled) => change({ dictationEnabled })}
+        />
+      </Row>
       <Row
         id="voice-companion"
         label={t("Enable voice companion")}
@@ -353,97 +387,104 @@ export function VoiceSettings() {
           onChange={(enabled) => change({ enabled })}
         />
       </Row>
-      {settings.enabled ? (
+      {speechEnabled ? (
         <>
-          <Row
-            id="voice-mode"
-            label={t("Conversation")}
-            description={
-              settings.mode === "local"
-                ? t("Speech is recognized on this computer; the session's provider writes replies.")
-                : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
-                    p1: settings.mode === "grok" ? "Grok Voice" : "OpenAI Realtime",
-                  })
-            }
-            disabled={installing}
-          >
-            <Segmented
-              label={t("Conversation")}
-              value={settings.mode}
-              options={[
-                { value: "local", label: t("Local") },
-                // Signed in through Grok Build and Codex; no separate API key.
-                { value: "grok", label: "Grok Voice" },
-                { value: "openai", label: "OpenAI Realtime" },
-              ]}
-              onChange={(mode) => change({ mode: mode as VoiceMode })}
-            />
-          </Row>
-          {settings.mode !== "local" ? speakerRow : null}
-          {settings.mode === "local" ? (
+          <MicrophonePermissionSettings />
+          {settings.enabled ? (
             <>
               <Row
-                id="voice-engine"
-                label={t("Reply voice")}
+                id="voice-mode"
+                label={t("Conversation")}
                 description={
-                  !settings.natural
-                    ? t("An installed voice of this computer.")
-                    : settings.engine === "voxcpm2"
-                      ? t("High quality sounds richer but needs an NVIDIA GPU.")
-                      : settings.engine === "elevenlabs"
-                        ? t("Natural cloud voice. Only the reply text leaves this computer.")
-                        : t("Fast and private: runs on this computer's processor.")
+                  settings.mode === "local"
+                    ? t(
+                        "Speech is recognized on this computer; the session's provider writes replies.",
+                      )
+                    : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+                        p1: settings.mode === "grok" ? "Grok Voice" : "OpenAI Realtime",
+                      })
                 }
                 disabled={installing}
               >
-                <Select
-                  label={t("Reply voice")}
-                  value={!settings.natural ? "system" : settings.engine}
+                <Segmented
+                  label={t("Conversation")}
+                  value={settings.mode}
                   options={[
-                    { value: "supertonic", label: t("Natural (Supertonic)") },
-                    { value: "voxcpm2", label: t("High quality (VoxCPM2)") },
-                    { value: "elevenlabs", label: "ElevenLabs" },
-                    { value: "system", label: t("System voice") },
+                    { value: "local", label: t("Local") },
+                    // Signed in through Grok Build and Codex; no separate API key.
+                    { value: "grok", label: "Grok Voice" },
+                    { value: "openai", label: "OpenAI Realtime" },
                   ]}
-                  onChange={(value) => {
-                    setJob({ state: "idle" });
-                    change(
-                      value === "system"
-                        ? { natural: false }
-                        : { natural: true, engine: value as Preferences["engine"] },
-                    );
-                  }}
+                  onChange={(mode) => change({ mode: mode as VoiceMode })}
                 />
               </Row>
-              {speakerRow}
-              {settings.natural && settings.engine === "elevenlabs" ? (
+              {settings.mode !== "local" ? speakerRow : null}
+              {settings.mode === "local" ? (
                 <>
-                  <VoiceCloudKey onSaved={() => void check()} />
                   <Row
-                    id="voice-elevenlabs-voice"
-                    label={t("ElevenLabs voice ID")}
-                    description={t("Optional. Leave empty for a multilingual default voice.")}
+                    id="voice-engine"
+                    label={t("Reply voice")}
+                    description={
+                      !settings.natural
+                        ? t("An installed voice of this computer.")
+                        : settings.engine === "voxcpm2"
+                          ? t("High quality sounds richer but needs an NVIDIA GPU.")
+                          : settings.engine === "elevenlabs"
+                            ? t("Natural cloud voice. Only the reply text leaves this computer.")
+                            : t("Fast and private: runs on this computer's processor.")
+                    }
+                    disabled={installing}
                   >
-                    <TextField
-                      label={t("ElevenLabs voice ID")}
-                      hideLabel
-                      value={settings.elevenVoice}
-                      placeholder="JBFqnCBsd6RMkjVDRZzb"
-                      autoComplete="off"
-                      spellCheck={false}
-                      onChange={(event) => {
-                        const value = event.target.value.trim();
-                        if (/^[A-Za-z0-9]{0,64}$/.test(value)) change({ elevenVoice: value });
+                    <Select
+                      label={t("Reply voice")}
+                      value={!settings.natural ? "system" : settings.engine}
+                      options={[
+                        { value: "supertonic", label: t("Natural (Supertonic)") },
+                        { value: "voxcpm2", label: t("High quality (VoxCPM2)") },
+                        { value: "elevenlabs", label: "ElevenLabs" },
+                        { value: "system", label: t("System voice") },
+                      ]}
+                      onChange={(value) => {
+                        setJob({ state: "idle" });
+                        change(
+                          value === "system"
+                            ? { natural: false }
+                            : { natural: true, engine: value as Preferences["engine"] },
+                        );
                       }}
                     />
                   </Row>
+                  {speakerRow}
+                  {settings.natural && settings.engine === "elevenlabs" ? (
+                    <>
+                      <VoiceCloudKey onSaved={() => void check()} />
+                      <Row
+                        id="voice-elevenlabs-voice"
+                        label={t("ElevenLabs voice ID")}
+                        description={t("Optional. Leave empty for a multilingual default voice.")}
+                      >
+                        <TextField
+                          label={t("ElevenLabs voice ID")}
+                          hideLabel
+                          value={settings.elevenVoice}
+                          placeholder="JBFqnCBsd6RMkjVDRZzb"
+                          autoComplete="off"
+                          spellCheck={false}
+                          onChange={(event) => {
+                            const value = event.target.value.trim();
+                            if (/^[A-Za-z0-9]{0,64}$/.test(value)) change({ elevenVoice: value });
+                          }}
+                        />
+                      </Row>
+                    </>
+                  ) : null}
                 </>
               ) : null}
             </>
           ) : null}
           <Row
             id="voice-setup"
-            label={t("Voice setup")}
+            label={settings.enabled ? t("Voice setup") : t("Dictation setup")}
             description={setupHint}
             feedback={
               setupError ? <SettingsFeedback state="error">{message}</SettingsFeedback> : undefined
@@ -546,239 +587,273 @@ export function VoiceSettings() {
               </>
             ) : null}
           </Row>
-          <AdvancedSettings
-            id="voice-advanced"
-            defaultOpen={false}
-            keepMounted
-            settingIds={[
-              "voice-conversation-preset",
-              "voice-idle-sleep",
-              "voice-manual-turn-end",
-              "voice-turn-silence",
-              "voice-barge-in",
-              "voice-hold-announcements",
-              "voice-persona",
-              "voice-memory",
-              "voice-visual-style",
-              "voice-device",
-            ]}
-            title={
-              <>
-                {t("Advanced")}
-                {turnChoiceError || presetError ? (
-                  <Badge tone="danger">{t("Needs attention")}</Badge>
-                ) : null}
-              </>
-            }
-          >
-            <Row
-              id="voice-conversation-preset"
-              label={t("Professional conversation")}
-              description={t(
-                "Uses a longer pause, allows interruptions, and holds spoken progress updates. You can change each setting afterward.",
-              )}
-            >
-              <div className="space-y-1">
-                <Button
-                  onClick={() => {
-                    try {
-                      saveProfessionalConversationPreset();
-                      setPresetError(false);
-                      setTurnChoiceError(false);
-                    } catch {
-                      setPresetError(true);
-                    }
-                  }}
-                >
-                  {t("Apply preset")}
-                </Button>
-                {presetError && (
-                  <SettingsFeedback state="error">{t(VOICE_PRESET_FAILED)}</SettingsFeedback>
-                )}
-              </div>
-            </Row>
-            <Row
-              id="voice-idle-sleep"
-              label={t("Sleep voice when I'm idle")}
-              description={t(
-                "Closes the microphone while idle. Returning leaves it off until you press Talk.",
-              )}
-            >
-              <Select
-                label={t("Sleep voice when I'm idle")}
-                value={String(settings.idleSleepMinutes)}
-                options={[
-                  { value: "0", label: t("Never") },
-                  ...[5, 10, 15, 30, 60].map((minutes) => ({
-                    value: String(minutes),
-                    label: t("{p0} min", { p0: minutes }),
-                  })),
-                  ...(![0, 5, 10, 15, 30, 60].includes(settings.idleSleepMinutes)
-                    ? [
-                        {
-                          value: String(settings.idleSleepMinutes),
-                          label: t("{p0} min", { p0: settings.idleSleepMinutes }),
-                        },
-                      ]
-                    : []),
-                ]}
-                onChange={(value) => change({ idleSleepMinutes: Number(value) })}
-              />
-            </Row>
-            <Row
-              id="voice-manual-turn-end"
-              label={t("I decide when my turn ends")}
-              description={t(
-                "Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.",
-              )}
-            >
-              <div className="space-y-1">
-                <Toggle
-                  label={t("I decide when my turn ends")}
-                  on={settings.manualTurnEnd === true}
-                  onChange={(manual) => {
-                    try {
-                      saveVoiceTurnEndChoice(manual);
-                      setTurnChoiceError(false);
-                    } catch {
-                      setTurnChoiceError(true);
-                    }
-                  }}
-                />
-                {turnChoiceError && (
-                  <SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>
-                )}
-              </div>
-            </Row>
-            <Row
-              id="voice-turn-silence"
-              label={t("Wait before replying")}
-              description={
-                settings.manualTurnEnd
-                  ? t("Automatic pause detection is off. Choose Finish turn when you are ready.")
-                  : undefined
+          {settings.enabled ? (
+            <AdvancedSettings
+              id="voice-advanced"
+              defaultOpen={false}
+              keepMounted
+              settingIds={[
+                "voice-conversation-preset",
+                "voice-idle-sleep",
+                "voice-manual-turn-end",
+                "voice-turn-silence",
+                "voice-barge-in",
+                "voice-hold-announcements",
+                "voice-persona",
+                "voice-memory",
+                "voice-visual-style",
+                "voice-device",
+              ]}
+              title={
+                <>
+                  {t("Advanced")}
+                  {turnChoiceError || presetError ? (
+                    <Badge tone="danger">{t("Needs attention")}</Badge>
+                  ) : null}
+                </>
               }
             >
-              <Select
-                label={t("Wait before replying")}
-                disabled={settings.manualTurnEnd === true}
-                value={String(settings.turnEndSilence ?? 1.2)}
-                options={[
-                  { value: "1.2", label: t("Natural pause") },
-                  { value: "2.5", label: t("Longer pause") },
-                  { value: "4", label: t("Extra time") },
-                ]}
-                onChange={(value) => change({ turnEndSilence: Number(value) })}
-              />
-            </Row>
-            <Row
-              id="voice-barge-in"
-              label={t("I may interrupt speech")}
-              description={t("Lets your speech interrupt the assistant's reply.")}
-            >
-              <Toggle
-                label={t("I may interrupt speech")}
-                on={settings.allowBargeIn !== false}
-                onChange={(allowBargeIn) => change({ allowBargeIn })}
-              />
-            </Row>
-            <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
-              <Toggle
-                label={t("Hold spoken progress updates")}
-                on={settings.holdAnnouncements === true}
-                onChange={(holdAnnouncements) => change({ holdAnnouncements })}
-              />
-            </Row>
-            <Row
-              id="voice-persona"
-              label={t("Companion identity")}
-              description={t("Name, how it addresses you, tone, tasks and ground rules.")}
-            >
-              <Badge tone="neutral">
-                {assistantSnapshot?.profile.name ? assistantName : voicePersonaSummary(persona)}
-              </Badge>
-              <Button
-                onClick={() =>
-                  window.dispatchEvent(
-                    new CustomEvent("bycoda:open-assistant", { detail: { tab: "settings" } }),
-                  )
-                }
-              >
-                {t("Customize")}
-              </Button>
-              <Button variant="ghost" onClick={() => setEditingStyle(true)}>
-                {t("Voice style")}
-              </Button>
-            </Row>
-            {editingStyle ? (
-              <VoicePersonaDialog purpose="edit" styleOnly onClose={() => setEditingStyle(false)} />
-            ) : null}
-            <Row
-              id="voice-memory"
-              label={t("Memory")}
-              description={t("Keeps short notes about you between conversations on this device.")}
-            >
-              <Button
-                onClick={() =>
-                  window.dispatchEvent(
-                    new CustomEvent("bycoda:open-assistant", { detail: { tab: "memory" } }),
-                  )
-                }
-              >
-                {t("Manage ({p0})", {
-                  p0: assistantSnapshot?.memory.length ?? memory.notes.length,
-                })}
-              </Button>
-              <Toggle
-                label={t("Memory")}
-                on={memory.enabled}
-                onChange={(enabled) => saveVoiceMemory({ ...loadVoiceMemory(), enabled })}
-              />
-            </Row>
-            {/* A deliberate full-width chooser: four previews need more room than the control column. */}
-            <Row id="voice-visual-style" label={t("Visual style")} stacked>
-              <SegmentedControl
-                label={t("Visual style")}
-                value={settings.visual}
-                optionIdPrefix="voice-visual"
-                options={(
-                  [
-                    ["mark", t("bycoda mark")],
-                    ["wave", t("Wave")],
-                    ["dots", t("Dots")],
-                    ["orb", t("Orb")],
-                  ] as [VoiceVisual, string][]
-                ).map(([value, label]) => ({
-                  value,
-                  label,
-                  accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
-                }))}
-                onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
-              />
-            </Row>
-            {settings.mode === "local" ? (
               <Row
-                id="voice-device"
-                label={t("Processing")}
-                description={t("Automatic uses a supported NVIDIA GPU when available.")}
-                disabled={installing}
+                id="voice-conversation-preset"
+                label={t("Professional conversation")}
+                description={t(
+                  "Uses a longer pause, allows interruptions, and holds spoken progress updates. You can change each setting afterward.",
+                )}
               >
-                <Segmented
-                  label={t("Processing")}
-                  value={settings.device}
+                <div className="space-y-1">
+                  <Button
+                    onClick={() => {
+                      try {
+                        saveProfessionalConversationPreset();
+                        setPresetError(false);
+                        setTurnChoiceError(false);
+                      } catch {
+                        setPresetError(true);
+                      }
+                    }}
+                  >
+                    {t("Apply preset")}
+                  </Button>
+                  {presetError && (
+                    <SettingsFeedback state="error">{t(VOICE_PRESET_FAILED)}</SettingsFeedback>
+                  )}
+                </div>
+              </Row>
+              <Row
+                id="voice-idle-sleep"
+                label={t("Sleep voice when I'm idle")}
+                description={t(
+                  "Closes the microphone while idle. Returning leaves it off until you press Talk.",
+                )}
+              >
+                <Select
+                  label={t("Sleep voice when I'm idle")}
+                  value={String(settings.idleSleepMinutes)}
                   options={[
-                    { value: "auto", label: t("Automatic") },
-                    { value: "gpu", label: t("GPU") },
-                    { value: "cpu", label: t("CPU") },
+                    { value: "0", label: t("Never") },
+                    ...[5, 10, 15, 30, 60].map((minutes) => ({
+                      value: String(minutes),
+                      label: t("{p0} min", { p0: minutes }),
+                    })),
+                    ...(![0, 5, 10, 15, 30, 60].includes(settings.idleSleepMinutes)
+                      ? [
+                          {
+                            value: String(settings.idleSleepMinutes),
+                            label: t("{p0} min", { p0: settings.idleSleepMinutes }),
+                          },
+                        ]
+                      : []),
                   ]}
-                  onChange={(value) => {
-                    setJob({ state: "idle" });
-                    change({ device: value as VoiceDevice });
-                  }}
+                  onChange={(value) => change({ idleSleepMinutes: Number(value) })}
                 />
               </Row>
-            ) : null}
-          </AdvancedSettings>
+              <Row
+                id="voice-manual-turn-end"
+                label={t("I decide when my turn ends")}
+                description={t(
+                  "Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.",
+                )}
+              >
+                <div className="space-y-1">
+                  <Toggle
+                    label={t("I decide when my turn ends")}
+                    on={settings.manualTurnEnd === true}
+                    onChange={(manual) => {
+                      try {
+                        saveVoiceTurnEndChoice(manual);
+                        setTurnChoiceError(false);
+                      } catch {
+                        setTurnChoiceError(true);
+                      }
+                    }}
+                  />
+                  {turnChoiceError && (
+                    <SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>
+                  )}
+                </div>
+              </Row>
+              {settings.mode === "openai" && <Row
+                id="voice-semantic-vad"
+                label={t("Experimental OpenAI turn detection")}
+                description={t("Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.")}
+              >
+                <Toggle label={t("Experimental OpenAI turn detection")} on={settings.experimentalSemanticVad === true} disabled={settings.manualTurnEnd === true} onChange={(experimentalSemanticVad) => change({ experimentalSemanticVad })} />
+              </Row>}
+              <Row
+                id="voice-turn-silence"
+                label={t("Wait before replying")}
+                description={
+                  settings.manualTurnEnd
+                    ? t("Automatic pause detection is off. Choose Finish turn when you are ready.")
+                    : undefined
+                }
+              >
+                <Select
+                  label={t("Wait before replying")}
+                  disabled={settings.manualTurnEnd === true}
+                  value={String(settings.turnEndSilence ?? 1.2)}
+                  options={[
+                    { value: "1.2", label: t("Natural pause") },
+                    { value: "2.5", label: t("Longer pause") },
+                    { value: "4", label: t("Extra time") },
+                  ]}
+                  onChange={(value) => change({ turnEndSilence: Number(value) })}
+                />
+              </Row>
+              <Row
+                id="voice-barge-in"
+                label={t("I may interrupt speech")}
+                description={t("Lets your speech interrupt the assistant's reply.")}
+              >
+                <Toggle
+                  label={t("I may interrupt speech")}
+                  on={settings.allowBargeIn !== false}
+                  onChange={(allowBargeIn) => change({ allowBargeIn })}
+                />
+              </Row>
+              <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
+                <Toggle
+                  label={t("Hold spoken progress updates")}
+                  on={settings.holdAnnouncements === true}
+                  onChange={(holdAnnouncements) => change({ holdAnnouncements })}
+                />
+              </Row>
+              <Row
+                id="voice-persona"
+                label={t("Companion identity")}
+                description={t("Name, how it addresses you, tone, tasks and ground rules.")}
+              >
+                <Badge tone="neutral">
+                  {assistantSnapshot?.profile.name ? assistantName : voicePersonaSummary(persona)}
+                </Badge>
+                <Button
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("bycoda:open-assistant", { detail: { tab: "settings" } }),
+                    )
+                  }
+                >
+                  {t("Customize")}
+                </Button>
+                <Button variant="ghost" onClick={() => setEditingStyle(true)}>
+                  {t("Voice style")}
+                </Button>
+              </Row>
+              {editingStyle ? (
+                <VoicePersonaDialog
+                  purpose="edit"
+                  styleOnly
+                  onClose={() => setEditingStyle(false)}
+                />
+              ) : null}
+              <Row
+                id="voice-memory"
+                label={t("Memory")}
+                description={t("Keeps short notes about you between conversations on this device.")}
+              >
+                <Button
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("bycoda:open-assistant", { detail: { tab: "memory" } }),
+                    )
+                  }
+                >
+                  {t("Manage ({p0})", {
+                    p0: assistantSnapshot?.memory.length ?? memory.notes.length,
+                  })}
+                </Button>
+                <Toggle
+                  label={t("Memory")}
+                  on={memory.enabled}
+                  onChange={(enabled) => saveVoiceMemory({ ...loadVoiceMemory(), enabled })}
+                />
+              </Row>
+              {/* A deliberate full-width chooser: four previews need more room than the control column. */}
+              <Row id="voice-visual-style" label={t("Visual style")} stacked>
+                <SegmentedControl
+                  label={t("Visual style")}
+                  value={settings.visual}
+                  optionIdPrefix="voice-visual"
+                  options={(
+                    [
+                      ["mark", t("bycoda mark")],
+                      ["wave", t("Wave")],
+                      ["dots", t("Dots")],
+                      ["orb", t("Orb")],
+                    ] as [VoiceVisual, string][]
+                  ).map(([value, label]) => ({
+                    value,
+                    label,
+                    accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
+                  }))}
+                  onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
+                />
+              </Row>
+              {settings.mode === "local" ? (
+                <Row
+                  id="voice-device"
+                  label={t("Processing")}
+                  description={t("Automatic uses a supported NVIDIA GPU when available.")}
+                  disabled={installing}
+                >
+                  <Segmented
+                    label={t("Processing")}
+                    value={settings.device}
+                    options={[
+                      { value: "auto", label: t("Automatic") },
+                      { value: "gpu", label: t("GPU") },
+                      { value: "cpu", label: t("CPU") },
+                    ]}
+                    onChange={(value) => {
+                      setJob({ state: "idle" });
+                      change({ device: value as VoiceDevice });
+                    }}
+                  />
+                </Row>
+              ) : null}
+            </AdvancedSettings>
+          ) : (
+            <Row
+              id="dictation-device"
+              label={t("Processing")}
+              description={t("Automatic uses a supported NVIDIA GPU when available.")}
+              disabled={installing}
+            >
+              <Segmented
+                label={t("Processing")}
+                value={settings.device}
+                options={[
+                  { value: "auto", label: t("Automatic") },
+                  { value: "gpu", label: t("GPU") },
+                  { value: "cpu", label: t("CPU") },
+                ]}
+                onChange={(value) => {
+                  setJob({ state: "idle" });
+                  change({ device: value as VoiceDevice });
+                }}
+              />
+            </Row>
+          )}
           {locating ? (
             <Modal
               title={t("Locate voice files")}

@@ -157,6 +157,9 @@ function GithubWorkItemPreview({
         ? Promise.resolve(cachedDetails)
         : githubWorkItemDetails(cwd || ".", workItem.repo, workItem.kind, workItem.number),
     ]).then(([itemResult, detailsResult]) => {
+      if (itemResult.status === "rejected" || detailsResult.status === "rejected") {
+        requestStarted.current = false;
+      }
       if (!mounted.current) return;
       if (itemResult.status === "fulfilled") setItem(itemResult.value);
       if (detailsResult.status === "fulfilled") {

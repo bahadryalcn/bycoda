@@ -14,6 +14,8 @@ Paths are repository-relative. Read the affected subsection only; reports and ru
 
 ## Quotas and local rules
 
+- Footer details: `src/app/shell/UsageProviderChip.tsx` shares compact, unframed quota-window groups across providers. Keep both used/remaining values, countdown/exact-date tooltips and freshness/source labels. Codex banked-reset rows retain per-credit confirmation, disabled/loading/error/outcome states and expiry tooltips; mascot geometry must not enlarge the section header.
+- Footer checks: `src/app/shell/UsageProviderChip.test.ts` and `UsageFooterAuth.test.ts` cover quota semantics, reset outcomes and authentication/account boundaries.
 - Account source/cache/history: `src/features/providers/model/rateLimits.ts`, `rateLimitsFetch.ts`, `rateLimitsCache.ts`, `rateLimitHistory.ts`, `providerAccounts.ts`.
 - UI: `src/features/usage/ui/UsageDisplaySettings.tsx`, `UsageQuotaHistory.tsx`, `UsageBudgets.tsx`; direct section/reveal in `src/features/settings/model/settings.ts` and `src/features/settings/ui/SettingsView.tsx`.
 - Rules/readings/store: `src/features/usage/model/usageBudgets.ts`, `usageBudgetReadings.ts`, `usageBudgetStore.ts`; pre-dispatch owner `src/app/workspace/sessions/submit/submitUsageBudget.ts` and its submit caller.
@@ -29,7 +31,7 @@ Paths are repository-relative. Read the affected subsection only; reports and ru
 ## Host/mobile boundaries
 
 - Host task budget/limit/report owners: `host/task-budgets.ts`, `tasks.ts`, `limits.ts`, `usage-report.ts`; local desktop rule gates do not enforce all of these.
-- `usage.sessions.read` is a bounded Host reader in `host/conversation-project-tools.ts`; mobile `mobile/src/features/tools/usage-screen.tsx` uses its own report/paging contract.
+- `usage.sessions.read` is a bounded Host reader in `host/conversation/conversation-project-tools.ts`; mobile `mobile/src/features/tools/usage-screen.tsx` uses its own report/paging contract.
 - Mobile provider views include `mobile/src/features/tools/provider-desktop.tsx`, `provider-desktop-model.ts`, `provider-account-editor.tsx`; capability families `providers.desktop.v1` and `providers.desktop.quotaRefresh.v1` retain explicit refresh/cooldown/consent.
 - Verify current route and capability support before claiming local-budget management parity.
 

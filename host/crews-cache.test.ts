@@ -41,7 +41,7 @@ async function fixture() {
   const engine = { command: vi.fn<(command: unknown) => Promise<void>>().mockResolvedValue(undefined), updateSession: vi.fn() };
   const session = vi
     .spyOn(store, "session")
-    .mockResolvedValue({ status: "running" } as Awaited<ReturnType<HostStore["session"]>>);
+    .mockResolvedValue({ projectId: "project", status: "running" } as Awaited<ReturnType<HostStore["session"]>>);
   const create = () =>
     new HostCrews(
       store,
@@ -205,7 +205,7 @@ it("does not transfer or decode oversized settled history on scheduler reads", a
 
 it("keeps changing delivery ticks off canonical history while retaining all saved data", async () => {
   const f = await fixture();
-  f.session.mockResolvedValue({ status: "idle" } as Awaited<ReturnType<HostStore["session"]>>);
+  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<ReturnType<HostStore["session"]>>);
   const history = Array.from({ length: 40 }, (_, index) => run(`settled-history-${index}`, "finished"));
   const parse = vi.spyOn(JSON, "parse");
   const prepare = vi.spyOn(f.store.db, "prepare");
@@ -288,7 +288,7 @@ it("invalid run arrays cannot masquerade as an empty active projection", async (
 
 it("retains the exact persisted delivery across uncertain send failure and restart", async () => {
   const f = await fixture();
-  f.session.mockResolvedValue({ status: "idle" } as Awaited<ReturnType<HostStore["session"]>>);
+  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<ReturnType<HostStore["session"]>>);
   const live = run("live");
   live.messages = [{ id: "request", from: "owner", text: "Notice", createdAt: 1 }];
   await f.write(state(run("history", "finished"), live));

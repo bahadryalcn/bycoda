@@ -90,9 +90,23 @@ export function WorkspaceReview({
   }, [workspace.id, workspace.environmentId, publication]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (!plan) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      clearTimeout(timer);
+      const remaining = plan.expiresAt - Date.now();
+      setNow(Date.now());
+      if (remaining > 0) timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
+    };
+    check();
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [plan]);
   useEffect(() => {
     let live = true;
     void getWorkspaceCapabilities(context)

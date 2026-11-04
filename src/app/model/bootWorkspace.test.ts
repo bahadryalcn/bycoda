@@ -11,6 +11,8 @@ vi.mock("./sessionWindowOwnership", () => ({
 const store = vi.hoisted(() => ({
   loadWorkspaceSnapshot: vi.fn(),
   listInFlightSessions: vi.fn(),
+  listDeletedSessionIds: vi.fn(),
+  isSessionDeleted: vi.fn(),
   getSession: vi.fn(),
   upsertSession: vi.fn(),
   upsertSessionPreservingActivity: vi.fn(),
@@ -26,6 +28,8 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   store.listInFlightSessions.mockResolvedValue([]);
+  store.listDeletedSessionIds.mockResolvedValue([]);
+  store.isSessionDeleted.mockReturnValue(false);
   store.upsertSession.mockResolvedValue(null);
   store.upsertSessionPreservingActivity.mockResolvedValue({ id: "stored" });
 });
@@ -55,6 +59,47 @@ it("restores ten idle tabs without rewriting their transcripts before first pain
   );
   expect(restored?.tabs).toHaveLength(10);
   expect(store.upsertSession).not.toHaveBeenCalled();
+  expect(store.upsertSessionPreservingActivity).not.toHaveBeenCalled();
+});
+
+it("drops deleted active and inactive chats before rebuilding saved layout or recovery", async () => {
+  const sessions = savedWorkspace();
+  const deleted = [sessions[0].id, sessions[7].id];
+  store.listDeletedSessionIds.mockResolvedValue(deleted);
+  store.listInFlightSessions.mockResolvedValue(
+    deleted.map((sessionId) => ({ sessionId, cwd: "/repo" })),
+  );
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  const restored = await loadResumedWorkspace();
+  expect(restored?.sessions.map((session) => session.id)).toEqual(
+    sessions.filter((session) => !deleted.includes(session.id)).map((session) => session.id),
+  );
+  expect(restored?.tabs).toHaveLength(8);
+  expect(store.getSession).not.toHaveBeenCalled();
+  expect(store.upsertSessionPreservingActivity).not.toHaveBeenCalled();
+  const { getSessionRecovery } = await import("../../features/workspace/model/sessionRecovery");
+  expect(getSessionRecovery()).toBeNull();
+});
+
+it("keeps saved layout protected when deletion status cannot be verified", async () => {
+  savedWorkspace();
+  store.listDeletedSessionIds.mockRejectedValue(new Error("database unavailable"));
+  const { loadResumedWorkspace, workspaceSnapshotWriteBlocked } = await import("./appLifecycle");
+  expect(await loadResumedWorkspace()).toBeNull();
+  expect(workspaceSnapshotWriteBlocked()).toBe(true);
+  expect(store.getSession).not.toHaveBeenCalled();
+  expect(store.upsertSessionPreservingActivity).not.toHaveBeenCalled();
+});
+
+it("does not rebuild a deleted shell when deletion is confirmed during active hydration", async () => {
+  const sessions = savedWorkspace();
+  store.getSession.mockResolvedValue(null);
+  store.isSessionDeleted.mockImplementation((id: string) => id === sessions[0].id);
+  store.listInFlightSessions.mockResolvedValue([{ sessionId: sessions[0].id, cwd: "/repo" }]);
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  const restored = await loadResumedWorkspace();
+  expect(restored?.sessions.map((session) => session.id)).not.toContain(sessions[0].id);
+  expect(restored?.tabs).toHaveLength(9);
   expect(store.upsertSessionPreservingActivity).not.toHaveBeenCalled();
 });
 

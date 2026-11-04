@@ -6,7 +6,7 @@ import { HostStore } from "../store";
 import { HostAssistant, type AssistantPorts } from "./service";
 import { AssistantResponseSchema } from "../../src/shared/model/host-contracts/assistant";
 import { chiefContextAction, tokenBudgetMode, workerContextAction } from "./cost";
-import { AssistantTextPreflightError } from "../assistant-text-budget";
+import { AssistantTextPreflightError } from "./core/assistant-text-budget";
 
 it("refunds only a known zero-provider reply refusal, retains the owner message and never retries that intent", async () => {
   let calls = 0;

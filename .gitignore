@@ -111,3 +111,4 @@ package-lock.json
 
 # Separate Expo repository, nested here when checked out.
 /mobile/
+/tests/browser/temp/*

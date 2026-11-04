@@ -5,7 +5,7 @@ import type { HarnessEvent } from "../../core/types";
 const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
 let onExit: (() => void) | undefined;
-const execChild = vi.fn(async () => "");
+const execChild = vi.fn(async (..._args: unknown[]) => "");
 const killChild = vi.fn(async () => undefined);
 
 beforeEach(() => {
@@ -17,6 +17,8 @@ vi.mock("../../core/child", () =>
   processConstructions.mock({
     resolveGrokBinary,
     execChild,
+    prepareUtilitySessionCleanup: async (_handle: unknown, command: string, args: string[], cwd: string, provider: string) =>
+      () => execChild(command, args, cwd, provider),
     spawnChild: async () => undefined,
     killChild,
     unwatchChild: () => undefined,

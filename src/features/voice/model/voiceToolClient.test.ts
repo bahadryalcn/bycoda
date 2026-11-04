@@ -4,6 +4,7 @@ const request = vi.hoisted(() => vi.fn());
 const remoteId = vi.hoisted(() => vi.fn());
 const rpc = vi.hoisted(() => vi.fn());
 const captureHost = vi.hoisted(() => vi.fn());
+const globalHost = vi.hoisted(() => vi.fn());
 vi.mock("../../connections/model/connections", () => ({
   remoteSessionFor: remoteId,
   remoteRequest: rpc,
@@ -11,6 +12,7 @@ vi.mock("../../connections/model/connections", () => ({
 vi.mock("../../connections/model/hostFeatureClient", () => ({
   hostFeatureRequest: request,
   featureHost: captureHost,
+  captureVoiceToolHost: globalHost,
 }));
 import { callVoiceTool, discoverVoiceTools } from "./voiceToolClient";
 
@@ -29,10 +31,66 @@ describe("voice tool client", () => {
     remoteId.mockReset();
     rpc.mockReset();
     captureHost.mockReset();
+    globalHost.mockReset();
+    globalHost.mockResolvedValue({
+      machine: { id: "local-host", environmentId: "host" },
+      request: rpc,
+    });
     captureHost.mockResolvedValue({
       machine: { id: "local-host", environmentId: "host" },
       projectId: "project",
     });
+  });
+  it("discovers global Room tools on its original Host without a project or coding session", async () => {
+    rpc.mockResolvedValue({ tools: [descriptor] });
+    await discoverVoiceTools({ cwd: "", threadId: "room", environmentId: "host" });
+    expect(globalHost).toHaveBeenCalledWith("host");
+    expect(rpc).toHaveBeenCalledWith("voice.tools.list", { threadId: "room" });
+    expect(request).not.toHaveBeenCalled();
+    expect(captureHost).not.toHaveBeenCalled();
+  });
+  it("accepts exact project-free provenance and rejects an injected project without replay", async () => {
+    const receive = vi.fn();
+    const source = {
+      environmentId: "host",
+      threadId: "room",
+      family: "conversation" as const,
+      action: "preferences.read",
+    };
+    const target = {
+      cwd: "",
+      threadId: "room",
+      causalContext: { id: "context", environmentId: "host", receive },
+    };
+    const call = {
+      family: "conversation" as const,
+      action: "preferences.read",
+      input: {},
+      requestId: "read-once",
+    };
+    const disclosure = {
+      id: "proof",
+      contextId: "context",
+      requestId: "read-once",
+      verified: false,
+      source,
+    };
+    rpc.mockResolvedValue({
+      value: { available: true },
+      voiceContext: {},
+      voiceDisclosure: disclosure,
+    });
+    expect(await callVoiceTool(target, call)).toEqual({ available: true });
+    expect(receive).toHaveBeenCalledWith({}, disclosure, "read-once", source);
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("projectId");
+    rpc.mockResolvedValue({
+      value: {},
+      voiceContext: {},
+      voiceDisclosure: { ...disclosure, source: { ...source, projectId: "injected" } },
+    });
+    await expect(callVoiceTool(target, call)).rejects.toThrow("could not be verified");
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(request).not.toHaveBeenCalled();
   });
   it("returns authenticated unscoped desktop data without retrying or inventing content provenance", async () => {
     const receive = vi.fn(),
@@ -255,7 +313,9 @@ describe("voice tool client", () => {
     request.mockRejectedValue(new Error("Update bycoda Host"));
     await expect(discoverVoiceTools(target)).rejects.toThrow("Update bycoda Host");
     expect(request).toHaveBeenCalledTimes(1);
-    await expect(discoverVoiceTools({ cwd: "" })).rejects.toThrow("Choose a project");
+    await expect(discoverVoiceTools({ cwd: "" })).rejects.toThrow(
+      "verified assistant conversation",
+    );
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -299,4 +359,21 @@ describe("voice tool client", () => {
     ).rejects.toThrow("invalid");
     expect(request).not.toHaveBeenCalled();
   });
+});
+
+it("binds account-scoped social results to their exact unverified source", async () => {
+  rpc.mockReset();
+  globalHost.mockResolvedValue({ machine: { id: "local-host", environmentId: "host" }, request: rpc });
+  const receive = vi.fn();
+  const target = { cwd: "", threadId: "room", causalContext: { id: "context", environmentId: "host", receive } };
+  const call = { family: "social" as const, action: "thread.read", accountId: "account-a", input: { id: "thread" }, requestId: "read" };
+  const source = { environmentId: "host", threadId: "room", accountId: "account-a", family: "social" as const, action: "thread.read" };
+  const disclosure = { id: "proof", contextId: "context", requestId: "read", verified: false, source };
+  rpc.mockResolvedValue({ value: { id: "thread" }, voiceContext: { status: "unknown" }, voiceDisclosure: disclosure });
+  expect(await callVoiceTool(target, call)).toEqual({ id: "thread" });
+  expect(rpc).toHaveBeenCalledWith("voice.tools.call", expect.objectContaining({ accountId: "account-a", threadId: "room" }));
+  expect(receive).toHaveBeenCalledWith({ status: "unknown" }, disclosure, "read", source);
+  rpc.mockResolvedValue({ value: {}, voiceContext: {}, voiceDisclosure: { ...disclosure, source: { ...source, accountId: "account-b" } } });
+  await expect(callVoiceTool(target, call)).rejects.toThrow("could not be verified");
+  await expect(callVoiceTool({ cwd: "/a", threadId: "room" }, call)).rejects.toThrow("invalid");
 });

@@ -1,8 +1,33 @@
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
-import { DeviceHost } from "../../device-host";
+import { DeviceHost } from "../../devices/device-host";
 import { RPC_ERROR_CODES, WS_LIMITS } from "../../../src/shared/model/host-contracts";
 import { fixture, sha } from "../../native-devices.test-support";
+
+it("binds inspection and input to the claimed device and rejects stale nodes", async () => {
+  const f = await fixture("2026-11-04-device-control-test"), ws = await f.connect();
+  const original = f.command.getMockImplementation()!;
+  let resourceId = "app:id/save", taps = 0;
+  f.command.mockImplementation(async (exe, args, options) => {
+    if (args.includes("cat")) return `<?xml version="1.0"?><hierarchy><node text="Save" resource-id="${resourceId}" class="android.widget.Button" enabled="true" clickable="true" bounds="[10,20][110,70]" /></hierarchy>`;
+    if (args.includes("tap")) taps++;
+    return original(exe, args, options);
+  });
+  const deviceId = "emulator-5554";
+  const lease = await ws.call("devices.control.claim", { deviceId, requestId: "claim" });
+  expect((await ws.request("devices.control.claim", { deviceId, requestId: "another-window" })).error).toBeTruthy();
+  const foreign = await f.connect(f.other.token);
+  expect((await foreign.request("devices.control.claim", { deviceId, requestId: "foreign" })).error).toBeTruthy();
+  expect((await foreign.request("devices.control.release", { deviceId, leaseId: lease.leaseId })).error).toBeTruthy();
+  const inspection = await ws.call("devices.inspect", { deviceId, leaseId: lease.leaseId });
+  expect(inspection.nodes[0]).toMatchObject({ label: "Save", clickable: true });
+  resourceId = "app:id/other";
+  expect((await ws.request("devices.action", { deviceId, leaseId: lease.leaseId, requestId: "stale", action: { type: "pressNode", inspectionId: inspection.inspectionId, nodeId: inspection.nodes[0].id } })).error).toBeTruthy();
+  expect(taps).toBe(0);
+  const current = await ws.call("devices.inspect", { deviceId, leaseId: lease.leaseId });
+  await ws.call("devices.action", { deviceId, leaseId: lease.leaseId, requestId: "press", action: { type: "pressNode", inspectionId: current.inspectionId, nodeId: current.nodes[0].id } });
+  expect(taps).toBe(1);
+});
 
 it("routes actual DeviceHost inventory, preflight, boot, action and four-MiB capture through shared HTTP and WS", async () => {
   const f = await fixture(),
@@ -17,14 +42,18 @@ it("routes actual DeviceHost inventory, preflight, boot, action and four-MiB cap
   expect(image.length).toBe(f.png.length);
   expect(sha(image)).toBe(sha(f.png));
   expect(await f.callHttp("devices.capture", { deviceId: "emulator-5554" })).toEqual(frame);
+  const lease = await ws.call("devices.control.claim", { deviceId: "emulator-5554", requestId: "claim-one" });
+  expect(await f.callHttp("devices.control.status", { deviceId: "emulator-5554" })).toEqual({ deviceId: "emulator-5554", busy: true });
   const action = await ws.call("devices.action", {
     deviceId: "emulator-5554",
+    leaseId: lease.leaseId,
+    requestId: "snapshot-one",
     action: { type: "snapshot" },
   });
   expect(JSON.parse(action).data.xml).toBe(f.xml);
   expect(Buffer.byteLength(JSON.stringify(action))).toBeGreaterThan(WS_LIMITS.maxMessageBytes);
   expect(
-    await f.callHttp("devices.action", { deviceId: "emulator-5554", action: { type: "snapshot" } }),
+    await f.callHttp("devices.action", { deviceId: "emulator-5554", leaseId: lease.leaseId, requestId: "snapshot-one", action: { type: "snapshot" } }),
   ).toBe(action);
   // Existing start's already-running path retains the actual exclusive owner lane.
   const status = await f.callHttp("devices.status");
@@ -158,8 +187,9 @@ it("keeps admitted input alive after socket loss and never resends it on reconne
     }
     return original(exe, args, options);
   });
+  const lease = await ws.call("devices.control.claim", { deviceId: "emulator-5554", requestId: "claim-one" });
   const pending = ws
-    .request("devices.action", { deviceId: "emulator-5554", action: { type: "press", x: 1, y: 2 } })
+    .request("devices.action", { deviceId: "emulator-5554", leaseId: lease.leaseId, requestId: "press-one", action: { type: "press", x: 1, y: 2 } })
     .catch(() => undefined);
   await started;
   ws.socket.terminate();

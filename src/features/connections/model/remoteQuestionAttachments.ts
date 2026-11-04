@@ -9,6 +9,9 @@ export async function uploadQuestionAttachments(
 ): Promise<UserQuestionReply> {
   if (reply.kind !== "answered" || !reply.attachments) return reply;
   const entries = Object.entries(reply.attachments);
+  if (options?.questionSessionId && entries.some(([, files]) =>
+    files.some((file) => !!file.hostEnvironmentId && file.hostEnvironmentId === options.environmentId),
+  )) throw new Error("This attachment belongs to an earlier Host operation. Reattach the original file to answer this question.");
   const uploaded = await uploadRemoteAttachments(
     machineId,
     entries.flatMap(([, files]) => files),

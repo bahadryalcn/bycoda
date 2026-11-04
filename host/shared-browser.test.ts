@@ -1,6 +1,11 @@
 import { expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { SharedBrowser, sharedBrowserUrl, type BrowserLoader } from "./shared-browser";
+import {
+  SharedBrowser,
+  SessionBrowserRegistry,
+  sharedBrowserUrl,
+  type BrowserLoader,
+} from "./shared-browser";
 import { RuntimeLogsService } from "./runtime-logs";
 
 it("resizes the owned session to390px, reports real frame dimensions and bounds pointer input", async () => {
@@ -421,4 +426,145 @@ it("closes a page created after host shutdown rather than resurrecting the brows
   await expect(opening).rejects.toThrow("closed during startup");
   expect(close).toHaveBeenCalledTimes(1);
   expect(await browser.dispatch("browser.status", {}, "owner")).toMatchObject({ open: false });
+});
+
+it("isolates scoped browser pages and keeps document identity through input", async () => {
+  let count = 0;
+  let launches = 0;
+  const loader: BrowserLoader = async () => ({
+    chromium: {
+      launch: async () => {
+        launches++;
+        return {
+          newContext: async () => {
+            const id = ++count;
+            return {
+              newPage: async () => ({
+                goto: async () => {},
+                url: () => `https://example.com/${id}`,
+                screenshot: async () => Buffer.from(`frame-${id}`),
+                mouse: { click: async () => {}, wheel: async () => {} },
+                keyboard: { type: async () => {}, press: async () => {} },
+              }),
+            };
+          },
+          close: async () => {},
+        };
+      },
+    },
+  });
+  const registry = new SessionBrowserRegistry(loader);
+  try {
+    const a = { projectId: "p", sessionId: "a" };
+    const b = { projectId: "p", sessionId: "b" };
+    const claimA = await registry.dispatch("browser.claim", a, "owner");
+    const claimB = await registry.dispatch("browser.claim", b, "owner");
+    const pa = { ...a, leaseId: claimA.leaseId };
+    const pb = { ...b, leaseId: claimB.leaseId };
+    await registry.dispatch("browser.open", { ...pa, url: "https://example.com/a" }, "owner");
+    await registry.dispatch("browser.open", { ...pb, url: "https://example.com/b" }, "owner");
+    const before = await registry.dispatch("browser.frame", pa, "owner");
+    await registry.dispatch("browser.input", { ...pa, kind: "click", x: 1, y: 1 }, "owner");
+    const after = await registry.dispatch("browser.frame", pa, "owner");
+    expect(launches).toBe(1);
+    expect(before.data).not.toBe((await registry.dispatch("browser.frame", pb, "owner")).data);
+    expect(after.documentId).toBe(before.documentId);
+    expect(after.navigationId).not.toBe(before.navigationId);
+    await expect(registry.dispatch("browser.status", { sessionId: "a" }, "owner")).rejects.toThrow(
+      "validated project",
+    );
+  } finally {
+    await registry.close();
+  }
+});
+
+it("deduplicates acknowledged input and rejects stale document coordinates", async () => {
+  const click = vi.fn(async () => {});
+  const loader: BrowserLoader = async () => ({
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => {},
+            url: () => "https://example.com/",
+            screenshot: async () => Buffer.from("frame"),
+            mouse: { click, wheel: async () => {} },
+            keyboard: { type: async () => {}, press: async () => {} },
+          }),
+        }),
+        close: async () => {},
+      }),
+    },
+  });
+  const browser = new SharedBrowser(loader);
+  try {
+    const claim = await browser.dispatch("browser.claim", {}, "owner");
+    const opened = await browser.dispatch(
+      "browser.open",
+      { leaseId: claim.leaseId, url: "https://example.com/" },
+      "owner",
+    );
+    const input = {
+      leaseId: claim.leaseId,
+      kind: "click",
+      x: 1,
+      y: 1,
+      documentId: opened.documentId,
+      requestId: "one",
+    };
+    await browser.dispatch("browser.input", input, "owner");
+    await browser.dispatch("browser.input", input, "owner");
+    expect(click).toHaveBeenCalledTimes(1);
+    await expect(browser.dispatch("browser.input", { ...input, x: 2 }, "owner")).rejects.toThrow(
+      "reused",
+    );
+    await expect(
+      browser.dispatch(
+        "browser.input",
+        { ...input, requestId: "two", documentId: "stale" },
+        "owner",
+      ),
+    ).rejects.toThrow("document changed");
+  } finally {
+    await browser.close();
+  }
+});
+
+it("isolates paired-owner presentation namespaces from native session browsers", async () => {
+  const loader: BrowserLoader = async () => ({
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => {},
+            url: () => "https://example.com",
+            screenshot: async () => Buffer.from("frame"),
+            mouse: { click: async () => {}, wheel: async () => {} },
+            keyboard: { type: async () => {}, press: async () => {} },
+          }),
+        }),
+        close: async () => {},
+      }),
+    },
+  });
+  const registry = new SessionBrowserRegistry(loader);
+  try {
+    const scope = { ownerPresentationScope: "origin", projectId: "p", sessionId: "s" };
+    const claim = await registry.dispatch("browser.claim", scope, "owner-a");
+    await registry.dispatch(
+      "browser.open",
+      { ...scope, leaseId: claim.leaseId, url: "https://example.com" },
+      "owner-a",
+    );
+    expect((await registry.dispatch("browser.status", scope, "owner-b")).open).toBe(false);
+    expect(
+      (await registry.dispatch("browser.status", { projectId: "p", sessionId: "s" }, "owner-a"))
+        .open,
+    ).toBe(false);
+    await expect(registry.dispatchForSession("browser.status", scope, "agent")).rejects.toThrow(
+      "unavailable to agents",
+    );
+  } finally {
+    await registry.close();
+  }
 });

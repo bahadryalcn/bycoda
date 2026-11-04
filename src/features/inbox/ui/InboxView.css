@@ -43,7 +43,7 @@
     inset: 0;
     z-index: 10;
     width: auto !important;
-    background: var(--color-background-base);
+    background: var(--ui-surface-floating);
   }
   .inbox-discussion-resizer {
     display: none;

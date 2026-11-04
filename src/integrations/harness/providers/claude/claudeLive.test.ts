@@ -434,6 +434,25 @@ describe("claude streamed tool inputs", () => {
       expect(settled).toBe(true);
     },
   );
+  it("holds the next prompt until the stopped query's result drains", async () => {
+    const first = await startTurn("s1");
+    await cancelClaudeTurn("s1");
+    await first.turn;
+    const users = () => parse().filter((message) => message.type === "user").length;
+    const before = users();
+    const send = () => sendClaudeTurn({
+      sessionId: "s1", cwd: "/repo", model: "claude:claude-sonnet-5",
+      modelSettings: {}, runtimeMode: "supervised", text: "next", attachments: [],
+      onEvent: () => undefined,
+    });
+    await expect(send()).rejects.toThrow("still settling");
+    expect(users()).toBe(before);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    const next = send();
+    await waitFor(() => users() === before + 1, "next admitted prompt");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await next;
+  });
   it("launches the selected advisor and rebinds when it is disabled", async () => {
     const first = await startTurn("advisor-session", {
       modelSettings: { advisor: "opus", subagentModel: "haiku", subagentPolicy: "force" },

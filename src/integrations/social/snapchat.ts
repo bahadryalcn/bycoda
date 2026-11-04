@@ -194,7 +194,7 @@ export function createSnapchatAdapter(http: SocialHttp, now = Date.now): SocialA
           form.set("part_number", String(part));
           form.set(
             "file",
-            new Blob([encrypted.slice(offset, offset + partSize)], {
+            new Blob([encrypted.subarray(offset, offset + partSize)], {
               type: "application/octet-stream",
             }),
             `part-${part}.enc`,

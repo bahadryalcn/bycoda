@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 const api = vi.hoisted(() => ({ exec: vi.fn() }));
 vi.mock("../src/shared/lib/processExecution.node", () => ({ execFileAsync: api.exec }));
-vi.mock("./git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
-vi.mock("./git-conflicts", () => ({
+vi.mock("./git/git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
+vi.mock("./git/git-conflicts", () => ({
   hostUnmerged: async () => [],
   hostOperationState: async () => null,
   unmergedMessage: () => "conflict",

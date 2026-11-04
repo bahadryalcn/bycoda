@@ -21,6 +21,7 @@ import {
 import type { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { type Session } from "../../../features/sessions/model/session";
 import { type LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
+import { withRoomPrivacyMutation, type PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   planOpenSessionsSideBySide,
@@ -35,11 +36,11 @@ export interface OpenSessionActionsDeps {
   setProjectTerminalFocused: Dispatch<SetStateAction<boolean>>;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
   setInspectedWorkerId: Dispatch<SetStateAction<string | null>>;
-  followProject: (cwd: string | null | undefined) => void;
+  followProject: (cwd: string | null | undefined, token?: PrivacyMutationToken) => void;
   appendTab: (tab: WorkspaceTab, cwd?: string) => void;
   insertBesideActive: (prev: WorkspaceTab[], tab: WorkspaceTab, cwd?: string) => WorkspaceTab[];
   ensureOpenSession: (sessionId: string) => Promise<Session | null>;
-  focusOpenSession: (sessionId: string) => boolean;
+  focusOpenSession: (sessionId: string, token?: PrivacyMutationToken) => boolean;
   replaceBlankPaneWithSession: (session: Session) => boolean;
   linkedSessionUpdatesRef: MutableRefObject<ReadonlyMap<string, LinkedSessionUpdate>>;
   revealLinkedSessionUpdate: (sessionId: string, update: LinkedSessionUpdate) => void;
@@ -101,22 +102,31 @@ export function useOpenSessionActions({
   }, [sessions, onKeepSession, tabsRef]);
 
   const onSelectHistorySession = useCallback(
-    async (sessionId: string, options?: { preview?: boolean; isCurrent?: () => boolean }) => {
+    async (sessionId: string, options?: { preview?: boolean; isCurrent?: () => boolean; workspaceRequestId?: string; privacyToken?: PrivacyMutationToken }): Promise<void> => {
+      if (options?.workspaceRequestId && !options.privacyToken)
+        return withRoomPrivacyMutation(token => onSelectHistorySession(sessionId, { ...options, workspaceRequestId: undefined, privacyToken: token }), options.workspaceRequestId);
       const request = ++openRequest.current;
       workspaceNavigation.cancel();
       const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
       const isCurrent = () => navigationCurrent() && options?.isCurrent?.() !== false;
       let session = await ensureOpenSession(sessionId);
-      if (request !== openRequest.current || !isCurrent() || !session || session.inboxAsk) return;
+      if (request !== openRequest.current || !isCurrent() || !session || session.inboxAsk) {
+        if (options?.privacyToken) throw new Error("Room session is unavailable.");
+        return;
+      }
       let inspectedWorkerId: string | undefined;
       const parentId = session.orchestrationLeadId ?? orchestrator.forSession(sessionId)?.leadId;
       if (parentId && parentId !== sessionId) {
         session = await ensureOpenSession(parentId);
-        if (request !== openRequest.current || !isCurrent() || !session) return;
+        if (request !== openRequest.current || !isCurrent() || !session) {
+          if (options?.privacyToken) throw new Error("Room session is unavailable.");
+          return;
+        }
         inspectedWorkerId = sessionId;
       }
       const linkedUpdate = linkedSessionUpdatesRef.current.get(session.id);
-      if (focusOpenSession(session.id)) {
+      const follow = (cwd: string) => options?.privacyToken ? followProject(cwd, options.privacyToken) : followProject(cwd);
+      if (options?.privacyToken ? focusOpenSession(session.id, options.privacyToken) : focusOpenSession(session.id)) {
         if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
         if (!options?.preview) onKeepSession(session.id);
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
@@ -126,13 +136,20 @@ export function useOpenSessionActions({
       try {
         release = await reserveSessionWindow([session.id], inspectedWorkerId);
       } catch (error) {
+        if (options?.privacyToken) throw error;
         await message(String(error), { title: appName(), kind: "warning" });
         return;
       }
-      if (!release) return;
+      if (!release) {
+        if (options?.privacyToken) throw new Error("Room session ownership is unavailable.");
+        return;
+      }
       let retained = false;
       try {
-        if (request !== openRequest.current || !isCurrent()) return;
+        if (request !== openRequest.current || !isCurrent()) {
+          if (options?.privacyToken) throw new Error("Room session open was superseded.");
+          return;
+        }
         if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
         if (options?.preview) {
           const replacement = openSessionPreview(tabsRef.current, session, getSessions());
@@ -140,7 +157,7 @@ export function useOpenSessionActions({
             tabsRef.current = replacement.tabs;
             setTabs(replacement.tabs);
             setActiveTabId(replacement.tab.id);
-            followProject(session.cwd);
+            follow(session.cwd);
             setComposerFocused(true);
             if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
             retained = true;
@@ -158,7 +175,7 @@ export function useOpenSessionActions({
               ),
             );
           }
-          followProject(session.cwd);
+          follow(session.cwd);
           if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
           retained = true;
           return;
@@ -171,7 +188,7 @@ export function useOpenSessionActions({
         };
         appendTab(tab, session.cwd);
         setActiveTabId(tab.id);
-        followProject(session.cwd);
+        follow(session.cwd);
         setComposerFocused(true);
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
         retained = true;

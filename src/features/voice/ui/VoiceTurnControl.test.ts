@@ -29,14 +29,14 @@ async function render(manual: boolean, muted = false, compact = false) {
 it("shows the current automatic mode and opens choices without changing or committing audio", async () => {
   const automatic = await render(false);
   const primary = container.querySelector<HTMLButtonElement>('[data-split-part="primary"]')!;
-  expect(primary.textContent).toBe("Automatic replies");
+  expect(primary.textContent).toBe("Reply when I pause");
   await act(async () => primary.click());
   expect(automatic.onManualChange).not.toHaveBeenCalled();
   expect(automatic.onFinish).not.toHaveBeenCalled();
   const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   expect(choices.map((node) => [node.textContent, node.getAttribute("aria-checked")])).toEqual([
-    ["Wait until I finish", "false"],
-    ["Automatic replies", "true"],
+    ["I'll finish when readyPress Finish turn to send your speech.", "false"],
+    ["Reply when I pauseReply after a pause in your speech.", "true"],
   ]);
   await act(async () => choices[0].click());
   expect(automatic.onManualChange).toHaveBeenCalledExactlyOnceWith(true);
@@ -48,22 +48,22 @@ it("shows the current automatic mode and opens choices without changing or commi
   expect(manual.onFinish).toHaveBeenCalledOnce();
   expect(manual.onManualChange).not.toHaveBeenCalled();
 });
-it("keeps compact labels short while exposing the full action and checking only the stored mode", async () => {
+it("shows only icons in compact mode and never finishes from the menu", async () => {
   await render(false, false, true);
-  let primary = container.querySelector<HTMLButtonElement>('[data-split-part="primary"]')!;
-  expect(primary.textContent).toBe("Automatic");
-  expect(primary.getAttribute("aria-label")).toBe("Automatic replies");
+  expect(container.querySelectorAll("button")).toHaveLength(1);
+  expect(container.textContent).toBe("");
   const manual = await render(true, false, true);
-  primary = container.querySelector<HTMLButtonElement>('[data-split-part="primary"]')!;
-  expect(primary.textContent).toBe("Finish");
-  expect(primary.getAttribute("aria-label")).toBe("Finish turn");
+  const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish turn"]')!;
+  expect(finish.textContent).toBe("");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[data-split-part="menu"]')!.click(),
+    container.querySelector<HTMLButtonElement>('[aria-label="Turn ending"]')!.click(),
   );
   const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   expect(choices.map((node) => node.getAttribute("aria-checked"))).toEqual(["true", "false"]);
   expect(manual.onFinish).not.toHaveBeenCalled();
-  expect(manual.onManualChange).not.toHaveBeenCalled();
+  await act(async () => choices[1].click());
+  expect(manual.onManualChange).toHaveBeenCalledWith(false);
+  expect(manual.onFinish).not.toHaveBeenCalled();
 });
 it("blocks finishing while muted but keeps the turn policy choice available", async () => {
   const { onFinish, onManualChange } = await render(true, true);
@@ -75,7 +75,7 @@ it("blocks finishing while muted but keeps the turn policy choice available", as
   await act(async () => menu.click());
   const automatic = [
     ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
-  ].find((node) => node.textContent?.includes("Automatic replies"))!;
+  ].find((node) => node.textContent?.includes("Reply when I pause"))!;
   await act(async () => automatic.click());
   expect(onManualChange).toHaveBeenCalledExactlyOnceWith(false);
   expect(onFinish).not.toHaveBeenCalled();

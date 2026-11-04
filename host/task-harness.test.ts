@@ -105,6 +105,67 @@ async function setup() {
     finish,
   };
 }
+it("continues an accepted task after its originating project permit closes", async () => {
+  const s = await setup();
+  await s.tasks.save(s.input({ status: "todo" }));
+  const gate = Promise.withResolvers<void>();
+  const tick = s.tasks.tick.bind(s.tasks);
+  const delayed = vi.spyOn(s.tasks, "tick").mockImplementationOnce(async () => { await gate.promise; return tick(); });
+  let permit = true;
+  const accepted = await s.store.db.withAuthorization(async () => permit, () => s.tasks.startTask("harness-task"));
+  expect(accepted.status).toBe("queued");
+  expect(s.turns).toHaveLength(0);
+  permit = false;
+  gate.resolve();
+  await vi.waitFor(() => expect(s.turns).toHaveLength(1), { timeout: 10000 });
+  const current = await s.task();
+  expect(current.status).toBe("running");
+  expect(current.runId).toBeTruthy();
+  expect(current.model).toBe("claude:test");
+  delayed.mockRestore();
+});
+it("does not schedule a task when its enclosing acceptance transaction rolls back", async () => {
+  const s = await setup();
+  await s.tasks.save(s.input({ status: "todo" }));
+  const tick = vi.spyOn(s.tasks, "tick");
+  await expect(s.store.transaction(async () => {
+    await s.tasks.startTask("harness-task");
+    throw new Error("rollback fixture");
+  })).rejects.toThrow("rollback fixture");
+  expect(tick).not.toHaveBeenCalled();
+  expect((await s.task()).status).toBe("todo");
+  expect(s.turns).toHaveLength(0);
+  tick.mockRestore();
+});
+it("schedules an accepted retry after its originating project permit closes", async () => {
+  const s = await setup();
+  await s.tasks.save(s.input({ status: "todo" }));
+  await s.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked','$.error','fixture failure') WHERE id=?").run("harness-task");
+  const reviewed = await s.task();
+  let permit = true;
+  const accepted = await s.store.db.withAuthorization(async () => permit, () => s.tasks.move("harness-task", "queued", reviewed));
+  expect(accepted.status).toBe("queued");
+  permit = false;
+  await s.tick();
+  await vi.waitFor(() => expect(s.turns).toHaveLength(1), { timeout: 10000 });
+  const current = await s.task();
+  expect(current.status).toBe("running");
+  expect(current.runId).toBeTruthy();
+  expect(current.model).toBe("claude:test");
+});
+it("schedules a newly accepted queued task after its originating project permit closes", async () => {
+  const s = await setup();
+  let permit = true;
+  const accepted = await s.store.db.withAuthorization(async () => permit, () => s.tasks.save(s.input({ status: "queued" })));
+  expect(accepted.status).toBe("queued");
+  permit = false;
+  await s.tick();
+  await vi.waitFor(() => expect(s.turns).toHaveLength(1), { timeout: 10000 });
+  const current = await s.task();
+  expect(current.status).toBe("running");
+  expect(current.runId).toBeTruthy();
+  expect(current.model).toBe("claude:test");
+});
 describe("task harness preparation and aggregate budgets", () => {
   it("blocks a missing required source before any provider send", async () => {
     const s = await setup();

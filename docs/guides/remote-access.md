@@ -405,6 +405,14 @@ Requests whose helper is still running, or whose admission was interrupted, keep
 their reservation. Releasing capacity does not mean the original failed or that
 it is safe to send it again.
 
+Compatible new Hosts also tell the desktop when an exact unknown format request
+can no longer produce a recorded result. The desktop then releases that result's
+reservation while keeping the original request protected against replay. New
+format requests use the formatter's smaller enforced output limit and separate
+native capacity from control operations; retained older requests keep their
+original limits. A recovered completed format result can be discarded after its
+original caller is gone, without applying old text to the current editor.
+
 New development clients can also clean up completed delivery records in ordered
 groups while retaining a permanent guard against replay. Interrupted cleanup does
 not repeat the operation. Missing or uncertain outcomes stop cleanup until their

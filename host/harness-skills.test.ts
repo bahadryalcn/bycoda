@@ -23,20 +23,20 @@ function fixture() {
   return { cwd, home, skill };
 }
 
-it("finds alternatives by description, ranks exact names and paginates without loading bodies", () => {
+it("finds alternatives by description, ranks exact names and paginates without loading bodies", async () => {
   const { cwd, home, skill } = fixture();
   skill("good-css", "---\ndescription: CSS layout techniques\n---\nprivate body");
   skill("layout", "---\ndescription: Layout design\n---\nbody");
   skill("responsive", "---\ndescription: Responsive layout\n---\nbody", home);
-  const result = searchHarnessSkills(cwd, { query: "layout", limit: 2 }, home);
+  const result = (await searchHarnessSkills(cwd, { query: "layout", limit: 2 }, home));
   expect(result.skills.map((entry) => entry.name)).toEqual(["layout", "good-css"]);
   expect(JSON.stringify(result)).not.toContain("private body");
   expect(result.total).toBe(3);
   expect(result.nextOffset).toBe(2);
-  const next = searchHarnessSkills(cwd, { query: "layout", offset: 2, limit: 2 }, home);
+  const next = (await searchHarnessSkills(cwd, { query: "layout", offset: 2, limit: 2 }, home));
   expect(next.skills.map((entry) => entry.name)).toEqual(["responsive"]);
   expect(next.nextOffset).toBeNull();
-  expect(searchHarnessSkills(cwd, { query: "missing" }, home).skills).toEqual([]);
+  expect((await searchHarnessSkills(cwd, { query: "missing" }, home)).skills).toEqual([]);
 });
 
 it("reads fresh project-preferred content by discovered name with explicit truncation", async () => {
@@ -58,7 +58,7 @@ it("reads fresh project-preferred content by discovered name with explicit trunc
   await expect(readHarnessSkill(cwd, { name: "huge" }, home)).rejects.toThrow("2 MiB");
 });
 
-it("discovers project plugin skills inside nested workspaces and excludes siblings and disabled plugins", () => {
+it("discovers project plugin skills inside nested workspaces and excludes siblings and disabled plugins", async () => {
   const { cwd, home } = fixture();
   const plugin = join(home, "plugin");
   mkdirSync(join(plugin, "skills", "review"), { recursive: true });
@@ -72,16 +72,16 @@ it("discovers project plugin skills inside nested workspaces and excludes siblin
   );
   const nested = join(cwd, "packages", "web");
   mkdirSync(nested, { recursive: true });
-  expect(searchHarnessSkills(nested, {}, home).skills.map((entry) => entry.name)).toContain(
+  expect((await searchHarnessSkills(nested, {}, home)).skills.map((entry) => entry.name)).toContain(
     "kit:review",
   );
-  expect(searchHarnessSkills(cwd + "-sibling", {}, home).skills).toEqual([]);
+  expect((await searchHarnessSkills(cwd + "-sibling", {}, home)).skills).toEqual([]);
   mkdirSync(join(cwd, ".claude"), { recursive: true });
   writeFileSync(
     join(cwd, ".claude/settings.json"),
     JSON.stringify({ enabledPlugins: { "kit@market": false } }),
   );
-  expect(searchHarnessSkills(cwd, {}, home).skills).toEqual([]);
+  expect((await searchHarnessSkills(cwd, {}, home)).skills).toEqual([]);
 });
 
 it("ranks by task coverage and exposes same-name alternatives for comparison", async () => {
@@ -97,13 +97,13 @@ it("ranks by task coverage and exposes same-name alternatives for comparison", a
   );
   skill("review", "project review", cwd);
   skill("review", "personal review", home);
-  const ranked = searchHarnessSkills(cwd, { query: "responsive table overflow" }, home);
+  const ranked = (await searchHarnessSkills(cwd, { query: "responsive table overflow" }, home));
   expect(ranked.skills[0]).toMatchObject({
     name: "table-overflow",
     matchedTerms: 3,
     queryTerms: 3,
   });
-  const reviews = searchHarnessSkills(cwd, { query: "review" }, home).skills;
+  const reviews = (await searchHarnessSkills(cwd, { query: "review" }, home)).skills;
   expect(reviews.map(({ scope, active }) => [scope, active])).toEqual([
     ["project", true],
     ["user", false],

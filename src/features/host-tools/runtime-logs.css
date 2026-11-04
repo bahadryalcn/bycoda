@@ -1,10 +1,10 @@
-.host-tools-content:has(> .runtime-logs-panel) {
+.host-tools-content-logs {
   display: flex;
   flex-direction: column;
   overflow: clip;
 }
 
-.host-tools-content:has(> .runtime-logs-panel) > .host-tools-machine {
+.host-tools-content-logs > .host-tools-machine {
   flex: none;
 }
 
@@ -14,7 +14,7 @@
   --runtime-log-warning: var(--ui-tone-warning-fg);
   --runtime-log-browser: var(--ui-tone-info-fg);
   --runtime-log-server: var(--color-feature);
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   flex: 1 1 0;
   block-size: auto;
   gap: 4px;
@@ -233,7 +233,7 @@
   scrollbar-gutter: stable;
   border: 1px solid var(--color-stroke);
   border-radius: 0;
-  background: var(--color-background-base);
+  background: var(--ui-workspace-reading-base);
 }
 
 .runtime-logs-list {

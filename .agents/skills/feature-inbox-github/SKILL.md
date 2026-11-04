@@ -26,6 +26,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `inboxSeen.ts` migrates legacy seen history to exact-key IndexedDB records, retains legacy bytes for older windows, and bounds the in-memory cache. Writes merge timestamps transactionally; unavailable storage and partial saves remain visible and retryable. First-snapshot staging commits one complete generation. Partial fetches do not prove an identity is safe to evict.
 - Retain saved filters, selected detail/tab/file, comment/Ask/repair drafts and responsive detail/back navigation.
 - Keep bounded fetching, cache/in-flight deduplication, late-response rejection, good data on error and operation-specific recovery.
+- Media authentication coalesces only concurrent token lookups; bound request admission, token output and deadlines, retain original process and pipe ownership through retirement, and never cache credentials after the flight.
 - Public comments, reviews, merge and repair actions retain their native owner approval and provider gates; reads and drafts grant no write authority.
 
 ## Workflow

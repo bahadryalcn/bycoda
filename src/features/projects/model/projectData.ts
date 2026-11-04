@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { projectKey } from "../../../shared/lib/paths";
 import { clearProjectLogo } from "./projectLogos";
 import { clearProjectChatBackground } from "./chatBackground";
@@ -14,6 +15,8 @@ import {
 import { rebaseProjectGroupAssignment, removeProjectGroupAssignment } from "./projectGroups";
 import { rebaseAdditionalDirs, removeAdditionalDirs } from "./additionalDirs";
 import { rebaseSessionFolderSettings } from "../../sessions/model/sessionFolders";
+import { executeOrganizationOperation } from "../../sessions/model/sessionOrganizationOperations";
+import { NATIVE_SESSION_ORGANIZATION_ACTIVE } from "../../sessions/model/sessionOrganizationStore";
 import {
   clearProjectProviders,
   rebaseProjectProviders,
@@ -44,21 +47,26 @@ export async function removeProjectData(path: string): Promise<void> {
   await clearProjectChatBackground(key).catch(() => undefined);
   clearProjectChatBackgroundSetting(key);
   clearTabGroupSettings(key);
-  removeProjectGroupAssignment(normalized);
+  await withRoomPrivacyMutation(() => removeProjectGroupAssignment(normalized));
   removeAdditionalDirs(normalized);
   clearProjectProviders(key);
   clearProjectSidebarTab(normalized);
 }
 
 /** Move local project settings after the filesystem resolver finds a rename. */
-export function rebaseProjectData(from: string, to: string): void {
+export async function rebaseProjectData(from: string, to: string): Promise<void> {
+  if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+    const result = await executeOrganizationOperation(crypto.randomUUID(), { kind: "rebase", cwd: from, to });
+    if (result.state !== "applied")
+      throw new Error(result.state === "unknown" ? `Folder rebase outcome is unknown: ${result.operationId}` : result.state === "applied-unavailable" ? `Folder rebase was applied, but refresh failed: ${result.operationId}` : "Folder rebase conflicted; refresh before retrying.");
+  }
   const oldKey = projectKey(normalizeProjectPath(from));
   const newKey = projectKey(normalizeProjectPath(to));
   rebaseProjectTabGroupSettings(from, to);
   rebaseProjectGroupAssignment(from, to);
   rebaseAdditionalDirs(from, to);
   rebaseProjectChatBackgroundSetting(oldKey, newKey);
-  rebaseSessionFolderSettings(from, to);
+  rebaseSessionFolderSettings(from, to, !NATIVE_SESSION_ORGANIZATION_ACTIVE);
   rebaseProjectProviders(oldKey, newKey);
   rebaseProjectSidebarTab(from, to);
 }

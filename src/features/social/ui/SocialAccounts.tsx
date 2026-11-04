@@ -50,6 +50,7 @@ import {
   type Props,
 } from "./socialShared";
 import { useSocialPending } from "./useSocialPending";
+import { AssistantAccountGrant } from "./AssistantAccountGrant";
 import { SocialBrowserWorkspace, socialBrowserWorkspaceKey } from "./SocialBrowserWorkspace";
 import { TelegramChannelConnection, telegramConnectionKey } from "./TelegramChannelConnection";
 
@@ -1185,6 +1186,7 @@ function AccountDetail({
           <AccountCapabilities capabilities={snapshot.capabilities[account.id] ?? []} />
         </section>
       </details>
+      <AssistantAccountGrant account={account} client={client} run={run} locked={socialLocked} />
       <details className="social-form social-account-permissions" open>
         <summary>{t("Project access")}</summary>
         <p className="text-ui-caption text-(--ui-text-secondary)">

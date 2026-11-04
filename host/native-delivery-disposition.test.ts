@@ -5,7 +5,7 @@ import { durableWrite } from "./turn-git-history";
 
 const format = "native.services.workspace.format" as const;
 const finish = "native.services.conversation.desktop.finish" as const;
-const maximum = 32 * 1024 * 1024;
+const maximum = 4 * 1024 * 1024;
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -32,7 +32,8 @@ const identity = (request: ReturnType<typeof original>) => ({
   sha256: request.sha256,
   byteLength: request.byteLength,
 });
-const unknown = (request: ReturnType<typeof original>) => ({
+const unknown = (request: ReturnType<typeof original>, resultUnavailable = false) => ({
+  ...(resultUnavailable ? { resultUnavailable: true } : {}),
   ...identity(request),
   target: format,
   state: "unknown",
@@ -78,7 +79,7 @@ it("releases an exited formatter reservation for a distinct full-capacity origin
   f.setFormat(async () => {
     throw new Error("Formatter exited without a result");
   });
-  expect(await f.call("native.services.delivery.apply", failed)).toEqual(unknown(failed));
+  expect(await f.call("native.services.delivery.apply", failed)).toEqual(unknown(failed, true));
   expect(await row(f, failed.originalId)).toMatchObject({
     state: "admitted",
     reserved_bytes: 0,
@@ -99,8 +100,8 @@ it("releases an exited formatter reservation for a distinct full-capacity origin
       ...identity(failed),
       target: format,
     }),
-  ).toEqual(unknown(failed));
-  expect(await f.call("native.services.delivery.apply", failed)).toEqual(unknown(failed));
+  ).toEqual(unknown(failed, true));
+  expect(await f.call("native.services.delivery.apply", failed)).toEqual(unknown(failed, true));
   expect(f.counts.format).toBe(2);
   await expect(
     f.call("native.services.delivery.ack", {
@@ -130,6 +131,8 @@ it("keeps an unresolved actual handler's maximum reservation and blocks a distin
   const pending = f.call("native.services.delivery.apply", active);
   try {
     await entered;
+    for (let index = 0; index < 7; index++)
+      await f.journal.admit(f.principal, format, identity(original()));
     expect(await row(f, active.originalId)).toMatchObject({
       state: "admitted",
       reserved_bytes: maximum,
@@ -171,6 +174,8 @@ it("does not dispose a committed admission whose acknowledgement was lost before
   );
   fault.mockRestore();
   expect(fired).toBe(true);
+  for (let index = 0; index < 7; index++)
+    await f.journal.admit(f.principal, format, identity(original()));
   expect(f.counts.format).toBe(0);
   expect(await row(f, request.originalId)).toMatchObject({
     state: "admitted",
@@ -191,7 +196,7 @@ it("fences late result recording after disposition rather than reusing released 
   f.setFormat(async () => {
     throw new Error("Exited formatter");
   });
-  expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request));
+  expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request, true));
   await expect(f.journal.record(f.principal, format, identity(request), null)).rejects.toThrow(
     /reserv|held/i,
   );
@@ -207,7 +212,7 @@ it("fences late result recording after disposition rather than reusing released 
       ...identity(request),
       target: format,
     }),
-  ).toEqual(unknown(request));
+  ).toEqual(unknown(request, true));
   expect(await row(f, request.originalId)).toMatchObject({
     state: "admitted",
     reserved_bytes: 0,
@@ -290,11 +295,13 @@ it.each(["rollback", "before", "after"] as const)(
       (error: unknown) => ({ error }),
     );
     if ("error" in outcome) expect(String(outcome.error)).toMatch(/Disposition|Handler exited/i);
-    else expect(outcome.value).toEqual(unknown(request));
+    else expect(outcome.value).toEqual(unknown(request, mode === "after"));
     fault?.restore();
     if (mode === "rollback") await f.store.db.exec("DROP TRIGGER reject_disposition");
     else expect(fault?.fired).toBe(true);
     const reserved = mode === "after" ? 0 : maximum;
+    for (let index = 0; index < 7; index++)
+      await f.journal.admit(f.principal, format, identity(original()));
     expect(await row(f, request.originalId)).toMatchObject({
       state: "admitted",
       reserved_bytes: reserved,
@@ -308,8 +315,10 @@ it.each(["rollback", "before", "after"] as const)(
         ...identity(request),
         target: format,
       }),
-    ).toEqual(unknown(request));
-    expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request));
+    ).toEqual(unknown(request, mode === "after"));
+    expect(await f.call("native.services.delivery.apply", request)).toEqual(
+      unknown(request, mode === "after"),
+    );
     expect(f.counts.format).toBe(1);
     expect((await row(f, request.originalId))?.reserved_bytes).toBe(reserved);
     f.setFormat(async () => null);
@@ -357,7 +366,7 @@ it("releases only already-owned failure bookkeeping after authority loss without
   expect(f.counts.format).toBe(1);
   f.setAllowed(true);
   await f.reopen();
-  expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request));
+  expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request, true));
   f.setFormat(async () => null);
   expect(await f.call("native.services.delivery.apply", original())).toMatchObject({
     state: "recorded",
@@ -452,4 +461,42 @@ it("disposes the exact admitted clone when an exited handler mutates its input i
   await expect(f.journal.record(f.principal, format, captured, null)).rejects.toThrow(
     /reserv|held/i,
   );
+});
+
+it("bounds new formatter results at4MiB and fences oversized output without replay", async () => {
+  const f = await fixture(),
+    request = original();
+  f.setFormat(async () => ({ formatted: "x".repeat(maximum), cursorOffset: 0 }));
+  expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request, true));
+  expect(await row(f, request.originalId)).toMatchObject({ reserved_bytes: 0, result_json: null });
+  await f.reopen();
+  await expect(f.journal.record(f.principal, format, identity(request), null)).rejects.toThrow(
+    /reserv|held/i,
+  );
+  expect(await f.call("native.services.delivery.apply", request)).toEqual(unknown(request, true));
+  expect(f.counts.format).toBe(1);
+});
+
+it("discloses no result-unavailable proof for absent, unresolved, corrupt or wrong-principal originals", async () => {
+  const f = await fixture(),
+    request = original();
+  const status = () =>
+    f.call("native.services.delivery.status", { ...identity(request), target: format });
+  expect(await status()).toEqual({ state: "absent" });
+  await f.journal.admit(f.principal, format, identity(request));
+  expect(await status()).toEqual(unknown(request));
+  await f.store.db
+    .prepare(
+      "UPDATE native_delivery_receipts SET reserved_bytes=0,result_sha256=? WHERE original_id=?",
+    )
+    .run("a".repeat(64), request.originalId);
+  expect(await status()).toEqual(unknown(request));
+  const other = original();
+  await f.journal.admit("another-principal", format, identity(other));
+  await f.store.db
+    .prepare("UPDATE native_delivery_receipts SET reserved_bytes=0 WHERE original_id=?")
+    .run(other.originalId);
+  expect(
+    await f.call("native.services.delivery.status", { ...identity(other), target: format }),
+  ).toEqual({ state: "absent" });
 });

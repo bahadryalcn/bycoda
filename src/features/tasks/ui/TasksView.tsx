@@ -1584,7 +1584,7 @@ function TasksContent({
           ) : listView || selectMode || section === "backlog" ? (
             tasks.length ? (
               <TaskList
-                key={`${projectFilter}:${sprintFilter}:${section}:${statusFilter}:${searchQuery}`}
+                key={`${projectFilter}:${sprintFilter}:${section}:${statusFilter}`}
                 tasks={tasks}
                 selection={selectMode}
                 selected={bulkSelection}

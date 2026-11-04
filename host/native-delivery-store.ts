@@ -5,7 +5,10 @@ import type { NativeDeliveryIdentity } from "../src/shared/model/host-contracts/
 import type { NativeDeliveryResultSource } from "../src/shared/model/host-contracts/native-delivery-identity";
 import type { NativeDeliveryConsumedResult } from "../src/shared/model/host-contracts/native-delivery-identity";
 import type { NativeBufferDeliveryProof } from "./domains/native-delivery/ports";
-import { NATIVE_SERVICES_RPC_SCHEMAS } from "../src/shared/model/host-contracts/native-services";
+import {
+  NATIVE_SERVICES_RPC_SCHEMAS,
+  NATIVE_FORMAT_MAX_RESULT_BYTES,
+} from "../src/shared/model/host-contracts/native-services";
 import {
   createNativeDeliveryEpochs,
   initializeNativeDeliveryEpochs,
@@ -25,11 +28,14 @@ export type NativeDeliveryRow = NativeDeliveryIdentity & {
   resultSource?: NativeDeliveryResultSource;
   proof?: NativeBufferDeliveryProof;
   consumedResult?: NativeDeliveryConsumedResult;
+  resultUnavailable?: true;
 } & (
     | { state: "fenced"; epoch: NativeDeliveryEpochFence }
     | { state: "admitted" | "recorded" | "retired"; epoch?: never }
   );
+// Retain legacy results; new formatter executions have a smaller enforced bound.
 const MAX_RESULT_BYTES = 32 * 1024 * 1024;
+
 const MAX_TOTAL_RESULT_BYTES = 64 * 1024 * 1024;
 const MAX_PRINCIPAL_RESULT_BYTES = 32 * 1024 * 1024;
 const MAX_ROWS = 1_000_000;
@@ -244,6 +250,17 @@ export function createNativeDeliveryStore(store: HostStore) {
         kind,
         state: meta.state as "admitted" | "recorded" | "retired",
         ...result,
+        ...(kind === "native.services.workspace.format" &&
+        meta.state === "admitted" &&
+        meta.reserved_bytes === 0 &&
+        meta.actual_result_bytes === null &&
+        meta.proof_bytes === null &&
+        meta.result_sha256 === null &&
+        meta.result_bytes === null &&
+        meta.consumed_sha256 === null &&
+        meta.consumed_bytes === null
+          ? { resultUnavailable: true as const }
+          : {}),
         ...(consumedResult ? { consumedResult } : {}),
         ...(meta.bounded_proof === null
           ? {}
@@ -322,7 +339,12 @@ export function createNativeDeliveryStore(store: HostStore) {
         if (row.state === "recorded" || row.state === "retired") return;
         if (
           row.state !== "admitted" ||
-          (row.reserved_bytes !== 0 && row.reserved_bytes !== maximumResult(kind)) ||
+          (row.reserved_bytes !== 0 &&
+            row.reserved_bytes !== maximumResult(kind) &&
+            !(
+              kind === "native.services.workspace.format" &&
+              row.reserved_bytes === NATIVE_FORMAT_MAX_RESULT_BYTES
+            )) ||
           row.no_result !== 1 ||
           (kind !== "buffer" && row.no_proof !== 1) ||
           row.result_sha256 !== null ||
@@ -340,7 +362,7 @@ export function createNativeDeliveryStore(store: HostStore) {
             ...key(principal, kind, identity),
             identity.sha256,
             identity.byteLength,
-            maximumResult(kind),
+            row.reserved_bytes,
           );
         if (Number(changed.changes) !== 1)
           throw new Error("Native delivery failed execution disposition changed and remains held");
@@ -460,7 +482,10 @@ export function createNativeDeliveryStore(store: HostStore) {
           throw new Error(
             "Native delivery journal capacity is unavailable; retained originals remain held",
           );
-        const reservation = maximumResult(kind);
+        const reservation =
+          kind === "native.services.workspace.format"
+            ? NATIVE_FORMAT_MAX_RESULT_BYTES
+            : maximumResult(kind);
         if (
           kind === "native.services.workspace.format" &&
           (Number(count?.bytes) + reservation > MAX_TOTAL_RESULT_BYTES ||

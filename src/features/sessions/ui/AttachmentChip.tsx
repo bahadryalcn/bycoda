@@ -3,7 +3,6 @@ import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
-import { attachmentPreviewSrc } from "../model/attachments";
 import { tokenLabel } from "../model/attachmentTokens";
 import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
 import { AttachmentIdentity } from "./AttachmentIdentity";
@@ -12,6 +11,7 @@ import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { BrowserAnnotationDetails } from "../../host-tools/BrowserAnnotationDetails";
 import { useAttachmentPreview } from "./useAttachmentPreview";
+import { useNearViewport } from "./useNearViewport";
 import { useState } from "react";
 import {
   AttachmentFilePreview,
@@ -36,6 +36,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   const canOpenFile = canOpenFileAttachment(attachment);
+  const [thumbnailBox, nearViewport] = useNearViewport<HTMLDivElement>();
   const {
     src: preview,
     canOpen,
@@ -44,10 +45,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
     error: previewError,
     show,
     close,
-  } = useAttachmentPreview(attachment);
+  } = useAttachmentPreview(attachment, nearViewport);
   // A gone image has no picture worth showing; it reads as a marked file chip.
-  const image =
-    attachment.kind === "image" && !attachment.missing && attachmentPreviewSrc(attachment);
+  const image = attachment.kind === "image" && canOpen;
   const label = token ? tokenLabel(token) : null;
   const labelNode = label ? (
     <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
@@ -60,6 +60,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   const chip = (
     <>
       <div
+        ref={thumbnailBox}
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
         className={`group ${styles.card} ${image ? styles.image : styles.file}`}
@@ -76,13 +77,17 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               type="button"
               aria-label={t("Open {p0} full screen", { p0: attachment.name })}
               tooltip={imageDetails}
+              disabled={loading}
+              loading={loading}
+              aria-busy={loading}
+              aria-haspopup="dialog"
               onClick={(event) => {
                 event.stopPropagation();
                 void show();
               }}
               className={styles.thumbnail}
             >
-              {failedThumbnail !== preview ? (
+              {preview && failedThumbnail !== preview ? (
                 <img
                   src={preview}
                   alt=""
@@ -183,11 +188,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 <Link className="icon-xs" />
               </Button>
             ) : null}
-            {previewError ? (
-              <InlineMessage tone="warning" live="assertive">
-                {t("Preview unavailable. Try again.")}
-              </InlineMessage>
-            ) : null}
             {attachment.missing ? (
               <span className="shrink-0 text-ui-caption leading-4 text-(--ui-tone-warning-fg)">
                 {t("missing")}
@@ -226,6 +226,11 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           </InlineAction>
         ) : null}
       </div>
+      {previewError ? (
+        <InlineMessage tone="warning" live="assertive">
+          {t("Preview unavailable. Try again.")}
+        </InlineMessage>
+      ) : null}
       {attachment.browserAnnotation ? (
         <details className="browser-annotation-chip">
           <summary>{t("Inspect browser element")}</summary>

@@ -452,6 +452,46 @@ from the user accent.
 
 ### Theme and interaction ownership
 
+Workspace canvases use `--ui-workspace-canvas` and navigation panes use
+`--ui-workspace-panel`. Both retain their opaque theme roles until dark native
+glass and Main pane glass are effective; then the owning `.body-glass` paints
+the user's opacity once and child canvases stay clear. The app root must not
+add a second translucent fill. Sidebar opacity remains independently owned.
+
+Navigation chrome, quiet cards, joined controls and selected-row layers use the
+central `--ui-navigation-*` roles. Their glass gate follows dark native window
+glass independently of Main pane glass. Navigation tab strips inside an existing
+sidebar canvas stay clear; an outer title bar owns its canvas fill, while a title
+bar nested inside a painted pane does not paint the opacity again. Bounded
+status chips, code fragments and field focus/press states retain their readable
+semantic fills. `ButtonGroup surface="navigation"` selects the navigation control
+role through the shared adapter; callers do not restyle the primitive locally.
+
+Opt-in workspace artwork is separate from native window glass and the saved
+Pure/Tinted canvas choice. `has-workspace-background` paints one root image through
+the shared safe gradient serializer and a theme-derived readability veil. Pane
+canvases expose that image; reading and control surfaces retain their semantic
+fills. Preview swatches use the same composition with local image/strength values.
+Project/chat images and live scenes keep their existing higher layers and opacity
+ownership. Reduced transparency and forced colors explicitly remove artwork while
+retaining the saved design; browsers need not implement a positive accessibility
+media query to display the normal background. Independent popups keep their own
+background contract.
+
+Reading regions use `--ui-workspace-reading` instead of clearing their background.
+Sticky text and overlapping panels must occlude content underneath: retain their
+opaque semantic tone or use the shared floating role. Verify actual scrolled
+content before applying translucency to an overlap boundary. The `-reading-base`, `-reading-chat`, `-reading-panel`
+and `-reading-muted` variants,
+and `-canvas-muted`, `-canvas-chat` and `-canvas-surface` variants, preserve the
+original opaque tone of existing consumers. These roles are defined only in
+`src/styles/index.css`; reduced transparency and forced colors restore opaque
+fills with selectors at least as specific as the glass selectors. Ordinary
+fields, floating overlays, status/diff marks and embedded document, browser,
+device or media pixels keep their own roles. Native effect success is separate
+from renderer styling; a failed effect retains an opaque canvas and exposes
+local retry rather than claiming glass is active.
+
 The palette supplies base seeds; `index.css` and `bycoda.css` derive the shared
 surface, text, state, geometry and motion roles, and `arc.css` maps them into
 scoped Arc controls. Appearance applies the saved theme and custom accent to the

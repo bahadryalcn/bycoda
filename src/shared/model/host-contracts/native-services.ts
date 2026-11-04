@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { JsonObjectSchema, JsonValueSchema, SafeCounterSchema } from "./schemas";
+import { IdentifierSchema, JsonObjectSchema, JsonValueSchema, SafeCounterSchema } from "./schemas";
+
+// Serialized UTF-8 output limit of the bounded formatter worker. Legacy delivery reads retain32MiB.
+export const NATIVE_FORMAT_MAX_RESULT_BYTES = 4 * 1024 * 1024;
 
 const empty = z.strictObject({});
 const assistantPresence = z.strictObject({
@@ -45,6 +48,26 @@ export const NativeWorkspaceFormatParamsSchema = z.strictObject({
   args: z.strictObject({ path: z.string(), source: z.string(), cursorOffset: SafeCounterSchema }),
 });
 export const NATIVE_SERVICES_RPC_SCHEMAS = {
+  "native.services.assistant.observations.ingest": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.delegation.publicKey": { params: z.strictObject({}), result: z.strictObject({ publicKey: z.string(), environmentId: z.string() }) },
+  "native.services.assistant.delegation.origin": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.delegation.nativeChallenge": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.delegation.attest": { params: z.strictObject({ input: JsonObjectSchema }), result: z.strictObject({ signature: z.string() }) },
+  "native.services.assistant.delegation.issue": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.delegation.issue.status": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.delegation.challenge": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.delegation.call": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonValueSchema },
+  "native.services.assistant.delegation.revoke": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
+  "native.services.assistant.visibility.epoch": { params: empty, result: z.strictObject({ epoch: SafeCounterSchema }) },
+  "native.services.assistant.visibility.revoke": { params: empty, result: z.strictObject({ epoch: SafeCounterSchema }) },
+  "native.services.assistant.visibility.reopen": { params: z.strictObject({ input: JsonObjectSchema }), result: z.strictObject({ epoch: SafeCounterSchema }) },
+  "native.services.assistant.notification.authorize": { params: z.strictObject({ input: z.strictObject({ threadId: z.string(), notificationId: z.string(), operationHash: z.string() }) }), result: z.strictObject({ authorized: z.boolean() }) },
+  "native.services.assistant.workspace.authorize": { params: z.strictObject({ input: z.strictObject({ threadId: z.string(), requestId: z.string(), operationHash: z.string() }) }), result: z.strictObject({ authorized: z.boolean() }) },
+  "native.services.assistant.browser.panel": {
+    // Filesystem paths are bounded by the owner in UTF-16, as with FilesReadParamsSchema.
+    params: z.strictObject({ environmentId: IdentifierSchema, projectId: IdentifierSchema, threadId: IdentifierSchema, projectCwd: z.string(), action: z.enum(["browser.status", "browser.claim", "browser.release", "browser.open", "browser.frame", "browser.resize", "browser.input", "browser.close", "browser.operation.status"]), input: JsonObjectSchema, requestId: IdentifierSchema }),
+    result: JsonObjectSchema,
+  },
   "native.services.assistant.presence.get": { params: empty, result: assistantPresence },
   "native.services.assistant.presence.set": {
     params: z.strictObject({ state: z.enum(["present", "away", "dnd"]) }),
@@ -104,6 +127,51 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
       id: z.string(),
       action: z.enum([
         "ssh.workspace.approve",
+        "workspace.projects.select",
+        "workspace.sessions.create",
+        "workspace.sessions.open",
+        "workspace.sessions.submit",
+        "workspace.sessions.submit.status",
+        "workspace.sessions.stop",
+        "privacy.scope.capture",
+        "privacy.account.capture",
+        "voice.generation.retire",
+        "voice.generation.status",
+        "voice.generation.source",
+        "delegation.grants",
+        "delegation.call",
+        "inbox.room.execute",
+        "inbox.room.scope",
+        "observations.native.baseline",
+        "observations.native.projectBaseline",
+        "observations.native.projectComplete",
+        "observations.native.complete",
+        "workspace.operation.status",
+        "workspace.operation.execute",
+        "ui.tools.open",
+        "ui.tools.status",
+        "assistant.notification.deliver",
+        "assistant.notification.status",
+        "desktop.act.authorize",
+        "management.write.authorize",
+        "preferences.read",
+        "preferences.templateRead",
+        "preferences.patch",
+        "preferences.status",
+        "providerManagement.read",
+        "providerManagement.patch",
+        "providerManagement.status",
+        "providerManagement.quotaRefresh",
+        "organization.read",
+        "organization.patch",
+        "organization.status",
+        "servers.list",
+        "servers.get",
+        "servers.ssh.execute",
+        "servers.ssh.status",
+        "servers.ssh.cancel",
+        "servers.ssh.save",
+        "servers.ssh.remove",
         "ssh.workspace.close.approve",
         "ptyMobile.create",
         "ptyMobile.attach",
@@ -141,6 +209,11 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
       .nullable(),
   },
 } as const;
+// Preserve domain UTF-16 path bounds without exporting Unicode-incompatible checks.
+export const NativeAssistantBrowserPanelParamsSchema =
+  NATIVE_SERVICES_RPC_SCHEMAS["native.services.assistant.browser.panel"].params.extend({
+    projectCwd: z.string().regex(/^[^\u0000]{1,4096}(?![\s\S])/),
+  });
 export type NativeServiceMethod = keyof typeof NATIVE_SERVICES_RPC_SCHEMAS;
 export const NATIVE_SERVICE_METHODS = Object.freeze(
   Object.keys(NATIVE_SERVICES_RPC_SCHEMAS) as NativeServiceMethod[],
@@ -148,6 +221,9 @@ export const NATIVE_SERVICE_METHODS = Object.freeze(
 export function nativeServiceReadOnly(method: NativeServiceMethod): boolean {
   return (
     method === "native.services.assistant.presence.get" ||
+    method === "native.services.assistant.visibility.epoch" ||
+    method === "native.services.assistant.notification.authorize" ||
+    method === "native.services.assistant.workspace.authorize" ||
     method.endsWith(".bridge.describe") ||
     method.endsWith(".desktop.authorize") ||
     method.endsWith(".native.status")

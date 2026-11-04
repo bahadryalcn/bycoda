@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import type { ManagedWorkspace } from "./workspace-contracts";
 import type { StewardWorkspaceServices } from "./stewards";
-import { invalidateHostWorktrees } from "./git-worktrees";
+import { invalidateHostWorktrees } from "./git/git-worktrees";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type { HostEngine } from "./engine";
 import { writerWorkspaceMode } from "./task-workspace-runtime";

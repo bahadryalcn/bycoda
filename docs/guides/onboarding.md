@@ -15,6 +15,19 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
 - Appearance applies Light, Dark or System mode immediately. Still previews show
   the original uncles and Star Wars crew. Users can hide the crew or disable
   decorative animations independently. Existing appearance settings are reused.
+  In Appearance → Translucency, sidebar and main pane opacity are independent;
+  enable Main pane glass to use its opacity. Light mode remains opaque. Windows
+  and macOS also require Window glass; Linux uses Main pane glass to enable the
+  transparent window. If the native window update fails, retry from the setting.
+- Appearance → Backgrounds → Workspace background offers six editable presets,
+  linear, radial and soft-blend styles, three colors, angle and strength. Choose a
+  preset to enable it, then open Customize background to edit it. Changes save
+  automatically and synchronize between windows; turning it off retains the
+  design. The background is drawn inside the app in either theme, behind chat
+  images and live scenes. It temporarily covers desktop translucency without
+  changing the saved glass preferences. Accessibility may hide the artwork while
+  keeping the design saved. Failed saves retain the current design and offer
+  retry; conflicting edits from another window require explicit resolution.
 - Agents checks local Codex, Claude Code and Antigravity installations. Other
   supported providers can be added from a compact selector; ACP configuration
   opens the existing custom-agent editor. Checkboxes control model-picker visibility.

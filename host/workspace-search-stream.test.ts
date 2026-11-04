@@ -6,7 +6,7 @@ vi.mock("node:child_process", async (original) => ({
   ...(await original<typeof import("node:child_process")>()),
   spawn: api.spawn,
 }));
-vi.mock("./git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
+vi.mock("./git/git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
 import { searchHostContent } from "./workspace";
 
 let child: EventEmitter & {

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { VoiceVad, frameFeatures, pcmBase64, resamplePcm } from "./voiceVad";
+import { VoiceVad, decodePcmBase64, frameFeatures, pcmBase64, resamplePcm } from "./voiceVad";
 it("retains a manual turn across long pauses and never commits until the owner finishes", () => {
   const end = vi.fn(),
     pause = vi.fn();
@@ -60,6 +60,18 @@ it("encodes explicit little-endian PCM and resamples hardware rates", () => {
     1, 0, 255, 255, 255, 127, 0, 128,
   ]);
   expect(resamplePcm(new Int16Array(48000), 48000)).toHaveLength(16000);
+});
+
+it("roundtrips a PCM subarray without exposing adjacent samples", () => {
+  const input = new Int16Array([1234, -32768, 32767, -1, 9876]);
+  expect([...decodePcmBase64(pcmBase64(input.subarray(1, 4)))]).toEqual([-32768, 32767, -1]);
+  expect(() => decodePcmBase64(btoa("x"))).toThrow("Invalid speech audio");
+});
+
+it("reuses scratch buffers without carrying prior frame energy into shorter frames", () => {
+  const scratch = { signal: new Float32Array(0), squares: new Float64Array(0) };
+  for (const frame of [voicedFrame(), new Int16Array(32), voicedFrame().subarray(0, 256)])
+    expect(frameFeatures(frame, 16000, scratch)).toEqual(frameFeatures(frame, 16000));
 });
 
 it("asks at a short pause and ends the turn only when the owner commits that pause", () => {

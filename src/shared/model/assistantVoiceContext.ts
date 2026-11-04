@@ -1,6 +1,13 @@
 import { z } from "zod";
 const id = z.string().min(1).max(200),
   counter = z.number().int().nonnegative();
+export const AssistantVoiceRuntimeRegisterSchema = z.strictObject({
+  op: z.literal("voice.runtime.register"),
+  threadId: id,
+  generationKey: id,
+  seedMessageIds: z.array(id).max(6).refine(value => new Set(value).size === value.length),
+  summaryProofId: id.optional(),
+});
 export const AssistantVoiceContextReasonSchema = z.enum([
   "unverified-seed",
   "unverified-summary",
@@ -69,7 +76,9 @@ export const AssistantVoiceContextSchema = z
 /** Authenticated operation subject; this never certifies the returned content's project provenance. */
 export const AssistantVoiceDisclosureSourceSchema = z.strictObject({
   environmentId: id,
-  projectId: id,
+  projectId: id.optional(),
+  accountId: id.optional(),
+  nativeLibrary: z.literal(true).optional(),
   threadId: id,
   sessionId: id.optional(),
   family: z.enum(["conversation", "social", "runtime-logs"]),

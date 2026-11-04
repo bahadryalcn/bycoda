@@ -150,6 +150,7 @@ export type HostWorktree = {
   missing: boolean;
 };
 export type HostSession = {
+  sourceEpoch?: string;
   /** Host observed provider work for this exact run; metadata saves do not refresh it. */
   runActivity?: { runId: string; lastActivityAt: number };
   /** Host-stamped projection for summary rows; client commands cannot set this. */
@@ -229,7 +230,7 @@ export type RemoteAttachment = {
 /** `sessions.sync` sends only the blocks that changed after the client's
  * revision, so a long transcript is not re-downloaded on every poll. */
 export type SessionSync =
-  | { kind: "unchanged"; revision: number }
+  | { kind: "unchanged"; revision: number; sourceEpoch?: string }
   | { kind: "snapshot"; value: HostSession }
   | {
       kind: "delta";
@@ -247,6 +248,7 @@ export type SessionSync =
  * pieces with `sessions.syncChunk`, so every piece describes one revision. */
 export type SessionSyncTransfer = {
   kind: "chunked";
+  sourceEpoch?: string;
   transfer: string;
   /** UTF-16 length of the serialized `SessionSync`. */
   length: number;
@@ -257,6 +259,9 @@ export type SessionSyncResponse = SessionSync | SessionSyncTransfer;
 /** Throws when the delta does not apply to `known`; request a snapshot then. */
 export function applySessionSync(known: HostSession | undefined, sync: SessionSync): HostSession {
   if (sync.kind === "snapshot") return sync.value;
+  const sourceEpoch = sync.kind === "delta" ? sync.value.sourceEpoch : sync.sourceEpoch;
+  if (known?.sourceEpoch !== sourceEpoch)
+    throw new Error("Session sync source changed");
   if (!known || known.revision !== (sync.kind === "delta" ? sync.base : sync.revision))
     throw new Error("Session sync base does not match");
   if (sync.kind === "unchanged") return known;
@@ -301,7 +306,7 @@ export type MachineChangesRequest = {
   subscriptionId?: string;
   tasksKnown?: string;
   instanceId?: string;
-  sessions: { sessionId: string; revision: number }[];
+  sessions: { sessionId: string; revision: number; sourceEpoch?: string }[];
   projects: { projectId: string; known?: string }[];
   /** Checkouts (host paths) whose `.git` the host watches; hosts with `git.watch`. */
   git?: { cwd: string; known?: string }[];
@@ -314,7 +319,7 @@ export type MachineChanges = {
   tasks?: { etag: string };
   instanceId: string;
   reset: boolean;
-  sessions: { sessionId: string; revision: number; deleted?: boolean; sync?: SessionSync }[];
+  sessions: { sessionId: string; revision: number; sourceEpoch?: string; deleted?: boolean; sync?: SessionSync }[];
   projects: {
     projectId: string;
     etag: string;
@@ -345,6 +350,16 @@ export type HostCommand = HostCommandBody & {
   queued?: { id: string; clientId: string; revision: number; selected?: boolean };
 };
 type HostCommandBody =
+  | {
+      type: "regenerateTitle";
+      commandId: string;
+      sessionId: string;
+      expectedTitle: string;
+      harness: RemoteProvider;
+      model: string;
+      modelSettings?: Record<string, string>;
+      providerAccountId?: string;
+    }
   | {
       type: "steer";
       commandId: string;
@@ -378,6 +393,7 @@ type HostCommandBody =
     }
   | {
       type: "configure";
+      expectedRevision?: number;
       providerAccountId?: string | null;
       commandId: string;
       sessionId: string;
@@ -413,6 +429,7 @@ type HostCommandBody =
     }
   | {
       type: "draft";
+      expectedRevision?: number;
       commandId: string;
       sessionId: string;
       text: string;

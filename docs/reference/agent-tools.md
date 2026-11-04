@@ -7,6 +7,10 @@ permissions and target identity. Metadata never grants authority.
 ## Discovery
 
 `tools.search` returns bounded summaries filtered by query, group or family.
+`group` selects a transport (`conversation`, `social`, `runtime-logs`); `family`
+selects an exact domain such as `sessions`, `providers` or `browser`. For free-text
+discovery, use `query` and omit filters when unsure. Invalid groups are rejected
+with allowed values and correction guidance; they never broaden a request.
 `tools.describe` returns complete schemas and management metadata for up to four
 namespaced IDs or exact tool names. Its JSON document may span chunks: concatenate
 `content` in cursor order until `nextCursor` is null before parsing. Cursors are

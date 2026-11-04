@@ -8,8 +8,8 @@ import { HostTasks } from "../tasks";
 import { HostGoals } from "../goals";
 import { HostAssistant } from "./service";
 import { AssistantRepository } from "./repository";
-import { assistantExecutionPorts } from "../assistant-runtime";
-import { assistantDomain } from "../assistant-domain";
+import { assistantExecutionPorts } from "./core/assistant-runtime";
+import { assistantDomain } from "../domains/assistant/service";
 import {
   assistantActiveHours,
   DEFAULT_ASSISTANT_POLICY,

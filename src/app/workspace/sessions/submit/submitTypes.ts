@@ -125,6 +125,7 @@ export interface SubmitPreflight {
 
 /** Values produced by the turn setup phase and consumed by the run/dispatch phases. */
 export interface SubmitSetup {
+  editToken?: symbol;
   traceId: ReturnType<typeof beginSessionPerformanceTrace>;
   gen: number;
   proposalId: string | undefined;

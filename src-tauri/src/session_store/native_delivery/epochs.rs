@@ -636,6 +636,26 @@ pub(crate) fn prepare(
     raw: &str,
     epoch: &EpochHandle,
 ) -> Result<Original, String> {
+    prepare_with_budget(
+        store,
+        semantic_key,
+        route,
+        method,
+        raw,
+        epoch,
+        result_budget(method)?,
+    )
+}
+
+pub(crate) fn prepare_with_budget(
+    store: &SessionStore,
+    semantic_key: &str,
+    route: &str,
+    method: &str,
+    raw: &str,
+    epoch: &EpochHandle,
+    budget: usize,
+) -> Result<Original, String> {
     prepare_inputs(semantic_key, route, method, raw)?;
     runtime(store, epoch)?;
     write(store, |conn| {
@@ -643,29 +663,38 @@ pub(crate) fn prepare(
         if value.route != route {
             return Err(stale());
         }
-        prepare_tx(conn, store, semantic_key, route, method, raw, |conn| {
-            if value.closed {
-                return Err(
+        prepare_tx(
+            conn,
+            store,
+            semantic_key,
+            route,
+            method,
+            raw,
+            budget,
+            |conn| {
+                if value.closed {
+                    return Err(
                     "NATIVE_DELIVERY_EPOCH_CLOSED: this stream cannot allocate another original"
                         .into(),
                 );
-            }
-            if value.host_through != value.local_through {
-                return Err("NATIVE_DELIVERY_EPOCH_UNCONFIRMED: Host floor lacks matching local consumption/retirement evidence".into());
-            }
-            value.high_water = value
-                .high_water
-                .checked_add(1)
-                .filter(|n| *n <= MAX_SAFE)
-                .ok_or_else(capacity)?;
-            save_state(conn, &value, false)?;
-            let id = format!(
-                "nd2:{}:{}:{}",
-                value.owner_id, value.generation, value.high_water
-            );
-            conn.execute("INSERT INTO native_delivery_epoch_allocations VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![id,value.owner_id,value.generation,value.high_water,semantic_key,route,method,value.source_store_id,value.source_profile_id,digest(raw),raw.len() as i64]).map_err(|e|e.to_string())?;
-            Ok(id)
-        })
+                }
+                if value.host_through != value.local_through {
+                    return Err("NATIVE_DELIVERY_EPOCH_UNCONFIRMED: Host floor lacks matching local consumption/retirement evidence".into());
+                }
+                value.high_water = value
+                    .high_water
+                    .checked_add(1)
+                    .filter(|n| *n <= MAX_SAFE)
+                    .ok_or_else(capacity)?;
+                save_state(conn, &value, false)?;
+                let id = format!(
+                    "nd2:{}:{}:{}",
+                    value.owner_id, value.generation, value.high_water
+                );
+                conn.execute("INSERT INTO native_delivery_epoch_allocations VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![id,value.owner_id,value.generation,value.high_water,semantic_key,route,method,value.source_store_id,value.source_profile_id,digest(raw),raw.len() as i64]).map_err(|e|e.to_string())?;
+                Ok(id)
+            },
+        )
     })
 }
 pub(super) fn legacy_allocation_allowed(conn: &Connection, route: &str) -> Result<(), String> {

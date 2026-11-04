@@ -46,7 +46,7 @@ export function startSubmittedTurn(
   const { sessionId, text, options } = input;
   const { current, editedResend, handoffCard, initialWorkCwd, createDraftWorktree, pendingSwitch } =
     pre;
-  const { gen, proposalId, queuedHandoff, launchTitleGeneration, turn } = setup;
+  const { gen, proposalId, queuedHandoff, launchTitleGeneration, turn, editToken } = setup;
   let outgoingRetired = false;
   void (async () => {
     let workCwd = initialWorkCwd;
@@ -247,7 +247,7 @@ export function startSubmittedTurn(
       if (endActiveSubmit(sessionId, gen)) repairStaleHandoff(sessionId);
       if (retiringTurns.current.get(sessionId) === gen) retiringTurns.current.delete(sessionId);
       editedResend?.reject();
-      if (editedResend) editedResends.finish(sessionId);
+      if (editToken) editedResends.finish(sessionId, editToken);
       options?.onSettled?.(
         turnGen.current.get(sessionId) !== gen
           ? { status: "cancelled", text: turn.controlText }

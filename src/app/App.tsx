@@ -95,6 +95,7 @@ import { useOpenSessionActions } from "./workspace/sessions/useOpenSessionAction
 import { useSessionPlacement } from "./workspace/sessions/useSessionPlacement";
 import { useSessionReminderActions } from "./workspace/sessions/useSessionReminderActions";
 import { useSessionRename } from "./workspace/sessions/useSessionRename";
+import { useSessionTitleRegeneration } from "./workspace/sessions/useSessionTitleRegeneration";
 import { useHistorySessionDelete } from "./workspace/sessions/useHistorySessionDelete";
 import { useHistorySessionArchive } from "./workspace/sessions/useHistorySessionArchive";
 import { useHistorySessionMeta } from "./workspace/sessions/useHistorySessionMeta";
@@ -146,7 +147,7 @@ import { shallowArrayEqual } from "../features/sessions/model/stableBlocks";
 import { useHeldValue } from "./workspace/helpers/stableProps";
 import { useProjectBranches } from "../features/source-control/hooks/useProjectBranches";
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
-import { HAS_NATIVE_GLASS, IS_MAC } from "../platform/tauri/platform";
+import { IS_MAC } from "../platform/tauri/platform";
 import { useLinkedWorkspaceGroups } from "../features/projects/hooks/useLinkedWorkspaceGroups";
 import { additionalDirsForSession } from "../features/projects/model/additionalDirs";
 import { setAdditionalDirsResolver } from "../integrations/harness/core/additionalDirs";
@@ -1513,6 +1514,11 @@ function Workspace({
     sidebarCwd,
   });
 
+  const { onRegenerateHistorySessionTitle } = useSessionTitleRegeneration({
+    sessionsRef, setSessions, loadedSessionCache, lastPersisted,
+    invalidateLoadedSession, refreshHistory, sidebarCwd,
+  });
+
   const { checkOpenWorktreeFiles, onCheckWorktreeRemoval, onRemoveWorktree } = useWorktreeRemoval({
     tabsRef,
     projectTerminalsRef,
@@ -1609,7 +1615,7 @@ function Workspace({
     whatsNewVersionRef,
   });
 
-  const { onPinHistorySession, onPinHistorySessions, onSetHistorySessionLinkedWorkItem } =
+  const { onPinHistorySession, onPinHistorySessions, onConfirmedPin, onPreparePin, onSetHistorySessionLinkedWorkItem } =
     useHistorySessionMeta({
       sessionsRef,
       setSessions,
@@ -1917,6 +1923,7 @@ function Workspace({
   submitAfterProjectSyncRef.current = submitSession;
 
   const onStopRef = useRef<(sessionId: string) => void>(() => undefined);
+  const onStopForRoomRef = useRef<(sessionId: string) => Promise<void>>(async () => { throw new Error("Session stop owner unavailable."); });
   const { launchAutomation } = useAutomationLaunch({
     setServersViewOpen,
     appendTab,
@@ -1979,6 +1986,7 @@ function Workspace({
     onDelete: onDeleteHistorySession,
     onSubmit: submitSession,
     onStop: (sessionId) => onStopRef.current(sessionId),
+    onStopForRoom: (sessionId) => onStopForRoomRef.current(sessionId),
   });
   const launchQuickSessionRef = useRef(launchQuickSession);
   launchQuickSessionRef.current = launchQuickSession;
@@ -2102,10 +2110,11 @@ function Workspace({
     lastPersistedUserBlock,
     persistSession,
   });
-  const { onStop } = useSessionStop({
+  const { onStop, onStopForRoom } = useSessionStop({
     sessionsRef,
     setSessions,
     turnGen,
+    retiringTurns,
     flushHarnessEvents,
     deferWorkspaceWork,
     tabsRef,
@@ -2113,6 +2122,7 @@ function Workspace({
     projectTerminalFocusedRef,
     onStopRef,
   });
+  onStopForRoomRef.current = onStopForRoom;
   const {
     onApproval,
     onQuestionReply,
@@ -2149,6 +2159,7 @@ function Workspace({
   });
 
   useAppControlRequests({
+    workspaceActions: voiceApp.workspace,
     launchQuickSessionRef,
     submitSessionRef,
     ensureOpenSessionRef,
@@ -2988,10 +2999,13 @@ function Workspace({
     onPopOutSession: onPopOutSession,
     onOpenSessionsSideBySide: onOpenSessionsSideBySide,
     onRenameSession: onRenameHistorySession,
+    onRegenerateSessionTitle: onRegenerateHistorySessionTitle,
     onArchiveSession: onArchiveHistorySession,
     onArchiveSessions: onArchiveHistorySessions,
     onPinSession: onPinHistorySession,
     onPinSessions: onPinHistorySessions,
+    onConfirmedPin,
+    onPreparePin,
     onSetSessionLinkedWorkItem: onSetHistorySessionLinkedWorkItem,
     onDeleteSession: onDeleteHistorySession,
     onDeleteSessions: onDeleteHistorySessions,
@@ -3093,9 +3107,7 @@ function Workspace({
         <OrchestrationActions.Provider value={orchestrationActions}>
           <OrchestrationWorkers.Provider value={orchestrationWorkers}>
             <div
-              className={`flex h-full flex-col text-content ${
-                HAS_NATIVE_GLASS ? "bg-background-base/40" : "bg-background-base"
-              }`}
+              className="app-canvas flex h-full flex-col text-content"
             >
               {compactTitleBar ? workspaceTitleBar : null}
               {!detachedSessionWindow && <DesktopControlStrip />}
@@ -3152,10 +3164,13 @@ function Workspace({
                       onPopOutSession={sidebarActions.onPopOutSession}
                       onOpenSessionsSideBySide={sidebarActions.onOpenSessionsSideBySide}
                       onRenameSession={sidebarActions.onRenameSession}
+                      onRegenerateSessionTitle={sidebarActions.onRegenerateSessionTitle}
                       onArchiveSession={sidebarActions.onArchiveSession}
                       onArchiveSessions={sidebarActions.onArchiveSessions}
                       onPinSession={sidebarActions.onPinSession}
                       onPinSessions={sidebarActions.onPinSessions}
+                      onConfirmedPin={sidebarActions.onConfirmedPin}
+                      onPreparePin={sidebarActions.onPreparePin}
                       onSetSessionLinkedWorkItem={sidebarActions.onSetSessionLinkedWorkItem}
                       reminders={sessionReminders.reminders}
                       onSetReminders={sessionReminders.schedule}

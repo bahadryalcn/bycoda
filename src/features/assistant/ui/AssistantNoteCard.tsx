@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { AssistantNote } from "../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../shared/ui/Button";
+import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import styles from "./AssistantNoteCard.module.css";
 
 /** Presentation only: Room keeps mutation identity, confirmation and recovery. */
@@ -25,7 +26,7 @@ export function AssistantNoteCard({
         </h3>
         <div className={styles.actions}>{actions}</div>
       </div>
-      <time className={styles.date} dateTime={new Date(note.updatedAt).toISOString()}>
+      <time className={styles.date} dateTime={isoTimestamp(note.updatedAt)}>
         {updatedAt}
       </time>
       {note.body && <p className={styles.excerpt}>{note.body}</p>}

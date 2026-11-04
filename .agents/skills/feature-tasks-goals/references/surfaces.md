@@ -13,7 +13,7 @@ Paths are repository-root relative. Search the named task/goal/sprint/steward ac
   clears it on new output/input waits/attempt changes, and checks the unchanged row
   across reads. `model/taskStatusLine.ts` supplies the warning to card/list/detail;
   unknown legacy timestamps do not prove stalled work.
-- Assistant follow-up badges: `host/assistant-task-metadata.ts` reads canonical
+- Assistant follow-up badges: `host/assistant/work/assistant-task-metadata.ts` reads canonical
   task/job/session delivery receipts; `host/tasks.ts` caches their projection by
   revision and source membership and includes it in the machine-change ETag.
   `AssistantTaskBadge.tsx` serves board and list. Unknown delivery stays separate;

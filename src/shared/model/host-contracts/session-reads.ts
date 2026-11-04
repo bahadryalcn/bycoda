@@ -15,6 +15,7 @@ export const SessionsPageParamsSchema = z.strictObject({
 });
 export const SessionsSyncParamsSchema = z.strictObject({
   sessionId: IdentifierSchema,
+  sourceEpoch: IdentifierSchema.optional(),
   preview: z.boolean().optional(),
   revision: SafeCounterSchema.optional(),
   waitMs: SafeCounterSchema.max(30_000).optional(),
@@ -48,6 +49,7 @@ const history = z.strictObject({
   totalBlocks: SafeCounterSchema,
 });
 const metadata = {
+  sourceEpoch: IdentifierSchema.optional(),
   authorityGeneration: SafeCounterSchema.min(1).optional(),
   history: history.optional(),
   historyLoading: z.boolean().optional(),
@@ -127,7 +129,7 @@ export const SessionsListResultSchema = z.union([
   z.strictObject({ etag: z.string(), sessions: z.array(SessionSummarySchema) }),
 ]);
 export const SessionSyncSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("unchanged"), revision: SafeCounterSchema }),
+  z.strictObject({ kind: z.literal("unchanged"), revision: SafeCounterSchema, sourceEpoch: IdentifierSchema.optional() }),
   z.strictObject({ kind: z.literal("snapshot"), value: SessionViewSchema }),
   z.strictObject({
     kind: z.literal("delta"),
@@ -144,6 +146,7 @@ export const SessionSyncSchema = z.discriminatedUnion("kind", [
 ]);
 export const SessionSyncTransferSchema = z.strictObject({
   kind: z.literal("chunked"),
+  sourceEpoch: IdentifierSchema.optional(),
   transfer: IdentifierSchema,
   length: SafeCounterSchema,
 });

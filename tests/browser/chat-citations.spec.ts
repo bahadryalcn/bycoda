@@ -204,6 +204,56 @@ for (const width of [1280, 800]) {
   }
 }
 
+for (const width of [1280, 800]) {
+  for (const theme of ["dark", "light"]) {
+    test(`compact citation preview preserves full text: ${theme} ${width}`, async ({ page }) => {
+      const directory = "temp/verification/citation-preview-2026-11-04";
+      await mkdir(directory, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat-citations.html?theme=${theme}`);
+      await addCitation(page, "");
+      const composer = page.getByTestId("composer-pane");
+      const reference = composer.getByRole("button", { name: quote, exact: true });
+      await expect(reference).toHaveText("Seçilen metni kaynak mesajıyla birlikte alıntı…");
+      await composer.getByRole("button", { name: "Copy quote", exact: true }).click();
+      await expect.poll(() => page.evaluate(() => window.fixtureCopiedText)).toBe(quote);
+      await composer.screenshot({ path: `${directory}/${theme}-${width}-quote.png` });
+
+      await composer.getByRole("button", { name: "Edit citation comment", exact: true }).click();
+      const edit = page.getByRole("dialog", { name: "Edit citation comment", exact: true });
+      await expect(edit.locator("blockquote")).toHaveText(quote);
+      const longComment = "W".repeat(240);
+      await edit.getByLabel("Comment (optional)", { exact: true }).fill(longComment);
+      await edit.getByRole("button", { name: "Save comment", exact: true }).click();
+      const longReference = composer.getByRole("button", { name: longComment, exact: true });
+      await expect(longReference).toHaveText("W".repeat(79) + "…");
+      const row = longReference.locator("..");
+      expect(
+        await row.evaluate((element) => element.scrollWidth - element.clientWidth),
+      ).toBeLessThanOrEqual(1);
+      const rowBox = (await row.boundingBox())!;
+      const copyBox = (await composer
+        .getByRole("button", { name: "Copy quote", exact: true })
+        .boundingBox())!;
+      expect(copyBox.x).toBeGreaterThanOrEqual(rowBox.x);
+      expect(copyBox.x + copyBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+      await composer.screenshot({ path: `${directory}/${theme}-${width}-long-comment.png` });
+      await composer.getByRole("button", { name: "Send", exact: true }).click();
+      const sent = page.locator(".user-message-bubble").filter({
+        has: page.locator('[data-selectable-agent-response="citation-sent"]'),
+      });
+      const sentReference = sent.getByRole("button", { name: longComment, exact: true });
+      await expect(sentReference).toHaveText("W".repeat(79) + "…");
+      await sent.getByRole("button", { name: "Quoted reply", exact: true }).click();
+      await expect(page.locator("blockquote")).toHaveText(quote);
+      await expect(page.getByText(longComment, { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await sent.screenshot({ path: `${directory}/${theme}-${width}-sent.png` });
+    });
+  }
+}
+
 test("citation submit retains exact quote and comment, changed source remains readable", async ({
   page,
 }) => {

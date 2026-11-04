@@ -35,7 +35,7 @@ function fixture() {
   return { home, cwd };
 }
 
-it("migrates legacy preferences once, preserves other restrictions and re-enables without changing providers", () => {
+it("migrates legacy preferences once, preserves other restrictions and re-enables without changing providers", async () => {
   const { home, cwd } = fixture();
   const path = join(cwd, ".agents/skills/good-css/SKILL.md");
   expect(migrateSkillPolicy([path], home).disabledNames).toEqual(["good-css"]);
@@ -46,9 +46,9 @@ it("migrates legacy preferences once, preserves other restrictions and re-enable
 
 it("enforces changes immediately across search, exact reads, alternative copies and prompt expansion", async () => {
   const { home, cwd } = fixture();
-  expect(searchHarnessSkills(cwd, {}, home).skills).toHaveLength(2);
+  expect((await searchHarnessSkills(cwd, {}, home)).skills).toHaveLength(2);
   setSkillEnabled("good-css", false, home);
-  expect(searchHarnessSkills(cwd, {}, home).skills).toEqual([]);
+  expect((await searchHarnessSkills(cwd, {}, home)).skills).toEqual([]);
   for (const scope of ["project", "user"])
     await expect(readHarnessSkill(cwd, { name: "good-css", scope }, home)).rejects.toThrow(
       "disabled",
@@ -63,7 +63,7 @@ it("enforces changes immediately across search, exact reads, alternative copies 
 it("keeps provider-disabled skills blocked when bycoda allows them", async () => {
   const { home, cwd } = fixture();
   reportSessionCommands("skill-policy-test", [{ kind: "skill", name: "good-css", enabled: false }]);
-  expect(searchHarnessSkills(cwd, {}, home, "skill-policy-test").skills).toEqual([]);
+  expect((await searchHarnessSkills(cwd, {}, home, "skill-policy-test")).skills).toEqual([]);
   await expect(
     readHarnessSkill(cwd, { name: "good-css" }, home, "skill-policy-test"),
   ).rejects.toThrow("disabled");
@@ -77,7 +77,7 @@ it("preserves an alternative explicitly enabled by the provider without reading 
     { kind: "skill", name: "good-css", path: projectPath, enabled: false },
     { kind: "skill", name: "good-css", path: userPath, enabled: true },
   ]);
-  const found = searchHarnessSkills(cwd, {}, home, "skill-policy-test");
+  const found = (await searchHarnessSkills(cwd, {}, home, "skill-policy-test"));
   expect(found.skills).toHaveLength(1);
   expect(found.skills[0].scope).toBe("user");
   expect((await readHarnessSkill(cwd, { name: "good-css" }, home, "skill-policy-test")).scope).toBe(
@@ -91,7 +91,7 @@ it("preserves an alternative explicitly enabled by the provider without reading 
   );
 });
 
-it("fails closed on corrupt persistent state and rejects tool-pattern injection", () => {
+it("fails closed on corrupt persistent state and rejects tool-pattern injection", async () => {
   const { home } = fixture();
   saveSkillPolicy({ disabledNames: [], disabledPaths: [] }, home);
   expect(() => setSkillEnabled("*", false, home)).toThrow();
@@ -114,7 +114,7 @@ it.skipIf(process.platform === "win32")(
   },
 );
 
-it("reports a failed policy replacement without deleting the existing target", () => {
+it("reports a failed policy replacement without deleting the existing target", async () => {
   const { home } = fixture();
   const target = join(home, ".bycoda-host", "skill-policy.json");
   mkdirSync(target, { recursive: true });
@@ -125,7 +125,7 @@ it("reports a failed policy replacement without deleting the existing target", (
   expect(readFileSync(join(target, "evidence"), "utf8")).toBe("keep");
 });
 
-it("does not overwrite or remove another process's preference lock", () => {
+it("does not overwrite or remove another process's preference lock", async () => {
   const { home } = fixture();
   saveSkillPolicy({ disabledNames: ["keep"], disabledPaths: [] }, home);
   const lock = join(home, ".bycoda-host", "skill-policy.lock");
@@ -135,7 +135,7 @@ it("does not overwrite or remove another process's preference lock", () => {
   expect(() => setSkillEnabled("keep", true, home)).toThrow("in progress");
 });
 
-it("preserves a live SQLite lock and recovers its initialized marker after the holder exits", () => {
+it("preserves a live SQLite lock and recovers its initialized marker after the holder exits", async () => {
   const { home } = fixture();
   saveSkillPolicy({ disabledNames: ["keep"], disabledPaths: [] }, home);
   const dir = join(home, ".bycoda-host");
@@ -151,7 +151,7 @@ it("preserves a live SQLite lock and recovers its initialized marker after the h
   expect(setSkillEnabled("synthetic", false, home).disabledNames).toEqual(["keep", "synthetic"]);
 });
 
-it("recovers after an isolated process exits abruptly while holding the updated lock", () => {
+it("recovers after an isolated process exits abruptly while holding the updated lock", async () => {
   const { home } = fixture();
   saveSkillPolicy({ disabledNames: ["keep"], disabledPaths: [] }, home);
   execFileSync(
@@ -189,7 +189,7 @@ it("requires an owner invocation for manual-only skills and preserves automatic-
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SKILL.md"), `---\n${flag}\n---\n${name} instructions`);
   }
-  expect(searchHarnessSkills(cwd, { query: "manual" }, home).skills).toEqual([]);
+  expect((await searchHarnessSkills(cwd, { query: "manual" }, home)).skills).toEqual([]);
   await expect(readHarnessSkill(cwd, { name: "manual" }, home)).rejects.toThrow("disabled");
   expect(
     (await readHarnessSkill(cwd, { name: "manual" }, home, undefined, ["manual"])).text,

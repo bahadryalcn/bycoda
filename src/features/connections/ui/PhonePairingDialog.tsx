@@ -200,6 +200,9 @@ export function PhonePairingDialog({
 
         {state.stage === "access" ? (
           <div className="flex flex-col gap-4">
+            {localNetwork && state.access.reason ? (
+              <InlineMessage tone="info">{t(state.access.reason)}</InlineMessage>
+            ) : null}
             {state.access.state === "ready" ? (
               <>
                 <p className="text-ui-secondary leading-relaxed text-(--ui-text-muted)">

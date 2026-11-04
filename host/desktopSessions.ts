@@ -1,3 +1,4 @@
+import { SessionReadProcesses } from "./session-read-process";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
@@ -10,7 +11,10 @@ import type {
 } from "../src/features/connections/model/protocol";
 import type { Block, Session } from "../src/features/sessions/model/session";
 import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
-import { isTurnInterruptionNotice } from "../src/features/sessions/model/turnInterruption";
+import {
+  isOwnerStoppedTurn,
+  isTurnInterruptionNotice,
+} from "../src/features/sessions/model/turnInterruption";
 import { assistantSessionManagement } from "../src/features/sessions/model/sessionProvenance";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "./host-notes-async";
@@ -270,6 +274,7 @@ export class DesktopSessions {
   private handles = new Map<string, Handle>();
   private metadataReader?: AsyncHostNotes;
   private transcriptReader?: AsyncHostNotes;
+  private readonly sessionReadProcesses = new SessionReadProcesses();
   /** Single-session point reads (stamp, metadata, reference) have their own
    * worker: they must not wait behind a project-list fan-out. */
   private pointReader?: AsyncHostNotes;
@@ -405,6 +410,7 @@ export class DesktopSessions {
   /** Releases every cached connection (host shutdown). */
   close(): void {
     this.metadataGeneration++;
+    void this.sessionReadProcesses.close().catch(() => undefined);
     this.metadataFlights.clear();
     this.metadataKeys.clear();
     this.listMetadataCache.clear();
@@ -536,21 +542,27 @@ export class DesktopSessions {
               "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_block_state'",
             )
             .get();
-          const last =
+          const tail =
             normalized &&
-            db.prepare("SELECT 1 FROM session_block_state WHERE session_id=?").get(String(row.id))
+            db
+              .prepare("SELECT 1 FROM session_block_state WHERE session_id=? AND length>=0")
+              .get(String(row.id))
               ? db
                   .prepare(
-                    "SELECT block_json FROM session_blocks WHERE session_id=? ORDER BY ordinal DESC LIMIT 1",
+                    "SELECT block_json FROM session_blocks WHERE session_id=? ORDER BY ordinal DESC LIMIT 2",
                   )
-                  .get(String(row.id))?.block_json
-              : db
-                  .prepare(
-                    "SELECT CASE WHEN json_valid(blocks_json) THEN json_extract(blocks_json, '$[#-1]') END AS block FROM sessions WHERE id=?",
-                  )
-                  .get(String(row.id))?.block;
-          const marker = typeof last === "string" ? parse(last) : undefined;
-          row.interrupted = isTurnInterruptionNotice(marker);
+                  .all(String(row.id))
+                  .reverse()
+                  .map((block) => parse(block.block_json))
+              : (parse(
+                  db
+                    .prepare(
+                      "SELECT CASE WHEN json_valid(blocks_json) THEN json_extract(blocks_json, '$[#-2]', '$[#-1]') END AS blocks FROM sessions WHERE id=?",
+                    )
+                    .get(String(row.id))?.blocks,
+                ) ?? []);
+          row.interrupted =
+            !isOwnerStoppedTurn(tail) && isTurnInterruptionNotice(tail[tail.length - 1]);
         }
         if (meta) this.readTranscriptFacts(db, row, transcriptView);
         else if (
@@ -997,8 +1009,17 @@ export class DesktopSessions {
   }
 
   /** Polling caches only database rows; heartbeat authority is evaluated after every await. */
-  async stampAsync(id: string, maxAgeMs = 0) {
+  async stampAsync(id: string, maxAgeMs = 0, signal?: AbortSignal) {
     const generation = this.metadataGeneration;
+    if (signal) {
+      const rows = await this.sessionReadProcesses.read<DesktopStampRow[]>(
+        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "stamp", sessionId: id }, signal,
+      );
+      this.assertReadGeneration(generation);
+      signal.throwIfAborted();
+      return this.stampFromRows(id, rows);
+    }
+    
     const now = Date.now();
     const cached = this.stamps.get(id);
     if (cached && now - cached.at < maxAgeMs) return this.stampFromRows(id, cached.rows);
@@ -1102,7 +1123,16 @@ export class DesktopSessions {
     return found ? String(found.row.cwd) : undefined;
   }
 
-  async projectCwdAsync(id: string): Promise<string | undefined> {
+  async projectCwdAsync(id: string, signal?: AbortSignal): Promise<string | undefined> {
+    if (signal) {
+      const generation = this.metadataGeneration;
+      const record = await this.sessionReadProcesses.read<DesktopMetadataRecord | undefined>(
+        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "metadata", sessionId: id }, signal,
+      );
+      this.assertReadGeneration(generation);
+      signal.throwIfAborted();
+      return record?.cwd;
+    }
     return (await this.metadataAsync(id))?.cwd;
   }
 
@@ -1267,8 +1297,30 @@ export class DesktopSessions {
     id: string,
     projectId: string,
     expectedProjectCwd?: string,
+    signal?: AbortSignal,
   ): Promise<HostSession | undefined> {
     const generation = this.metadataGeneration;
+    if (signal) {
+      const record = await this.sessionReadProcesses.read<DesktopSnapshotRecord | undefined>(
+        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "snapshot", sessionId: id, projectId, expectedProjectCwd }, signal,
+      );
+      this.assertReadGeneration(generation);
+      signal.throwIfAborted();
+      if (!record) return undefined;
+      const rows = await this.sessionReadProcesses.read<DesktopStampRow[]>(
+        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "stamp", sessionId: id }, signal,
+      );
+      const owner = rows.reduce<DesktopStampRow | undefined>((old, row) =>
+        !old || ownsBefore(row.createdAt, old.createdAt) ? row : old, undefined);
+      this.assertReadGeneration(generation);
+      signal.throwIfAborted();
+      if (!owner || owner.updatedAt !== record.value.revision ||
+          (owner.createdAt || owner.updatedAt) !== record.value.createdAt)
+        throw new Error("Desktop session source changed while reading.");
+      const running = this.isRunning(id, record.stored);
+      const { busy: _busy, ...session } = record.value.session;
+      return { ...record.value, status: running ? "running" : "idle", session: { ...session, ...(running ? { busy: true } : {}) } };
+    }
     const key = JSON.stringify([id, projectId, expectedProjectCwd]);
     let flight = this.snapshotFlights.get(key);
     if (!flight) {

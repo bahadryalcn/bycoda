@@ -8,8 +8,8 @@ import {
 } from "./native-devices";
 import { exportWireSchema, getHostRpcMethod, hostRpcHasEffect } from "./index";
 
-it("keeps lifecycle and mobile preview lists separate from the exact Native helper nine", () => {
-  expect(NATIVE_DEVICE_METHODS).toHaveLength(9);
+it("keeps lifecycle and mobile preview lists separate from Native device methods", () => {
+  expect(NATIVE_DEVICE_METHODS).toHaveLength(14);
   expect(DEVICE_LIFECYCLE_METHODS).toEqual(["devices.setup", "devices.stop"]);
   expect(MOBILE_DEVICE_PREVIEW_METHODS).toEqual([
     "devices.preview.mobile.start",

@@ -13,6 +13,13 @@ export type NativeControlInvoke = <T>(
   args?: Record<string, unknown>,
 ) => Promise<T>;
 
+/** Exact native page and durable logical-session claim captured for this turn. */
+export type NativeSessionCapability = Readonly<{
+  shellId: string;
+  operationId: string;
+  pageToken: string;
+}>;
+
 declare const controlTurnBrand: unique symbol;
 export type ControlTurnHandle = Readonly<{
   sessionId: string;
@@ -24,6 +31,7 @@ type Phase = "authorizing" | "unknown" | "ready" | "finishing" | "failed" | "fin
 type Original = {
   readonly handle: ControlTurnHandle;
   readonly invoke: NativeControlInvoke;
+  readonly nativeSessionCapability?: NativeSessionCapability;
   receipt?: NativeControlTurnReceipt;
   phase: Phase;
   finish?: Promise<void>;
@@ -79,6 +87,10 @@ function originalFor(state: Keeper, handle: ControlTurnHandle): Original {
   return original;
 }
 
+export function nativeSessionCapability(handle: ControlTurnHandle): NativeSessionCapability | undefined {
+  return originalFor(available(), handle).nativeSessionCapability;
+}
+
 /** Exact immutable source correlation for a fresh process bind; it grants no currentness. */
 export function nativeControlTurnReceipt(handle: ControlTurnHandle): NativeControlTurnReceipt {
   let original: Original;
@@ -127,6 +139,7 @@ export async function beginNativeControlTurn(
   cwd: string,
   appAccess: boolean,
   invokeFn: NativeControlInvoke,
+  nativeSessionCapability?: NativeSessionCapability,
 ): Promise<ControlTurnHandle> {
   if (
     typeof sessionId !== "string" ||
@@ -147,7 +160,9 @@ export async function beginNativeControlTurn(
   if (state.active.size >= NATIVE_CONTROL_TURN_CAPACITY)
     throw new Error("Native control turn capacity is held by unfinished or unconfirmed work.");
   const handle = Object.freeze({ sessionId }) as ControlTurnHandle;
-  const original: Original = { handle, invoke: invokeFn, phase: "authorizing" };
+  if (nativeSessionCapability && nativeSessionCapability.shellId !== sessionId)
+    throw new Error("Native session capability belongs to another session.");
+  const original: Original = { handle, invoke: invokeFn, nativeSessionCapability, phase: "authorizing" };
   // Reserve before any effect; terminal failures release the local slot.
   state.handles.set(handle, original);
   state.active.add(original);

@@ -18,7 +18,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `src/features/connections/ui/QuickConnect.tsx`, `SshServerEditor.tsx`, `SshIdentityField.tsx`, `SshSettings.tsx`: configuration and trust/identity.
 - `src/features/connections/ui/ServersTerminalWorkspace.tsx` and restore controls: tabs, focus and explicit reconnect.
 - `src/features/connections/model/serverInventory.ts`, `serverTerminalRestoreState.ts`, `src/features/terminal/model/terminalClose.ts`: state and lifetime boundaries.
-- `host/conversation-server-tools.ts`, `src-tauri/src/conversation_servers.rs`, `src-tauri/src/conversation_ssh_execution.rs`: agent inventory tools and separately approved, conversation-owned SSH commands.
+- `host/conversation/conversation-server-tools.ts`, `src-tauri/src/conversation_servers.rs`, `src-tauri/src/conversation_ssh_execution.rs`: agent inventory tools and separately approved, conversation-owned SSH commands.
 
 ## Preserve
 

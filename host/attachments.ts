@@ -3,7 +3,7 @@ import { join, basename, dirname, resolve } from "node:path";
 import type { Attachment } from "../src/features/sessions/model/session";
 import type { RemoteAttachment } from "../src/features/connections/model/protocol";
 import type { HostStore } from "./store";
-import { mkdir, open, readdir, type FileHandle } from "node:fs/promises";
+import { mkdir, open, readdir, stat, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { parseBrowserAnnotation } from "../src/shared/lib/browserAnnotation";
 // Reads, status hashes and writes of the same file observe a single ordered stream.
@@ -53,7 +53,7 @@ async function readExactly(handle: FileHandle, bytes: Buffer, offset: number): P
     read += result.bytesRead;
   }
 }
-export async function attachmentUploadStatus(store: HostStore, input: Record<string, unknown>) {
+export async function attachmentUploadStatus(store: HostStore, input: Record<string, unknown>, before?: () => Promise<void>) {
   const path = attachmentPath(store, String(input.id ?? ""));
   if (
     !Number.isSafeInteger(input.size) ||
@@ -62,6 +62,7 @@ export async function attachmentUploadStatus(store: HostStore, input: Record<str
   )
     throw new Error("Invalid attachment size");
   return serializeAttachment(path, async () => {
+    await before?.();
     let handle: FileHandle;
     try {
       handle = await open(path, "r");
@@ -99,6 +100,7 @@ export function attachmentPath(store: HostStore, id: string): string {
 export async function writeAttachmentChunk(
   store: HostStore,
   input: Record<string, unknown>,
+  before?: () => Promise<void>,
 ): Promise<{
   offset: number;
 }> {
@@ -122,6 +124,7 @@ export async function writeAttachmentChunk(
   if (byteLength > MAX_CHUNK_BYTES || Number(offset) + byteLength > Number(size))
     throw new Error("Invalid attachment chunk size");
   return serializeAttachment(path, async () => {
+    await before?.();
     const bytes = Buffer.from(encoded, "base64");
     await mkdir(store.attachmentDir, { recursive: true, mode: 0o700 });
     let handle: FileHandle;
@@ -201,6 +204,15 @@ export function resolveAttachments(store: HostStore, refs: RemoteAttachment[]): 
     if (statSync(path).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
     return { ...ref, path };
   });
+}
+/** Question replies may contain many files; do not block the Host event loop on stat. */
+export async function resolveQuestionAttachments(store: HostStore, refs: RemoteAttachment[]): Promise<Attachment[]> {
+  return Promise.all(refs.map(async (ref) => {
+    const path = attachmentPath(store, ref.id);
+    touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
+    if ((await stat(path)).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
+    return { ...ref, path };
+  }));
 }
 /** Reads only an attachment already accepted into this session. Paths supplied
  * by the client are never used, and each response stays below the RPC cap. */

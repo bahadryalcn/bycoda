@@ -29,7 +29,7 @@ beforeEach(() => {
 
 it("hides without a password, preserves membership and survives a restart", async () => {
   const model = await import("./groupLock");
-  expect(model.hideGroup("personal")).toBe(true);
+  expect(await model.hideGroup("personal")).toBe(true);
   expect(model.visibleProjects(["/personal", "/work"], (path) => path)).toEqual(["/work"]);
   expect(model.getGroupLockView().hiddenGroupIds.has("personal")).toBe(true);
   expect(
@@ -38,9 +38,19 @@ it("hides without a password, preserves membership and survives a restart", asyn
   vi.resetModules();
   const restarted = await import("./groupLock");
   expect(restarted.isProjectLocked("/personal")).toBe(true);
-  expect(restarted.restoreHiddenGroup("personal")).toBe(true);
+  expect(await restarted.restoreHiddenGroup("personal")).toBe(true);
   expect(restarted.isProjectLocked("/personal")).toBe(false);
   expect(JSON.parse(localStorage.getItem(HIDDEN_KEY)!)).toEqual([]);
+});
+
+it("remembers an unlocked group across restart when relock on launch is disabled", async () => {
+  const model = await import("./groupLock");
+  await model.setLockPassword("correct-password");
+  expect(model.setRelockOnLaunch(false)).toBe(true);
+  expect((await model.unlockGroup("work", "correct-password")).ok).toBe(true);
+  expect(model.isProjectLocked("/work")).toBe(false);
+  vi.resetModules();
+  expect((await import("./groupLock")).isProjectLocked("/work")).toBe(false);
 });
 
 it("keeps the old password when persisting a replacement fails", async () => {
@@ -65,13 +75,13 @@ it("keeps the old password when persisting a replacement fails", async () => {
 
 it("temporary restoration hides again at restart and when locking all groups", async () => {
   const model = await import("./groupLock");
-  model.hideGroup("personal");
-  expect(model.restoreHiddenGroup("personal", true)).toBe(true);
+  await model.hideGroup("personal");
+  expect(await model.restoreHiddenGroup("personal", true)).toBe(true);
   expect(model.isProjectLocked("/personal")).toBe(false);
   expect(JSON.parse(localStorage.getItem(HIDDEN_KEY)!)).toEqual(["personal"]);
-  model.lockAllGroups();
+  await model.lockAllGroups();
   expect(model.isProjectLocked("/personal")).toBe(true);
-  model.restoreHiddenGroup("personal", true);
+  await model.restoreHiddenGroup("personal", true);
   vi.resetModules();
   expect((await import("./groupLock")).isProjectLocked("/personal")).toBe(true);
 });
@@ -80,17 +90,17 @@ it("requires verification and restores only the chosen group with unlock-all ena
   const model = await import("./groupLock");
   await model.setLockPassword("correct-password");
   model.setUnlockAll(true);
-  model.hideGroup("personal");
-  expect(model.restoreHiddenGroup("personal")).toBe(false);
+  await model.hideGroup("personal");
+  expect(await model.restoreHiddenGroup("personal")).toBe(false);
   expect((await model.authorizeHiddenGroups("incorrect-password")).ok).toBe(false);
   expect(model.getGroupLockView().hiddenGroupsAuthorized).toBe(false);
   expect((await model.authorizeHiddenGroups("correct-password")).ok).toBe(true);
-  expect(model.restoreHiddenGroup("personal", true)).toBe(true);
+  expect(await model.restoreHiddenGroup("personal", true)).toBe(true);
   expect(model.isProjectLocked("/personal")).toBe(false);
   expect(model.isProjectLocked("/work")).toBe(true);
-  model.lockAllGroups();
+  await model.lockAllGroups();
   expect(model.getGroupLockView().hiddenGroupsAuthorized).toBe(false);
-  expect(model.restoreHiddenGroup("personal")).toBe(false);
+  expect(await model.restoreHiddenGroup("personal")).toBe(false);
 });
 
 it("updates hidden state from another window and ignores deleted group ids", async () => {
@@ -139,23 +149,23 @@ it("mirrors temporary visibility and re-hiding through the window channel", asyn
 
 it("keeps hidden preferences after password recovery and conceals temporary groups", async () => {
   const model = await import("./groupLock");
-  model.hideGroup("personal");
-  model.restoreHiddenGroup("personal", true);
-  model.resetForgottenPassword();
+  await model.hideGroup("personal");
+  await model.restoreHiddenGroup("personal", true);
+  await model.resetForgottenPassword();
   expect(model.isProjectLocked("/personal")).toBe(true);
-  expect(model.restoreHiddenGroup("personal")).toBe(true);
+  expect(await model.restoreHiddenGroup("personal")).toBe(true);
 });
 
 it("hiding alone does not prevent background execution, while explicit password locks do", async () => {
   const model = await import("./groupLock");
-  model.hideGroup("personal");
+  await model.hideGroup("personal");
   expect(model.isProjectLocked("/personal")).toBe(true);
   expect(model.isProjectPasswordLocked("/personal")).toBe(false);
   await model.setLockPassword("correct-password");
-  model.makeGroupLockable("work");
-  model.hideGroup("work");
+  await model.makeGroupLockable("work");
+  await model.hideGroup("work");
   expect(model.isProjectPasswordLocked("/work")).toBe(false);
-  model.lockGroup("work");
+  await model.lockGroup("work");
   expect(model.isProjectPasswordLocked("/work")).toBe(true);
 });
 
@@ -168,7 +178,7 @@ it("does not claim success when persistence fails", async () => {
       throw new Error("quota");
     },
   });
-  expect(model.hideGroup("personal")).toBe(false);
+  expect(await model.hideGroup("personal")).toBe(false);
   expect(model.isProjectLocked("/personal")).toBe(false);
 });
 
@@ -202,7 +212,7 @@ it("does not mark a group lockable or unlock it when the flag cannot be saved", 
   await model.setLockPassword("correct-password");
   const write = failWrites((key) => key === "bycoda.projectGroups");
   try {
-    expect(model.makeGroupLockable("personal")).toBe(false);
+    expect(await model.makeGroupLockable("personal")).toBe(false);
   } finally {
     write.mockRestore();
   }
@@ -211,7 +221,7 @@ it("does not mark a group lockable or unlock it when the flag cannot be saved", 
       (group: { id: string }) => group.id === "personal",
     ).lockable,
   ).toBeUndefined();
-  expect(model.makeGroupLockable("personal")).toBe(true);
+  expect(await model.makeGroupLockable("personal")).toBe(true);
 });
 
 it("reports a group lock removal whose flag was not saved without losing the lock", async () => {
@@ -249,12 +259,12 @@ it("keeps the password when its removal cannot be saved and reports a partial re
 
   const groupsWrite = failWrites((key) => key === "bycoda.projectGroups");
   try {
-    expect(model.resetForgottenPassword()).toBe("partial");
+    expect(await model.resetForgottenPassword()).toBe("partial");
   } finally {
     groupsWrite.mockRestore();
   }
   expect(model.getGroupLockView().hasPassword).toBe(false);
   expect(JSON.parse(localStorage.getItem("bycoda.projectGroups")!)[1].lockable).toBe(true);
   // Projects stay in their groups; only the saved lock flag is left to review.
-  expect(model.resetForgottenPassword()).toBe("complete");
+  expect(await model.resetForgottenPassword()).toBe("complete");
 });

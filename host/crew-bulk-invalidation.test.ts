@@ -10,7 +10,7 @@ import { HostEngine } from "./engine";
 import { HostCrews } from "./crews";
 import { DesktopSessions } from "./desktopSessions";
 import { ModelCatalogCache } from "./model-catalog-cache";
-import * as images from "./social-images";
+import * as images from "./social/social-images";
 import { createHostServer } from "./server";
 import { BulkDescriptorSchema, WS_SUBPROTOCOL } from "../src/shared/model/host-contracts";
 import {

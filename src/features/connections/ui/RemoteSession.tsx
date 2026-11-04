@@ -900,7 +900,7 @@ function ConnectedRemoteSession({
               machine.id,
               () => ({
                 active: { projectId: project.projectId, sessionId, lastActiveAt },
-                sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0 }],
+                sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0, sourceEpoch: snapshotRef.current?.sourceEpoch }],
                 inlineSync:
                   visibleRef.current &&
                   !document.hidden &&
@@ -909,13 +909,15 @@ function ConnectedRemoteSession({
                   !snapshotRef.current.history &&
                   !snapshotRef.current.historyLoading,
               }),
-              (changes, application) => {
+              async (changes, application) => {
                 if (stale() || application?.isCurrent() === false) return;
                 const recoveredControlChannel = controlChannelFailed;
                 if (controlChannelFailed) {
                   controlChannelFailed = false;
                 }
                 const hint = changes.sessions.find((entry) => entry.sessionId === sessionId);
+                const sourceChanged = !!hint?.sourceEpoch && !!snapshotRef.current &&
+                  hint.sourceEpoch !== snapshotRef.current.sourceEpoch;
                 if (hint?.deleted) {
                   deletedOnHost = true;
                   bindingGen.markDeleted(bindingKey);
@@ -935,16 +937,19 @@ function ConnectedRemoteSession({
                   setError(t("This conversation was deleted on the host."));
                   return;
                 }
-                if (changes.reset) {
+                if (changes.reset || sourceChanged) {
                   ownerResetGeneration++;
                   forceTailRead.current = true;
                   historyPageRequest.current = null;
                   snapshotRef.current = undefined;
+                  cachedSessionSnapshots.delete(snapshotKey(machine.id, sessionId));
+                  await deleteRemotePageCache({ environmentId: machine.environmentId, sessionId });
+                  if (stale() || application?.isCurrent() === false) return;
                   setRemoteHistoryLoading(false);
                 }
                 const current = snapshotRef.current;
                 if (
-                  !changes.reset &&
+                  !changes.reset && !sourceChanged &&
                   !recoveredControlChannel &&
                   failed === 0 &&
                   visibleRef.current &&
@@ -997,6 +1002,7 @@ function ConnectedRemoteSession({
                 const ownerReadNeeded =
                   recoveredControlChannel ||
                   changes.reset ||
+                  sourceChanged ||
                   // A content request can fail while the control lane stays
                   // healthy. An unchanged host has no revision hint to wake us.
                   failed > 0 ||
@@ -3308,6 +3314,9 @@ function ConnectedRemoteSession({
         ownershipSource: `question:${commandId}`,
         environmentId: machine.environmentId,
         resumable: descriptor?.capabilities.includes("attachments.resume"),
+        ...(descriptor?.capabilities.includes("sessions.questionAttachments.v2")
+          ? { questionSessionId: sessionId, questionRequestId: requestId, questionRunId: runId }
+          : {}),
       });
     };
     void prepareReply()

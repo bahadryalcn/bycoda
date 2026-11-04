@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { MANAGEMENT_CONVERSATION_TOOLS } from "./conversation/conversation-management-tools";
 
 /** Metadata describes existing operations; it never grants permission or dispatches them. */
 export type ManagedToolGroup = "conversation" | "social" | "runtime-logs";
@@ -61,6 +62,8 @@ const CONVERSATION_ACTIONS = new Set(
   ),
 );
 CONVERSATION_ACTIONS.add("browser.preview");
+for (const action of ["devices.control.status", "devices.control.claim", "devices.control.renew", "devices.control.release", "devices.inspect"]) CONVERSATION_ACTIONS.add(action);
+for (const action of Object.keys(MANAGEMENT_CONVERSATION_TOOLS)) CONVERSATION_ACTIONS.add(action);
 CONVERSATION_ACTIONS.add("browser.resize");
 for (const action of ["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"])
   CONVERSATION_ACTIONS.add(action);
@@ -485,7 +488,9 @@ function selection(entries: readonly ManagedTool[], input: ToolSearchInput) {
   const family = textInput(input.family, 80);
   const group = textInput(input.group, 30);
   if (group && !["conversation", "social", "runtime-logs"].includes(group))
-    throw new Error("Unsupported tool group.");
+    throw new Error(
+      'Unsupported tool group. Expected one of: "conversation", "social", "runtime-logs". Omit group to search all groups; use family for domains such as sessions, providers or browser.',
+    );
   const terms = query.split(/\s+/).filter(Boolean);
   const tools = entries
     .filter(

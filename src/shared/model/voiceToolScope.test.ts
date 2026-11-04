@@ -20,6 +20,10 @@ it("permits only the finite desktop approval path for a real assistant thread an
     "shell.run",
     "browser.open",
     "desktop.arbitrary",
+    "workspaces.delivery.merge",
+    "workspaces.delivery.publish",
+    "workspaces.cleanup.apply",
+    "sprints.ingest",
   ])
     expect(voiceThreadToolAllowed("conversation", action)).toBe(false);
   expect(voiceThreadToolAllowed("shell", "desktop.launch")).toBe(false);

@@ -177,6 +177,8 @@ export const CrewRunViewSchema = CrewRunSchema.omit({
   coordinatorStatus: z.enum(["idle", "running", "interrupted"]).optional(),
 });
 export const CrewDirectorySchema = z.strictObject({
+  // The canonical Crew owner bounds cursor bytes; keep the shared wire subset.
+  historyNextCursor: z.string().optional(),
   definitions: z.array(CrewDefinitionSchema),
   agents: z.array(SavedCrewAgentSchema),
   runs: z.array(CrewRunViewSchema),
@@ -290,7 +292,11 @@ export const CrewSchemaResultSchema = z.strictObject({
 const project = { projectId: text };
 const run = { ...project, runId: text };
 const revision = { expectedUpdatedAt: z.number().optional() };
-export const CrewsListParamsSchema = z.strictObject(project);
+export const CrewsListParamsSchema = z.strictObject({
+  ...project,
+  historyLimit: z.number().int().min(1).max(100).optional(),
+  historyCursor: z.string().optional(),
+});
 export const CrewsSchemaParamsSchema = z.strictObject(project);
 export const CrewsInspectParamsSchema = z.strictObject({
   ...project,

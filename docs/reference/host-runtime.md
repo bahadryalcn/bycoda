@@ -392,15 +392,38 @@ An unknown service original cannot be retired; buffer retirement additionally
 requires its same verified current/archive proof. Retired status carries no
 payload and changes no source freshness or execution owner.
 
-Formatting reserves up to 32 MiB before invoking its handler. The format pool is
-64 MiB globally and 32 MiB per principal; tiny fixed buffer/finish outcomes use their
-bounded metadata row allowance instead. Exhaustion rejects before the effect.
+New formatting reserves 4 MiB before invoking its handler, matching the enforced
+serialized formatter output bound. `native.services.workspace.format.bounded.v1`
+advertises that bound; Native keeps the original 32 MiB allowance for older Hosts
+and retained legacy originals. The Host format pool remains 64 MiB globally and
+32 MiB per principal; tiny fixed buffer/finish outcomes use their bounded metadata
+row allowance instead. Native admission separates bounded formatting, legacy
+formatting and control reservations: 64 MiB, 128 MiB and 128 MiB respectively,
+including retained request bytes. Each lane admits at most 256 active result owners;
+the existing 65,536 total-row bound remains shared. These are reservation ceilings,
+not allocations of that much physical memory. A proven unavailable result no
+longer occupies an active result slot; its original request bytes and total-row
+slot remain charged. Unknown originals without that proof still occupy active
+slots. Exhaustion rejects before the effect.
 Consumed digests are stored separately from raw chunk hashes, so ACK does not
 materialize a retained 32 MiB result. Immediate Native cleanup has a 250 ms budget and
 cannot turn successful consumption into an error. Its receipt proves guarded Rust
 handoff, not receipt or application by JavaScript. Epoch compaction below extends
 that lifecycle; unknown-outcome resolution and target-platform power-loss
 acceptance remain separate full26 work.
+
+A format status may carry `resultUnavailable: true` only for an exact retained
+unknown original whose Host result reservation has been durably released and
+whose result cannot subsequently be recorded. Native verifies that original and
+the qualified Host under its response guards, then records an irreversible local
+result fence. Only the reserved result bytes are released; request bytes and
+unknown/no-replay identity remain held. This is not proof of successful or failed
+formatter execution, physical process retirement or permission to replay it.
+
+Recovery may discard a verified recorded formatter result only after its original
+live caller and unconsumed reply have relinquished ownership. Discard uses guarded
+local acknowledgement and the existing remote cleanup outbox; it never applies
+the old text to a current editor. An active caller's result remains protected.
 
 The actual Host now retains buffer report bytes, archive parts and completion
 proofs in its critical FULL SQLite owner. These reports contain file paths,

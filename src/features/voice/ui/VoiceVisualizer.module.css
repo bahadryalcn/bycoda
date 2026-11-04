@@ -40,8 +40,8 @@
   color: var(--ui-tone-danger-fg);
 }
 .drop {
-  fill: currentColor;
-  stroke: none;
+  fill: none;
+  stroke: currentColor;
   transform-box: fill-box;
   transform-origin: 50% 100%;
 }

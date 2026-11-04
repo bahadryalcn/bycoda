@@ -169,7 +169,7 @@ it("retains only failed or unprocessed projects after partial bulk deletion", as
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
-it("creates one group for the selection and rejects a hidden destination with the same name", () => {
+it("creates one group for the selection and rejects a hidden destination with the same name", async () => {
   render();
   click("/a");
   click("/b");
@@ -183,11 +183,10 @@ it("creates one group for the selection and rejects a hidden destination with th
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   setName("Team");
-  act(() =>
-    document
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-  );
+  await act(async () => {
+    document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+  });
   const group = loadProjectGroups()[0];
   expect(group.name).toBe("Team");
   expect(loadProjectGroupAssignments()).toEqual({
@@ -199,11 +198,10 @@ it("creates one group for the selection and rejects a hidden destination with th
   click("Move to group");
   click("New group…");
   setName("Secret");
-  act(() =>
-    document
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-  );
+  await act(async () => {
+    document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+  });
   expect(loadProjectGroupAssignments()["/a"]).toBe(group.id);
   expect(document.querySelector('[role="alert"]')).not.toBeNull();
 });

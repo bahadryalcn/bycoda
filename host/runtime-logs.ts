@@ -245,6 +245,7 @@ export class RuntimeLogsService {
       available: source.available,
       ...(source.projectId ? { projectId: source.projectId.slice(0, 256) } : {}),
       ...(source.sessionId ? { sessionId: source.sessionId.slice(0, 256) } : {}),
+      ...(source.assistantThreadId ? { assistantThreadId: source.assistantThreadId.slice(0, 256) } : {}),
       ...(source.url ? { url: scrubRuntimeLogText(source.url, 2048) } : {}),
       ...(source.reason ? { reason: scrubRuntimeLogText(source.reason, 512) } : {}),
     };

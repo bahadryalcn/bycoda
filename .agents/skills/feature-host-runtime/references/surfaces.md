@@ -14,7 +14,7 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
 - `src/features/connections/model/`: shared client policy, protocol/capability handling and Host/native adapters. `mobile/` has its own active and compatibility transports; inspect its nested repository rules and actual producer.
 - `src/integrations/harness/core/`: registry, child backend, JSON-RPC/ACP/Pi operation views, source context and output reduction. `src/integrations/harness/providers/` retains adapter-specific protocol and cleanup ownership.
 - `host/provider-guardian.ts`, `packages/provider-process-guardian/`: private guardian control and process cohort proof. Native counterparts remain under `src-tauri/src/`; do not infer full OS descendant closure from a process handle subset.
-- `host/conversation-tools.ts` and domain tool modules: scoped tool schemas and conversation principal; do not import a renderer-supplied principal or bypass the existing approval gate.
+- `host/conversation/conversation-tools.ts` and domain tool modules: scoped tool schemas and conversation principal; do not import a renderer-supplied principal or bypass the existing approval gate.
 
 ## Persistence, source admission and recovery
 

@@ -3,6 +3,7 @@ export default defineConfig({
   testDir: ".",
   testMatch: [
     "assistant-room.e2e.ts",
+    "assistant-room-global.e2e.ts",
     "assistant-settings.e2e.ts",
     "assistant-history.e2e.ts",
     "assistant-memory.e2e.ts",

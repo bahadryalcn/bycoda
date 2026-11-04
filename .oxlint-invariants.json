@@ -167,8 +167,8 @@
         "host/stewards.ts",
         "host/sessionRuns.ts",
         "host/task-budgets.ts",
-        "host/social-schedule.ts",
-        "host/social-program-schedule.ts",
+        "host/social/social-schedule.ts",
+        "host/social/social-program-schedule.ts",
         "src/features/automations/model/**",
         "src/app/workspace/bridges/useAutomationLaunch.ts"
       ],

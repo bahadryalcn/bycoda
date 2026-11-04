@@ -1,3 +1,5 @@
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
+
 /** A selected, read-only snapshot from an existing message in the current session. */
 export type ChatCitation = {
   version: 1;
@@ -9,6 +11,13 @@ export type ChatCitation = {
   occurrence: number;
   comment: string;
 };
+
+/** Compact display only; the saved quote and comment remain literal and complete. */
+export function chatCitationPreview(citation: Pick<ChatCitation, "text" | "comment">): string {
+  const words = (citation.comment.trim() || citation.text).trim().split(/\s+/);
+  const excerpt = words.slice(0, 6).join(" ");
+  return truncateGraphemes(excerpt + (words.length > 6 ? "…" : ""), 80);
+}
 
 // Bound failed label matches so bracket-heavy prompts cannot cause quadratic scans.
 const marker = /\[([^\]\n]{0,200})\]\(bycoda-citation:([^\s)]+)\)/g;

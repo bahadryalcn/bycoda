@@ -1,6 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { nextQueueStatus } from "../../connections/model/queueState";
 import {
   deliveryResolverFor,
@@ -170,12 +172,10 @@ export function DeliveryProgressNotice({
     >
       <div
         className="flex flex-wrap items-center gap-x-2 gap-y-1"
-        role={stage === "rejected" || stage === "unknown" ? "alert" : "status"}
-        aria-live="polite"
       >
-        <span className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]">{t(summary)}</span>
+        <LiveText className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]" text={t(summary)} />
         {pending ? (
-          <span className="shrink-0 tabular-nums text-(--ui-text-muted)" aria-live="off">
+          <span className="shrink-0 tabular-nums text-(--ui-text-muted)">
             {t("{p0}s elapsed", { p0: elapsed })}
           </span>
         ) : null}
@@ -202,11 +202,7 @@ export function DeliveryProgressNotice({
           onChoose={choose}
         />
       ) : null}
-      {resolveError ? (
-        <div role="alert" className="mt-1 text-ui-caption text-(--ui-tone-danger-fg)">
-          {resolveError}
-        </div>
-      ) : null}
+      {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
     </div>
   );
 }

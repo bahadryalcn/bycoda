@@ -1,8 +1,61 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 const fixture = "/tests/browser/host-tools.html";
 const captures = "temp/verification/2026-10-12-tools-usability/browser";
-/** Container width (px) from which the tool tab strip replaces the narrow selector (36rem). */
-const NARROW_TOOLS_WIDTH = 576;
+/** Container width (px) from which the tool tab strip replaces the narrow selector (48rem). */
+const NARROW_TOOLS_WIDTH = 768;
+
+for (const scheme of ["dark", "light"] as const) {
+  for (const width of [1280, 800]) {
+    test(`workspace translucency preserves accessibility and pane ownership: ${scheme} ${width}`, async ({ page, context }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`${fixture}?theme=${scheme}`);
+      await expect(page.locator(".host-tools")).toBeVisible();
+      // Model the real app shell around the isolated tool consumer. This tests
+      // renderer compositing and fallbacks, not native window effect support.
+      await page.evaluate(() => {
+        const root = document.getElementById("root")!;
+        root.classList.add("app-canvas");
+        const main = document.createElement("main");
+        main.className = "body-glass";
+        main.style.cssText = "height:100%;display:flex;flex-direction:column";
+        main.append(...root.childNodes);
+        root.append(main);
+        document.documentElement.classList.add("has-native-glass", "glass-body");
+        document.documentElement.style.setProperty("--main-opacity", "0.42");
+      });
+      const alpha = (selector: string) => page.locator(selector).first().evaluate((node) => {
+        const canvas = document.createElement("canvas").getContext("2d")!;
+        canvas.fillStyle = getComputedStyle(node).backgroundColor;
+        canvas.fillRect(0, 0, 1, 1);
+        return canvas.getImageData(0, 0, 1, 1).data[3] / 255;
+      });
+      await expect.poll(() => alpha(".app-canvas")).toBe(scheme === "dark" ? 0 : 1);
+      await expect.poll(() => alpha(".host-tools")).toBe(scheme === "dark" ? 0 : 1);
+      expect(await alpha(".body-glass")).toBeCloseTo(scheme === "dark" ? 0.42 : 1, 2);
+      if (scheme === "dark") {
+        await page.evaluate(() => document.documentElement.classList.remove("glass-body"));
+        expect(await alpha(".host-tools")).toBe(1);
+        await page.evaluate(() => document.documentElement.classList.add("glass-body"));
+        const cdp = await context.newCDPSession(page);
+        try {
+          for (const media of ["prefers-reduced-transparency", "forced-colors"]) {
+            await cdp.send("Emulation.setEmulatedMedia", {
+              features: [{ name: media, value: media === "forced-colors" ? "active" : "reduce" }],
+            });
+            await expect.poll(() => alpha(".app-canvas")).toBe(1);
+            expect(await alpha(".body-glass")).toBe(1);
+            expect(await alpha(".host-tools")).toBe(1);
+          }
+        } finally {
+          await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+          await cdp.detach();
+        }
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    });
+  }
+}
 
 async function selectTool(page: Page, name: string, scope: Page | Locator = page) {
   await expect(scope.locator(".host-tools-topbar")).toBeVisible();
@@ -419,7 +472,7 @@ test("selects local and remote tool machines while clearing the previous browser
       name: "Shared host browser screenshot; click to interact when controlling",
     }),
   ).toHaveCount(0);
-  await expect(page.getByRole("switch", { name: "Live view", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Live view", exact: true })).toBeChecked();
   await expect(
     page.getByRole("heading", { name: "Shared host browser · Fixture MacBook", exact: true }),
   ).toBeVisible();
@@ -446,8 +499,16 @@ test("selects local and remote tool machines while clearing the previous browser
       (call) => call.method === "resources.read" && call.target?.machineId === "fixture-mac",
     ),
   ).toBe(true);
+  expect(routing.every((call) => !("projectId" in call.params))).toBe(true);
   expect(
-    routing.every((call) => !("projectId" in call.params) && !("sessionId" in call.params)),
+    routing
+      .filter((call) => call.method.startsWith("browser."))
+      .every(
+        (call) =>
+          call.params.sessionId === "fixture-session" &&
+          (call.target?.kind !== "machine" ||
+            typeof call.params.ownerPresentationScope === "string"),
+      ),
   ).toBe(true);
   await selectTool(page, "Development servers");
   await expect(machine).toHaveCount(0);
@@ -556,9 +617,16 @@ test("opens the browser and sends input using its control lease", async ({ page 
     {
       cwd: "G:/demo/example",
       method: "browser.input",
-      params: { kind: "text", text: "Example text", leaseId: "fixture-lease" },
+      params: expect.objectContaining({
+        kind: "text",
+        text: "Example text",
+        leaseId: "fixture-lease",
+        sessionId: "fixture-session",
+      }),
     },
   ]);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Control active", exact: true }).click();
   await page.getByRole("button", { name: "Release", exact: true }).click();
   // Releasing the lease dismisses the controls popover; reopen it to see the state.
   await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
@@ -655,7 +723,7 @@ for (const locale of ["en", "tr"]) {
       for (let index = 0; index < 5; index++) {
         await selectTool(page, names[index]);
         await expect(page.getByRole("tabpanel")).toBeVisible();
-        await expect(page.locator(".host-tools-content > .host-tool-panel")).toBeVisible();
+        await expect(page.locator(".host-tools-content .host-tool-panel:visible")).toBeVisible();
         if (index === 0)
           await expect(page.locator(".device-panel-choice").getByRole("button")).toBeVisible();
         if (index === 1)

@@ -43,6 +43,7 @@ export class Dictation {
     /** App language: Whisper uses it when its own language guess is uncertain. */
     private language: string,
     private config?: VoiceRuntimeConfig,
+    private microphoneId?: string,
   ) {}
 
   async start() {
@@ -71,7 +72,12 @@ export class Dictation {
       this.backend = backend;
       backend.catch((cause) => this.fail(cause));
       const stream = await openMicrophone({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          ...(this.microphoneId ? { deviceId: { exact: this.microphoneId } } : {}),
+        },
         video: false,
       });
       this.stream = stream;

@@ -224,13 +224,16 @@ describe("editLastTurn", () => {
   it("coordinates only one rewind per session", () => {
     const coordinator = createEditedResendCoordinator();
 
-    expect(coordinator.start("one")).toBe(true);
+    const token = coordinator.start("one")!;
+    expect(token).toBeTypeOf("symbol");
     expect(coordinator.isActive("one")).toBe(true);
-    expect(coordinator.start("one")).toBe(false);
-    expect(coordinator.start("two")).toBe(true);
-    coordinator.finish("one");
+    expect(coordinator.start("one")).toBeUndefined();
+    expect(coordinator.start("two")).toBeTypeOf("symbol");
+    coordinator.finish("one", Symbol("other"));
+    expect(coordinator.isActive("one")).toBe(true);
+    coordinator.finish("one", token);
     expect(coordinator.isActive("one")).toBe(false);
-    expect(coordinator.start("one")).toBe(true);
+    expect(coordinator.start("one")).toBeTypeOf("symbol");
   });
 
   it("allows edit on idle OpenCode sessions", () => {

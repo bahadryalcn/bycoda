@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 const FRESH_MS = 4000;
 
 // Remounts (tab switches, transcript windowing) must not replay a burst.
-const celebrated = new Set<string>();
+const celebrated = new Map<string, number>();
 
 export function shouldCelebrateTurn(
   blockId: string,
@@ -27,7 +27,11 @@ export function useTurnCelebration(
 
   useEffect(() => {
     if (!fresh) return;
-    celebrated.add(blockId);
+    const now = Date.now();
+    for (const [id, at] of celebrated) {
+      if (now - at >= FRESH_MS) celebrated.delete(id);
+    }
+    celebrated.set(blockId, now);
     const timer = setTimeout(() => setDone(true), durationMs);
     return () => clearTimeout(timer);
   }, [blockId, fresh, durationMs]);

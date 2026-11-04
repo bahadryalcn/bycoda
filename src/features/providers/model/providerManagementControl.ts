@@ -12,11 +12,11 @@ import {
 
 export type ProviderManagementContext = {
   environmentId: string;
-  sourceSessionId: string;
-  projectCwd: string;
-  workingCwd: string;
+  projectId?: string;
   valid: () => boolean;
-};
+  authorize?: () => Promise<boolean>;
+} & ({ sourceSessionId: string; sourceThreadId?: never; projectCwd: string; workingCwd: string }
+  | { sourceThreadId: string; sourceSessionId?: never; projectCwd?: string; workingCwd?: string });
 type Deps = {
   accounts: () => ProviderAccount[];
   quota: (provider: "claude" | "codex", id: string) => ProviderRateLimits;
@@ -77,11 +77,12 @@ export async function readProviderManagement(
 ) {
   const valid = () =>
     context.valid() &&
-    [context.environmentId, context.sourceSessionId, context.projectCwd, context.workingCwd].every(
+    [context.environmentId, context.sourceSessionId ?? context.sourceThreadId].every(
       (value) => text(value, 4096),
     ) &&
-    !context.projectCwd.startsWith("remote://") &&
-    !context.workingCwd.startsWith("remote://");
+    (!context.sourceThreadId || (!!context.projectId === !!context.projectCwd && !!context.projectCwd === !!context.workingCwd)) &&
+    (!context.projectCwd || !context.projectCwd.startsWith("remote://")) &&
+    (!context.workingCwd || !context.workingCwd.startsWith("remote://"));
   if (Object.keys(request).length || !valid())
     throw new Error("Provider management source identity mismatch");
   const allAccounts = deps.accounts();
@@ -117,7 +118,7 @@ export async function readProviderManagement(
       },
     };
   });
-  const cachedMcp = deps.mcp(context.workingCwd);
+  const cachedMcp = context.workingCwd ? deps.mcp(context.workingCwd) : undefined;
   const mcp = (cachedMcp?.servers ?? []).slice(0, 256).map((server) => {
     if (
       !["claude", "claude_desktop", "codex", "cursor", "opencode"].includes(server.provider) ||
@@ -148,7 +149,9 @@ export async function readProviderManagement(
   if (!valid()) throw new Error("Provider management source changed");
   return {
     environmentId: context.environmentId,
+    projectId: context.projectId,
     sourceSessionId: context.sourceSessionId,
+    sourceThreadId: context.sourceThreadId,
     projectCwd: context.projectCwd,
     workingCwd: context.workingCwd,
     sampledAt: deps.now(),

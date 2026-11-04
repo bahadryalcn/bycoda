@@ -83,7 +83,7 @@ export function useAutomationSessionOpeners({
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);
       setProjectCwd(session.cwd);
-      setRecents(rememberProject(session.cwd));
+      setRecents(await rememberProject(session.cwd));
       await onSelectHistorySession(sessionId);
     },
     [ensureOpenSession, onSelectHistorySession, toolWindow],
@@ -147,7 +147,7 @@ export function useAutomationSessionOpeners({
           setFilePickerOpen(false);
           setSidebarTab("sessions", opened.cwd);
           setProjectCwd(opened.cwd);
-          setRecents(rememberProject(opened.cwd));
+          setRecents(await rememberProject(opened.cwd));
           await onSelectHistorySession(opened.sessionId);
           retained = true;
           return;
@@ -168,7 +168,7 @@ export function useAutomationSessionOpeners({
       const knownBefore = loadRecents().map((item) => item.path);
       setSettingsOpen(false);
       setFilePickerOpen(false);
-      setRecents(rememberProject(project.key));
+      setRecents(await rememberProject(project.key));
       promptAddedProjectNames(knownBefore);
       await onSelectRemoteSession(project.key, target.sessionId);
     },

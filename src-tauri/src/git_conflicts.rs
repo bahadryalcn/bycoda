@@ -1,6 +1,6 @@
 //! Unmerged paths: what kind of conflict each is, the three versions git keeps
 //! for it, and where the repository's git directory is. `git ls-files -u` is
-//! the one source (the host in host/git-conflicts.ts reads the same listing).
+//! the one source (the host in host/git/git-conflicts.ts reads the same listing).
 
 use crate::fs::{git_output, git_run, MAX_TEXT_FILE_BYTES};
 use serde::Serialize;

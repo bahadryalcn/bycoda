@@ -22,6 +22,7 @@ import {
   AssistantVoiceContextOpenSchema,
   AssistantVoiceContextGetSchema,
   AssistantVoiceContextInvalidateSchema,
+  AssistantVoiceRuntimeRegisterSchema,
   type AssistantVoiceContext,
 } from "../assistantVoiceContext";
 import {
@@ -102,6 +103,7 @@ export const AssistantProfilePatchSchema = z.strictObject({
   keepAwakeWhileWorking: z.boolean().optional(),
   setupComplete: z.boolean().optional(),
   voiceSetupComplete: z.boolean().optional(),
+  voiceNarration: z.boolean().optional(),
   proactiveSpeech: z.enum(["never", "return", "important"]).optional(),
   quietStart: z.number().int().min(0).max(23).optional(),
   quietEnd: z.number().int().min(0).max(23).optional(),
@@ -122,14 +124,16 @@ export const AssistantProfilePatchSchema = z.strictObject({
   notificationAway: z.enum(["all", "urgent", "none"]).optional(),
   notificationDnd: z.literal("none").optional(),
   summaryRefreshMessages: z.number().int().min(10).max(200).optional(),
+  observationTaskDone: z.boolean().optional(),
+  observationTaskNeedsInput: z.boolean().optional(),
   execution: AssistantExecutionSchema.nullable().optional(),
   chiefExecution: AssistantExecutionSchema.nullable().optional(),
   replyExecution: AssistantExecutionSchema.nullable().optional(),
   planningExecution: AssistantExecutionSchema.nullable().optional(),
 });
 export type AssistantProfilePatch = z.infer<typeof AssistantProfilePatchSchema>;
-export type AssistantProfile = Required<Omit<AssistantProfilePatch, keyof AssistantPolicy>> &
-  AssistantPolicy & { version: number; updatedAt: number };
+export type AssistantProfile = Required<Omit<AssistantProfilePatch, keyof AssistantPolicy | "voiceNarration">> &
+  AssistantPolicy & { voiceNarration?: boolean; version: number; updatedAt: number };
 export type AssistantMemory = {
   id: string;
   version: number;
@@ -232,6 +236,9 @@ export type AssistantMessageToolAction = {
 export type AssistantMessage = {
   id: string;
   projectIds?: string[];
+  /** Minimum visibility restrictions; these do not certify contributor provenance. */
+  visibilityProjectIds?: string[];
+  unverifiedToolContext?: true;
   toolActions?: AssistantMessageToolAction[];
   ownerQuestionId?: string;
   ownerQuestionRequestId?: string;
@@ -298,11 +305,15 @@ export type AssistantNotification = {
     | "job.waiting"
     | "job.failed"
     | "budget.exhausted"
-    | "owner.question";
+    | "owner.question"
+    | "task.done"
+    | "task.needsInput";
   title: string;
   body: string;
   createdAt: number;
   jobId?: string;
+  taskId?: string;
+  taskCreatedAt?: number;
   projectId?: string;
   projectIds?: string[];
   eligible: boolean;
@@ -376,6 +387,7 @@ export type AssistantSnapshot = {
     notes: boolean;
     quickNotes?: boolean;
     quickAutomations?: boolean;
+    observationTasks?: boolean;
     conversations: boolean;
   };
 };
@@ -415,6 +427,7 @@ export const AssistantRequestValidationSchema = z.union([
     AssistantVoiceContextOpenSchema,
     AssistantVoiceContextGetSchema,
     AssistantVoiceContextInvalidateSchema,
+    AssistantVoiceRuntimeRegisterSchema,
     AssistantOwnerQuestionAskSchema,
     AssistantOwnerQuestionPresentSchema,
     AssistantOwnerQuestionGetSchema,
@@ -423,6 +436,9 @@ export const AssistantRequestValidationSchema = z.union([
     AssistantOwnerQuestionCancelSchema,
     z.strictObject({ op: z.literal("projects.list") }),
     z.strictObject({ op: z.literal("snapshot"), limit }),
+    z.strictObject({ op: z.literal("narration.pending"), threadId: id, generation: id }),
+    z.strictObject({ op: z.literal("narration.claim"), threadId: id, eventId: id, generation: id }),
+    z.strictObject({ op: z.literal("narration.settle"), threadId: id, eventId: id, generation: id, state: z.enum(["delivered", "unknown"]) }),
     z.strictObject({
       op: z.literal("profile.update"),
       expectedVersion: version,
@@ -485,6 +501,7 @@ export const AssistantRequestValidationSchema = z.union([
       idempotencyKey: id,
     }),
     z.strictObject({ op: z.literal("messages.linkJob"), id, jobId: id, jobKey: id }),
+    z.strictObject({ op: z.literal("threads.sendIdentity") }),
     z.strictObject({
       op: z.literal("threads.send"),
       threadId: id,
@@ -492,6 +509,15 @@ export const AssistantRequestValidationSchema = z.union([
       text: text(16000),
       sessionId: id.optional(),
       idempotencyKey: id,
+      expectedHostInstance: id.optional(),
+    }),
+    z.strictObject({
+      op: z.literal("threads.sendStatus"),
+      threadId: id,
+      text: text(16000),
+      sessionId: id.optional(),
+      idempotencyKey: id,
+      expectedHostInstance: id,
     }),
     z.strictObject({
       op: z.literal("threads.summary"),
@@ -582,6 +608,8 @@ export const AssistantRequestValidationSchema = z.union([
         .optional(),
     }),
     z.strictObject({ op: z.literal("manual.list") }),
+    z.strictObject({ op: z.literal("observation.delivery.list"), projectId: id }),
+    z.strictObject({ op: z.literal("observation.delivery.refresh"), projectId: id, notificationId: id }),
     z.strictObject({
       op: z.literal("manual.policy"),
       expectedVersion: version,
@@ -640,6 +668,11 @@ export const AssistantRequestValidationSchema = z.union([
 ]);
 export type AssistantRequest = z.infer<typeof AssistantRequestValidationSchema>;
 export type AssistantResponse = {
+  sendIdentity?: { instanceId: string };
+  narrationEvents?: { eventId: string; kind: "progress" | "completed" | "question"; text: string; createdAt: number }[];
+  narrationClaimed?: boolean;
+  sendReceipt?: { status: "settled" | "unknown" | "refused" | "notSent" };
+  observationDeliveries?: { notificationId: string; projectId: string; state: "pending" | "unknown" | "accepted" | "suppressed" }[];
   voiceContext?: AssistantVoiceContext;
   ownerQuestion?: AssistantOwnerQuestion | null;
   ownerQuestionReceipt?: AssistantOwnerQuestionReceipt;
@@ -683,6 +716,7 @@ const deleteReviewSchema = z.strictObject({
     .max(1000),
 });
 const profileSchema = AssistantProfilePatchSchema.required().extend({
+  voiceNarration: z.boolean().optional(),
   version,
   updatedAt: version,
   dailyTokenBudget: z.number().int().min(0).max(1_000_000_000),
@@ -788,6 +822,8 @@ const threadSchema = z.strictObject({
 const messageSchema = z.strictObject({
   ...metadata,
   projectIds: z.array(id).max(1000).optional(),
+  visibilityProjectIds: z.array(id).max(1000).optional(),
+  unverifiedToolContext: z.literal(true).optional(),
   toolActions: z
     .array(
       z.strictObject({
@@ -889,11 +925,15 @@ export const AssistantSnapshotSchema = z.strictObject({
           "job.failed",
           "budget.exhausted",
           "owner.question",
+          "task.done",
+          "task.needsInput",
         ]),
         title: z.string().max(200),
         body: z.string().max(2000),
         createdAt: version,
         jobId: id.optional(),
+        taskId: id.optional(),
+        taskCreatedAt: version.optional(),
         projectId: id.optional(),
         projectIds: z.array(id).max(1000).optional(),
         eligible: z.boolean(),
@@ -952,10 +992,16 @@ export const AssistantSnapshotSchema = z.strictObject({
     notes: z.boolean(),
     quickNotes: z.boolean().optional(),
     quickAutomations: z.boolean().optional(),
+    observationTasks: z.boolean().optional(),
     conversations: z.boolean(),
   }),
 });
 export const AssistantResponseValidationSchema = z.strictObject({
+  sendIdentity: z.strictObject({ instanceId: id }).optional(),
+  narrationEvents: z.array(z.strictObject({ eventId: id, kind: z.enum(["progress", "completed", "question"]), text: z.string().max(8000), createdAt: z.number() })).max(20).optional(),
+  narrationClaimed: z.boolean().optional(),
+  sendReceipt: z.strictObject({ status: z.enum(["settled", "unknown", "refused", "notSent"]) }).optional(),
+  observationDeliveries: z.array(z.strictObject({ notificationId: id, projectId: id, state: z.enum(["pending", "unknown", "accepted", "suppressed"]) })).max(100).optional(),
   voiceContext: AssistantVoiceContextSchema.optional(),
   ownerQuestion: AssistantOwnerQuestionSchema.nullable().optional(),
   ownerQuestionReceipt: AssistantOwnerQuestionReceiptSchema.optional(),

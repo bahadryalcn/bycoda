@@ -1,9 +1,29 @@
 # Workbench navigation
 
+Rename a conversation from its menu or with F2. The title edits inside the same
+row; project and activity stay visible. Enter saves, Escape cancels, and a failed
+save retains the draft for retry.
+
+Choose **Regenerate title**, immediately below Rename, to create a title from the
+saved conversation without sending a new turn. **Settings > Chat > Conversation
+titles** selects its model and account. Automatic chooses an enabled lightweight
+model from the conversation provider, preferring Haiku, Terra or Flash. If no
+lightweight model is available, choose one explicitly. Failed generation keeps the
+current title and offers Retry; a concurrent manual rename is preserved.
+
 While a project is open, Working summarizes its running conversations in one compact
 line and lists conversations from other projects. Its header still counts all running
 conversations. Conversations needing attention and finished conversations remain
 available as individual rows. Last Sessions keeps the complete Working list.
+
+Above the composer, expanded background work shows the reported model and provider
+icon above each subagent's title. Hover or focus the information icon to see status
+counts in a card; click or tap to keep it open. The separate arrow toggles the list.
+Steps, failed steps and elapsed time sit beside
+the opening chevron. Animated bars mark running work; a green check marks completed
+work, a red cross marks failure, and warning icons distinguish stopped and interrupted
+runs. Hover or focus a row for its full identity and status. Missing child-model
+metadata stays unspecified rather than borrowing the parent conversation's model.
 
 Readable labels stay quiet on hover. Tooltips explain icons, missing shortcuts
 and additional context, or reveal the full text when a label is clipped. Narrow
@@ -20,6 +40,10 @@ follow-up can enter it. The message returns to the queue and an active queue
 continues automatically when the conversation is free; no second Resume is needed.
 Stop and an explicitly paused queue still require Resume. Rejected sends and
 unconfirmed delivery remain held for review instead of being resent automatically.
+
+Images in older saved queues are moved to ordinary local attachment files before
+queue synchronization, keeping image bytes out of the limited browser storage.
+If saving fails, the message and original image stay queued for recovery.
 
 Question answers are retained locally while you switch conversations or hide a
 form. The local question store has a shared limit of 64 question drafts and 4 MiB,
@@ -49,11 +73,14 @@ including compact details and opening a cited conversation beside the current on
 Use the project rail to choose a project or workspace, the sessions list to
 choose a conversation, and the top tabs to switch open work. These keep their
 existing saved widths, layout and density settings. Standard and detailed session
-rows show project identity above the conversation title. Within one project, the
-project mark stays neutral and rows do not apply its saved project color or ground.
-Pin or unpin from the upper left; status stays at the upper right, with branch and
-provider icons below the title. Previous providers appear muted; the last provider
-used retains its color. Hover or focus the title for model, location and handoff
+rows show project identity above the conversation title. Within one project,
+rows keep neutral backgrounds while showing the saved project mark. Pin, archive
+and delete appear in the project header on hover or keyboard focus. Pin replaces
+the project mark beside its name; pinned rows keep the pin visible. Touch keeps
+them available. Status stays at the upper right; hover or keyboard focus hides
+its word while keeping its icon and Working elapsed time. Plain branch text and larger
+provider icons sit below the title without shifting when actions appear.
+Previous providers appear muted; the last provider used retains its color. Hover or focus the title for model, location and handoff
 details. Compact density keeps one-line rows.
 
 Interrupted conversations show a yellow warning with an Interrupted label or an
@@ -136,7 +163,8 @@ the menu button at the start of the title row opens the application menus, and
 Alt or F10 still opens them from the keyboard. The Changes tab always shows how
 many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
-a small detail card with the title, model, branch or worktree, path and status.
+a small detail card with the title, model, branch or worktree, path, status and
+the full date and time of its last activity.
 The card closes when you scroll its list, resize the window or switch away from
 the app. Focus the row again or hover it to reopen the details.
 

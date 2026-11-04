@@ -81,6 +81,8 @@ export async function assistantRequest(
       "manual.list",
       "memory.search",
       "threads.messages",
+      "threads.sendStatus",
+      "threads.sendIdentity",
       "conversations.search",
       "notes.get",
       "questions.get",

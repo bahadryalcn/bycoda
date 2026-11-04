@@ -171,12 +171,17 @@ it("rechecks authorization after acquiring a contended lock and never commits re
       return allowed;
     },
   );
+  let physicallySettled = false;
+  const settlement = notes.settled().then(() => { physicallySettled = true; });
   await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(physicallySettled).toBe(false);
   expect(checks).toEqual([true]);
   allowed = false;
   writer.exec("COMMIT");
   writer.close();
   await expect(pending).rejects.toThrow("authority revoked");
+  await settlement;
+  expect(physicallySettled).toBe(true);
   expect(checks).toEqual([true, false]);
   expect((await notes.get("note"))?.body).toBe("original");
 });

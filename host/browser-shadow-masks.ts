@@ -2,6 +2,8 @@
  * never enter annotation metadata. */
 export type BrowserDomNode = {
   nodeType: number;
+  nodeId?: number;
+  contentDocument?: BrowserDomNode;
   localName?: string;
   children?: BrowserDomNode[];
   shadowRoots?: { shadowRootType?: string }[];

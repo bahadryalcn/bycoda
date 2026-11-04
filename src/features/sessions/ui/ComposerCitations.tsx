@@ -1,12 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Copy, MessageSquarePlus, Pencil, X } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import type { ChatCitation } from "../model/chatCitation";
+import { chatCitationPreview, type ChatCitation } from "../model/chatCitation";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ComposerCitations.module.css";
 
@@ -30,6 +31,11 @@ export function ComposerCitations({
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const copying = useRef(false);
   const commentDrafts = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
   const editingCitation = citations.find((c) => c.id === editing?.id);
   if (!citations.length) return null;
   const preview = (citation: ChatCitation, navigate = false) => {
@@ -54,6 +60,7 @@ export function ComposerCitations({
             size="sm"
             align="start"
             className={styles.source}
+            aria-label={citation.comment.trim() || citation.text}
             startIcon={<MessageSquarePlus />}
             tooltip={citation.text}
             tooltipWide
@@ -61,7 +68,7 @@ export function ComposerCitations({
             onFocus={() => preview(citation)}
             onClick={() => preview(citation, true)}
           >
-            <span className={styles.excerpt}>{citation.comment.trim() || citation.text}</span>
+            <span className={styles.excerpt}>{chatCitationPreview(citation)}</span>
           </Button>
           <Button
             iconOnly
@@ -73,6 +80,7 @@ export function ComposerCitations({
             onClick={async () => {
               if (copying.current) return;
               copying.current = true;
+              setCopied(null);
               setCopyingId(citation.id);
               try {
                 await copyMessage(citation.text);
@@ -116,11 +124,7 @@ export function ComposerCitations({
           </Button>
         </div>
       ))}
-      {copied ? (
-        <span role="status" className={styles.feedback}>
-          {t("Quote copied")}
-        </span>
-      ) : null}
+      <LiveText className={styles.feedback} text={copied ? t("Quote copied") : ""} />
       {error ? <InlineError>{error}</InlineError> : null}
       {editing && editingCitation ? (
         <Popover

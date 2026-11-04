@@ -44,7 +44,50 @@ export class AttachmentOwnership {
         ON attachment_ownership_claims(id, updated_at);
       CREATE INDEX IF NOT EXISTS attachment_ownership_claim_owner
         ON attachment_ownership_claims(principal, owner_id, id, claim_id);
+      CREATE TABLE IF NOT EXISTS attachment_question_claims (
+        id TEXT PRIMARY KEY, principal TEXT NOT NULL, session_id TEXT NOT NULL,
+        run_id TEXT NOT NULL, request_id INTEGER NOT NULL, occurrence_id TEXT NOT NULL
+      );
     `);
+  }
+  async bindQuestion(principal: string, id: string, sessionId: string, runId: string, requestId: number, occurrenceId: string): Promise<void> {
+    return this.store.db.scope(async () => {
+      await this.ready;
+      const path = attachmentPath(this.store, id);
+      if (id !== id.toLowerCase()) throw new Error("Question attachment ID must be lowercase");
+      await this.store.transaction(async () => {
+        const old = await this.store.db.prepare("SELECT * FROM attachment_question_claims WHERE id=?").get(id);
+        if (old) {
+          if (old.principal !== principal || old.session_id !== sessionId || old.run_id !== runId ||
+              old.request_id !== requestId || old.occurrence_id !== occurrenceId)
+            throw new Error("Attachment belongs to another question");
+          return;
+        }
+        if (lstatSync(path, { throwIfNoEntry: false })) throw new Error("Existing attachment cannot be bound to a question");
+        await this.store.db.prepare("INSERT INTO attachment_question_claims VALUES(?,?,?,?,?,?)")
+          .run(id, principal, sessionId, runId, requestId, occurrenceId);
+      });
+    });
+  }
+  async assertQuestion(principal: string, ids: string[], sessionId: string, runId: string, requestId: number, occurrenceId: string): Promise<void> {
+    return this.store.db.scope(async () => {
+      await this.ready;
+      for (const id of ids) {
+        attachmentPath(this.store, id);
+        const row = await this.store.db.prepare("SELECT * FROM attachment_question_claims WHERE id=?").get(id);
+        if (!row || row.principal !== principal || row.session_id !== sessionId || row.run_id !== runId ||
+            row.request_id !== requestId || row.occurrence_id !== occurrenceId)
+          throw new Error("Attachment does not belong to this question");
+      }
+    });
+  }
+  async assertUnboundUpload(id: string): Promise<void> {
+    return this.store.db.scope(async () => {
+      await this.ready;
+      attachmentPath(this.store, id);
+      if (await this.store.db.prepare("SELECT id FROM attachment_question_claims WHERE id=?").get(id.toLowerCase()))
+        throw new Error("Question attachment requires its original binding");
+    });
   }
   private parse(input: Record<string, unknown>): {
     ids: string[];

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chatCitationPreview,
   extractChatCitations,
   projectChatCitationsForProvider,
   serializeChatCitation,
@@ -21,6 +22,25 @@ const citation: ChatCitation = {
 };
 
 describe("chat citations", () => {
+  it("shows only the first six words without changing the saved citation", () => {
+    const value = {
+      ...citation,
+      comment: "",
+      text: " One\n two  three four five six seven eight ",
+    };
+    expect(chatCitationPreview(value)).toBe("One two three four five six…");
+    expect(extractChatCitations(serializeChatCitation(value)).citations).toEqual([value]);
+    expect(chatCitationPreview({ text: "quote", comment: " Short comment " })).toBe(
+      "Short comment",
+    );
+  });
+
+  it("bounds unbroken preview text without splitting emoji", () => {
+    expect(chatCitationPreview({ text: "👩🏽‍💻".repeat(100), comment: "" })).toBe(
+      "👩🏽‍💻".repeat(79) + "…",
+    );
+  });
+
   it("preserves bracket-heavy prose with and without a malformed citation marker", () => {
     const prose = "[".repeat(64_000);
     for (const text of [prose, `${prose}bycoda-citation:invalid`]) {

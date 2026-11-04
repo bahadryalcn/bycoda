@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod account_identity;
+#[path = "assistant/assistant_presence.rs"]
 mod assistant_presence;
 mod automations;
 mod azure_devops;
@@ -62,6 +63,12 @@ mod native_provider_output;
 mod native_window_lifecycle;
 mod native_workspace;
 mod notes;
+#[path = "assistant/assistant_observation_outbox.rs"]
+mod assistant_observation_outbox;
+#[path = "assistant/assistant_server_observation.rs"]
+mod assistant_server_observation;
+#[path = "assistant/assistant_session_observation.rs"]
+pub(crate) mod assistant_session_observation;
 mod notifications;
 #[cfg(windows)]
 mod owned_process_job;
@@ -70,6 +77,11 @@ mod pasteboard;
 mod pi_usage;
 mod presence;
 mod privacy_settings;
+mod privacy_projection;
+#[path = "assistant/room/room_organization_owner.rs"]
+mod room_organization_owner;
+#[path = "assistant/room/room_browser_panel.rs"]
+mod room_browser_panel;
 mod project_logo;
 mod provider_terminal_profiles;
 mod provider_usage;
@@ -89,6 +101,7 @@ mod search;
 mod server_inventory;
 mod session_import;
 mod session_store;
+mod sync_owner;
 mod session_tools_bridge;
 mod session_transfer;
 mod session_window_ownership;
@@ -359,6 +372,19 @@ async fn open_tool_window(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+async fn open_host_tools_window(
+    app: tauri::AppHandle,
+    title: String,
+    payload: serde_json::Value,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        window::open_host_tools_window(&app, &title, &payload)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// wry's own WebView2 browser arguments; replacing them must keep these.
 const WEBVIEW_DEFAULT_ARGS: &str =
@@ -588,6 +614,9 @@ pub fn run() {
             handoff_history::handoff_history_read,
             remote::remote_disconnect,
             remote::remote_request,
+            remote::assistant_native_send,
+            remote::assistant_native_finish,
+            remote::assistant_native_reconcile,
             remote::host_connection_attach,
             remote::host_connection_detach,
             remote::host_connection_request,
@@ -603,6 +632,15 @@ pub fn run() {
             remote_files::prepare_local_file,
             remote::social_authority_status,
             remote::social_authority_connect,
+            remote::assistant_room_delegation::room_delegation_issue,
+            remote::assistant_room_delegation::room_delegation_call,
+            remote::assistant_room_delegation::room_delegation_revoke,
+            remote::assistant_room_delegation::room_delegation_native_identity,
+            conversation_tools_bridge::voice_generation_retirement::voice_runtime_birth,
+            conversation_tools_bridge::voice_generation_retirement::voice_generation_bind,
+            conversation_tools_bridge::voice_generation_retirement::voice_runtime_closed,
+            remote::assistant_room_delegation::room_delegation_issue_status,
+            remote::assistant_room_delegation::room_delegation_revoke_retained,
             remote::remote_ssh_begin,
             remote::remote_ssh_reconnect,
             remote::remote_machine_update,
@@ -623,6 +661,13 @@ pub fn run() {
             control::control_authorize_turn,
             control::control_turn_finished,
             control::control_history_sources,
+            control::control_assistant_source,
+            control::control_assistant_source_v2,
+            control::control_assistant_visibility,
+            privacy_projection::control_privacy_projection_read,
+            room_browser_panel::control_room_browser_panel_request,
+            privacy_projection::control_privacy_projection_begin,
+            privacy_projection::control_privacy_projection_transition,
             mobile_pty::mobile_pty_call,
             control::app_cli_path,
             social_bridge::harness_social_bridge,
@@ -634,6 +679,7 @@ pub fn run() {
             keep_awake::set_keep_awake,
             presence::get_user_presence,
             notifications::notification_permission,
+            notifications::assistant_notification_capability,
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
@@ -837,6 +883,10 @@ pub fn run() {
             fs::read_binary_file,
             fs::read_project_image,
             fs::write_attachment,
+            fs::create_question_attachment,
+            fs::read_question_attachment,
+            fs::retain_question_attachment,
+            fs::release_question_attachment,
             fs::save_generated_image,
             fs::delete_generated_images,
             fs::read_text_file,
@@ -926,6 +976,31 @@ pub fn run() {
             session_import::import_read_codex,
             session_import::import_placeholder_dir,
             session_store::session_upsert,
+            sync_owner::sync_cycle_begin,
+            sync_owner::sync_cycle_complete,
+            harness::management_authority::harness_management_grant,
+            harness::management_authority::harness_utility_cleanup_grant,
+            harness::management_authority::harness_management_spawn_grant,
+            harness::owned_opencode::owned_opencode_acquire,
+            harness::owned_opencode::owned_opencode_catalog_acquire,
+            harness::owned_opencode::owned_opencode_utility_acquire,
+            harness::owned_opencode::owned_opencode_release,
+            session_store::canonical_store::canonical_store_get,
+            session_store::canonical_store::canonical_store_receipt,
+            session_store::canonical_store::canonical_store_legacy_list,
+            session_store::canonical_store::assistant_draft_backup_list,
+            session_store::canonical_store::assistant_draft_backup_read,
+            session_store::canonical_store::canonical_store_page_token,
+            session_store::canonical_store::canonical_store_session_guard_ready,
+            session_store::canonical_store::canonical_store_read,
+            session_store::canonical_store::canonical_store_list,
+            session_store::canonical_store::canonical_store_list_bounded,
+            session_store::canonical_store::outbox_export_oversize,
+            session_store::canonical_store::canonical_store_transaction,
+            session_store::canonical_store::canonical_store_claim,
+            session_store::canonical_store::canonical_store_mark_submitted,
+            session_store::canonical_store::canonical_store_settle,
+            session_store::canonical_store::canonical_store_recover,
             session_store::incremental::session_apply_delta,
             session_store::incremental::session_get_page,
             session_store::session_import,
@@ -940,11 +1015,15 @@ pub fn run() {
             session_store::session_search_content,
             session_store::cancel_session_search,
             session_store::session_get,
+            session_store::session_deleted_ids,
             session_store::references::session_reference_get,
             session_store::references::session_reference_resolve,
             session_store::session_delete,
             session_store::session_set_archived,
             session_store::session_set_pinned,
+            session_store::pin_receipts::session_pin_state,
+            session_store::pin_receipts::session_pin_receipt,
+            session_store::pin_receipts::session_pin_apply,
             session_store::session_set_linked_work_item,
             session_store::session_set_queue,
             turn_probe::probe_turn_tail,
@@ -1004,6 +1083,7 @@ pub fn run() {
             menu::autosave_set_enabled,
             open_new_window,
             open_tool_window,
+            open_host_tools_window,
             window::hide_window,
             window::destroy_window,
             window::quit_poll_reply,

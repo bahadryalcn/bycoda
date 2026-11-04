@@ -50,7 +50,7 @@ export async function runAntigravityTextPrompt(input: TextPromptInput): Promise<
     input.signal?.throwIfAborted();
     let release: (() => void) | undefined;
     const id = `bycoda-antigravity-text-${crypto.randomUUID()}`;
-    const child = createChildProcessHandle(id, input.operationContext?.nativeControlTurn);
+    const child = createChildProcessHandle(id, input.operationContext?.nativeControlTurn, input.operationContext?.nativeControlTurn ? undefined : "utility");
     prepareTextProcess(child, input.operationContext, true);
     retirements.admit(child, "antigravity.text");
     return withProviderRetirement(

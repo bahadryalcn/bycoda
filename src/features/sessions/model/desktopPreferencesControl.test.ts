@@ -10,6 +10,9 @@ import { loadPromptTemplates } from "./promptTemplates";
 import { loadProjectProviderSettings, setProjectProviderHidden } from "./projectProviders";
 import { loadDefaultModels, loadLastModelChoice } from "./models";
 import { loadGlobalSessionDefaults } from "./providerSessionDefaults";
+import { loadVoiceSettings } from "../../voice/model/voiceSettings";
+import { loadThemePreference } from "../../settings/model/appearance";
+import { loadAppearancePreferences } from "../../settings/model/appearancePreferences";
 const privacy = vi.hoisted(() => ({
   lockedGroupIds: new Set<string>(),
   lockedProjectKeys: new Set<string>(),
@@ -54,6 +57,65 @@ function fixture() {
     },
   };
 }
+it("binds global Room preference changes to the real thread and rechecks authority", async () => {
+  const f = fixture();
+  const context = { environmentId: "host", sourceThreadId: "room", valid: () => true, authorize: vi.fn(async () => false) };
+  const snapshot = await f.control(context, "preferences.read", {}) as DesktopPreferencesSnapshot;
+  expect(snapshot.sourceThreadId).toBe("room");
+  expect(snapshot.sourceSessionId).toBeUndefined();
+  const previous = loadThemePreference();
+  const result = await f.control(context, "preferences.patch", {
+    operationId: "room-op", expectedRevision: snapshot.revision,
+    change: { kind: "theme", value: previous === "dark" ? "light" : "dark" },
+  }) as DesktopPreferencesStatus;
+  expect(context.authorize).toHaveBeenCalledOnce();
+  expect(result.state).toBe("failed");
+  expect(loadThemePreference()).toBe(previous);
+  const other = { ...context, sourceThreadId: "other" };
+  expect(await f.control(other, "preferences.status", { operationId: "room-op" })).toEqual({ state: "unknown" });
+  context.authorize.mockResolvedValue(true);
+  const applied = await f.control(context, "preferences.patch", {
+    operationId: "room-op-2", expectedRevision: snapshot.revision,
+    change: { kind: "theme", value: previous === "dark" ? "light" : "dark" },
+  }) as DesktopPreferencesStatus;
+  expect(applied.state).toBe("applied");
+  expect(loadThemePreference()).not.toBe(previous);
+});
+it("changes application preferences through existing owners while preserving microphone opt-in", async () => {
+  const f = fixture();
+  expect((await f.patch({ kind: "theme", value: "light" })).state).toBe("applied");
+  expect(loadThemePreference()).toBe("light");
+  expect((await f.patch({ kind: "density", value: "touch" })).state).toBe("applied");
+  expect(loadAppearancePreferences().controlDensity).toBe("touch");
+  const enabled = loadVoiceSettings().enabled;
+  expect(
+    (
+      await f.patch({
+        kind: "voice",
+        value: { compact: true, manualTurnEnd: true, idleSleepMinutes: 15 },
+      })
+    ).state,
+  ).toBe("applied");
+  expect(loadVoiceSettings()).toMatchObject({
+    enabled,
+    compact: true,
+    manualTurnEnd: true,
+    idleSleepMinutes: 15,
+    manualTurnEndRevision: 1,
+  });
+  expect((await f.patch({ kind: "voice", value: { enabled: true } })).state).toBe("failed");
+  expect(loadVoiceSettings().enabled).toBe(enabled);
+  expect((await f.patch({ kind: "voice", value: { python: "unsafe" } })).state).toBe("failed");
+});
+it("includes application settings in the review revision", async () => {
+  const f = fixture(),
+    stale = await f.read();
+  await f.patch({
+    kind: "density",
+    value: stale.application.density === "touch" ? "compact" : "touch",
+  });
+  expect((await f.patch({ kind: "theme", value: "dark" }, stale.revision)).state).toBe("failed");
+});
 it("reads cached metadata only, explicitly reads a reviewed body, and uses canonical template mutations", async () => {
   const f = fixture();
   expect((await f.read()).atomic).toBe(false);

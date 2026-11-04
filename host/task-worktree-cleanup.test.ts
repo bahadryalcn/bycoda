@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { cleanupTaskWorktree, isTaskWorktreeRemoving } from "./task-worktree-cleanup";
-import { createHostWorktree, hostWorktrees } from "./git-worktrees";
+import { createHostWorktree, hostWorktrees } from "./git/git-worktrees";
 
 const roots: string[] = [];
 afterEach(() => {

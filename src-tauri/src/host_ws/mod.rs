@@ -71,6 +71,11 @@ fn native_device_method(method: &str) -> bool {
             | "devices.start"
             | "devices.boot"
             | "devices.capture"
+            | "devices.control.status"
+            | "devices.control.claim"
+            | "devices.control.release"
+            | "devices.control.renew"
+            | "devices.inspect"
             | "devices.action"
     )
 }
@@ -93,6 +98,18 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.desktop.status"
             | "native.services.assistant.presence.get"
             | "native.services.assistant.presence.set"
+            | "native.services.assistant.visibility.epoch"
+            | "native.services.assistant.delegation.publicKey"
+            | "native.services.assistant.delegation.origin"
+            | "native.services.assistant.delegation.nativeChallenge"
+            | "native.services.assistant.delegation.attest"
+            | "native.services.assistant.delegation.issue"
+            | "native.services.assistant.delegation.issue.status"
+            | "native.services.assistant.delegation.challenge"
+            | "native.services.assistant.delegation.call"
+            | "native.services.assistant.delegation.revoke"
+            | "native.services.assistant.visibility.revoke"
+            | "native.services.assistant.visibility.reopen"
             | "native.services.runtimeLogs.access.issue"
             | "native.services.runtimeLogs.terminals.append"
             | "native.services.conversation.bridge.describe"
@@ -125,6 +142,9 @@ mod desktop_stop_scope_tests {
     use super::*;
     #[test]
     fn emergency_stop_is_a_local_native_service_only() {
+        // Room browser panel disclosure is fenced by the HTTP response owner;
+        // WebSocket must reject before dispatch so only authenticated fallback runs.
+        assert!(!native_service_method("native.services.assistant.browser.panel"));
         assert!(native_service_method("native.services.desktop.stop"));
         assert!(native_service_method("native.services.desktop.status"));
         assert!(!native_peer_service_method(
@@ -149,6 +169,12 @@ pub(crate) fn native_peer_service_method(method: &str) -> bool {
     matches!(
         method,
         "native.services.social.native.status"
+            | "native.services.assistant.delegation.nativeChallenge"
+            | "native.services.assistant.delegation.issue"
+            | "native.services.assistant.delegation.issue.status"
+            | "native.services.assistant.delegation.challenge"
+            | "native.services.assistant.delegation.call"
+            | "native.services.assistant.delegation.revoke"
             | "native.services.social.native.enroll"
             | "native.services.social.native.register"
             | "native.services.social.native.authority"
@@ -973,6 +999,14 @@ impl HostWsBroker {
         thread::Builder::new()
             .name("host-ws".into())
             .spawn(move || {
+                // Retire the handle even if the runtime or worker panics.
+                struct RetireWorker(Arc<Shared>);
+                impl Drop for RetireWorker {
+                    fn drop(&mut self) {
+                        self.0.stop.store(true, Ordering::Release);
+                    }
+                }
+                let _retire = RetireWorker(shared.clone());
                 match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -984,7 +1018,6 @@ impl HostWsBroker {
                         shared.state(0, "blocked", Some("internal"));
                     }
                 }
-                shared.stop.store(true, Ordering::Release);
             })
             .map_err(|_| {
                 WsFailure::local(

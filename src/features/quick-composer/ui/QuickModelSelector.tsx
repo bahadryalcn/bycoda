@@ -4,7 +4,6 @@ import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { emit } from "@tauri-apps/api/event";
 import { Check, RotateCcw, Star, ChevronDown } from "../../../shared/ui/icons";
 import {
   findModel,
@@ -33,7 +32,7 @@ import {
   resolveActiveModelKey,
   stepActiveModelKey,
 } from "../../sessions/model/modelListReconcile";
-import { filterQuickModels, QUICK_COMPOSER_CATALOG_REQUEST_EVENT } from "../model/quickComposer";
+import { filterQuickModels, requestQuickCatalog } from "../model/quickComposer";
 import { quickSessionModelSettings } from "../model/quickSessionDefaults";
 
 type Props = {
@@ -117,7 +116,7 @@ export function QuickModelSelector({
     else modelRowRef.current?.focus({ preventScroll: true });
   }, [showModels]);
   useEffect(() => {
-    if (visibleTab !== "favorites") void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, visibleTab);
+    if (visibleTab !== "favorites") requestQuickCatalog(visibleTab);
   }, [visibleTab]);
 
   useLayoutEffect(() => {

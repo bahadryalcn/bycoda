@@ -87,6 +87,10 @@ export class AsyncHostNotes implements HostNotesAccess {
   get revision() {
     return this.version;
   }
+  /** Wait for accepted worker jobs to settle, including an observer-unknown result. */
+  settled(): Promise<void> {
+    return this.tail;
+  }
 
   private async start(): Promise<StorageWorker> {
     // An error observation is not the worker's actual exit. Keep its identity

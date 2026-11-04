@@ -27,7 +27,8 @@ import {
   type PendingWindowMoves,
   type WindowMovePosition,
 } from "../../model/windowTransferPopout";
-import { abortQuit, relinquishTransferredWindow } from "../../model/appLifecycle";
+import { abortQuit, beginTransferredWindowClose, relinquishTransferredWindow } from "../../model/appLifecycle";
+import { flushAssistantDrafts } from "../../../features/assistant/model/assistantDraftFlush";
 import type { TabActivation } from "../tabs/useTabActivation";
 import { beginWindowMoveTiming } from "../../model/windowMoveTiming";
 import {
@@ -334,8 +335,10 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           });
         });
         if (closeDrainedWindow) {
-          relinquishTransferredWindow();
+          beginTransferredWindowClose();
           try {
+            await flushAssistantDrafts();
+            relinquishTransferredWindow();
             await getCurrentWindow().destroy();
           } catch (error) {
             abortQuit();

@@ -64,7 +64,7 @@ export const HOST_COMMANDS = new Set([
   "git_branches",
   "git_checkout",
   "git_create_branch",
-  // The `git.actions` set (host/git-actions.ts). Their results carry no host
+  // The `git.actions` set (host/git/git-actions.ts). Their results carry no host
   // paths: `git_conflicts` and the file arguments are repo-relative.
   "git_stash",
   "git_trust_repository",
@@ -110,6 +110,8 @@ export const HOST_COMMANDS = new Set([
   "skill_export",
   "skill_delete",
   "skill_import",
+  "skill_catalog_install",
+  "skill_catalog_install_status",
 ]);
 /** Arguments that hold paths; everything else is passed through untouched. */
 const PATH_ARGS = ["path", "cwd", "parent", "from", "destParent", "paths"];
@@ -145,6 +147,8 @@ const MACHINE_COMMANDS = new Set([
   "list_skills",
   "skill_export",
   "skill_import",
+  "skill_catalog_install",
+  "skill_catalog_install_status",
   "skill_delete",
   "skill_policy_get",
   "skill_policy_set",
@@ -227,6 +231,16 @@ async function runOnMachine(
     throw reason;
   }
   const fromHost = (path: string) => remotePath(env, path);
+  if (
+    (command === "skill_catalog_install" || command === "skill_catalog_install_status") &&
+    result &&
+    typeof result === "object"
+  ) {
+    const installation = result as Record<string, unknown>;
+    return typeof installation.path === "string"
+      ? { ...installation, path: fromHost(installation.path) }
+      : installation;
+  }
   if (
     (command === "skill_policy_get" || command === "skill_policy_set") &&
     result &&

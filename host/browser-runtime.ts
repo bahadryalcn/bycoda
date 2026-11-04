@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
-import { deviceCommand } from "./device-process";
+import { deviceCommand } from "./devices/device-process";
 import type { BrowserLoader } from "./shared-browser";
 
 export const BROWSER_RUNTIME_VERSION = "1.64.0";

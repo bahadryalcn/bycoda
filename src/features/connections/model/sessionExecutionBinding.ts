@@ -1,9 +1,12 @@
 import type { Session } from "../../sessions/model/session";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { RemoteProject } from "./remoteProjects";
 import {
   readBindingEvidencePage,
   writeBindingEvidence,
   preserveBindingSource,
+  readBindingEvidence,
+  skipImportedNativeBindingLegacy,
   type StoredBindingEvidence,
 } from "./hostSessionBindingDatabase";
 
@@ -26,6 +29,54 @@ let hydrating: Promise<void> | undefined;
 const writes: Array<{ previous: StoredBindingEvidence | undefined; next: StoredBindingEvidence }> =
   [];
 let saving: Promise<void> | undefined;
+let canonicalEpoch = false;
+let migrationOperationId: string | undefined;
+const MIGRATION_SCOPE = "host-session-bindings-migration.v1";
+const MIGRATION_KEY = "legacy-import";
+
+async function bindingEpoch(): Promise<{ active: boolean; claim?: { pageToken: string; operationId: string } }> {
+  if (!isTauri()) return { active: false };
+  // Missing or failed readiness is unknown, never an authorization to cut over.
+  const ready = await invoke<boolean>("canonical_store_session_guard_ready");
+  if (ready !== true && ready !== false) throw new Error("Session ownership guard readiness is unknown.");
+  if (!ready) return { active: false };
+  const marker = await invoke<{ version: number; value: unknown } | null>("canonical_store_get", {
+    scope: MIGRATION_SCOPE, key: MIGRATION_KEY,
+  });
+  if (marker?.value === true) {
+    skipImportedNativeBindingLegacy();
+    return { active: true };
+  }
+  if (marker) throw new Error("Invalid session owner migration marker.");
+  const pageToken = await invoke<string>("canonical_store_page_token");
+  const operationId = migrationOperationId ??= crypto.randomUUID();
+  let acquired = await invoke<{ owned: boolean; operationId: string }>("canonical_store_claim", {
+    scope: MIGRATION_SCOPE, key: MIGRATION_KEY, operationId, pageToken,
+  });
+  if (!acquired.owned) {
+    const recovered = await invoke<boolean>("canonical_store_recover", {
+      scope: MIGRATION_SCOPE, key: MIGRATION_KEY, operationId: acquired.operationId, pageToken,
+    });
+    if (recovered) acquired = await invoke("canonical_store_claim", {
+      scope: MIGRATION_SCOPE, key: MIGRATION_KEY, operationId, pageToken,
+    });
+  }
+  if (!acquired.owned) throw new Error("Session owner migration is already in progress. Retry loading.");
+  return { active: true, claim: { pageToken, operationId } };
+}
+
+async function finishBindingEpoch(claim: { pageToken: string; operationId: string }): Promise<void> {
+  const result = await invoke<{ applied: boolean }>("canonical_store_transaction", {
+    scope: MIGRATION_SCOPE, pageToken: claim.pageToken, operationId: crypto.randomUUID(),
+    checks: [{ key: MIGRATION_KEY, version: null }], writes: [{ key: MIGRATION_KEY, value: true }],
+    legacy: [], expectedRevision: null,
+    claim: { key: MIGRATION_KEY, operationId: claim.operationId, mode: "require" },
+  });
+  if (!result.applied) throw new Error("Session owner migration was not confirmed.");
+  if (!await invoke<boolean>("canonical_store_settle", { scope: MIGRATION_SCOPE, key: MIGRATION_KEY, ...claim }))
+    throw new Error("Session owner migration settlement is unknown.");
+  skipImportedNativeBindingLegacy();
+}
 
 /** Synchronous acceptance can retain the draft while publication is pending. */
 export function hostSessionBindingsPending(): boolean {
@@ -37,6 +88,7 @@ export function hydrateHostSessionBindings(): Promise<void> {
   if (hydrated) return Promise.resolve();
   if (hydrating) return hydrating;
   hydrating = (async () => {
+    const epoch = await bindingEpoch();
     const loaded = new Map<string, StoredBindingEvidence>();
     let after: string | undefined;
     for (;;) {
@@ -45,7 +97,7 @@ export function hydrateHostSessionBindings(): Promise<void> {
       if (page.length < 128) break;
       after = page[page.length - 1].shellId;
     }
-    for (let index = 0; index < localStorage.length; index++) {
+    for (let index = 0; (!epoch.active || epoch.claim) && index < localStorage.length; index++) {
       const key = localStorage.key(index);
       if (!key?.startsWith(PREFIX)) continue;
       const shellId = key.slice(PREFIX.length);
@@ -53,14 +105,26 @@ export function hydrateHostSessionBindings(): Promise<void> {
       if (raw === null) continue;
       if (loaded.has(shellId)) {
         await preserveBindingSource(shellId, raw);
+        if (localStorage.getItem(key) !== raw) throw new Error("Session owner migration source changed.");
         continue;
       }
       const row = { shellId, raw, legacyRaw: raw };
       await writeBindingEvidence(undefined, row);
+      if (localStorage.getItem(key) !== raw) throw new Error("Session owner migration source changed.");
       loaded.set(shellId, row);
+    }
+    if (epoch.claim) await finishBindingEpoch(epoch.claim);
+    if (epoch.active) {
+      // Native evidence and its recovery bytes committed before releasing quota.
+      // Never remove a source that changed during migration or in another page.
+      for (const row of loaded.values()) {
+        if (row.legacyRaw !== null && localStorage.getItem(PREFIX + row.shellId) === row.legacyRaw)
+          localStorage.removeItem(PREFIX + row.shellId);
+      }
     }
     canonical.clear();
     for (const [id, row] of loaded) canonical.set(id, row);
+    canonicalEpoch = epoch.active;
     hydrated = true;
   })().finally(() => {
     hydrating = undefined;
@@ -69,10 +133,30 @@ export function hydrateHostSessionBindings(): Promise<void> {
 }
 
 /** Await durable owner publication before command admission or Native fallback. */
-export async function flushHostSessionBindings(): Promise<void> {
+export async function flushHostSessionBindings(shellId?: string): Promise<void> {
   await hydrateHostSessionBindings();
   do {
     await drain();
+    if (shellId !== undefined) {
+      const latest = await readBindingEvidence(shellId);
+      if (writes.length) continue;
+      if (latest) canonical.set(shellId, latest);
+      else canonical.delete(shellId);
+    } else {
+      // Canonical-only writers no longer emit localStorage change fences. Read
+      // every owner before a caller uses this window's synchronous projection.
+      const latest = new Map<string, StoredBindingEvidence>();
+      let after: string | undefined;
+      for (;;) {
+        const page = await readBindingEvidencePage(after);
+        for (const row of page) latest.set(row.shellId, row);
+        if (page.length < 128) break;
+        after = page[page.length - 1].shellId;
+      }
+      if (writes.length) continue;
+      canonical.clear();
+      for (const [id, row] of latest) canonical.set(id, row);
+    }
   } while (writes.length);
 }
 
@@ -91,12 +175,12 @@ function drain(): Promise<void> {
 }
 
 function publish(shellId: string, raw: string): void {
-  // Publish compatibility fence first. Old clients cannot see an unowned shell
-  // while the IndexedDB transaction is pending or has failed.
-  localStorage.setItem(PREFIX + shellId, raw);
+  if (isTauri() && !hydrated) throw new Error("Session owner storage is still loading.");
+  // Keep the old routing fence until every admission reads native authority.
+  if (!canonicalEpoch) localStorage.setItem(PREFIX + shellId, raw);
   if (!hydrated) return;
   const previous = canonical.get(shellId);
-  const next = { shellId, raw, legacyRaw: raw };
+  const next = { shellId, raw, legacyRaw: canonicalEpoch ? (previous?.legacyRaw ?? null) : raw };
   canonical.set(shellId, next);
   writes.push({ previous, next });
   void drain().catch(() => {});
@@ -118,13 +202,13 @@ class InvalidStoredSessionOwner extends Error {
 }
 function read(shellId: string): StoredHostShell | undefined {
   if (typeof localStorage === "undefined") return;
-  const legacy = localStorage.getItem(PREFIX + shellId);
+  const legacy = canonicalEpoch ? null : localStorage.getItem(PREFIX + shellId);
   const evidence = canonical.get(shellId);
-  if (hydrated && evidence && legacy !== evidence.legacyRaw)
+  if (!canonicalEpoch && hydrated && evidence && legacy !== evidence.legacyRaw)
     throw new Error("The stored session owner changed. Reload before continuing.");
   if (!hydrated && typeof indexedDB !== "undefined")
     throw new Error("Session owner storage is still loading. Sending is held.");
-  if (hydrated && !evidence && legacy !== null)
+  if (!canonicalEpoch && hydrated && !evidence && legacy !== null)
     throw new Error("A session owner appeared in another window. Reload before continuing.");
   const raw = hydrated ? (evidence?.raw ?? null) : legacy;
   if (raw === null) return;

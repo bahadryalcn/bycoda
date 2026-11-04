@@ -10,6 +10,19 @@ vi.mock("../connections/model/hostFeatureClient", () => ({
 }));
 let root: Root;
 let container: HTMLDivElement;
+it("does not take the delayed second sample after its conversation becomes hidden", async () => {
+  vi.mocked(hostFeatureRequest).mockResolvedValue({ samples: [sample] });
+  await act(async () =>
+    root.render(createElement(DiagnosticsPanel, { cwd: "/repo", active: true })),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    root.render(createElement(DiagnosticsPanel, { cwd: "/repo", active: false })),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1100));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+});
 const sample = {
   at: Date.now(),
   host: { totalMemoryBytes: 1024, freeMemoryBytes: 512, logicalCpus: 8, loadAverage: null },

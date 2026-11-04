@@ -145,6 +145,46 @@ pub(super) fn supports_ack_host(descriptor: &Value) -> bool {
 }
 
 const RESULT_BYTES: usize = 32 * 1024 * 1024;
+pub(super) fn supports_bounded_format_host(descriptor: &Value) -> bool {
+    supports_host(descriptor)
+        && descriptor["capabilities"].as_array().is_some_and(|caps| {
+            caps.iter()
+                .any(|cap| cap.as_str() == Some("native.services.workspace.format.bounded.v1"))
+        })
+}
+
+static FORMAT_OWNERS: std::sync::OnceLock<Mutex<std::collections::HashSet<String>>> =
+    std::sync::OnceLock::new();
+
+/// Lifetime of the actual formatter caller, including its unconsumed reply.
+/// Recovery may discard a terminal result only after this owner is gone.
+pub(super) struct FormatOwner(String);
+impl FormatOwner {
+    fn claim(original: &Original) -> Result<Self, String> {
+        let mut owners = FORMAT_OWNERS
+            .get_or_init(Mutex::default)
+            .lock()
+            .map_err(|_| "Native formatter owners are unavailable")?;
+        if owners.len() >= 256 || !owners.insert(original.id().to_owned()) {
+            return Err("Native formatter callers are at capacity".into());
+        }
+        Ok(Self(original.id().to_owned()))
+    }
+    fn is_live(original: &Original) -> bool {
+        FORMAT_OWNERS
+            .get_or_init(Mutex::default)
+            .lock()
+            .map(|owners| owners.contains(original.id()))
+            .unwrap_or(true)
+    }
+}
+impl Drop for FormatOwner {
+    fn drop(&mut self) {
+        if let Ok(mut owners) = FORMAT_OWNERS.get_or_init(Mutex::default).lock() {
+            owners.remove(&self.0);
+        }
+    }
+}
 static RESULT_BUDGET: std::sync::OnceLock<Mutex<(usize, usize)>> = std::sync::OnceLock::new();
 
 /// Whole decoded target-result ownership, retained beside actual reply guards.
@@ -389,7 +429,7 @@ fn read_result_source(
         let bytes = source["byteLength"]
             .as_u64()
             .and_then(|bytes| usize::try_from(bytes).ok())
-            .filter(|bytes| *bytes > 0 && *bytes <= RESULT_BYTES)
+            .filter(|bytes| *bytes > 0 && *bytes <= original.result_budget())
             .ok_or_else(|| held(original))?;
         Ok((source.clone(), hash.to_owned(), bytes))
     })?;
@@ -498,6 +538,31 @@ fn persist_reply(
         // a recorded result. Never download or project that old output again.
         return reply.project(|_| Err(retired(&original)));
     }
+    if wrapped
+        && reply.channel.bounded_format_supported
+        && original.method() == "native.services.workspace.format"
+        && reply.value["state"] == "unknown"
+        && reply.value["resultUnavailable"] == true
+    {
+        let channel = reply.channel.clone();
+        access(&channel)?.with(|store| {
+            let admission = journal::completion_admission(store)?;
+            let outcome = reply.project(|value| {
+                if !exact_binding(value, &original)
+                    || value.get("result").is_some()
+                    || value.get("resultSource").is_some()
+                    || value.get("consumedResult").is_some()
+                {
+                    return Err(held(&original));
+                }
+                authority::with_full_projection_transaction(store, |tx| {
+                    journal::release_unavailable_result_tx(tx.connection(), &original)
+                })
+            });
+            admission.finish(outcome)
+        })?;
+        return Err(held(&original));
+    }
     if wrapped && reply.value["state"] == "retired" {
         return reply.project(|value| {
             if !exact_binding(value, &original) {
@@ -579,6 +644,7 @@ pub(super) fn http(
         related_guards: Vec::new(),
         result_charge: None,
         consumed: Mutex::new(false),
+        format_owner: None,
     })
 }
 
@@ -734,32 +800,68 @@ pub(super) fn request(
     let original = if epochs_supported(channel) {
         let epoch = ensure_epoch(channel, deadline)?;
         access(channel)?.with(|store| {
-            journal::epochs::prepare(
+            journal::epochs::prepare_with_budget(
                 store,
                 &semantic_key,
                 &fingerprint,
                 target,
                 params_json,
                 &epoch,
+                if target == "native.services.workspace.format" && channel.bounded_format_supported
+                {
+                    journal::FORMAT_RESULT_BYTES
+                } else if target == "native.services.workspace.format" {
+                    journal::MAX_RESULT_BYTES
+                } else {
+                    64 * 1024
+                },
             )
         })?
     } else {
         access(channel)?.with(|store| {
-            journal::prepare(store, &semantic_key, &fingerprint, target, params_json)
+            journal::prepare_with_budget(
+                store,
+                &semantic_key,
+                &fingerprint,
+                target,
+                params_json,
+                if target == "native.services.workspace.format" && channel.bounded_format_supported
+                {
+                    journal::FORMAT_RESULT_BYTES
+                } else if target == "native.services.workspace.format" {
+                    journal::MAX_RESULT_BYTES
+                } else {
+                    64 * 1024
+                },
+            )
         })?
     };
     if epoch_wire::required(&original) && !epochs_supported(channel) {
         return Err(held(&original));
     }
-    if !original.can_dispatch() {
-        return status(channel, &original, deadline);
-    }
-    apply(channel, legacy, &original, params_json, deadline)
+    let owner = (target == "native.services.workspace.format")
+        .then(|| FormatOwner::claim(&original))
+        .transpose()?;
+    let mut reply = if !original.can_dispatch() {
+        status(channel, &original, deadline)?
+    } else {
+        apply(channel, legacy, &original, params_json, deadline)?
+    };
+    reply.format_owner = owner;
+    Ok(reply)
 }
 
 pub(super) fn project<T>(
     reply: &NativeServiceReply,
     consume: impl FnOnce(&Value) -> Result<T, String>,
+) -> Result<T, String> {
+    project_with_deadline(reply, consume, None)
+}
+
+fn project_with_deadline<T>(
+    reply: &NativeServiceReply,
+    consume: impl FnOnce(&Value) -> Result<T, String>,
+    cleanup_deadline: Option<Instant>,
 ) -> Result<T, String> {
     let Some(original) = &reply.delivery else {
         let guards = reply.guards();
@@ -793,7 +895,11 @@ pub(super) fn project<T>(
     // The successful consumer and local FULL receipt are already complete.
     // Remote capacity retirement is best-effort and cannot turn that success
     // into an error or authorize another effect/consumer attempt.
-    let _ = acknowledge_consumed(reply, original, Instant::now() + CLEANUP_BUDGET);
+    let _ = acknowledge_consumed(
+        reply,
+        original,
+        cleanup_deadline.unwrap_or_else(|| Instant::now() + CLEANUP_BUDGET),
+    );
     Ok(value)
 }
 
@@ -910,8 +1016,9 @@ pub(super) fn reconcile_remote_acks(
     Ok(acknowledged)
 }
 
-/// Read-only remote reconciliation, bounded by the caller's single deadline.
-/// It records delivery evidence only and never recreates a former requester.
+/// Status reconciliation, bounded by the caller's single deadline. It never
+/// recreates a former requester. Terminal orphan formatter output is explicitly
+/// discarded; no editor receives it and the original effect is never replayed.
 pub(super) fn reconcile_pending(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
@@ -940,6 +1047,7 @@ pub(super) fn reconcile_pending(
             original.method(),
             "native.services.conversation.desktop.finish" | "native.services.workspace.format"
         ) || original.can_dispatch()
+            || FormatOwner::is_live(&original)
         {
             cursor = Some(original.id().to_owned());
             continue;
@@ -949,7 +1057,12 @@ pub(super) fn reconcile_pending(
             break;
         }
         if let Ok(reply) = status(channel, &original, deadline) {
-            // Deliberately no project/ACK: no former consumer is reconstructed.
+            if original.method() == "native.services.workspace.format" {
+                // No new owner can be constructed for this original: format
+                // invocations allocate fresh identities, and the live owner
+                // stays registered through its reply's final drop.
+                let _ = project_with_deadline(&reply, |_| Ok(()), Some(deadline));
+            }
             drop(reply);
             recorded += 1;
         }

@@ -20,6 +20,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { compareCounts, countFindings, sortedCounts } from "./check-ui-drift.mjs";
+import { checkPrivacyWriterCalls } from "./check-privacy-writers.mjs";
 
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/invariants-baseline.json";
@@ -158,6 +159,15 @@ export function checkInvariants({ root = defaultRoot, files } = {}) {
     ...bucket,
     items: findings.filter((item) => item.file === bucket.file && item.rule === bucket.rule),
   }));
+  const privacyCalls = checkPrivacyWriterCalls({ root, files: scope });
+  for (const item of privacyCalls) {
+    const rule = "privacy-writer-outside-fence";
+    regressions.push({ file: item.file, rule, count: 1, baseline: 0, items: [{
+      file: item.file, line: item.line, rule,
+      message: "Privacy writers must run inside withRoomPrivacyMutation or a reviewed delegate.",
+      text: item.text,
+    }] });
+  }
   return { success: regressions.length === 0, ...result, regressions, findings, current };
 }
 

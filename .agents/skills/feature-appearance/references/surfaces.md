@@ -17,6 +17,8 @@ Code paths are repository-relative. Verify current callers and platform gates fo
 
 ## Persistence and platform boundaries
 
+- Workspace gradients: `src/features/settings/ui/GradientBackgroundCard.tsx` and its module CSS; `src/features/settings/model/workspaceBackground.ts` owns `bycoda.workspaceBackground.v1`, normalization, same-/sibling-window updates and save/conflict recovery. The pure serializer/presets are `src/shared/theme/workspaceBackground.ts`; `src/styles/index.css` owns the single root image, theme veil and accessibility fallback. `initAppearance()` initializes it for main/detached workspaces; independent quick composer keeps its own background contract. Model/UI tests are colocated; browser scenarios are in `tests/browser/settings.e2e.ts`.
+
 - Appearance record: `bycoda.appearancePreferences.v1`; verify normalization/defaults before adding a field. `canvasBackground`, accent readability, custom surfaces and reset scopes are independent contracts.
 - Native commands: `set_window_glass_enabled` in `src-tauri/src/window.rs`; `set_window_background_blur` and registrations in `src-tauri/src/lib.rs`. Never infer effective OS state from renderer CSS.
 - Image commands in `src-tauri/src/chat_background.rs`: `save_chat_background`, `remove_chat_background`, `save_project_chat_background`, `remove_project_chat_background`. Preserve existing size/extension validation and failure ownership.

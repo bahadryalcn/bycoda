@@ -42,7 +42,7 @@ All code paths below are repository-relative. This is a starting map; follow cur
 ## Connections
 
 - `src/features/connections/ui/ConnectionsSettings.tsx`, `PhoneConnectionPanel.tsx`, `PhonePairingDialog.tsx`; follow their model/remote-command imports.
-- Host entry points: `host/mobile-access.ts`, `mobile-pairing.ts`, `mobile-access-config.ts`; native bridge `src-tauri/src/remote.rs`.
+- Host entry points: `host/mobile/mobile-access.ts`, `mobile-pairing.ts`, `mobile-access-config.ts`; native bridge `src-tauri/src/remote.rs`.
 - Search registered `mobile.access.*` and `mobile.pairing.*` operations. Retain owner-device identity, explicit pairing/enable/disable intent, expiry, cancellation and uncertain-result recovery; never infer a paired-phone roster without a data source.
 - Mobile authority and phone permission/settings use the separate mobile repository/routes; read [mobile](../../feature-mobile/SKILL.md) when those contracts change.
 

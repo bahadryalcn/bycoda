@@ -433,6 +433,7 @@ describe("settings pages", () => {
         "streaming-text-mode",
         "translation-model-default",
         "reprompt-model-default",
+        "title-model-default",
       ],
       worktrees: ["git-generation-default", "diff-view", "project-worktrees"],
       groupLock: ["mask-emails", "file-access", "start-in-privacy-mode"],
@@ -474,21 +475,41 @@ describe("settings pages", () => {
       container.querySelector<HTMLButtonElement>("#setting-privacy-policy")!.click(),
     );
     expect(document.body.textContent).toContain("No developer collection or tracking");
-    expect(document.body.textContent).toContain("info@bahadrhllyalcn.com");
+    expect(document.body.textContent).toContain("info@bycoda.codes");
     for (const entry of SETTINGS_INDEX.filter((item) => item.section === "policies")) {
       expect(container.querySelector(`[data-setting-id="${entry.id}"]`)).not.toBeNull();
     }
     const contact = document.querySelector<HTMLAnchorElement>(
-      'a[href="mailto:info@bahadrhllyalcn.com"]',
+      'a[href="mailto:info@bycoda.codes"]',
     )!;
     vi.mocked(openUrl).mockResolvedValueOnce(undefined);
     await act(async () => contact.click());
-    expect(openUrl).toHaveBeenCalledWith("mailto:info@bahadrhllyalcn.com");
+    expect(openUrl).toHaveBeenCalledWith("mailto:info@bycoda.codes");
     vi.mocked(openUrl).mockRejectedValueOnce(new Error("No email app"));
     await act(async () => contact.click());
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "Copy info@bahadrhllyalcn.com",
+      "Copy info@bycoda.codes",
     );
+  });
+
+  it("keeps application and developer contacts distinct in About", async () => {
+    vi.mocked(openUrl).mockReset().mockResolvedValue(undefined);
+    await render("general");
+    const website = productLink("bycoda.codes");
+    const contact = productLink("info@bycoda.codes");
+    const developerContact = productLink("info@bahadrhllyalcn.com");
+    expect(contact.closest(".settings-row")?.textContent).toContain("Contact");
+    expect(developerContact.closest(".settings-row")?.textContent).toContain("Developer contact");
+    const openWebsite = Array.from(
+      website.closest(".settings-row")!.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Open website")!;
+    expect(openWebsite).toBeTruthy();
+    await act(async () => openWebsite.click());
+    expect(openUrl).toHaveBeenLastCalledWith("https://bycoda.codes");
+    await act(async () => contact.click());
+    expect(openUrl).toHaveBeenLastCalledWith("mailto:info@bycoda.codes");
+    await act(async () => developerContact.click());
+    expect(openUrl).toHaveBeenLastCalledWith("mailto:info@bahadrhllyalcn.com");
   });
 
   it("keeps a General link pending and its recovery local while other links remain usable", async () => {

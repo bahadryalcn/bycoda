@@ -344,6 +344,13 @@ export type TurnMetrics = {
  * client send/create/steer command. Missing author retains legacy owner input. */
 export type SessionMessageAuthor =
   | {
+      kind: "assistant-room";
+      name: string;
+      threadId: string;
+      reason: "kickoff";
+      operationId: string;
+    }
+  | {
       kind: "assistant-manual";
       name: string;
       supervisionId: string;

@@ -1,17 +1,17 @@
 import { forEachAsync, mapAsync, someAsync } from "./async-collections";
-import { deferredAssistantTurn, AssistantTurnPolicyDeferredError } from "./assistant-turn-policy";
+import { deferredAssistantTurn, AssistantTurnPolicyDeferredError } from "./assistant/core/assistant-turn-policy";
 import {
   assistantRecoveryHoldsTask,
   assistantRecoveryIdentity,
   readAssistantRecovery,
   writeAssistantRecovery,
   type AssistantRecoverySource,
-} from "./assistant-worker-recovery";
-import { assistantJobSessionBelongs } from "./assistant-job-scope";
+} from "./assistant/work/assistant-worker-recovery";
+import { assistantJobSessionBelongs } from "./assistant/work/assistant-job-scope";
 import {
   withAssistantTaskMetadata,
   assistantTaskMetadataSourceStamp,
-} from "./assistant-task-metadata";
+} from "./assistant/work/assistant-task-metadata";
 import { hostQuestionToken } from "./question-source";
 import type { AssistantJob } from "../src/shared/model/host-contracts/assistant";
 import { runGitText } from "../src/shared/lib/processExecution.node";
@@ -67,7 +67,7 @@ import {
   reviewFindings,
   reviewRepairStop,
 } from "../src/features/tasks/model/taskReviewNotes";
-import { createHostWorktree } from "./git-worktrees";
+import { createHostWorktree } from "./git/git-worktrees";
 import { taskWorkspace } from "./task-workspace";
 import { transferTaskArtifacts } from "./task-artifacts";
 import {
@@ -82,7 +82,7 @@ import type {
   SprintTaskSnapshot,
 } from "../src/features/tasks/model/hostSprints";
 import { HostLimits } from "./limits";
-import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
+import { hostGitRepositoryKey, withHostGitMutation } from "./git/git-mutations";
 import { HostTaskBudgets } from "./task-budgets";
 import { admitRunDuration, confirmedRunElapsed } from "./run-duration";
 import { checkTaskPreflight } from "./task-preflight";
@@ -98,11 +98,7 @@ import {
   type SessionRunEngine,
 } from "./sessionRuns";
 import { runHostShell } from "./shell";
-import {
-  assertShellOwnershipAvailable,
-  hasShellPhysicalOwner,
-  reserveShellOwnership,
-} from "./shell-ownership";
+import { assertShellOwnershipAvailable, hasShellPhysicalOwner, reserveShellOwnership } from "./shell-ownership";
 import type { HostStore } from "./store";
 import {
   previewTaskFinalization,
@@ -1479,6 +1475,22 @@ export class HostTasks {
         await store.db.exec(
           "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS tasks_project ON tasks(json_extract(value, '$.projectId'));",
         );
+        await store.db.exec(`
+          CREATE TABLE IF NOT EXISTS task_admission_generation (id TEXT PRIMARY KEY, generation INTEGER NOT NULL);
+          INSERT OR IGNORE INTO task_admission_generation SELECT id, 1 FROM tasks;
+          CREATE TRIGGER IF NOT EXISTS task_admission_insert AFTER INSERT ON tasks BEGIN
+            INSERT INTO task_admission_generation(id,generation) VALUES(NEW.id,1)
+              ON CONFLICT(id) DO UPDATE SET generation=generation+1;
+          END;
+          CREATE TRIGGER IF NOT EXISTS task_admission_transition AFTER UPDATE ON tasks
+          WHEN json_extract(OLD.value,'$.status') IS NOT json_extract(NEW.value,'$.status') BEGIN
+            INSERT INTO task_admission_generation(id,generation) VALUES(NEW.id,1)
+              ON CONFLICT(id) DO UPDATE SET generation=generation+1;
+          END;
+          CREATE TRIGGER IF NOT EXISTS task_admission_delete AFTER DELETE ON tasks BEGIN
+            UPDATE task_admission_generation SET generation=generation+1 WHERE id=OLD.id;
+          END;
+        `);
         await store.db.exec(
           "CREATE TABLE IF NOT EXISTS task_goal_holds(goal_id TEXT PRIMARY KEY);",
         );
@@ -2066,6 +2078,8 @@ export class HostTasks {
         throw new Error("A new task starts as to do or queued.");
       const now = this.now();
       const previous = await this.find(input.id);
+      if ((raw as { expectedAbsent?: unknown }).expectedAbsent === true && previous)
+        throw new Error("Task ID already exists. Choose a new ID.");
       assertExpectedConfiguration(raw, previous, parseHostTask);
       if (input.crewDefinitionId && previous && (previous.crewRunId || hasUnmergedBranch(previous)))
         throw new Error(
@@ -2179,12 +2193,18 @@ export class HostTasks {
   }
   /** Moving a reviewed task to done merges its branch; that can fail, and the
    * task then stays in review. */
-  async move(id: string, to: unknown): Promise<HostTask> {
+  async move(id: string, to: unknown, reviewed?: HostTask): Promise<HostTask> {
     await this.ready;
 
     if (this.delivering.has(id)) throw new Error("This task is being merged.");
     const task = await this.find(id);
     if (!task) throw new Error("Task not found.");
+    if (reviewed) {
+      assertExpectedConfiguration({ expectedConfiguration: reviewed }, task, parseHostTask);
+      if (reviewed.updatedAt !== task.updatedAt || reviewed.status !== task.status)
+        throw new Error("Task changed after review. Read it again.");
+      if (to !== "queued") throw new Error("Reviewed task admission only queues work.");
+    }
     if (!isTaskStatus(to)) throw new Error("Invalid task status");
     if (task.artifactDeliveryPending && ["todo", "queued", "done"].includes(to))
       throw new Error(
@@ -2199,16 +2219,12 @@ export class HostTasks {
     const now = this.now();
     if ((to === "queued" || to === "todo") && this.jobs.has(id))
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
-    if (
-      ["todo", "queued", "done"].includes(to) &&
-      (await hasShellPhysicalOwner(this.store, "task", id))
-    )
-      throw new Error(
-        "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
-      );
+    if (["todo", "queued", "done"].includes(to) && await hasShellPhysicalOwner(this.store, "task", id))
+      throw new Error("The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.");
     if (to === "queued" && !task.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
     if (to === "queued") await this.resolveAssistantRecoveryForOwner(task);
-    if (to === "queued" && canTakeOverBlockedTask(task)) return await this.queueTakeover(task, now);
+    if (to === "queued" && canTakeOverBlockedTask(task))
+      return await this.queueTakeover(task, now, reviewed ? task : undefined);
     if (to === "queued" && taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
     if (to === "todo" && task.status === "queued") {
       // Only a task nothing has run for can be pulled back.
@@ -2257,18 +2273,22 @@ export class HostTasks {
         ...rest
       } = task;
       if (!task.merged)
-        return await this.write({
-          ...rest,
-          ...(rest.mergeRepair ? { mergeRepair: { ...rest.mergeRepair, attempts: 0 } } : {}),
-          retryFeedback: await this.retryFeedback(task),
-          // An owner rerun of work finished with findings gets a fresh correction budget.
-          repairAttempts: completedWithFindings ? 0 : task.repairAttempts,
-          ...(completedWithFindings ? { reviewFailureCount: 0 } : {}),
-          repairNote: task.repairNote,
-          repairStop: task.repairStop,
-          status: to,
-          updatedAt: now,
-        });
+        return await this.write(
+          {
+            ...rest,
+            ...(rest.mergeRepair ? { mergeRepair: { ...rest.mergeRepair, attempts: 0 } } : {}),
+            retryFeedback: await this.retryFeedback(task),
+            // An owner rerun of work finished with findings gets a fresh correction budget.
+            repairAttempts: completedWithFindings ? 0 : task.repairAttempts,
+            ...(completedWithFindings ? { reviewFailureCount: 0 } : {}),
+            repairNote: task.repairNote,
+            repairStop: task.repairStop,
+            status: to,
+            updatedAt: now,
+          },
+          undefined,
+          reviewed ? task : undefined,
+        );
       const {
         branch,
         worktreeCwd,
@@ -2299,7 +2319,11 @@ export class HostTasks {
         deliveryRequested,
         ...fresh
       } = rest;
-      return await this.write({ ...fresh, status: to, updatedAt: now });
+      return await this.write(
+        { ...fresh, status: to, updatedAt: now },
+        undefined,
+        reviewed ? task : undefined,
+      );
     }
     if (to === "blocked") {
       if (task.crewDefinitionId && this.crewRunner) {
@@ -2339,15 +2363,21 @@ export class HostTasks {
     });
   }
   /** Owner start requests retain scheduler limits and dependency gates. */
-  async startTask(id: string): Promise<HostTask> {
+  async startTask(id: string, reviewed?: HostTask): Promise<HostTask> {
     await this.ready;
 
-    let task = await this.get(id);
+    let { task, generation } = await this.transaction(async () => ({
+      task: await this.find(id),
+      generation: Number((await this.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0),
+    }));
     if (!task) throw new Error("Task not found.");
     if (await hasShellPhysicalOwner(this.store, "task", id))
-      throw new Error(
-        "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
-      );
+      throw new Error("The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.");
+    if (reviewed) {
+      assertExpectedConfiguration({ expectedConfiguration: reviewed }, task, parseHostTask);
+      if (reviewed.updatedAt !== task.updatedAt || reviewed.status !== task.status)
+        throw new Error("Task changed after review. Read it again.");
+    }
     if (task.status === "queued") await this.resolveAssistantRecoveryForOwner(task);
     if (task.goalId && this.pausedGoals.has(task.goalId))
       throw new Error("This goal is paused. Resume it before starting its tasks.");
@@ -2357,11 +2387,24 @@ export class HostTasks {
           "This goal was cancelled. Create a new task to continue its retained work.",
         );
     }
-    if (task.status !== "queued") task = await this.move(id, "queued");
+    if (task.status !== "queued") {
+      task = await this.move(id, "queued", reviewed);
+      const moved = task;
+      generation = await this.transaction(async () => {
+        const current = await this.find(id);
+        if (!current || !isDeepStrictEqual(current, JSON.parse(JSON.stringify(moved))))
+          throw new Error("Task changed before starting. Refresh and try again.");
+        return Number((await this.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0);
+      });
+    }
     const accepted = await this.transaction(async () => {
       const current = await this.find(id);
-      if (!current || !isDeepStrictEqual(current, JSON.parse(JSON.stringify(task))))
+      const currentGeneration = Number((await this.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0);
+      if (!current || current.status !== "queued" || currentGeneration !== generation)
         throw new Error("Task changed before starting. Refresh and try again.");
+      assertExpectedConfiguration({ expectedConfiguration: task }, current, parseHostTask);
+      await this.store.db.prepare("UPDATE task_admission_generation SET generation=generation+1 WHERE id=?").run(id);
+      generation = currentGeneration + 1;
       // Read the queue under the same transaction as its ordering writes. A
       // previous snapshot could restore another task that was stopped or edited.
       const ordered = (await this.list()).filter(
@@ -2377,9 +2420,22 @@ export class HostTasks {
     });
     // Acceptance is durable; the scheduler still owns capacity and dependency
     // gates. Unrelated maintenance must not hold the owner's Start response.
-    void this.tick().catch((error) =>
-      console.error("Task scheduling failed:", errorMessage(error)),
-    );
+    // Schedule only after the enclosing commit, outside the caller's
+    // short-lived Room or voice authorization.
+    this.store.afterCommit(() => {
+      void this.tick().catch(async (error) => {
+        try {
+          await this.transaction(async () => {
+            const current = await this.find(id);
+            const currentGeneration = Number((await this.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0);
+            if (current?.status === "queued" && currentGeneration === generation)
+              await this.block(current, `Task scheduling failed: ${errorMessage(error)}`, this.now());
+          });
+        } catch (reportError) {
+          console.error("Task scheduling failure could not be recorded:", errorMessage(reportError));
+        }
+      });
+    });
     return accepted;
   }
   async reorder(ids: unknown): Promise<HostTask[]> {
@@ -2546,9 +2602,7 @@ export class HostTasks {
     if (this.jobs.has(id))
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (await hasShellPhysicalOwner(this.store, "task", id))
-      throw new Error(
-        "The original verification command tree is not proven stopped. Inspect Host diagnostics before deleting.",
-      );
+      throw new Error("The original verification command tree is not proven stopped. Inspect Host diagnostics before deleting.");
     if (task?.status === "running" || task?.status === "verifying")
       throw new Error("Stop this task before deleting it.");
     if (task && hasUnmergedBranch(task)) {
@@ -3159,28 +3213,32 @@ export class HostTasks {
     const row = await this.store.db.prepare("SELECT value FROM goals WHERE id=?").get(task.goalId);
     return !row || JSON.parse(String(row.value)).status !== "cancelled";
   }
-  private async queueTakeover(task: HostTask, now: number): Promise<HostTask> {
-    return await this.write({
-      ...task,
-      status: "queued",
-      blockedTakeover: {
-        at: now,
-        previousSessionId: task.sessionId,
-        blocker: task.error ?? "Verification failed.",
+  private async queueTakeover(task: HostTask, now: number, reviewed?: HostTask): Promise<HostTask> {
+    return await this.write(
+      {
+        ...task,
+        status: "queued",
+        blockedTakeover: {
+          at: now,
+          previousSessionId: task.sessionId,
+          blocker: task.error ?? "Verification failed.",
+        },
+        retryFeedback: await this.retryFeedback(task),
+        review: true,
+        sessionId: undefined,
+        runId: undefined,
+        reviewer: undefined,
+        verification: undefined,
+        reviewOnly: undefined,
+        repairStop: undefined,
+        error: undefined,
+        needsInput: undefined,
+        completedAt: undefined,
+        updatedAt: now,
       },
-      retryFeedback: await this.retryFeedback(task),
-      review: true,
-      sessionId: undefined,
-      runId: undefined,
-      reviewer: undefined,
-      verification: undefined,
-      reviewOnly: undefined,
-      repairStop: undefined,
-      error: undefined,
-      needsInput: undefined,
-      completedAt: undefined,
-      updatedAt: now,
-    });
+      undefined,
+      reviewed,
+    );
   }
   /** Backfill the available legacy review once; runtime/missing-verdict
    * failures are not defects. Only trusted correction summaries replace missing sessions. */
@@ -3236,7 +3294,11 @@ export class HostTasks {
     }
     return await this.write({ ...task, reviewNotes: notes });
   }
-  private async write(task: HostTask, persisted?: Map<string, string>): Promise<HostTask> {
+  private async write(
+    task: HostTask,
+    persisted?: Map<string, string>,
+    reviewed?: HostTask,
+  ): Promise<HostTask> {
     const sourceGeneration = task.workspaceGenerationId;
     task = suspendedTaskDelivery(task);
     // An old attempt's diagnostic must never label a new worker/reviewer.
@@ -3252,6 +3314,11 @@ export class HostTasks {
     task = { ...task, workspaceGenerationId: task.workspaceGenerationId ?? randomUUID() };
     return await this.store.db.scope(async () => {
       await this.store.db.checkAuthorization();
+      if (
+        reviewed &&
+        !isDeepStrictEqual(await this.find(task.id), JSON.parse(JSON.stringify(reviewed)))
+      )
+        throw new Error("Task changed before queue admission. Read it again.");
       if (this.invalidatedAssistantGenerations.get(task.id)?.has(sourceGeneration))
         throw new Error(
           "The original assistant task execution was retired; stale callbacks cannot restore it.",
@@ -3310,12 +3377,7 @@ export class HostTasks {
     now: number,
     retainReviewer = false,
   ): Promise<HostTask> {
-    if (
-      task.workspaceActivityId &&
-      this.managed &&
-      !this.jobs.has(task.id) &&
-      !(await hasShellPhysicalOwner(this.store, "task", task.id))
-    ) {
+    if (task.workspaceActivityId && this.managed && !this.jobs.has(task.id) && !(await hasShellPhysicalOwner(this.store, "task", task.id))) {
       const run = task.reviewer ?? task;
       if (
         (
@@ -3686,13 +3748,8 @@ export class HostTasks {
     active: readonly HostTask[],
   ): Promise<HostTask> {
     if (await hasShellPhysicalOwner(this.store, "task", task.id))
-      throw new Error(
-        "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
-      );
-    await assertShellOwnershipAvailable(
-      this.store,
-      task.worktreeCwd ?? (await this.store.project(task.projectId)).cwd,
-    );
+      throw new Error("The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.");
+    await assertShellOwnershipAvailable(this.store, task.worktreeCwd ?? (await this.store.project(task.projectId)).cwd);
     if (!(await this.goalExecutionAllowed(task.goalId))) return task;
     if (assistantRecoveryHoldsTask(await readAssistantRecovery(this.store, task.id), task))
       return task;
@@ -4554,14 +4611,7 @@ export class HostTasks {
         return;
       const verification: TaskVerification = {};
       if (task.verifyCommand) {
-        const physicalOwner = await reserveShellOwnership(
-          this.store,
-          cwd,
-          "task",
-          id,
-          task.verifyCommand,
-          task.workspaceActivityId,
-        );
+        const physicalOwner = await reserveShellOwnership(this.store, cwd, "task", id, task.verifyCommand, task.workspaceActivityId);
         const result = await runHostShell(
           cwd,
           task.verifyCommand,
@@ -4582,20 +4632,7 @@ export class HostTasks {
         if (result.terminationFailed) {
           await physicalOwner.unknown(result.terminationFailed);
           const latest = await this.find(id);
-          if (latest)
-            await this.write({
-              ...latest,
-              status: "blocked",
-              error: result.terminationFailed,
-              verification: {
-                command: {
-                  exitCode: null,
-                  output: result.output.slice(-VERIFY_OUTPUT_LIMIT),
-                  timedOut: result.timedOut,
-                },
-              },
-              updatedAt: this.now(),
-            });
+          if (latest) await this.write({ ...latest, status: "blocked", error: result.terminationFailed, verification: { command: { exitCode: null, output: result.output.slice(-VERIFY_OUTPUT_LIMIT), timedOut: result.timedOut } }, updatedAt: this.now() });
           return;
         }
         await physicalOwner.complete();
@@ -4746,11 +4783,7 @@ export class HostTasks {
         .catch((error) => console.error("Could not verify a task:", errorMessage(error)))
         .finally(async () => {
           const latest = await this.find(id);
-          if (
-            latest?.workspaceActivityId &&
-            latest.status === "blocked" &&
-            !(await hasShellPhysicalOwner(this.store, "task", id))
-          ) {
+          if (latest?.workspaceActivityId && latest.status === "blocked" && !(await hasShellPhysicalOwner(this.store, "task", id))) {
             const run = latest.reviewer ?? latest;
             if (
               (
@@ -4903,7 +4936,11 @@ export class HostTasks {
             review,
           )
         : [];
-    const repositoryFingerprint = await this.workspaceFingerprint(task);
+    // Acceptance already includes the repository snapshot. Other reviews need
+    // it only for failed-attempt progress comparisons.
+    const repositoryFingerprint = !acceptance && review.verdict === "fail" && outcome.status === "succeeded"
+      ? await this.workspaceFingerprint(task)
+      : undefined;
     const acceptanceFingerprint = acceptance ? await this.acceptanceFingerprint(task) : undefined;
     const workspaceFingerprint = acceptanceRequired ? acceptanceFingerprint : repositoryFingerprint;
     const currentReview = await this.find(task.id);

@@ -16,6 +16,41 @@ afterEach(async () => {
 });
 const at = (value: string) => new Date(value).getTime();
 const MINUTE = 60000;
+it("does not upsert another project's automation through create-only admission", async () => {
+  const f = await setup();
+  const foreignPath = join(f.directory, "foreign");
+  mkdirSync(foreignPath);
+  const foreign = await f.store.addProject(foreignPath, "Foreign project");
+  const original = await f.automations.save(f.input({ projectId: foreign.id }));
+  await expect(
+    f.automations.save(f.input({ expectedAbsent: true, name: "Overwritten" })),
+  ).rejects.toThrow("Automation ID already exists");
+  expect((await f.automations.list())[0]).toEqual(original);
+});
+it("admits only one concurrent create-only automation for the same ID", async () => {
+  const f = await setup();
+  const results = await Promise.allSettled([
+    f.automations.save(f.input({ expectedAbsent: true, name: "First owner request" })),
+    f.automations.save(f.input({ expectedAbsent: true, name: "Second owner request" })),
+  ]);
+  expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+  expect(results.find((result) => result.status === "rejected")?.reason).toMatchObject({
+    message: "Automation ID already exists. Choose a new ID.",
+  });
+});
+it("rejects a changed reviewed automation at pending-run admission without launching", async () => {
+  const f = await setup();
+  const reviewed = await f.automations.save(f.input());
+  const transaction = f.store.transaction.bind(f.store);
+  vi.spyOn(f.store, "transaction").mockImplementationOnce(async (operation) => {
+    await f.automations.save(f.input({ prompt: "Concurrent owner instructions" }));
+    return transaction(operation);
+  });
+  await expect(f.automations.runNow("nightly", reviewed)).rejects.toThrow("Configuration changed");
+  expect(await f.automations.runs("nightly")).toEqual([]);
+  expect(f.turns).toHaveLength(0);
+  expect((await f.automations.list())[0].prompt).toBe("Concurrent owner instructions");
+});
 it("drains a held manual launch on close and prevents dispatch after preparation", async () => {
   const f = await setup();
   await f.automations.save(f.input());
@@ -368,22 +403,61 @@ describe("host automations", () => {
   });
   it("stops a run that passes its time limit", async () => {
     const { automations, input, clock, provider, turns, settled } = await setup();
-    await automations.save(input({ maxRunMinutes: 30 }));
-    const run = await automations.runNow("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
-    clock.now += 29 * MINUTE;
-    await automations.tick();
-    expect(provider.cancel).not.toHaveBeenCalled();
-    clock.now += MINUTE;
-    await automations.tick();
-    expect(provider.cancel).toHaveBeenCalledTimes(1);
-    await settled(run.sessionId!);
-    clock.now += MINUTE;
-    await automations.tick();
-    expect((await automations.runs("nightly"))[0]).toMatchObject({
-      status: "failed",
-      error: "Stopped: reached the 30-minute time limit.",
-    });
+    // Run limits count observed, matching wall/monotonic intervals, not a wall
+    // clock jump (which may be system sleep). Keep the Engine's admission clock
+    // and the scheduler's clock on the same deterministic timeline.
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      await automations.save(input({ maxRunMinutes: 30 }));
+      const run = await automations.runNow("nightly");
+      await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
+      for (let minute = 0; minute < 29; minute++) {
+        clock.now += MINUTE;
+        await automations.tick();
+      }
+      expect(provider.cancel).not.toHaveBeenCalled();
+      clock.now += MINUTE;
+      await automations.tick();
+      expect(provider.cancel).toHaveBeenCalledTimes(1);
+      await settled(run.sessionId!);
+      clock.now += MINUTE;
+      await automations.tick();
+      expect((await automations.runs("nightly"))[0]).toMatchObject({
+        status: "failed",
+        error: "Stopped: reached the 30-minute time limit.",
+      });
+    } finally {
+      wall.mockRestore();
+      monotonic.mockRestore();
+    }
+  });
+  it("does not cancel a run after an unobserved wall-clock gap", async () => {
+    const { automations, input, clock, provider, turns } = await setup();
+    let elapsed = 0;
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      await automations.save(input({ maxRunMinutes: 30 }));
+      const run = await automations.runNow("nightly");
+      await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
+      clock.now += 30 * MINUTE;
+      await automations.tick();
+      expect(provider.cancel).not.toHaveBeenCalled();
+      // A later matching interval resumes measurement without retroactively
+      // charging the gap as thirty minutes of confirmed provider work.
+      clock.now += MINUTE;
+      elapsed += MINUTE;
+      await automations.tick();
+      expect(provider.cancel).not.toHaveBeenCalled();
+      expect((await automations.runs("nightly"))[0]).toMatchObject({
+        id: run.id,
+        status: "running",
+      });
+    } finally {
+      wall.mockRestore();
+      monotonic.mockRestore();
+    }
   });
   it("skips a due run while the previous one is still going", async () => {
     const { automations, input, clock, turns } = await setup();

@@ -293,7 +293,7 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+      <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-pane-border) bg-(--ui-workspace-panel) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
         <TextField
           hideLabel
           label={t("Page number")}
@@ -349,7 +349,7 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
         tabIndex={0}
         role="region"
         aria-label={t("PDF preview")}
-        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--ui-surface-muted) py-3"
+        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--ui-workspace-canvas-muted) py-3"
         style={{ overflowAnchor: "none" }}
       >
         <div className="relative w-full" style={{ height: pages.getTotalSize() }}>

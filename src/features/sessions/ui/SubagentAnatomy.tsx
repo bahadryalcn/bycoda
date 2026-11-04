@@ -2,7 +2,13 @@ import { t, useT } from "../../../shared/i18n";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
 import type { AgentStep, Block } from "../model/session";
-import { subagentReport, subagentStatusLine, toolCallState } from "../model/transcriptActivity";
+import {
+  subagentReport,
+  subagentStatusLine,
+  subagentStatusParts,
+  toolCallState,
+  type SubagentStatusPart,
+} from "../model/transcriptActivity";
 import { AgentClock } from "./AgentClock";
 import { AgentMarkdown } from "./AgentMarkdown";
 
@@ -33,6 +39,35 @@ export function runLabel(block: Block, busy: boolean): string {
   return lifecycleLabel(blockLifecycle(block, busy));
 }
 
+export function SubagentStatusSummary({
+  parts,
+  separator = ", ",
+}: {
+  parts: SubagentStatusPart[];
+  separator?: string;
+}) {
+  return parts.map((part, index) => (
+    <span key={index}>
+      {index ? separator : ""}
+      <span
+        className={
+          part.tone === "danger"
+            ? "text-(--ui-tone-danger-fg)"
+            : part.tone === "warning"
+              ? "text-(--ui-tone-warning-fg)"
+              : part.tone === "success"
+                ? "text-(--ui-tone-success-fg)"
+                : part.tone === "accent"
+                  ? "text-(--ui-tone-accent-fg)"
+                  : undefined
+        }
+      >
+        {part.text}
+      </span>
+    </span>
+  ));
+}
+
 /**
  * State and time lead; agent type, model and the step summary are quiet and
  * truncate. `busy` is whether the owning session is working, as for the dock.
@@ -42,12 +77,14 @@ export function SubagentStateLine({
   busy,
   steps,
   model,
+  inline = false,
   className = "",
 }: {
   block: Block;
   busy: boolean;
   steps: AgentStep[];
   model?: string;
+  inline?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -56,13 +93,14 @@ export function SubagentStateLine({
   const running = lifecycle === "running";
   const failed = toolCallState(block) === "rejected";
   const summary = lifecycle === "stopped" ? "" : subagentStatusLine(block, steps);
-  const quietMeta = [run?.agentType, model, summary && !failed ? summary : undefined]
-    .filter(Boolean)
-    .join(" · ");
+  const identity = [run?.agentType, model].filter(Boolean).join(" · ");
+  const visibleSummary = summary && !failed ? summary : undefined;
+  const quietMeta = [identity, visibleSummary].filter(Boolean).join(" · ");
+  const Container = inline ? "span" : "div";
   return (
-    <div
+    <Container
       data-subagent-state
-      className={`flex min-w-0 items-center gap-x-2 text-ui-caption text-(--ui-text-secondary) ${className}`}
+      className={`flex min-w-0 items-center gap-x-2 whitespace-nowrap text-ui-caption text-(--ui-text-secondary) ${className}`}
     >
       <span
         className={`shrink-0 font-medium ${
@@ -70,9 +108,9 @@ export function SubagentStateLine({
             ? "text-(--ui-tone-danger-fg)"
             : running
               ? "text-(--ui-tone-accent-fg)"
-              : lifecycle === "interrupted"
+              : lifecycle === "interrupted" || lifecycle === "stopped"
                 ? "text-(--ui-tone-warning-fg)"
-                : "text-(--ui-tone-neutral-fg)"
+                : "text-(--ui-tone-success-fg)"
         }`}
       >
         {lifecycleLabel(lifecycle)}
@@ -83,10 +121,16 @@ export function SubagentStateLine({
           label={model ? `${quietMeta} (${t("Model: {p0}", { p0: model })})` : quietMeta}
           when={model ? "always" : "overflow"}
         >
-          <span className="min-w-0 flex-1 truncate">{quietMeta}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {identity}
+            {identity && visibleSummary ? " · " : ""}
+            {visibleSummary ? (
+              <SubagentStatusSummary parts={subagentStatusParts(block, steps)} />
+            ) : null}
+          </span>
         </Tooltip>
       ) : null}
-    </div>
+    </Container>
   );
 }
 

@@ -388,13 +388,17 @@ it("preserves the existing32MiB target result limit using source metadata rather
       ...empty,
       formatted: "x".repeat(maximum - Buffer.byteLength(JSON.stringify(empty))),
     };
-  f.setFormat(async () => result);
+  // Legacy admitted originals keep their larger result contract.
+  await f.journal.admit(f.principal, format, identity);
+  await f.store.db
+    .prepare("UPDATE native_delivery_receipts SET reserved_bytes=? WHERE original_id=?")
+    .run(maximum, identity.originalId);
+  await f.journal.record(f.principal, format, identity, result);
   const raw = Buffer.from(JSON.stringify(result));
   expect(raw.length).toBe(maximum);
-  const status = (await f.call("native.services.delivery.apply", {
+  const status = (await f.call("native.services.delivery.status", {
     ...identity,
     target: format,
-    paramsJson,
   })) as { state: string; resultSource: { sha256: string; byteLength: number } };
   expect(status).toEqual({
     ...identity,
@@ -414,7 +418,7 @@ it("preserves the existing32MiB target result limit using source metadata rather
       deliverySha(raw.subarray(offset, offset + 65_536)),
     );
   }
-  expect(f.counts.format).toBe(1);
+  expect(f.counts.format).toBe(0);
 });
 
 it("preserves delivery metadata and recorded result across staged buffer/service commits", async () => {

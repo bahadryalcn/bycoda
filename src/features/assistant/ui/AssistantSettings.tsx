@@ -123,6 +123,8 @@ export function AssistantSettings({
       notificationAway,
       notificationDnd,
       summaryRefreshMessages,
+      observationTaskDone,
+      observationTaskNeedsInput,
     } = draft;
     try {
       const saved = await assistantRequest({
@@ -164,6 +166,8 @@ export function AssistantSettings({
           notificationAway,
           notificationDnd,
           summaryRefreshMessages,
+          observationTaskDone,
+          observationTaskNeedsInput,
         },
       });
       if (!saved.profile)
@@ -313,6 +317,7 @@ export function AssistantSettings({
               <div className={styles.stack}>
                 <div className={settingsStyles.profileFields}>
                   <AssistantProfileFields
+                    observationTasksAvailable={snapshot.capabilities.observationTasks === true}
                     section={section}
                     value={draft}
                     onChange={(patch) => {

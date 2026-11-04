@@ -2,8 +2,14 @@
   padding: 4px;
 }
 .toolbar {
-  flex-wrap: wrap;
+  inline-size: max-content;
+  flex-wrap: nowrap;
   justify-content: flex-start;
+}
+.rail {
+  max-block-size: min(20rem, 60vh);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .comment {
   display: flex;

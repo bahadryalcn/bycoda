@@ -6,6 +6,7 @@ export type RuntimeLogSource = {
   label: string;
   projectId?: string;
   sessionId?: string;
+  assistantThreadId?: string;
   url?: string;
   available: boolean;
   reason?: string;

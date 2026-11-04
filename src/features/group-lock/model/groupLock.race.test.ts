@@ -32,7 +32,7 @@ afterEach(() => vi.unstubAllGlobals());
 async function setup() {
   const model = await import("./groupLock");
   await model.setLockPassword("synthetic-initial");
-  model.lockAllGroups();
+  await model.lockAllGroups();
   return model;
 }
 const groups = () =>
@@ -41,6 +41,40 @@ const groups = () =>
     collapsed: boolean;
     lockable: boolean;
   }[];
+it("ignores an uncorrelated state-v2 message after the original request settled", async () => {
+  let listener: ((event: MessageEvent) => void) | undefined;
+  let requestId = "";
+  class Channel {
+    set onmessage(value: (event: MessageEvent) => void) { listener = value; }
+    postMessage(value: { type: string; requestId?: string }) { if (value.type === "hello-v2") requestId = value.requestId ?? ""; }
+    close() {}
+  }
+  vi.stubGlobal("BroadcastChannel", Channel);
+  const model = await import("./groupLock");
+  expect(requestId).toBeTruthy();
+  listener?.({ data: { type: "state-v2", requestId, groupIds: [] } } as MessageEvent);
+  await model.setLockPassword("synthetic-initial");
+  await model.lockAllGroups();
+  expect(() => listener?.({ data: { type: "state-v2", groupIds: ["work"] } } as MessageEvent)).not.toThrow();
+  expect(model.getGroupLockView().lock.lockedGroupIds.has("work")).toBe(true);
+});
+it("keeps hidden-group authorization when another window repeats the same state", async () => {
+  let listener: ((event: MessageEvent) => void) | undefined;
+  class Channel {
+    set onmessage(value: (event: MessageEvent) => void) { listener = value; }
+    postMessage() {}
+    close() {}
+  }
+  vi.stubGlobal("BroadcastChannel", Channel);
+  const model = await import("./groupLock");
+  await model.setLockPassword("synthetic-initial");
+  await model.lockAllGroups();
+  expect(await model.hideGroup("work")).toBe(true);
+  expect((await model.authorizeHiddenGroups("synthetic-correct")).ok).toBe(true);
+  expect(model.getGroupLockView().hiddenGroupsAuthorized).toBe(true);
+  listener?.({ data: { type: "state", groupIds: [], visibleHiddenIds: [] } } as MessageEvent);
+  expect(model.getGroupLockView().hiddenGroupsAuthorized).toBe(true);
+});
 it("wrong passwords keep groups locked while a fresh correct attempt opens only the reviewed group", async () => {
   const model = await setup();
   state.verify.mockResolvedValueOnce(false);
@@ -107,7 +141,7 @@ it("simultaneous successful hashes cannot both apply through the outer-await gap
 });
 it("a stale verified hidden-groups request cannot authorize a new record", async () => {
   const model = await setup();
-  model.hideGroup("work");
+  await model.hideGroup("work");
   let finish!: (value: boolean) => void;
   state.verify.mockImplementationOnce(
     () =>

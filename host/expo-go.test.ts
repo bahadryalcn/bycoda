@@ -3,7 +3,7 @@ import { expoManifest, expoPreviewUrl, cachedExpoGo } from "./expo-go";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { deviceCommand } from "./device-process";
+import type { deviceCommand } from "./devices/device-process";
 describe("Expo preview boundaries", () => {
   it("reuses a verified official package and refreshes a corrupted archive", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-expo-cache-"));

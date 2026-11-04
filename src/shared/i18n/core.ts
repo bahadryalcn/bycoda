@@ -131,10 +131,11 @@ function notify() {
       });
   }
 }
-async function applyPreference(next: LanguagePreference, persist: boolean) {
+async function applyPreference(next: LanguagePreference, persist: boolean, valid?: () => boolean) {
   const id = ++request;
   const nextLocale = next === "system" ? systemLocale() : next;
   await loadCatalog(nextLocale);
+  if (valid && !valid()) throw new Error("Language preference source changed.");
   if (id !== request) return;
   preference = next;
   locale = nextLocale;
@@ -147,10 +148,13 @@ async function applyPreference(next: LanguagePreference, persist: boolean) {
   }
   notify();
 }
-export function setLanguagePreference(next: LanguagePreference): Promise<void> {
+export function setLanguagePreference(
+  next: LanguagePreference,
+  valid?: () => boolean,
+): Promise<void> {
   if (next !== "system" && !isLocale(next))
     return Promise.reject(new Error("Unsupported language"));
-  return applyPreference(next, true);
+  return applyPreference(next, true, valid);
 }
 export const getLanguagePreference = () => preference;
 export const getDomainLanguagePreference = (domain: LanguageDomain) => domainPreferences[domain];

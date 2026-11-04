@@ -7,7 +7,7 @@ import {
   isManagedWorkspaceBranch,
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
-} from "./git-mutations";
+} from "./git/git-mutations";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type {
   BranchDeliveryService,
@@ -30,10 +30,10 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../src/platform/tauri/fs";
-import { hostUnmerged, unmergedMessage } from "./git-conflicts";
-import { hostWorktrees } from "./git-worktrees";
-import { hostGitSubmodules } from "./git-submodules";
-import { createHostBranch, hostBranches, switchHostBranch } from "./git-branches";
+import { hostUnmerged, unmergedMessage } from "./git/git-conflicts";
+import { hostWorktrees } from "./git/git-worktrees";
+import { hostGitSubmodules } from "./git/git-submodules";
+import { createHostBranch, hostBranches, switchHostBranch } from "./git/git-branches";
 import {
   GIT_ACTION_COMMANDS,
   GIT_ACTIONS_NEEDING_IDLE,
@@ -44,7 +44,7 @@ import {
   runGitAction,
   verifyGitManagementSnapshot,
   type GitActionCommand,
-} from "./git-actions";
+} from "./git/git-actions";
 import type { HostStore } from "./store";
 import { HostCheckpoints } from "./checkpoints";
 import { fileRevertGeneration } from "./session-file-revert";
@@ -53,8 +53,9 @@ import { formatWorkspaceText } from "./editor-format";
 import { listHostClaudeCommands } from "./claude-commands";
 import { deleteHostSkill, exportHostSkill, importHostSkill, listHostSkills } from "./skills";
 import { withWorkspaceMutation } from "./workspace-mutations";
-import { inspectConversationPath } from "./conversation-file-mutations";
+import { inspectConversationPath } from "./conversation/conversation-file-mutations";
 import { migrateSkillPolicy, setSkillEnabled } from "./skill-policy";
+import { installCatalogSkill, parseSkillInstallRequest, skillInstallStatus } from "./skill-install";
 import {
   createHostPath,
   existingPath,
@@ -138,6 +139,8 @@ export const WORKSPACE_COMMANDS = [
   "skill_export",
   "skill_delete",
   "skill_import",
+  "skill_catalog_install",
+  "skill_catalog_install_status",
 ] as const;
 export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 
@@ -221,7 +224,7 @@ export class WorkspaceCommands {
     return this.delivery.service;
   }
 
-  async run(command: unknown, args: unknown, owner = "local"): Promise<Awaited<Promise<unknown>>> {
+  async run(command: unknown, args: unknown, owner = "local", authorized?: () => Promise<boolean>): Promise<Awaited<Promise<unknown>>> {
     const input =
       args && typeof args === "object" && !Array.isArray(args)
         ? (args as Record<string, unknown>)
@@ -251,13 +254,13 @@ export class WorkspaceCommands {
       if (mutating && this.delivery?.startMutation)
         for (const path of new Set(paths))
           if (typeof path === "string") releases.push(await this.delivery.startMutation(path));
-      return await this.dispatch(command, args, owner);
+      return await this.dispatch(command, args, owner, authorized);
     } finally {
       for (const release of releases.reverse()) await release();
     }
   }
 
-  private async dispatch(command: unknown, args: unknown, owner: string): Promise<unknown> {
+  private async dispatch(command: unknown, args: unknown, owner: string, authorized?: () => Promise<boolean>): Promise<unknown> {
     if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
       throw new Error("Unsupported workspace command");
     const input =
@@ -288,11 +291,11 @@ export class WorkspaceCommands {
         async ({ root }) =>
           await withWorkspaceMutation(
             root,
-            async () => await this.runCommand(command as WorkspaceCommand, input, owner),
+            async () => await this.runCommand(command as WorkspaceCommand, input, owner, authorized),
           ),
       );
     }
-    return await this.runCommand(command as WorkspaceCommand, input, owner);
+    return await this.runCommand(command as WorkspaceCommand, input, owner, authorized);
   }
 
   private async assertLegacyDeliveryAllowed(command: string, input: Record<string, unknown>) {
@@ -368,6 +371,7 @@ export class WorkspaceCommands {
     command: WorkspaceCommand,
     input: Record<string, unknown>,
     owner: string,
+    authorized?: () => Promise<boolean>,
   ): Promise<Awaited<Promise<unknown>>> {
     if (GIT_ACTION_COMMANDS.includes(command as GitActionCommand))
       return await this.gitActionCommand(command as GitActionCommand, input);
@@ -408,13 +412,13 @@ export class WorkspaceCommands {
       case "create_path":
         return await this.create(input.parent, input.name, input.isDir);
       case "rename_path":
-        return await this.rename(input.path, input.name, input.expectedHash);
+        return await this.rename(input.path, input.name, input.expectedHash, authorized);
       case "delete_path":
-        return await this.delete(input.path, input.expectedHash);
+        return await this.delete(input.path, input.expectedHash, authorized);
       case "copy_path":
-        return await this.copy(input.from, input.destParent, input.expectedHash);
+        return await this.copy(input.from, input.destParent, input.expectedHash, authorized);
       case "move_path":
-        return await this.move(input.from, input.destParent, input.expectedHash);
+        return await this.move(input.from, input.destParent, input.expectedHash, authorized);
       case "git_diff_index":
         return await this.gitIndex(input.cwd);
       case "git_diff_files":
@@ -528,7 +532,7 @@ export class WorkspaceCommands {
       case "cancel_project_search":
         return await this.cancelProjectSearch(input.cwd, input.searchId, owner);
       case "list_skills":
-        return await this.listSkills(input.cwd, input.disabledPaths);
+        return await this.listSkills(input.cwd, input.disabledPaths, input.provider);
       case "skill_policy_get":
         return Promise.resolve().then(() => migrateSkillPolicy(input.legacyDisabledPaths));
       case "skill_policy_set":
@@ -544,6 +548,20 @@ export class WorkspaceCommands {
       case "skill_import":
         // `cwd` only routes the call here; skills land in this machine's home.
         return Promise.resolve().then(() => importHostSkill(input));
+      case "skill_catalog_install":
+      case "skill_catalog_install_status": {
+        const request = parseSkillInstallRequest(input);
+        // The execution machine validates project authority before any network or disk mutation.
+        if (request.scope === "project") {
+          const located = await this.existing(request.cwd, true);
+          if (!(await stat(located.path)).isDirectory())
+            throw new Error("Choose a project folder.");
+          request.cwd = located.path;
+        }
+        return command === "skill_catalog_install"
+          ? await installCatalogSkill(request)
+          : await skillInstallStatus(request);
+      }
     }
   }
 
@@ -916,7 +934,7 @@ export class WorkspaceCommands {
       throw new Error("Path changed before commit; inspect it again.");
   }
 
-  private async rename(input: unknown, name: unknown, expectedHash?: unknown): Promise<string> {
+  private async rename(input: unknown, name: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<string> {
     if (typeof name !== "string" || !name.trim() || /^[\\/]/.test(name) || name.includes("\0"))
       throw new Error("A file or folder name must be provided.");
     const { root, path: from } = await this.existing(input);
@@ -944,16 +962,19 @@ export class WorkspaceCommands {
     }
     if (!spellingAlias && !relative(from, to).startsWith(".."))
       throw new Error("Cannot move a folder into itself.");
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
     await mkdir(dirname(to), { recursive: true });
     await this.verifyExpectedPath(root, input, from, expectedHash);
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
     await rename(from, to);
     invalidateHostFilePaths(root);
     return target;
   }
 
-  private async delete(input: unknown, expectedHash?: unknown): Promise<void> {
+  private async delete(input: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<void> {
     const { root, path } = await this.existing(input);
     await this.verifyExpectedPath(root, input, path, expectedHash);
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
     await rm(path, { recursive: true });
     invalidateHostFilePaths(root);
   }
@@ -971,7 +992,7 @@ export class WorkspaceCommands {
     return { root: parent.root, source: source.path, parent: parent.path };
   }
 
-  private async copy(from: unknown, destParent: unknown, expectedHash?: unknown): Promise<string> {
+  private async copy(from: unknown, destParent: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<string> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const ext = extname(name);
@@ -989,13 +1010,14 @@ export class WorkspaceCommands {
         continue;
       }
       await this.verifyExpectedPath(root, from, source, expectedHash);
+      if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
       await cp(source, to, { recursive: true, errorOnExist: true, force: false });
       invalidateHostFilePaths(root);
       return joined(destParent as string, candidate);
     }
   }
 
-  private async move(from: unknown, destParent: unknown, expectedHash?: unknown): Promise<string> {
+  private async move(from: unknown, destParent: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<string> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const to = resolve(parent, name);
@@ -1008,6 +1030,7 @@ export class WorkspaceCommands {
     )
       throw new Error(alreadyExists(name));
     await this.verifyExpectedPath(root, from, source, expectedHash);
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
     await rename(source, to);
     invalidateHostFilePaths(root);
     return joined(destParent as string, name);
@@ -1050,7 +1073,9 @@ export class WorkspaceCommands {
 
   /** This machine's skills for a project folder here; the desktop drops
    * the ones it hides, as it does for its own. */
-  private async listSkills(input: unknown, disabled: unknown) {
+  private async listSkills(input: unknown, disabled: unknown, provider?: unknown) {
+    if (provider !== undefined && (typeof provider !== "string" || provider.length > 64))
+      throw new Error("Invalid skill provider.");
     if (
       disabled != null &&
       (!Array.isArray(disabled) ||
@@ -1060,9 +1085,10 @@ export class WorkspaceCommands {
       throw new Error("Invalid disabled skill paths.");
     const disabledPaths = (disabled ?? []) as string[];
     // An empty `cwd` is "no project": this machine's personal skills only.
-    if (input === "") return listHostSkills(null, undefined, disabledPaths);
+    if (input === "")
+      return listHostSkills(null, undefined, disabledPaths, provider as string | undefined);
     const { path } = await this.existing(input, true);
-    return listHostSkills(path, undefined, disabledPaths);
+    return listHostSkills(path, undefined, disabledPaths, provider as string | undefined);
   }
 
   /** A listed skill's files. The skill may live in the home folder, outside

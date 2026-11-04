@@ -7,8 +7,8 @@ import { HostStore } from "./store";
 import { createManagedWorkspaceRegistry } from "./managed-workspaces";
 import { createWorkspacePolicyResolver } from "./workspace-policy";
 import { guardedRemoveWorkspace } from "./workspace-cleanup";
-import { withHostGitMutation } from "./git-mutations";
-import * as gitMutations from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
+import * as gitMutations from "./git/git-mutations";
 import type { ManagedWorkspace } from "./workspace-contracts";
 
 const cleanups: Array<() => Promise<void>> = [];

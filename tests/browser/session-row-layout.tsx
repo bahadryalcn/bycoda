@@ -65,6 +65,8 @@ const initial: SessionSummary[] = [
     model: "claude-sonnet-4-5",
     title: "T3 Code Design System Clarity",
     interrupted: true,
+    // The repository matches the project, so rows show the branch without a repeated prefix.
+    repo: "bycoda",
     branch: "main",
     providerHistory: {
       providers: ["codex", "claude"] as ("claude" | "codex")[],
@@ -102,7 +104,11 @@ const initial: SessionSummary[] = [
 }));
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function Fixture() {
-  const [history, setHistory] = useState(initial);
+  const [history, setHistory] = useState(
+    params.has("two-rows")
+      ? initial.filter((row) => row.id === "row-working" || row.id === "row-long")
+      : initial,
+  );
   const [selected, setSelected] = useState("");
   const [projectCwd, setProjectCwd] = useState(cwd);
   const [gitCwd, setGitCwd] = useState(cwd);
@@ -210,6 +216,21 @@ function Fixture() {
           status="idle"
           pending={false}
           onSelectSession={setSelected}
+          onRenameSession={async (id, title) => {
+            setHistory((rows) => rows.map((row) => (row.id === id ? { ...row, title } : row)));
+          }}
+          onRegenerateSessionTitle={async (id, path) => {
+            if (params.has("title-error")) throw new Error("Fixture title provider unavailable");
+            setHistory((rows) =>
+              rows.map((row) =>
+                row.id === id && row.cwd === path
+                  ? { ...row, title: "Restore Draft Editing in Recovered Sessions" }
+                  : row,
+              ),
+            );
+          }}
+          onArchiveSession={() => {}}
+          onDeleteSession={() => {}}
           onPinSession={(id, pinned) => {
             setPinCount((value) => value + 1);
             setHistory((rows) => rows.map((row) => (row.id === id ? { ...row, pinned } : row)));

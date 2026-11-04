@@ -153,6 +153,11 @@ export function visibleAssistantMessages(
   );
   const sessions = sessionProjects(source);
   return messages.filter((message) => {
+    if (
+      message.visibilityProjectIds?.some((id) => !scope.projectIds.has(id)) ||
+      (message.unverifiedToolContext && !scope.unrestricted)
+    )
+      return false;
     const contributors = message.projectIds;
     if (Array.isArray(contributors)) {
       const thread = source.threads.find((thread) => thread.id === message.threadId);

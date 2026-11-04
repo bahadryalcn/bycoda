@@ -61,6 +61,7 @@ async function fixture(t) {
     "provider-guard",
     "host-notes-worker",
     "store-worker",
+    "session-read-helper",
     "snapshot-worker",
     "workspace-cleanup-worker",
   ])

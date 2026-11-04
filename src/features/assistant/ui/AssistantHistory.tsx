@@ -1,5 +1,6 @@
 import type { AssistantActivity } from "../../../shared/model/host-contracts/assistant";
 import { t, useLocale } from "../../../shared/i18n";
+import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { Button } from "../../../shared/ui/Button";
 import { ExternalLink } from "../../../shared/ui/icons";
 import styles from "./AssistantHistory.module.css";
@@ -62,7 +63,7 @@ export function AssistantHistory({
           <ol className={styles.events}>
             {events.map((entry) => (
               <li className={styles.event} key={entry.id}>
-                <time className={styles.time} dateTime={new Date(entry.createdAt).toISOString()}>
+                <time className={styles.time} dateTime={isoTimestamp(entry.createdAt)}>
                   {new Date(entry.createdAt).toLocaleTimeString(locale, {
                     hour: "2-digit",
                     minute: "2-digit",

@@ -9,6 +9,8 @@ export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
 export type VoiceMode = "local" | "grok" | "openai";
 
 export type VoiceSettings = {
+  /** Explicit opt-in: OpenAI receives continuous live audio for turn detection. */
+  experimentalSemanticVad?: boolean;
   manualTurnEnd?: boolean;
   manualTurnEndRevision?: number;
   microphoneId?: string;
@@ -18,6 +20,7 @@ export type VoiceSettings = {
   visual: VoiceVisual;
   compact: boolean;
   enabled: boolean;
+  dictationEnabled: boolean;
   /** Zero disables idle sleep; otherwise minutes without owner input. */
   idleSleepMinutes: number;
   natural: boolean;
@@ -35,9 +38,11 @@ export type VoiceSettings = {
   ttsPath: string;
 };
 const defaults: VoiceSettings = {
+  experimentalSemanticVad: false,
   visual: "mark",
   compact: false,
   enabled: false,
+  dictationEnabled: false,
   idleSleepMinutes: 10,
   natural: true,
   mode: "local",
@@ -61,7 +66,13 @@ const preference = createStoredSetting<VoiceSettings>({
         ? (value.visual as VoiceVisual)
         : "mark",
       compact: value?.compact === true,
+      experimentalSemanticVad: value?.experimentalSemanticVad === true,
       enabled: value?.enabled === true,
+      // Preserve existing dictation visibility until its own switch is saved.
+      dictationEnabled:
+        typeof value?.dictationEnabled === "boolean"
+          ? value.dictationEnabled
+          : value?.enabled === true,
       ...(typeof value?.manualTurnEnd === "boolean" ? { manualTurnEnd: value.manualTurnEnd } : {}),
       ...(Number.isSafeInteger(value?.manualTurnEndRevision) && value.manualTurnEndRevision >= 0
         ? { manualTurnEndRevision: value.manualTurnEndRevision }

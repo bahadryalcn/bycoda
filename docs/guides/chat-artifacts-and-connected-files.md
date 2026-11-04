@@ -2,6 +2,20 @@
 
 Tool rows keep the conversation compact. Use **Changes** beside an edit or the output chevron beside a command to inspect its saved code, patch, or result. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
 
+Subagent rows show status, elapsed time and step counts beside the name, before the disclosure arrow. Failed-step counts appear in red; a failed step does not mean the entire run failed.
+
+## Image attachments
+
+Image attachments show small previews in the conversation, including saved images
+from earlier messages. Previews load as their cards approach the visible area.
+Click a preview to open it full screen; Escape returns to the conversation.
+If loading fails, click the image icon to retry. Missing files stay marked as missing.
+
+Pasted images are saved before they are accepted as attachments, so their file
+reference survives closing and reopening the app. If an older message saved only
+image metadata without a file reference, attach the original image again; its
+name and size cannot restore the missing picture.
+
 ## Visual explanations
 
 The assistant can include a diagram, comparison or interactive example directly
@@ -20,7 +34,9 @@ implemented change to your project. Unsupported clients retain the source result
 
 Select text in a message to open actions beside the selection. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
 
-Use **Add citation** to attach the excerpt to your next message, with an optional comment. The reference appears above the writing area without replacing your draft. You can edit its comment, copy the excerpt, or remove the reference. Draft recovery keeps the quote and comment together. Sending includes the literal excerpt, your comment, and the source message identity as read-only context.
+Selection actions stay on one row. In a narrow window, scroll the action row horizontally or use its arrow keys to reach the remaining actions.
+
+Use **Add citation** to attach the excerpt to your next message, with an optional comment. The reference appears above the writing area without replacing your draft. Reference labels show the first six words, with an ellipsis for longer text; unusually long words are also shortened. The full quote remains available in its tooltip and details. You can edit its comment, copy the excerpt, or remove the reference. Draft recovery keeps the quote and comment together. Sending includes the literal excerpt, your comment, and the source message identity as read-only context.
 
 Hover or focus a reference to briefly highlight its exact source without scrolling. Click it to return to the source in the current conversation. If the source has changed or is unavailable, the saved quote remains readable; an equal phrase in another message is never substituted. The information control on a sent reference shows its full excerpt and comment.
 
@@ -45,7 +61,14 @@ remaining work. You can send another message to the same conversation or use
 **Stop all**. A child is finished only when its provider reports a terminal outcome;
 an interrupted or failed child is not shown as successfully completed.
 
+Failed step counts appear in red in the activity list and agent details. A failed
+step does not mean the whole agent failed: running agents keep their active status,
+completed agents use green, and stopped or interrupted agents use warning colors.
+
 ## Earlier conversation after a provider or model change
+
+With decorative motion enabled, selecting a provider or model briefly shows its
+provider icon beside “Ready to work together”. Reduced motion hides this acknowledgment.
 
 When a switch needs a conversation handoff, bycoda saves the earlier messages on
 the conversation's owning computer. It includes as much history and recap as the

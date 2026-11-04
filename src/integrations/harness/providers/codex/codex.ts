@@ -1,5 +1,6 @@
 import {
   queueProviderOperation,
+  retireProviderEpoch,
   assertProviderOperation,
   observeProviderProcess,
   finishProviderOperation,
@@ -53,7 +54,7 @@ import {
 } from "../../../../features/sessions/model/userQuestion";
 import { resolveCodexBinary, spawnChild, watchChild } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
-import { reportSessionCommands } from "../../core/reportedCommands";
+import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
 import {
   asRecord,
@@ -839,7 +840,9 @@ export async function forgetCodexSession(
   const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  forgetSessionCommands(sessionId);
   await stopCodexSession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(cancellationEpoch, operationTailsBySession, sessionId);
 }
 
 export function bindCodexSession(

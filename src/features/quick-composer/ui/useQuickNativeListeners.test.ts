@@ -16,6 +16,9 @@ vi.mock("../model/quickComposer", () => ({
   initialQuickProject: () => "/repo",
   initialQuickChoice: () => ({ harness: "codex" }),
   applyQuickCatalog: () => ["codex"],
+  acceptQuickCatalog: (payload: unknown) => payload,
+  requestQuickCatalog: (harness: string) => { void mocks.emit("catalog-request", harness); },
+  stopQuickCatalogRequests: () => {},
 }));
 vi.mock("./QuickProjectIcon", () => ({ loadQuickProjectAppearance: () => ({}) }));
 import { useQuickNativeListeners, type QuickNativeListeners } from "./useQuickNativeListeners";

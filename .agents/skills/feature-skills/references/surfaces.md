@@ -14,6 +14,9 @@ All source paths are repository-relative. Canonical policy semantics live in `do
 
 ## Operations and data
 
+- Recommended catalog: `src/features/skills/ui/RecommendedSkills.tsx`, `RecommendedSkills.module.css`, `src/features/skills/model/recommendedSkills.ts`; source metadata only, ranked by general usefulness rather than benchmark scores.
+- Opt-in source installation: `skillInstallation.ts`, `skillInstallTypes.ts`, `skillInstallRecipe.ts`, `host/skill-install.ts`; visible public installer command/reference and owner-only `skill_catalog_install` / `skill_catalog_install_status` workspace commands, with durable receipts in `~/.bycoda-host/skill-installs/` and `.bycoda-install.json` provenance/provider markers. These are not model installation tools.
+
 - Commands: `list_skills`, `skill_policy_get`, `skill_policy_set`, `skill_export`, `skill_import`, `skill_delete`, `read_text_file`, `write_text_file`; remote dispatch uses `workspace.run` with exact machine/cwd.
 - Changes notify `bycoda:skills-change`. Current explicit refresh must refresh owning-machine policy and fence older in-flight results; a stale cache must not re-enable or re-disable a skill.
 - Preserve full-directory transfer validation, limits, stage/rollback and protected namespaces in current Host/native source. File copy does not prove executable-mode or installed-provider acceptance.

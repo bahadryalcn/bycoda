@@ -11,10 +11,65 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         ordinal INTEGER NOT NULL, block_id TEXT NOT NULL, block_json TEXT NOT NULL,
         revision INTEGER NOT NULL, PRIMARY KEY(session_id, ordinal));
       CREATE INDEX IF NOT EXISTS session_blocks_roles ON session_blocks(session_id,json_extract(block_json,'$.role'),json_extract(block_json,'$.draft'));
+      CREATE INDEX IF NOT EXISTS session_blocks_usage_started ON session_blocks(json_extract(block_json,'$.startedAt') DESC)
+        WHERE json_extract(block_json,'$.role')='user'
+          AND COALESCE(json_extract(block_json,'$.draft'),0)=0
+          AND json_type(block_json,'$.startedAt') IN ('integer','real');
       CREATE TRIGGER IF NOT EXISTS session_blocks_checkpoint_changed AFTER UPDATE OF blocks_json ON sessions
         WHEN OLD.blocks_json != NEW.blocks_json BEGIN
           UPDATE session_block_state SET revision=revision+1,length=-1 WHERE session_id=NEW.id;
         END;")?;
+    // Materialize legacy checkpoints once and keep them in sync with every
+    // writer. The transaction couples the backfill, triggers and version marker:
+    // a crash or competing connection cannot expose a half-built projection.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS session_usage_legacy (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        ordinal INTEGER NOT NULL, block_json TEXT NOT NULL,
+        PRIMARY KEY(session_id, ordinal));
+      CREATE INDEX IF NOT EXISTS session_usage_legacy_started ON session_usage_legacy(json_extract(block_json,'$.startedAt') DESC)
+        WHERE json_extract(block_json,'$.role')='user'
+          AND COALESCE(json_extract(block_json,'$.draft'),0)=0
+          AND json_type(block_json,'$.startedAt') IN ('integer','real');
+      CREATE TABLE IF NOT EXISTS session_usage_projection_version (version INTEGER PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS session_usage_invalid (session_id TEXT PRIMARY KEY);
+      CREATE TRIGGER IF NOT EXISTS session_usage_legacy_insert AFTER INSERT ON sessions BEGIN
+          DELETE FROM session_usage_legacy WHERE session_id=NEW.id;
+          DELETE FROM session_usage_invalid WHERE session_id=NEW.id;
+          INSERT INTO session_usage_invalid SELECT NEW.id WHERE COALESCE(NEW.blocks_json,'') != '' AND
+            (NOT json_valid(NEW.blocks_json) OR json_type(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE 'null' END) != 'array'
+             OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type != 'object'));
+          INSERT INTO session_usage_legacy SELECT NEW.id, CAST(key AS INTEGER), value
+            FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type='object'
+              AND NOT EXISTS(SELECT 1 FROM session_usage_invalid WHERE session_id=NEW.id);
+        END;
+      CREATE TRIGGER IF NOT EXISTS session_usage_legacy_update AFTER UPDATE OF blocks_json ON sessions BEGIN
+        DELETE FROM session_usage_legacy WHERE session_id=NEW.id;
+        DELETE FROM session_usage_invalid WHERE session_id=NEW.id;
+        INSERT INTO session_usage_invalid SELECT NEW.id WHERE COALESCE(NEW.blocks_json,'') != '' AND
+          (NOT json_valid(NEW.blocks_json) OR json_type(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE 'null' END) != 'array'
+           OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type != 'object'));
+        INSERT INTO session_usage_legacy SELECT NEW.id, CAST(key AS INTEGER), value
+          FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type='object'
+            AND NOT EXISTS(SELECT 1 FROM session_usage_invalid WHERE session_id=NEW.id);
+        END;
+      CREATE TRIGGER IF NOT EXISTS session_usage_legacy_delete AFTER DELETE ON sessions BEGIN
+        DELETE FROM session_usage_legacy WHERE session_id=OLD.id;
+        DELETE FROM session_usage_invalid WHERE session_id=OLD.id;
+        END;")?;
+    let version: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM session_usage_projection_version WHERE version=1)", [], |row| row.get(0))?;
+    if !version {
+        tx.execute_batch("DELETE FROM session_usage_legacy;
+          DELETE FROM session_usage_invalid;
+          INSERT INTO session_usage_invalid SELECT id FROM sessions WHERE COALESCE(blocks_json,'') != '' AND
+            (NOT json_valid(blocks_json) OR json_type(CASE WHEN json_valid(blocks_json) THEN blocks_json ELSE 'null' END) != 'array'
+             OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(blocks_json) THEN blocks_json ELSE '[]' END) WHERE type != 'object'));
+          INSERT INTO session_usage_legacy SELECT s.id, CAST(b.key AS INTEGER), b.value
+            FROM sessions s, json_each(CASE WHEN json_valid(s.blocks_json) THEN s.blocks_json ELSE '[]' END) b
+            WHERE b.type='object' AND NOT EXISTS(SELECT 1 FROM session_usage_invalid i WHERE i.session_id=s.id);
+          INSERT INTO session_usage_projection_version VALUES(1);")?;
+    }
+    tx.commit()?;
     // Generate the compatibility view from the current schema so later columns
     // remain available. Summary readers retain their covering table indexes.
     let columns = conn
@@ -581,6 +636,7 @@ fn page_with_cache(
     // A deferred read transaction pins metadata and blocks to the same WAL
     // snapshot. Cursors reject intervening writes rather than splice revisions.
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    deletions::assert_readable(&tx, id)?;
     let state: Option<(i64, usize)> = tx
         .query_row(
             "SELECT revision,length FROM session_block_state WHERE session_id=?1 AND length>=0",

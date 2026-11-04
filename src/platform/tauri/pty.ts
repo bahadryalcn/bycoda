@@ -280,10 +280,16 @@ export function resizePty(id: string, cols: number, rows: number): Promise<void>
   next.running = (async () => {
     try {
       let sent: [number, number] | null = null;
+      let failure: unknown;
       while (!sent || sent[0] !== next.cols || sent[1] !== next.rows) {
         sent = [next.cols, next.rows];
-        await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+        try {
+          await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+        } catch (error) {
+          failure = error;
+        }
       }
+      if (failure !== undefined) throw failure;
     } finally {
       resizeSlots.delete(id);
     }

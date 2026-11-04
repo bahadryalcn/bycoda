@@ -73,7 +73,7 @@ async function discoverCommands(
   signal?.throwIfAborted();
   const childId = `bycoda-${flavor.id}-skills-${crypto.randomUUID()}`;
   const skillProcess = retirements.admit(
-    createChildProcessHandle(childId),
+    createChildProcessHandle(childId, undefined, "management"),
     retirementOwnerKey ?? `${flavor.id}.skills`,
   );
   let releaseBridge: (() => void) | undefined;

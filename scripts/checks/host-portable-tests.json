@@ -20,11 +20,11 @@
       }
     },
     {
-      "file": "host/conversation-task-queue-tools.test.ts",
+      "file": "host/conversation/conversation-task-queue-tools.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/conversation-task-queue-tools.test.ts": "e973b21a78e70a42371e26a56361174783e5792cec3e9cc3af077afeb1d071c2",
-        "host/conversation-task-queue-tools.ts": "862625e3cbed035c1427e9f6417d67110a6dc9ab910b6217c0ce5fc3fa74b7fd"
+        "host/conversation/conversation-task-queue-tools.test.ts": "1869158e0b1bb47cf91dafb70435b4555f4cd3e2a5f1d438b87ea08b7f80ac37",
+        "host/conversation/conversation-task-queue-tools.ts": "10ccc95db1a67f67022c54a74fbabf60fa5f639b9599ca41d6b0759d8b4d5a71"
       }
     },
     {
@@ -95,11 +95,11 @@
       }
     },
     {
-      "file": "host/social-delivery.test.ts",
+      "file": "host/social/social-delivery.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/social-delivery.test.ts": "b1ccb04e209a2cd67e3702b82fcb1da7ab26591915d97f01affe961facfd3c67",
-        "host/social-delivery.ts": "652b4ec9091632b91d6527bc8bbd711f05bb9a5ea38ae8893726e4d171a99f63"
+        "host/social/social-delivery.test.ts": "b1ccb04e209a2cd67e3702b82fcb1da7ab26591915d97f01affe961facfd3c67",
+        "host/social/social-delivery.ts": "33a1153f5bf17055c575bff91da7b150bbb68a90dcc1bd9a583734dc76bbd4f6"
       }
     },
     {

@@ -1,4 +1,6 @@
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { registerVoiceGenerationRetirement, recordVoiceGenerationClosure, beginVoiceRuntime, associateVoiceGeneration, bindVoiceGeneration, closeVoiceRuntimeEvidence } from "../model/voiceGenerationRetirement";
+import { retireNarrationOutput } from "../model/voiceNarrationLifecycle";
 import {
   useCallback,
   useEffect,
@@ -23,10 +25,20 @@ import {
   MicOff,
   Square,
   VolumeX,
+  Volume2,
+  Pause,
   X,
 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
+import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
+import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
+import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
+import { VoiceToolActivityPanel } from "./VoiceToolActivityPanel";
+import { useVoicePushToTalk } from "./useVoicePushToTalk";
+import { useAssistantControlSource, waitForAssistantControlSource } from "../../assistant/model/useAssistantControlSource";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
+import { elapsedSince } from "../../../shared/lib/time/timestamps";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
 import {
   useVoicePresence,
@@ -150,8 +162,8 @@ import { previewVoice } from "../model/voicePreview";
 import { mayDeliverVoiceBriefing } from "../model/voiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { isMacMicrophoneBlocked } from "../model/microphoneAccess";
-import { openPrivacySettings } from "../../../platform/tauri/privacySettings";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
 const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: string }> = {
@@ -248,6 +260,22 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     pinnedRef.current = pinned;
   }, [props, pinned]);
   const [muted, setMuted] = useState(false);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
+  const [toolActivities, setToolActivities] = useState<readonly VoiceToolActivityEntry[]>([]);
+  const toolActivity = useRef<VoiceToolActivity | null>(null);
+  if (!toolActivity.current) toolActivity.current = new VoiceToolActivity(setToolActivities);
+  const speakerMutedRef = useRef(false);
+  const briefingAbort = useRef<AbortController | null>(null);
+  const pushToTalkHeld = useRef(false);
+  const [hearingInput, setHearingInput] = useState(false);
+  useEffect(() => {
+    if (status !== "live" || muted) {
+      setHearingInput(false);
+      return;
+    }
+    const timer = setInterval(() => setHearingInput(audioLevel.current > 0.04), 120);
+    return () => clearInterval(timer);
+  }, [status, muted]);
   const [message, setMessage] = useState("");
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
@@ -307,6 +335,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      releaseChoice();
     };
   }, []);
   if (!ownerRuleWrites.current)
@@ -797,7 +826,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   // The session stays here; `detached` only moves its controls to a native
   // always-on-top window that can float over other applications.
   const [detached, setDetached] = useState(false);
-  const [detaching, setDetaching] = useState(false);
+  const [detaching, setDetachingState] = useState(false);
+  const detachingRef = useRef(false);
+  function setDetaching(value: boolean) {
+    if (detachingRef.current === value) return;
+    detachingRef.current = value;
+    setDetachingState(value);
+  }
   const canDetach = hasNativeWindows();
   const panel = useRef<HTMLElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
@@ -816,12 +851,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       client.current.updateOwnerInstructions?.(ownerInstructions());
   }, [ownerKey]);
   useEffect(() => {
-    client.current?.configureConversation({
+    const options = {
       turnEndSilence: settings.turnEndSilence,
       allowBargeIn: settings.allowBargeIn,
       manualTurnEnd: settings.manualTurnEnd,
-    });
-  }, [settings.turnEndSilence, settings.allowBargeIn, settings.manualTurnEnd]);
+    };
+    if (client.current instanceof RealtimeVoice) {
+      const configured = client.current.configureConversation({ ...options, experimentalSemanticVad: settings.mode === "openai" && settings.manualTurnEnd !== true && settings.experimentalSemanticVad === true });
+      if (configured === false) { close(); setError(t("Voice settings changed. Reconnect voice to apply.")); }
+    } else client.current?.configureConversation(options);
+  }, [settings.turnEndSilence, settings.allowBargeIn, settings.manualTurnEnd, settings.mode, settings.experimentalSemanticVad]);
   const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
   const [lastAdmittedSpeechAt, setLastAdmittedSpeechAt] = useState<number | null>(null);
   const markAdmittedSpeech = useCallback(() => {
@@ -869,7 +908,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         profile,
         presence,
         status,
-        hold: settings.holdAnnouncements === true || muted,
+        hold: settings.holdAnnouncements === true || muted || speakerMuted,
         hour: new Date().getHours(),
         now: Date.now(),
         briefing,
@@ -912,6 +951,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       /* Dedupe still applies in this mounted lifecycle. */
     }
     const abort = new AbortController();
+    briefingAbort.current = abort;
     briefingDeliveries.current.set(briefing.id, "playing");
     if (briefingDeliveries.current.size > 64)
       briefingDeliveries.current.delete(briefingDeliveries.current.keys().next().value!);
@@ -945,6 +985,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (briefingDeliveries.current.get(briefing.id) === "playing")
         briefingDeliveries.current.set(briefing.id, "interrupted");
       abort.abort();
+      if (briefingAbort.current === abort) briefingAbort.current = null;
       setPlayback(false);
     };
   }, [
@@ -958,6 +999,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     status,
     phase,
     muted,
+    speakerMuted,
     settings.holdAnnouncements,
   ]);
   const mutedRef = useRef(muted);
@@ -969,7 +1011,69 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     { role: "user" | "assistant"; text: string; projectIds?: readonly string[] }[]
   >([]);
   const causalGeneration = useRef<VoiceCausalGeneration | undefined>(undefined);
+  const narrationAbort = useRef<AbortController | null>(null);
+  const narrationPlayback = useRef<Promise<unknown> | null>(null);
+  const narrationClosure = useRef<Promise<void>>(Promise.resolve());
+  const retirementKeys = useRef(new Map<RealtimeVoice | LocalVoice, Set<string>>());
+  function closeVoiceRuntime() {
+    const runtime = client.current;
+    narrationAbort.current?.abort();
+    const narration = narrationPlayback.current;
+    runtime?.close();
+    client.current = null;
+    if (runtime) {
+      const keys = retirementKeys.current.get(runtime);
+      const closure = retireNarrationOutput(narrationAbort.current, narration, () => runtime.retire());
+      narrationClosure.current = closure;
+      closeVoiceRuntimeEvidence(runtime, closure);
+      void closure.catch(() => { /* Unconfirmed closure remains held. */ });
+      if (keys?.size) {
+        for (const key of keys) recordVoiceGenerationClosure(key, closure);
+        retirementKeys.current.delete(runtime);
+      }
+    }
+  }
+  function retainCausalGeneration(value: VoiceCausalGeneration) {
+    const runtime = client.current;
+    if (!runtime) throw new Error("The voice provider generation is unavailable.");
+    registerVoiceGenerationRetirement(value.generationKey, () => value.retirementIdentity(), async () => {
+      if (client.current === runtime) {
+        close();
+        await narrationClosure.current;
+      } else {
+        runtime.close();
+        await runtime.retire();
+      }
+    }, () => client.current === runtime && runtime.isOutputReady());
+    associateVoiceGeneration(runtime, value.generationKey);
+    const keys = retirementKeys.current.get(runtime) ?? new Set<string>();
+    keys.add(value.generationKey);
+    retirementKeys.current.set(runtime, keys);
+    causalGeneration.current = value;
+  }
   const activeHistoryBinding = useRef<VoiceHistoryBinding | undefined>(undefined);
+  const [managementBinding, setManagementBinding] = useState<VoiceHistoryBinding>();
+  const [managementSource, setManagementSource] = useState<{ threadId: string; environmentId: string }>();
+  const [narrationGeneration, setNarrationGeneration] = useState<{ runtime: RealtimeVoice | LocalVoice; generationKey: string; threadId: string; environmentId: string }>();
+  useEffect(() => {
+    let active = true;
+    setManagementSource(undefined);
+    if (!managementBinding || managementBinding.remote || status === "idle") return;
+    void Promise.all([managementBinding.open(), managementBinding.environmentId?.()])
+      .then(([history, environmentId]) => {
+        if (active && environmentId && managementBinding.current?.() !== false)
+          setManagementSource({ threadId: history.thread.id, environmentId });
+      })
+      .catch(() => {
+        // History/operation feedback owns unavailable-source recovery.
+      });
+    return () => { active = false; };
+  }, [managementBinding, status === "idle"]);
+  const managementCurrent = status !== "idle" && managementBinding?.current?.() !== false;
+  useAssistantControlSource(
+    managementCurrent ? managementSource?.threadId : undefined,
+    managementCurrent ? managementSource?.environmentId : undefined,
+  );
   const threadSummary = useRef("");
   const turnHistory = useRef<Promise<VoiceHistory | null> | undefined>(undefined);
   const historyBindings = useRef<VoiceHistoryBindings | null>(null);
@@ -1008,6 +1112,90 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   const realtime = settings.mode === "local" ? undefined : REALTIME[settings.mode];
   const generation = useRef(0);
+  useEffect(() => {
+    setNarrationGeneration(undefined);
+    const runtime = client.current;
+    const source = managementSource;
+    const history = activeHistoryBinding.current;
+    if (status !== "live" || !runtime || !source || !history || history.remote) return;
+    let active = true;
+    const generationKey = crypto.randomUUID();
+    const current = () => client.current === runtime && activeHistoryBinding.current === history && history.current?.() !== false;
+    // Narration belongs to the real connection. It does not invent an owner utterance
+    // or open conversational/tool provenance before the owner has spoken.
+    registerVoiceGenerationRetirement(generationKey, () => source, async () => {
+      if (client.current === runtime) {
+        close();
+        await narrationClosure.current;
+      } else {
+        runtime.close();
+        await runtime.retire();
+      }
+    }, () => current() && runtime.isOutputReady());
+    associateVoiceGeneration(runtime, generationKey);
+    const keys = retirementKeys.current.get(runtime) ?? new Set<string>();
+    keys.add(generationKey);
+    retirementKeys.current.set(runtime, keys);
+    void bindVoiceGeneration(generationKey, source).then(() => {
+      if (active && current()) setNarrationGeneration({ runtime, generationKey, ...source });
+    }).catch(cause => {
+      if (active && current()) reportContextFailure(cause);
+    });
+    return () => { active = false; };
+  }, [managementSource, status]);
+  useEffect(() => {
+    const source = managementSource;
+    const narration = narrationGeneration;
+    const runtime = client.current;
+    if (!source || !narration || !runtime || narration.runtime !== runtime || narration.threadId !== source.threadId || narration.environmentId !== source.environmentId || status !== "live" || !assistantSnapshot?.profile.voiceNarration || presence !== "active" || muted || speakerMuted || settings.holdAnnouncements || phase !== "listening") return;
+    const abort = new AbortController();
+    narrationAbort.current = abort;
+    const epoch = generation.current;
+    let running = false;
+    const current = () => !abort.signal.aborted && generation.current === epoch && client.current === runtime && narration.runtime === runtime && (activeHistoryBinding.current?.current?.() ?? true);
+    const pump = async () => {
+      if (running || !current() || playbackRef.current) return;
+      running = true;
+      try {
+        const request = (input: Parameters<typeof assistantRequest>[0]) => assistantRequest(input, source.environmentId);
+        const pending = await request({ op: "narration.pending", threadId: source.threadId, generation: narration.generationKey });
+        if (!current()) return;
+        const candidate = pending.narrationEvents?.[0];
+        if (!candidate) return;
+        const claimed = await request({ op: "narration.claim", threadId: source.threadId, generation: narration.generationKey, eventId: candidate.eventId });
+        const event = claimed.narrationEvents?.[0];
+        if (!claimed.narrationClaimed || !event) return;
+        let played = false;
+        if (current()) {
+          if (runtime instanceof RealtimeVoice) {
+            const output = runtime.speakWithReceipt(event.text, event.eventId, abort.signal);
+            narrationPlayback.current = output;
+            const receipt = await output;
+            if (narrationPlayback.current === output) narrationPlayback.current = null;
+            played = receipt.status === "played" && current();
+          } else {
+            const output = new Promise<boolean>(resolve => {
+              const finish = (result: boolean) => { clearTimeout(timer); abort.signal.removeEventListener("abort", cancel); resolve(result); };
+              const cancel = () => { runtime.silence(); finish(false); };
+              const timer = setTimeout(() => finish(false), 60000);
+              abort.signal.addEventListener("abort", cancel, { once: true });
+              if (!runtime.speak(event.text, false, () => finish(true))) finish(false);
+            });
+            narrationPlayback.current = output;
+            played = await output;
+            if (narrationPlayback.current === output) narrationPlayback.current = null;
+            played = played && current();
+          }
+        }
+        await request({ op: "narration.settle", threadId: source.threadId, generation: narration.generationKey, eventId: event.eventId, state: played ? "delivered" : "unknown" });
+      } catch {
+        // Pending receipts remain durable and are never replayed after an unknown outcome.
+      } finally { running = false; }
+    };
+    void pump().catch(() => {});
+    const timer = setInterval(() => void pump().catch(() => {}), 15000);
+    return () => { abort.abort(); if (narrationAbort.current === abort) narrationAbort.current = null; clearInterval(timer); };
+  }, [managementSource, narrationGeneration, status, assistantSnapshot?.profile.voiceNarration, presence, muted, speakerMuted, settings.holdAnnouncements, phase]);
   const sequence = useRef(0);
   const consumedSequence = useRef(0);
   const sideRequest = useRef<AbortController | null>(null);
@@ -1164,6 +1352,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       snapshot.historyBinding ??
       captureHistoryBinding(global, snapshot.projectPath, snapshot.projectPaths);
     activeHistoryBinding.current = binding;
+    setManagementBinding(binding);
     const selected = binding.open();
     turnHistory.current = selected;
     transcriptStore.current?.bindPending(
@@ -1238,14 +1427,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     sequence.current++;
     sideRequest.current?.abort();
     sideRequest.current = null;
-    client.current?.close();
-    client.current = null;
+    closeVoiceRuntime();
     audioLevel.current = 0;
     setPlayback(false);
     setStatus(next);
     setPhase("listening");
   }
   function close() {
+    invalidateFeatureHosts();
     setLastAdmittedSpeechAt(null);
     lastDeliveredAssistant.current = "";
     manualPresenceCapture.current = false;
@@ -1263,8 +1452,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     sequence.current++;
     sideRequest.current?.abort();
     sideRequest.current = null;
-    client.current?.close();
-    client.current = null;
+    closeVoiceRuntime();
     jobs.current.clear();
     history.current.clear();
     setPlayback(false);
@@ -1318,7 +1506,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       generation.current++;
       sideRequest.current?.abort();
       transcriptStore.current?.finish();
-      client.current?.close();
+      closeVoiceRuntime();
     },
     [],
   );
@@ -1504,7 +1692,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     let promptExchanges = exchanges.map(({ role, text }) => ({ role, text }));
     let verifiedContext: unknown;
     if (latest.current.workspace && !activeHistoryBinding.current?.remote) {
-      causalGeneration.current = new VoiceCausalGeneration(
+      retainCausalGeneration(new VoiceCausalGeneration(
         [],
         false,
         () =>
@@ -1513,8 +1701,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           !controller.signal.aborted &&
           voiceDisclosureCurrent(),
         reportContextFailure,
-      );
-      void causalGeneration.current.invalidate("unverified-seed");
+      ));
+      void causalGeneration.current?.invalidate("unverified-seed");
       promptExchanges = [];
       verifiedContext = {
         scope: acceptedTarget?.globalScope ? "global" : "project",
@@ -1558,7 +1746,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           undefined,
           summary?.proofId,
         );
-        causalGeneration.current = causal;
+        retainCausalGeneration(causal);
         await causal.accept(captured, Promise.resolve(owner), text);
         const context = await causal.context();
         verifiedContext =
@@ -1629,7 +1817,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           signal: controller.signal,
           tools: voiceTools,
           persona: ownerInstructions(),
-          execute: async (name, args) => {
+          execute: async (name, args, _signal, wait) => {
             if (
               controller.signal.aborted ||
               generation.current !== epoch ||
@@ -1641,6 +1829,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               args,
               epoch,
               () => !controller.signal.aborted && binding.sequence === sequence.current,
+              wait,
             );
           },
         });
@@ -1788,6 +1977,44 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     args: Record<string, unknown>,
     epoch: number,
     active: () => boolean = () => true,
+    wait?: { waitForOwner(): void },
+  ) {
+    if (generation.current !== epoch || !active() || !voiceDisclosureCurrent())
+      return { error: "The voice connection is no longer active." };
+    const capturedRevision = turnRevision.current;
+    return toolActivity.current!.run(
+      {
+        name: truncateGraphemes(typeof args.action === "string" ? args.action : name, 100),
+        target:
+          latest.current.sessions.find((session) => session.id === turnSessionId.current)?.title ||
+          t("Global"),
+        projectPath: turnProjectPath.current || currentTarget()?.cwd || props.projectPath || "",
+        requestId:
+          typeof args.requestId === "string" && args.requestId.length <= 300
+            ? args.requestId
+            : undefined,
+      },
+      (observing, waitForOwner) =>
+        performRealtimeTool(
+          name,
+          args,
+          epoch,
+          () => active() && observing() && turnRevision.current === capturedRevision,
+          {
+            waitForOwner: () => {
+              waitForOwner();
+              wait?.waitForOwner();
+            },
+          },
+        ),
+    );
+  }
+  async function performRealtimeTool(
+    name: string,
+    args: Record<string, unknown>,
+    epoch: number,
+    active: () => boolean = () => true,
+    wait?: { waitForOwner(): void },
   ) {
     const revision = turnRevision.current;
     const isActive = () => active() && turnRevision.current === revision;
@@ -1883,6 +2110,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         accepted: [],
       };
       setJobReview(review);
+      wait?.waitForOwner();
       return new Promise<unknown>((resolve) => {
         pendingJobs.current = {
           review,
@@ -2002,6 +2230,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           }
         : (owner?.choice ?? next);
       setChoice(shown);
+      wait?.waitForOwner();
       return new Promise<unknown>((resolve) => {
         const timer = setTimeout(releaseChoice, next.timeoutSec * 1000);
         pendingChoice.current = { choice: shown, resolve, timer, owner, presentation };
@@ -2052,6 +2281,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     return result;
   }
   function recoverRealtime(provider: RealtimeProvider, _reason: string, rotation = false) {
+    invalidateFeatureHosts();
     manualPresenceCapture.current = false;
     checkingTalkPresence.current = false;
     const wasMuted = mutedRef.current;
@@ -2171,7 +2401,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         playback: (active) => {
           if (generation.current === epoch && voiceDisclosureCurrent()) setPlayback(active);
         },
-        tool: (name, args) => realtimeTool(name, args, epoch),
+        tool: (name, args, wait) => realtimeTool(name, args, epoch, undefined, wait),
         rotate: () => {
           if (generation.current === epoch) recoverRealtime(provider, "", true);
         },
@@ -2202,9 +2432,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         turnEndSilence: settings.turnEndSilence,
         allowBargeIn: settings.allowBargeIn,
         manualTurnEnd: settings.manualTurnEnd,
+        experimentalSemanticVad: provider === "openai" && settings.manualTurnEnd !== true && settings.experimentalSemanticVad === true,
       },
     );
     client.current = voice;
+    voice.setOutputMuted(speakerMutedRef.current);
     if (restoreMuted) voice.mute(true);
     let connectionScope: VoiceHistoryScope | undefined;
     const disclosureCurrent = () =>
@@ -2212,6 +2444,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       voiceDisclosureCurrent() &&
       capturedHistory?.current?.() !== false &&
       (!connectionScope || connectionScope.current());
+    let runtimeRegistrationPending = false;
     try {
       const secret = await realtimeSecret(provider);
       if (generation.current !== epoch) return;
@@ -2247,7 +2480,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         role,
         text,
       }));
-      causalGeneration.current = new VoiceCausalGeneration(
+      const causal = new VoiceCausalGeneration(
         seed.map((message) => message.id),
         !!seededSummary,
         () => generation.current === epoch && voiceDisclosureCurrent(),
@@ -2257,7 +2490,28 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         undefined,
         seededSummary?.proofId,
       );
+      retainCausalGeneration(causal);
       const summary = seededSummary?.text ?? "";
+      runtimeRegistrationPending = true;
+      await beginVoiceRuntime(voice, provider === "xai" ? "grok" : "openai");
+      if (!disclosureCurrent()) {
+        closeVoiceRuntimeEvidence(voice, voice.retire());
+        return;
+      }
+      if (!capturedHistory) throw new Error("Voice runtime source unavailable.");
+      const [sourceHistory, sourceEnvironment] = await Promise.all([
+        capturedHistory.open(), capturedHistory.environmentId?.(),
+      ]);
+      if (!sourceEnvironment || !disclosureCurrent()) throw new Error("Voice runtime source unavailable.");
+      const { isTauri } = await import("@tauri-apps/api/core");
+      if (isTauri()) await waitForAssistantControlSource(sourceHistory.thread.id, sourceEnvironment, disclosureCurrent);
+      if (!disclosureCurrent()) throw new Error("Voice runtime source changed.");
+      await causal.bindRuntimeIdentity(capturedHistory);
+      if (!disclosureCurrent()) {
+        closeVoiceRuntimeEvidence(voice, voice.retire());
+        return;
+      }
+      runtimeRegistrationPending = false;
       await voice.connect(secret, safeTurns, {
         summary,
         disclosureCurrent,
@@ -2281,7 +2535,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         stopCapture("ready", true);
         return;
       }
-      if (classifyVoiceFailure(cause).recoverable)
+      if (runtimeRegistrationPending) {
+        close();
+        setError(voiceError(cause, "Voice runtime registration was not confirmed."));
+      } else if (classifyVoiceFailure(cause).recoverable)
         recoverRealtime(provider, voiceError(cause, "Voice could not connect."));
       else {
         close();
@@ -2334,6 +2591,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       const selected = currentSpeechTarget(),
         binding = selected.historyBinding!;
       activeHistoryBinding.current = binding;
+      setManagementBinding(binding);
       const opening = binding.open();
       turnHistory.current = opening;
       transcriptStore.current?.bindPending(
@@ -2438,7 +2696,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       },
     );
     client.current = voice;
+    voice.setOutputMuted(speakerMutedRef.current);
     try {
+      await beginVoiceRuntime(voice, "local");
+      if (generation.current !== epoch) return;
       await voice.connect();
       if (generation.current === epoch) setStatus("live");
     } catch (cause) {
@@ -2448,6 +2709,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     }
   }
   const visualState = voiceVisualState({ status, phase, muted, playback, error });
+  const sessionProgress = useVoiceSessionProgress(target);
+  const sessionStatusText = t(
+    sessionProgress === "quiet" ? "No recent session updates" : "Session working",
+  );
   const statusText = t(
     status === "live"
       ? muted
@@ -2460,7 +2725,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               ? "Preparing a reply..."
               : phase === "speaking"
                 ? "Receiving speech..."
-                : "Listening"
+                : hearingInput
+                  ? "Microphone is receiving sound"
+                  : "Listening"
       : status === "reconnecting"
         ? "Reconnecting..."
         : status === "sleeping"
@@ -2478,6 +2745,52 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     client.current?.mute(!muted);
     setMuted(!muted);
   }
+  function beginPushToTalk() {
+    if (status !== "live" || !mutedRef.current || !client.current?.beginPushToTalk()) return false;
+    pushToTalkHeld.current = true;
+    setMuted(false);
+    return true;
+  }
+  function endPushToTalk() {
+    if (!pushToTalkHeld.current) return;
+    pushToTalkHeld.current = false;
+    client.current?.endPushToTalk();
+    setMuted(true);
+  }
+  function cancelPushToTalk() {
+    if (!pushToTalkHeld.current) return;
+    pushToTalkHeld.current = false;
+    if (!client.current) return;
+    client.current?.mute(true);
+    setMuted(true);
+  }
+  const pushToTalkBinding = useVoicePushToTalk({
+    enabled: open && !detached && status === "live",
+    begin: beginPushToTalk,
+    end: endPushToTalk,
+    cancel: cancelPushToTalk,
+  });
+  function toggleSpeaker() {
+    speakerMutedRef.current = !speakerMutedRef.current;
+    if (speakerMutedRef.current && briefingAbort.current && !briefingAbort.current.signal.aborted) {
+      briefingAbort.current.abort();
+      setPlayback(false);
+    }
+    client.current?.setOutputMuted(speakerMutedRef.current);
+    setSpeakerMuted(speakerMutedRef.current);
+  }
+  const speakerButton = (
+    <Button
+      iconOnly
+      label={t(speakerMuted ? "Unmute speaker" : "Mute speaker")}
+      tooltip={t(speakerMuted ? "Unmute speaker" : "Mute speaker")}
+      selected={speakerMuted}
+      aria-pressed={speakerMuted}
+      onClick={toggleSpeaker}
+    >
+      {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
+    </Button>
+  );
   // Compact mode's single control: start when idle, otherwise mute or resume.
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
   const micLabel = t(
@@ -2548,7 +2861,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     else if (command === "automaticTurnEnd") setManualTurnEnd(false);
     else if (command === "toggleMute") {
       if (status === "live") toggleMute();
-    } else if (command === "silence") client.current?.silence();
+    } else if (command === "toggleSpeaker") {
+      toggleSpeaker();
+    } else if (command === "beginPushToTalk") beginPushToTalk();
+    else if (command === "endPushToTalk") endPushToTalk();
+    else if (command === "cancelPushToTalk") cancelPushToTalk();
+    else if (command === "silence") client.current?.silence();
     else if (command === "disconnect") close();
     else if (command === "dock") dock();
     else if (command === "close") {
@@ -2572,7 +2890,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     );
   const historyScopeVisible = activeHistoryBinding.current?.current?.() ?? true;
   const bodyVisible = jobReviewVisible && historyScopeVisible;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!bodyVisible) {
       client.current?.silence();
       if (status === "live" || status === "connecting" || status === "reconnecting")
@@ -2593,6 +2911,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         props.projects?.find((project) => project.path === props.projectPath)?.name ||
         props.projectPath?.split(/[\\/]/).pop() ||
         t("Select a session");
+  const visibleToolActivities = bodyVisible
+    ? toolActivities.filter((entry) =>
+        !entry.projectPath
+          ? globalScope
+          : !isProjectLocked(entry.projectPath) &&
+            (props.projects ?? [{ path: target?.cwd ?? props.projectPath ?? "" }]).some(
+              (project) => pathKey(project.path) === pathKey(entry.projectPath),
+            ),
+      )
+    : [];
   useVoiceOverlayHost({
     detached: open && detached,
     level: audioLevel,
@@ -2604,7 +2932,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       choice: bodyVisible ? choice : null,
       jobReview: jobReviewVisible ? jobReview : null,
       muted,
+      speakerMuted,
       working: Boolean(target?.busy),
+      workingStatus: sessionStatusText,
+      activity: visibleToolActivities.map((entry) => ({
+        ...entry,
+        elapsedMs: entry.elapsedMs ?? elapsedSince(entry.startedAt),
+      })),
       canStart: Boolean(target) || Boolean(props.workspace),
       transcript: shownTranscript,
       message: shownMessage,
@@ -2634,12 +2968,20 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     },
     // Closed natively, or its owner reloaded: bring the controls home.
     onClosed: () => setDetached(false),
+    onStopWaiting: (id) => {
+      if (visibleToolActivities.some((entry) => entry.id === id))
+        toolActivity.current?.stopWaiting(id);
+    },
+    onError: () => setError(t("Voice window could not connect. Return to the app and retry.")),
   });
   const summary = voiceSummaryLine({
     message: shownMessage,
     transcript: shownTranscript,
     error: shownError || historyNotice,
-    statusText,
+    statusText:
+      hearingInput && status === "live" && !muted && !playback && phase === "listening"
+        ? t("Sound detected")
+        : statusText,
   });
   const moveLabel = t(
     canDetach
@@ -2859,6 +3201,17 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                 onFinish={() => client.current?.finishTurn()}
               />
             )}{" "}
+            {status !== "idle" && (
+              <Button
+                iconOnly
+                label={t("Disconnect voice")}
+                tooltip={t("Disconnect voice")}
+                onClick={close}
+              >
+                <Square className="icon-sm" />
+              </Button>
+            )}
+            {speakerButton}
             {micButton}
           </>
         ) : (
@@ -2896,12 +3249,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         )}
       </header>
       {compact && (
-        <div role="status" className={styles.srOnly}>
-          {shownError || statusText}
-          {target?.busy ? ` | ${t("Agent working")}` : ""}
-        </div>
+        <LiveText className={styles.srOnly} text={`${shownError || statusText}${target?.busy ? ` | ${sessionStatusText}` : ""}`} />
       )}
       <div className={styles.body} hidden={compact}>
+        {bodyVisible && (
+          <VoiceToolActivityPanel
+            entries={visibleToolActivities}
+            onStopWaiting={(id) => toolActivity.current?.stopWaiting(id)}
+          />
+        )}
         {props.workspace && (
           <div className={styles.scope}>
             <SegmentedControl
@@ -2992,11 +3348,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             small
           />
           <div className={styles.stateText}>
-            <div role="status" className={styles.status}>
-              {statusText}
-            </div>
-            {target?.busy ? <span className={styles.caption}>{t("Agent working")}</span> : null}
+            <LiveText className={styles.status} text={statusText} />
+            {target?.busy ? <span className={styles.caption}>{sessionStatusText}</span> : null}
           </div>
+          {target?.busy && (
+            <Button
+              iconOnly
+              label={t("Stop work")}
+              tooltip={t("Stop work")}
+              onClick={() => props.onStop(target.id)}
+            >
+              <Square className="icon-sm" />
+            </Button>
+          )}
           {status === "idle" && (
             <InfoPopover label={t("About voice")} width={260}>
               {realtime
@@ -3033,11 +3397,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               </details>
             </>
           ))}
-        {shownError && isMacMicrophoneBlocked(shownError) ? (
-          <Button onClick={() => void openPrivacySettings("microphone").catch(() => {})}>
-            {t("Open Privacy Settings")}
-          </Button>
-        ) : null}
+        {shownError ? <MicrophoneRecoveryAction message={shownError} /> : null}
         {historyNotice && historyNotice !== shownError && (
           <p role="status" className={styles.caption}>
             {historyNotice}
@@ -3052,6 +3412,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           <Button loading={savingRule} onClick={() => void saveOwnerRule()}>
             {t("Retry rule save")}
           </Button>
+        )}
+        {status === "live" && muted && pushToTalkBinding && (
+          <p className={styles.caption}>{t("Hold {p1} to talk", { p1: pushToTalkBinding })}</p>
         )}
       </div>
       <div className={styles.actions} hidden={compact}>
@@ -3106,8 +3469,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               tooltip={t("Silence")}
               onClick={() => client.current?.silence()}
             >
-              <VolumeX className="icon-sm" />
+              <Pause className="icon-sm" />
             </Button>
+            {speakerButton}
             <Button
               iconOnly
               label={t("Disconnect voice")}

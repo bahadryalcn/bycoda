@@ -4,6 +4,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import styles from "./QuestionForm.module.css";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { AttachmentChip } from "./AttachmentChip";
 import { useComposerFileDrop } from "./useComposerFileDrop";
 import { useAttachmentSink } from "./useComposerAttachments";
@@ -560,11 +561,7 @@ function QuestionFormContent({
               <span className="sr-only">{t("Question")}</span>
             )}
             {total > 1 ? (
-              <span className={styles.progress} aria-live="polite">
-                {index + 1}
-                {" / "}
-                {total}
-              </span>
+              <LiveText className={styles.progress} text={`${index + 1} / ${total}`} />
             ) : null}
           </div>
         ) : null}
@@ -661,7 +658,7 @@ function QuestionFormContent({
         <div className={styles.footer}>
           <div className={styles.feedback}>
             {parentClosed ? (
-              <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
+              <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
             ) : null}
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
             <p

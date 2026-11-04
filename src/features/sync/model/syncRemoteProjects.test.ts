@@ -117,6 +117,22 @@ describe("autoAddRetryDelayMs", () => {
 describe("autoAddRemoteProjects", () => {
   beforeEach(mockLocalStorage);
 
+  it("does not persist a remote folder whose open completes after cancellation", async () => {
+    const sync = await load();
+    let current = true;
+    let finish!: (value: unknown) => void;
+    const request = vi.fn(() => new Promise<unknown>((resolve) => { finish = resolve; }));
+    sync.setRemoteOpenTargets([{ environmentId: "env-a", name: "PC", request }]);
+    applyRemoteProjectRecords(PEER, [pathRecord("C:/code/app", "env-a")]);
+    const adding = sync.autoAddRemoteProjects(0, () => current);
+    expect(request).toHaveBeenCalledTimes(1);
+    current = false;
+    finish({ id: "app", cwd: "C:/code/app" });
+    await expect(adding).rejects.toThrow("SYNC_STOPPED");
+    expect(loadRecents()).toEqual([]);
+    expect(remoteProjectFor("remote://env-a/C:/code/app")).toBeUndefined();
+  });
+
   it("adds projects of a connected machine once, without a path for unmatched ones", async () => {
     const sync = await load();
     const pc = target("env-a");
@@ -248,6 +264,20 @@ describe("adoptLocalProjects", () => {
     setLocalHostEnvironmentId("env-own");
     return sync;
   }
+
+  it("does not adopt a folder whose existence check completes after cancellation", async () => {
+    const sync = await loadWithOwnHost();
+    applyRemoteProjectRecords(PEER, [pathRecord(SHOP, "env-own")]);
+    let current = true;
+    let finish!: (value: boolean) => void;
+    const exists = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const adopting = sync.adoptLocalProjects(exists, () => current);
+    expect(exists).toHaveBeenCalledTimes(1);
+    current = false;
+    finish(true);
+    await expect(adopting).rejects.toThrow("SYNC_STOPPED");
+    expect(loadRecents()).toEqual([]);
+  });
 
   it("adds a folder on this machine that another desktop opened remotely, once", async () => {
     const sync = await loadWithOwnHost();

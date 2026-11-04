@@ -9,7 +9,7 @@ Paths are repository-relative. Configuration presentation does not grant provide
 | Models/caches                | `src/features/inbox/model/githubTasks.ts`, `gitlab.ts`, `azureDevOps.ts`, `jira.ts`, `jiraBoard.ts`, `linear.ts`                                                                                |
 | Consumers                    | `src/features/inbox/ui/InboxView.tsx`, `JiraBoardView.tsx`; model `useInboxUnseen.ts` and current scope subscribers                                                                             |
 | Native config                | `src-tauri/src/fs.rs`, `gitlab.rs`, `azure_devops.rs`, `linear.rs`, `jira.rs`, `jira/board.rs`; registrations in `lib.rs`                                                                       |
-| Host bridge                  | `host/provider-inbox.ts`, `host/conversation-workspace-tools.ts`; follow the current remoteInbox client                                                                                         |
+| Host bridge                  | `host/provider-inbox.ts`, `host/conversation/conversation-workspace-tools.ts`; follow the current remoteInbox client                                                                                         |
 | Mobile                       | `mobile/app/(tabs)/inbox.tsx`; `mobile/src/features/inbox/provider-inbox-screen.tsx`, `provider-list.tsx`, `provider-protocol.ts`; desktop Jira bridge and `src-tauri/src/jira/mobile_board.rs` |
 
 ## Operations and identity

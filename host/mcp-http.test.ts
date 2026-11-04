@@ -10,13 +10,13 @@ import { HostEngine } from "./engine";
 import { createHostServer } from "./server";
 import { McpTokens, MCP_GROUPS } from "./mcp-tokens";
 import { mcpCatalog, externalMcpCatalog } from "./mcp-http";
-import { conversationToolCatalog } from "./conversation-tools";
+import { conversationToolCatalog } from "./conversation/conversation-tools";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/social";
-import { socialToolCatalog } from "./social-tools";
-import { ConversationDesktopRelay } from "./conversation-tools";
+import { socialToolCatalog } from "./social/social-tools";
+import { ConversationDesktopRelay } from "./conversation/conversation-tools";
 import { SharedBrowser } from "./shared-browser";
-import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
+import { ConversationWorkspaceTools } from "./conversation/conversation-workspace-tools";
 import { parseLocalSessionLink } from "../src/features/sessions/model/localSessionReference";
 
 const cleanup: (() => Promise<void>)[] = [];
@@ -107,6 +107,15 @@ async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
 it("keeps bounded managed discovery inside external grants and preserves complete session discovery", async () => {
   const s = await setup();
   const grant = await s.grant({ conversation: ["read"] });
+  const invalidGroup = await s.send(grant.token, "tools/call", {
+    name: "conversation_tools_search",
+    arguments: { group: "sessions", query: "model settings" },
+  });
+  expect(invalidGroup.body.result.isError).toBe(true);
+  expect(invalidGroup.body.result.content[0].text).toContain(
+    'Expected one of: "conversation", "social", "runtime-logs".',
+  );
+  expect(invalidGroup.body.result.content[0].text).toContain("Use family for domains");
   const search = await s.send(grant.token, "tools/call", {
     name: "conversation_tools_search",
     arguments: { family: "browser", limit: 2 },

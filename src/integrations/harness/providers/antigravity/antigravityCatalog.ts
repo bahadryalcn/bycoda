@@ -44,11 +44,11 @@ export async function discoverAntigravityModels(workingDirectory?: string) {
   const { path, args, transport } = await resolveAntigravityBinary();
   if (transport === "stream-json") {
     // No ACP server on this machine: the CLI lists its own models.
-    return parseAntigravityModels(await execChild(path, ["models"], undefined, "antigravity"));
+    return parseAntigravityModels(await execChild(path, ["models"], undefined, "antigravity", undefined, "management"));
   }
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId), "antigravity.catalog");
+  const probeProcess = retirements.admit(createChildProcessHandle(probeId, undefined, "management"), "antigravity.catalog");
   const acp = new AcpClient(probeProcess, {
     onRequest: (id, method) => {
       const response =

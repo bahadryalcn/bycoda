@@ -61,11 +61,13 @@ import { useQueuedMessageActions } from "./useQueuedMessageActions";
 
 const hoisted = vi.hoisted(() => ({
   request: (..._args: unknown[]): Promise<unknown> => Promise.reject(new Error("unset")),
+  writeAttachment: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async () => [
-    { id: "local", environmentId: "host", localHost: true, endpoint: "http://127.0.0.1:1" },
-  ],
+  invoke: async (command: string, args: unknown) =>
+    command === "write_attachment"
+      ? hoisted.writeAttachment(args)
+      : [{ id: "local", environmentId: "host", localHost: true, endpoint: "http://127.0.0.1:1" }],
 }));
 vi.mock("../../../features/connections/model/connections", () => ({
   cachedRemoteCapabilities: () => ["sessions.queue"],
@@ -73,7 +75,8 @@ vi.mock("../../../features/connections/model/connections", () => ({
   remoteRequest: (...args: unknown[]) => hoisted.request(...args),
 }));
 vi.mock("../../../features/connections/model/remoteAttachments", () => ({
-  uploadRemoteAttachments: async (_machine: string, attachments: unknown[]) => attachments,
+  uploadRemoteAttachments: async (_machine: string, attachments: Record<string, unknown>[]) =>
+    attachments.map(({ data: _data, ...file }) => file),
 }));
 vi.mock("../../../features/usage/model/usageBudgetReadings", () => ({
   assertUsageBudgets: () => {},
@@ -268,6 +271,7 @@ async function macEnqueue(mac: SharedQueueClient, id: string) {
 }
 
 beforeEach(async () => {
+  hoisted.writeAttachment.mockReset();
   localStorage.clear();
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -309,6 +313,65 @@ afterEach(async () => {
 });
 
 describe("coordination never pauses the queue", () => {
+  it("automatically sends a legacy inline image after the turn finishes with a full WebView cache", async () => {
+    await mount({ busy: true });
+    expect(Object.keys(localStorage).some((key) => key.startsWith("bycoda:shared-queue:"))).toBe(
+      true,
+    );
+    expect((await hostQueue()).messages).toEqual([]);
+
+    let finishWrite!: (path: string) => void;
+    hoisted.writeAttachment.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const image = {
+      id: "legacy-image",
+      name: "image.png",
+      mimeType: "image/png",
+      kind: "image" as const,
+      size: 3,
+      data: "YWJj",
+    };
+    const save = localStorage.setItem.bind(localStorage);
+    const storage = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+      if (key.startsWith("bycoda:shared-queue:") && value.includes('"data":"YWJj"'))
+        throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+      save(key, value);
+    });
+    try {
+      await act(async () =>
+        setSessions((all) =>
+          all.map((entry) => ({
+            ...entry,
+            queuedMessages: [
+              { id: "image-follow-up", text: "Use this image", attachments: [image] },
+            ],
+            queueStatus: "active",
+          })),
+        ),
+      );
+      await pump(0, 2);
+      expect(hoisted.writeAttachment).toHaveBeenCalledOnce();
+      await finishTurn();
+      await pump(0, 2);
+      expect(world.sent).toEqual([]);
+      expect(session().queuedMessages?.[0].attachments[0].data).toBe(image.data);
+
+      await act(async () => finishWrite("/saved/legacy-image.png"));
+      await pump(1500, 8);
+      expect(world.sent).toEqual([{ id: "image-follow-up", text: "Use this image" }]);
+      expect((await hostQueue()).messages).toEqual([]);
+      expect(session().queuedMessages ?? []).toEqual([]);
+      expect(hoisted.writeAttachment).toHaveBeenCalledOnce();
+      expect(world.status.join("|")).not.toMatch(/quota|paused|rejected/i);
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
   it("sends the head when the other computer appends a row between the desktop's read and its claim", async () => {
     let injected = false;
     const mac = macClient();

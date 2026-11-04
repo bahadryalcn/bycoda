@@ -32,6 +32,7 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
 import { MarkdownSource } from "../../sessions/ui/AgentMarkdown";
 import { SkillDocumentPreview } from "./SkillDocumentPreview";
+import { RecommendedSkills } from "./RecommendedSkills";
 import { copyText } from "../../../platform/tauri/clipboard";
 import {
   exportSkill,
@@ -134,6 +135,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   // Keep one mounted creation form when switching to an existing skill. Its
   // name/scope draft survives selection and responsive layout changes.
   const [showCreate, setShowCreate] = useState(false);
+  const [showRecommended, setShowRecommended] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -872,6 +874,14 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
 
   return (
     <div className={styles.page}>
+      {showRecommended ? (
+        <RecommendedSkills
+          cwd={cwd}
+          machines={machines}
+          onInstalled={() => requestRefresh()}
+          onClose={() => setShowRecommended(false)}
+        />
+      ) : null}
       <section className={styles.library} aria-label={t("Skills")}>
         <header className={styles.libraryHeader}>
           <div className={styles.headingRow}>
@@ -909,6 +919,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           </div>
           <div className={styles.count}>
             {skills === null ? "…" : t("{p0} skills shown", { p0: shownCount })}
+            <Button variant="secondary" onClick={() => setShowRecommended(true)}>
+              {t("Discover skills")}
+            </Button>
           </div>
           {header ? null : filterField}
         </header>

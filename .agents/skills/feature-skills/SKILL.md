@@ -17,6 +17,14 @@ Use for Skills management UI, catalog/policy state, document edit/preview/split,
 - `src/features/skills/model/skills.ts`, `skillPreferences.ts`, `machineSkills.ts`, `transferSkill.ts` and `deleteSkill.ts` own data/actions.
 - Read [skill policy](../../../docs/reference/skill-policy.md) for canonical availability/enforcement rules; use [surfaces](references/surfaces.md) for source/test routing.
 
+## Recommended catalog and installation
+
+- `RecommendedSkills.tsx` and `recommendedSkills.ts` own the public third-party, metadata-only catalog and original publisher links. Never import personal/project-owned skills into recommendations. Keep prerequisites visible; never bundle third-party skill bodies or silently install optional tools or hooks.
+- `skillInstallRecipe.ts` owns the visible command, pinned public Skills CLI version and installer reference. This standardized installer is distinct from a publisher's own preferred installer. Execute argv without a shell, in an isolated temporary project/home/cache with a deadline; package lifecycle scripts stay disabled.
+- Installation uses `skillInstallation.ts` and Host `skill-install.ts` through authenticated owner workspace commands. Validate the registered project, machine, scope, provider, allowlisted source, bounded CLI-produced subtree and matching skill name. Resolve one upstream commit and preserve supporting files and executable modes.
+- Never overwrite existing destinations or change enablement policy. Publish discovery only after supporting files and provider marker exist; reconcile uncertain operations by original request identity before any retry.
+- Catalog-managed provider markers filter before same-name precedence in native/Host/composer discovery. Preserve legacy skill visibility and independent machine/provider restrictions.
+
 ## Preserve
 
 - Host/native policy writers share their existing lock and schema and sync before replacement. Retain corrupt/unreadable policy in place; a dangling link or failed read must not become an empty policy or re-enable disabled skills on the next read.

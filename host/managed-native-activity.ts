@@ -6,11 +6,11 @@ import {
   canonicalWorkspacePath,
   workspacePathKey as pathKey,
 } from "./workspace-paths";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 import { durableWrite } from "./turn-git-history";
-import { createNativeBufferReports } from "./native-buffer-reports";
+import { createNativeBufferReports } from "./native-buffer/native-buffer-reports";
 import type { NativeBufferPersistence } from "./ports/native-buffer-persistence";
-export type { NativeBufferSnapshot } from "./native-buffer-reports";
+export type { NativeBufferSnapshot } from "./native-buffer/native-buffer-reports";
 import type { ManagedWorkspace } from "./workspace-contracts";
 import type {
   ExecutionActivityReservations,

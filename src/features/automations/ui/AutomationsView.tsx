@@ -1304,7 +1304,7 @@ function AutomationEditor({
     draft.prompt.trim().length > 0 &&
     looksLikeProject(draft.cwd) &&
     draft.model.length > 0;
-  const folderOptions = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
+  const folderChoices = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
   const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const setTriggers = (triggers: AutomationTrigger[]) => onChange(applyTriggers(draft, triggers));
@@ -1641,7 +1641,7 @@ function AutomationEditor({
                         </SettingsRow>
                         <SettingsRow
                           label={t("Session folder")}
-                          hint="Where runs appear in the sidebar"
+                          hint={folderChoices.error ?? (folderChoices.loading ? t("Loading folders…") : "Where runs appear in the sidebar")}
                         >
                           <SearchableSelect
                             variant="pill"
@@ -1649,7 +1649,8 @@ function AutomationEditor({
                             align="end"
                             label={t("Session folder")}
                             value={draft.sessionFolderId}
-                            options={folderOptions}
+                            options={folderChoices.options}
+                            disabled={folderChoices.loading || !!folderChoices.error}
                             onChange={(value) => update("sessionFolderId", value)}
                           />
                         </SettingsRow>

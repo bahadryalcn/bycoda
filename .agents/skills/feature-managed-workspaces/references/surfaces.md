@@ -22,6 +22,6 @@ Paths are repository-root relative. The canonical architecture is `docs/referenc
 
 ## Checks
 
-- Model suites: worktree removal/policy, conversation rewind/strategy and task workspace. Host: `host/git-worktrees.test.ts`, checkpoints/leases, cleanup and `host/managed-workspaces.e2e.test.ts` (fake providers).
+- Model suites: worktree removal/policy, conversation rewind/strategy and task workspace. Host: `host/git/git-worktrees.test.ts`, checkpoints/leases, cleanup and `host/managed-workspaces.e2e.test.ts` (fake providers).
 - Browser families under `tests/browser/`: worktrees, workspace-actions, workspace-rewind, build-identity, git-workspace/checkouts, project-workspace-navigation and tasks. Select each family's existing config.
 - Native checkpoint/lease/source tests need an isolated Cargo target/profile. Inspect nested `mobile/` separately; parent branch identity does not identify its source or build.

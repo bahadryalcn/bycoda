@@ -153,6 +153,8 @@ export class HostAutomations {
       await this.store.project(input.projectId);
       const now = this.now();
       const previous = await this.find(input.id);
+      if ((raw as { expectedAbsent?: unknown }).expectedAbsent === true && previous)
+        throw new Error("Automation ID already exists. Choose a new ID.");
       assertExpectedConfiguration(raw, previous, parseHostAutomation);
       return await this.write({
         ...input,
@@ -197,9 +199,9 @@ export class HostAutomations {
     const deleted = await this.store.db.prepare("DELETE FROM automations WHERE id=?").run(id);
     if (Number(deleted.changes) > 0) this.store.afterCommit(() => this.onDelete?.({ id }));
   }
-  runNow(id: string): Promise<HostAutomationRun> {
+  runNow(id: string, reviewed?: HostAutomation): Promise<HostAutomationRun> {
     if (this.closing) return Promise.reject(new Error("Automation service is closing."));
-    const pending = this.runNowOwned(id);
+    const pending = this.runNowOwned(id, reviewed);
     this.manualRuns.add(pending);
     void pending.then(
       () => this.manualRuns.delete(pending),
@@ -207,14 +209,27 @@ export class HostAutomations {
     );
     return pending;
   }
-  private async runNowOwned(id: string): Promise<HostAutomationRun> {
+  private async runNowOwned(id: string, reviewed?: HostAutomation): Promise<HostAutomationRun> {
     if (this.closing) throw new Error("Automation service is closing.");
     await this.ready;
 
-    const automation = await this.find(id);
-    if (!automation) throw new Error("Automation not found.");
     const now = this.now();
-    const run = await this.newRun(automation, "manual", now);
+    // Admit the exact reviewed configuration and its pending run together. Launch
+    // uses that accepted snapshot after releasing SQL ownership.
+    const { automation, run } = await this.store.transaction(async () => {
+      const automation = await this.find(id);
+      if (!automation) throw new Error("Automation not found.");
+      if (reviewed) {
+        assertExpectedConfiguration(
+          { expectedConfiguration: reviewed },
+          automation,
+          parseHostAutomation,
+        );
+        if (reviewed.updatedAt !== automation.updatedAt)
+          throw new Error("Automation changed after review. Read it again.");
+      }
+      return { automation, run: await this.newRun(automation, "manual", now) };
+    });
     try {
       return await this.launch(automation, run, now);
     } catch (error) {

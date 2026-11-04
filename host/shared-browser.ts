@@ -41,6 +41,8 @@ type BrowserCdpSession = {
   send(method: "Runtime.getProperties", params: { objectId: string; ownProperties: boolean; generatePreview: boolean }): Promise<{ result: { name: string; value?: { objectId?: string; value?: unknown } }[] }>;
   send(method: "DOM.describeNode", params: { objectId: string; depth: number; pierce: boolean }): Promise<{ node: BrowserDomNode & { backendNodeId?: number } }>;
   send(method: "Runtime.releaseObjectGroup", params: { objectGroup: string }): Promise<unknown>;
+  send(method: "DOM.enable"): Promise<unknown>;
+  on?(event: string, listener: (payload: any) => void): unknown;
   detach(): Promise<void>;
 };
 
@@ -56,19 +58,31 @@ type Page = {
     maskColor?: string;
     style?: string;
   }): Promise<Buffer>;
-  context?: () => { newCDPSession(page: Page): Promise<BrowserCdpSession> };
+  context?: () => {
+    newCDPSession(page: Page): Promise<BrowserCdpSession>;
+  };
   evaluate?: <T, A>(callback: (arg: A) => T, arg: A) => Promise<T>;
   locator?: (selector: string) => unknown;
   on?: <K extends keyof PageEvents>(event: K, callback: (value: PageEvents[K]) => void) => unknown;
   off?: <K extends keyof PageEvents>(event: K, callback: (value: PageEvents[K]) => void) => unknown;
-  mouse: { click(x: number, y: number): Promise<void>; wheel(x: number, y: number): Promise<void> };
-  keyboard: { type(text: string): Promise<void>; press(key: string): Promise<void> };
+  mouse: {
+    click(x: number, y: number): Promise<void>;
+    wheel(x: number, y: number): Promise<void>;
+    move?(x: number, y: number): Promise<void>;
+    down?(options: { button: "left" | "middle" | "right" }): Promise<void>;
+    up?(options: { button: "left" | "middle" | "right" }): Promise<void>;
+  };
+  keyboard: {
+    type(text: string): Promise<void>;
+    insertText?(text: string): Promise<void>;
+    press(key: string): Promise<void>;
+  };
 };
 type Browser = {
   newContext(options: {
     viewport: { width: number; height: number };
     acceptDownloads: boolean;
-  }): Promise<{ newPage(): Promise<Page> }>;
+  }): Promise<{ newPage(): Promise<Page>; close?(): Promise<void> }>;
   close(): Promise<void>;
 };
 export type BrowserLoader = () => Promise<{
@@ -78,6 +92,7 @@ export type SharedBrowserOptions = {
   runtimeLogs?: RuntimeLogsService;
   logLabel?: string;
   keepAlive?: boolean;
+  onIdleClosed?: () => void;
 };
 const fingerprint = (credential: string) => createHash("sha256").update(credential).digest("hex");
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
@@ -113,13 +128,29 @@ export function sharedBrowserUrl(input: unknown) {
 export class SharedBrowser {
   private browser?: Browser;
   private page?: Page;
+  private maskSession?: BrowserCdpSession;
+  private maskCache?: string[];
+  private maskRevision = 0;
+  private documentRoots = new Set<number>();
+  private maskEvents = false;
+  private screenshotMutations?: {
+    marker: string;
+    nodes: Set<number>;
+    styleParents: Set<number>;
+    glass: boolean;
+    glassExpected: boolean;
+  };
   private lease?: { owner: string; id: string; expiresAt: number };
   private busy = false;
-  private maskSession?: BrowserCdpSession;
-  private hoverObjects?: { session: BrowserCdpSession; group: string };
+  private readonly inputReceipts = new Map<
+    string,
+    { payload: string; result: ReturnType<SharedBrowser["status"]> }
+  >();
   private lastUse = 0;
   private idleTimer?: ReturnType<typeof setInterval>;
   private navigationId = randomUUID();
+  private documentId = randomUUID();
+  private hoverObjects?: { session: BrowserCdpSession; group: string };
   private pageGeneration = 0;
   private captureGeneration = 0;
   private viewport = { ...DEFAULT_VIEWPORT };
@@ -137,6 +168,21 @@ export class SharedBrowser {
     selection?: BrowserAnnotationCapture;
     point?: { x: number; y: number };
     inspection?: ElementInspection;
+    depth?: number;
+    traversal?: ("parent" | "child" | "previousSibling" | "nextSibling")[];
+    nodeId?: string;
+    maskRevision?: number;
+    captures: Map<
+      string,
+      {
+        selection: BrowserAnnotationCapture;
+        point: { x: number; y: number };
+        depth: number;
+        traversal?: ("parent" | "child" | "previousSibling" | "nextSibling")[];
+        inspection: ElementInspection;
+        revision?: number;
+      }
+    >;
   };
   constructor(
     private readonly loader: BrowserLoader = async () => {
@@ -155,10 +201,11 @@ export class SharedBrowser {
     private readonly options: SharedBrowserOptions = {},
   ) {}
 
-  async dispatchForSession(method: string, params: Record<string, unknown>, credential: string) {
+  async dispatchForSession(method: string, params: Record<string, unknown>, credential: string, options: { takeover?: boolean } = {}) {
     const matches =
       this.logSource?.projectId === params.projectId &&
-      this.logSource?.sessionId === params.sessionId;
+      this.logSource?.sessionId === params.sessionId &&
+      this.logSource?.assistantThreadId === params.threadId;
     if (
       ["browser.frame", "browser.input", "browser.close", "browser.resize"].includes(method) ||
       method.startsWith("browser.annotation.")
@@ -168,7 +215,7 @@ export class SharedBrowser {
         throw new Error("Claim browser control before using it.");
       this.requireLease(fingerprint(credential), params);
     }
-    const value = await this.dispatch(method, params, credential);
+    const value = await this.dispatch(method, params, credential, options);
     if (method === "browser.status" || method === "browser.claim" || method === "browser.release") {
       return matches
         ? value
@@ -177,6 +224,7 @@ export class SharedBrowser {
             url: null,
             logSourceId: undefined,
             navigationId: undefined,
+            documentId: undefined,
             annotationId: undefined,
           };
     }
@@ -189,6 +237,28 @@ export class SharedBrowser {
     credential: string,
     options: { takeover?: boolean } = {},
   ) {
+    const receiptOwner = fingerprint(credential);
+    let receiptKey: string | undefined;
+    let receiptPayload: string | undefined;
+    if (method === "browser.input" && params.requestId !== undefined) {
+      if (
+        typeof params.requestId !== "string" ||
+        !params.requestId ||
+        params.requestId.length > 128
+      )
+        throw new Error("Invalid browser input request ID");
+      receiptKey = JSON.stringify([receiptOwner, params.requestId]);
+      receiptPayload = JSON.stringify(params);
+      const receipt = this.inputReceipts.get(receiptKey);
+      if (receipt) {
+        if (!this.lease || this.lease.expiresAt <= this.now())
+          throw new Error("Claim browser control before changing it");
+        this.requireLease(receiptOwner, params);
+        if (receipt.payload !== receiptPayload)
+          throw new Error("Browser input request ID was reused with different input");
+        return receipt.result;
+      }
+    }
     if (this.busy) throw new Error("Shared browser is busy; retry after the current request");
     this.busy = true;
     try {
@@ -223,14 +293,16 @@ export class SharedBrowser {
         const url = sharedBrowserUrl(params.url);
         const projectId = this.logContext(params.projectId);
         const sessionId = this.logContext(params.sessionId);
+        const assistantThreadId = this.logContext(params.threadId);
         if (
           this.page &&
-          (this.logSource?.projectId !== projectId || this.logSource?.sessionId !== sessionId)
+          (this.logSource?.projectId !== projectId || this.logSource?.sessionId !== sessionId || this.logSource?.assistantThreadId !== assistantThreadId)
         ) {
           // A new context prevents old-document network/console events from being
           // attributed to a different conversation while navigation is pending.
           await this.disposePage();
         }
+        this.documentId = randomUUID();
         this.invalidateSelection();
         const source: RuntimeLogSource = {
           id: `browser:${randomUUID()}`,
@@ -238,6 +310,7 @@ export class SharedBrowser {
           label: this.options.logLabel ?? "Shared browser",
           projectId,
           sessionId,
+          ...(assistantThreadId ? { assistantThreadId } : {}),
           url,
           available: true,
         };
@@ -257,17 +330,15 @@ export class SharedBrowser {
       }
       if (method === "browser.frame") {
         if (!this.page) throw new Error("Open a shared browser first");
-        const page = this.page, navigationId = this.navigationId;
+        const page = this.page, documentId = this.documentId, navigationId = this.navigationId;
         const viewport = { ...this.viewport };
         const frame = await page.screenshot({ type: "jpeg", quality: 65, timeout: 5_000 });
-        if (page !== this.page || navigationId !== this.navigationId)
+        if (page !== this.page || documentId !== this.documentId || navigationId !== this.navigationId)
           throw new Error("Browser document changed during capture. Refresh the frame.");
         if (frame.byteLength > 2 * 1024 * 1024)
           throw new Error("Browser frame exceeds transfer budget");
         return {
           ...this.status(owner),
-          // The existing view generation is also this capture's document fence.
-          documentId: navigationId,
           mimeType: "image/jpeg",
           data: frame.toString("base64"),
           width: viewport.width,
@@ -284,6 +355,7 @@ export class SharedBrowser {
         await page.setViewportSize(viewport);
         if (this.page !== page) throw new Error("Browser changed during viewport resize.");
         this.viewport = viewport;
+        this.documentId = randomUUID();
         this.invalidateSelection();
         return this.status(owner);
       }
@@ -297,7 +369,7 @@ export class SharedBrowser {
         if (this.annotation)
           throw new Error("Cancel element selection before interacting with the page");
         if (!this.page) throw new Error("Open a shared browser first");
-        if (params.documentId !== undefined && params.documentId !== this.navigationId)
+        if (params.documentId !== undefined && params.documentId !== this.documentId)
           throw new Error("Browser document changed. Refresh before interacting.");
         if (params.navigationId !== undefined && params.navigationId !== this.navigationId)
           throw new Error("Browser view changed. Refresh before interacting.");
@@ -314,10 +386,46 @@ export class SharedBrowser {
           )
             throw new Error("Invalid click position");
           await this.page.mouse.click(x, y);
+        } else if (params.kind === "pointer") {
+          const x = Number(params.x),
+            y = Number(params.y);
+          if (
+            !Number.isFinite(x) ||
+            !Number.isFinite(y) ||
+            x < 0 ||
+            y < 0 ||
+            x >= this.viewport.width ||
+            y >= this.viewport.height
+          )
+            throw new Error("Invalid pointer position");
+          const button = params.button ?? "left";
+          if (button !== "left" && button !== "middle" && button !== "right")
+            throw new Error("Invalid pointer button");
+          if (!["move", "down", "up"].includes(String(params.action)))
+            throw new Error("Unsupported pointer action");
+          if (
+            !this.page.mouse.move ||
+            (params.action === "down" && !this.page.mouse.down) ||
+            (params.action === "up" && !this.page.mouse.up)
+          )
+            throw new Error("Pointer input is unavailable on this host browser");
+          await this.page.mouse.move(x, y);
+          if (params.action === "down" && this.page.mouse.down)
+            await this.page.mouse.down({ button });
+          else if (params.action === "up" && this.page.mouse.up)
+            await this.page.mouse.up({ button });
+          else if (params.action !== "move") throw new Error("Unsupported pointer action");
         } else if (params.kind === "scroll") {
           const y = Number(params.y);
-          if (!Number.isFinite(y) || Math.abs(y) > 2000) throw new Error("Invalid scroll distance");
-          await this.page.mouse.wheel(0, y);
+          const x = params.x === undefined ? 0 : Number(params.x);
+          if (
+            !Number.isFinite(x) ||
+            Math.abs(x) > 2000 ||
+            !Number.isFinite(y) ||
+            Math.abs(y) > 2000
+          )
+            throw new Error("Invalid scroll distance");
+          await this.page.mouse.wheel(x, y);
         } else if (params.kind === "text") {
           if (
             typeof params.text !== "string" ||
@@ -325,7 +433,8 @@ export class SharedBrowser {
             params.text.includes("\0")
           )
             throw new Error("Invalid browser text");
-          await this.page.keyboard.type(params.text);
+          if (this.page.keyboard.insertText) await this.page.keyboard.insertText(params.text);
+          else await this.page.keyboard.type(params.text);
         } else if (params.kind === "key") {
           if (
             ![
@@ -337,13 +446,35 @@ export class SharedBrowser {
               "ArrowDown",
               "ArrowLeft",
               "ArrowRight",
+              "Delete",
+              "Home",
+              "End",
+              "PageUp",
+              "PageDown",
+              "A",
+              "C",
+              "X",
             ].includes(String(params.key))
           )
             throw new Error("Unsupported browser key");
-          await this.page.keyboard.press(String(params.key));
+          const modifiers = params.modifiers ?? [];
+          if (
+            !Array.isArray(modifiers) ||
+            modifiers.length > 4 ||
+            new Set(modifiers).size !== modifiers.length ||
+            modifiers.some((value) => !["Control", "Alt", "Shift", "Meta"].includes(value))
+          )
+            throw new Error("Unsupported browser key modifiers");
+          await this.page.keyboard.press([...modifiers, String(params.key)].join("+"));
         } else throw new Error("Unsupported browser input");
         this.invalidateSelection();
-        return this.status(owner);
+        const result = this.status(owner);
+        if (receiptKey && receiptPayload) {
+          this.inputReceipts.set(receiptKey, { payload: receiptPayload, result });
+          if (this.inputReceipts.size > 256)
+            this.inputReceipts.delete(this.inputReceipts.keys().next().value!);
+        }
+        return result;
       }
       if (method.startsWith("browser.annotation."))
         return await this.annotate(method, params, owner);
@@ -362,6 +493,7 @@ export class SharedBrowser {
       leaseExpiresAt: this.lease?.expiresAt,
       viewport: { ...this.viewport },
       navigationId: this.navigationId,
+      documentId: this.documentId,
       annotationId: this.annotation?.owner === owner ? this.annotation.id : undefined,
     };
   }
@@ -391,25 +523,106 @@ export class SharedBrowser {
       throw new Error("Element selection expired. Select the element again.");
     return annotation;
   }
-  private async shadowMasks(page: Page) {
+  private async ensureMaskSession(page: Page) {
     if (!page.context)
       throw new Error("Safe shadow DOM inspection is unavailable on this host browser");
-    const session = await page.context().newCDPSession(page);
-    try {
-      const document = await session.send("DOM.getDocument", { depth: -1, pierce: true });
-      return browserShadowMasks(document.root);
-    } finally {
-      await session.detach();
-    }
-  }
-  private async ensureMaskSession(page: Page) {
-    if (!page.context) throw new Error("Safe shadow DOM inspection is unavailable on this host browser");
     if (!this.maskSession) {
       const session = await page.context().newCDPSession(page);
-      if (page !== this.page) { await session.detach(); throw new Error("Browser changed during inspection."); }
+      if (page !== this.page) {
+        await session.detach();
+        throw new Error("Browser changed during inspection.");
+      }
       this.maskSession = session;
+      if (session.on) {
+        const events = [
+          "DOM.documentUpdated",
+          "DOM.childNodeInserted",
+          "DOM.childNodeRemoved",
+          "DOM.attributeModified",
+          "DOM.attributeRemoved",
+          "DOM.shadowRootPushed",
+          "DOM.shadowRootPopped",
+          "DOM.characterDataModified",
+        ];
+        for (const event of events)
+          session.on(event, (payload: any) => {
+            const capture = this.screenshotMutations;
+            let own = false;
+            if (
+              capture &&
+              event === "DOM.childNodeInserted" &&
+              payload?.node &&
+              Number.isInteger(payload.parentNodeId)
+            ) {
+              const node = payload.node;
+              const text = node.children?.map((child: any) => child.nodeValue ?? "").join("") ?? "";
+              if (
+                node.localName === "style" &&
+                text.includes(capture.marker) &&
+                this.documentRoots.has(payload.parentNodeId) &&
+                !capture.styleParents.has(payload.parentNodeId)
+              ) {
+                capture.styleParents.add(payload.parentNodeId);
+                capture.nodes.add(node.nodeId);
+                own = true;
+              } else if (
+                node.localName === "x-pw-glass" &&
+                capture.glassExpected &&
+                node.attributes?.includes("popover") &&
+                node.attributes?.includes("manual") &&
+                node.shadowRoots?.some((root: any) => root.shadowRootType === "closed") &&
+                !capture.glass &&
+                capture.styleParents.has(payload.parentNodeId)
+              ) {
+                capture.glass = true;
+                capture.nodes.add(node.nodeId);
+                own = true;
+              }
+            } else if (
+              capture &&
+              event === "DOM.childNodeRemoved" &&
+              capture.nodes.has(payload?.nodeId)
+            ) {
+              capture.nodes.delete(payload.nodeId);
+              own = true;
+            }
+            if (!own) this.maskRevision++;
+            this.maskCache = undefined;
+          });
+        try {
+          await session.send("DOM.enable");
+          this.maskEvents = true;
+        } catch {
+          this.maskEvents = false;
+        }
+      }
     }
     return this.maskSession;
+  }
+  private async shadowMasks(page: Page, fresh = false) {
+    const session = await this.ensureMaskSession(page);
+    if (!fresh && this.maskEvents && this.maskCache) return this.maskCache;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const revision = this.maskRevision;
+      const document = await session.send("DOM.getDocument", { depth: -1, pierce: true });
+      const roots = new Set<number>();
+      const collectRoots = (node: BrowserDomNode) => {
+        if (node.nodeType === 9)
+          for (const child of node.children ?? [])
+            if (child.localName === "html" && Number.isInteger(child.nodeId))
+              roots.add(child.nodeId!);
+        for (const child of node.children ?? []) collectRoots(child);
+        if (node.contentDocument) collectRoots(node.contentDocument);
+      };
+      collectRoots(document.root);
+      const masks = browserShadowMasks(document.root);
+      if (page !== this.page) throw new Error("Browser changed during inspection.");
+      if (revision !== this.maskRevision) continue;
+      this.documentRoots = roots;
+      if (this.maskEvents) this.maskCache = masks;
+      return masks;
+    }
+    throw new Error("Page changed during inspection. Try again.");
   }
   /** Inspect a bounded hit ancestry only; never enumerate the document for hover. */
   private async hoverBoundary(page: Page, x: number, y: number): Promise<string | undefined> {
@@ -495,35 +708,72 @@ export class SharedBrowser {
         projectId: params.projectId,
         sessionId: params.sessionId,
         navigationId: this.navigationId,
+        captures: new Map(),
       };
       return this.status(owner);
     }
     const annotation = this.annotationScope(params, owner);
     if (method === "browser.annotation.clear") {
+      if (params.captureId !== undefined) {
+        if (typeof params.captureId !== "string" || !annotation.captures.has(params.captureId))
+          throw new Error("Browser capture was not found in this annotation scope.");
+        annotation.captures.delete(params.captureId);
+        if (annotation.selection?.id !== params.captureId) return this.status(owner);
+      }
       annotation.selection = undefined;
       annotation.inspection = undefined;
       annotation.point = undefined;
       return this.status(owner);
     }
     if (method === "browser.annotation.read") {
-      if (!annotation.selection || !annotation.point || !annotation.inspection)
-        throw new Error("Select an element first");
+      const captureId =
+        params.captureId === undefined ? annotation.selection?.id : params.captureId;
+      if (typeof captureId !== "string") throw new Error("Select an element first");
+      const capture = annotation.captures.get(captureId);
+      if (!capture) throw new Error("Browser capture was not found in this annotation scope.");
+      if (capture.revision !== undefined && capture.revision !== this.maskRevision)
+        throw new Error("Page changed. Select the element again.");
+      const revision = this.maskRevision;
       const current = await page.evaluate(inspectBrowserElement, {
-        ...annotation.point,
+        ...capture.point,
+        ancestorDepth: capture.depth,
+        traversal: capture.traversal,
         full: true,
-        opaqueHosts: await this.shadowMasks(page),
+        opaqueHosts: await this.shadowMasks(page, true),
       });
       this.annotationScope(params, owner);
-      if (JSON.stringify(current) !== JSON.stringify(annotation.inspection)) {
-        annotation.selection = undefined;
+      if (
+        (this.maskEvents && revision !== this.maskRevision) ||
+        JSON.stringify(current) !== JSON.stringify(capture.inspection)
+      ) {
+        annotation.captures.delete(captureId);
         throw new Error("Page changed. Select the element again.");
       }
-      return { ...this.status(owner), selection: annotation.selection };
+      return { ...this.status(owner), selection: capture.selection };
     }
-    if (!["browser.annotation.hover", "browser.annotation.select"].includes(method))
+    const traverse =
+      method === "browser.annotation.parent" || method === "browser.annotation.traverse";
+    if (
+      traverse &&
+      (!this.maskEvents ||
+        !annotation.point ||
+        !annotation.selection ||
+        !annotation.nodeId ||
+        params.nodeId !== annotation.nodeId ||
+        annotation.maskRevision !== this.maskRevision)
+    )
+      throw new Error("Element identity is stale or traversal is unavailable. Select again.");
+    if (
+      ![
+        "browser.annotation.hover",
+        "browser.annotation.select",
+        "browser.annotation.parent",
+        "browser.annotation.traverse",
+      ].includes(method)
+    )
       throw new Error("Unsupported annotation method");
-    const x = Number(params.x),
-      y = Number(params.y);
+    const x = traverse ? annotation.point!.x : Number(params.x),
+      y = traverse ? annotation.point!.y : Number(params.y);
     if (
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
@@ -533,8 +783,42 @@ export class SharedBrowser {
       y >= this.viewport.height
     )
       throw new Error("Invalid selection position");
-    const full = method === "browser.annotation.select";
-    if (full) annotation.selection = undefined;
+    const full = method !== "browser.annotation.hover";
+    const depth = 0;
+    const traversal = traverse ? [...(annotation.traversal ?? [])] : [];
+    if (traverse) {
+      const direction = method === "browser.annotation.parent" ? "parent" : params.direction;
+      if (direction === "ancestor") {
+        if (
+          !Number.isInteger(params.ancestorIndex) ||
+          Number(params.ancestorIndex) < 0 ||
+          Number(params.ancestorIndex) > 63
+        )
+          throw new Error("Invalid ancestor index");
+        traversal.push(...(Array(Number(params.ancestorIndex) + 1).fill("parent") as "parent"[]));
+      } else if (
+        direction === "parent" ||
+        direction === "child" ||
+        direction === "previousSibling" ||
+        direction === "nextSibling"
+      )
+        traversal.push(direction);
+      else throw new Error("Invalid browser traversal direction");
+      if (traversal.length > 64) throw new Error("Element traversal exceeds inspection budget");
+    }
+    const replaceCaptureId = full ? params.replaceCaptureId : undefined;
+    if (
+      replaceCaptureId !== undefined &&
+      (typeof replaceCaptureId !== "string" ||
+        replaceCaptureId !== annotation.selection?.id ||
+        !annotation.captures.has(replaceCaptureId))
+    )
+      throw new Error("Browser capture to replace is stale.");
+    if (full && annotation.captures.size >= 8 && replaceCaptureId === undefined)
+      throw new Error(
+        "Browser annotation capture limit reached. Start a new selection to continue.",
+      );
+    if (full && !traverse && replaceCaptureId === undefined) annotation.selection = undefined;
     const boundary = full ? undefined : await this.hoverBoundary(page, x, y);
     this.annotationScope(params, owner);
     if (!full && !boundary) return {
@@ -544,8 +828,10 @@ export class SharedBrowser {
     const inspection = await page.evaluate(inspectBrowserElement, {
       x,
       y,
+      ancestorDepth: depth,
+      traversal,
       full,
-      opaqueHosts: full ? await this.shadowMasks(page) : [],
+      opaqueHosts: full ? await this.shadowMasks(page, true) : [],
     });
     this.annotationScope(params, owner);
     if (!full && boundary !== await this.hoverBoundary(page, x, y))
@@ -557,32 +843,72 @@ export class SharedBrowser {
         hover: inspection.element,
         limitation: inspection.limitation,
       };
-    const frame = await page.screenshot({
-      type: "jpeg",
-      quality: 65,
-      timeout: 5_000,
-      mask: inspection.masks.map((selector) => page.locator!(selector)),
-      maskColor: "#333333",
-      // Also hide content overflowing private/closed shadow hosts. Playwright
-      // restores this screenshot-only stylesheet after capture.
-      style: inspection.masks.length
-        ? `${inspection.masks.join(",")} { opacity: 0 !important; }`
-        : undefined,
-    });
+    if (!this.maskEvents)
+      throw new Error("Safe capture requires browser DOM mutation observation.");
+    const inspectedRevision = this.maskRevision;
+    const marker = `bycoda-capture-${randomUUID()}`;
+    this.screenshotMutations = {
+      marker,
+      nodes: new Set(),
+      styleParents: new Set(),
+      glass: false,
+      glassExpected: inspection.masks.length > 0,
+    };
+    let frame: Buffer;
+    try {
+      frame = await page.screenshot({
+        type: "jpeg",
+        quality: 65,
+        timeout: 5_000,
+        mask: inspection.masks.map((selector) => page.locator!(selector)),
+        maskColor: "#333333",
+        // Also hide content overflowing private/closed shadow hosts. Playwright
+        // restores this screenshot-only stylesheet after capture.
+        style: `/* ${marker} */ ${inspection.masks.length ? `${inspection.masks.join(",")} { opacity: 0 !important; }` : ""}`,
+      });
+      // Drain CDP events before judging Playwright screenshot cleanup.
+      await this.maskSession!.send("DOM.getDocument", { depth: 0, pierce: true });
+      const observed = this.screenshotMutations;
+      if (
+        !observed ||
+        observed.styleParents.size === 0 ||
+        observed.nodes.size !== 0 ||
+        (observed.glassExpected && !observed.glass)
+      )
+        this.maskRevision++;
+    } finally {
+      this.screenshotMutations = undefined;
+      this.maskCache = undefined;
+    }
     this.annotationScope(params, owner);
     if (frame.byteLength > 2 * 1024 * 1024)
       throw new Error("Browser frame exceeds transfer budget");
     const current = await page.evaluate(inspectBrowserElement, {
       x,
       y,
+      ancestorDepth: depth,
+      traversal,
       full: true,
-      opaqueHosts: await this.shadowMasks(page),
+      opaqueHosts: await this.shadowMasks(page, true),
     });
     this.annotationScope(params, owner);
-    if (JSON.stringify(current) !== JSON.stringify(inspection))
+    if (
+      (this.maskEvents && inspectedRevision !== this.maskRevision) ||
+      JSON.stringify(current) !== JSON.stringify(inspection)
+    )
       throw new Error("Page changed. Select the element again.");
     annotation.point = { x, y };
-    annotation.inspection = inspection;
+    annotation.depth = depth;
+    annotation.traversal = traversal;
+    annotation.nodeId = randomUUID();
+    annotation.maskRevision = this.maskRevision;
+    inspection.element.nodeId = annotation.nodeId;
+    if (inspection.element.parentSelector && this.maskEvents)
+      inspection.element.parentNodeId = annotation.nodeId;
+    annotation.inspection = {
+      ...inspection,
+      element: { ...inspection.element, nodeId: undefined, parentNodeId: undefined },
+    };
     annotation.selection = {
       id: randomUUID(),
       projectId: annotation.projectId,
@@ -604,6 +930,15 @@ export class SharedBrowser {
         height: this.viewport.height,
       },
     };
+    if (typeof replaceCaptureId === "string") annotation.captures.delete(replaceCaptureId);
+    annotation.captures.set(annotation.selection.id, {
+      selection: annotation.selection,
+      point: { x, y },
+      depth,
+      traversal,
+      inspection: annotation.inspection,
+      revision: this.maskEvents ? this.maskRevision : undefined,
+    });
     return { ...this.status(owner), selection: annotation.selection };
   }
   private async ensurePage() {
@@ -621,21 +956,45 @@ export class SharedBrowser {
       if (generation !== this.pageGeneration) throw new Error("Browser was closed during startup");
       this.page = page;
       const navigated = (frame: PageEvents["framenavigated"]) => {
-        if (this.page === page && generation === this.pageGeneration && !frame.parentFrame())
+        if (this.page === page && generation === this.pageGeneration && !frame.parentFrame()) {
+          this.documentId = randomUUID();
           this.invalidateSelection();
+        }
       };
       page.on?.("framenavigated", navigated);
       this.detachPageListeners = () => page.off?.("framenavigated", navigated);
       this.browser = browser;
       this.idleTimer = setInterval(() => {
-        if (!this.options.keepAlive && !this.busy && this.now() - this.lastUse > 5 * 60_000)
-          void this.close().catch(() => {});
+        if (
+          !this.options.keepAlive &&
+          !this.busy &&
+          !this.annotation &&
+          (!this.lease || this.lease.expiresAt <= this.now()) &&
+          this.now() - this.lastUse > 5 * 60_000
+        ) {
+          this.busy = true;
+          void this.close()
+            .then(() => this.options.onIdleClosed?.())
+            .catch(() => {})
+            .finally(() => {
+              this.busy = false;
+            });
+        }
       }, 30_000);
       this.idleTimer.unref();
     } catch (error) {
       await browser.close();
       throw error;
     }
+  }
+  reclaimable(at: number) {
+    return (
+      !this.busy &&
+      !this.page &&
+      !this.annotation &&
+      (!this.lease || this.lease.expiresAt <= at) &&
+      at - this.lastUse > 5 * 60_000
+    );
   }
   revoke(credential: string) {
     if (this.lease?.owner === fingerprint(credential)) {
@@ -810,9 +1169,18 @@ export class SharedBrowser {
   }
 
   private async disposePage() {
+    this.pageGeneration++;
     const maskSession = this.maskSession;
     this.maskSession = undefined;
-    this.pageGeneration++;
+    this.maskCache = undefined;
+    this.documentRoots.clear();
+    this.maskEvents = false;
+    this.maskRevision++;
+    try {
+      await maskSession?.detach();
+    } catch {
+      /* page already closed */
+    }
     this.stopCapture("The browser has closed. Retained logs remain available.");
     this.detachPageListeners?.();
     this.detachPageListeners = undefined;
@@ -822,16 +1190,152 @@ export class SharedBrowser {
     this.page = undefined;
     this.browser = undefined;
     this.viewport = { ...DEFAULT_VIEWPORT };
+    this.documentId = randomUUID();
     this.invalidateSelection();
     if (browser) {
       await browser.close();
       this.hoverObjects = undefined;
     }
-    await maskSession?.detach();
   }
 
   async close() {
     this.lease = undefined;
     await this.disposePage();
+  }
+}
+
+/** Isolated per-conversation browser state; legacy owner-wide mode remains separate. */
+export class SessionBrowserRegistry {
+  private readonly browsers = new Map<string, SharedBrowser>();
+  private readonly shared: SharedBrowser;
+  private process?: Promise<Browser>;
+  private readonly pooledLoader: BrowserLoader;
+  constructor(
+    private readonly loader: BrowserLoader,
+    private readonly now = Date.now,
+    private readonly options: SharedBrowserOptions = {},
+  ) {
+    this.pooledLoader = async () => ({
+      chromium: {
+        launch: async () => {
+          if (!this.process)
+            this.process = this.loader()
+              .then((runtime) => runtime.chromium.launch({ headless: true }))
+              .catch((error) => {
+                this.process = undefined;
+                throw error;
+              });
+          const process = await this.process;
+          let context: Awaited<ReturnType<Browser["newContext"]>> | undefined;
+          return {
+            newContext: async (options) => {
+              context = await process.newContext(options);
+              return context;
+            },
+            close: async () => {
+              await context?.close?.();
+            },
+          };
+        },
+      },
+    });
+    this.shared = new SharedBrowser(this.pooledLoader, now, options);
+  }
+  private browser(params: Record<string, unknown>, credential: string) {
+    if (params.threadId !== undefined) {
+      if (params.sessionId !== undefined || params.ownerPresentationScope !== undefined ||
+        [params.environmentId, params.projectId, params.threadId].some(value => typeof value !== "string" || !value || value.length > 256 || value.includes("\0")) || typeof params.roomProjectCwd !== "string" || !params.roomProjectCwd || params.roomProjectCwd.length > 4096 || params.roomProjectCwd.includes("\0"))
+        throw new Error("A real Room, Host and project are required for scoped browser access.");
+      return this.browserForKey(JSON.stringify(["assistant-thread", params.environmentId, params.projectId, params.roomProjectCwd, params.threadId]));
+    }
+    if (params.ownerPresentationScope !== undefined) {
+      if (
+        typeof params.ownerPresentationScope !== "string" ||
+        !params.ownerPresentationScope ||
+        params.ownerPresentationScope.length > 512 ||
+        params.ownerPresentationScope.includes("\0")
+      )
+        throw new Error("Invalid owner browser presentation scope");
+      return this.browserForKey(
+        JSON.stringify(["owner", fingerprint(credential), params.ownerPresentationScope]),
+      );
+    }
+    if (params.sessionId === undefined) return this.shared;
+    if (
+      typeof params.sessionId !== "string" ||
+      !params.sessionId ||
+      typeof params.projectId !== "string" ||
+      !params.projectId
+    )
+      throw new Error(
+        "A validated project and conversation are required for scoped browser access.",
+      );
+    return this.browserForKey(JSON.stringify(["session", params.projectId, params.sessionId]));
+  }
+  private browserForKey(key: string) {
+    let browser = this.browsers.get(key);
+    if (!browser) {
+      if (this.browsers.size >= 16) {
+        for (const [candidateKey, candidate] of this.browsers)
+          if (candidate.reclaimable(this.now())) this.browsers.delete(candidateKey);
+      }
+      if (this.browsers.size >= 16)
+        throw new Error(
+          "Browser session capacity reached. Close a browser before opening another.",
+        );
+      browser = new SharedBrowser(this.pooledLoader, this.now, {
+        ...this.options,
+        onIdleClosed: () => {
+          if (this.browsers.get(key) === browser) this.browsers.delete(key);
+        },
+      });
+      this.browsers.set(key, browser);
+    }
+    return browser;
+  }
+  async dispatch(
+    method: string,
+    params: Record<string, unknown>,
+    credential: string,
+    options: { takeover?: boolean } = {},
+  ) {
+    const browser = this.browser(params, credential);
+    const result = await browser.dispatch(method, params, credential, options);
+    if (method === "browser.close" && params.sessionId !== undefined) {
+      const key =
+        params.ownerPresentationScope !== undefined
+          ? JSON.stringify(["owner", fingerprint(credential), params.ownerPresentationScope])
+          : JSON.stringify(["session", params.projectId, params.sessionId]);
+      this.browsers.delete(key);
+    }
+    return result;
+  }
+  async dispatchForSession(method: string, params: Record<string, unknown>, credential: string) {
+    if (params.ownerPresentationScope !== undefined || params.threadId !== undefined)
+      throw new Error("Owner browser presentation scopes are unavailable to agents.");
+    return this.browser(params, credential).dispatchForSession(method, params, credential);
+  }
+  async dispatchForRoom(method: string, params: Record<string, unknown>, credential: string, options: { takeover?: boolean } = {}) {
+    if (!params.threadId || params.sessionId !== undefined || params.ownerPresentationScope !== undefined || method.startsWith("browser.annotation."))
+      throw new Error("A real Room browser source is required; session annotations have a separate owner.");
+    const browser = this.browser(params, credential);
+    const result = await browser.dispatchForSession(method, params, credential, options);
+    if (method === "browser.close")
+      this.browsers.delete(JSON.stringify(["assistant-thread", params.environmentId, params.projectId, params.roomProjectCwd, params.threadId]));
+    return result;
+  }
+  revoke(credential: string) {
+    this.shared.revoke(credential);
+    for (const browser of this.browsers.values()) browser.revoke(credential);
+  }
+  async close() {
+    await Promise.all([
+      this.shared.close(),
+      ...Array.from(this.browsers.values(), (browser) => browser.close()),
+    ]);
+    this.browsers.clear();
+    const process = this.process;
+    this.process = undefined;
+    if (process) await (await process).close();
   }
 }

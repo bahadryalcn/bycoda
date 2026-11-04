@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 
+import { NATIVE_FORMAT_MAX_RESULT_BYTES } from "../src/shared/model/host-contracts/native-services";
+
 export type EditorFormatResult = { formatted: string; cursorOffset: number };
 
 /** Run project code/config in a bounded, isolated process, without writing the file. */
@@ -25,7 +27,7 @@ export function formatWorkspaceText(
         cwd: root,
         windowsHide: true,
         timeout: 20_000,
-        maxBuffer: 4 * 1024 * 1024,
+        maxBuffer: NATIVE_FORMAT_MAX_RESULT_BYTES,
       },
       (error, stdout, stderr) => {
         if (error) {
@@ -35,7 +37,10 @@ export function formatWorkspaceText(
           return;
         }
         try {
-          resolve(JSON.parse(stdout));
+          const result = JSON.parse(stdout);
+          if (Buffer.byteLength(JSON.stringify(result)) > NATIVE_FORMAT_MAX_RESULT_BYTES)
+            throw new Error("Project formatter output exceeds its reserved capacity");
+          resolve(result);
         } catch {
           reject(new Error("Invalid project formatter response"));
         }
@@ -89,6 +94,7 @@ else if (tool === 'prettier') {
   const plugins = await Promise.all((options?.plugins || []).map(plugin => typeof plugin === 'string' ? pathToFileURL(req.resolve(plugin)).href : plugin));
   const info = await prettier.getFileInfo(path, { ignorePath, plugins });
   if (info.ignored) process.stdout.write(JSON.stringify({ formatted: source, cursorOffset }));
+  else if (!info.inferredParser && !options?.parser) process.stdout.write('null');
   else {
     const result = await prettier.formatWithCursor(source, { ...options, plugins, filepath: path, cursorOffset });
     // Prettier also returns internal comment metadata. Keep the public native
@@ -100,7 +106,12 @@ else if (tool === 'prettier') {
   const bin = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin[tool];
   const args = tool === 'biome' ? ['format', '--stdin-file-path=' + path] : ['--stdin-filepath', path];
   const result = spawnSync(process.execPath, [join(dirname(tools[tool]), bin), ...args], { cwd: dirname(path), input: source, encoding: 'utf8', windowsHide: true, timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
-  if (result.error || result.status !== 0) throw new Error(result.stderr || result.error?.message || 'Formatting failed');
-  process.stdout.write(JSON.stringify({ formatted: result.stdout, cursorOffset: Math.min(cursorOffset, result.stdout.length) }));
+  // Oxfmt reports unsupported stdin paths as a dedicated diagnostic, not a syntax failure.
+  if (tool === 'oxfmt' && !result.error && result.status !== 0 && !result.stdout && result.stderr.trim() === 'Unsupported file type for stdin-filepath') {
+    process.stdout.write('null');
+  } else {
+    if (result.error || result.status !== 0) throw new Error(result.stderr || result.error?.message || 'Formatting failed');
+    process.stdout.write(JSON.stringify({ formatted: result.stdout, cursorOffset: Math.min(cursorOffset, result.stdout.length) }));
+  }
 }
 `;

@@ -25,15 +25,15 @@ import {
   measureWorkspaceStorage,
   workspaceRetentionEligibility,
 } from "./workspace-retention";
-import { managedWorkspaceRoot } from "./git-worktrees";
-import { hostGitRepositoryKey } from "./git-mutations";
+import { managedWorkspaceRoot } from "./git/git-worktrees";
+import { hostGitRepositoryKey } from "./git/git-mutations";
 import { GitTurnHistory, gitText } from "./turn-git-history";
 import { HostBranchDeliveryService } from "./branch-delivery";
 import { WorkspaceBootstrapService } from "./workspace-bootstrap";
 import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import { createManagedNativeActivity } from "./managed-native-activity";
-import { createNativeBufferPersistenceStore } from "./native-buffer-persistence-store";
+import { createNativeBufferPersistenceStore } from "./native-buffer/native-buffer-persistence-store";
 import { createExactGitRewindPolicy } from "./exact-git-rewind";
 
 export { workspacePathKey } from "./workspace-paths";
@@ -91,22 +91,13 @@ export function createManagedWorkspaceRuntime(
     ...(await nativeActivity.probe(workspaceId)),
   ];
   const pending = async (workspaceId: string, except?: string) => {
-    const operations = await store.workspaceOperations(workspaceId);
-    const completedDelivery = operations.find(
-      (operation) =>
-        operation.id === except &&
-        operation.kind === "delivery" &&
-        operation.phase === "complete" &&
-        operation.merge,
-    );
+    const candidate = except ? await store.workspaceOperation(except) : null;
+    const completedDelivery = candidate?.workspaceId === workspaceId &&
+      candidate.kind === "delivery" && candidate.phase === "complete" && candidate.merge
+      ? candidate : undefined;
     return (
-      operations.some(
-        (operation) =>
-          operation.id !== except &&
-          (operation.phase !== "complete" ||
-            (operation.kind === "rewind" &&
-              !(operation as unknown as { finalized?: boolean }).finalized)),
-      ) || (await options.artifactPending?.(workspaceId, completedDelivery?.id)) === true
+      (await store.workspaceHasPendingOperations(workspaceId, except)) ||
+      (await options.artifactPending?.(workspaceId, completedDelivery?.id)) === true
     );
   };
   const activity = createExecutionActivityReservations({

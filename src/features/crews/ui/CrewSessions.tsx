@@ -239,7 +239,7 @@ export function CrewManagementDialog({
     void act(`open:${source}`, async () => {
       await onOpen({ cwd, machineId: data.machine.id, projectId: data.project.id, sessionId });
       onClose();
-    });
+    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   };
   if (page === "edit")
     return (
@@ -434,6 +434,10 @@ export function CrewManagementDialog({
                   query={query}
                   selectedId={selected?.id}
                   disabled={pending}
+                  hasMoreHistory={state.hasMoreHistory}
+                  historyLoading={state.historyLoading}
+                  historyError={state.historyError}
+                  onLoadMore={() => void state.loadMoreHistory()}
                   onViewChange={(next) => {
                     if (pendingGate.current) return;
                     setView(next);

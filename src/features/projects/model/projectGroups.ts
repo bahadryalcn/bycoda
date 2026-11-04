@@ -179,7 +179,7 @@ export function setProjectGroupAssignment(
   else if (loadProjectGroups().some((group) => group.id === groupId)) {
     next[key] = groupId;
   }
-  saveProjectGroupAssignments(next);
+  if (!saveProjectGroupAssignments(next)) throw new Error("Could not save project group assignment.");
   return next;
 }
 
@@ -194,7 +194,7 @@ export function rebaseProjectGroupAssignment(from: string, to: string): void {
   if (oldKey === newKey || !(oldKey in next)) return;
   if (!(newKey in next)) next[newKey] = next[oldKey];
   delete next[oldKey];
-  saveProjectGroupAssignments(next);
+  if (!saveProjectGroupAssignments(next)) throw new Error("Could not save project group assignment.");
 }
 
 /** False when the group does not exist or the change could not be saved. */
@@ -230,8 +230,7 @@ export function moveProjectGroup(id: string, step: MoveStep): boolean {
 export function deleteProjectGroup(id: string): boolean {
   const nextGroups = loadProjectGroups().filter((group) => group.id !== id);
   if (!saveProjectGroups(nextGroups)) return false;
-  saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups));
-  return true;
+  return saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups));
 }
 
 export function projectGroupColor(group: ProjectGroup): string {
@@ -326,7 +325,7 @@ export function changeProjectGroupMembers(
     if (assignments[key] === id) delete assignments[key];
   }
   for (const path of add) assignments[pathKey(path)] = id;
-  saveProjectGroupAssignments(assignments);
+  if (!saveProjectGroupAssignments(assignments)) throw new Error("Could not save project group membership.");
 }
 
 /** Paths (as stored keys) currently assigned to the group. */

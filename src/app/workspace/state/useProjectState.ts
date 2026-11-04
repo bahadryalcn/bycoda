@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
 import { visibleProjects } from "../../../features/group-lock/model/lockState";
 import {
@@ -27,11 +27,14 @@ export function useProjectState({ toolWindow, windowTransfer, resumed }: Project
       lastProjectPath() ??
       "~",
   );
-  const [recents, setRecents] = useState(() =>
-    resumed?.projectCwd && looksLikeProject(resumed.projectCwd)
-      ? rememberProject(resumed.projectCwd)
-      : loadRecents(),
-  );
+  const [recents, setRecents] = useState(loadRecents);
+  useEffect(() => {
+    if (!resumed?.projectCwd || !looksLikeProject(resumed.projectCwd)) return;
+    let active = true;
+    void rememberProject(resumed.projectCwd).then((next) => { if (active) setRecents(next); })
+      .catch((error: unknown) => console.error("Could not remember project", error));
+    return () => { active = false; };
+  }, [resumed?.projectCwd]);
   // What is not behind a locked group. The rail itself gets the full list, so
   // it can keep the saved order and pins of projects that are hidden.
   const lockSnapshot = useLockSnapshot();

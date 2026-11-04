@@ -121,11 +121,25 @@ async function main() {
   pair --name <device>  Issue a device credential (shown once)
   devices               List paired devices
   revoke <device-id>    Revoke a device credential
+  native-admission-preview-enroll   Review native installation key enrollment
+  native-admission-enroll           Apply reviewed enrollment
+  native-admission-preview-revoke   Review native installation key revocation
+  native-admission-revoke           Apply reviewed revocation
 Options: --data-dir <directory> --port <port> (default 3776)
 Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port");
+  if (["native-admission-preview-enroll", "native-admission-enroll", "native-admission-preview-revoke", "native-admission-revoke"].includes(command)) {
+    const { previewNativeAdmission, applyNativeAdmission } = await import("./native-admission-cli");
+    const action = command.endsWith("enroll") ? "enroll" as const : "revoke" as const;
+    const hostId = option("host-id", "");
+    const installationId = option("installation-id", "");
+    const change = action === "enroll" ? { action, hostId, installationId, publicKeyPath: option("public-key", "") } : { action, hostId, installationId };
+    const result = command.includes("preview") ? await previewNativeAdmission(directory, change) : await applyNativeAdmission(directory, change, option("reviewed-hash", ""), option("revision", ""));
+    console.log(JSON.stringify(result));
+    return;
+  }
   const { protectWindowsDirectory, preflightWindowsHostUninstall } = await import("./windows");
   const {
     connectionInfo,
@@ -356,7 +370,7 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { createHostServer } = await import("./server");
   const releaseOwner = await acquireHostOwner(directory);
   try {
-    const { installAppSkills } = await import("./app-skills");
+    const { installAppSkills } = await import("./app-skills/app-skills");
     installAppSkills();
   } catch (error) {
     console.error("Could not install the bycoda app skills:", error);
@@ -546,13 +560,13 @@ async function entry() {
     return;
   }
   if (command === "conversation") {
-    const { callConversationTool, conversationToolCatalog, CONVERSATION_MAX_INPUT_BYTES } =
-      await import("./conversation-tools");
+    const { callConversationTool, sessionConversationToolCatalog, CONVERSATION_MAX_INPUT_BYTES } =
+      await import("./conversation/conversation-tools");
     if (!args[1] || args[1] === "--help") {
       console.log(
         JSON.stringify({
           usage: "bycoda Host conversation <action> --input -",
-          tools: conversationToolCatalog(),
+          tools: sessionConversationToolCatalog(),
         }),
       );
       return;
@@ -624,7 +638,7 @@ async function entry() {
     return;
   }
   if (command === "social") {
-    const { callSocialTool } = await import("./social-tools");
+    const { callSocialTool } = await import("./social/social-tools");
     const { SOCIAL_TOOLS } = await import("../src/features/social/model/social");
     if (!args[1] || args[1] === "--help") {
       console.log(

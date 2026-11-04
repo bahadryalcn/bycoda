@@ -1,3 +1,5 @@
+import type { PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
+import { rememberProjectInMutation } from "../../../features/projects/model/recents";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
@@ -91,7 +93,11 @@ export function useWorkspaceDirectoryActions({
   }, []);
 
   const onCwdChange = useCallback(
-    (sessionId: string, cwd: string) => {
+    (sessionId: string, cwd: string, token?: PrivacyMutationToken) => {
+      const remember = (path: string) => {
+        if (token) setRecents(rememberProjectInMutation(path, token));
+        else void rememberProject(path).then(setRecents).catch((error: unknown) => console.error("Could not remember project", error));
+      };
       const normalized = normalizeProjectPath(cwd);
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       const previous = current?.cwd;
@@ -106,7 +112,7 @@ export function useWorkspaceDirectoryActions({
         (owner || (looksLikeProject(previous) && !isBlankSession(current)))
       ) {
         setProjectCwd(normalized);
-        setRecents(rememberProject(normalized));
+        remember(normalized);
         const session = owner
           ? newSessionForProject(current, normalized)
           : newSession(
@@ -130,7 +136,7 @@ export function useWorkspaceDirectoryActions({
         });
       }
       setProjectCwd(normalized);
-      setRecents(rememberProject(normalized));
+      remember(normalized);
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;

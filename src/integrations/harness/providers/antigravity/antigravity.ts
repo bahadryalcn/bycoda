@@ -7,6 +7,7 @@ import {
   ownsOperation,
   type HarnessOperationContext,
   acpTurnWriter,
+  retireProviderEpoch,
   type AcpWriterView,
 } from "../turnWriter";
 
@@ -413,6 +414,8 @@ export async function forgetAntigravitySession(
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
   await stopAntigravitySession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(cancelEpoch, turnsByThread, sessionId, lifecycleByThread);
+  retireProviderEpoch(sessionEpoch, turnsByThread, sessionId, lifecycleByThread);
 }
 
 export function bindAntigravitySession(threadId: string, acpSessionId: string, cwd: string): void {

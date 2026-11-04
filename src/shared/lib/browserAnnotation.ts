@@ -3,6 +3,20 @@
 export type BrowserRect = { x: number; y: number; width: number; height: number };
 export type BrowserElementTarget = {
   tag: string;
+  inspectionVersion?: 1;
+  role?: string;
+  interaction?: { disabled: boolean; focusable: boolean };
+  layout?: { display: string; childBounds?: BrowserRect[]; limitation?: string };
+  parentSelector?: string;
+  boxModel?: {
+    content: BrowserRect;
+    padding: BrowserRect;
+    border: BrowserRect;
+    margin: BrowserRect;
+  };
+  boxModelLimitation?: string;
+  nodeId?: string;
+  parentNodeId?: string;
   text: string;
   selector: string;
   path: string;
@@ -59,6 +73,65 @@ export function parseBrowserAnnotation(value: unknown): BrowserAnnotationAttachm
   )
     throw new Error("Invalid browser annotation");
   const { element: e, viewport: vp } = v;
+  const rect = (value: BrowserRect): BrowserRect => {
+    if (!value || typeof value !== "object") throw new Error("Invalid browser annotation geometry");
+    const x = number(value.x),
+      y = number(value.y),
+      width = number(value.width),
+      height = number(value.height);
+    if (
+      Math.abs(x) > 10_000_000 ||
+      Math.abs(y) > 10_000_000 ||
+      width < 0 ||
+      height < 0 ||
+      width > 10_000_000 ||
+      height > 10_000_000
+    )
+      throw new Error("Invalid browser annotation geometry");
+    return { x, y, width, height };
+  };
+  let inspection: Pick<
+    BrowserElementTarget,
+    "inspectionVersion" | "role" | "boxModel" | "boxModelLimitation" | "interaction" | "layout"
+  > = {};
+  if (e.inspectionVersion !== undefined) {
+    if (e.inspectionVersion !== 1) throw new Error("Unsupported browser inspection version");
+    inspection = { inspectionVersion: 1 };
+    if (e.role !== undefined) inspection.role = string(e.role, 100);
+    if (e.boxModelLimitation !== undefined)
+      inspection.boxModelLimitation = string(e.boxModelLimitation, 500);
+    if (e.boxModel !== undefined)
+      inspection.boxModel = {
+        content: rect(e.boxModel.content),
+        padding: rect(e.boxModel.padding),
+        border: rect(e.boxModel.border),
+        margin: rect(e.boxModel.margin),
+      };
+    if (e.interaction !== undefined) {
+      if (
+        !e.interaction ||
+        typeof e.interaction.disabled !== "boolean" ||
+        typeof e.interaction.focusable !== "boolean"
+      )
+        throw new Error("Invalid browser inspection interaction");
+      inspection.interaction = {
+        disabled: e.interaction.disabled,
+        focusable: e.interaction.focusable,
+      };
+    }
+    if (e.layout !== undefined) {
+      if (!e.layout || typeof e.layout !== "object")
+        throw new Error("Invalid browser inspection layout");
+      inspection.layout = { display: string(e.layout.display, 100) };
+      if (e.layout.limitation !== undefined)
+        inspection.layout.limitation = string(e.layout.limitation, 500);
+      if (e.layout.childBounds !== undefined) {
+        if (!Array.isArray(e.layout.childBounds) || e.layout.childBounds.length > 32)
+          throw new Error("Invalid browser inspection layout");
+        inspection.layout.childBounds = e.layout.childBounds.map(rect);
+      }
+    }
+  }
   return {
     id: string(v.id, 128),
     projectId: string(v.projectId, 512),
@@ -77,6 +150,7 @@ export function parseBrowserAnnotation(value: unknown): BrowserAnnotationAttachm
     trust: "untrusted-page-data",
     limitations: v.limitations.map((entry) => string(entry, 500)),
     element: {
+      ...inspection,
       tag: string(e.tag, 100),
       text: string(e.text, 2000),
       selector: string(e.selector, 8192),

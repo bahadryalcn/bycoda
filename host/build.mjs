@@ -45,3 +45,9 @@ await build({
   entryPoints: ["host/storage/snapshot-worker.mjs"],
   outfile: "build/host/snapshot-worker.mjs",
 });
+
+await build({
+  ...options,
+  entryPoints: ["host/session-read-helper.mjs"],
+  outfile: "build/host/session-read-helper.mjs",
+});

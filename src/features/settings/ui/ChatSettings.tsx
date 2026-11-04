@@ -39,6 +39,7 @@ import {
   useComposerSpelling,
 } from "../model/composerSpelling";
 import { TranslationSettings } from "./TranslationSettings";
+import { TitleGenerationSettings } from "./TitleGenerationSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
@@ -307,6 +308,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         <TranslationSettings embedded />
         <TranslationSettings embedded action="reprompt" />
       </Group>
+      <TitleGenerationSettings />
       <TemplatesSettings />
       <VoiceSettings />
     </div>

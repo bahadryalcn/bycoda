@@ -384,7 +384,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [cwd, focusKind, retry]);
+  }, [cwd, focusPath, focusKind, retry]);
 
   // A review opened from the Changes or Staged Changes section shows only that side.
   const entries = useMemo(() => workingTreeDiffEntries(files ?? [], focusKind), [files, focusKind]);

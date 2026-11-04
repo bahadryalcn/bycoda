@@ -9,9 +9,14 @@ import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 import { hostToolTargetKey, type HostToolTarget } from "../connections/model/hostToolTarget";
+import {
+  peekToolsDraftPart,
+  subscribeToolsDraftTransfer,
+  writeToolsDraftPart,
+} from "./toolsDraftTransfer";
 import "./diagnostics-panel.css";
 
-type Sample = {
+export type DiagnosticsSample = {
   at: number;
   host: {
     totalMemoryBytes: number;
@@ -27,7 +32,14 @@ type Sample = {
     uptimeSeconds: number;
   };
 };
-type Props = { cwd: string; hostTarget?: HostToolTarget; hostLabel?: string };
+type Sample = DiagnosticsSample;
+type Props = {
+  cwd: string;
+  hostTarget?: HostToolTarget;
+  hostLabel?: string;
+  active?: boolean;
+  transferScope?: import("./toolsDraftTransfer").ToolsDraftScope;
+};
 const mib = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
 const time = (at: number) => new Date(at).toLocaleTimeString(getLocale());
@@ -117,12 +129,31 @@ export function DiagnosticsPanel(props: Props) {
     />
   );
 }
-function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLabel }: Props) {
+function ProjectDiagnosticsPanel({
+  cwd,
+  hostTarget = { kind: "project" },
+  hostLabel,
+  active = true,
+  transferScope,
+}: Props) {
   useLocale();
-  const [samples, setSamples] = useState<Sample[]>([]);
+  const [samples, setSamples] = useState<Sample[]>(() =>
+    transferScope ? (peekToolsDraftPart(transferScope, "diagnostics")?.samples ?? []) : [],
+  );
+  useEffect(() => {
+    if (!transferScope) return;
+    return subscribeToolsDraftTransfer(transferScope, ({ diagnostics }) => {
+      if (diagnostics) setSamples(diagnostics.samples);
+    });
+  }, [transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
+    if (active && transferScope) writeToolsDraftPart(transferScope, "diagnostics", { samples });
+  }, [active, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue, samples]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const alive = useRef(false);
+  const visible = useRef(active);
+  visible.current = active;
   const pending = useRef(false);
   const delay = useRef<{ timer: ReturnType<typeof setTimeout>; resolve: () => void } | null>(null);
   useEffect(() => {
@@ -145,7 +176,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
         )
       : null;
   const read = async () => {
-    if (pending.current) return;
+    if (pending.current || !visible.current) return;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -165,7 +196,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
               hostTarget,
             );
       const result = await request();
-      if (!alive.current) return;
+      if (!alive.current || !visible.current) return;
       setSamples(result.samples);
       // One user request includes the two samples needed for a useful CPU measurement.
       if (result.samples[result.samples.length - 1]?.process.cpuPercent === null) {
@@ -173,7 +204,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
           delay.current = { timer: setTimeout(resolve, 1100), resolve };
         });
         delay.current = null;
-        if (!alive.current) return;
+        if (!alive.current || !visible.current) return;
         const measured = await request();
         if (alive.current) setSamples(measured.samples);
       }

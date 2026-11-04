@@ -625,7 +625,7 @@ export function ServersView({
           {servers.length > 0 || !loaded ? (
             <div
               aria-busy={bulkBusy}
-              className="servers-selection-bar sticky top-0 z-1 bg-(--color-background-base) text-ui-caption"
+              className="servers-selection-bar sticky top-0 z-1 bg-(--ui-workspace-reading-base) text-ui-caption"
             >
               {checkedServers.length > 0 ? (
                 <Checkbox

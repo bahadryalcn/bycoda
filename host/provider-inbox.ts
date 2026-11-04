@@ -169,7 +169,7 @@ export class ProviderInboxBridge {
       await this.prune();
       const rows = await this.db
         .prepare(
-          "SELECT result_json FROM remote_inbox_jobs WHERE owner_hash=? AND state='completed' AND json_extract(operation_json,'$.action')='list' ORDER BY rowid DESC LIMIT 10",
+          "SELECT operation_json, result_json FROM remote_inbox_jobs WHERE owner_hash=? AND state='completed' AND json_extract(operation_json,'$.action')='list' ORDER BY rowid DESC LIMIT 10",
         )
         .all(ownerHash);
       const path = (value: string) => {
@@ -179,6 +179,8 @@ export class ProviderInboxBridge {
           : normalized;
       };
       for (const row of rows) {
+        const operation = JSON.parse(String(row.operation_json)) as RemoteInboxOperation;
+        if (operation.action !== "list" || !operation.projects.some(project => path(project.path) === path(cwd))) continue;
         const result = JSON.parse(String(row.result_json ?? "null")) as {
           items?: RemoteInboxTarget[];
         } | null;

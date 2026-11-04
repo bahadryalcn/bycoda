@@ -1,6 +1,10 @@
 import type { Readable, Writable } from "node:stream";
 
-class McpRateLimited extends Error {}
+class McpRateLimited extends Error {
+  constructor(readonly retryAfterSeconds?: number) {
+    super("MCP host rate limit exceeded.");
+  }
+}
 
 export type McpScope = "conversation" | "runtime-logs" | "social";
 
@@ -136,7 +140,8 @@ export async function runMcpProxy(
         }
         if (response.status === 429) {
           await response.body?.cancel();
-          throw new McpRateLimited();
+          const retryAfter = Number(response.headers.get("retry-after"));
+          throw new McpRateLimited(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
         }
       }
       if (!response.ok) {
@@ -169,7 +174,9 @@ export async function runMcpProxy(
             code: -32603,
             message:
               error instanceof McpRateLimited
-                ? "MCP host rate limit exceeded. Retry shortly."
+                ? error.retryAfterSeconds
+                  ? `MCP host rate limit exceeded. Retry after ${error.retryAfterSeconds} seconds.`
+                  : "MCP host rate limit exceeded. Retry later."
                 : "MCP host request failed.",
           },
         });

@@ -21,10 +21,61 @@ import {
   hostToolRequest,
   invalidateFeatureHosts,
   listHostToolMachines,
+  captureVoiceToolHost,
 } from "./hostFeatureClient";
 import type { RemoteMachine } from "./protocol";
 
 describe("hostFeatureRequest", () => {
+  it("pins global voice management to the actual Host without resolving any project", async () => {
+    const machine = {
+      id: "local",
+      environmentId: "room-host",
+      endpoint: "http://127.0.0.1:3774",
+      name: "Local",
+    };
+    invoke.mockResolvedValue(machine);
+    machineCapabilities.mockResolvedValue(["voice.tools.v1"]);
+    const host = await captureVoiceToolHost("room-host");
+    await host.request("voice.tools.list", { threadId: "room" });
+    expect(hostProjectFor).not.toHaveBeenCalled();
+    expect(remoteRequest).toHaveBeenCalledWith(
+      "local",
+      "voice.tools.list",
+      { threadId: "room" },
+      false,
+      false,
+      "room-host",
+    );
+    invoke.mockResolvedValue({ ...machine, environmentId: "replacement" });
+    await expect(host.request("voice.tools.call", { threadId: "room" })).rejects.toThrow(
+      "captured Host",
+    );
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+  });
+  it("evicts a hung discovery without dispatching a mutation or retaining its late result", async () => {
+    vi.useFakeTimers();
+    try {
+      let late!: (value: unknown) => void;
+      invoke.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            late = resolve;
+          }),
+      );
+      const pending = hostFeatureRequest("/hung", "dev.servers", "devServers.list");
+      const rejected = expect(pending).rejects.toThrow("Host discovery timed out");
+      await vi.advanceTimersByTimeAsync(20_001);
+      await rejected;
+      expect(remoteRequest).not.toHaveBeenCalled();
+      await hostFeatureRequest("/hung", "dev.servers", "devServers.list");
+      late({ id: "obsolete", endpoint: "http://old", name: "old" });
+      await Promise.resolve();
+      await hostFeatureRequest("/hung", "dev.servers", "devServers.list");
+      expect(remoteRequest.mock.calls.every(([id]) => id === "local")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   beforeEach(() => {
     invalidateFeatureHosts();
     invoke.mockReset();

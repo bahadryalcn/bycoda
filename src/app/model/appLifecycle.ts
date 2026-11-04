@@ -1,4 +1,3 @@
-import { flushHostSessionBindings } from "../../features/connections/model/sessionExecutionBinding";
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
@@ -42,6 +41,8 @@ import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
 import {
   getSession,
   listInFlightSessions,
+  listDeletedSessionIds,
+  isSessionDeleted,
   listSessionsByProject,
   loadWorkspaceSnapshot,
   isPrimaryWorkspaceWindow,
@@ -59,8 +60,11 @@ import {
   parseWorkspaceSnapshot,
 } from "../../features/workspace/model/workspaceSnapshot";
 import { flushComposerDrafts } from "../../features/sessions/data/composerDraftStore";
+import { flushAssistantDrafts } from "../../features/assistant/model/assistantDraftFlush";
 import { probeTurnTail, readTurnSteps, type TurnTail } from "../../platform/tauri/turnProbe";
 import { markAutoContinueDue } from "../../features/sessions/model/autoContinue";
+import { isOwnerStoppedTurn } from "../../features/sessions/model/turnInterruption";
+import { flushHostSessionBindings } from "../../features/connections/model/sessionExecutionBinding";
 import {
   classifyTurnRecovery,
   shouldAutoContinue,
@@ -210,7 +214,7 @@ function startDeferredBootReads(): void {
   void worker();
   void worker();
 }
-let liveWorkspace: {
+type LiveWorkspace = {
   sessions: () => Session[];
   tabs: () => WorkspaceTab[];
   activeTabId: () => string;
@@ -220,7 +224,8 @@ let liveWorkspace: {
   lastDockSide: () => DockSide | null;
   keepTab?: (tab: WorkspaceTab) => boolean;
   flush: () => void;
-} | null = null;
+};
+let liveWorkspace: LiveWorkspace | null = null;
 
 export function isAppQuitting(): boolean {
   return quitting;
@@ -392,12 +397,24 @@ export async function commitQuit(id: number): Promise<void> {
  * A quit that stopped part-way because another window could not save. This
  * window is staying open, so it must go back to persisting on unload.
  */
+let transferredWindowState: { live: LiveWorkspace | null; boot: ResumedWorkspace | null } | undefined;
+
 export function abortQuit(): void {
   quitting = false;
+  if (transferredWindowState) {
+    liveWorkspace = transferredWindowState.live;
+    bootingResumed = transferredWindowState.boot;
+    transferredWindowState = undefined;
+  }
   if (liveWorkspace && deferredBootReads.length) startDeferredBootReads();
 }
 
 /** A successfully drained pop-out must not save a stale workspace on unload. */
+export function beginTransferredWindowClose(): void {
+  transferredWindowState = { live: liveWorkspace, boot: bootingResumed };
+  quitting = true;
+}
+
 export function relinquishTransferredWindow(): void {
   quitting = true;
   liveWorkspace = null;
@@ -555,6 +572,24 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   for (const tab of snapshot?.tabs ?? [])
     for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);
   for (const ref of savedRefs) claimIds.add(ref.sessionId);
+  const savedRecovery = parseSessionRecovery(
+    snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
+      ? snapshotRaw.sessionRecovery
+      : null,
+  );
+  const deletionCandidates = new Set(claimIds);
+  for (const stub of savedRecovery?.workspace.sessions ?? []) deletionCandidates.add(stub.id);
+  let deleted: Set<string>;
+  try {
+    deleted = new Set(await listDeletedSessionIds([...deletionCandidates]));
+  } catch (error) {
+    // Unknown deletion status cannot authorize recreating saved layout shells.
+    snapshotReadFailed = true;
+    console.warn("[boot] deleted conversations could not be verified", error);
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+    return null;
+  }
+  for (const id of deleted) claimIds.delete(id);
   const foreign = new Set<string>();
   const claimed = new Set<string>();
   try {
@@ -583,26 +618,25 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     await Promise.all([...claimed].map((id) => abortRestoredSession(id).catch(() => {})));
     return null;
   }
-  const refs = savedRefs.filter((ref) => !foreign.has(ref.sessionId));
+  const refs = savedRefs.filter(
+    (ref) => !foreign.has(ref.sessionId) && !deleted.has(ref.sessionId),
+  );
   const interrupted = new Set(refs.map((ref) => ref.sessionId));
-  if (snapshot && foreign.size) {
+  if (snapshot && (foreign.size || deleted.size)) {
     const tabs = snapshot.tabs.flatMap((original) => {
       let tab: WorkspaceTab | null = original;
       for (const id of leafIds(original.layout))
-        if (foreign.has(id)) tab = tab && closeLeaf(tab, id);
+        if (foreign.has(id) || deleted.has(id)) tab = tab && closeLeaf(tab, id);
       return tab ? [tab] : [];
     });
     snapshot = {
       ...snapshot,
       tabs,
-      sessions: snapshot.sessions.filter((session) => !foreign.has(session.id)),
+      sessions: snapshot.sessions.filter(
+        (session) => !foreign.has(session.id) && !deleted.has(session.id),
+      ),
     };
   }
-  const savedRecovery = parseSessionRecovery(
-    snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
-      ? snapshotRaw.sessionRecovery
-      : null,
-  );
   // Entries saved before a remote chat was ever sent are not recoverable history.
   const unsentRecoveryIds: string[] = [];
   for (const stub of savedRecovery?.workspace.sessions ?? []) {
@@ -614,7 +648,8 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     )
       unsentRecoveryIds.push(stub.id);
   }
-  const previousRecovery = savedRecovery && dropRecoverySessions(savedRecovery, unsentRecoveryIds);
+  const previousRecovery =
+    savedRecovery && dropRecoverySessions(savedRecovery, [...deleted, ...unsentRecoveryIds]);
   setSessionRecovery(previousRecovery);
 
   const ids = new Set<string>();
@@ -657,11 +692,17 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
                 }),
             },
       ).catch(() => null);
+      if (isSessionDeleted(id)) {
+        deleted.add(id);
+        interrupted.delete(id);
+      }
       if (record) loaded.set(id, record);
     }),
   );
 
-  let workspace = snapshot ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted) : null;
+  let workspace = snapshot
+    ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted, deleted)
+    : null;
   if (
     !workspace &&
     snapshot &&
@@ -937,6 +978,7 @@ async function withRecordedSteps(
  * Either way the steps the CLI recorded while the app was away are filled in.
  */
 async function recoverInterruptedTurn(session: Session): Promise<Session> {
+  if (isOwnerStoppedTurn(session.blocks)) return session;
   const [tail, steps] = await Promise.all([transcriptTail(session), readRecordedSteps(session)]);
   const recovery = classifyTurnRecovery({
     wasInFlight: true,
@@ -1055,6 +1097,7 @@ export async function persistQuitState(
   );
   // Drafts wait on a short timer; the quit must not.
   await write(flushComposerDrafts());
+  await write(flushAssistantDrafts());
   // The queue hook writes through as it changes; this settles the last edit
   // before the process goes.
   await Promise.all(

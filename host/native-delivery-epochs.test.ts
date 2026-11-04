@@ -789,7 +789,12 @@ it("preserves the full32MiB formatter result and compacts it using only retired 
     ...empty,
     formatted: "x".repeat(maximum - Buffer.byteLength(JSON.stringify(empty))),
   };
-  await f.journal.execute(f.principal, format, id, async () => value);
+  // Preserve results admitted by the legacy32MiB contract.
+  await f.journal.admit(f.principal, format, id);
+  await f.store.db
+    .prepare("UPDATE native_delivery_receipts SET reserved_bytes=? WHERE original_id=?")
+    .run(maximum, id.originalId);
+  await f.journal.record(f.principal, format, id, value);
   expect((await f.journal.readMetadata(f.principal, format, id))?.resultSource?.byteLength).toBe(
     maximum,
   );

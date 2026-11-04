@@ -60,6 +60,7 @@ export function createTerminalWebgl(
     if (webgl || loading || disposed) return;
     loading = true;
     let created: { dispose(): void } | undefined;
+    let before: Set<HTMLCanvasElement> | undefined;
     try {
       const { WebglAddon } = await import("@xterm/addon-webgl");
       if (disposed || !canRender()) return;
@@ -74,7 +75,7 @@ export function createTerminalWebgl(
         addon.dispose();
         if (current && !disposed && canRender()) onRendererChange();
       });
-      const before = new Set(term.element?.querySelectorAll("canvas") ?? []);
+      before = new Set(term.element?.querySelectorAll("canvas") ?? []);
       term.loadAddon(addon);
       webgl = addon;
       context = rendererContext(term, before);
@@ -85,6 +86,12 @@ export function createTerminalWebgl(
       term.refresh(0, term.rows - 1);
     } catch {
       // A renderer that failed to attach must not keep its WebGL context alive.
+      try {
+        (context ?? (before ? rendererContext(term, before) : null))
+          ?.getExtension("WEBGL_lose_context")?.loseContext();
+      } catch {
+        // The context is already gone.
+      }
       try {
         created?.dispose();
       } catch {

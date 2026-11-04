@@ -1,7 +1,9 @@
 import { flatMapAsync, mapAsync, someAsync } from "./async-collections";
-import { deferredAssistantTurn } from "./assistant-turn-policy";
+import { deferredAssistantTurn } from "./assistant/core/assistant-turn-policy";
 import { createHash, randomUUID } from "node:crypto";
-import { resolveHostWorktreeAsync } from "./git-worktrees";
+import { isDeepStrictEqual } from "node:util";
+import { assertExpectedConfiguration } from "./configurationConflict";
+import { resolveHostWorktreeAsync } from "./git/git-worktrees";
 import {
   GOAL_CANCELLED,
   GOAL_FINAL_ACCEPTANCE_CRITERIA,
@@ -186,6 +188,7 @@ export class HostGoals {
     // The Store's AsyncLocal authorization follows an admitted owner request
     // across preparation and SQL waits. Scheduler calls have no request grant.
     this.engine = {
+      withCommandAdmission: engine.withCommandAdmission?.bind(engine),
       withMessageAuthor: (author, work) => {
         const perform = () =>
           engine.withMessageAuthor ? engine.withMessageAuthor(author, work) : work();
@@ -320,13 +323,19 @@ export class HostGoals {
     if (await this.find(input.id)) throw new Error("This goal already exists.");
     for (const projectId of input.projectIds) await this.store.project(projectId);
     const now = this.now();
-    return await this.plan({
+    const goal: HostGoal = {
       ...input,
       status: "planning",
       taskIds: [],
       createdAt: now,
       updatedAt: now,
+    };
+    if ((raw as { expectedAbsent?: unknown }).expectedAbsent !== true) return this.plan(goal);
+    const admitted = await this.store.transaction(async () => {
+      if (await this.find(input.id)) throw new Error("This goal already exists.");
+      return this.write(goal);
     });
+    return this.plan(admitted, admitted);
   }
   /** Updates operational settings and existing tasks atomically. */
   async update(id: string, raw: unknown, expectedUpdatedAt: unknown): Promise<HostGoal> {
@@ -361,6 +370,9 @@ export class HostGoals {
     });
     const now = this.now();
     const updated = await this.tasks.transaction(async () => {
+      const current = await this.get(id);
+      if (current.updatedAt !== expectedUpdatedAt || !isDeepStrictEqual(current, goal))
+        throw new Error("This goal changed. Close and reopen settings before saving.");
       await this.tasks.updateGoalSettings(goal.id, goal.taskIds, {
         autoMerge: false,
         ...(Boolean(goal.continueUntilDone) !== settings.continueUntilDone
@@ -402,10 +414,15 @@ export class HostGoals {
   }
   /** Plans again, from a plan waiting for approval or a failed planning,
    * with the owner's feedback when given. */
-  async replan(id: string, feedback?: unknown): Promise<HostGoal> {
+  async replan(id: string, feedback?: unknown, reviewed?: HostGoal): Promise<HostGoal> {
     await this.ready;
 
     const goal = await this.get(id);
+    if (reviewed) {
+      assertExpectedConfiguration({ expectedConfiguration: reviewed }, goal, parseHostGoal);
+      if (reviewed.updatedAt !== goal.updatedAt || reviewed.status !== goal.status)
+        throw new Error("Goal changed after review. Read it again.");
+    }
     const failedPlanning = goal.status === "blocked" && !goal.taskIds.length;
     if (goal.status !== "awaiting-approval" && !failedPlanning)
       throw new Error("Only a goal whose plan was not started can be planned again.");
@@ -426,12 +443,15 @@ export class HostGoals {
       ...rest
     } = goal;
     const note = typeof feedback === "string" ? feedback.trim() : "";
-    return await this.plan({
-      ...rest,
-      ...(note ? { feedback: note } : {}),
-      status: "planning",
-      updatedAt: this.now(),
-    });
+    return await this.plan(
+      {
+        ...rest,
+        ...(note ? { feedback: note } : {}),
+        status: "planning",
+        updatedAt: this.now(),
+      },
+      reviewed ? goal : undefined,
+    );
   }
   /** Stops the goal: its planner, its running tasks as Stop does, and its
    * queued tasks, which are blocked. Branches stay. */
@@ -671,12 +691,17 @@ export class HostGoals {
       return goal;
     });
   }
-  private async write(goal: HostGoal): Promise<HostGoal> {
+  private async write(goal: HostGoal, reviewed?: HostGoal): Promise<HostGoal> {
     if (goal.autoMerge) goal = { ...goal, autoMerge: undefined, deliveryApprovalRequired: true };
     return await this.store.db.scope(async () => {
       // Nested scope reuse does not repeat FIFO admission. Recheck after any
       // awaited reconciliation/preparation before this concrete write as well.
       await this.store.db.checkAuthorization();
+      if (
+        reviewed &&
+        !isDeepStrictEqual(await this.find(goal.id), JSON.parse(JSON.stringify(reviewed)))
+      )
+        throw new Error("Goal changed after planning admission. Read it again.");
       if (goal.id.startsWith("assistant-")) {
         const current = await this.find(goal.id);
         if (
@@ -719,23 +744,73 @@ export class HostGoals {
       await this.write(next);
     }, "critical");
   }
-  private async blockPlanning(goal: HostGoal, planError: string, now: number) {
-    return await this.write({
-      ...goal,
-      status: "blocked",
-      plannerRecoveryPending: undefined,
-      planError,
-      updatedAt: now,
-    });
+  private async blockPlanning(goal: HostGoal, planError: string, now: number, reviewed?: HostGoal) {
+    return await this.write(
+      {
+        ...goal,
+        status: "blocked",
+        plannerRecoveryPending: undefined,
+        planError,
+        updatedAt: now,
+      },
+      reviewed,
+    );
+  }
+  /** Preserve only this already-started run when its reviewed goal loses admission.
+   * Recovery bookkeeping never restores goal state or starts another provider. */
+  private async retireReviewedPlanner(
+    goalId: string,
+    started: { sessionId: string; runId: string },
+    cause: unknown,
+  ): Promise<never> {
+    const key = `goal-planner-retirement:${goalId}:${started.runId}`;
+    let persistedState: string | undefined;
+    const record = async (state: string, cleanupError?: string) => {
+      try {
+        await this.store.db.runRecoveryBookkeeping(() =>
+          this.store.db
+            .prepare(
+              "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            )
+            .run(
+              key,
+              JSON.stringify({
+                goalId,
+                ...started,
+                state,
+                cause: errorMessage(cause),
+                ...(cleanupError ? { cleanupError } : {}),
+              }),
+            ),
+        );
+        persistedState = state;
+      } catch {
+        // Storage failure cannot skip cancellation or erase the exact run from
+        // the caller's uncertain outcome. No effects use bookkeeping authority.
+      }
+    };
+    await record("cancellation-pending");
+    let cancellation = "requested";
+    try {
+      await cancelSessionRun(this.engine, started);
+      await record("cancellation-requested");
+    } catch (error) {
+      cancellation = "unknown";
+      await record("uncertain", errorMessage(error));
+    }
+    throw new Error(
+      `${errorMessage(cause)} Planner session ${started.sessionId}, run ${started.runId}; cancellation ${cancellation}; retirement receipt ${key}: ${persistedState ?? "not persisted"}. Inspect this exact run before recovery.`,
+    );
   }
   /** Starts the planner in the lead project's folder. */
-  private async plan(goal: HostGoal): Promise<HostGoal> {
+  private async plan(goal: HostGoal, reviewed?: HostGoal): Promise<HostGoal> {
     if (!(await this.tasks.goalExecutionAllowed(goal.id))) return goal;
-    const tracked = goal.id.startsWith("assistant-");
-    if (tracked && this.assistantPlanning.has(goal.id)) return (await this.find(goal.id)) ?? goal;
-    if (tracked) this.assistantPlanning.add(goal.id);
+    if (this.assistantPlanning.has(goal.id)) return (await this.find(goal.id)) ?? goal;
+    this.assistantPlanning.add(goal.id);
+    let admitted: HostGoal | undefined;
     try {
-      if (goal.id.startsWith("assistant-"))
+      if (reviewed) admitted = await this.store.transaction(() => this.write(goal, reviewed));
+      else if (goal.id.startsWith("assistant-"))
         await this.store.transaction(async () => {
           const current = await this.find(goal.id);
           if (
@@ -755,9 +830,11 @@ export class HostGoals {
           { ...goal, budgetStop: budget.reasons.join(" "), budgetUsage: budget.usage },
           budget.reasons.join(" "),
           now,
+          admitted,
         );
       // With the day's agent time used up the goal waits, still planning.
-      if (await this.tasks.limits.reached()) return await this.write({ ...goal, updatedAt: now });
+      if (await this.tasks.limits.reached())
+        return await this.write({ ...goal, updatedAt: now }, admitted);
       let projects;
       try {
         projects = await mapAsync(goal.projectIds, async (projectId) => {
@@ -777,31 +854,51 @@ export class HostGoals {
           };
         });
       } catch (error) {
-        return await this.blockPlanning(goal, errorMessage(error), now);
+        return await this.blockPlanning(goal, errorMessage(error), now, admitted);
       }
-      const started = await launchSessionRun(
-        this.store,
-        this.engine,
-        {
-          projectId: goal.leadProjectId,
-          ...(goal.isolate !== undefined &&
-          (goal.isolate === false || !goal.workspaces?.[goal.leadProjectId]?.checkoutCwd)
-            ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
-            : {}),
-          ...(projects.find((project) => project.lead)?.workingCwd
-            ? { worktreeCwd: projects.find((project) => project.lead)!.workingCwd }
-            : {}),
-          harness: (goal.plannerExecution ?? goal).harness,
-          providerAccountId: (goal.plannerExecution ?? goal).providerAccountId,
-          model: (goal.plannerExecution ?? goal).model,
-          modelSettings: (goal.plannerExecution ?? goal).modelSettings,
-          runtimeMode: goal.runtimeMode,
-          title: `Plan: ${goal.title}`.slice(0, 200),
-          author: { kind: "task", id: goal.id, name: goal.title, reason: "planning" },
-          prompt: plannerPrompt(goal, projects),
-        },
-        () => this.tasks.goalExecutionAllowed(goal.id),
-      );
+      const checkAdmission = async () => {
+        if (!admitted) return;
+        const current = await this.find(goal.id);
+        assertExpectedConfiguration({ expectedConfiguration: admitted }, current, parseHostGoal);
+        if (
+          !current ||
+          current.status !== "planning" ||
+          current.awaitingOwnerRestart ||
+          current.createdAt !== admitted.createdAt
+        )
+          throw new Error("Goal changed after planning admission. Read it again.");
+      };
+      const launch = () =>
+        launchSessionRun(
+          this.store,
+          this.engine,
+          {
+            projectId: goal.leadProjectId,
+            ...(goal.isolate !== undefined &&
+            (goal.isolate === false || !goal.workspaces?.[goal.leadProjectId]?.checkoutCwd)
+              ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
+              : {}),
+            ...(projects.find((project) => project.lead)?.workingCwd
+              ? { worktreeCwd: projects.find((project) => project.lead)!.workingCwd }
+              : {}),
+            harness: (goal.plannerExecution ?? goal).harness,
+            providerAccountId: (goal.plannerExecution ?? goal).providerAccountId,
+            model: (goal.plannerExecution ?? goal).model,
+            modelSettings: (goal.plannerExecution ?? goal).modelSettings,
+            runtimeMode: goal.runtimeMode,
+            title: `Plan: ${goal.title}`.slice(0, 200),
+            author: { kind: "task", id: goal.id, name: goal.title, reason: "planning" },
+            prompt: plannerPrompt(goal, projects),
+          },
+          async () => {
+            await checkAdmission();
+            return this.tasks.goalExecutionAllowed(goal.id);
+          },
+        );
+      const started =
+        admitted && this.engine.withCommandAdmission
+          ? await this.engine.withCommandAdmission({ check: checkAdmission }, launch)
+          : await launch();
       if (started.deferred) return goal;
       const planning: HostGoal = {
         ...goal,
@@ -813,23 +910,34 @@ export class HostGoals {
         budgetUsage: budget.usage,
         budgetStop: undefined,
       };
-      if (started.sessionId && started.runId)
-        await this.tasks.budgets.register({
-          goalId: goal.id,
-          role: "planner",
-          sessionId: started.sessionId,
-          runId: started.runId,
-          startedAt: now,
-        });
-      if (started.error !== undefined)
-        return await this.blockPlanning(
-          planning,
-          `Could not start the planner: ${started.error}`,
-          now,
-        );
-      return await this.write(planning);
+      try {
+        if (started.sessionId && started.runId)
+          await this.tasks.budgets.register({
+            goalId: goal.id,
+            role: "planner",
+            sessionId: started.sessionId,
+            runId: started.runId,
+            startedAt: now,
+          });
+        if (started.error !== undefined)
+          return await this.blockPlanning(
+            planning,
+            `Could not start the planner: ${started.error}`,
+            now,
+            admitted,
+          );
+        return await this.write(planning, admitted);
+      } catch (error) {
+        if (admitted && started.sessionId && started.runId)
+          return this.retireReviewedPlanner(
+            goal.id,
+            { sessionId: started.sessionId, runId: started.runId },
+            error,
+          );
+        throw error;
+      }
     } finally {
-      if (tracked) this.assistantPlanning.delete(goal.id);
+      this.assistantPlanning.delete(goal.id);
     }
   }
   private async stopPlanner(goal: HostGoal): Promise<void> {

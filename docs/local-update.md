@@ -96,7 +96,7 @@ an unknown launch or an ambiguous installation state.
 
 When another session is editing the checkout, apply only completed files to a
 verified earlier snapshot with
-`-BaseSnapshot <coordinator-request.json> -SourcePaths host/device-host.ts,host/device-host.test.ts`.
+`-BaseSnapshot <coordinator-request.json> -SourcePaths host/devices/device-host.ts,host/devices/device-host.test.ts`.
 The archive checksum and fingerprint are checked before applying the selected
 repository paths. This option cannot be combined with `-SnapshotRequest`,
 `-InstallOnly`, or a version change.

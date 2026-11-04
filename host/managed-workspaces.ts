@@ -6,14 +6,14 @@ import {
   canonicalWorkspacePath,
   workspacePathKey,
 } from "./workspace-paths";
-import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
+import { hostGitRepositoryKey, withHostGitMutation } from "./git/git-mutations";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import {
   managedWorkspaceBase,
   managedWorkspaceNames,
   managedWorkspaceRoot,
   materializeManagedWorkspace,
-} from "./git-worktrees";
+} from "./git/git-worktrees";
 import { projectRepositoryIdentity } from "./workspace-policy";
 import type { HostStore } from "./store";
 import type {
@@ -77,12 +77,7 @@ export function createManagedWorkspaceRegistry(
   };
   const settled = async (id: string) => {
     if (
-      (await store.workspaceOperations(id)).some(
-        (operation) =>
-          operation.phase !== "complete" ||
-          (operation.kind === "rewind" &&
-            !(operation as typeof operation & { finalized?: boolean }).finalized),
-      )
+      await store.workspaceHasPendingOperations(id)
     )
       throw new Error("Workspace operation recovery required before further writes");
   };
@@ -212,13 +207,7 @@ export function createManagedWorkspaceRegistry(
         )
           throw new Error("Workspace creation target identity changed");
         if (
-          (await store.workspaceOperations(workspace.id)).some(
-            (other) =>
-              other.id !== operation.id &&
-              (other.phase !== "complete" ||
-                (other.kind === "rewind" &&
-                  !(other as typeof other & { finalized?: boolean }).finalized)),
-          )
+          await store.workspaceHasPendingOperations(workspace.id, operation.id)
         )
           throw new Error("Another workspace operation recovery is pending");
         if (await options.isActive?.(workspace))

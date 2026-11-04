@@ -9,6 +9,20 @@ import { ModelPicker as ActualModelPicker } from "../../src/features/sessions/ui
 import { VoiceSetupSteps as ActualVoiceSetupSteps } from "../../src/features/voice/ui/VoiceSetupSteps.tsx";
 const realControls = new URLSearchParams(location.search).has("real-controls");
 const desktopParams = new URLSearchParams(location.search);
+const globalRoomFixture = desktopParams.has("global-room");
+if (globalRoomFixture) {
+  (window as any).__globalRoomRequests = [];
+  (window as any).__globalRoomNativeRequests = [];
+  (window as any).__TAURI_INTERNALS__ = {
+    invoke: async (command: string, input: unknown) => {
+      (window as any).__globalRoomNativeRequests.push(structuredClone({ command, input }));
+      if (desktopParams.has("remote-access") && command === "remote_machines")
+        return [{ id: "fixture-remote", name: "Office", endpoint: "https://fixture.invalid", environmentId: "fixture-remote-host" }];
+      if (command !== "control_assistant_source" && command !== "control_assistant_source_v2")
+        throw new Error("Native effects are forbidden in the global Room fixture.");
+    },
+  };
+}
 const desktopInstalled = desktopParams.has("desktop");
 let desktopStopped = desktopParams.has("desktop-stopped");
 let desktopActive = desktopParams.has("desktop-active");
@@ -579,6 +593,10 @@ const messages: AssistantMessage[] = [
     jobIds: ["job-one", "job-two"],
   },
 ];
+if (globalRoomFixture) messages[0].toolActions = [
+  { id: "room-fixture-read", family: "conversation", action: "servers.list", status: "completed", createdAt: now - 1000 },
+  { id: "room-fixture-held", family: "conversation", action: "preferences.patch", status: "unknown", createdAt: now },
+];
 if (privacyFixture)
   messages.push(
     {
@@ -610,6 +628,8 @@ export async function hostToolRequest(
   _method: string,
   input: any,
 ) {
+  if (globalRoomFixture)
+    (window as any).__globalRoomRequests.push(structuredClone({ method: _method, input }));
   if (realControls)
     ((window as any).__setupRequests ??= []).push(structuredClone({ method: _method, input }));
   if (_method === "environment.describe") return { environmentId: "fixture-local-host" };
@@ -972,6 +992,7 @@ export async function hostToolRequest(
       return { thread };
     }
     case "projects.list":
+      if (desktopParams.has("no-projects")) return { projects: [] };
       return {
         projects: [
           { id: "one", path: "/fixture", name: "MonoCode" },
@@ -1017,6 +1038,13 @@ export async function hostToolRequest(
       if (summaryRefreshMutations === 1) throw new Error("Fixture summary ACK lost after commit");
       return { thread: structuredClone(thread) };
     }
+    case "threads.open":
+      if (globalRoomFixture) {
+        const thread = snapshot.threads.find((thread) => thread.projectId === input.projectId);
+        if (!thread) throw new Error("The requested Room fixture thread does not exist.");
+        return { thread: structuredClone(thread) };
+      }
+      return { ok: true };
     case "threads.messages":
       return {
         ...(summaryFixture

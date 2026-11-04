@@ -6,6 +6,84 @@ use crate::fs::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// Captured GitHub credential is native-only and passed only to a child environment.
+pub(crate) struct RoomGithubAccount { token: String, login: String }
+impl RoomGithubAccount {
+    pub(crate) fn capture(cwd: &str) -> Result<Self, String> {
+        let token = crate::inbox_media::github_auth_token_fresh()?.filter(|value| !value.is_empty())
+            .ok_or("GitHub account unavailable")?;
+        let result = crate::fs::gh_checked_with_token(&expand_home(cwd), &["api", "--hostname", "github.com", "user"], &token)?;
+        let user: Value = serde_json::from_str(&result).map_err(|_| "Invalid GitHub account response")?;
+        let login = user["login"].as_str().filter(|value| !value.is_empty() && value.len() <= 200)
+            .ok_or("GitHub account identity unavailable")?.to_owned();
+        Ok(Self { token, login })
+    }
+    pub(crate) fn login(&self) -> &str { &self.login }
+    pub(crate) fn list(&self, cwd: &str, state: &str, assigned: bool, search: &str, kinds: &[String], guard: impl Fn() -> Result<(), String>) -> Result<Vec<Value>, String> {
+        if !matches!(state, "open" | "all") || search.len() > 500 || search.contains('\0') { return Err("Invalid GitHub list filter".into()); }
+        if kinds.len() > 2 || kinds.iter().any(|kind| !matches!(kind.as_str(), "issue" | "pr")) { return Err("Invalid GitHub item kinds".into()); }
+        let root = expand_home(cwd);
+        guard()?;
+        let repo = crate::fs::gh_checked_with_token(&root, &["repo", "view", "--json", "nameWithOwner"], &self.token)?;
+        let repo: Value = serde_json::from_str(&repo).map_err(|_| "Invalid repository response")?;
+        let name = repo["nameWithOwner"].as_str().ok_or("GitHub repository unavailable")?;
+        crate::fs::split_github_repo(name)?;
+        let mut result = Vec::new();
+        for kind in kinds {
+            guard()?;
+            let items = crate::fs::git_github_work_items_for_token(&root, name, kind, assigned, state, search, 40, Some(&self.token))?;
+            guard()?;
+            for item in items {
+                let mut row = serde_json::to_value(item).map_err(|_| "Invalid GitHub list result")?;
+                row["provider"] = json!("github"); row["projectPath"] = json!(cwd);
+                result.push(row);
+            }
+        }
+        Ok(result)
+    }
+    pub(crate) fn current(&self, cwd: &str) -> Result<(), String> {
+        let _ = cwd;
+        let current = crate::inbox_media::github_auth_token_fresh()?.ok_or("GitHub account unavailable")?;
+        if self.token != current {
+            return Err("GitHub account changed; review the operation again".into());
+        }
+        Ok(())
+    }
+    pub(crate) fn item(&self, cwd: &str, repo: &str, kind: &str, number: i64, action: &str, body: &str, guard: impl Fn() -> Result<(), String>) -> Result<Value, String> {
+        let root = expand_home(cwd);
+        guard()?;
+        let result = match action {
+            "details" => serde_json::to_value(crate::fs::git_github_work_item_details_for_token(&root, repo, kind, number, Some(&self.token))?).map_err(|_| "Invalid GitHub details")?,
+            "thread" => serde_json::to_value(crate::fs::git_github_work_item_thread_for_token(&root, repo, kind, number, Some(&self.token))?).map_err(|_| "Invalid GitHub thread")?,
+            "comment" => Value::String(crate::fs::git_github_work_item_comment_for_token(&root, repo, kind, number, body, "", Some(&self.token))?),
+            _ => return Err("Invalid GitHub item action".into()),
+        };
+        guard()?;
+        Ok(result)
+    }
+    pub(crate) fn pr_action(&self, cwd: &str, repo: &str, number: i64, action: &str, expected_head: &str, guard: impl Fn() -> Result<(), String>) -> Result<Value, String> {
+        guard()?;
+        let result = crate::fs::git_github_pr_action_for_token(&expand_home(cwd), repo, number, action, expected_head, Some(&self.token))?;
+        guard()?;
+        serde_json::to_value(result).map_err(|_| "Invalid GitHub action result".into())
+    }
+    pub(crate) fn review_context(&self, cwd: &str, repo: &str, number: i64, guard: impl Fn() -> Result<(), String>) -> Result<Value, String> {
+        let root = expand_home(cwd);
+        let endpoint = pull_endpoint(repo, number)?;
+        let read_head = || -> Result<String, String> { guard()?; head_sha(&crate::fs::gh_checked_with_token(&root, &["api", "--hostname", "github.com", &endpoint], &self.token)?) };
+        let before = read_head()?;
+        let diff = crate::fs::git_github_pr_diff_for_token(&root, repo, number, false, Some(&self.token), &guard)?;
+        let after = read_head()?;
+        if before != after { return Err("PR changed while reading the diff. Read review context again.".into()); }
+        guard()?;
+        serde_json::to_value(ReviewContext { commit_id: before, diff }).map_err(|_| "Invalid review context".into())
+    }
+    pub(crate) fn review(&self, cwd: &str, repo: &str, number: i64, review: &ReviewInput,
+        guard: impl Fn() -> Result<(), String>) -> Result<String, String> {
+        execute_review_guarded_with_token(cwd, repo, number, review, guard, Some(&self.token))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewComment {
@@ -225,12 +303,22 @@ pub(crate) fn execute_review_guarded(
     review: &ReviewInput,
     guard: impl Fn() -> Result<(), String>,
 ) -> Result<String, String> {
+    execute_review_guarded_with_token(cwd, repo, number, review, guard, None)
+}
+
+pub(crate) fn execute_review_guarded_with_token(
+    cwd: &str, repo: &str, number: i64, review: &ReviewInput,
+    guard: impl Fn() -> Result<(), String>, token: Option<&str>,
+) -> Result<String, String> {
     let root = expand_home(cwd);
     submit_review_guarded_with(repo, number, review, guard, |endpoint, payload| {
+        let checked = |args: &[&str]| match token {
+            Some(value) => crate::fs::gh_checked_with_token(&root, args, value),
+            None => gh_checked(&root, args),
+        };
         if let Some(payload) = payload {
             with_temp_markdown(&payload.to_string(), |path| {
-                gh_checked(
-                    &root,
+                checked(
                     &[
                         "api",
                         "--hostname",
@@ -244,7 +332,7 @@ pub(crate) fn execute_review_guarded(
                 )
             })
         } else {
-            gh_checked(&root, &["api", "--hostname", "github.com", endpoint])
+            checked(&["api", "--hostname", "github.com", endpoint])
         }
     })
 }

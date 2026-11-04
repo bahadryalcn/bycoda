@@ -20,6 +20,12 @@ export function reportSessionCommands(sessionId: string, commands: ReportedComma
   for (const listener of listeners.get(sessionId) ?? []) listener();
 }
 
+/** Forget provider-owned discovery when its session is deleted or switched. */
+export function forgetSessionCommands(sessionId: string): void {
+  if (!reported.delete(sessionId)) return;
+  for (const listener of listeners.get(sessionId) ?? []) listener();
+}
+
 export function getReportedCommands(sessionId: string | undefined) {
   return (sessionId && reported.get(sessionId)) || EMPTY;
 }

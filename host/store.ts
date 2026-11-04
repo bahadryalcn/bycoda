@@ -1,6 +1,8 @@
+import { SessionReadProcesses } from "./session-read-process";
+import { ProjectIdentityFence } from "./project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
 import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
-import { assistantJobSessionBelongs } from "./assistant-job-scope";
+import { assistantJobSessionBelongs } from "./assistant/work/assistant-job-scope";
 import type { AssistantJob } from "../src/shared/model/host-contracts/assistant";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -231,6 +233,19 @@ export class HostStore {
     return this.transaction(() => this.sessionWrite(sessionId, expectedGeneration, work));
   }
   readonly db: StoreDatabase;
+  private readonly projectIdentityFence = new ProjectIdentityFence();
+  /** Project identity writers must acquire their lease before SQL ownership. */
+  withProjectIdentityWrite<T>(effect: () => Promise<T>): Promise<T> {
+    if (this.db.ownsScope) return Promise.reject(new Error("Project identity write lease must be acquired before database ownership."));
+    return this.projectIdentityFence.write(effect);
+  }
+  withProjectIdentityRead<T>(proofs: { projectId: string; cwd: string }[], effect: (valid: () => boolean) => Promise<T>): Promise<T> {
+    return this.projectIdentityFence.read(async valid => {
+      for (const proof of proofs) if ((await this.project(proof.projectId)).cwd !== proof.cwd) throw new Error("Room project identity changed.");
+      if (!valid()) throw new Error("Room project identity changed.");
+      return effect(valid);
+    });
+  }
   readonly ready: Promise<void>;
   private closePromise?: Promise<void>;
   environmentId = "";
@@ -421,7 +436,14 @@ export class HostStore {
       this.publishChanges();
     }
   }
+  private readonly sessionReadSignals = new AsyncLocalStorage<AbortSignal>();
+  private readonly sessionReadProcesses = new SessionReadProcesses();
+  private readonly sessionReadPath: string;
+  withReadCancellation<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+    return this.sessionReadSignals.run(signal, () => this.db.scope(work, signal));
+  }
   constructor(path: string) {
+    this.sessionReadPath = path;
     this.attachmentDir = join(dirname(path), "attachments");
     this.db = new StoreDatabase(path);
     this.db.onMutation = (sql) => this.externalMutation(sql);
@@ -482,6 +504,7 @@ export class HostStore {
       CREATE TABLE IF NOT EXISTS session_journal (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, revision INTEGER NOT NULL, metadata TEXT NOT NULL, block_ids TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_journal_blocks (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, block_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id,block_id));
       CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, signature TEXT NOT NULL, receipt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_pin_receipts (operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL, request_hash TEXT NOT NULL, result TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS desktop_command_delivery (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, signature TEXT NOT NULL,
         principal_id TEXT NOT NULL, owner_id TEXT NOT NULL, delivery TEXT NOT NULL,
@@ -511,8 +534,12 @@ export class HostStore {
       );
       CREATE TABLE IF NOT EXISTS workspace_mutation_receipts (
         scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, signature TEXT NOT NULL,
-        response TEXT NOT NULL, PRIMARY KEY(scope, idempotency_key)
+        response TEXT NOT NULL, created_at INTEGER, PRIMARY KEY(scope, idempotency_key)
       );
+      CREATE INDEX IF NOT EXISTS workspace_operations_workspace_order
+        ON workspace_operations(workspace_id, id);
+      CREATE INDEX IF NOT EXISTS workspace_operations_recovery_lookup
+        ON workspace_operations(workspace_id, phase, kind);
       CREATE TABLE IF NOT EXISTS workspace_policies (
         project_id TEXT NOT NULL, environment_id TEXT NOT NULL, revision INTEGER NOT NULL,
         payload TEXT NOT NULL, PRIMARY KEY(project_id, environment_id)
@@ -579,6 +606,18 @@ export class HostStore {
         UPDATE receipts SET created_at = ${Date.now()};
         COMMIT;`);
     }
+    await this.db.exec("CREATE INDEX IF NOT EXISTS receipts_created_at ON receipts(created_at)");
+    const workspaceReceiptColumns = await this.db.prepare("PRAGMA table_info(workspace_mutation_receipts)").all();
+    if (!workspaceReceiptColumns.some((column) => column.name === "created_at")) {
+      await this.db.exec(`ALTER TABLE workspace_mutation_receipts ADD COLUMN created_at INTEGER`);
+    }
+    // These three receipts are created atomically with their complete SQLite
+    // mutations. Legacy rows get a full retention window; operation receipts
+    // and unknown delivery evidence have no age-based deletion here.
+    await this.db.prepare(`UPDATE workspace_mutation_receipts SET created_at=?
+      WHERE created_at IS NULL AND (scope LIKE 'workspace-policy:%' OR
+        scope LIKE 'workspace-feature-acquire:%' OR scope LIKE 'workspace-feature-release:%')`).run(Date.now());
+    await this.db.exec("CREATE INDEX IF NOT EXISTS workspace_receipts_created_at ON workspace_mutation_receipts(created_at)");
     await this.pruneReceipts();
     await this.migrateSessionState();
     // Covering partial index: adopted() is answered from the index alone.
@@ -620,7 +659,9 @@ export class HostStore {
       shell_running INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);
-    CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);`);
+    CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);
+    CREATE INDEX IF NOT EXISTS session_state_workspace_probe ON session_state(json_extract(summary, '$.workspaceId')) WHERE json_valid(summary);
+    CREATE INDEX IF NOT EXISTS session_state_worktree_probe ON session_state(json_extract(summary, '$.worktreeCwd')) WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL;`);
     // An older host binary only knows `sessions`; these keep the side table
     // current when it writes there after a rollback.
     await this.db
@@ -946,6 +987,26 @@ export class HostStore {
       return rows.map((row) => JSON.parse(String(row.payload)));
     });
   }
+  /** Check recovery without transferring or parsing settled operation history. */
+  async workspaceHasPendingOperations(workspaceId: string, except?: string, includeUnfinalizedRewinds = true): Promise<boolean> {
+    return this.db.storeScope(async () => {
+      const row = await this.db.prepare(`SELECT 1 AS pending FROM workspace_operations
+        WHERE workspace_id=? AND CASE
+          WHEN json_valid(payload)=0 THEN 1
+          WHEN json_extract(payload, '$.phase') IS NOT phase OR
+            json_extract(payload, '$.kind') IS NOT kind THEN 1
+          WHEN ? IS NOT NULL AND id=? THEN 0
+          WHEN phase <> 'complete' THEN 1
+          WHEN ? AND kind='rewind' THEN CASE json_type(payload, '$.finalized')
+            WHEN 'null' THEN 1 WHEN 'false' THEN 1
+            WHEN 'integer' THEN json_extract(payload, '$.finalized')=0
+            WHEN 'real' THEN json_extract(payload, '$.finalized')=0
+            WHEN 'text' THEN json_extract(payload, '$.finalized')=''
+            ELSE json_type(payload, '$.finalized') IS NULL END
+          ELSE 0 END LIMIT 1`).get(workspaceId, except ?? null, except ?? null, includeUnfinalizedRewinds ? 1 : 0);
+      return !!row;
+    });
+  }
   async findWorkspaceOperation(request: {
     workspaceId: string;
     kind: WorkspaceOperation["kind"];
@@ -1072,9 +1133,9 @@ export class HostStore {
       await this.db.checkAuthorization();
       await this.db
         .prepare(
-          "INSERT INTO workspace_mutation_receipts (scope, idempotency_key, signature, response) VALUES (?, ?, ?, ?)",
+          "INSERT INTO workspace_mutation_receipts (scope, idempotency_key, signature, response, created_at) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(scope, key, canonicalWorkspaceJson(request), JSON.stringify(response));
+        .run(scope, key, canonicalWorkspaceJson(request), JSON.stringify(response), Date.now());
     });
   }
   async workspacePolicy(
@@ -1249,6 +1310,22 @@ export class HostStore {
         await assertHostAuthority(this.db, id, cached.authorityGeneration);
       return this.remember(cached);
     }
+    const readSignal = this.sessionReadSignals.getStore();
+    if (readSignal && this.sessionReadPath !== ":memory:") {
+      readSignal.throwIfAborted();
+      const value = await this.sessionReadProcesses.read<HostSession | undefined>(
+        { kind: "host", path: this.sessionReadPath, sessionId: id }, readSignal,
+      );
+      readSignal.throwIfAborted();
+      if (!value) return undefined;
+      const source = await this.db.prepare("SELECT revision FROM session_state WHERE id=?").get(id);
+      if (!source || Number(source.revision) !== value.revision || value.session.id !== id)
+        throw new Error("Host session source changed while reading.");
+      if (value.authorityGeneration !== undefined)
+        await assertHostAuthority(this.db, id, value.authorityGeneration);
+      readSignal.throwIfAborted();
+      return this.remember(value);
+    }
     const row = await this.db.prepare("SELECT snapshot FROM sessions WHERE id=?").get(id);
     if (!row) return undefined;
     let value = JSON.parse(String(row.snapshot)) as HostSession;
@@ -1283,7 +1360,8 @@ export class HostStore {
     }
     return this.remember(value);
   }
-  async session(id: string): Promise<HostSession> {
+  async session(id: string, signal?: AbortSignal): Promise<HostSession> {
+    if (signal) return this.withReadCancellation(signal, () => this.session(id));
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
@@ -1460,7 +1538,8 @@ export class HostStore {
       return false;
     });
   }
-  async sync(id: string, revision?: number): Promise<SessionSync> {
+  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
+    if (signal) return this.withReadCancellation(signal, () => this.sync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
       const { blockRevisions, ...snapshot } = value;
@@ -1540,7 +1619,7 @@ export class HostStore {
     });
   }
   /** Everything startup needs per session, without parsing transcripts. */
-  async startupStates(): Promise<
+  async startupStates(candidateWorkspaceId?: string): Promise<
     {
       id: string;
       projectId: string;
@@ -1551,21 +1630,34 @@ export class HostStore {
       running: boolean;
       shellRunning: boolean;
       workspaceId?: string;
+      worktreeCwd?: string;
       providerSessionId: string | null;
       harness: string | null;
       cwd: string | null;
     }[]
   > {
     return this.db.storeScope(async () => {
-      return (
-        await this.db
-          .prepare(`SELECT id, project_id, revision, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
-          json_extract(summary, '$.workspaceId') AS workspace_id,
+      const columns = `SELECT id, project_id, revision, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
+          json_valid(summary) AS summary_valid,
+          CASE WHEN json_valid(summary) THEN json_extract(summary, '$.workspaceId') END AS workspace_id,
+          CASE WHEN json_valid(summary) THEN json_extract(summary, '$.worktreeCwd') END AS worktree_cwd,
           EXISTS(SELECT 1 FROM host_authority_heads h WHERE h.session_id=session_state.id) AS has_authority
-        FROM session_state ORDER BY updated_at DESC`)
-          .all()
-      ).map((row) => {
-        const unwritten = this.pending.get(String(row.id))?.value;
+        FROM session_state`;
+      const rows = candidateWorkspaceId === undefined
+        ? await this.db.prepare(`${columns} ORDER BY updated_at DESC`).all()
+        : await this.db.prepare(`${columns} WHERE id IN (
+            SELECT id FROM session_state WHERE json_valid(summary) AND json_extract(summary, '$.workspaceId')=?
+            UNION SELECT id FROM session_state WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL
+            UNION SELECT id FROM session_state WHERE NOT json_valid(summary)
+            UNION SELECT value FROM json_each(?)
+          )`).all(candidateWorkspaceId, JSON.stringify([...this.pending.keys()]));
+      const legacy = new Map<string, HostSession>();
+      for (const row of rows) {
+        const id = String(row.id);
+        if (!Number(row.summary_valid) && !this.pending.has(id)) legacy.set(id, await this.session(id));
+      }
+      return rows.map((row) => {
+        const unwritten = this.pending.get(String(row.id))?.value ?? legacy.get(String(row.id));
         if (unwritten)
           return {
             id: unwritten.session.id,
@@ -1576,10 +1668,9 @@ export class HostStore {
               unwritten.authorityGeneration !== undefined || !!Number(row.has_authority),
             hasDesktop: unwritten.desktop != null,
             running: unwritten.status === "running",
-            shellRunning: unwritten.session.blocks.some(
-              (block) => block.shell?.running || block.shell?.terminationFailed,
-            ),
+            shellRunning: unwritten.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed),
             workspaceId: unwritten.session.workspaceId,
+            worktreeCwd: unwritten.session.worktreeCwd,
             providerSessionId: unwritten.session.providerSessionId || null,
             harness: unwritten.session.harness ?? null,
             cwd: unwritten.session.cwd ?? null,
@@ -1594,6 +1685,7 @@ export class HostStore {
           running: row.status === "running",
           shellRunning: !!Number(row.shell_running),
           workspaceId: row.workspace_id == null ? undefined : String(row.workspace_id),
+          worktreeCwd: row.worktree_cwd == null ? undefined : String(row.worktree_cwd),
           providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
           harness: row.harness == null ? null : String(row.harness),
           cwd: row.session_cwd == null ? null : String(row.session_cwd),
@@ -2055,11 +2147,7 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some(
-            (block) => block.shell?.running || block.shell?.terminationFailed,
-          )
-            ? 1
-            : 0,
+          value.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed) ? 1 : 0,
         );
       await this.db
         .prepare(`INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2076,11 +2164,7 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some(
-            (block) => block.shell?.running || block.shell?.terminationFailed,
-          )
-            ? 1
-            : 0,
+          value.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed) ? 1 : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
       const eventRows = rows.map((row) => [
@@ -2164,11 +2248,7 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some(
-            (block) => block.shell?.running || block.shell?.terminationFailed,
-          )
-            ? 1
-            : 0,
+          value.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed) ? 1 : 0,
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
@@ -2182,6 +2262,42 @@ export class HostStore {
     const guarded = () => this.sessionWrite(value.session.id, value.authorityGeneration, run);
     if (this.inTransaction) await guarded();
     else await this.transaction(guarded, "checkpoint");
+  }
+  async pinState(id: string, projectId: string, authorityGeneration?: number): Promise<{ state: "current"; version: number; pinned: boolean }> {
+    await this.assertAuthority(id, authorityGeneration);
+    const current = await this.session(id);
+    if (current.projectId !== projectId) throw new Error("Session does not belong to this project");
+    if (!Number.isSafeInteger(current.revision) || current.revision < 0) throw new Error("Invalid session revision");
+    return { state: "current", version: current.revision, pinned: !!current.pinned };
+  }
+  async pinReceipt(id: string, projectId: string, operationId: string): Promise<{ state: "applied" | "superseded" | "refused"; version: number; pinned: boolean | null } | null> {
+    return this.db.scope(async () => {
+      const row = await this.db.prepare("SELECT result FROM session_pin_receipts WHERE operation_id=? AND session_id=? AND project_id=?").get(operationId, id, projectId);
+      return row ? JSON.parse(String(row.result)) : null;
+    });
+  }
+  async pinApply(id: string, projectId: string, operationId: string, desiredPinned: boolean, expectedVersion: number, authorityGeneration?: number): Promise<{ state: "applied" | "superseded" | "refused"; version: number; pinned: boolean | null }> {
+    const hash = createHash("sha256").update(JSON.stringify([id, projectId, desiredPinned, expectedVersion, authorityGeneration ?? null])).digest("hex");
+    return this.transaction(() => this.sessionWrite(id, authorityGeneration, async () => {
+      const prior = await this.db.prepare("SELECT request_hash,result FROM session_pin_receipts WHERE operation_id=?").get(operationId);
+      if (prior) {
+        if (prior.request_hash !== hash) throw new Error("Pin operation ID reused with different request");
+        return JSON.parse(String(prior.result));
+      }
+      const current = await this.find(id);
+      if (current && current.projectId !== projectId) throw new Error("Session does not belong to this project");
+      let result: { state: "applied" | "superseded" | "refused"; version: number; pinned: boolean | null };
+      if (!current) result = { state: "refused", version: 0, pinned: null };
+      else if (!Number.isSafeInteger(current.revision) || current.revision < 0 || current.revision >= Number.MAX_SAFE_INTEGER)
+        result = { state: "refused", version: 0, pinned: null };
+      else if (current.revision !== expectedVersion) result = { state: "superseded", version: current.revision, pinned: !!current.pinned };
+      else {
+        const next = await this.save({ ...current, revision: current.revision + 1, pinned: desiredPinned }, { type: "session.metadata", patch: { pinned: desiredPinned } });
+        result = { state: "applied", version: next.revision, pinned: !!next.pinned };
+      }
+      await this.db.prepare("INSERT INTO session_pin_receipts(operation_id,session_id,project_id,request_hash,result) VALUES(?,?,?,?,?)").run(operationId, id, projectId, hash, JSON.stringify(result));
+      return result;
+    }), "critical");
   }
   async updateSession(
     id: string,
@@ -2597,6 +2713,9 @@ export class HostStore {
           "DELETE FROM receipts WHERE (created_at IS NULL OR created_at < ?) AND id NOT IN (SELECT id FROM desktop_command_delivery)",
         )
         .run(now - RECEIPT_RETENTION_MS);
+      await this.db.prepare(`DELETE FROM workspace_mutation_receipts WHERE created_at < ? AND
+        (scope LIKE 'workspace-policy:%' OR scope LIKE 'workspace-feature-acquire:%' OR
+         scope LIKE 'workspace-feature-release:%')`).run(now - RECEIPT_RETENTION_MS);
     });
   }
   async events(
@@ -2753,6 +2872,7 @@ export class HostStore {
     this.authorityListeners.clear();
     this.authorizationListeners.clear();
     this.authCache.clear();
+    void this.sessionReadProcesses.close().catch(() => undefined);
     const closing = this.db.close(() => this.flushAll());
     if (this.db.ownsScope) return closing;
     this.closePromise = closing.finally(() => {

@@ -443,6 +443,11 @@ export const HOST_RPC_METHODS = Object.freeze({
   "devices.start": nativeDeviceOperation("devices.start"),
   "devices.boot": nativeDeviceOperation("devices.boot"),
   "devices.capture": nativeDeviceOperation("devices.capture"),
+  "devices.control.status": nativeDeviceOperation("devices.control.status"),
+  "devices.control.claim": nativeDeviceOperation("devices.control.claim"),
+  "devices.control.release": nativeDeviceOperation("devices.control.release"),
+  "devices.control.renew": nativeDeviceOperation("devices.control.renew"),
+  "devices.inspect": nativeDeviceOperation("devices.inspect"),
   "devices.action": nativeDeviceOperation("devices.action"),
 
   "native.services.upload.begin": nativeServiceUploadOperation("native.services.upload.begin"),
@@ -471,6 +476,32 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.services.desktop.stop": nativeServiceOperation("native.services.desktop.stop"),
   "native.services.assistant.presence.get": nativeServiceOperation(
     "native.services.assistant.presence.get",
+  ),
+  "native.services.assistant.delegation.publicKey": nativeServiceOperation("native.services.assistant.delegation.publicKey"),
+  "native.services.assistant.delegation.origin": nativeServiceOperation("native.services.assistant.delegation.origin"),
+  "native.services.assistant.delegation.nativeChallenge": nativeServiceOperation("native.services.assistant.delegation.nativeChallenge"),
+  "native.services.assistant.delegation.attest": nativeServiceOperation("native.services.assistant.delegation.attest"),
+  "native.services.assistant.delegation.issue": nativeServiceOperation("native.services.assistant.delegation.issue"),
+  "native.services.assistant.delegation.issue.status": nativeServiceOperation("native.services.assistant.delegation.issue.status"),
+  "native.services.assistant.delegation.challenge": nativeServiceOperation("native.services.assistant.delegation.challenge"),
+  "native.services.assistant.delegation.call": nativeServiceOperation("native.services.assistant.delegation.call"),
+  "native.services.assistant.delegation.revoke": nativeServiceOperation("native.services.assistant.delegation.revoke"),
+  "native.services.assistant.visibility.epoch": nativeServiceOperation(
+    "native.services.assistant.visibility.epoch",
+  ),
+  "native.services.assistant.notification.authorize": nativeServiceOperation(
+    "native.services.assistant.notification.authorize",
+  ),
+  "native.services.assistant.workspace.authorize": nativeServiceOperation(
+    "native.services.assistant.workspace.authorize",
+  ),
+  "native.services.assistant.browser.panel": nativeServiceOperation("native.services.assistant.browser.panel"),
+  "native.services.assistant.observations.ingest": nativeServiceOperation("native.services.assistant.observations.ingest"),
+  "native.services.assistant.visibility.revoke": nativeServiceOperation(
+    "native.services.assistant.visibility.revoke",
+  ),
+  "native.services.assistant.visibility.reopen": nativeServiceOperation(
+    "native.services.assistant.visibility.reopen",
   ),
   "native.services.assistant.presence.set": nativeServiceOperation(
     "native.services.assistant.presence.set",

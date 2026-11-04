@@ -47,30 +47,24 @@ export function useQueueHoldReason(sessionId: string): string | undefined {
  * it may yet deliver the message. While one is, sending the same message again
  * could duplicate it, so the review warns and does not offer "Send again".
  */
-const lateSettlements = new Map<string, number[]>();
-/**
- * A provider call that never answers must not hold Resume and the queue for
- * good: after this long the owner is trusted again (Send again, Resume).
- */
-export const LATE_SETTLEMENT_MAX_MS = 10 * 60_000;
+const lateSettlements = new Map<string, Set<symbol>>();
 const openSettlements = (sessionId: string): number =>
-  (lateSettlements.get(sessionId) ?? []).filter((at) => Date.now() - at < LATE_SETTLEMENT_MAX_MS)
-    .length;
+  lateSettlements.get(sessionId)?.size ?? 0;
 
 /** Follows an unconfirmed send until its provider call finally answers. */
 export function trackLateSettlement(
   sessionId: string,
   settlement: Promise<DeliverySettlement>,
 ): void {
-  const at = Date.now();
-  lateSettlements.set(sessionId, [...(lateSettlements.get(sessionId) ?? []), at]);
+  const token = Symbol(sessionId);
+  const pending = lateSettlements.get(sessionId) ?? new Set<symbol>();
+  pending.add(token);
+  lateSettlements.set(sessionId, pending);
   notify();
   const done = () => {
-    const left = [...(lateSettlements.get(sessionId) ?? [])];
-    const index = left.indexOf(at);
-    if (index >= 0) left.splice(index, 1);
-    if (left.length) lateSettlements.set(sessionId, left);
-    else lateSettlements.delete(sessionId);
+    const left = lateSettlements.get(sessionId);
+    if (!left?.delete(token)) return;
+    if (!left.size) lateSettlements.delete(sessionId);
     notify();
   };
   void settlement.then(done, done);

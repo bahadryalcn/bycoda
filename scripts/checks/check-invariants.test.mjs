@@ -34,6 +34,8 @@ function fixtureRoot(t) {
     recursive: true,
   });
   cpSync(join(repoRoot, oxlintConfig), join(root, oxlintConfig));
+  mkdirSync(join(root, "scripts", "checks"), { recursive: true });
+  cpSync(join(repoRoot, "scripts", "checks", "privacy-writer-exceptions.json"), join(root, "scripts", "checks", "privacy-writer-exceptions.json"));
   symlinkSync(
     join(repoRoot, "node_modules"),
     join(root, "node_modules"),
@@ -153,4 +155,13 @@ test("oxlint tool diagnostics and malformed output fail with useful detail", () 
     ),
     [{ file: "src/x.ts", rule: "oxlint/no-test", line: 0, text: "finding", message: "finding" }],
   );
+});
+
+test("privacy writer violations fail the invariant pipeline even with an empty baseline", (t) => {
+  const root = fixtureRoot(t);
+  write(root, "src/features/demo/privacy.ts", "setProjectGroupAssignment('/private', null);\n");
+  writeBaseline(root, {});
+  const result = checkInvariants({ root });
+  assert.equal(result.success, false);
+  assert.ok(result.regressions.some((item) => item.rule === "privacy-writer-outside-fence"));
 });

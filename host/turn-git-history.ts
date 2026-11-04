@@ -26,7 +26,7 @@ import type {
   WorkspacePathManifestEntry,
 } from "./workspace-contracts";
 import type { TurnGitHistory } from "./workspace-service-contracts";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 import {
   canonicalWorkspaceEntry,
   canonicalWorkspacePath,
@@ -243,7 +243,6 @@ export class GitTurnHistory implements TurnGitHistory {
     const lines = (
       await gitText(path, [
         "rev-parse",
-        "--path-format=absolute",
         "--show-toplevel",
         "--absolute-git-dir",
         "--git-path",
@@ -255,7 +254,8 @@ export class GitTurnHistory implements TurnGitHistory {
       .split("\n")
       .map((line) => line.trim());
     if (lines.length !== 4) throw new Error("Unsupported Git root path");
-    const [top, gitDirectory, indexPath, head] = lines;
+    const [top, gitDirectory, index, head] = lines;
+    const indexPath = resolve(path, index);
     if (workspacePathKey(await canonicalWorkspacePath(top)) !== workspacePathKey(path))
       throw new Error("Workspace is not the Git root");
     return { head, indexPath, gitDirectory } satisfies GitContext;
@@ -329,7 +329,7 @@ export class GitTurnHistory implements TurnGitHistory {
     );
   }
   private async indexPath(cwd: string) {
-    return gitText(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]);
+    return resolve(cwd, await gitText(cwd, ["rev-parse", "--git-path", "index"]));
   }
   private async indexBytes(cwd: string) {
     return (await optionalRead(await this.indexPath(cwd))) ?? Buffer.alloc(0);

@@ -398,6 +398,57 @@ test("Antigravity translates directly and only connected providers are listed", 
   await expect(page.getByTestId("choice")).toContainText('"harness":"antigravity"');
 });
 
+test("translation selection actions stay on one row across themes and widths", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const light of [false, true]) {
+    for (const width of [1280, 800, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/composer-extras.html?translation-selection");
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      const input = page.getByRole("textbox", { name: "Message", exact: true });
+      await input.fill("selam bugün nasılsın?");
+      await input.press("Control+a");
+      const toolbar = page.getByRole("toolbar", { name: "Selected text actions" });
+      await expect(
+        toolbar.getByRole("button", { name: "Translate to Chinese", exact: true }),
+      ).toBeAttached();
+      const bounds = await toolbar.getByRole("button").evaluateAll((buttons) =>
+        buttons.map((button) => ({
+          top: button.getBoundingClientRect().top,
+          bottom: button.getBoundingClientRect().bottom,
+        })),
+      );
+      expect(
+        Math.max(...bounds.map((box) => box.top)) - Math.min(...bounds.map((box) => box.top)),
+      ).toBeLessThan(2);
+      const popup = page.locator("[data-selection-menu]");
+      if (width >= 800) {
+        await expect
+          .poll(() =>
+            toolbar.evaluate(
+              (element) => element.parentElement!.scrollWidth <= element.parentElement!.clientWidth,
+            ),
+          )
+          .toBe(true);
+      }
+      const box = (await popup.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      await toolbar.getByRole("button", { name: "Translate to Chinese", exact: true }).focus();
+      await expect(toolbar).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-selection-menu/${light ? "light" : "dark"}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(toolbar).toHaveCount(0);
+    }
+  }
+});
+
 test("translation selection menu opens above text and survives unavailable geometry", async ({
   page,
 }) => {

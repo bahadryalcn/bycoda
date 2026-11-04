@@ -31,15 +31,36 @@ function targetedReply(method: string, params: Record<string, unknown> = {}) {
 async function fixture(sessionScoped = false) {
   let now = 1000;
   let navigation = (_frame: { parentFrame(): unknown }) => {};
+  const cdpListeners = new Map<string, (payload: unknown) => void>();
   const cdpSend = vi.fn(async (method: string, params: Record<string, unknown> = {}) => targetedReply(method, params));
   const page = {
     goto: vi.fn(),
     url: () => "https://example.test/",
     evaluate: vi.fn(async () => structuredClone(inspection)),
     locator: vi.fn((selector: string) => selector),
-    screenshot: vi.fn(async () => Buffer.from("safe-frame")),
+    screenshot: vi.fn(async (options: { style?: string }) => {
+      cdpListeners.get("DOM.childNodeInserted")?.({
+        parentNodeId: 2,
+        node: { nodeId: 31, localName: "style", children: [{ nodeValue: options.style }] },
+      });
+      cdpListeners.get("DOM.childNodeInserted")?.({
+        parentNodeId: 2,
+        node: {
+          nodeId: 32,
+          localName: "x-pw-glass",
+          attributes: ["popover", "manual"],
+          shadowRoots: [{ shadowRootType: "closed" }],
+        },
+      });
+      cdpListeners.get("DOM.childNodeRemoved")?.({ nodeId: 32 });
+      cdpListeners.get("DOM.childNodeRemoved")?.({ nodeId: 31 });
+      return Buffer.from("safe-frame");
+    }),
     context: () => ({
       newCDPSession: async () => ({
+        on: vi.fn((event: string, callback: (payload: unknown) => void) =>
+          cdpListeners.set(event, callback),
+        ),
         send: cdpSend,
         detach: vi.fn(),
       }),
@@ -238,6 +259,145 @@ it("reports inaccessible targets without creating a selection", async () => {
     expect(f.page.screenshot).not.toHaveBeenCalled();
   } finally {
     await f.browser.close();
+  }
+});
+
+it("revalidates the exact requested capture and rejects unknown IDs", async () => {
+  const { browser, params } = await fixture();
+  try {
+    const first = await browser.dispatch("browser.annotation.select", params, "owner");
+    const second = await browser.dispatch(
+      "browser.annotation.select",
+      { ...params, x: 51 },
+      "owner",
+    );
+    const read = await browser.dispatch(
+      "browser.annotation.read",
+      { ...params, captureId: first.selection!.id },
+      "owner",
+    );
+    expect(read.selection?.id).toBe(first.selection?.id);
+    expect(read.selection?.id).not.toBe(second.selection?.id);
+    await expect(
+      browser.dispatch("browser.annotation.read", { ...params, captureId: "unknown" }, "owner"),
+    ).rejects.toThrow("not found");
+  } finally {
+    await browser.close();
+  }
+});
+
+it("uses bounded hover lookups even after mutations while full selection keeps redaction scans", async () => {
+  const listeners = new Map<string, (payload?: any) => void>();
+  let scans = 0;
+  const cdp = {
+    on: (event: string, callback: (payload?: any) => void) => {
+      listeners.set(event, callback);
+    },
+    send: async (method: string, params: Record<string, unknown> = {}) => {
+      if (method === "DOM.getDocument") scans++;
+      return targetedReply(method, params);
+    },
+    detach: async () => {},
+  };
+  const page = {
+    goto: async () => {},
+    url: () => "https://example.test",
+    evaluate: async () => structuredClone(inspection),
+    locator: (selector: string) => selector,
+    screenshot: async (options: { style?: string }) => {
+      listeners.get("DOM.childNodeInserted")?.({
+        parentNodeId: 2,
+        node: { nodeId: 31, localName: "style", children: [{ nodeValue: options.style }] },
+      });
+      listeners.get("DOM.childNodeInserted")?.({
+        parentNodeId: 2,
+        node: {
+          nodeId: 32,
+          localName: "x-pw-glass",
+          attributes: ["popover", "manual"],
+          shadowRoots: [{ shadowRootType: "closed" }],
+        },
+      });
+      listeners.get("DOM.childNodeRemoved")?.({ nodeId: 32 });
+      listeners.get("DOM.childNodeRemoved")?.({ nodeId: 31 });
+      return Buffer.from("frame");
+    },
+    context: () => ({ newCDPSession: async () => cdp }),
+    mouse: { click: async () => {}, wheel: async () => {} },
+    keyboard: { type: async () => {}, press: async () => {} },
+  };
+  const loader = (async () => ({
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({ newPage: async () => page }),
+        close: async () => {},
+      }),
+    },
+  })) as BrowserLoader;
+  const browser = new SharedBrowser(loader);
+  try {
+    const claim = await browser.dispatch("browser.claim", {}, "owner");
+    const opened = await browser.dispatch(
+      "browser.open",
+      { leaseId: claim.leaseId, url: "https://example.test" },
+      "owner",
+    );
+    const scope = {
+      projectId: "p",
+      sessionId: "s",
+      leaseId: claim.leaseId,
+      navigationId: opened.navigationId,
+    };
+    const start = await browser.dispatch("browser.annotation.start", scope, "owner");
+    const point = { ...scope, annotationId: start.annotationId, x: 1, y: 1 };
+    await browser.dispatch("browser.annotation.hover", point, "owner");
+    await browser.dispatch("browser.annotation.hover", point, "owner");
+    expect(scans).toBe(0);
+    listeners.get("DOM.shadowRootPushed")!();
+    await browser.dispatch("browser.annotation.hover", point, "owner");
+    expect(scans).toBe(0);
+    await browser.dispatch("browser.annotation.select", point, "owner");
+    expect(scans).toBe(3);
+  } finally {
+    await browser.close();
+  }
+});
+
+it("releases exact capture IDs and replaces current capture only after success", async () => {
+  const { browser, page, params } = await fixture();
+  try {
+    const first = await browser.dispatch("browser.annotation.select", params, "owner");
+    const id = first.selection!.id;
+    page.screenshot.mockRejectedValueOnce(new Error("fixture capture failure"));
+    await expect(
+      browser.dispatch("browser.annotation.select", { ...params, replaceCaptureId: id }, "owner"),
+    ).rejects.toThrow("fixture capture failure");
+    expect(
+      (await browser.dispatch("browser.annotation.read", { ...params, captureId: id }, "owner"))
+        .selection?.id,
+    ).toBe(id);
+    const replacement = await browser.dispatch(
+      "browser.annotation.select",
+      { ...params, replaceCaptureId: id },
+      "owner",
+    );
+    await expect(
+      browser.dispatch("browser.annotation.read", { ...params, captureId: id }, "owner"),
+    ).rejects.toThrow("not found");
+    await browser.dispatch(
+      "browser.annotation.clear",
+      { ...params, captureId: replacement.selection!.id },
+      "owner",
+    );
+    await expect(
+      browser.dispatch(
+        "browser.annotation.read",
+        { ...params, captureId: replacement.selection!.id },
+        "owner",
+      ),
+    ).rejects.toThrow("not found");
+  } finally {
+    await browser.close();
   }
 });
 

@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { Readable, Writable } from "node:stream";
 import {
   createManagedToolCatalog,
@@ -20,7 +21,7 @@ import {
   validateConversationTool,
   runConversationMcp,
   type ConversationTool,
-} from "./conversation-tools";
+} from "./conversation/conversation-tools";
 import {
   RUNTIME_LOG_TOOLS,
   RUNTIME_LOG_TOOL_SCHEMAS,
@@ -34,13 +35,13 @@ import {
   socialToolCatalog,
   socialAuthorizationScope,
   normalizeSocialToolRequest,
-} from "./social-tools";
+} from "./social/social-tools";
 import { McpTokens, MCP_GROUPS, type McpGrant, type McpGroup } from "./mcp-tokens";
 import type { HostStore } from "./store";
 import { RequestAuthorizationError } from "./store-db";
-import type { SocialService } from "./social";
+import type { SocialService } from "./social/social";
 import type { RuntimeLogsService } from "./runtime-logs";
-import type { ConversationWorkspaceTools } from "./conversation-workspace-tools";
+import type { ConversationWorkspaceTools } from "./conversation/conversation-workspace-tools";
 import type { Session } from "../src/features/sessions/model/session";
 import {
   localSessionLinkFields,
@@ -166,6 +167,7 @@ export function toolAuthorizationScope(group: McpGroup, action: string): "read" 
 export class McpHttp {
   readonly tokens: McpTokens;
   private window = { start: 0, count: 0, active: 0 };
+  private lastTokenSweep = 0;
   // Per-credential limits so one noisy client cannot starve the others; `window` stays
   // as a generous global safety cap.
   private readonly tokenWindows = new Map<
@@ -299,22 +301,28 @@ export class McpHttp {
     // Count only requests that passed cheap validation, per authenticated credential.
     const now = this.now();
     if (now - this.window.start >= 60_000) this.window = { ...this.window, start: now, count: 0 };
-    for (const [key, entry] of this.tokenWindows)
-      if (entry.active === 0 && now - entry.start >= 60_000) this.tokenWindows.delete(key);
-    let tokenWindow = this.tokenWindows.get(token);
+    if (now - this.lastTokenSweep >= 60_000 || now < this.lastTokenSweep) {
+      this.lastTokenSweep = now;
+      for (const [key, entry] of this.tokenWindows)
+        if (entry.active === 0 && now - entry.start >= 60_000) this.tokenWindows.delete(key);
+    }
+    const tokenKey = createHash("sha256").update(token).digest("hex");
+    let tokenWindow = this.tokenWindows.get(tokenKey);
     if (!tokenWindow)
-      this.tokenWindows.set(token, (tokenWindow = { start: now, count: 0, active: 0 }));
+      this.tokenWindows.set(tokenKey, (tokenWindow = { start: now, count: 0, active: 0 }));
     else if (now - tokenWindow.start >= 60_000) {
       tokenWindow.start = now;
       tokenWindow.count = 0;
     }
-    if (
-      ++tokenWindow.count > 240 ||
-      tokenWindow.active >= 16 ||
-      ++this.window.count > 1200 ||
-      this.window.active >= 64
-    ) {
-      response.setHeader("Retry-After", "60");
+    const tokenExceeded = ++tokenWindow.count > 240;
+    const globalExceeded = ++this.window.count > 1200;
+    if (tokenExceeded || tokenWindow.active >= 16 || globalExceeded || this.window.active >= 64) {
+      const wait = Math.max(
+        tokenExceeded ? tokenWindow.start + 60_000 - now : 0,
+        globalExceeded ? this.window.start + 60_000 - now : 0,
+        1000,
+      );
+      response.setHeader("Retry-After", String(Math.ceil(wait / 1000)));
       return reject(429, "MCP request limit exceeded.");
     }
     const ownedWindow = tokenWindow;

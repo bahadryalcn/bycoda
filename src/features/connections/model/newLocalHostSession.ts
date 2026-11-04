@@ -59,7 +59,7 @@ export async function newLocalHostSession(
     authorityGeneration: null,
     created: false,
   });
-  await flushHostSessionBindings();
+  await flushHostSessionBindings(bound.id);
   refreshRemoteMachines();
   return bound;
 }

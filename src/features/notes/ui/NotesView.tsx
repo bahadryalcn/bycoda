@@ -852,7 +852,7 @@ export function NotesView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-surface-panel)"
+      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-workspace-panel)"
     >
       <div className="flex min-h-9 shrink-0 items-center gap-1 px-2 pt-1">
         <span

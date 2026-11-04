@@ -25,6 +25,7 @@ Use for Settings Archive and related project/session archive entry points. Proje
 - Project Restore selects/opens it; opening an archived conversation does not implicitly unarchive or send. Open, unarchive and delete remain distinct.
 - Project removal preserves the project folder while deleting the applicable app metadata/conversations; managed directory cleanup retains separate authority.
 - Only confirmed successful removal/unarchive announces completion. Cancel, guard refusal, false return, failure and uncertain result retain truthful row state and retry.
+- Successful conversation deletion retains a durable ID marker in its native/Host store. Late saves, adoption and restart recovery cannot recreate that ID; failed deletion transactions must not leave a marker. Unsent-draft editing uses its separate guarded disposal path.
 - Revalidate captured targets on relock, project/machine/selection changes and concurrent removal. Preserve busy/dirty/queue/checkpoint/provider lifecycle gates.
 - Preserve date meaning: project archivedAt differs from conversation last activity. Do not invent session archive timestamps, restored pin/order guarantees or remote/mobile parity.
 

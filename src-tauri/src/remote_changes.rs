@@ -94,6 +94,8 @@ struct Shared {
     refresh_running: bool,
     refresh_generation: Option<u64>,
     refresh_result: Option<Result<Value, String>>,
+    instance: Option<String>,
+    instance_generation: u64,
 }
 
 impl Changes {
@@ -142,6 +144,7 @@ impl Changes {
         if !state.windows.contains_key(window) && state.windows.len() >= 32 {
             return Err("Too many remote window subscriptions".into());
         }
+        let window_instance = params.get("instanceId").and_then(Value::as_str).map(str::to_owned);
         let immediate = params.get("waitMs").and_then(Value::as_u64) == Some(0);
         let interest = |value: &Value| {
             let mut value = value.clone();
@@ -180,7 +183,7 @@ impl Changes {
             let demand_generation = state.demand_generation;
             if joined_refresh && state.refresh_generation == Some(demand_generation) {
                 if let Some(result) = &state.refresh_result {
-                    return result.clone();
+                    return window_result(result.clone(), window_instance.as_deref(), state.instance.as_deref());
                 }
             }
             let mut request = scheduled_request(
@@ -189,16 +192,19 @@ impl Changes {
             )?;
             request["waitMs"] = json!(0);
             request["demandChanged"] = json!(true);
+            if let Some(instance) = &state.instance { request["instanceId"] = json!(instance); }
+            let instance_generation = state.instance_generation;
             state.refresh_running = true;
             drop(state);
             let result =
                 send(request.clone()).and_then(|response| checked_response(&request, response));
             let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
+            let result = accept_instance(&mut state, instance_generation, result);
             state.refresh_running = false;
             state.refresh_generation = Some(demand_generation);
             state.refresh_result = Some(result.clone());
             entry.changed.notify_all();
-            return result;
+            return window_result(result, window_instance.as_deref(), state.instance.as_deref());
         }
         if state.running {
             let generation = state.generation;
@@ -211,26 +217,54 @@ impl Changes {
             if timeout.timed_out() {
                 return Err("Remote control request timed out".into());
             }
-            return next
+            let result = next
                 .result
                 .clone()
                 .unwrap_or_else(|| Err("Remote control request ended".into()));
+            return window_result(result, window_instance.as_deref(), next.instance.as_deref());
         }
-        let request = scheduled_request(
+        let mut request = scheduled_request(
             union(state.windows.values().map(|(value, _)| value))?,
             state.generation,
         )?;
+        if let Some(instance) = &state.instance { request["instanceId"] = json!(instance); }
+        let instance_generation = state.instance_generation;
         state.running = true;
         drop(state);
         let result =
             send(request.clone()).and_then(|response| checked_response(&request, response));
         let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
+        let result = accept_instance(&mut state, instance_generation, result);
         state.running = false;
         state.generation += 1;
         state.result = Some(result.clone());
         entry.changed.notify_all();
-        result
+        window_result(result, window_instance.as_deref(), state.instance.as_deref())
     }
+}
+
+fn accept_instance(state: &mut Shared, generation: u64, result: Result<Value, String>) -> Result<Value, String> {
+    let response = result?;
+    let instance = response.get("instanceId").and_then(Value::as_str).ok_or("Invalid machine changes instance")?;
+    if generation != state.instance_generation && state.instance.as_deref() != Some(instance) {
+        return Err("Remote control response belongs to a retired instance".into());
+    }
+    if state.instance.as_deref() != Some(instance) {
+        state.instance = Some(instance.to_owned());
+        state.instance_generation += 1;
+    }
+    Ok(response)
+}
+
+fn window_result(result: Result<Value, String>, requested: Option<&str>, current: Option<&str>) -> Result<Value, String> {
+    let mut response = result?;
+    if current.is_some_and(|instance| response.get("instanceId").and_then(Value::as_str) != Some(instance)) {
+        return Err("Remote control response belongs to a retired instance".into());
+    }
+    if requested.is_some_and(|instance| response.get("instanceId").and_then(Value::as_str) != Some(instance)) {
+        response["reset"] = json!(true);
+    }
+    Ok(response)
 }
 
 fn checked_response(request: &Value, mut response: Value) -> Result<Value, String> {

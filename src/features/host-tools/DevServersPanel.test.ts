@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../shared/hooks/useRetainedState";
 import { DevServersPanel } from "./DevServersPanel";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
+import { readToolsDraftTransfer, restoreToolsDraftTransfer } from "./toolsDraftTransfer";
 import type { DevServer, DevServerDetails } from "./devServerTypes";
 
 vi.mock("../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: vi.fn() }));
@@ -22,6 +23,75 @@ vi.mock("./BrowserPanel", () => ({
 }));
 let root: Root;
 let container: HTMLDivElement;
+it("restores a transferred server form without starting it", async () => {
+  const scope = { cwd: "/repo", sessionId: "transfer-test", targetValue: "project" };
+  restoreToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue, {
+    servers: {
+      showStart: true,
+      name: "my-api",
+      command: "pnpm dev",
+      workingDirectory: "apps/api",
+      port: "3333",
+      restartCommand: "restart",
+      restartCwd: "apps/api",
+    },
+  });
+  await act(async () =>
+    root.render(createElement(DevServersPanel, { cwd: "/repo", transferScope: scope })),
+  );
+  expect(container.querySelector<HTMLInputElement>('input[value="my-api"]')).not.toBeNull();
+  expect(container.querySelector<HTMLInputElement>('input[value="pnpm dev"]')).not.toBeNull();
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devServers.start"),
+  ).toBe(false);
+});
+it("holds transfer while a server start is in flight", async () => {
+  const scope = { cwd: "/repo", sessionId: "server-pending", targetValue: "project" };
+  let finish!: (value: unknown) => void;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _cap, method) => {
+    if (method === "devServers.start")
+      return await new Promise((resolve) => {
+        finish = resolve;
+      });
+    return { servers: [server], errors: [] };
+  });
+  await act(async () =>
+    root.render(
+      createElement(DevServersPanel, {
+        cwd: "/repo",
+        transferScope: scope,
+        launch: { input: { name: "Dev", command: "node dev.js" } },
+      }),
+    ),
+  );
+  await act(async () => button("Start command").click());
+  expect(() => readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)).toThrow(
+    "Wait for the current tool action",
+  );
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "devServers.start"),
+  ).toHaveLength(1);
+  await act(async () => finish({}));
+  expect(() => readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)).not.toThrow();
+});
+it("suspends discovery for a hidden conversation and resumes without losing the list", async () => {
+  await act(async () =>
+    root.render(createElement(DevServersPanel, { cwd: "/repo", active: false })),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(hostFeatureRequest).not.toHaveBeenCalled();
+  await act(async () =>
+    root.render(createElement(DevServersPanel, { cwd: "/repo", active: true })),
+  );
+  expect(container.textContent).toContain("node");
+  const reads = vi.mocked(hostFeatureRequest).mock.calls.length;
+  await act(async () =>
+    root.render(createElement(DevServersPanel, { cwd: "/repo", active: false })),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(reads);
+  expect(container.textContent).toContain("node");
+});
 const server: DevServer = {
   id: "process:41:birth-41",
   process: { pid: 41, startedAt: "birth-41", name: "node", command: "node dev.js" },

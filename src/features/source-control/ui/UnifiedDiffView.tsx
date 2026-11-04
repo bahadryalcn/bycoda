@@ -1139,12 +1139,12 @@ const SplitLane = memo(function SplitLane({
     return side === "before" ? (
       <DiffLineRow line={row.line} lane={lane} hovered={false} commenting={false} />
     ) : (
-      <div className="bg-[var(--ui-surface)]" style={HUNK_HEIGHT} />
+      <div className="bg-[var(--ui-workspace-canvas-surface)]" style={HUNK_HEIGHT} />
     );
   }
   const line = side === "before" ? row.left : row.right;
   if (!line) {
-    return <div className="bg-[var(--ui-surface)]" style={LINE_HEIGHT} />;
+    return <div className="bg-[var(--ui-workspace-canvas-surface)]" style={LINE_HEIGHT} />;
   }
   return (
     <DiffLineRow
@@ -1232,7 +1232,7 @@ function FoldBar({
 }) {
   useLocale();
   return (
-    <div className="flex items-center gap-1 bg-[var(--ui-surface-muted)] px-2" style={FOLD_HEIGHT}>
+    <div className="flex items-center gap-1 bg-[var(--ui-workspace-reading-muted)] px-2" style={FOLD_HEIGHT}>
       <Button
         size="sm"
         inset
@@ -1310,7 +1310,7 @@ const DiffLineRow = memo(function DiffLineRow({
   useLocale();
   if (line.kind === "hunk") {
     return (
-      <div className="flex items-center bg-[var(--ui-surface)]" style={HUNK_HEIGHT}>
+      <div className="flex items-center bg-[var(--ui-workspace-canvas-surface)]" style={HUNK_HEIGHT}>
         {lane === "code" ? (
           <span className="px-3 font-mono diff-meta-text leading-none text-[var(--ui-text-muted)]">
             {line.text}

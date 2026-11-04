@@ -70,6 +70,7 @@ export async function previewVoice(
   started?.();
 }
 export class LocalVoice {
+  async retire() {}
   constructor(
     callbacks: unknown,
     _language?: unknown,
@@ -88,6 +89,7 @@ export class LocalVoice {
   }
 }
 export class RealtimeVoice {
+  async retire() {}
   constructor(_provider: unknown, callbacks: unknown) {
     setupVoice.realtimeCallbacks = callbacks;
   }

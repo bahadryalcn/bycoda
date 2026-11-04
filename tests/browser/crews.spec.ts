@@ -336,6 +336,14 @@ for (const theme of ["light", "dark"] as const) {
       .first()
       .click();
     const team = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
+    await expect(team.locator("[data-member-row]")).toHaveCount(17);
+    await expect(team).not.toContainText("Responsibilities");
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 995 });
+      await team.screenshot({
+        path: `temp/verification/2026-11-04-crew-roster/team-${theme}-${width}-${testInfo.project.name}.png`,
+      });
+    }
     await expect(team.getByRole("region", { name: "Coordinator", exact: true })).toContainText(
       "Team Lead",
     );

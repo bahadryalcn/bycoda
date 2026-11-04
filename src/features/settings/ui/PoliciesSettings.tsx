@@ -50,13 +50,13 @@ export function PoliciesSettings() {
         // The shared conversation renderer only opens HTTP links. Handle our
         // published contact address here without changing conversation behavior.
         const target = event.target instanceof Element ? event.target.closest("a") : null;
-        if (target?.getAttribute("href") !== "mailto:info@bahadrhllyalcn.com") return;
+        if (target?.getAttribute("href") !== "mailto:info@bycoda.codes") return;
         event.preventDefault();
         event.stopPropagation();
         const origin = currentContext.current;
         const attempt = ++mailAttempt.current;
         setContactErrorContext(null);
-        void openUrl("mailto:info@bahadrhllyalcn.com").catch(() => {
+        void openUrl("mailto:info@bycoda.codes").catch(() => {
           if (origin === currentContext.current && attempt === mailAttempt.current)
             setContactErrorContext(origin);
         });
@@ -144,7 +144,7 @@ export function PoliciesSettings() {
           {contactError ? (
             <SettingsFeedback state="error">
               {t(
-                "Could not open your email app. Copy info@bahadrhllyalcn.com into your email app.",
+                "Could not open your email app. Copy info@bycoda.codes into your email app.",
               )}
             </SettingsFeedback>
           ) : null}

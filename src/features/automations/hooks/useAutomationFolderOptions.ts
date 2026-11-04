@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { getLocale, t } from "../../../shared/i18n";
 import {
   loadSessionFolders,
   subscribeSessionFolders,
   type SessionFolder,
 } from "../../sessions/model/sessionFolders";
+import { organizationFoldersForProject } from "../../sessions/model/sessionOrganizationOperations";
+import { cachedSessionOrganization, NATIVE_SESSION_ORGANIZATION_ACTIVE, subscribeSessionOrganization } from "../../sessions/model/sessionOrganizationStore";
 
 // `loadSessionFolders` returns a fresh clone per call, so the store snapshot
 // is cached per project and replaced only when the stored folders change.
@@ -48,13 +50,27 @@ export type FolderOption = { value: string; label: string; keywords?: string };
 export function useAutomationFolderOptions(
   cwd: string,
   sessionFolderId: string | undefined,
-): FolderOption[] {
+): { options: FolderOption[]; loading: boolean; error: string | null } {
   const subscribe = useCallback((onChange: () => void) => subscribeFolders(cwd, onChange), [cwd]);
   const getSnapshot = useCallback(() => folderSnapshot(cwd), [cwd]);
-  const sessionFolders = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const legacyFolders = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const [native, setNative] = useState<{ cwd: string; folders: SessionFolder[]; error: string | null } | null>(null);
+  useEffect(() => {
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
+    setNative(null);
+    return subscribeSessionOrganization(() => {
+      const snapshot = cachedSessionOrganization();
+      if (!snapshot) return;
+      try { setNative({ cwd, folders: organizationFoldersForProject(snapshot, cwd), error: null }); }
+      catch (error) { setNative((previous) => ({ cwd, folders: previous?.cwd === cwd ? previous.folders : [], error: String(error) })); }
+    }, (error) => setNative((previous) => ({ cwd, folders: previous?.cwd === cwd ? previous.folders : [], error: String(error) })));
+  }, [cwd]);
+  const loading = NATIVE_SESSION_ORGANIZATION_ACTIVE && (!native || native.cwd !== cwd);
+  const error = NATIVE_SESSION_ORGANIZATION_ACTIVE && native?.cwd === cwd ? native.error : null;
+  const sessionFolders = NATIVE_SESSION_ORGANIZATION_ACTIVE ? (native?.cwd === cwd ? native.folders : []) : legacyFolders;
   // Labels are read lazily; a locale change still replaces the array.
   const locale = getLocale();
-  return useMemo(() => {
+  const options = useMemo(() => {
     const options: FolderOption[] = [
       {
         value: "",
@@ -68,7 +84,7 @@ export function useAutomationFolderOptions(
         keywords: folder.name,
       })),
     ];
-    if (sessionFolderId && !sessionFolders.some((folder) => folder.id === sessionFolderId)) {
+    if (!loading && !error && sessionFolderId && !sessionFolders.some((folder) => folder.id === sessionFolderId)) {
       options.push({
         value: sessionFolderId,
         get label() {
@@ -78,5 +94,6 @@ export function useAutomationFolderOptions(
       });
     }
     return options;
-  }, [locale, sessionFolderId, sessionFolders]);
+  }, [locale, sessionFolderId, sessionFolders, loading, error]);
+  return { options, loading, error };
 }

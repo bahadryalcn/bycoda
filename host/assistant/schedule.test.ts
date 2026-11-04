@@ -229,10 +229,12 @@ it("enriches every message acknowledgement, retry, page and search with actual c
       text: "A scoped conversation",
       idempotencyKey: "send-scope",
     };
+  const scopedReply = await f.service.request(send, "owner");
   expect(
-    (await f.service.request(send, "owner")).messages!.every(
+    scopedReply.messages!.every(
       (message) => JSON.stringify(message.projectIds) === '["project"]',
     ),
+    JSON.stringify(scopedReply),
   ).toBe(true);
   expect((await f.service.request(send, "owner")).messages![0].projectIds).toEqual(["project"]);
   // Deleted referenced jobs keep their authoritative project identity. A
@@ -398,7 +400,7 @@ it("retains mixed-project causal reply scope through retries and recursive histo
     idempotencyKey: "causal-reply",
   };
   const first = (await f.service.request(send, "owner")).messages!.at(-1)!;
-  expect(first.projectIds).toEqual([actual.id]);
+  expect(first.projectIds, JSON.stringify(first)).toEqual([actual.id]);
   expect((await f.service.request(send, "owner")).messages![0].projectIds).toEqual([actual.id]);
   expect(f.reply).toHaveBeenCalledTimes(1);
   const secondSend = {

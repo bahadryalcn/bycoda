@@ -11,7 +11,7 @@ Own the typed inline snapshot and its isolated renderer. Ordinary HTML attachmen
 
 Code paths below are repository-root relative.
 
-- `host/conversation-visual-tools.ts`
+- `host/conversation/conversation-visual-tools.ts`
 - `src/features/sessions/model/inlineVisual.ts`
 - `src/features/sessions/ui/InlineVisual.tsx`
 - `src/features/files/ui/HtmlPreview.tsx` and `src-tauri/src/html_preview.rs`

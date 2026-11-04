@@ -946,6 +946,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "explorer gitignore ignored hidden files tree",
   },
   {
+    id: "workspace-background",
+    section: "appearance",
+    get label() {
+      return t("Workspace background");
+    },
+    keywords: "gradient gradyan geçiş colors presets linear radial mesh soft blend angle strength background",
+  },
+  { id: "workspace-gradient-style", section: "appearance", get label() { return t("Gradient style"); }, keywords: "gradient gradyan geçiş linear radial mesh soft blend" },
+  { id: "workspace-gradient-colors", section: "appearance", get label() { return t("Gradient colors"); }, keywords: "gradient gradyan geçiş colors colours renk" },
+  { id: "workspace-gradient-angle", section: "appearance", get label() { return t("Gradient angle"); }, keywords: "gradient gradyan geçiş angle açı direction" },
+  { id: "workspace-gradient-strength", section: "appearance", get label() { return t("Background strength"); }, keywords: "gradient gradyan geçiş strength intensity opacity yoğunluk" },
+  {
     id: "chat-background",
     section: "appearance",
     get label() {
@@ -961,6 +973,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords:
       "animated wallpaper ascii ai neural tree latent face thought weaver ascii mask calm motion backdrop sinir ağacı gizil yüz düşünce dokuyucu ascii maske sakin arka plan",
+  },
+  {
+    id: "title-model-default",
+    section: "chat",
+    get label() {
+      return t("Default title model");
+    },
+    keywords: "conversation title regenerate rename model provider account haiku terra flash başlık isim yeniden oluştur varsayılan",
   },
   {
     id: "translation-model-default",
@@ -994,6 +1014,22 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Transcript layout");
     },
     keywords: "full width chat bubble message",
+  },
+  {
+    id: "dictation-enabled",
+    section: "chat",
+    get label() {
+      return t("Enable dictation");
+    },
+    keywords: "dictate dictation speech to text microphone diktate dikte yazdır mikrofon",
+  },
+  {
+    id: "speech-microphone",
+    section: "chat",
+    get label() {
+      return t("Microphone access");
+    },
+    keywords: "microphone permission privacy macos windows linux mikrofon izin",
   },
   {
     id: "voice-companion",
@@ -2390,6 +2426,7 @@ export type KeybindingRow = {
  * focused surface handlers such as the draft composer workspace toggle.
  */
 export const KEYBINDINGS: KeybindingRow[] = [
+  { command: "Voice: Push to Talk", keys: "", when: "Voice connected and microphone paused" },
   { command: DESKTOP_STOP_COMMAND, keys: `${CTRL}${IS_MAC ? "⌥" : "Alt+"}Esc`, when: "Anywhere" },
   { command: "App: Settings", keys: `${MOD},`, when: "Always" },
   { command: "App: Search", keys: `${MOD}K`, when: "Always" },

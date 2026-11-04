@@ -117,3 +117,46 @@ it("does not corrupt multibyte characters split across stdin chunks in the forma
   const result = await formatWorkspaceText(root, path, source, 0);
   expect(JSON.stringify(result)).not.toContain("�");
 });
+
+it("skips unsupported Prettier files but honors an explicitly configured parser", async () => {
+  const { root } = await project();
+  const path = join(root, ".gitignore");
+  await writeFile(path, "disk content");
+  expect(await formatWorkspaceText(root, path, "node_modules/\n", 0)).toBeNull();
+  await writeFile(
+    join(root, ".prettierrc.json"),
+    JSON.stringify({ overrides: [{ files: ".gitignore", options: { parser: "json" } }] }),
+  );
+  expect(await formatWorkspaceText(root, path, '{"a":1}', 0)).toMatchObject({
+    formatted: '{ "a": 1 }\n',
+  });
+  await writeFile(
+    join(root, "custom-plugin.mjs"),
+    `export const parsers = {
+    custom: { parse: text => ({ text }), astFormat: "custom", locStart: () => 0, locEnd: node => node.text.length }
+  }; export const printers = { custom: { print: path => path.getValue().text.toUpperCase() } };`,
+  );
+  await writeFile(
+    join(root, ".prettierrc.json"),
+    JSON.stringify({ parser: "custom", plugins: ["./custom-plugin.mjs"] }),
+  );
+  expect(await formatWorkspaceText(root, path, "custom input", 0)).toMatchObject({
+    formatted: "CUSTOM INPUT",
+  });
+  expect(await readFile(path, "utf8")).toBe("disk content");
+});
+
+it("skips an unsupported Oxfmt file while retaining syntax errors", async () => {
+  const { root } = await project();
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ scripts: { format: "oxfmt --write ." } }),
+  );
+  const path = join(root, ".gitignore");
+  await writeFile(path, "disk content");
+  expect(await formatWorkspaceText(root, path, "node_modules/\n", 0)).toBeNull();
+  await expect(
+    formatWorkspaceText(root, join(root, "broken.js"), "const = ;", 0),
+  ).rejects.toThrow();
+  expect(await readFile(path, "utf8")).toBe("disk content");
+});

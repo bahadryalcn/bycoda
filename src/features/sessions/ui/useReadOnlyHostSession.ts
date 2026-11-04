@@ -53,7 +53,15 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
     const current = () => !cancelled && getGroupLockView() === privacy;
     const publish = (patch: Partial<ReadState>) => {
       if (!current()) return;
-      setState((previous) => ({ ...previous, key, privacy, ...patch }));
+      setState((previous) => {
+        if (
+          previous.key === key && previous.privacy === privacy &&
+          (Object.keys(patch) as (keyof ReadState)[]).every((field) =>
+            Object.is(previous[field], patch[field]),
+          )
+        ) return previous;
+        return { ...previous, key, privacy, ...patch };
+      });
     };
     const unavailable = () =>
       new Error(t("This local conversation is unavailable or inaccessible."));

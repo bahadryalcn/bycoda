@@ -237,6 +237,28 @@ describe("durable session recovery", () => {
     expect(recoveryNeedsAttention("working")).toBe(true);
     expect(recoveryStatus({ ...chat("a"), blocks: [] }, false, true)).toBe("idle");
   });
+  it("resolves a legacy owner Stop followed directly by the old quit marker", () => {
+    const stopped = chat("legacy-stopped");
+    stopped.blocks.push(
+      { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+      {
+        id: "quit",
+        role: "system",
+        notice: "interrupt",
+        text: "Turn interrupted when bycoda quit.",
+      },
+    );
+    expect(recoveryStatus(stopped, false, true)).toBe("idle");
+    expect(recoveryStatus(stopped, true, false)).toBe("unknown");
+    stopped.blocks.push({ id: "next", role: "user", text: "New work" });
+    stopped.blocks.push({
+      id: "new-quit",
+      role: "system",
+      notice: "interrupt",
+      text: "Turn interrupted when bycoda quit.",
+    });
+    expect(recoveryStatus(stopped, false, true)).toBe("interrupted");
+  });
   it("holds recovered conversations from automatic sends even after acknowledgment", () => {
     const recovery = captureSessionRecovery(null, snapshot(["a"]), 100)!;
     setSessionRecovery(recovery);

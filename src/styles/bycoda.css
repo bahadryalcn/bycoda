@@ -113,7 +113,7 @@
   }
 }
 .bycoda-titlebar {
-  background: var(--color-background-base);
+  background: var(--ui-navigation-chrome);
   border-block-end-color: var(--color-stroke);
 }
 .bycoda-project-rail {
@@ -327,9 +327,10 @@ html.theme-light .project-sigil {
   white-space: nowrap;
   animation: bycoda-welcome 1400ms ease both;
 }
-.bycoda-welcome img {
+.bycoda-welcome-icon {
   width: 24px;
   height: 24px;
+  flex-shrink: 0;
   object-fit: contain;
 }
 @keyframes bycoda-welcome {
@@ -409,7 +410,7 @@ html.theme-light .project-sigil {
   min-height: 32px;
   height: 32px;
   padding-inline: 6px;
-  background: var(--bycoda-panel);
+  background: var(--ui-navigation-panel);
 }
 .bycoda-workspace-tabs {
   container: workspace-tabs / inline-size;
@@ -494,7 +495,7 @@ html.theme-light .project-sigil {
   /* Follows the shared density preference: compact control height plus 8px. */
   min-height: calc(var(--ui-control-height-compact) + 0.5rem);
   height: calc(var(--ui-control-height-compact) + 0.5rem);
-  background: var(--color-background-base);
+  background: var(--ui-navigation-chrome);
   border-bottom: 1px solid var(--color-stroke);
 }
 /* Keep the same native controls on the highest visible chrome row. */

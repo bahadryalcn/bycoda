@@ -1,3 +1,5 @@
+import { InlineError } from "../../shared/ui/InlineError";
+import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
@@ -357,6 +359,7 @@ export function ProjectRail({
     projectGroupAssignments,
     remoteOnly,
   } = useProjectRailData();
+  const [groupMutationError, setGroupMutationError] = useState(false);
   const [lastSessionsShown, setLastSessionsShown] = useState(false);
   const [crewsShown, setCrewsShown] = useState(false);
   const [inboxMenu, setInboxMenu] = useState<{
@@ -420,10 +423,13 @@ export function ProjectRail({
         loadRecents().map((item) => item.path),
       );
       if (added.length === 0) return;
-      changeProjectGroupMembers(groupId, added, []);
-      updateProjectGroup(groupId, (current) => ({ ...current, collapsed: false }));
+      await withRoomPrivacyMutation(() => {
+        changeProjectGroupMembers(groupId, added, []);
+        updateProjectGroup(groupId, (current) => ({ ...current, collapsed: false }));
+      });
+      setGroupMutationError(false);
       revealProject(added[added.length - 1]);
-    })();
+    })().catch(() => setGroupMutationError(true));
   };
   const busy = useMemo(() => {
     const set = new Set<string>();
@@ -992,6 +998,7 @@ export function ProjectRail({
       aria-label={t("Projects")}
       className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5 ${visible ? "flex" : "hidden"}`}
     >
+      {groupMutationError && <InlineError>{t("Could not add projects to the group. Please try again.")}</InlineError>}
       {!navigator ? (
         <div
           className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"

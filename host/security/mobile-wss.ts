@@ -15,6 +15,7 @@ export type MobileWssOptions = {
   address: string;
   getPort: () => number;
   material: MobileTlsMaterial;
+  ingressSecret?: string;
   limits?: Partial<{ maxConnections: number; maxPending: number; handshakeTimeoutMs: number }>;
 };
 
@@ -275,6 +276,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       headers: {
         Host: `127.0.0.1:${internalPort}`,
         Authorization: request.headers.authorization!,
+        ...(options.ingressSecret ? { "X-Bycoda-Mobile-Ingress": options.ingressSecret } : {}),
         Connection: "Upgrade",
         Upgrade: "websocket",
         "Sec-WebSocket-Version": "13",

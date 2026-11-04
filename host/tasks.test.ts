@@ -1,7 +1,7 @@
 import { mapAsync } from "./async-collections";
-import { AssistantTurnPolicyDeferredError } from "./assistant-turn-policy";
-import * as assistantTurnPolicy from "./assistant-turn-policy";
-import * as assistantTaskMetadata from "./assistant-task-metadata";
+import { AssistantTurnPolicyDeferredError } from "./assistant/core/assistant-turn-policy";
+import * as assistantTurnPolicy from "./assistant/core/assistant-turn-policy";
+import * as assistantTaskMetadata from "./assistant/work/assistant-task-metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
@@ -27,16 +27,8 @@ it("keeps the original failed verification owner fenced across retry and board r
   await f.tasks.save(f.input());
   const task = await f.task();
   const project = await f.store.project(task.projectId);
-  await f.store.db
-    .prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked') WHERE id=?")
-    .run(task.id);
-  const original = await reserveShellOwnership(
-    f.store,
-    project.cwd,
-    "task",
-    task.id,
-    "original verification",
-  );
+  await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked') WHERE id=?").run(task.id);
+  const original = await reserveShellOwnership(f.store, project.cwd, "task", task.id, "original verification");
   await original.observe({ pid: 42, hostPid: 84, spawnObservedAt: 123 });
   await original.unknown("taskkill failed");
   await expect(f.tasks.move(task.id, "queued")).rejects.toThrow("not proven stopped");
@@ -46,14 +38,8 @@ it("keeps the original failed verification owner fenced across retry and board r
   await expect(restarted.startTask(task.id)).rejects.toThrow("not proven stopped");
   await expect(restarted.move(task.id, "queued")).rejects.toThrow("not proven stopped");
   await expect(restarted.delete(task.id, true)).rejects.toThrow("not proven stopped");
-  const row = await f.store.db
-    .prepare("SELECT value FROM metadata WHERE key=?")
-    .get(`shell-physical-owner.v1:${original.id}`);
-  expect(JSON.parse(String(row!.value))).toMatchObject({
-    id: original.id,
-    command: "original verification",
-    physicalIdentity: { pid: 42 },
-  });
+  const row = await f.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(`shell-physical-owner.v1:${original.id}`);
+  expect(JSON.parse(String(row!.value))).toMatchObject({ id: original.id, command: "original verification", physicalIdentity: { pid: 42 } });
 });
 it("refreshes read-only assistant follow-up metadata and board ETags without rewriting a task or launching work", async () => {
   const f = await setup();
@@ -139,7 +125,7 @@ import * as processExecution from "../src/shared/lib/processExecution.node";
 import * as hostShell from "./shell";
 import { writerWorkspaces } from "./writer-workspaces.test-support";
 import type { TaskWorkspaceServices } from "./task-workspace-runtime";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -1691,6 +1677,56 @@ describe("explicit task workspaces and owner controls", () => {
     });
     await expect(tasks.startTask("main")).rejects.toThrow("Task changed before starting");
     expect(await tasks.get("main")).toMatchObject({ status: "todo" });
+  });
+  it("rejects a reviewed Start after configuration changes without scheduling it", async () => {
+    const { tasks, input } = await setup();
+    const reviewed = await tasks.save(input({ status: "todo" }));
+    await tasks.save(input({ status: undefined, prompt: "New owner instructions" }));
+    const tick = vi.spyOn(tasks, "tick").mockResolvedValue(undefined);
+    await expect(tasks.startTask("main", reviewed)).rejects.toThrow("Configuration changed");
+    expect(tick).not.toHaveBeenCalled();
+    expect(await tasks.get("main")).toMatchObject({
+      status: "todo",
+      prompt: "New owner instructions",
+    });
+  });
+  it("does not upsert another project's task through create-only admission", async () => {
+    const { tasks, input, addProject } = await setup();
+    const foreign = await addProject("foreign");
+    const original = await tasks.save(input({ status: "todo", projectId: foreign.id }));
+    await expect(tasks.save(input({ expectedAbsent: true, title: "Overwritten" }))).rejects.toThrow(
+      "Task ID already exists",
+    );
+    expect(await tasks.get("main")).toEqual(original);
+  });
+  it("admits only one concurrent create-only task for the same ID", async () => {
+    const { tasks, input } = await setup();
+    const results = await Promise.allSettled([
+      tasks.save(input({ expectedAbsent: true, status: "todo", title: "First owner request" })),
+      tasks.save(input({ expectedAbsent: true, status: "todo", title: "Second owner request" })),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")?.reason).toMatchObject({
+      message: "Task ID already exists. Choose a new ID.",
+    });
+  });
+  it("retains an owner edit racing reviewed queue preparation", async () => {
+    const { tasks, input } = await setup();
+    const reviewed = await tasks.save(input({ status: "todo" }));
+    const preparation = tasks as unknown as {
+      retryFeedback(task: unknown): Promise<string | undefined>;
+    };
+    vi.spyOn(preparation, "retryFeedback").mockImplementationOnce(async () => {
+      await tasks.save(input({ status: undefined, prompt: "Concurrent owner instructions" }));
+      return undefined;
+    });
+    const tick = vi.spyOn(tasks, "tick").mockResolvedValue(undefined);
+    await expect(tasks.startTask("main", reviewed)).rejects.toThrow("before queue admission");
+    expect(tick).not.toHaveBeenCalled();
+    expect(await tasks.get("main")).toMatchObject({
+      status: "todo",
+      prompt: "Concurrent owner instructions",
+    });
   });
   it("acknowledges Start while an unrelated scheduler pass remains pending", async () => {
     const { tasks, input } = await setup();

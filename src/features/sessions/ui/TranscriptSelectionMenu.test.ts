@@ -34,6 +34,23 @@ afterEach(() => {
 });
 
 describe("TranscriptSelectionMenu", () => {
+  it("keeps selection while scrolling its action rail, but dismisses on page scroll", () => {
+    const onDismiss = vi.fn();
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          selection: { text: "Selected words", rect: new DOMRect(10, 80, 100, 20) },
+          onDismiss,
+        }),
+      ),
+    );
+    const rail = document.querySelector('[data-selection-menu] [role="toolbar"]')!.parentElement!;
+    act(() => rail.dispatchEvent(new Event("scroll")));
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new Event("scroll")));
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
   it("never retargets an open citation comment when a pane changes sessions", () => {
     const onAddToChat = vi.fn();
     const props = { onAddToChat, onDismiss: vi.fn() };

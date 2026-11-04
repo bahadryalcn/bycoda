@@ -88,6 +88,18 @@ pub struct NoteImageAsset {
 }
 
 pub fn ensure_notes_table(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("SAVEPOINT notes_schema_migration")?;
+    let result = ensure_notes_table_inner(conn);
+    match result {
+        Ok(()) => conn.execute_batch("RELEASE notes_schema_migration"),
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK TO notes_schema_migration; RELEASE notes_schema_migration");
+            Err(error)
+        }
+    }
+}
+
+fn ensure_notes_table_inner(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS notes (
            id TEXT PRIMARY KEY,
@@ -170,32 +182,29 @@ pub fn ensure_notes_table(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    crate::assistant_observation_outbox::install_notes(conn)?;
     Ok(())
 }
 
 #[tauri::command(async)]
 pub fn notes_list(store: State<'_, SessionStore>) -> Result<Vec<Note>, String> {
-    let conn = store.lock_conn()?;
-    list_notes(&conn).map_err(|e| e.to_string())
+    store.with_read_conn(|conn| list_notes(conn).map_err(|e| e.to_string()))
 }
 
 #[tauri::command(async)]
 pub fn notes_list_summaries(store: State<'_, SessionStore>) -> Result<Vec<NoteSummary>, String> {
-    let conn = store.lock_conn()?;
-    list_note_summaries(&conn).map_err(|error| error.to_string())
+    store.with_read_conn(|conn| list_note_summaries(conn).map_err(|error| error.to_string()))
 }
 
 #[tauri::command(async)]
 pub fn notes_search(store: State<'_, SessionStore>, query: String) -> Result<Vec<String>, String> {
-    let conn = store.lock_conn()?;
-    search_notes(&conn, &query).map_err(|error| error.to_string())
+    store.with_read_conn(|conn| search_notes(conn, &query).map_err(|error| error.to_string()))
 }
 
 #[tauri::command(async)]
 pub fn notes_get(store: State<'_, SessionStore>, id: String) -> Result<Option<Note>, String> {
     validate_id(&id, "note")?;
-    let conn = store.lock_conn()?;
-    get_note(&conn, &id).map_err(|e| e.to_string())
+    store.with_read_conn(|conn| get_note(conn, &id).map_err(|e| e.to_string()))
 }
 
 #[tauri::command(async)]
@@ -889,14 +898,13 @@ fn normalize_title(title: &str) -> String {
     }
 }
 
-/// Lowercase ASCII words of `title` joined by single hyphens, untruncated.
+/// Lowercase title words joined by single hyphens, untruncated.
 fn slug_words(title: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
     for ch in title.chars() {
-        let c = ch.to_ascii_lowercase();
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
+        if ch.is_alphanumeric() {
+            out.extend(ch.to_lowercase());
             dash = false;
         } else if !out.is_empty() && !dash {
             out.push('-');
@@ -908,7 +916,9 @@ fn slug_words(title: &str) -> String {
 
 fn slugify(title: &str) -> String {
     let words = slug_words(title);
-    let slug = words[..words.len().min(48)].trim_end_matches('-');
+    let mut end = words.len().min(48);
+    while !words.is_char_boundary(end) { end -= 1; }
+    let slug = words[..end].trim_end_matches('-');
     if slug.is_empty() {
         "note".into()
     } else {
@@ -921,6 +931,10 @@ fn slugify(title: &str) -> String {
 /// another; the note stays pending until it gets a real title. Checks the
 /// whole title so text past the slug length cutoff still counts.
 fn is_placeholder_title(title: &str) -> bool {
+    // Do not discard non-ASCII letters when deciding whether a title is real.
+    if title.chars().any(|ch| !ch.is_ascii() && ch.is_alphanumeric()) {
+        return false;
+    }
     let words = slug_words(title);
     match words.strip_prefix("untitled") {
         Some("") => true,
@@ -1626,6 +1640,6 @@ mod tests {
     fn slugify_strips_punctuation() {
         assert_eq!(slugify("Hello, World!"), "hello-world");
         assert_eq!(slugify("***"), "note");
-        assert_eq!(slugify("Ä"), "note");
+        assert_eq!(slugify("Ä"), "ä");
     }
 }

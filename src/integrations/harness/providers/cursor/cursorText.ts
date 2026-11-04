@@ -208,7 +208,7 @@ async function startLive(
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
   prepareTextProcess(textProcess, operationContext, true);
   const acpRef: { session: LiveText | null } = { session: null };
   let admitted = false;

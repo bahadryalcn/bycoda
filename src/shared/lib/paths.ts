@@ -1,4 +1,5 @@
 import { IS_WIN } from "../../platform/tauri/platform";
+import { REMOTE_PATH_PREFIX } from "./remotePaths";
 
 function windowsPath(path: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\") || path.startsWith("//");
@@ -22,6 +23,19 @@ export function slash(path: string): string {
 
 function trimSlash(path: string): string {
   return slash(path).replace(/\/+$/, "") || "/";
+}
+
+/** Normalize a project path for display without changing its case. */
+export function normalizeProjectPath(path: string): string {
+  return trimSlash(path);
+}
+
+export function isRemoteProjectPath(path: string): boolean {
+  return slash(path).startsWith(REMOTE_PATH_PREFIX);
+}
+
+export function sameProjectPath(a: string, b: string): boolean {
+  return pathKey(a) === pathKey(b);
 }
 
 /** Project comparisons run per session on every workspace update; the same few

@@ -73,6 +73,16 @@ same project formatter as Alt+Shift+F and changes the editor buffer; Save retain
 the existing format-on-save preference. Clipboard errors appear in the editor,
 and a delayed Cut or Paste does not overwrite newer edits or selections.
 
+If formatting fails during Save, the editor still attempts to save your current
+text. **Saved, but formatting failed** appears only after that save succeeds.
+A failed save keeps its own error and unsaved edits; a format warning alone is
+not proof that the file was saved. Editing again clears the saved claim.
+Manual **Format document** changes the buffer without saving it.
+Prettier files with no inferred or explicitly configured parser, and files
+reported unsupported by Oxfmt, skip project formatting. Explicit Prettier parser
+and plugin configuration remains supported. Actual syntax and execution failures
+still appear as format errors.
+
 Editors open on the same file, such as its own tab and its Working Tree review tab,
 share one document, like a file and its diff view in VS Code. An edit appears in
 every one of them at once, and Undo/Redo (Ctrl/Cmd+Z, Ctrl+Y or Cmd+Shift+Z) in

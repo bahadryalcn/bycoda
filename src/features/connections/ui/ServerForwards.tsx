@@ -33,6 +33,7 @@ export function ServerForwards({
 }) {
   const proxy = useSshHttpProxyApproval();
   const locked = useRef(false);
+  const statusSequence = useRef(0);
   const [draft, setDraft] = useRetainedState(`servers:forward-draft:${server.id}`, {
     name: "",
     kind: "local" as "local" | "dynamic",
@@ -58,35 +59,43 @@ export function ServerForwards({
     let disposed = false;
     let pending = false;
     const refresh = async () => {
-      if (pending) return;
+      if (pending || document.hidden) return;
       pending = true;
+      const sequence = ++statusSequence.current;
       try {
         const result = await listSshForwards();
-        if (!disposed) {
-          setStatuses(result.filter((item) => item.connectionId === server.id));
+        if (!disposed && sequence === statusSequence.current) {
+          const next = result.filter((item) => item.connectionId === server.id);
+          setStatuses((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
           setStatusError("");
         }
       } catch {
-        if (!disposed) setStatusError(t("Couldn’t read forwarding status."));
+        if (!disposed && sequence === statusSequence.current) setStatusError(t("Couldn’t read forwarding status."));
       } finally {
         pending = false;
       }
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 1500);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       disposed = true;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [server.id, active]);
   const run = async (id: string, action: () => Promise<unknown>) => {
     if (locked.current) return;
     locked.current = true;
+    ++statusSequence.current;
     setBusy(id);
     setError("");
     try {
       await action();
-      setStatuses((await listSshForwards()).filter((item) => item.connectionId === server.id));
+      const sequence = ++statusSequence.current;
+      const result = await listSshForwards();
+      if (sequence === statusSequence.current)
+        setStatuses(result.filter((item) => item.connectionId === server.id));
       setStatusError("");
     } catch (cause) {
       setError(String(cause));

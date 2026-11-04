@@ -3,6 +3,47 @@ import { expect, test, type Page } from "@playwright/test";
 /** Save state of a Markdown file sits beside Save in the view shell, not in the footer (plain files use the footer). */
 const saveStatus = (page: Page) => page.locator('[role=status][aria-live="polite"]');
 
+test("Ctrl+S distinguishes a saved source from a failed format without claiming failed disk writes were saved", async ({
+  page,
+}, info) => {
+  await page.goto("/tests/browser/file-save.html?format-error");
+  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  const editor = page.locator(".cm-content:visible");
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Saved unformatted source");
+  await page.keyboard.press("Control+s");
+  await expect(page.getByLabel("Disk writes")).toContainText("1: ");
+  const warning = page.getByRole("alert");
+  await expect(warning).toContainText("Saved, but formatting failed: NATIVE_DELIVERY_CAPACITY");
+  for (const width of [1280, 800]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const light of [false, true]) {
+      await page.evaluate((value) => {
+        (
+          window as unknown as { fileSaveFixture: { setTheme(light: boolean): void } }
+        ).fileSaveFixture.setTheme(value);
+      }, light);
+      await page.screenshot({
+        path: info.outputPath(`format-save-${width}-${light ? "light" : "dark"}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Unsaved edit");
+  await expect(warning).not.toContainText("Saved, but formatting failed");
+  await page.evaluate(() => {
+    (window as unknown as { fileSaveFixture: { failWrites: boolean } }).fileSaveFixture.failWrites =
+      true;
+  });
+  await page.keyboard.press("Control+s");
+  await expect(page.getByText("Saved, but formatting failed: ", { exact: false })).toHaveCount(0);
+  await expect(page.getByLabel("Disk writes")).toContainText("1: ");
+  await expect(page.getByText("Disk full while saving", { exact: false })).toBeVisible();
+});
+
 test("native draft save reporting never marks edits made during an older disk write as saved", async ({
   page,
 }) => {

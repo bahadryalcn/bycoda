@@ -1,5 +1,6 @@
 import type { HarnessOperationContext } from "./types";
 import { captureTextInput } from "./textSource";
+import { nativeModelId } from "../../../features/sessions/model/models";
 import {
   buildThreadTitlePrompt,
   parseGeneratedSessionTitle,
@@ -10,12 +11,16 @@ export type TitleInput = {
   sessionId: string;
   cwd: string;
   message: string;
+  model?: string;
+  modelSettings?: Record<string, string>;
   providerAccountId?: string;
   operationContext?: HarnessOperationContext;
 };
 export type TitlePrompt = {
   cwd: string;
   prompt: string;
+  model?: string;
+  modelSettings?: Record<string, string>;
   timeoutMs: number;
   providerAccountId?: string;
   operationContext?: HarnessOperationContext;
@@ -33,6 +38,8 @@ export async function generateSessionTitle(
       operationContext: input.operationContext,
       prompt: buildThreadTitlePrompt(input.message),
       timeoutMs: 45_000,
+      ...(input.model ? { model: nativeModelId(input.model) } : {}),
+      ...(input.modelSettings ? { modelSettings: input.modelSettings } : {}),
       ...(input.providerAccountId ? { providerAccountId: input.providerAccountId } : {}),
     });
     return parseGeneratedSessionTitle(output, input.message);

@@ -94,8 +94,8 @@ export function HtmlPreview({
         toolbarTarget
           ? "flex items-center gap-1"
           : compact
-            ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface) px-2 py-1"
-            : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1"
+            ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading) px-2 py-1"
+            : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-workspace-panel) px-3 py-1"
       }
     >
       {toolbar}

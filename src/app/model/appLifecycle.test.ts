@@ -65,6 +65,7 @@ vi.mock("../../features/sessions/data/sessionStore", async (importOriginal) => {
     ...actual,
     loadWorkspaceSnapshot: vi.fn().mockResolvedValue(null),
     listInFlightSessions: vi.fn().mockResolvedValue([]),
+    listDeletedSessionIds: vi.fn().mockResolvedValue([]),
     listSessionsByProject: vi.fn().mockResolvedValue([]),
     isPrimaryWorkspaceWindow: vi.fn().mockReturnValue(true),
     getSession: vi.fn().mockResolvedValue(null),

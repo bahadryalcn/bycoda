@@ -9,6 +9,18 @@ export function isOwnerStopNotice(block: TurnNotice | null | undefined): boolean
   );
 }
 
+/** A former quit handler could append its marker after an already completed Stop. */
+export function isOwnerStoppedTurn(blocks: readonly TurnNotice[]): boolean {
+  const last = blocks[blocks.length - 1];
+  return (
+    isOwnerStopNotice(last) ||
+    (last?.role === "system" &&
+      (last.text === "Turn interrupted when bycoda quit." ||
+        last.text === "Turn interrupted when Bycoda quit.") &&
+      isOwnerStopNotice(blocks[blocks.length - 2]))
+  );
+}
+
 /** A deliberate Stop is terminal, but must not advertise interruption or auto-resume. */
 export function isTurnInterruptionNotice(block: TurnNotice | null | undefined): boolean {
   return (

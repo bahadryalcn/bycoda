@@ -11,7 +11,7 @@ import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { createHostServer } from "./server";
 import { BrowserRuntime } from "./browser-runtime";
-import { DeviceHost } from "./device-host";
+import { DeviceHost } from "./devices/device-host";
 import * as expoGo from "./expo-go";
 import { RuntimeLogsService } from "./runtime-logs";
 import { HostChildBackend } from "./child-backend";
@@ -22,12 +22,12 @@ import { DesktopSessions } from "./desktopSessions";
 import { HostTerminals } from "./terminals";
 import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./generic-acp";
-import * as accessCenter from "./access-center";
-import { ConversationDesktopRelay } from "./conversation-tools";
-import { DevicePreviews } from "./device-preview";
+import * as accessCenter from "./security/access/access-center";
+import { ConversationDesktopRelay } from "./conversation/conversation-tools";
+import { DevicePreviews } from "./devices/device-preview";
 import { ProviderInboxBridge } from "./provider-inbox";
-import { VoiceSetupService } from "./voice-setup";
-import { LocalVoiceService } from "./voice-local";
+import { VoiceSetupService } from "./voice/voice-setup";
+import { LocalVoiceService } from "./voice/voice-local";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
@@ -36,7 +36,7 @@ import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueu
 import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
 import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
 import { AttachmentOwnership } from "./attachment-ownership";
-import { SocialService } from "./social";
+import { SocialService } from "./social/social";
 import * as accountCatalog from "./provider-accounts";
 
 const modelProbe = vi.hoisted(() => vi.fn());
@@ -2025,6 +2025,102 @@ it("advertises individual Claude stopping only with an installed provider hook",
 });
 
 describe("scoped Conversation Tools RPC", () => {
+  it("routes reviewed management mutations through native approval and retains their receipt", async () => {
+    const s = await sessionTools();
+    await s.call("conversation.desktop.take");
+    const input = { requestId: "reviewed-sprint", sprintId: "sprint-one", name: "Reviewed sprint" };
+    const pending = s.tool("sprints.create", input);
+    let requests: any[] = [];
+    for (let attempt = 0; attempt < 30 && !requests.length; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      requests = (await s.call("conversation.desktop.take")).value.result;
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      action: "management.write.authorize",
+      sessionId: s.created.sessionId,
+      input: { operation: { action: "sprints.create", input } },
+    });
+    expect((await s.tool("sprints.list")).value.result.items).toEqual([]);
+    await s.call("conversation.desktop.finish", {
+      id: requests[0].id,
+      result: { approved: true, operationHash: requests[0].input.operation.operationHash },
+    });
+    expect((await pending).value.result).toMatchObject({
+      state: "completed",
+      result: { id: "sprint-one", name: "Reviewed sprint" },
+    });
+    expect((await s.tool("sprints.create", input)).value.result.state).toBe("completed");
+    expect((await s.call("conversation.desktop.take")).value.result).toEqual([]);
+    expect((await s.tool("sprints.create", { ...input, name: "Different" })).value.error).toContain(
+      "different input",
+    );
+    expect((await s.tool("sprints.list", { limit: 1 })).value.result).toMatchObject({
+      total: 1,
+      nextOffset: null,
+    });
+  });
+  it("forwards focused desktop management with native-owned identity and reviewed organization changes", async () => {
+    const s = await sessionTools();
+    await s.call("conversation.desktop.take");
+    const take = async () => {
+      let requests: any[] = [];
+      await vi.waitFor(async () => {
+        requests = (await s.call("conversation.desktop.take")).value.result;
+        expect(requests).toHaveLength(1);
+      });
+      return requests[0];
+    };
+    for (const [action, nativeAction, args, fields] of [
+      ["preferences.read", "preferences.read", { offset: 2, limit: 1 }, {}],
+      ["providers.status", "providerManagement.read", {}, {}],
+      ["projects.organization.read", "organization.read", { offset: 0, memberOffset: 2 }, {}],
+      [
+        "history.import.status",
+        "historyImport.status",
+        { operationId: "existing" },
+        { operationId: "existing" },
+      ],
+    ] as const) {
+      const pending = s.tool(action, args);
+      const request = await take();
+      expect(request.action).toBe(nativeAction);
+      expect(request.input).toEqual({ ...fields, sessionId: s.created.sessionId });
+      await s.call("conversation.desktop.finish", {
+        id: request.id,
+        result: { revision: "revision", state: "unknown" },
+      });
+      expect((await pending).value.error).toBeUndefined();
+    }
+    const input = {
+      requestId: "organization-change",
+      expectedRevision: "a".repeat(64),
+      change: { kind: "projectName", name: "Reviewed name" },
+    };
+    const pending = s.tool("projects.organization.patch", input);
+    const review = await take();
+    expect(review.action).toBe("management.write.authorize");
+    await s.call("conversation.desktop.finish", {
+      id: review.id,
+      result: { approved: true, operationHash: review.input.operation.operationHash },
+    });
+    const effect = await take();
+    expect(effect.action).toBe("organization.patch");
+    expect(effect.input).toEqual({
+      operationId: input.requestId,
+      expectedRevision: input.expectedRevision,
+      change: input.change,
+      sessionId: s.created.sessionId,
+    });
+    await s.call("conversation.desktop.finish", {
+      id: effect.id,
+      result: { state: "applied", snapshot: { name: "Reviewed name" } },
+    });
+    expect((await pending).value.result).toMatchObject({
+      state: "completed",
+      result: { state: "applied", snapshot: { name: "Reviewed name" } },
+    });
+  });
   it("routes preview jobs through scoped RPC and rejects foreign ownership and protected input", async () => {
     const spies = [
       vi.spyOn(DeviceHost.prototype, "preflight").mockResolvedValue({
@@ -2535,34 +2631,41 @@ describe("scoped Conversation Tools RPC", () => {
       setup: expect.stringContaining("Set up host browser"),
     });
   });
-  it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
+  it("keeps canonical conversation leases separate from the legacy owner-wide browser", async () => {
     const s = await sessionTools();
     const agent = (await s.tool("browser.claim")).value.result;
-    const blocked = await s.call("browser.claim");
-    expect(blocked.value.error).toContain("Another client");
-    const owner = (await s.call("browser.claim", { takeover: true })).value.result;
+    const owner = (await s.call("browser.claim")).value.result;
     expect(owner.controlling).toBe(true);
     expect(owner.leaseId).not.toBe(agent.leaseId);
-    expect((await s.tool("browser.claim")).value.error).toContain("Another client");
-    expect((await s.tool("browser.claim", { takeover: true })).value.error).toBeTruthy();
-    expect((await s.call("browser.status")).value.result).toMatchObject({
-      controlling: true,
-      leaseId: owner.leaseId,
+    const scoped = await s.call("browser.claim", {
+      projectId: s.project.id,
+      sessionId: s.created.sessionId,
     });
+    expect(scoped.value.error).toContain("Another client");
+    const takeover = await s.call("browser.claim", {
+      projectId: s.project.id,
+      sessionId: s.created.sessionId,
+      takeover: true,
+    });
+    expect(takeover.value.result.controlling).toBe(true);
+    expect((await s.tool("browser.claim", { takeover: true })).value.error).toBeTruthy();
   });
-  it("serves the owner browser for a conversation this host cannot read, without its label", async () => {
+  it("rejects unknown native sessions and supports explicit owner presentation scopes", async () => {
     const s = await sessionTools();
     const unknown = await s.call("browser.status", {
       projectId: s.project.id,
       sessionId: crypto.randomUUID(),
     });
-    expect(unknown.value.error).toBeUndefined();
-    expect(unknown.value.result).toMatchObject({ open: false });
+    expect(unknown.value.error).toBeTruthy();
     const known = await s.call("browser.status", {
       projectId: s.project.id,
       sessionId: s.created.sessionId,
     });
     expect(known.value.error).toBeUndefined();
+    const alternate = await s.call("browser.status", {
+      ownerPresentationScope: "origin-workspace",
+    });
+    expect(alternate.value.result).toMatchObject({ open: false });
     expect(
       (
         await s.call("browser.status", {
@@ -2802,7 +2905,7 @@ describe("scoped Conversation Tools RPC", () => {
     ).value.result;
     expect(own.id).toBe("own-task");
     await s.call("tasks.save", { task: { ...input, id: "foreign-task", projectId: other.id } });
-    expect((await s.tool("tasks.list")).value.result.map((task: any) => task.id)).toEqual([
+    expect((await s.tool("tasks.list")).value.result.items.map((task: any) => task.id)).toEqual([
       "own-task",
     ]);
     expect((await s.tool("tasks.start", { taskId: "foreign-task" })).value.error).toContain(

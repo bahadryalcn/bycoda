@@ -2,9 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
+import { fixtureSourceScan } from "./fixtureSourceScan.ts";
 const mock = fileURLToPath(new URL("./host-tools-mocks.ts", import.meta.url));
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  cacheDir: "temp/build/browser-host-tools-cache",
+  plugins: [fixtureSourceScan(), react(), tailwindcss()],
   resolve: {
     alias: [{ find: /.*\/connections\/model\/hostFeatureClient$/, replacement: mock }],
   },

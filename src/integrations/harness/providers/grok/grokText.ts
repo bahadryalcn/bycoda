@@ -14,7 +14,7 @@ import { AcpClient } from "../../core/acp";
 import {
   captureChildProcess,
   createChildProcessHandle,
-  execChild,
+  prepareUtilitySessionCleanup,
   resolveGrokBinary,
   spawnChild,
   watchChild,
@@ -201,7 +201,7 @@ async function startLive(
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
   prepareTextProcess(textProcess, operationContext, true);
   const acpRef: { session: LiveText | null } = { session: null };
   let admitted = false;
@@ -354,22 +354,18 @@ async function dropLive(
     current.closed = true;
     current.acp.close();
   }
+  const cleanup = current && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(current.acpSessionId)
+    ? await prepareUtilitySessionCleanup(current.process, current.binaryPath,
+      ["--no-auto-update", "sessions", "delete", current.acpSessionId], current.cwd, "grok")
+      .then((run) => ({ run }), (error: unknown) => ({ error }))
+    : undefined;
   const originals = new Set([current?.process, pending]);
   await (expected
     ? retirements.retire(originals)
     : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(originals)]));
   // Stop the writer first so it cannot recreate the session after deletion.
-  if (current) await deleteTextSession(current);
-}
-
-async function deleteTextSession(session: LiveText): Promise<void> {
-  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(session.acpSessionId)) return;
-  await execChild(
-    session.binaryPath,
-    ["--no-auto-update", "sessions", "delete", session.acpSessionId],
-    session.cwd,
-    "grok",
-  ).catch((error) => console.debug("[bycoda] Grok text session cleanup", error));
+  if (cleanup && "run" in cleanup) await cleanup.run().catch((error) => console.debug("[bycoda] Grok text session cleanup", error));
+  else if (cleanup) console.debug("[bycoda] Grok text session cleanup grant", cleanup.error);
 }
 
 async function handleTextRequest(acp: AcpWriterView, id: number, method: string, params: unknown) {

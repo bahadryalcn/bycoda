@@ -113,7 +113,7 @@ type Props = {
   onDeleteSession: (sessionId: string) => void;
   /** Whether `sessions` is complete; Archive must not read loading or failed history as empty. */
   sessionsStatus?: ComponentProps<typeof ArchivePage>["sessionsStatus"];
-  onRestoreProject?: (path: string) => void;
+  onRestoreProject?: (path: string) => void | Promise<void>;
   onDeleteProject?: (path: string) => void | Promise<void>;
   onOpenWhatsNew: (version: string) => void;
   collapsedProjectRailMode?: CollapsedProjectRailMode;

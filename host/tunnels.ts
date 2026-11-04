@@ -14,7 +14,7 @@ import {
   type TunnelProvider,
   type TunnelStart,
 } from "../src/integrations/external-tunnels";
-import { OsSocialCredentials, type SocialCredentialStore } from "./social-credentials";
+import { OsSocialCredentials, type SocialCredentialStore } from "./social/social-credentials";
 import { startTunnelGuardian, type OwnedTunnelProcess } from "./tunnel-process";
 import {
   probeTunnelOrigin,

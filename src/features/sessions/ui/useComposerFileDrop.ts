@@ -1,5 +1,6 @@
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { t } from "../../../shared/i18n";
 import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
@@ -182,7 +183,7 @@ export function useComposerFileDrop({
           if (!over || blockedBy(false)) return;
           if (event.payload.paths.length === 0) {
             setPasteError(
-              "This drag did not provide a file. Save the image, then drag the saved file here.",
+              t("This drag did not provide a file. Save the image, then drag the saved file here."),
             );
             return;
           }

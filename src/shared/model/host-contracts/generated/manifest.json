@@ -114,6 +114,22 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "generationKey": { "type": "string" },
+                  "op": { "const": "voice.runtime.register", "type": "string" },
+                  "seedMessageIds": {
+                    "items": { "type": "string" },
+                    "maxItems": 6,
+                    "type": "array"
+                  },
+                  "summaryProofId": { "type": "string" },
+                  "threadId": { "type": "string" }
+                },
+                "required": ["op", "threadId", "generationKey", "seedMessageIds"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
                   "expectedJobVersion": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
@@ -314,6 +330,39 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "generation": { "type": "string" },
+                  "op": { "const": "narration.pending", "type": "string" },
+                  "threadId": { "type": "string" }
+                },
+                "required": ["op", "threadId", "generation"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "eventId": { "type": "string" },
+                  "generation": { "type": "string" },
+                  "op": { "const": "narration.claim", "type": "string" },
+                  "threadId": { "type": "string" }
+                },
+                "required": ["op", "threadId", "eventId", "generation"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "eventId": { "type": "string" },
+                  "generation": { "type": "string" },
+                  "op": { "const": "narration.settle", "type": "string" },
+                  "state": { "enum": ["delivered", "unknown"], "type": "string" },
+                  "threadId": { "type": "string" }
+                },
+                "required": ["op", "threadId", "eventId", "generation", "state"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
                   "expectedVersion": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
@@ -456,6 +505,8 @@
                         "type": "string"
                       },
                       "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
+                      "observationTaskDone": { "type": "boolean" },
+                      "observationTaskNeedsInput": { "type": "boolean" },
                       "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
                       "planApproval": { "enum": ["always", "large", "never"], "type": "string" },
                       "planningExecution": {
@@ -570,6 +621,7 @@
                         "minimum": 10,
                         "type": "integer"
                       },
+                      "voiceNarration": { "type": "boolean" },
                       "voiceSetupComplete": { "type": "boolean" },
                       "workerCompactPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
                       "workerHandoffPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
@@ -754,7 +806,14 @@
               },
               {
                 "additionalProperties": false,
+                "properties": { "op": { "const": "threads.sendIdentity", "type": "string" } },
+                "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
                 "properties": {
+                  "expectedHostInstance": { "type": "string" },
                   "idempotencyKey": { "type": "string" },
                   "op": { "const": "threads.send", "type": "string" },
                   "sessionId": { "type": "string" },
@@ -763,6 +822,19 @@
                   "via": { "enum": ["voice", "text"], "type": "string" }
                 },
                 "required": ["op", "threadId", "via", "text", "idempotencyKey"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "expectedHostInstance": { "type": "string" },
+                  "idempotencyKey": { "type": "string" },
+                  "op": { "const": "threads.sendStatus", "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "text": { "type": "string" },
+                  "threadId": { "type": "string" }
+                },
+                "required": ["op", "threadId", "text", "idempotencyKey", "expectedHostInstance"],
                 "type": "object"
               },
               {
@@ -966,6 +1038,25 @@
                 "additionalProperties": false,
                 "properties": { "op": { "const": "manual.list", "type": "string" } },
                 "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "op": { "const": "observation.delivery.list", "type": "string" },
+                  "projectId": { "type": "string" }
+                },
+                "required": ["op", "projectId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "notificationId": { "type": "string" },
+                  "op": { "const": "observation.delivery.refresh", "type": "string" },
+                  "projectId": { "type": "string" }
+                },
+                "required": ["op", "projectId", "notificationId"],
                 "type": "object"
               },
               {
@@ -1804,9 +1895,15 @@
                 "maxItems": 20,
                 "type": "array"
               },
+              "unverifiedToolContext": { "const": true, "type": "boolean" },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "via": { "enum": ["text", "voice"], "type": "string" }
+              "via": { "enum": ["text", "voice"], "type": "string" },
+              "visibilityProjectIds": {
+                "items": { "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
             },
             "required": [
               "id",
@@ -1852,9 +1949,15 @@
                   "maxItems": 20,
                   "type": "array"
                 },
+                "unverifiedToolContext": { "const": true, "type": "boolean" },
                 "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                 "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "via": { "enum": ["text", "voice"], "type": "string" }
+                "via": { "enum": ["text", "voice"], "type": "string" },
+                "visibilityProjectIds": {
+                  "items": { "type": "string" },
+                  "maxItems": 1000,
+                  "type": "array"
+                }
               },
               "required": [
                 "id",
@@ -1870,6 +1973,22 @@
               "type": "object"
             },
             "maxItems": 100,
+            "type": "array"
+          },
+          "narrationClaimed": { "type": "boolean" },
+          "narrationEvents": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": { "type": "number" },
+                "eventId": { "type": "string" },
+                "kind": { "enum": ["progress", "completed", "question"], "type": "string" },
+                "text": { "type": "string" }
+              },
+              "required": ["eventId", "kind", "text", "createdAt"],
+              "type": "object"
+            },
+            "maxItems": 20,
             "type": "array"
           },
           "note": {
@@ -1889,6 +2008,23 @@
               },
               { "type": "null" }
             ]
+          },
+          "observationDeliveries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "notificationId": { "type": "string" },
+                "projectId": { "type": "string" },
+                "state": {
+                  "enum": ["pending", "unknown", "accepted", "suppressed"],
+                  "type": "string"
+                }
+              },
+              "required": ["notificationId", "projectId", "state"],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
           },
           "ok": { "type": "boolean" },
           "ownerQuestion": {
@@ -2276,6 +2412,8 @@
               "notificationDnd": { "const": "none", "type": "string" },
               "notificationPresent": { "enum": ["all", "urgent", "none"], "type": "string" },
               "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
+              "observationTaskDone": { "type": "boolean" },
+              "observationTaskNeedsInput": { "type": "boolean" },
               "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
               "planApproval": { "enum": ["always", "large", "never"], "type": "string" },
               "planningExecution": {
@@ -2377,6 +2515,7 @@
               "summaryRefreshMessages": { "maximum": 200, "minimum": 10, "type": "integer" },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "voiceNarration": { "type": "boolean" },
               "voiceSetupComplete": { "type": "boolean" },
               "workerCompactPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
               "workerHandoffPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
@@ -2418,6 +2557,8 @@
               "notificationAway",
               "notificationDnd",
               "summaryRefreshMessages",
+              "observationTaskDone",
+              "observationTaskNeedsInput",
               "execution",
               "chiefExecution",
               "replyExecution",
@@ -2440,6 +2581,20 @@
             },
             "maxItems": 1000,
             "type": "array"
+          },
+          "sendIdentity": {
+            "additionalProperties": false,
+            "properties": { "instanceId": { "type": "string" } },
+            "required": ["instanceId"],
+            "type": "object"
+          },
+          "sendReceipt": {
+            "additionalProperties": false,
+            "properties": {
+              "status": { "enum": ["settled", "unknown", "refused", "notSent"], "type": "string" }
+            },
+            "required": ["status"],
+            "type": "object"
           },
           "snapshot": {
             "additionalProperties": false,
@@ -2529,6 +2684,7 @@
                   "conversations": { "type": "boolean" },
                   "jobs": { "type": "boolean" },
                   "notes": { "type": "boolean" },
+                  "observationTasks": { "type": "boolean" },
                   "quickAutomations": { "type": "boolean" },
                   "quickNotes": { "type": "boolean" }
                 },
@@ -3114,7 +3270,9 @@
                         "job.waiting",
                         "job.failed",
                         "budget.exhausted",
-                        "owner.question"
+                        "owner.question",
+                        "task.done",
+                        "task.needsInput"
                       ],
                       "type": "string"
                     },
@@ -3124,6 +3282,12 @@
                       "maxItems": 1000,
                       "type": "array"
                     },
+                    "taskCreatedAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "taskId": { "type": "string" },
                     "title": { "type": "string" }
                   },
                   "required": [
@@ -3468,6 +3632,8 @@
                   "notificationDnd": { "const": "none", "type": "string" },
                   "notificationPresent": { "enum": ["all", "urgent", "none"], "type": "string" },
                   "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
+                  "observationTaskDone": { "type": "boolean" },
+                  "observationTaskNeedsInput": { "type": "boolean" },
                   "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
                   "planApproval": { "enum": ["always", "large", "never"], "type": "string" },
                   "planningExecution": {
@@ -3569,6 +3735,7 @@
                   "summaryRefreshMessages": { "maximum": 200, "minimum": 10, "type": "integer" },
                   "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "voiceNarration": { "type": "boolean" },
                   "voiceSetupComplete": { "type": "boolean" },
                   "workerCompactPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
                   "workerHandoffPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
@@ -3610,6 +3777,8 @@
                   "notificationAway",
                   "notificationDnd",
                   "summaryRefreshMessages",
+                  "observationTaskDone",
+                  "observationTaskNeedsInput",
                   "execution",
                   "chiefExecution",
                   "replyExecution",
@@ -4409,6 +4578,51 @@
           {
             "additionalProperties": false,
             "properties": {
+              "authorityGeneration": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "commandId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
+              "expectedTitle": { "type": "string" },
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "model": { "type": "string" },
+              "modelSettings": {
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              },
+              "providerAccountId": { "type": "string" },
+              "sessionId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
+              "type": { "const": "regenerateTitle", "type": "string" }
+            },
+            "required": ["commandId", "sessionId", "type", "expectedTitle", "harness", "model"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
               "attachments": {
                 "items": {
                   "additionalProperties": false,
@@ -4758,6 +4972,7 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
               },
+              "expectedRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "queued": {
                 "additionalProperties": false,
                 "properties": {
@@ -5325,6 +5540,11 @@
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                         "type": "string"
                       },
+                      "expectedRevision": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "queued": {
                         "additionalProperties": false,
                         "properties": {
@@ -5442,6 +5662,7 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
               },
+              "expectedRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "harness": {
                 "enum": [
                   "codex",
@@ -11996,7 +12217,11 @@
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "properties": { "projectId": { "type": "string" } },
+        "properties": {
+          "historyCursor": { "type": "string" },
+          "historyLimit": { "maximum": 100, "minimum": 1, "type": "integer" },
+          "projectId": { "type": "string" }
+        },
         "required": ["projectId"],
         "type": "object"
       },
@@ -12442,6 +12667,7 @@
             },
             "type": "array"
           },
+          "historyNextCursor": { "type": "string" },
           "runs": {
             "items": {
               "additionalProperties": false,
@@ -19564,6 +19790,16 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "inspectionId": { "type": "string" },
+                  "nodeId": { "type": "string" },
+                  "type": { "const": "pressNode", "type": "string" }
+                },
+                "required": ["type", "inspectionId", "nodeId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
                   "text": { "type": "string" },
                   "timeoutMs": { "maximum": 120000, "minimum": 1, "type": "integer" },
                   "type": { "const": "waitForText", "type": "string" }
@@ -19574,9 +19810,11 @@
             ]
           },
           "deviceId": { "type": "string" },
-          "projectId": { "type": "string" }
+          "leaseId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "requestId": { "type": "string" }
         },
-        "required": ["deviceId", "action"],
+        "required": ["deviceId", "leaseId", "requestId", "action"],
         "type": "object"
       },
       "requiredCapability": "transport.ws.devices.v1",
@@ -19644,6 +19882,215 @@
         "type": "object"
       },
       "retry": "never",
+      "scope": "device"
+    },
+    "devices.control.claim": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "requestId": { "type": "string" }
+        },
+        "required": ["deviceId", "requestId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.devices.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "expiresAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "leaseId": { "type": "string" }
+        },
+        "required": ["deviceId", "leaseId", "expiresAt"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "devices.control.release": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "leaseId": { "type": "string" },
+          "projectId": { "type": "string" }
+        },
+        "required": ["deviceId", "leaseId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.devices.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "released": { "const": true, "type": "boolean" } },
+        "required": ["released"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "devices.control.renew": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "leaseId": { "type": "string" },
+          "projectId": { "type": "string" }
+        },
+        "required": ["deviceId", "leaseId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.devices.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "expiresAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "leaseId": { "type": "string" }
+        },
+        "required": ["deviceId", "leaseId", "expiresAt"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "devices.control.status": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "deviceId": { "type": "string" }, "projectId": { "type": "string" } },
+        "required": ["deviceId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.devices.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "busy": { "type": "boolean" }, "deviceId": { "type": "string" } },
+        "required": ["deviceId", "busy"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "devices.inspect": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "leaseId": { "type": "string" },
+          "projectId": { "type": "string" }
+        },
+        "required": ["deviceId", "leaseId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.devices.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "coordinateSpace": { "enum": ["pixels", "points"], "type": "string" },
+          "deviceId": { "type": "string" },
+          "frame": {
+            "additionalProperties": false,
+            "properties": {
+              "base64": { "type": "string" },
+              "capturedAt": { "type": "string" },
+              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+            },
+            "required": ["mime", "base64", "capturedAt"],
+            "type": "object"
+          },
+          "inspectedAt": { "type": "string" },
+          "inspectionId": { "type": "string" },
+          "nodes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "bounds": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": { "type": "number" },
+                    "width": { "type": "number" },
+                    "x": { "type": "number" },
+                    "y": { "type": "number" }
+                  },
+                  "required": ["x", "y", "width", "height"],
+                  "type": "object"
+                },
+                "clickable": { "type": "boolean" },
+                "enabled": { "type": "boolean" },
+                "id": { "type": "string" },
+                "identity": { "type": "string" },
+                "label": { "type": "string" },
+                "role": { "type": "string" }
+              },
+              "required": ["id", "label", "role", "identity", "bounds", "enabled", "clickable"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "raw": { "type": "string" },
+          "viewport": {
+            "additionalProperties": false,
+            "properties": {
+              "height": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "width": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": ["width", "height"],
+            "type": "object"
+          }
+        },
+        "required": [
+          "deviceId",
+          "inspectionId",
+          "raw",
+          "inspectedAt",
+          "frame",
+          "coordinateSpace",
+          "nodes"
+        ],
+        "type": "object"
+      },
+      "retry": "safe-query",
       "scope": "device"
     },
     "devices.list": {
@@ -19751,6 +20198,7 @@
             "additionalProperties": false,
             "properties": {
               "agentInstalled": { "type": "boolean" },
+              "controlProtocol": { "const": 1, "type": "number" },
               "installed": { "type": "boolean" },
               "lastError": { "type": "string" },
               "platform": { "type": "string" },
@@ -20111,6 +20559,7 @@
         "additionalProperties": false,
         "properties": {
           "agentInstalled": { "type": "boolean" },
+          "controlProtocol": { "const": 1, "type": "number" },
           "installed": { "type": "boolean" },
           "lastError": { "type": "string" },
           "platform": { "type": "string" },
@@ -20154,6 +20603,7 @@
         "additionalProperties": false,
         "properties": {
           "agentInstalled": { "type": "boolean" },
+          "controlProtocol": { "const": 1, "type": "number" },
           "installed": { "type": "boolean" },
           "lastError": { "type": "string" },
           "platform": { "type": "string" },
@@ -20197,6 +20647,7 @@
         "additionalProperties": false,
         "properties": {
           "agentInstalled": { "type": "boolean" },
+          "controlProtocol": { "const": 1, "type": "number" },
           "installed": { "type": "boolean" },
           "lastError": { "type": "string" },
           "platform": { "type": "string" },
@@ -20240,6 +20691,7 @@
         "additionalProperties": false,
         "properties": {
           "agentInstalled": { "type": "boolean" },
+          "controlProtocol": { "const": 1, "type": "number" },
           "installed": { "type": "boolean" },
           "lastError": { "type": "string" },
           "platform": { "type": "string" },
@@ -26075,6 +26527,703 @@
       "retry": "never",
       "scope": "device"
     },
+    "native.services.assistant.browser.panel": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "browser.status",
+              "browser.claim",
+              "browser.release",
+              "browser.open",
+              "browser.frame",
+              "browser.resize",
+              "browser.input",
+              "browser.close",
+              "browser.operation.status"
+            ],
+            "type": "string"
+          },
+          "environmentId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "projectCwd": { "type": "string" },
+          "projectId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          },
+          "threadId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environmentId",
+          "projectId",
+          "threadId",
+          "projectCwd",
+          "action",
+          "input",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.attest": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "signature": { "type": "string" } },
+        "required": ["signature"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.call": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.challenge": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.issue": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.issue.status": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.nativeChallenge": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.origin": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.publicKey": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "environmentId": { "type": "string" }, "publicKey": { "type": "string" } },
+        "required": ["publicKey", "environmentId"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.delegation.revoke": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.notification.authorize": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "notificationId": { "type": "string" },
+              "operationHash": { "type": "string" },
+              "threadId": { "type": "string" }
+            },
+            "required": ["threadId", "notificationId", "operationHash"],
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "authorized": { "type": "boolean" } },
+        "required": ["authorized"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "native.services.assistant.observations.ingest": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": { "$ref": "#/$defs/__schema0" },
+        "propertyNames": { "type": "string" },
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "native.services.assistant.presence.get": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -26130,6 +27279,137 @@
         "type": "object"
       },
       "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.visibility.epoch": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "epoch": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" } },
+        "required": ["epoch"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "native.services.assistant.visibility.reopen": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "items": { "$ref": "#/$defs/__schema0" }, "type": "array" },
+              {
+                "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": { "$ref": "#/$defs/__schema0" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "epoch": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" } },
+        "required": ["epoch"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.visibility.revoke": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "epoch": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" } },
+        "required": ["epoch"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.assistant.workspace.authorize": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "operationHash": { "type": "string" },
+              "requestId": { "type": "string" },
+              "threadId": { "type": "string" }
+            },
+            "required": ["threadId", "requestId", "operationHash"],
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "authorized": { "type": "boolean" } },
+        "required": ["authorized"],
+        "type": "object"
+      },
+      "retry": "safe-query",
       "scope": "device"
     },
     "native.services.conversation.access.issue": {
@@ -26229,6 +27509,51 @@
           "action": {
             "enum": [
               "ssh.workspace.approve",
+              "workspace.projects.select",
+              "workspace.sessions.create",
+              "workspace.sessions.open",
+              "workspace.sessions.submit",
+              "workspace.sessions.submit.status",
+              "workspace.sessions.stop",
+              "privacy.scope.capture",
+              "privacy.account.capture",
+              "voice.generation.retire",
+              "voice.generation.status",
+              "voice.generation.source",
+              "delegation.grants",
+              "delegation.call",
+              "inbox.room.execute",
+              "inbox.room.scope",
+              "observations.native.baseline",
+              "observations.native.projectBaseline",
+              "observations.native.projectComplete",
+              "observations.native.complete",
+              "workspace.operation.status",
+              "workspace.operation.execute",
+              "ui.tools.open",
+              "ui.tools.status",
+              "assistant.notification.deliver",
+              "assistant.notification.status",
+              "desktop.act.authorize",
+              "management.write.authorize",
+              "preferences.read",
+              "preferences.templateRead",
+              "preferences.patch",
+              "preferences.status",
+              "providerManagement.read",
+              "providerManagement.patch",
+              "providerManagement.status",
+              "providerManagement.quotaRefresh",
+              "organization.read",
+              "organization.patch",
+              "organization.status",
+              "servers.list",
+              "servers.get",
+              "servers.ssh.execute",
+              "servers.ssh.status",
+              "servers.ssh.cancel",
+              "servers.ssh.save",
+              "servers.ssh.remove",
               "ssh.workspace.close.approve",
               "ptyMobile.create",
               "ptyMobile.attach",
@@ -26557,6 +27882,29 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
               },
+              "resultUnavailable": { "const": true, "type": "boolean" },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "state": { "const": "unknown", "type": "string" },
+              "target": { "const": "native.services.workspace.format", "type": "string" }
+            },
+            "required": [
+              "originalId",
+              "byteLength",
+              "sha256",
+              "target",
+              "state",
+              "resultUnavailable"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "originalId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
               "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
               "state": { "const": "unknown", "type": "string" },
               "target": {
@@ -26868,6 +28216,29 @@
               }
             },
             "required": ["originalId", "byteLength", "sha256", "target", "consumedResult", "state"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "originalId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
+              "resultUnavailable": { "const": true, "type": "boolean" },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "state": { "const": "unknown", "type": "string" },
+              "target": { "const": "native.services.workspace.format", "type": "string" }
+            },
+            "required": [
+              "originalId",
+              "byteLength",
+              "sha256",
+              "target",
+              "state",
+              "resultUnavailable"
+            ],
             "type": "object"
           },
           {
@@ -29085,6 +30456,10 @@
                 "propertyNames": { "type": "string" },
                 "type": "object"
               },
+              "sourceEpoch": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
               "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
@@ -29284,6 +30659,10 @@
                 },
                 "runtimeMode": {
                   "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                  "type": "string"
+                },
+                "sourceEpoch": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
                 },
                 "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
@@ -29503,6 +30882,10 @@
                       "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                       "type": "string"
                     },
+                    "sourceEpoch": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                     "title": { "type": "string" },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -29593,7 +30976,11 @@
                     "additionalProperties": false,
                     "properties": {
                       "kind": { "const": "unchanged", "type": "string" },
-                      "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                      "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                      "sourceEpoch": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                        "type": "string"
+                      }
                     },
                     "required": ["kind", "revision"],
                     "type": "object"
@@ -29732,6 +31119,10 @@
                             "additionalProperties": { "$ref": "#/$defs/__schema0" },
                             "propertyNames": { "type": "string" },
                             "type": "object"
+                          },
+                          "sourceEpoch": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
                           },
                           "status": {
                             "enum": ["idle", "running", "interrupted"],
@@ -29887,6 +31278,10 @@
                             "propertyNames": { "type": "string" },
                             "type": "object"
                           },
+                          "sourceEpoch": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          },
                           "status": {
                             "enum": ["idle", "running", "interrupted"],
                             "type": "string"
@@ -29911,6 +31306,10 @@
                 "properties": {
                   "kind": { "const": "chunked", "type": "string" },
                   "length": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "sourceEpoch": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "transfer": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -32636,6 +34035,10 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
             "type": "string"
           },
+          "sourceEpoch": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          },
           "waitMs": { "maximum": 30000, "minimum": 0, "type": "integer" }
         },
         "required": ["sessionId"],
@@ -32668,7 +34071,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "kind": { "const": "unchanged", "type": "string" },
-                  "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                  "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "sourceEpoch": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  }
                 },
                 "required": ["kind", "revision"],
                 "type": "object"
@@ -32795,6 +34202,10 @@
                         "additionalProperties": { "$ref": "#/$defs/__schema0" },
                         "propertyNames": { "type": "string" },
                         "type": "object"
+                      },
+                      "sourceEpoch": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                        "type": "string"
                       },
                       "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                       "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
@@ -32931,6 +34342,10 @@
                         "propertyNames": { "type": "string" },
                         "type": "object"
                       },
+                      "sourceEpoch": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                        "type": "string"
+                      },
                       "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                       "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                     },
@@ -32948,6 +34363,10 @@
             "properties": {
               "kind": { "const": "chunked", "type": "string" },
               "length": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "sourceEpoch": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                "type": "string"
+              },
               "transfer": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                 "type": "string"
@@ -43178,6 +44597,47 @@
         {
           "additionalProperties": false,
           "properties": {
+            "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+            "commandId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "expectedTitle": { "type": "string" },
+            "harness": {
+              "enum": [
+                "codex",
+                "claude",
+                "cursor",
+                "grok",
+                "opencode",
+                "pi",
+                "omp",
+                "fx",
+                "hermes",
+                "antigravity",
+                "acp"
+              ],
+              "type": "string"
+            },
+            "model": { "type": "string" },
+            "modelSettings": {
+              "additionalProperties": { "type": "string" },
+              "propertyNames": { "type": "string" },
+              "type": "object"
+            },
+            "providerAccountId": { "type": "string" },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "type": { "const": "regenerateTitle", "type": "string" }
+          },
+          "required": ["commandId", "sessionId", "type", "expectedTitle", "harness", "model"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "attachments": {
               "items": {
                 "additionalProperties": false,
@@ -43513,6 +44973,7 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
             },
+            "expectedRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
             "queued": {
               "additionalProperties": false,
               "properties": {
@@ -44069,6 +45530,11 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
                     },
+                    "expectedRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
@@ -44182,6 +45648,7 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
             },
+            "expectedRevision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
             "harness": {
               "enum": [
                 "codex",
@@ -45233,6 +46700,22 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "generationKey": { "type": "string" },
+                        "op": { "const": "voice.runtime.register", "type": "string" },
+                        "seedMessageIds": {
+                          "items": { "type": "string" },
+                          "maxItems": 6,
+                          "type": "array"
+                        },
+                        "summaryProofId": { "type": "string" },
+                        "threadId": { "type": "string" }
+                      },
+                      "required": ["op", "threadId", "generationKey", "seedMessageIds"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
                         "expectedJobVersion": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -45433,6 +46916,39 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "generation": { "type": "string" },
+                        "op": { "const": "narration.pending", "type": "string" },
+                        "threadId": { "type": "string" }
+                      },
+                      "required": ["op", "threadId", "generation"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "eventId": { "type": "string" },
+                        "generation": { "type": "string" },
+                        "op": { "const": "narration.claim", "type": "string" },
+                        "threadId": { "type": "string" }
+                      },
+                      "required": ["op", "threadId", "eventId", "generation"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "eventId": { "type": "string" },
+                        "generation": { "type": "string" },
+                        "op": { "const": "narration.settle", "type": "string" },
+                        "state": { "enum": ["delivered", "unknown"], "type": "string" },
+                        "threadId": { "type": "string" }
+                      },
+                      "required": ["op", "threadId", "eventId", "generation", "state"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
                         "expectedVersion": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -45588,6 +47104,8 @@
                               "type": "string"
                             },
                             "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
+                            "observationTaskDone": { "type": "boolean" },
+                            "observationTaskNeedsInput": { "type": "boolean" },
                             "perWakeTokenCap": {
                               "maximum": 1000000,
                               "minimum": 1000,
@@ -45719,6 +47237,7 @@
                               "minimum": 10,
                               "type": "integer"
                             },
+                            "voiceNarration": { "type": "boolean" },
                             "voiceSetupComplete": { "type": "boolean" },
                             "workerCompactPercent": {
                               "maximum": 99,
@@ -45919,7 +47438,14 @@
                     },
                     {
                       "additionalProperties": false,
+                      "properties": { "op": { "const": "threads.sendIdentity", "type": "string" } },
+                      "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
                       "properties": {
+                        "expectedHostInstance": { "type": "string" },
                         "idempotencyKey": { "type": "string" },
                         "op": { "const": "threads.send", "type": "string" },
                         "sessionId": { "type": "string" },
@@ -45928,6 +47454,25 @@
                         "via": { "enum": ["voice", "text"], "type": "string" }
                       },
                       "required": ["op", "threadId", "via", "text", "idempotencyKey"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expectedHostInstance": { "type": "string" },
+                        "idempotencyKey": { "type": "string" },
+                        "op": { "const": "threads.sendStatus", "type": "string" },
+                        "sessionId": { "type": "string" },
+                        "text": { "type": "string" },
+                        "threadId": { "type": "string" }
+                      },
+                      "required": [
+                        "op",
+                        "threadId",
+                        "text",
+                        "idempotencyKey",
+                        "expectedHostInstance"
+                      ],
                       "type": "object"
                     },
                     {
@@ -46141,6 +47686,25 @@
                       "additionalProperties": false,
                       "properties": { "op": { "const": "manual.list", "type": "string" } },
                       "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "op": { "const": "observation.delivery.list", "type": "string" },
+                        "projectId": { "type": "string" }
+                      },
+                      "required": ["op", "projectId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "notificationId": { "type": "string" },
+                        "op": { "const": "observation.delivery.refresh", "type": "string" },
+                        "projectId": { "type": "string" }
+                      },
+                      "required": ["op", "projectId", "notificationId"],
                       "type": "object"
                     },
                     {
@@ -47321,6 +48885,117 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.control.status", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "deviceId": { "type": "string" }, "projectId": { "type": "string" } },
+              "required": ["deviceId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.control.claim", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "deviceId": { "type": "string" },
+                "projectId": { "type": "string" },
+                "requestId": { "type": "string" }
+              },
+              "required": ["deviceId", "requestId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.control.release", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "deviceId": { "type": "string" },
+                "leaseId": { "type": "string" },
+                "projectId": { "type": "string" }
+              },
+              "required": ["deviceId", "leaseId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.control.renew", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "deviceId": { "type": "string" },
+                "leaseId": { "type": "string" },
+                "projectId": { "type": "string" }
+              },
+              "required": ["deviceId", "leaseId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.inspect", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "deviceId": { "type": "string" },
+                "leaseId": { "type": "string" },
+                "projectId": { "type": "string" }
+              },
+              "required": ["deviceId", "leaseId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "devices.action", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -47391,6 +49066,16 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "inspectionId": { "type": "string" },
+                        "nodeId": { "type": "string" },
+                        "type": { "const": "pressNode", "type": "string" }
+                      },
+                      "required": ["type", "inspectionId", "nodeId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
                         "text": { "type": "string" },
                         "timeoutMs": { "maximum": 120000, "minimum": 1, "type": "integer" },
                         "type": { "const": "waitForText", "type": "string" }
@@ -47401,9 +49086,11 @@
                   ]
                 },
                 "deviceId": { "type": "string" },
-                "projectId": { "type": "string" }
+                "leaseId": { "type": "string" },
+                "projectId": { "type": "string" },
+                "requestId": { "type": "string" }
               },
-              "required": ["deviceId", "action"],
+              "required": ["deviceId", "leaseId", "requestId", "action"],
               "type": "object"
             }
           },
@@ -47722,6 +49409,443 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.delegation.publicKey",
+              "type": "string"
+            },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.delegation.origin", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.delegation.nativeChallenge",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.delegation.attest", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.delegation.issue", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.delegation.issue.status",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.delegation.challenge",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.delegation.call", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.delegation.revoke", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.visibility.epoch", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.notification.authorize",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "notificationId": { "type": "string" },
+                    "operationHash": { "type": "string" },
+                    "threadId": { "type": "string" }
+                  },
+                  "required": ["threadId", "notificationId", "operationHash"],
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.workspace.authorize",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "operationHash": { "type": "string" },
+                    "requestId": { "type": "string" },
+                    "threadId": { "type": "string" }
+                  },
+                  "required": ["threadId", "requestId", "operationHash"],
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.browser.panel", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "browser.status",
+                    "browser.claim",
+                    "browser.release",
+                    "browser.open",
+                    "browser.frame",
+                    "browser.resize",
+                    "browser.input",
+                    "browser.close",
+                    "browser.operation.status"
+                  ],
+                  "type": "string"
+                },
+                "environmentId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                },
+                "projectCwd": { "type": "string" },
+                "projectId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "requestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "threadId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "environmentId",
+                "projectId",
+                "threadId",
+                "projectCwd",
+                "action",
+                "input",
+                "requestId"
+              ],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": {
+              "const": "native.services.assistant.observations.ingest",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.visibility.revoke", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.visibility.reopen", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": { "$ref": "#/$defs/__schema0" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "native.services.assistant.presence.set", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -47788,6 +49912,51 @@
                 "action": {
                   "enum": [
                     "ssh.workspace.approve",
+                    "workspace.projects.select",
+                    "workspace.sessions.create",
+                    "workspace.sessions.open",
+                    "workspace.sessions.submit",
+                    "workspace.sessions.submit.status",
+                    "workspace.sessions.stop",
+                    "privacy.scope.capture",
+                    "privacy.account.capture",
+                    "voice.generation.retire",
+                    "voice.generation.status",
+                    "voice.generation.source",
+                    "delegation.grants",
+                    "delegation.call",
+                    "inbox.room.execute",
+                    "inbox.room.scope",
+                    "observations.native.baseline",
+                    "observations.native.projectBaseline",
+                    "observations.native.projectComplete",
+                    "observations.native.complete",
+                    "workspace.operation.status",
+                    "workspace.operation.execute",
+                    "ui.tools.open",
+                    "ui.tools.status",
+                    "assistant.notification.deliver",
+                    "assistant.notification.status",
+                    "desktop.act.authorize",
+                    "management.write.authorize",
+                    "preferences.read",
+                    "preferences.templateRead",
+                    "preferences.patch",
+                    "preferences.status",
+                    "providerManagement.read",
+                    "providerManagement.patch",
+                    "providerManagement.status",
+                    "providerManagement.quotaRefresh",
+                    "organization.read",
+                    "organization.patch",
+                    "organization.status",
+                    "servers.list",
+                    "servers.get",
+                    "servers.ssh.execute",
+                    "servers.ssh.status",
+                    "servers.ssh.cancel",
+                    "servers.ssh.save",
+                    "servers.ssh.remove",
                     "ssh.workspace.close.approve",
                     "ptyMobile.create",
                     "ptyMobile.attach",
@@ -48930,7 +51099,11 @@
             "method": { "const": "crews.list", "type": "string" },
             "params": {
               "additionalProperties": false,
-              "properties": { "projectId": { "type": "string" } },
+              "properties": {
+                "historyCursor": { "type": "string" },
+                "historyLimit": { "maximum": 100, "minimum": 1, "type": "integer" },
+                "projectId": { "type": "string" }
+              },
               "required": ["projectId"],
               "type": "object"
             }
@@ -55869,6 +58042,10 @@
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
                 },
+                "sourceEpoch": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "waitMs": { "maximum": 30000, "minimum": 0, "type": "integer" }
               },
               "required": ["sessionId"],
@@ -56865,6 +59042,58 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "authorityGeneration": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "commandId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "expectedTitle": { "type": "string" },
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "model": { "type": "string" },
+                    "modelSettings": {
+                      "additionalProperties": { "type": "string" },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    },
+                    "providerAccountId": { "type": "string" },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "type": { "const": "regenerateTitle", "type": "string" }
+                  },
+                  "required": [
+                    "commandId",
+                    "sessionId",
+                    "type",
+                    "expectedTitle",
+                    "harness",
+                    "model"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
                     "attachments": {
                       "items": {
                         "additionalProperties": false,
@@ -57217,6 +59446,11 @@
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
+                    },
+                    "expectedRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "queued": {
                       "additionalProperties": false,
@@ -57811,6 +60045,11 @@
                               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                               "type": "string"
                             },
+                            "expectedRevision": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
                             "queued": {
                               "additionalProperties": false,
                               "properties": {
@@ -57935,6 +60174,11 @@
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
+                    },
+                    "expectedRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "harness": {
                       "enum": [
@@ -58953,6 +61197,10 @@
           "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
           "type": "string"
         },
+        "sourceEpoch": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+          "type": "string"
+        },
         "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
         "title": { "type": "string" },
         "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -58991,7 +61239,11 @@
               "additionalProperties": false,
               "properties": {
                 "kind": { "const": "unchanged", "type": "string" },
-                "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "sourceEpoch": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
               },
               "required": ["kind", "revision"],
               "type": "object"
@@ -59114,6 +61366,10 @@
                       "additionalProperties": { "$ref": "#/$defs/__schema0" },
                       "propertyNames": { "type": "string" },
                       "type": "object"
+                    },
+                    "sourceEpoch": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                      "type": "string"
                     },
                     "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
@@ -59246,6 +61502,10 @@
                       "propertyNames": { "type": "string" },
                       "type": "object"
                     },
+                    "sourceEpoch": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                   },
@@ -59263,6 +61523,10 @@
           "properties": {
             "kind": { "const": "chunked", "type": "string" },
             "length": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "sourceEpoch": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
             "transfer": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
               "type": "string"
@@ -59369,6 +61633,10 @@
           "propertyNames": { "type": "string" },
           "type": "object"
         },
+        "sourceEpoch": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+          "type": "string"
+        },
         "status": { "enum": ["idle", "running", "interrupted"], "type": "string" },
         "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
       },
@@ -59451,5 +61719,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "8fbefcc2431d39fd4bfd15c2d05912cd73c9c14db9001617bff37af7e2502a0e"
+  "schemaHash": "a768d6edceb62c8693176bd6841ba23640b97237908aa58ba5408acb9995d04b"
 }

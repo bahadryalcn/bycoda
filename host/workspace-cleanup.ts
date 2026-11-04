@@ -14,8 +14,8 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFileAsync, runGitText } from "../src/shared/lib/processExecution.node";
-import { withHostGitMutation } from "./git-mutations";
-import { invalidateHostWorktrees } from "./git-worktrees";
+import { withHostGitMutation } from "./git/git-mutations";
+import { invalidateHostWorktrees } from "./git/git-worktrees";
 import {
   canonicalWorkspaceDirectorySync,
   canonicalWorkspacePathSync,
@@ -277,9 +277,7 @@ async function sourceState(path: string, detachedLinks = new Map<string, string>
         file !== "temp/" &&
         !file.startsWith("temp/"),
     );
-  const index = (
-    await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
-  ).trim();
+  const index = resolve(path, (await git(path, ["rev-parse", "--git-path", "index"])).trim());
   const fingerprint = await fingerprintSource({
     path,
     files,
@@ -652,9 +650,7 @@ export async function guardedRemoveWorkspace(
         force: false,
         filter: (source) => source !== join(input.path, ".git"),
       });
-      const index = (
-        await git(input.path, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
-      ).trim();
+      const index = resolve(input.path, (await git(input.path, ["rev-parse", "--git-path", "index"])).trim());
       if (exists(index)) copyFileSync(index, join(input.archiveRoot, "index"));
       const ref = `refs/bycoda/rewinds/${input.operationId}/rescue-head`;
       await git(input.projectCwd, ["update-ref", ref, registered.head]);
@@ -826,9 +822,7 @@ export function createWorkspaceRemovalService(
           registered.locked
         )
           throw new Error("Managed ownership/branch/registration is invalid or locked.");
-        const common = (
-          await git(workspace.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        ).trim();
+        const common = resolve(workspace.path, (await git(workspace.path, ["rev-parse", "--git-common-dir"])).trim());
         if (!sameWorkspacePath(common, workspace.repositoryId))
           throw new Error("Workspace repository identity changed.");
         links = await inventoryWorkspaceLinks(workspace.path);

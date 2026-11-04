@@ -249,6 +249,8 @@ export function AssistantSetup({
             notificationPresent: patch.notificationPresent,
             notificationAway: patch.notificationAway,
             notificationDnd: patch.notificationDnd,
+            observationTaskDone: patch.observationTaskDone,
+            observationTaskNeedsInput: patch.observationTaskNeedsInput,
             setupComplete: true,
             ...(voice ? { voiceSetupComplete: true } : {}),
             enabled: true,
@@ -363,7 +365,7 @@ export function AssistantSetup({
                 <AssistantProfileFields section="autonomy" value={patch} onChange={update} />
               )}
               {step === 7 && (
-                <AssistantProfileFields section="presence" value={patch} onChange={update} />
+                <AssistantProfileFields section="presence" value={patch} onChange={update} observationTasksAvailable={snapshot?.capabilities.observationTasks === true} />
               )}
               {step === 7 && (
                 <AssistantKeepAwakeStatus

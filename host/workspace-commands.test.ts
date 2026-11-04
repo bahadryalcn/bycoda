@@ -16,11 +16,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceCommands, type WorkspaceCommandDelivery } from "./workspace-commands";
-import { hostWorktrees } from "./git-worktrees";
+import { hostWorktrees } from "./git/git-worktrees";
 import * as workspace from "./workspace";
-import * as gitActions from "./git-actions";
+import * as gitActions from "./git/git-actions";
 
-vi.mock("./git-worktrees", () => ({ hostWorktrees: vi.fn() }));
+vi.mock("./git/git-worktrees", () => ({ hostWorktrees: vi.fn() }));
 const roots: string[] = [];
 
 async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["startMutation"]) {

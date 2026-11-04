@@ -13,6 +13,7 @@ localStorage.setItem("bycoda.formatOnSave", "0");
 let disk = "# Notes\r\nOriginal text\r\n";
 let writes = 0;
 const query = new URLSearchParams(location.search);
+if (query.has("format-error")) localStorage.setItem("bycoda.formatOnSave", "1");
 if (query.has("restore-draft")) localStorage.setItem("bycoda.autosave", "1");
 const files = [newFileTab("/fixture/notes.md", "/fixture")];
 if (query.has("same-name")) files.push(newFileTab("/fixture/archive/notes.md", "/fixture"));
@@ -99,6 +100,10 @@ Object.assign(window, {
     transformCallback: () => 1,
     unregisterCallback: () => {},
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "format_text_file" && query.has("format-error"))
+        throw new Error(
+          "NATIVE_DELIVERY_CAPACITY: retained originals are full; no new request was dispatched",
+        );
       if (command === "native_editor_draft_open") {
         return { version: 1, qualified: false, ownerEpoch: nativeDraftOwner };
       }

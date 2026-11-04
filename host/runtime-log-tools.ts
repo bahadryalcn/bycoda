@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import type { RuntimeLogQuery } from "../src/features/host-tools/runtimeLogTypes";
-import type { SocialService } from "./social";
+import type { SocialService } from "./social/social";
 import type { StoreAuthorization } from "./store-db";
 import {
   assertSessionGrantScope,

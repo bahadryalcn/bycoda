@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 import { durableWrite, GitTurnHistory, refComponent } from "./turn-git-history";
 import type { ManagedWorkspace, TurnGitRecord, WorkspaceActivity } from "./workspace-contracts";
 import type {

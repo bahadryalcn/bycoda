@@ -1,8 +1,119 @@
 import { expect, test } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
+const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
+test("sidebar glass retains selection and grouped action focus without main glass", async ({ page }) => {
+  await page.goto("/tests/browser/session-row-layout.html", { waitUntil: "domcontentloaded" });
+  const row = page.locator('[data-session-card="row-multi"]');
+  const group = page.locator("[data-github-star-prompt]");
+  await expect(row).toBeVisible();
+  await expect(group).toBeVisible();
+  const normal = await group.evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.evaluate(() => {
+    document.documentElement.classList.remove("glass-body", "theme-light");
+    document.documentElement.classList.add("has-native-glass");
+  });
+  const glass = await group.evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(glass).not.toBe(normal);
+  const selected = await row.evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(selected).not.toBe("none");
+  const dismiss = group.getByRole("button", { name: "Dismiss GitHub repository prompt" });
+  await dismiss.focus();
+  await expect(dismiss).toBeFocused();
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(row).toHaveCSS("outline-style", "solid");
+});
+for (const density of ["compact", "detailed"]) {
+  for (const light of [false, true]) {
+    test(`inline title rename density ${density} in ${light ? "light" : "dark"}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width: 800, height: 800 });
+      await page.goto(
+        `/tests/browser/session-row-layout.html?density=${density}&${light ? "light" : "dark"}`,
+        { waitUntil: "domcontentloaded" },
+      );
+      const row = page.locator('[data-session-card="row-working"]');
+      const select = row.locator("[data-session-select]");
+      await select.focus();
+      await select.press("F2");
+      const input = row.getByRole("textbox", { name: "Name", exact: true });
+      await expect(input).toBeFocused();
+      await page.mouse.move(760, 760);
+      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+      await mkdir(titleEvidence, { recursive: true });
+      await page.screenshot({
+        path: path.join(titleEvidence, `${light ? "light" : "dark"}-800-${density}-rename.png`),
+      });
+      await input.fill("Keep original title");
+      await input.press("Escape");
+      await expect(row).toContainText("Arif: 7/24 Sesli Asistan ve İş Takibi");
+    });
+  }
+}
+for (const light of [false, true]) {
+  for (const width of [1280, 800]) {
+    test(`title rename and regenerate at ${width} in ${light ? "light" : "dark"}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/session-row-layout.html?${light ? "light" : "dark"}`, {
+        waitUntil: "domcontentloaded",
+      });
+      const row = page.locator('[data-session-card="row-working"]');
+      await expect(row).toBeVisible({ timeout: 90_000 });
+      await expect(row).toHaveCSS("display", "flex");
+      await expect(row).toHaveCSS("flex-direction", "column");
+      await expect(row).toHaveCSS("align-items", "stretch");
+      await row.click({ button: "right" });
+      const menu = page.getByRole("menu");
+      const rename = menu.getByRole("menuitem", { name: "Rename", exact: false });
+      const regenerate = menu.getByRole("menuitem", { name: "Regenerate title", exact: true });
+      await expect(regenerate).toBeVisible();
+      const renameBox = await rename.boundingBox();
+      const regenerateBox = await regenerate.boundingBox();
+      expect(regenerateBox!.y).toBeGreaterThanOrEqual(renameBox!.y + renameBox!.height);
+      await mkdir(titleEvidence, { recursive: true });
+      await page.screenshot({
+        path: path.join(titleEvidence, `${light ? "light" : "dark"}-${width}-menu.png`),
+      });
+      await rename.click();
+      const input = row.getByRole("textbox", { name: "Name", exact: true });
+      await expect(input).toBeFocused();
+      await page.mouse.move(width - 20, 760);
+      await expect(row.locator("[data-session-row-project]")).toContainText("bycoda");
+      await expect(row.locator("[data-session-row-project]")).toContainText("Working");
+      await expect(row.locator("[data-session-row-branch]")).toContainText("feature/voice");
+      expect(
+        await input.evaluate(
+          (element: HTMLInputElement) =>
+            element.selectionStart === 0 && element.selectionEnd === element.value.length,
+        ),
+      ).toBe(true);
+      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: path.join(titleEvidence, `${light ? "light" : "dark"}-${width}-rename.png`),
+      });
+      await input.fill("An edited title");
+      await input.press("Enter");
+      await expect(row).toContainText("An edited title");
+      await row.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Regenerate title", exact: true }).click();
+      await expect(row).toContainText("Restore Draft Editing in Recovered Sessions");
+      await expect(page.getByRole("status", { name: "Selected session", exact: true })).toHaveText(
+        "",
+      );
+    });
+  }
+}
 for (const light of [false, true]) {
   for (const width of [1280, 800]) {
     test(`session identity, pin and providers at ${width} in ${light ? "light" : "dark"}`, async ({
@@ -384,3 +495,184 @@ test("new session retains selector and error when selected project becomes unava
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
   await expect(dialog.getByRole("combobox")).toBeEnabled();
 });
+
+for (const density of ["standard", "detailed"]) {
+  for (const light of [false, true]) {
+    for (const width of [1280, 800]) {
+      test(`session row space ${density} at ${width} in ${light ? "light" : "dark"}`, async ({
+        page,
+      }) => {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(
+          `/tests/browser/session-row-layout.html?density=${density}&${light ? "light" : "dark"}`,
+          { waitUntil: "domcontentloaded" },
+        );
+        const row = page.locator('[data-session-card="row-working"]');
+        const header = row.locator("[data-session-row-project]");
+        const title = row.locator("[data-session-select]");
+        const branch = row.locator("[data-session-row-branch]");
+        const providers = row.locator("[data-session-row-model]");
+        const archive = header.getByRole("button", { name: /^Archive / });
+        const remove = header.getByRole("button", { name: /^Delete / });
+        await expect(row).toBeVisible();
+        await expect(header.locator("[data-session-row-actions]")).toHaveCount(1);
+        await expect(archive).toHaveCount(1);
+        await expect(remove).toHaveCount(1);
+        await expect(branch.locator("svg")).toHaveCount(0);
+        await expect(branch).toContainText("feature/voice");
+        await expect(header).toContainText("Working");
+        const projectSlot = header.locator("[data-session-project-slot]");
+        const projectMark = projectSlot.locator("[data-session-project-mark]");
+        const pin = projectSlot.getByRole("button", { name: "Pin", exact: true });
+        await expect(pin).toHaveCount(1);
+        await expect(header.getByRole("button", { name: "Pin", exact: true })).toHaveCount(1);
+        const icon = providers.locator("svg, img").first();
+        await expect(icon).toHaveCSS("width", "16px");
+        await expect(icon).toHaveCSS("height", "16px");
+
+        await page.mouse.move(width - 20, 760);
+        await expect(projectMark).toHaveCSS("visibility", "visible");
+        const resting = await Promise.all([
+          title.boundingBox(),
+          branch.boundingBox(),
+          providers.boundingBox(),
+        ]);
+        const spaceEvidence = path.resolve("temp/verification/2026-11-04-session-row-space");
+        await mkdir(spaceEvidence, { recursive: true });
+        await writeFile(
+          path.join(spaceEvidence, "README.md"),
+          "# Session row space verification\n\nIsolated session-row-layout browser fixture. Captures cover standard/detailed density, light/dark themes, and 1280/800 viewports. Resting and hover captures exercise header actions and stable title/footer geometry. No live provider, native installation, or remote acceptance is established. Reuse by running session-row-layout.spec.ts with the session row space test filter.\n",
+        );
+        const captureName = `${light ? "light" : "dark"}-${width}-${density}`;
+        await row.screenshot({ path: path.join(spaceEvidence, `${captureName}-rest.png`) });
+
+        const checkStableContent = async () => {
+          const current = await Promise.all([
+            title.boundingBox(),
+            branch.boundingBox(),
+            providers.boundingBox(),
+          ]);
+          for (let index = 0; index < current.length; index += 1) {
+            expect(current[index]).not.toBeNull();
+            expect(resting[index]).not.toBeNull();
+            for (const dimension of ["x", "y", "width", "height"] as const) {
+              expect(current[index]![dimension]).toBeCloseTo(resting[index]![dimension], 1);
+            }
+          }
+          const [headerBox, archiveBox, deleteBox, titleBox] = await Promise.all([
+            header.boundingBox(),
+            archive.boundingBox(),
+            remove.boundingBox(),
+            title.boundingBox(),
+          ]);
+          expect(archiveBox!.y).toBeGreaterThanOrEqual(headerBox!.y);
+          expect(deleteBox!.y + deleteBox!.height).toBeLessThanOrEqual(titleBox!.y + 1);
+          expect(archiveBox!.x + archiveBox!.width).toBeLessThanOrEqual(deleteBox!.x + 1);
+          await expect(header).toContainText("Working");
+          for (const candidate of [row, page.locator('[data-session-card="row-long"]')]) {
+            expect(
+              await candidate.evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+            ).toBe(true);
+          }
+        };
+        await row.hover();
+        await expect(projectMark).toHaveCSS("visibility", "hidden");
+        await expect(pin).toHaveCSS("opacity", "1");
+        const [slotBox, pinBox] = await Promise.all([projectSlot.boundingBox(), pin.boundingBox()]);
+        expect(pinBox!.x).toBeCloseTo(slotBox!.x, 1);
+        expect(pinBox!.width).toBeCloseTo(slotBox!.width, 1);
+        await expect(archive).toHaveCSS("opacity", "1");
+        await expect(remove).toHaveCSS("opacity", "1");
+        await checkStableContent();
+        await row.screenshot({ path: path.join(spaceEvidence, `${captureName}-hover.png`) });
+        await page.mouse.move(width - 20, 760);
+        await archive.focus();
+        await expect(archive).toBeFocused();
+        await expect(remove).toHaveCSS("opacity", "1");
+        await checkStableContent();
+      });
+    }
+  }
+}
+
+for (const light of [false, true]) {
+  for (const width of [1280, 800]) {
+    test(`status words collapse on interaction at ${width} in ${light ? "light" : "dark"}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/session-row-layout.html?${light ? "light" : "dark"}`, {
+        waitUntil: "networkidle",
+      });
+      const row = page.locator('[data-session-card="row-multi"]');
+      const label = row.locator(".session-row-status-label");
+      const header = row.locator("[data-session-row-project]");
+      await page.mouse.move(width - 20, 760);
+      await expect(label).toHaveText("Interrupted");
+      const resting = await label.boundingBox();
+      expect(resting!.width).toBeGreaterThan(30);
+      const output = path.resolve("temp/verification/2026-11-04-session-status-icons");
+      await mkdir(output, { recursive: true });
+      await writeFile(
+        path.join(output, "README.md"),
+        "Current-source fixture: status words collapse on hover/focus, retain accessible text and restore on exit. Light/dark, 1280/800. No installed/native acceptance.",
+      );
+      await row.screenshot({
+        path: path.join(output, `${light ? "light" : "dark"}-${width}-rest.png`),
+      });
+      await row.hover();
+      await expect(label).toHaveCSS("clip-path", "inset(50%)");
+      expect((await label.boundingBox())!.width).toBe(1);
+      await expect(header.locator("svg").last()).toBeVisible();
+      await expect(header).toContainText("Interrupted");
+      await row.screenshot({
+        path: path.join(output, `${light ? "light" : "dark"}-${width}-hover.png`),
+      });
+      await page.mouse.move(width - 20, 760);
+      await expect(label).toHaveCSS("clip-path", "none");
+      await row.getByRole("button", { name: /^Archive / }).focus();
+      await expect(label).toHaveCSS("clip-path", "inset(50%)");
+      await row.getByRole("button", { name: /^Archive / }).evaluate((element) => element.blur());
+      await expect(label).toHaveCSS("clip-path", "none");
+    });
+  }
+}
+
+for (const light of [false, true]) {
+  for (const width of [1280, 800]) {
+    test(`two session rows remain unobscured at ${width} in ${light ? "light" : "dark"}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/session-row-layout.html?two-rows&${light ? "light" : "dark"}`,
+        { waitUntil: "networkidle" },
+      );
+      const rows = page.locator("[data-session-card]");
+      await expect(rows).toHaveCount(2);
+      const scroller = page.locator(".sidebar-session-scroll");
+      expect(
+        await scroller.evaluate((element) => element.scrollHeight <= element.clientHeight),
+      ).toBe(true);
+      const last = rows.last();
+      await expect(last.locator("[data-session-row-branch]")).toBeVisible();
+      await expect(last.locator("[data-session-row-model]")).toBeVisible();
+      expect(
+        await scroller.evaluate((element) => getComputedStyle(element, "::after").content),
+      ).toBe("none");
+      const output = path.resolve("temp/verification/2026-11-04-session-list-last-row");
+      await mkdir(output, { recursive: true });
+      await writeFile(
+        path.join(output, "README.md"),
+        "Current-source two-row sidebar fixture. Verifies no overflow and no trailing layer obscures the final branch/provider row. Light/dark at 1280/800. No native installation acceptance.",
+      );
+      await page.mouse.move(width - 20, 760);
+      await scroller.screenshot({
+        path: path.join(output, `${light ? "light" : "dark"}-${width}.png`),
+      });
+    });
+  }
+}

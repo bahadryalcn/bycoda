@@ -1,4 +1,45 @@
+import { executeAssistantObservationTool, isAssistantObservationAction, observationRoomConsumer } from "./assistant/observations/assistant-observation-tools";
+import { AssistantObservationPages } from "./assistant/observations/assistant-observation-pages";
+import { AssistantObservationNativePages, type NativePageScope } from "./assistant/observations/assistant-observation-native-pages";
+import { AssistantObservationHostPages } from "./assistant/observations/assistant-observation-host-pages";
+import { verifyNativeObservationPage, verifyNativeObservationCompletion, type NativeObservationCapture } from "./assistant/observations/assistant-native-observation-page";
+import { roomNativeResult, mergeNativeLibraryProofs, type NativeLibraryProof } from "./assistant/native/assistant-native-library-proof";
+import { AssistantNativeVoiceLeases, type NativeVoiceLease } from "./assistant/native/assistant-native-voice-leases";
+import { AssistantObservationProjectPages, collectGoalObservationProjects } from "./assistant/observations/assistant-observation-project-pages";
 import { createNativeDevicesService } from "./domains/native-devices/service";
+import { RoomAttestationSigner, roomAttestationKeyPath } from "./assistant/room/assistant-room-attestation";
+import { createRoomNativeTargetAdapter } from "./assistant/room/assistant-room-native-target";
+import { hostRoomDelegationStore } from "./assistant/room/assistant-room-delegation-store";
+import { conversationGitReviewHash } from "./conversation/conversation-git-review";
+import {
+  ConversationManagementTools,
+  isManagementAction,
+  managementPage,
+  managementCommand,
+  pageDesktopManagementSnapshot,
+  type ManagementReceipt,
+  type GlobalManagementPrincipal,
+  type ManagementAction,
+} from "./conversation/conversation-management-tools";
+import { ConversationThreadWorkTools, THREAD_WORK_ACTIONS } from "./conversation/conversation-thread-work-tools";
+import { ConversationThreadCrewTools, threadCrewAction } from "./conversation/conversation-thread-crew-tools";
+import {
+  isSessionManagementAction,
+  dispatchSessionManagement,
+} from "./conversation/conversation-session-management";
+import {
+  ConversationManagementRuntime,
+  isGlobalRuntimeRead,
+  isRuntimeManagementAction,
+} from "./conversation/conversation-management-runtime";
+import { projectManagementPath, runConversationGitAction } from "./conversation/conversation-project-management";
+import {
+  dispatchWorkspaceManagement,
+  isWorkspaceManagementAction,
+} from "./conversation/conversation-workspace-management";
+import { conversationListArguments, pageConversationListResult } from "./conversation/conversation-list-page";
+import { conversationSessionPage } from "../src/shared/model/conversationSessionPage";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import { bindNativeDevicesOwner } from "./ports/native-devices";
 import { bindNativeDeliveryOwner } from "./ports/native-delivery";
 import { createNativeDeliveryStore } from "./native-delivery-store";
@@ -16,18 +57,42 @@ import {
 import { ModelCatalogCache } from "./model-catalog-cache";
 import { projectDisplayNames } from "./project-display-names";
 import { hostProviderAccounts } from "./provider-accounts";
-import { createRealtimeSecret, createVoiceClientSecret } from "./voice";
-import { VoiceCloudCredentials } from "./voice-cloud-credentials";
-import { LocalVoiceService } from "./voice-local";
-import { inspectVoiceRuntime } from "./voice-runtime";
-import { VoiceSetupService } from "./voice-setup";
+import { createRealtimeSecret, createVoiceClientSecret } from "./voice/voice";
+import { VoiceCloudCredentials } from "./voice/voice-cloud-credentials";
+import { LocalVoiceService } from "./voice/voice-local";
+import { inspectVoiceRuntime } from "./voice/voice-runtime";
+import { VoiceSetupService } from "./voice/voice-setup";
 import {
   prepareVoiceToolDispatch,
   validateVoiceToolList,
   voiceToolCatalog,
+  voiceThreadToolAllowed,
   parseVoiceToolCall,
-} from "./voice-tools";
-import { HostVoiceToolDisclosure } from "./voice-tool-disclosure";
+} from "./voice/voice-tools";
+import { HostVoiceToolDisclosure } from "./voice/voice-tool-disclosure";
+import { createRoomManagementDispatcher, roomManagementDiscovery, roomAccountResult, captureRoomProject, hasRoomProjectCapture } from "./assistant/management/assistant-management-dispatch";
+import { AssistantRoomNotebook, isRoomNotebookAction } from "./assistant/room/assistant-room-notebook";
+import { AssistantRoomSocialSend } from "./assistant/room/assistant-room-social-send";
+import { AssistantRoomInbox, isRoomInboxAction } from "./assistant/room/assistant-room-inbox";
+import { AssistantRoomRemote } from "./assistant/room/assistant-room-remote";
+import { verifyWorkspaceReceipt } from "./assistant/native/assistant-workspace-receipt";
+import { AssistantWorkspaceOwner, workspaceOperationJson } from "./assistant/native/assistant-workspace-owner";
+import { describeWorkspaceTransfer, transferAssistantWorkspaceOperation } from "./assistant/native/assistant-workspace-transfer";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { executeRoomSessionAction, isRoomSessionAction, validateRoomSessionAction } from "./assistant/room/assistant-room-session";
+import { createRoomFileTools, isRoomFileAction, isRoomFileWrite } from "./assistant/room/assistant-room-files";
+import { createRoomDevServerTools, isRoomDevServerAction } from "./assistant/room/assistant-room-dev-servers";
+import { createRoomTerminalTools, isRoomTerminalAction, isRoomTerminalWrite } from "./assistant/room/assistant-room-terminals";
+import { createRoomBrowserTools, isRoomBrowserAction } from "./assistant/room/assistant-room-browser";
+import { isRoomWorkspaceAction, validateRoomWorkspaceAction } from "./assistant/room/assistant-room-workspace";
+import { validateRoomOrganization } from "./assistant/room/assistant-room-organization";
+import { AssistantVisibilityFence } from "./assistant/native/assistant-visibility-fence";
+import { NativeAdmissionOwner } from "./assistant/native/assistant-native-admission";
+import { AssistantVisibilityAdmission } from "./assistant/native/assistant-visibility-admission";
+import { createRoomNativeSourceAdapter } from "./assistant/room/assistant-room-native-adapter";
+import { AssistantObservationJournal } from "./assistant/observations/assistant-observation-journal";
+import { installAssistantObservationProducers } from "./assistant/observations/assistant-observation-producers";
+import { voiceGlobalToolAllowed } from "../src/shared/model/voiceToolScope";
 import { readSessionUsage } from "./usage-report";
 import {
   desktopActorId,
@@ -39,26 +104,26 @@ import {
   sealDesktopResource,
   type DesktopReviewScope,
 } from "./reviewed-desktop-scope";
-import { readHostAccess } from "./access-center";
+import { readHostAccess } from "./security/access/access-center";
 import { inlineSessionSync } from "./inlineSessionSync";
 import { HostCrews } from "./crews";
-import { ConversationProjectTools, isProjectConversationTool } from "./conversation-project-tools";
-import { callFileConversationTool, isFileConversationTool } from "./conversation-file-tools";
-import { callVisualConversationTool, isVisualConversationTool } from "./conversation-visual-tools";
+import { ConversationProjectTools, isProjectConversationTool } from "./conversation/conversation-project-tools";
+import { callFileConversationTool, isFileConversationTool } from "./conversation/conversation-file-tools";
+import { callVisualConversationTool, isVisualConversationTool } from "./conversation/conversation-visual-tools";
 import {
   CONVERSATION_TASK_EXECUTION_DEFAULTS,
   TASK_READ_TOOLS,
   callConversationTaskRead,
   normalizeConversationTaskConfiguration,
-} from "./conversation-task-tools";
-import { ConversationGoalTools, isGoalWriteTool } from "./conversation-goal-tools";
-import { ConversationTaskQueueTools, isTaskQueueTool } from "./conversation-task-queue-tools";
-import { ConversationStewardTools, isStewardConversationTool } from "./conversation-steward-tools";
+} from "./conversation/conversation-task-tools";
+import { ConversationGoalTools, isGoalWriteTool } from "./conversation/conversation-goal-tools";
+import { ConversationTaskQueueTools, isTaskQueueTool } from "./conversation/conversation-task-queue-tools";
+import { ConversationStewardTools, isStewardConversationTool } from "./conversation/conversation-steward-tools";
 import {
   ConversationRuntimeReadTools,
   isRuntimeReadConversationTool,
-} from "./conversation-runtime-read-tools";
-import { probeNativeCodexImageCapability } from "./social-images";
+} from "./conversation/conversation-runtime-read-tools";
+import { probeNativeCodexImageCapability } from "./social/social-images";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
 import {
@@ -87,7 +152,7 @@ import {
   type DevServerAction,
   type DevServerBridgeAction,
 } from "./domains/dev-servers/service";
-import { withHostGitMutation } from "./git-mutations";
+import { withHostGitMutation } from "./git/git-mutations";
 import { createHostPersistenceService } from "./domains/environment/persistence-service";
 import { SafeCounterSchema } from "../src/shared/model/host-contracts/schemas";
 import { rewindAuthorityGeneration } from "./session-rewind";
@@ -107,6 +172,7 @@ import {
 import { bindNativeServicesOwner } from "./ports/native-services";
 import {
   NATIVE_SERVICE_METHODS,
+  NativeAssistantBrowserPanelParamsSchema,
   type NativeServiceMethod,
 } from "../src/shared/model/host-contracts/native-services";
 import { createNativeBufferUploadService } from "./domains/native-workspaces/buffer-upload";
@@ -144,7 +210,7 @@ import {
   type ConversationPreviewInput,
   type PreviewBrowserState,
   type PreviewPresentation,
-} from "./conversation-preview";
+} from "./conversation/conversation-preview";
 import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { hostname, homedir } from "node:os";
@@ -168,26 +234,32 @@ import {
 import { HostEngine, parseCommand } from "./engine";
 import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
 import { HostAutomations } from "./automations";
-import { SocialService, type SocialPrincipal } from "./social";
+import { SocialService, type SocialPrincipal } from "./social/social";
 import { createSessionAuthorityResolver } from "./session-authority";
-import { socialAgentGenerator } from "./social-agent";
-import { OsSocialCredentials } from "./social-credentials";
-import { SocialTransport } from "./social-transport";
-import { XBrowserSessions } from "./social-browser";
-import { SocialPeers } from "./social-peers";
+import { socialAgentGenerator } from "./social/social-agent";
+import { OsSocialCredentials } from "./social/social-credentials";
+import { SocialTransport } from "./social/social-transport";
+import { XBrowserSessions } from "./social/social-browser";
+import { SocialPeers } from "./social/social-peers";
 import { createSocialAdapters } from "../src/integrations/social/platformAdapters";
 import { HostTasks } from "./tasks";
 import { HostSprints } from "./sprints";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
 import { HostAssistant } from "./assistant/service";
-import type { ConversationTool } from "./conversation-tools";
-import { assistantExecutionPorts } from "./assistant-runtime";
-import { AssistantTurnPolicyDeferredError } from "./assistant-turn-policy";
-import { assistantDomain } from "./assistant-domain";
-import { assistantSessionRuntime } from "./assistant-session-runtime";
-import { HostAssistantManualSessions } from "./assistant-manual-sessions";
-import { HostAssistantKeepAwake } from "./assistant-keep-awake";
+import type { ConversationTool } from "./conversation/conversation-tools";
+import { assistantExecutionPorts } from "./assistant/core/assistant-runtime";
+import { AssistantTurnPolicyDeferredError } from "./assistant/core/assistant-turn-policy";
+import { assistantDomain } from "./domains/assistant/service";
+import { AssistantRequestValidationSchema, AssistantResponseValidationSchema } from "../src/shared/model/host-contracts/assistant";
+import { withVoiceGenerationsRetired } from "./assistant/voice/assistant-voice-retirement";
+import { captureLiveVoiceGeneration, captureVoiceRuntimeSource } from "./assistant/voice/assistant-voice-status";
+import { z } from "zod";
+import { ingestNativeObservations, nativeObservationOperation } from "./assistant/observations/assistant-native-observations";
+import { verifyAssistantNotificationReceipt } from "./assistant/native/assistant-notification-receipt";
+import { assistantSessionRuntime } from "./assistant/sessions/assistant-session-runtime";
+import { HostAssistantManualSessions } from "./assistant/sessions/assistant-manual-sessions";
+import { HostAssistantKeepAwake } from "./assistant/core/assistant-keep-awake";
 import { HostDesktopControl } from "./desktop-control-host";
 import { desktopControlDomain } from "./desktop-control-domain";
 import { HostDesktopHelper } from "./desktop-helper";
@@ -196,11 +268,11 @@ import { readDesktopPresence } from "./desktop-presence";
 import {
   ConversationDesktopControlTools,
   isDesktopControlConversationTool,
-} from "./conversation-desktop-control-tools";
+} from "./conversation/conversation-desktop-control-tools";
 import { HostStewards } from "./stewards";
 import { dirname, join } from "node:path";
-import { DeviceHost } from "./device-host";
-import { DevicePreviews } from "./device-preview";
+import { DeviceHost } from "./devices/device-host";
+import { DevicePreviews } from "./devices/device-preview";
 import type { DeviceAction } from "../src/features/devices/types";
 import { GenericAcpService, type GenericAcpMetadataPatch } from "./generic-acp";
 import { HandoffHistoryStore } from "./handoff-history";
@@ -209,7 +281,7 @@ import { perfMetrics, mcpMetricName } from "./perf-metrics";
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
 import { performance } from "node:perf_hooks";
 import { BrowserRuntime } from "./browser-runtime";
-import { SharedBrowser } from "./shared-browser";
+import { SessionBrowserRegistry } from "./shared-browser";
 import { RuntimeLogMonitors } from "./runtime-log-monitors";
 import { DevServersService } from "./dev-servers";
 import { DevServerAccess } from "./dev-server-access";
@@ -217,9 +289,11 @@ import { RuntimeLogsService, scrubRuntimeLogText } from "./runtime-logs";
 import { RuntimeLogAccess, runtimeLogToolQuery } from "./runtime-log-tools";
 import {
   ConversationDesktopRelay,
-  conversationToolCatalog,
+  sessionConversationToolCatalog,
+  isRoomOnlyConversationAction,
+  validateSessionConversationTool,
   validateConversationTool,
-} from "./conversation-tools";
+} from "./conversation/conversation-tools";
 import { openDevServerBrowser } from "./dev-server-browser";
 import type { DevServerDetails } from "../src/features/host-tools/devServerTypes";
 import { WebControl } from "./web-control";
@@ -238,26 +312,26 @@ import {
 } from "./domains/context";
 import { RunLeases } from "./run-lease";
 import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
-import { AdoptedChanges } from "./adoptedChanges";
+import { AdoptedChanges } from "./workspaces/adoptedChanges";
 import { sameQueuedModelTarget } from "../src/features/sessions/model/messageQueue";
-import { parseRemoteAttachments, resolveAttachments } from "./attachments";
+import { parseRemoteAttachments, resolveAttachments, resolveQuestionAttachments } from "./attachments";
 import { DesktopDelete } from "./desktopDelete";
 import { hostInbox } from "./host-notes";
 import { AsyncHostNotes } from "./host-notes-async";
 import {
   ConversationWorkspaceTools,
   isWorkspaceConversationTool,
-} from "./conversation-workspace-tools";
+} from "./conversation/conversation-workspace-tools";
 import { ProviderInboxBridge } from "./provider-inbox";
-import { MobilePairing } from "./mobile-pairing";
-import { createMobileAccessService } from "./mobile-access";
-import { MobileLanAccess } from "./mobile-lan";
+import { MobilePairing } from "./mobile/mobile-pairing";
+import { createMobileAccessService } from "./mobile/mobile-access";
+import { MobileLanAccess } from "./mobile/mobile-lan";
 import { ExternalTunnels } from "./tunnels";
 import {
   parseRemoteInboxOperation,
   inboxOperationWrites,
 } from "../src/features/inbox/model/remoteInbox";
-import { branchCache } from "./git-actions";
+import { branchCache } from "./git/git-actions";
 import { withOverlay } from "./desktopLive";
 import { writeAttachmentChunk, readAttachmentChunk, attachmentUploadStatus } from "./attachments";
 import { sessionWorkCwd, type LinkedWorkItem } from "../src/features/sessions/model/session";
@@ -273,12 +347,12 @@ import {
   withHead,
 } from "./transcriptPage";
 import { RemoteChanges } from "./remoteChanges";
-import { GitWatches } from "./git-watch";
+import { GitWatches } from "./git/git-watch";
 import { syncPull, syncPush } from "./sync";
 import type { SyncOp } from "../src/features/sync/model/syncProtocol";
 import { browseHostDirectories, createHostDirectory } from "./browse";
-import { createHostBranch, hostBranches, switchHostBranch } from "./git-branches";
-import { createHostWorktree, hostWorktrees, resolveHostWorktreeAsync } from "./git-worktrees";
+import { createHostBranch, hostBranches, switchHostBranch } from "./git/git-branches";
+import { createHostWorktree, hostWorktrees, resolveHostWorktreeAsync } from "./git/git-worktrees";
 import {
   createHostPath,
   hostFileDiff,
@@ -398,11 +472,20 @@ export type HostPrivateControl = {
 };
 
 let rejectionGuards = 0;
+let hostDegradedSince: number | undefined;
 function logUnhandledRejection(reason: unknown) {
-  // Name only: messages and stacks may carry tokens, paths or prompts.
-  console.warn(
-    `Host recovered from an unhandled rejection (${reason instanceof Error ? reason.name : typeof reason}).`,
-  );
+  hostDegradedSince ??= Date.now();
+  // Messages and absolute paths may contain prompts or credentials. Retain only
+  // bounded frame locations, never arbitrary exception text or function names.
+  const frames = reason instanceof Error && typeof reason.stack === "string"
+    ? reason.stack.split("\n").slice(1, 17).flatMap((line) => {
+        const match = /(?:^|[\\/])([\w.-]+\.[cm]?js):(\d+):(\d+)\)?\s*$/.exec(line);
+        return match ? [`${match[1]}:${match[2]}:${match[3]}`] : [];
+      })
+    : [];
+  const name = reason instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(reason.name)
+    ? reason.name : "UnknownError";
+  console.warn(`Host state may be degraded after an unhandled rejection (${name}).${frames.length ? ` Frames: ${frames.join(", ")}` : ""}`);
 }
 /** An unawaited rejection must not terminate a Host that is serving other clients. */
 function guardUnhandledRejections(): () => void {
@@ -458,26 +541,15 @@ export async function createHostServer(
         for (const terminal of terminals.list(project.id).terminals)
           if (terminal.state === "running" && inWorkspace(terminal.cwd, workspace.path))
             add("shell", terminal.id);
-        for (const summary of await engine.store.summaries(project.id)) {
-          if (
-            summary.workspaceId !== workspace.id &&
-            !(summary.worktreeCwd && inWorkspace(summary.worktreeCwd, workspace.path))
-          )
-            continue;
-          if (
-            summary.status === "running" ||
-            desktop.live.busyClient(summary.id) ||
-            runLeases.holder(summary.id)
-          )
-            add("provider", summary.id);
-          const snapshot = await engine.store.session(summary.id);
-          if (
-            snapshot.session.blocks.some(
-              (block) => block.shell?.running || block.shell?.terminationFailed,
-            )
-          )
-            add("shell", summary.id);
-        }
+      }
+      for (const summary of await engine.store.startupStates(workspace.id)) {
+        if (
+          summary.workspaceId !== workspace.id &&
+          !(summary.worktreeCwd && inWorkspace(summary.worktreeCwd, workspace.path))
+        ) continue;
+        if (summary.running || desktop.live.busyClient(summary.id) || runLeases.holder(summary.id))
+          add("provider", summary.id);
+        if (summary.shellRunning) add("shell", summary.id);
       }
       return activities;
     },
@@ -644,6 +716,11 @@ export async function createHostServer(
   assistantPorts.keepAwake = (enabled) => assistantKeepAwake.setEnabled(enabled);
   assistantPorts.readPresence = readDesktopPresence;
   const assistant = new HostAssistant(engine.store, assistantPorts);
+  const roomAttestationSigner = new RoomAttestationSigner(
+    roomAttestationKeyPath(dirname(engine.store.attachmentDir)),
+    engine.store.environmentId,
+    id => assistant.threadBinding(id),
+  );
   await assistant.ready;
   tasks.assistantGoalAdmission = (goalId) => assistant.autonomousJobAllowed(goalId);
   const previousProviderSchedule = engine.beforeProviderTurn;
@@ -769,7 +846,7 @@ export async function createHostServer(
         if (inWorkspace(cwd, workspace.path)) await managedWorkspaces.touchActivity(workspace.id);
     });
   const logMonitors = new RuntimeLogMonitors(browserRuntime.load, runtimeLogs);
-  const sharedBrowser = new SharedBrowser(browserRuntime.load, Date.now, { runtimeLogs });
+  const sharedBrowser = new SessionBrowserRegistry(browserRuntime.load, Date.now, { runtimeLogs });
   const conversationPreviews = new ConversationPreviewWorkflow();
   const devServers = new DevServersService({
     runtimeLogs,
@@ -818,8 +895,10 @@ export async function createHostServer(
   const webControl = process.env.BYCODA_WEB_CONTROL_ORIGIN
     ? new WebControl(process.env.BYCODA_WEB_CONTROL_ORIGIN)
     : undefined;
-  const inHost = async (id: string) => {
-    return !!(await engine.store.sessionAuthority(id));
+  const sessionRead = <T>(signal: AbortSignal | undefined, work: () => Promise<T>): Promise<T> =>
+    signal ? engine.store.withReadCancellation(signal, work) : work();
+  const inHost = async (id: string, signal?: AbortSignal) => {
+    return !!(await sessionRead(signal, () => engine.store.sessionAuthority(id)));
   };
   const localSessionReference = async (id: string): Promise<LocalSessionLocator | undefined> =>
     (await inHost(id))
@@ -852,13 +931,13 @@ export async function createHostServer(
   const attachmentOwnership = new AttachmentOwnership(engine.store);
   void attachmentOwnership.ready.catch(() => {});
   /** A desktop-only session on this machine, matched to a registered project. */
-  const desktopSnapshot = async (id: string) => {
-    if (!id || (await inHost(id))) return undefined;
-    const cwd = await desktop.projectCwdAsync(id);
+  const desktopSnapshot = async (id: string, signal?: AbortSignal) => {
+    if (!id || (await inHost(id, signal))) return undefined;
+    const cwd = await desktop.projectCwdAsync(id, signal);
     const project = cwd
-      ? (await engine.store.projects()).find((p) => desktop.samePath(p.cwd, cwd))
+      ? (await sessionRead(signal, () => engine.store.projects())).find((p) => desktop.samePath(p.cwd, cwd))
       : undefined;
-    const snapshot = project && (await desktop.snapshotAsync(id, project.id, project.cwd));
+    const snapshot = project && (await desktop.snapshotAsync(id, project.id, project.cwd, signal));
     return snapshot &&
       (snapshot.session.harness === "acp" ||
         providers.includes(snapshot.session.harness as RemoteProvider))
@@ -1075,16 +1154,16 @@ export async function createHostServer(
   /** Pulls turns the desktop app ran in an adopted session since. */
   /** Desktop copies that could not be read, by the stamp they had then. */
   const unreadableDesktopCopies = new Map<string, number>();
-  const refresh = async (id: string, known?: { updatedAt: number; running: boolean }) => {
+  const refresh = async (id: string, known?: { updatedAt: number; running: boolean }, signal?: AbortSignal) => {
     let current;
     try {
-      current = await engine.store.session(id);
+      current = await engine.store.session(id, signal);
     } catch {
       return;
     }
     if (!current.desktop) return;
     if (current.authorityGeneration !== undefined) return;
-    const stamp = known ?? (await desktop.stampAsync(id));
+    const stamp = known ?? (await desktop.stampAsync(id, 0, signal));
     if (!stamp) return;
     if (stamp.running) throw new LeaseHeldError(runLeases.holder(id)?.holder ?? "desktop");
     if (stamp.updatedAt <= current.desktop.updatedAt) return;
@@ -1092,10 +1171,12 @@ export async function createHostServer(
     // alone anyway, and an unreadable copy stays unreadable until it changes.
     if (current.status === "running" || engine.desktopRefreshBlocked(id)) return;
     if (unreadableDesktopCopies.get(id) === stamp.updatedAt) return;
-    const project = await engine.store.project(current.projectId);
-    const snapshot = await desktop.snapshotAsync(id, project.id, project.cwd);
+    const project = await sessionRead(signal, () => engine.store.project(current.projectId));
+    const snapshot = await desktop.snapshotAsync(id, project.id, project.cwd, signal);
     if (snapshot) {
       unreadableDesktopCopies.delete(id);
+      signal?.throwIfAborted();
+      // Accepted refresh mutation retains its original owner through settlement.
       await engine.refreshFromDesktop(snapshot);
     } else {
       unreadableDesktopCopies.set(id, stamp.updatedAt);
@@ -1105,16 +1186,16 @@ export async function createHostServer(
   };
   /** Where watchers of `id` should look: the desktop app's copy for a
    * desktop-only session, or for an adopted one the app is running a turn in. */
-  const desktopWatch = async (id: string, polling = false) => {
+  const desktopWatch = async (id: string, polling = false, signal?: AbortSignal) => {
     if (!id) return undefined;
     let hosted: HostSession | undefined;
     try {
-      hosted = await engine.store.session(id);
+      hosted = await engine.store.session(id, signal);
     } catch {
       /* desktop-only */
     }
     if (hosted && (!hosted.desktop || hosted.status === "running")) return undefined;
-    const stamp = await desktop.stampAsync(id, polling ? WATCH_STAMP_MS : 0);
+    const stamp = await desktop.stampAsync(id, polling ? WATCH_STAMP_MS : 0, signal);
     if (!stamp) return undefined;
     if (hosted && !stamp.running) return undefined;
     const overlay = desktop.live.overlay(id);
@@ -1400,17 +1481,18 @@ export async function createHostServer(
   const desktopView = async (
     id: string,
     projectId?: string,
+    signal?: AbortSignal,
   ): Promise<Awaited<HostSession | undefined>> => {
     // Watchers re-request the same unchanged transcript many times (pages,
     // block fetches, polls); parsing it again is only needed once it moves.
-    const stamp = await desktop.stampAsync(id);
+    const stamp = await desktop.stampAsync(id, 0, signal);
     const key =
-      stamp && (projectId || !(await inHost(id)))
+      stamp && (projectId || !(await inHost(id, signal)))
         ? `${id}\0${projectId ?? ""}\0${stamp.updatedAt}\0${stamp.running}\0${desktop.live.overlay(id)?.changedAt ?? 0}`
         : undefined;
     const known = key ? viewMemo.get(key) : undefined;
     if (known) return known;
-    const view = await buildDesktopView(id, projectId);
+    const view = await buildDesktopView(id, projectId, signal);
     if (key && view) {
       for (const old of viewMemo.keys()) if (old.startsWith(`${id}\0`)) viewMemo.delete(old);
       viewMemo.set(key, view);
@@ -1433,11 +1515,12 @@ export async function createHostServer(
   const buildDesktopView = async (
     id: string,
     projectId?: string,
+    signal?: AbortSignal,
   ): Promise<Awaited<HostSession | undefined>> => {
-    const project = projectId ? await engine.store.project(projectId) : undefined;
+    const project = projectId ? await sessionRead(signal, () => engine.store.project(projectId)) : undefined;
     const snapshot = project
-      ? await desktop.snapshotAsync(id, project.id, project.cwd)
-      : await desktopSnapshot(id);
+      ? await desktop.snapshotAsync(id, project.id, project.cwd, signal)
+      : await desktopSnapshot(id, signal);
     if (!snapshot) return undefined;
     const overlay = desktop.live.overlay(id);
     return {
@@ -1514,6 +1597,7 @@ export async function createHostServer(
     if (client === undefined || client < entry.first || client > view.revision)
       return { kind: "snapshot", value: view };
     const {
+      blockRevisions: _revisions,
       session: { blocks, ...session },
       ...rest
     } = view;
@@ -1527,9 +1611,9 @@ export async function createHostServer(
     };
   };
   /** Like `refresh`, for reads: a running desktop turn just isn't pulled yet. */
-  const catchUp = async (id: string, known?: { updatedAt: number; running: boolean }) => {
+  const catchUp = async (id: string, known?: { updatedAt: number; running: boolean }, signal?: AbortSignal) => {
     try {
-      await refresh(id, known);
+      await refresh(id, known, signal);
     } catch {
       /* the desktop is mid-turn; serve the host copy */
     }
@@ -1647,8 +1731,94 @@ export async function createHostServer(
     async (projectId) => await models(projectId),
     Date.now,
     imageCapability,
+    {
+      session: async (id) => {
+        const value = await featureMeta(id);
+        const native = await desktopWatch(id);
+        return native?.running
+          ? { ...value, status: "running", runId: "desktop" }
+          : value;
+      },
+      command: (command, context) => commandService.dispatch(command, context),
+    },
   );
   const sessionListEpoch = randomUUID();
+  await engine.store.db.prepare(`CREATE TABLE IF NOT EXISTS session_read_sources (
+    session_id TEXT PRIMARY KEY, source_key TEXT NOT NULL, epoch TEXT NOT NULL
+  )`).run();
+  // Only pending source transitions are held in memory. Persisted epochs prevent
+  // an A-B-A owner change from reviving an earlier revision baseline.
+  type SourceInvalidation = {
+    epoch: string;
+    pending: Promise<void>;
+    started: boolean;
+    previous?: SourceInvalidation;
+    run: () => Promise<void>;
+  };
+  const sourceInvalidations = new Map<string, SourceInvalidation>();
+  const settleSourceInvalidation = async (id: string, entry: SourceInvalidation) => {
+    try {
+      await entry.pending;
+    } catch {
+      if (!entry.started && entry.previous) {
+        await settleSourceInvalidation(id, entry.previous);
+        if (!entry.started) entry.pending = entry.run();
+        return settleSourceInvalidation(id, entry);
+      }
+      // A lost acknowledgement is not proof of failure. Reconcile the exact
+      // transition token; never issue another update for an uncertain outcome.
+      const row = await engine.store.db.prepare("SELECT epoch FROM session_read_sources WHERE session_id=?").get(id);
+      if (!row || row.epoch !== entry.epoch)
+        throw new Error("Session read source transition is unresolved; retry reconciliation");
+    }
+    if (sourceInvalidations.get(id) === entry) sourceInvalidations.delete(id);
+  };
+  const invalidateSessionSource = (id: string) => {
+    const previous = sourceInvalidations.get(id);
+    const epoch = randomUUID();
+    const entry: SourceInvalidation = { epoch, started: false, previous, pending: Promise.resolve(), run: async () => {
+      entry.started = true;
+      await engine.store.db.storeScope(async () => {
+        await engine.store.db.prepare(`INSERT INTO session_read_sources (session_id, source_key, epoch)
+          VALUES (?, '', ?) ON CONFLICT(session_id) DO UPDATE SET source_key='', epoch=excluded.epoch`)
+          .run(id, epoch);
+      });
+    } };
+    const pending = (previous ? settleSourceInvalidation(id, previous) : Promise.resolve()).then(entry.run);
+    entry.pending = pending;
+    sourceInvalidations.set(id, entry);
+    void pending.then(() => {
+      if (sourceInvalidations.get(id) === entry) sourceInvalidations.delete(id);
+    }, (error) => {
+      console.error("Session read source invalidation failed:", error);
+    });
+  };
+  const sessionSourceKey = async (id: string): Promise<string> => {
+    const watch = await desktopWatch(id);
+    if (watch) {
+      const overlay = desktop.live.overlay(id);
+      return createHash("sha256").update(JSON.stringify([sessionListEpoch, "desktop", overlay?.sourceEpoch ?? null])).digest("hex");
+    }
+    const session = await engine.store.session(id);
+    return createHash("sha256").update(JSON.stringify([sessionListEpoch, "host", session.authorityGeneration ?? null, session.createdAt ?? null])).digest("hex");
+  };
+  const sessionSourceEpoch = async (id: string): Promise<string> => {
+    while (sourceInvalidations.has(id)) await settleSourceInvalidation(id, sourceInvalidations.get(id)!);
+    const source = await sessionSourceKey(id);
+    const epoch = await engine.store.transaction(async () => {
+      const known = await engine.store.db.prepare("SELECT source_key, epoch FROM session_read_sources WHERE session_id=?").get(id);
+      if (known && known.source_key === source) return String(known.epoch);
+      await engine.store.db.prepare(`INSERT INTO session_read_sources (session_id, source_key, epoch)
+        VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
+        source_key=excluded.source_key, epoch=excluded.epoch
+        WHERE session_read_sources.source_key <> excluded.source_key`).run(id, source, randomUUID());
+      const row = await engine.store.db.prepare("SELECT epoch FROM session_read_sources WHERE session_id=?").get(id);
+      if (!row) throw new Error("Session read source is unavailable");
+      return String(row.epoch);
+    });
+    if (source !== await sessionSourceKey(id)) throw new Error("Session read owner changed; retry");
+    return epoch;
+  };
   const decoratedSummaries = new WeakMap<
     HostSessionSummary,
     { key: string; value: HostSessionSummary }
@@ -1849,6 +2019,7 @@ export async function createHostServer(
       throw new Error("Host is not listening.");
     return address.port;
   });
+  const mobileIngressSecret = `${randomUUID()}${randomUUID()}`;
   const mobileLan = new MobileLanAccess(
     join(featureDirectory, "mobile-lan.json"),
     engine.store.environmentId,
@@ -1860,6 +2031,7 @@ export async function createHostServer(
     undefined,
     undefined,
     {
+      ingressSecret: mobileIngressSecret,
       tlsAuthority: new MobileTlsAuthority(
         join(featureDirectory, "mobile-tls.json"),
         engine.store.environmentId,
@@ -1920,6 +2092,8 @@ export async function createHostServer(
         ...new Set([...providers, ...((await genericAcp.list()).length ? ["acp" as const] : [])]),
       ],
       capabilities: [
+        "browser.sessionScopes.v1",
+        "browser.ownerPresentationScopes.v1",
         "assistant.v1",
         "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,
@@ -1967,6 +2141,7 @@ export async function createHostServer(
         "native.buffers.upload.v1",
         "native.buffers.delivery.v1",
         "native.services.delivery.v1",
+        "native.services.workspace.format.bounded.v1",
         "native.buffers.delivery.ack.v1",
         "native.services.delivery.ack.v1",
         "native.delivery.epochs.v2",
@@ -2035,6 +2210,7 @@ export async function createHostServer(
         "git.conflicts",
         "attachments.upload",
         "sessions.questionAttachments",
+        "sessions.questionAttachments.v2",
         "attachments.resume",
         "attachments.ownership.v1",
         "attachments.read",
@@ -2142,10 +2318,10 @@ export async function createHostServer(
   >({
     repository: {
       projectList: projectSessionList,
-      session: (id) => engine.store.session(id),
-      sync: (id, revision) => engine.store.sync(id, revision),
+      session: (id, signal) => engine.store.session(id, signal),
+      sync: (id, revision, signal) => engine.store.sync(id, revision, signal),
       readView: readSessionView,
-      catchUp,
+      catchUp: (id, signal) => catchUp(id, undefined, signal),
     },
     nativeProjection: {
       watch: desktopWatch,
@@ -2163,6 +2339,7 @@ export async function createHostServer(
     },
     transfers,
     revisionWaits,
+    sourceEpoch: sessionSourceEpoch,
   });
   const sessionQueueService = createSessionQueueService({
     environmentId: engine.store.environmentId,
@@ -2190,6 +2367,26 @@ export async function createHostServer(
       return sessionQueueService[action](params, { ...context, exposeAttachments });
     };
   const desktopCommandDelivery = new DesktopCommandDelivery(desktop.live, engine.store);
+  const questionBinding = async (sessionId: string, runId: string, requestId: number) => {
+    const view = await readSessionView(sessionId);
+    const question = view.session.pendingQuestion;
+    if (view.runId !== runId || question?.requestId !== requestId || !question.occurrenceId)
+      throw new Error("The original question is no longer available");
+    return question.occurrenceId;
+  };
+  const bindQuestionUpload = async (principal: string, params: Record<string, unknown>) => {
+    if (params.questionSessionId === undefined && params.questionRequestId === undefined && params.questionRunId === undefined) {
+      await attachmentOwnership.assertUnboundUpload(String(params.id ?? ""));
+      return;
+    }
+    const sessionId = String(params.questionSessionId ?? "");
+    const runId = String(params.questionRunId ?? "");
+    const requestId = params.questionRequestId;
+    if (!sessionId || !runId || !Number.isSafeInteger(requestId) || Number(requestId) < 0)
+      throw new Error("Invalid question attachment binding");
+    const occurrence = await questionBinding(sessionId, runId, Number(requestId));
+    await attachmentOwnership.bindQuestion(principal, String(params.id ?? ""), sessionId, runId, Number(requestId), occurrence);
+  };
   const commandService = createCommandService<HostSession>({
     repository: {
       receiptStatus: (id) => engine.store.receiptStatus(id),
@@ -2208,6 +2405,14 @@ export async function createHostServer(
       persistenceReady: () => engine.store.db.persistenceHealth().state === "ready",
       validateCommand: (command) => {
         parseCommand(command);
+      },
+      validateQuestionAttachments: async (command, context) => {
+        if (command.type !== "answer" || command.reply.kind !== "answered" || !command.reply.attachments) return;
+        if (!context.principalId || !command.runId) throw new Error("Question attachment identity is unavailable");
+        const ids = Object.values(command.reply.attachments).flat().map((file) => file.id);
+        if (!ids.length) return;
+        const occurrence = await questionBinding(command.sessionId, command.runId, command.requestId);
+        await attachmentOwnership.assertQuestion(context.principalId, ids, command.sessionId, command.runId, command.requestId, occurrence);
       },
       attachmentRefs: parseRemoteAttachments,
       previewContextual: (command, value) => engine.previewContextual(command, value),
@@ -2244,13 +2449,15 @@ export async function createHostServer(
           if (!pending || pending.requestId !== command.requestId)
             throw new Error("Question is already resolved");
           const attachments = Object.fromEntries(
-            Object.entries(parsed.reply.attachments ?? {}).map(([id, files]) => {
+            await Promise.all(Object.entries(parsed.reply.attachments ?? {}).map(async ([id, files]) => {
               const question = pending.questions.find((item) => item.id === id);
               if (!question?.allowCustom || question.preserveCustomWhitespace)
                 throw new Error("This question cannot accept attachments");
-              return [id, resolveAttachments(engine.store, parseRemoteAttachments(files))];
-            }),
+              return [id, await resolveQuestionAttachments(engine.store, parseRemoteAttachments(files))] as const;
+            })),
           );
+          if (desktop.live.overlay(command.sessionId)?.patch.pendingQuestion !== pending)
+            throw new Error("Question changed while resolving attachments");
           resolved = { ...parsed, reply: { ...parsed.reply, attachments } };
         }
         const prepared = await desktop.live.prepareDesktop(resolved);
@@ -2340,6 +2547,1353 @@ export async function createHostServer(
     },
   });
   const sprintsService = createHostSprintsService({ sprints });
+  const approveManagementOperation = async (
+    operation: { action: string; input: Record<string, unknown>; operationHash: string },
+    principal: import("./runtime-log-tools").RuntimeLogSubjectPrincipal,
+    authorized: () => Promise<boolean>,
+  ) => {
+    const decision = await conversationDesktop.call(
+      "management.write.authorize",
+      { operation },
+      (await engine.store.project(principal.projectId)).cwd,
+      principal,
+      authorized,
+    ) as { approved?: boolean; operationHash?: string };
+    if (decision.approved && principal.kind === "assistant-thread" &&
+      !(await visibleProjectForThread(principal.projectId, principal.threadId, authorized)))
+      throw new Error("The target project became unavailable or locked during review.");
+    return decision;
+  };
+  const conversationThreadWork = new ConversationThreadWorkTools(
+    engine.store,
+    tasks,
+    goals,
+    automations,
+    approveManagementOperation,
+  );
+  const conversationThreadCrews = new ConversationThreadCrewTools(crews, {
+    approve: approveManagementOperation,
+    receipt: async (key) => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key, value) => {
+      await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
+    },
+  });
+  const conversationManagementRuntime = new ConversationManagementRuntime({
+    subscribe: (listener) => engine.store.subscribeChanges(listener),
+    snapshot: async (projectId) => {
+      const sessions = (await projectSessionList(projectId)).list.slice(0, 100).map((row) => ({
+        kind: "session",
+        id: row.id,
+        status: row.status,
+        needsInput: row.needsInput,
+        updatedAt: row.updatedAt,
+      }));
+      const taskRows = (await tasks.list())
+        .filter((row) => row.projectId === projectId)
+        .slice(0, 100)
+        .map((row) => ({ kind: "task", id: row.id, status: row.status, updatedAt: row.updatedAt }));
+      const goalRows = (await goals.list())
+        .filter((row) => row.projectIds.length === 1 && row.projectIds[0] === projectId)
+        .slice(0, 100)
+        .map((row) => ({ kind: "goal", id: row.id, status: row.status, updatedAt: row.updatedAt }));
+      return [...sessions, ...taskRows, ...goalRows].sort(
+        (a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id),
+      );
+    },
+    read: async (action, args, principal, authorized) => {
+      const context: HostDomainContext = { authorized };
+      if (action === "environment.describe") return environmentService.describe({});
+      if (action === "environment.persistence.status")
+        return persistenceService.status({}, context);
+      if (action === "sync.status") {
+        const row = (await engine.store.db
+          .prepare("SELECT value FROM metadata WHERE key='syncRev'")
+          .get()) as { value: string } | undefined;
+        const revision = row ? Number(row.value) : null;
+        return {
+          revision: Number.isSafeInteger(revision) ? revision : null,
+          available: Number.isSafeInteger(revision),
+          state: "host-sync-metadata",
+        };
+      }
+      if (action === "tunnels.status") return tunnels.status();
+      if (action === "mobile.access.status")
+        return args.mode === "lan" ? mobileLan.status() : mobileAccess.status();
+      if (action === "history.import.status") {
+        if (principal.kind !== "session")
+          throw new Error("Choose a real focused session for history import status.");
+        const own = await featureSession(principal.sessionId);
+        if (own.projectId !== principal.projectId)
+          throw new Error("Conversation belongs to another project.");
+        const cwd = sessionWorkCwd(own.session);
+        return conversationDesktop.call(
+          "historyImport.status",
+          {
+            ...args,
+            sessionId: principal.sessionId,
+          },
+          cwd,
+          principal,
+          authorized,
+        );
+      }
+      throw new Error("Unsupported runtime management action.");
+    },
+  });
+  const conversationManagement = new ConversationManagementTools({
+    receipt: async (key) => {
+      const row = (await engine.store.db
+        .prepare("SELECT value FROM metadata WHERE key=?")
+        .get(key)) as { value: string } | undefined;
+      return row ? (JSON.parse(row.value) as ManagementReceipt) : undefined;
+    },
+    saveReceipt: async (key, value) => {
+      await engine.store.db
+        .prepare(
+          "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(key, JSON.stringify(value));
+    },
+    approve: approveManagementOperation,
+    execute: async (action, args, principal, authorized) => {
+      if (isRuntimeManagementAction(action))
+        return conversationManagementRuntime.call(action, args, principal, authorized);
+      const projectId = principal.projectId,
+        environmentId = engine.store.environmentId;
+      const project = await engine.store.project(projectId);
+      const context: HostDomainContext = {
+        authorized,
+        principalId: `management:${principal.kind === "assistant-thread" ? principal.threadId : principal.sessionId}`,
+      };
+      const checkSession = async (id: unknown) => {
+        const value = await featureSession(String(id));
+        if (value.projectId !== projectId)
+          throw new Error("Conversation belongs to another project.");
+        return value;
+      };
+      const cwd =
+        principal.kind === "session"
+          ? sessionWorkCwd((await checkSession(principal.sessionId)).session)
+          : project.cwd;
+      if (isSessionManagementAction(action))
+        return dispatchSessionManagement(action, args, principal, authorized, {
+          session: featureSession,
+          preview: (input, source) => engine.previewContextual(input, source),
+          dispatch: (command) => commandService.dispatch(command, context),
+        });
+      if (isWorkspaceManagementAction(action))
+        return dispatchWorkspaceManagement(action, args, principal, authorized, {
+          environmentId,
+          ownerProject: async (owner) =>
+            owner.kind === "session"
+              ? (await featureSession(owner.id)).projectId
+              : owner.kind === "task"
+                ? (await tasks.get(owner.id))?.projectId
+                : undefined,
+          workspace: workspaceForOwnerRpc,
+          assertWritable: (id) => managed.assertWritable(id),
+          registry: managedWorkspaces,
+          featureClaims,
+          removal: managed.removal,
+          delivery: managed.delivery,
+          reviewTaskDelivery: (id) => tasks.reviewDelivery(id),
+        });
+      if (action === "projects.get")
+        return { id: project.id, name: project.name, cwd: project.cwd, environmentId };
+      if (["projects.browse", "projects.createDirectory", "projects.open"].includes(action)) {
+        const path = await projectManagementPath(project.cwd, args.path);
+        if (action === "projects.open") return projectsService.open({ cwd: path }, context);
+        const listing =
+          action === "projects.createDirectory"
+            ? await projectsService.createDirectory({ path, name: args.name }, context)
+            : await projectsService.browse({ path }, context);
+        return { path: listing.path, ...managementPage(listing.entries, args) };
+      }
+      if (action === "projects.workspacePolicy.get")
+        return workspacePolicy.get({ projectId, environmentId });
+      if (action === "workspaces.list")
+        return managementPage(
+          (await managedWorkspaces.list({ projectId, environmentId })).filter(
+            (row) => row.projectId === projectId,
+          ),
+          args,
+        );
+      if (action === "workspaces.featureClaims.list")
+        return managementPage(
+          (await featureClaims.list({ projectId })).filter((row) => row.projectId === projectId),
+          args,
+        );
+      if (action.startsWith("workspaces.")) {
+        const value = await workspaceForOwnerRpc(args.workspaceId);
+        if (!value || value.projectId !== projectId)
+          throw new Error("Workspace is not in this project.");
+        if (action === "workspaces.get") return value;
+        const request = {
+          workspaceId: value.id,
+          expectedRevision: Number(args.expectedRevision),
+          idempotencyKey: String(args.requestId),
+        };
+        if (action === "workspaces.resume") return managedWorkspaces.resume(request);
+        if (action === "workspaces.finish") return managedWorkspaces.finish(request);
+        if (action === "workspaces.close") return managedWorkspaces.close(request);
+      }
+      if (action.startsWith("sprints.")) {
+        const scoped = (row: { projects: Array<{ projectId: string; environmentId: string }> }) =>
+          row.projects.length > 0 &&
+          row.projects.every(
+            (ref) => ref.projectId === projectId && ref.environmentId === environmentId,
+          );
+        if (action === "sprints.list")
+          return managementPage((await sprints.list()).sprints.filter(scoped), args);
+        if (action !== "sprints.create" && args.sprintId !== null) {
+          const current = await sprints.get(String(args.sprintId));
+          if (!current || !scoped(current))
+            throw new Error("Sprint is not wholly in this project.");
+        }
+        const { sprintId, requestId, ...fields } = args;
+        const input = { ...fields, requestId };
+        if (action === "sprints.get") return sprintsService.get({ id: sprintId }, context);
+        if (action === "sprints.report") return sprintsService.report({ id: sprintId }, context);
+        if (action === "sprints.create")
+          return sprintsService.create(
+            {
+              input: {
+                ...input,
+                id: sprintId,
+                projects: [{ environmentId, projectId, cwd: project.cwd, name: project.name }],
+                capacityPoints: args.capacityPoints ?? null,
+                projectCapacities: {},
+              },
+            },
+            context,
+          );
+        if (action === "sprints.update")
+          return sprintsService.update({ id: sprintId, input }, context);
+        if (action === "sprints.start")
+          return sprintsService.start({ id: sprintId, input }, context);
+        if (action === "sprints.complete")
+          return sprintsService.complete({ id: sprintId, input }, context);
+        if (action === "sprints.archive")
+          return sprintsService.archive({ id: sprintId, input }, context);
+        if (action === "sprints.plan") {
+          const task = await tasks.get(String(args.taskId));
+          if (!task || task.projectId !== projectId)
+            throw new Error("Task is not in this project.");
+          return sprintsService.plan(
+            { input: { ...input, sprintId, environmentId, projectId } },
+            context,
+          );
+        }
+      }
+      if (action === "git.status") {
+        const status = await gitService.index({ projectId, cwd }, context);
+        return {
+          ...status,
+          files: undefined,
+          expectedStatus: await conversationGitReviewHash(cwd),
+          ...managementPage(status.files, args),
+        };
+      }
+      if (action === "git.stash" || action === "git.pull")
+        return gitService.managedAction(
+          { projectId, cwd },
+          context,
+          (lockedCwd) => runConversationGitAction(lockedCwd, action, args),
+          {
+            beforeEffect: async (lockedCwd) => {
+              if ((await conversationGitReviewHash(lockedCwd)) !== args.expectedStatus)
+                throw new Error("Git status changed; read it and review again.");
+            },
+          },
+        );
+      if (action === "git.stage" || action === "git.unstage" || action === "git.commit") {
+        if ((await conversationGitReviewHash(cwd)) !== args.expectedStatus)
+          throw new Error("Git status changed; read it and review again.");
+        return gitService.action(
+          {
+            projectId,
+            cwd,
+            action:
+              action === "git.commit"
+                ? "commit"
+                : action === "git.stage"
+                  ? "stageFiles"
+                  : "unstageFiles",
+            ...(args.paths ? { path: args.paths } : {}),
+            ...(args.message ? { message: args.message } : {}),
+          },
+          context,
+          {
+            beforeEffect: async (lockedCwd) => {
+              if ((await conversationGitReviewHash(lockedCwd)) !== args.expectedStatus)
+                throw new Error("Git status changed while waiting; review again.");
+            },
+          },
+        );
+      }
+      if (
+        action.startsWith("preferences.") ||
+        action.startsWith("providers.") ||
+        action.startsWith("projects.organization.")
+      ) {
+        const desktopAction = action.startsWith("projects.organization.")
+          ? action.replace("projects.organization.", "organization.")
+          : action === "providers.status"
+            ? "providerManagement.read"
+            : action === "providers.quota.refresh"
+              ? "providerManagement.quotaRefresh"
+              : action === "providers.operation.status"
+                ? "providerManagement.status"
+                : action;
+        const {
+          requestId,
+          offset: _offset,
+          limit: _limit,
+          memberOffset: _memberOffset,
+          ...fields
+        } = args;
+        if (principal.kind === "assistant-thread") {
+          if (!action.startsWith("projects.organization."))
+            throw new Error("Use the global assistant source for desktop settings.");
+          const result = await conversationDesktop.callAssistantThread(desktopAction, {
+            ...fields, ...(requestId ? { operationId: requestId } : {}),
+          }, { threadId: principal.threadId, environmentId, projectId, targetProjectCwd: project.cwd }, authorized);
+          return pageDesktopManagementSnapshot(result, args);
+        }
+        const result = await conversationDesktop.call(
+          desktopAction,
+          {
+            ...fields,
+            ...(requestId ? { operationId: requestId } : {}),
+            sessionId: principal.sessionId,
+          },
+          cwd,
+          principal,
+          authorized,
+        );
+        return pageDesktopManagementSnapshot(result, args);
+      }
+      if (action === "commands.status") {
+        await checkSession(args.sessionId);
+        const receipt = await commandService.status({ commandId: args.commandId }, context);
+        if (receipt && receipt.sessionId !== args.sessionId)
+          throw new Error("Command belongs to another conversation.");
+        return receipt;
+      }
+      if (action === "commands.dispatch" || action === "ownerQuestions.answer") {
+        const command =
+          action === "commands.dispatch"
+            ? (args.command as Record<string, unknown>)
+            : {
+                type: "answer",
+                sessionId: args.sessionId,
+                runId: args.runId,
+                requestId: args.questionRequestId,
+                reply: { kind: "answered", answers: args.answers },
+              };
+        await checkSession(command.sessionId);
+        return commandService.dispatch(managementCommand(command, String(args.requestId)), context);
+      }
+      if (action === "ownerQuestions.list") {
+        const rows = (await projectSessionList(projectId)).list;
+        const values = await Promise.all(
+          rows
+            .filter((row) => row.needsInput)
+            .slice(0, 100)
+            .map(async (row) => {
+              const value = await checkSession(row.id);
+              return {
+                sessionId: row.id,
+                title: row.title,
+                runId: value.runId ?? null,
+                question: value.session.pendingQuestion ?? null,
+              };
+            }),
+        );
+        return managementPage(
+          values.filter((row) => row.question),
+          args,
+        );
+      }
+      if (action === "events.read") {
+        const snapshot = await projectSessionList(projectId);
+        return {
+          mode: "sampled" as const,
+          durable: false,
+          sampledAt: Date.now(),
+          ...managementPage(
+            snapshot.list
+              .filter((row) => row.updatedAt > Number(args.after ?? 0))
+              .map((row) => ({
+                kind: "session-state",
+                sessionId: row.id,
+                status: row.status,
+                needsInput: row.needsInput,
+                updatedAt: row.updatedAt,
+                lastActivityAt: row.runActivity?.lastActivityAt ?? row.lastActivityAt ?? null,
+              })),
+            args,
+          ),
+        };
+      }
+      throw new Error("Unsupported management action.");
+    },
+  });
+  const globalAssistantManagement = new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>({
+    receipt: async (key) => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key, value) => {
+      await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
+    },
+    approve: async (operation, principal, authorized) => conversationDesktop.callAssistantThread(
+      "management.write.authorize", { operation }, principal, authorized,
+    ) as Promise<{ approved?: boolean; operationHash?: string }>,
+    execute: async (action, args, principal, authorized) => {
+      const desktopAction = action.startsWith("projects.organization.")
+        ? action.replace("projects.organization.", "organization.")
+        : action === "providers.status" ? "providerManagement.read"
+        : action === "providers.quota.refresh" ? "providerManagement.quotaRefresh"
+        : action === "providers.operation.status" ? "providerManagement.status" : action;
+      const { requestId, offset: _offset, limit: _limit, memberOffset: _memberOffset, ...fields } = args;
+      const value = await conversationDesktop.callAssistantThread(desktopAction, {
+        ...fields,
+        ...(desktopAction === "organization.read" ? { ...(args.offset === undefined ? {} : { offset: args.offset }), ...(args.limit === undefined ? {} : { limit: args.limit }) } : {}),
+        ...(requestId ? { operationId: requestId } : {}),
+      }, principal, authorized);
+      if (desktopAction === "organization.read" && value && typeof value === "object" && !Array.isArray(value) && Array.isArray((value as Record<string, unknown>).items)) {
+        const known = await engine.store.projects();
+        const directory = value as Record<string, unknown>;
+        directory.items = (directory.items as unknown[]).map((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+          const record = item as Record<string, unknown>;
+          const matches = known.filter((project) => project.cwd === record.cwd);
+          return matches.length === 1 ? { ...record, projectId: matches[0].id } : record;
+        });
+        if (!(await authorized())) throw new Error("Assistant thread authority revoked.");
+      }
+      return pageDesktopManagementSnapshot(value, args);
+    },
+  });
+  const globalServerManagement = new ConversationManagementTools<string, GlobalManagementPrincipal>({
+    receipt: async (key) => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key, value) => {
+      await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
+    },
+    approve: async (operation, principal, authorized) => conversationDesktop.callAssistantThread("management.write.authorize", { operation }, principal, authorized) as Promise<{ approved?: boolean; operationHash?: string }>,
+    execute: async (action, args, principal, authorized) => {
+      const input = args.serverInput as Record<string, unknown>;
+      const { operationId: _operationId, ...canonical } = input;
+      return conversationDesktop.callAssistantThread(action, canonical, principal, authorized);
+    },
+  }, new Set());
+  const executeAccountSocial = async (call: { threadId: string; accountId: string; action: string; input: Record<string, unknown>; requestId: string }, deviceHash: string, authorized: () => Promise<boolean>, includeProof = false) => {
+    if (!(await authorized())) throw new Error("Room account authority revoked.");
+    const grant = await social.issueAccountThreadGrant(call.threadId, call.accountId, deviceHash);
+    try {
+      const principal = await social.principalForToken(grant.token);
+      if (!principal || !(await authorized())) throw new Error("Room account authority revoked.");
+      const grantAuthorization = social.authorization(grant.token);
+      const grantCheck = typeof grantAuthorization === "function" ? grantAuthorization : grantAuthorization.check;
+      const check = async () => (await authorized()) && (await grantCheck());
+      const result = await engine.store.db.withAuthorization(check, () => socialTransport.rpc(principal, "social.tools.call", { action: call.action, input: call.input, requestId: call.requestId }));
+      if (!(await check())) throw new Error("Room account authority revoked.");
+      return includeProof ? roomAccountResult(result, [{ accountId: grant.scope.accountId, version: grant.scope.version }]) : result;
+    } finally { social.revokeSessionGrant(grant.token); }
+  };
+  const visibilityFence = new AssistantVisibilityFence();
+  const nativeAdmissionOwner = new NativeAdmissionOwner(
+    process.env.BYCODA_NATIVE_ADMISSION_REGISTRY ?? join(dirname(engine.store.attachmentDir), "native-admission-registry.json"),
+    engine.store.environmentId,
+    !process.env.BYCODA_NATIVE_ADMISSION_REGISTRY,
+  );
+  const roomDelegationTarget = createRoomNativeTargetAdapter({
+    environmentId: engine.store.environmentId,
+    admission: nativeAdmissionOwner,
+    store: hostRoomDelegationStore(engine.store),
+    withProject: async (projectId, actions, requestId, operationHash, expectedNative, authorized, body) => {
+      const room = await assistant.globalRoomBinding();
+      if (!room) throw new Error("Target Host Room source is unavailable.");
+      const current = async () => await authorized() && (await assistant.globalRoomBinding())?.id === room.id;
+      return withRoomProjectScope({ threadId: room.id, projectId, family: "conversation", action: "delegation.target", input: { actions: [...actions], operationHash }, requestId }, current, async (valid, captured) => {
+        // The reviewed origin and the target's live privacy owner may be distinct
+        // enrolled installations. One registry lease fences both original keys.
+        if (captured.registryRevision !== expectedNative.revision || !(await nativeAdmissionOwner.current(expectedNative.installationId, expectedNative.revision)))
+          throw new Error("Target Host Native delegation source changed.");
+        return body(valid, captured.projectCwd);
+      });
+    },
+    execute: async (action, input, principal, _requestId, authorized) => {
+      const { expectedUpdatedAt: _expectedUpdatedAt, ...canonicalInput } = input;
+      validateConversationTool(action, action === "tasks.update" ? canonicalInput : input);
+      if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
+      if (action === "sessions.list") {
+        const { list } = await projectSessionList(principal.projectId);
+        return conversationSessionPage(list.map(row => ({ ...row, busy: row.status === "running" })), input);
+      }
+      if (action === "sessions.read") {
+        const target = await featureSession(String(input.sessionId));
+        if (target.projectId !== principal.projectId) throw new Error("Conversation belongs to another project.");
+        return sessionConversationPage({ ...target.session, busy: target.status === "running" }, input, await localSessionReference(target.session.id));
+      }
+      if (action === "tasks.create" || action === "tasks.update")
+        return conversationThreadWork.callDelegated(action, input, principal, authorized);
+      const rows = (await tasks.list(principal.projectId)).filter(row => row.projectId === principal.projectId);
+      if (action === "tasks.list") return managementPage(rows, input);
+      if (action === "tasks.get") {
+        const item = rows.find(row => row.id === input.taskId);
+        if (!item) throw new Error("Task is unavailable in the delegated project.");
+        return item;
+      }
+      throw new Error("Delegated write operations are unavailable.");
+    },
+  });
+  const visibilityAdmission = new AssistantVisibilityAdmission(engine.store.environmentId, nativeAdmissionOwner, visibilityFence);
+  const observationJournal = new AssistantObservationJournal(engine.store);
+  const observationPages = new AssistantObservationPages(engine.store);
+  const observationNativePages = new AssistantObservationNativePages(engine.store);
+  const observationHostPages = new AssistantObservationHostPages(engine.store);
+  const nativeVoiceLeases = new AssistantNativeVoiceLeases(engine.store);
+  const nativeObservationGeneration = (proof: NativeLibraryProof) => createHash("sha256").update(JSON.stringify([proof.environmentId, proof.threadId, proof.installationId, proof.issuer, proof.registryRevision, proof.visibilityEpoch, proof.policyGeneration])).digest("hex");
+  const observationProjectPages = new AssistantObservationProjectPages(engine.store);
+  const assistantWorkspaceOwner = new AssistantWorkspaceOwner(engine.store);
+  assistantPorts.roomObservationDelivered = async (threadId, observations, proofs, valid, projectProofs = [], nativeProofs = []) => {
+    for (const item of observations) {
+      if (!item || typeof item !== "object") continue;
+      const observation = item as { source?: { family?: string; action?: string; projectId?: string; accountId?: string; nativeLibrary?: boolean }; value?: { state?: string; observationSource?: unknown; snapshot?: { snapshotId?: unknown; offset?: unknown; nextOffset?: unknown; coverage?: unknown } } };
+      const source = observation.source, snapshot = observation.value?.snapshot;
+      if (source?.family !== "conversation" || source.action !== "observations.resnapshot" || observation.value?.state !== "incomplete" || !snapshot || typeof snapshot.snapshotId !== "string" || !Number.isSafeInteger(snapshot.offset) || !Number.isSafeInteger(snapshot.nextOffset)) continue;
+      if (source.nativeLibrary && source.projectId && !source.accountId && observation.value?.observationSource === "native-session") {
+        const proof = nativeProofs.find(item => item.threadId === threadId && item.environmentId === engine.store.environmentId);
+        const project = projectProofs.find(item => item.projectId === source.projectId);
+        if (!proof || !project || !Array.isArray(snapshot.coverage) || snapshot.coverage.length !== 1 || snapshot.coverage[0] !== "native-session") throw new Error("Native session disclosure provenance unavailable.");
+        const generation = createHash("sha256").update(JSON.stringify([nativeObservationGeneration(proof),source.projectId,project.cwd])).digest("hex");
+        await observationNativePages.delivered({ threadId, installationId: proof.installationId, generation, consumer: observationRoomConsumer(threadId,generation,"native-session"), source: "native-session" }, snapshot.snapshotId, Number(snapshot.offset), Number(snapshot.nextOffset), valid);
+        continue;
+      }
+      if (source.nativeLibrary && !source.projectId && !source.accountId) {
+        const selected = observation.value?.observationSource;
+        const proof = nativeProofs.find(proof => proof.threadId === threadId && proof.environmentId === engine.store.environmentId);
+        if (!proof || (selected !== "note" && selected !== "server" && selected !== "crew") || !Array.isArray(snapshot.coverage) || snapshot.coverage.length !== 1 || snapshot.coverage[0] !== selected) throw new Error("Native observation disclosure proof is unavailable.");
+        const generation = nativeObservationGeneration(proof);
+        if (selected === "crew") {
+          await observationHostPages.delivered({ threadId, generation, consumer: observationRoomConsumer(threadId, generation, selected) }, snapshot.snapshotId, Number(snapshot.offset), Number(snapshot.nextOffset), valid);
+          continue;
+        }
+        await observationNativePages.delivered({ threadId, installationId: proof.installationId, generation, consumer: observationRoomConsumer(threadId, generation, selected), source: selected }, snapshot.snapshotId, Number(snapshot.offset), Number(snapshot.nextOffset), valid);
+        continue;
+      }
+      if (source.projectId && !source.accountId) {
+        const selected = observation.value?.observationSource;
+        if ((selected !== "task" && selected !== "session" && selected !== "goal") || !Array.isArray(snapshot.coverage) || snapshot.coverage.length !== 1 || snapshot.coverage[0] !== selected) throw new Error("Observation page project provenance is unavailable.");
+        const goalProofs = selected === "goal" ? await collectGoalObservationProjects(engine.store, source.projectId) : undefined;
+        if (goalProofs?.some(expected => !projectProofs.some(actual => actual.projectId === expected.projectId && actual.cwd === expected.cwd))) throw new Error("Goal observation disclosure scope changed.");
+        await observationProjectPages.delivered({ threadId, projectId: source.projectId, source: selected, consumer: observationRoomConsumer(threadId, undefined, selected) }, snapshot.snapshotId, Number(snapshot.offset), Number(snapshot.nextOffset), valid, goalProofs);
+        continue;
+      }
+      if (!source.accountId || source.projectId) throw new Error("Observation page scope is unavailable.");
+      const proof = proofs.find(value => value.accountId === source.accountId);
+      if (!proof) throw new Error("Observation page account provenance is unavailable.");
+      await observationPages.delivered({ threadId, accountId: source.accountId, version: proof.version, consumer: observationRoomConsumer(threadId, proof.version) }, snapshot.snapshotId, Number(snapshot.offset), Number(snapshot.nextOffset), valid);
+    }
+  };
+  let observationCoverage: Awaited<ReturnType<typeof installAssistantObservationProducers>> | undefined;
+  const roomProjectNotes = new ConversationManagementTools<string>({
+    approve: approveManagementOperation,
+    receipt: async key => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key, value) => { await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value)); },
+    execute: async (action, input, principal, authorized) => {
+      if (principal.kind !== "assistant-thread" || !["notes.create", "notes.update", "notes.delete"].includes(action) || !input.noteInput || typeof input.noteInput !== "object" || Array.isArray(input.noteInput)) throw new Error("Invalid project note operation.");
+      try { return await conversationWorkspace.call(action as ConversationTool, input.noteInput as Record<string, unknown>, principal, undefined, authorized); }
+      finally { await hostNotes.settled(); }
+    },
+  }, new Set());
+  const roomResourceReceipts = {
+    receipt: async (key: string) => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key: string, value: ManagementReceipt) => {
+      await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
+    },
+    approve: approveManagementOperation,
+  };
+  const roomFiles = createRoomFileTools({
+    ...roomResourceReceipts,
+    run: (principal, command, input, authorized) => workspace.run(command, input, `room:${engine.store.environmentId}:${principal.threadId}`, authorized),
+  });
+  const roomDevServers = createRoomDevServerTools({
+    ...roomResourceReceipts,
+    project: id => engine.store.project(id),
+    handle: (action, input, projects, authorize) => devServers.handle(action, input, projects, authorize),
+  });
+  const roomTerminals = createRoomTerminalTools({ ...roomResourceReceipts, terminals, project: id => engine.store.project(id) });
+  const roomBrowser = createRoomBrowserTools({ ...roomResourceReceipts, registry: sharedBrowser, previews: conversationPreviews, describe: value => browserRuntime.describe(value) });
+  const roomSessions = new ConversationManagementTools<string>({
+    approve: approveManagementOperation,
+    receipt: async key => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key, value) => { await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value)); },
+    execute: async (action, input, principal, authorized) => {
+      if (principal.kind !== "assistant-thread" || !isRoomSessionAction(action)) throw new Error("A real Room session source is required.");
+      return executeRoomSessionAction(action, input, { kind: "assistant-thread", threadId: principal.threadId, projectId: principal.projectId, name: await assistant.identityName() }, authorized, engine.store, engine);
+    },
+  }, new Set(["sessions.submit.status"]));
+  const workspaceTransferSource = new AsyncLocalStorage<{ valid: () => boolean; source: { deviceHash: string; projectCwd: string; installationId: string; registryRevision: string; visibilityEpoch: number; policyGeneration: string } }>();
+  const roomWorkspace = new ConversationManagementTools<string>({
+    approve: approveManagementOperation,
+    receipt: async (key) => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? JSON.parse(String(row.value)) as ManagementReceipt : undefined;
+    },
+    saveReceipt: async (key, value) => { await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value)); },
+    execute: async (action, input, principal, authorized) => {
+      if (principal.kind !== "assistant-thread" || !isRoomWorkspaceAction(action)) throw new Error("A real Room workspace source is required.");
+      const project = await engine.store.project(principal.projectId);
+      if (action !== "workspace.sessions.submit.status" && action !== "workspace.operation.status") {
+        const bound = workspaceTransferSource.getStore();
+        if (!bound || bound.source.projectCwd !== project.cwd) throw new Error("Native workspace scope is unavailable.");
+        const current = async () => bound.valid() && await authorized() && bound.valid();
+        const source = { environmentId: engine.store.environmentId, threadId: principal.threadId, projectId: principal.projectId, targetProjectCwd: project.cwd, targetDeviceHash: bound.source.deviceHash, installationId: bound.source.installationId, registryRevision: bound.source.registryRevision, visibilityEpoch: bound.source.visibilityEpoch, policyGeneration: bound.source.policyGeneration, action, originalInput: input, requestId: String(input.requestId) };
+        return transferAssistantWorkspaceOperation(assistantWorkspaceOwner, source, current, bound.valid,
+          value => conversationDesktop.callAssistantThread("workspace.operation.execute", value, { threadId: principal.threadId, environmentId: engine.store.environmentId, projectId: principal.projectId, targetProjectCwd: project.cwd, targetDeviceHash: bound.source.deviceHash }, current),
+          value => verifyWorkspaceReceipt(nativeAdmissionOwner, value as { relayId: string; envelope: unknown }, { environmentId: engine.store.environmentId, threadId: principal.threadId, projectId: principal.projectId, targetCwd: project.cwd, operationId: source.requestId, action, originalInput: input }, current, bound.source));
+      }
+      return conversationDesktop.callAssistantThread(action, input, { threadId: principal.threadId, environmentId: engine.store.environmentId, projectId: project.id, targetProjectCwd: project.cwd }, authorized);
+    },
+  }, new Set(["workspace.sessions.submit.status"]));
+  const roomNotebook = new AssistantRoomNotebook(assistant, {
+    receipt: async (key) => {
+      const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
+      return row ? (JSON.parse(String(row.value)) as ManagementReceipt) : undefined;
+    },
+    saveReceipt: async (key, value) => {
+      await engine.store.db
+        .prepare(
+          "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(key, JSON.stringify(value));
+    },
+    approve: async (operation, principal, authorized) =>
+      conversationDesktop.callAssistantThread(
+        "management.write.authorize",
+        { operation },
+        principal,
+        authorized,
+      ) as Promise<{ approved?: boolean; operationHash?: string }>,
+  });
+  const visibleProjectForThread = async (id: string, threadId: string, authorized: () => Promise<boolean>) => {
+    const project = await engine.store.project(id);
+    for (let offset = 0; offset < 1000; offset += 100) {
+      const page = await conversationDesktop.callAssistantThread("organization.read", { offset, limit: 100 }, { threadId, environmentId: engine.store.environmentId }, authorized) as { items?: Array<{ cwd?: string }>; nextOffset?: number | null };
+      if (!Array.isArray(page.items)) return false;
+      if (page.items.some((item) => item.cwd === project.cwd)) return true;
+      if (page.nextOffset == null || page.nextOffset !== offset + 100) return false;
+    }
+    return false;
+  };
+  const roomVisibleProject = async (id: string, threadId: string, admission: import("./assistant/management/assistant-management-turn").RoomManagementAdmission) => visibleProjectForThread(id, threadId, admission.authorized);
+  social.retireAssistantVoiceGenerations = async (generations, effect) => {
+    const authorized = async () => {
+      try {
+        await engine.store.db.checkAuthorization();
+        for (const generation of generations)
+          if (!(await engine.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(generation.deviceHash))) return false;
+        return true;
+      } catch { return false; }
+    };
+    const expected = generations.map(generation => ({
+      environmentId: engine.store.environmentId,
+      threadId: generation.threadId,
+      generationKey: generation.generationKey,
+      requestId: randomUUID(),
+      operationHash: createHash("sha256").update(JSON.stringify([generation.threadId, generation.generationKey, generation.deviceHash, generation.accounts])).digest("hex"),
+    }));
+    return withVoiceGenerationsRetired({
+      admission: nativeAdmissionOwner,
+      relay: (item, check) => {
+        const generation = generations.find(value => value.threadId === item.threadId && value.generationKey === item.generationKey);
+        if (!generation) throw new Error("Voice generation retirement source changed.");
+        return conversationDesktop.callAssistantThread("voice.generation.retire", { generationKey: item.generationKey, requestId: item.requestId, operationHash: item.operationHash }, { threadId: item.threadId, environmentId: item.environmentId, targetDeviceHash: generation.deviceHash }, check) as Promise<{ relayId: string; envelope: unknown }>;
+      },
+    }, expected, authorized, effect);
+  };
+  assistantPorts.roomAccountProofsValid = async (threadId, proofs) => social.assistantAccountProofsValid(threadId, proofs);
+  const retireNativeVoiceGenerations = async <T>(generations: NativeVoiceLease[], effect: (valid: () => boolean) => Promise<T>): Promise<T> => {
+    const authorized = async () => {
+      try {
+        await engine.store.db.checkAuthorization();
+        for (const generation of generations) {
+          if (generation.environmentId !== engine.store.environmentId || !(await engine.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(generation.deviceHash))) return false;
+        }
+        return true;
+      } catch { return false; }
+    };
+    const expected = generations.map(generation => ({ environmentId: generation.environmentId, threadId: generation.threadId, generationKey: generation.generationKey, requestId: randomUUID(), operationHash: createHash("sha256").update(JSON.stringify(["native.voice.retire", generation])).digest("hex") }));
+    return withVoiceGenerationsRetired({ admission: nativeAdmissionOwner, relay: (item, check) => {
+      const generation = generations.find(value => value.threadId === item.threadId && value.generationKey === item.generationKey);
+      if (!generation) throw new Error("Native voice retirement source changed.");
+      return conversationDesktop.callAssistantThread("voice.generation.retire", { generationKey: item.generationKey, requestId: item.requestId, operationHash: item.operationHash }, { threadId: item.threadId, environmentId: item.environmentId, targetDeviceHash: generation.deviceHash }, check) as Promise<{ relayId: string; envelope: unknown }>;
+    } }, expected, authorized, effect);
+  };
+  assistantPorts.roomProjectProofsValid = async proofs => {
+    try {
+      if (proofs.length > 1000) return false;
+      const seen = new Map<string, string>();
+      for (const proof of proofs) {
+        if (!proof.projectId || !proof.cwd || (seen.has(proof.projectId) && seen.get(proof.projectId) !== proof.cwd) || (await engine.store.project(proof.projectId)).cwd !== proof.cwd) return false;
+        seen.set(proof.projectId, proof.cwd);
+      }
+      return true;
+    }
+    catch { return false; }
+  };
+  assistantPorts.withRoomAccountDisclosure = async (threadId, proofs, admission, effect) =>
+    social.withAssistantAccountProofs(threadId, proofs, async () => !admission.signal?.aborted && await admission.authorized(), effect);
+  assistantPorts.roomManagementVisible = async (threadId, projectIds, admission) => {
+    if (projectIds.length > 1000) return false;
+    try {
+      for (const id of new Set(projectIds)) if (!(await roomVisibleProject(id, threadId, admission))) return false;
+      return true;
+    } catch { return false; }
+  };
+  const withRoomProjectScope = async <T>(
+    call: import("./assistant/management/assistant-management-turn").RoomManagementCall,
+    authorized: () => Promise<boolean>,
+    body: (valid: () => boolean, source: { deviceHash: string; projectCwd: string; installationId: string; registryRevision: string; visibilityEpoch: number; policyGeneration: string }) => Promise<T>,
+    expectedDeviceHash?: string,
+  ): Promise<T> => {
+    if (!call.projectId) throw new Error("A project target is required for native scope.");
+    const project = await engine.store.project(call.projectId);
+    const operationHash = createHash("sha256").update(JSON.stringify([call.family, call.action, call.input])).digest("hex");
+    const captured = await conversationDesktop.callAssistantThread(
+      "privacy.scope.capture", { action: call.action, requestId: call.requestId, operationHash },
+      { threadId: call.threadId, environmentId: engine.store.environmentId, projectId: call.projectId, targetProjectCwd: project.cwd, ...(expectedDeviceHash ? { targetDeviceHash: expectedDeviceHash } : {}) }, authorized,
+    ) as { relayId: string; envelope: unknown; deviceHash: string };
+    if (!/^[a-f0-9]{64}$/.test(captured.deviceHash)) throw new Error("Native project source device is unavailable.");
+    if (expectedDeviceHash && captured.deviceHash !== expectedDeviceHash) throw new Error("Native project source device changed.");
+    return visibilityAdmission.withCapture(captured.envelope, {
+      environmentId: engine.store.environmentId, threadId: call.threadId, projectId: call.projectId,
+      targetCwd: project.cwd, action: call.action, requestId: call.requestId, operationHash, relayId: captured.relayId,
+    }, authorized, (valid, identity) => engine.store.withProjectIdentityRead([{ projectId: call.projectId!, cwd: project.cwd }], identityValid => engine.store.db.withAuthorization(async () => valid() && identityValid() && await authorized() && valid() && identityValid(), async () => {
+      captureRoomProject(call.projectId!, project.cwd);
+      return body(() => valid() && identityValid(), { deviceHash: captured.deviceHash, projectCwd: project.cwd, ...identity });
+    })));
+  };
+  let taskNotificationReadyUntil = 0;
+  const withNativeObservationScope = async <T>(
+    threadId: string, requestId: string, input: unknown,
+    authorized: () => Promise<boolean>,
+    body: (valid: () => boolean, proof: NativeLibraryProof, capture: NativeObservationCapture, deviceHash: string) => Promise<T>,
+    targetDeviceHash?: string,
+  ): Promise<T> => {
+    if ((await assistant.globalRoomBinding())?.id !== threadId) throw new Error("Native library requires the original Global Room.");
+    const operationHash = createHash("sha256").update(JSON.stringify(["native.observations", threadId, requestId, input])).digest("hex");
+    const captured = await conversationDesktop.callAssistantThread("privacy.account.capture", { requestId, operationHash }, { threadId, environmentId: engine.store.environmentId, ...(targetDeviceHash ? { targetDeviceHash } : {}) }, authorized) as { relayId: string; envelope: { operationJson: string }; deviceHash: string };
+    if (!/^[a-f0-9]{64}$/.test(captured.deviceHash)) throw new Error("Native library source device is unavailable.");
+    return visibilityAdmission.withAccountCapture(captured.envelope, { environmentId: engine.store.environmentId, threadId, relayId: captured.relayId, requestId, operationHash }, authorized, (valid, identity) => {
+      const proof: NativeLibraryProof = { environmentId: engine.store.environmentId, threadId, ...identity };
+      const original = JSON.parse(captured.envelope.operationJson) as { projectionRevision: number; policyDigest: string; privacyRevision: number };
+      const capture = { ...proof, projectionRevision: original.projectionRevision, policyDigest: original.policyDigest, privacyRevision: original.privacyRevision };
+      return engine.store.db.withAuthorization(async () => valid() && await authorized() && valid(), () => body(valid, proof, capture, captured.deviceHash));
+    });
+  };
+  const withNativeSessionScope = async <T>(call: import("./assistant/management/assistant-management-turn").RoomManagementCall, authorized: () => Promise<boolean>, body: (valid: () => boolean, proof: NativeLibraryProof, capture: NativeObservationCapture, deviceHash: string, cwd: string) => Promise<T>) => {
+    if (!call.projectId || (await assistant.globalRoomBinding())?.id !== call.threadId) throw new Error("Native session observations require the original global Room and exact project.");
+    const project = await engine.store.project(call.projectId);
+    const operationHash = createHash("sha256").update(JSON.stringify(["native.session.observations",call.threadId,call.projectId,project.cwd,call.requestId,call.input])).digest("hex");
+    const projectCapture = await conversationDesktop.callAssistantThread("privacy.scope.capture", { action: call.action, requestId: call.requestId, operationHash }, { threadId: call.threadId, environmentId: engine.store.environmentId, projectId: call.projectId, targetProjectCwd: project.cwd }, authorized) as { relayId: string; envelope: unknown; deviceHash: string };
+    if (!/^[a-f0-9]{64}$/.test(projectCapture.deviceHash)) throw new Error("Native session source device unavailable.");
+    const accountCapture = await conversationDesktop.callAssistantThread("privacy.account.capture", { requestId: call.requestId, operationHash }, { threadId: call.threadId, environmentId: engine.store.environmentId, targetDeviceHash: projectCapture.deviceHash }, authorized) as { relayId: string; envelope: { operationJson: string }; deviceHash: string };
+    if (accountCapture.deviceHash !== projectCapture.deviceHash) throw new Error("Native session source device changed.");
+    const expectedProject = { environmentId: engine.store.environmentId, threadId: call.threadId, projectId: call.projectId, targetCwd: project.cwd, action: call.action, requestId: call.requestId, operationHash, relayId: projectCapture.relayId };
+    const expectedAccount = { environmentId: engine.store.environmentId, threadId: call.threadId, requestId: call.requestId, operationHash, relayId: accountCapture.relayId };
+    return visibilityAdmission.withCaptures([{ envelope: projectCapture.envelope, expected: expectedProject }], authorized, (valid, identity) => engine.store.withProjectIdentityRead([{ projectId: call.projectId!, cwd: project.cwd }], async identityValid => {
+      if (!valid() || !identityValid()) throw new Error("Native session source changed.");
+      captureRoomProject(call.projectId!,project.cwd);
+      const original = JSON.parse(accountCapture.envelope.operationJson) as { projectionRevision: number; policyDigest: string; privacyRevision: number };
+      const proof: NativeLibraryProof = { environmentId: engine.store.environmentId, threadId: call.threadId, ...identity };
+      return body(() => valid() && identityValid(), proof, { ...proof, ...original }, projectCapture.deviceHash, project.cwd);
+    }), [{ envelope: accountCapture.envelope, expected: expectedAccount }]);
+  };
+  assistantPorts.observedTaskDeliveryConfigured = () => true;
+  assistantPorts.observationTasksReady = () => monotonicNow() < taskNotificationReadyUntil;
+  assistantPorts.pollObservedTasks = async (projectIds, accept, active) => {
+    const room = await assistant.globalRoomBinding();
+    if (!room) throw new Error("Assistant global Room source is unavailable.");
+    let incomplete = false;
+    for (const projectId of [...new Set(projectIds)]) {
+      const authorized = async () => active() && (await assistant.globalRoomBinding())?.id === room.id && await assistant.manualProjectAllowed(projectId);
+      if (!(await authorized())) { incomplete = true; continue; }
+      const call = { threadId: room.id, projectId, family: "conversation" as const, action: "observations.read", input: {}, requestId: randomUUID() };
+      try {
+        await withRoomProjectScope(call, authorized, async (scopeValid, source) => {
+          const valid = () => active() && scopeValid();
+          const page = await observationJournal.read("chief:task", { projectId }, authorized, async event => event.source === "task" && event.projectIds.length === 1 && event.projectIds[0] === projectId, valid, 3, 3000, "task");
+          if (page.status === "gap") throw new Error("Task observation history has a retention gap; owner resnapshot is required.");
+          for (const event of page.events) {
+            if (!(await accept(event, valid))) break;
+            await observationJournal.acknowledge("chief:task", { projectId }, event.sequence, authorized, valid);
+          }
+          const targets = (await assistant.observedNotificationTargets()).filter(target => target.projectId === projectId);
+          for (const target of targets) {
+            if (!valid()) throw new Error("Task notification source changed.");
+            const prior = await assistant.observedNotificationIntent(target.id);
+            if (prior?.state === "accepted" || prior?.state === "suppressed") continue;
+            if (prior && prior.state !== "prepared" && (prior.threadId !== room.id || prior.projectId !== projectId || prior.deviceHash !== source.deviceHash)) continue;
+            const intent = prior && prior.state !== "prepared" ? prior : await assistant.prepareObservedNotification(room.id, target.id, projectId, source.deviceHash, valid);
+            if (!intent) continue;
+            const requestId = `observation-${intent.operationHash}`;
+            const input = { notificationId: intent.notificationId, kind: intent.kind, requestId, operationHash: intent.operationHash, projectCwds: [source.projectCwd] };
+            const expected = { environmentId: engine.store.environmentId, threadId: room.id, notificationId: intent.notificationId, kind: intent.kind, requestId, operationHash: intent.operationHash };
+            const relay = (action: "assistant.notification.status" | "assistant.notification.deliver") => conversationDesktop.callAssistantThread(action, input, { threadId: room.id, environmentId: engine.store.environmentId, targetDeviceHash: source.deviceHash }, authorized) as Promise<{ relayId: string; envelope: unknown }>;
+            const status = await verifyAssistantNotificationReceipt(nativeAdmissionOwner, await relay("assistant.notification.status"), expected, authorized);
+            taskNotificationReadyUntil = status.permission === "granted" ? monotonicNow() + 15_000 : 0;
+            if (intent.state === "pending" || intent.state === "unknown") {
+              if (status.state === "accepted" || status.state === "suppressed") await assistant.settleObservedNotification(intent, status.state);
+              continue;
+            }
+            if (status.permission !== "granted" || !valid()) continue;
+            if (!(await assistant.armObservedNotification(intent, valid))) continue;
+            if (status.state === "accepted" || status.state === "suppressed") { await assistant.settleObservedNotification(intent, status.state); continue; }
+            try {
+              const receipt = await verifyAssistantNotificationReceipt(nativeAdmissionOwner, await relay("assistant.notification.deliver"), expected, authorized);
+              await assistant.settleObservedNotification(intent, receipt.state);
+            } catch (error) {
+              await assistant.settleObservedNotification(intent, "unknown");
+              throw error;
+            }
+          }
+        });
+      } catch { taskNotificationReadyUntil = 0; incomplete = true; }
+    }
+    if (incomplete) throw new Error("Some task observation sources were unavailable or need resnapshot.");
+  };
+  assistantPorts.withRoomProjectDisclosure = async (threadId, projectIds, admission, effect, projectProofs) => {
+    const ids = [...new Set(projectIds)];
+    if (!ids.length) return effect(() => true);
+    const initialThread = await assistant.threadBinding(threadId);
+    if (!initialThread || initialThread.id !== threadId) throw new Error("Room disclosure source is unavailable.");
+    const authorized = async () => {
+      if (admission.signal?.aborted || !(await admission.authorized())) return false;
+      const current = await assistant.threadBinding(threadId);
+      return !!current && current.id === threadId && current.projectId === initialThread.projectId;
+    };
+    const requestId = randomUUID();
+    const operationHash = createHash("sha256").update(JSON.stringify(["room.disclosure", threadId, ids.slice().sort(), requestId])).digest("hex");
+    const captures: Array<{ envelope: unknown; expected: import("./assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture }> = [];
+    for (const projectId of ids) {
+      const project = await engine.store.project(projectId);
+      const result = await conversationDesktop.callAssistantThread("privacy.scope.capture", { action: "room.disclosure", requestId, operationHash }, { threadId, environmentId: engine.store.environmentId, projectId, targetProjectCwd: project.cwd }, authorized) as { relayId: string; envelope: unknown };
+      captures.push({ envelope: result.envelope, expected: { environmentId: engine.store.environmentId, threadId, projectId, targetCwd: project.cwd, action: "room.disclosure", requestId, operationHash, relayId: result.relayId } });
+    }
+    const proofs = [...(projectProofs ?? [])];
+    if (proofs.some(proof => !ids.includes(proof.projectId))) throw new Error("Room disclosure contains an unqualified project source.");
+    for (const item of captures) {
+      const expected = proofs.filter(proof => proof.projectId === item.expected.projectId);
+      if (expected.some(proof => proof.cwd !== item.expected.targetCwd)) throw new Error("Room project identity changed before disclosure.");
+      if (!expected.length) proofs.push({ projectId: item.expected.projectId, cwd: item.expected.targetCwd });
+    }
+    return visibilityAdmission.withCaptures(captures, authorized, valid => engine.store.withProjectIdentityRead(proofs, async identityValid => {
+      if (!valid() || !identityValid()) throw new Error("Room project scope revoked.");
+      return effect(() => valid() && identityValid());
+    }));
+  };
+  assistantPorts.withSummarySourceDisclosure = async (targetThreadId, projectProofs, accountProofs, effect, expectedNative, nativeSources = []) => {
+    const actor = await assistant.globalRoomBinding();
+    const target = await assistant.threadBinding(targetThreadId);
+    if (!actor || !target || target.id !== targetThreadId) throw new Error("Summary Room source is unavailable.");
+    const nativeProofs = mergeNativeLibraryProofs(nativeSources);
+    if (nativeProofs.some(proof => proof.environmentId !== engine.store.environmentId || proof.threadId !== actor.id)) throw new Error("Summary Native library source changed.");
+    if (projectProofs.length > 1000 || accountProofs.length > 100) throw new Error("Summary source scope is too large.");
+    const authorized = async () => {
+      const current = await assistant.threadBinding(targetThreadId);
+      return (await assistant.globalRoomBinding())?.id === actor.id && !!current && current.id === target.id && current.projectId === target.projectId;
+    };
+    if (!(await authorized()) || (accountProofs.length && !(await social.assistantAccountProofsValid(actor.id, accountProofs)))) throw new Error("Summary source access is unavailable.");
+    const requestId = randomUUID();
+    const operationHash = createHash("sha256").update(JSON.stringify(["summary.disclosure", targetThreadId, projectProofs, accountProofs, requestId])).digest("hex");
+    const checkIssuer = (envelope: unknown) => {
+      if (expectedNative && JSON.parse(String((envelope as { operationJson?: unknown })?.operationJson)).issuer !== expectedNative.issuer) throw new Error("Native disclosure window changed.");
+    };
+    const run = async (valid: () => boolean) => {
+      if (expectedNative && !(await nativeAdmissionOwner.current(expectedNative.installationId, expectedNative.revision))) throw new Error("Native disclosure trust changed.");
+      return effect(valid);
+    };
+    const verifyNative = (identity: import("./assistant/native/assistant-visibility-admission").VisibilityIdentity & { issuer: string }) => {
+      if (nativeProofs.some(proof => proof.installationId !== identity.installationId || proof.issuer !== identity.issuer || proof.registryRevision !== identity.registryRevision || proof.visibilityEpoch !== identity.visibilityEpoch || proof.policyGeneration !== identity.policyGeneration)) throw new Error("Summary Native library privacy changed.");
+    };
+    if (!projectProofs.length) {
+      if (!accountProofs.length && !expectedNative && !nativeProofs.length) throw new Error("Summary source scope is unavailable.");
+      const captured = await conversationDesktop.callAssistantThread("privacy.account.capture", { requestId, operationHash }, { threadId: actor.id, environmentId: engine.store.environmentId, ...(expectedNative ? { targetDeviceHash: expectedNative.deviceHash } : {}) }, authorized) as { relayId: string; envelope: unknown };
+      checkIssuer(captured.envelope);
+      return visibilityAdmission.withAccountCapture(captured.envelope, { environmentId: engine.store.environmentId, threadId: actor.id, relayId: captured.relayId, requestId, operationHash }, authorized, (nativeValid, identity) => {
+        verifyNative(identity);
+        return accountProofs.length ? social.withAssistantAccountProofs(actor.id, accountProofs, authorized, accountValid => run(() => nativeValid() && accountValid())) : run(nativeValid);
+      });
+    }
+    const captures: Array<{ envelope: unknown; expected: import("./assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture }> = [];
+    for (const proof of projectProofs) {
+      if ((await engine.store.project(proof.projectId)).cwd !== proof.cwd) throw new Error("Summary project identity changed.");
+      const captured = await conversationDesktop.callAssistantThread("privacy.scope.capture", { action: "summary.disclosure", requestId, operationHash }, { threadId: actor.id, environmentId: engine.store.environmentId, projectId: proof.projectId, targetProjectCwd: proof.cwd, ...(expectedNative ? { targetDeviceHash: expectedNative.deviceHash } : {}) }, authorized) as { relayId: string; envelope: unknown };
+      checkIssuer(captured.envelope);
+      captures.push({ envelope: captured.envelope, expected: { environmentId: engine.store.environmentId, threadId: actor.id, projectId: proof.projectId, targetCwd: proof.cwd, action: "summary.disclosure", requestId, operationHash, relayId: captured.relayId } });
+    }
+    const nativeCaptures: Array<{ envelope: unknown; expected: { environmentId: string; threadId: string; relayId: string; requestId: string; operationHash: string } }> = [];
+    if (nativeProofs.length) {
+      const captured = await conversationDesktop.callAssistantThread("privacy.account.capture", { requestId, operationHash }, { threadId: actor.id, environmentId: engine.store.environmentId }, authorized) as { relayId: string; envelope: unknown };
+      nativeCaptures.push({ envelope: captured.envelope, expected: { environmentId: engine.store.environmentId, threadId: actor.id, requestId, operationHash, relayId: captured.relayId } });
+    }
+    return visibilityAdmission.withCaptures(captures, authorized, (nativeValid, identity) => engine.store.withProjectIdentityRead(projectProofs, async projectValid => {
+      verifyNative(identity);
+      const valid = () => nativeValid() && projectValid();
+      if (!valid()) throw new Error("Summary source access changed.");
+      if (!accountProofs.length) return run(valid);
+      return social.withAssistantAccountProofs(actor.id, accountProofs, authorized, accountValid => run(() => valid() && accountValid()));
+    }), nativeCaptures);
+  };
+  assistantPorts.withVoiceNarrationAuthorization = async (input, admission, effect) => {
+    const authorized = async () => !admission.signal?.aborted && admission.environmentId === engine.store.environmentId && /^[a-f0-9]{64}$/.test(admission.deviceHash) && await admission.authorized() && (await assistant.globalRoomBinding())?.id === input.threadId;
+    if (!(await authorized()) || input.projectIds.length > 100) throw new Error("Voice narration source unavailable.");
+    const requestId = randomUUID();
+    const operationHash = createHash("sha256").update(JSON.stringify(["narration", input, admission.deviceHash, requestId])).digest("hex");
+    const expected = { environmentId: engine.store.environmentId, threadId: input.threadId, generationKey: input.generation, requestId, operationHash };
+    const captured = await conversationDesktop.callAssistantThread("voice.generation.status", { generationKey: input.generation, requestId, operationHash }, { threadId: input.threadId, environmentId: engine.store.environmentId, targetDeviceHash: admission.deviceHash }, authorized) as { relayId: string; envelope: unknown };
+    const native = await captureLiveVoiceGeneration(nativeAdmissionOwner, expected, captured, authorized);
+    const projects = await Promise.all([...new Set(input.projectIds)].map(async projectId => ({ projectId, cwd: (await engine.store.project(projectId)).cwd })));
+    return assistantPorts.withSummarySourceDisclosure!(input.threadId, projects, input.accountProofs ?? [], async valid => {
+      if (!valid() || !(await authorized())) throw new Error("Voice narration source changed.");
+      if (input.accountProofs?.length) await social.registerAssistantVoiceLease({ threadId: input.threadId, generationKey: input.generation, deviceHash: admission.deviceHash, accounts: input.accountProofs }, valid);
+      return effect(() => valid() && !admission.signal?.aborted);
+    }, { ...native, deviceHash: admission.deviceHash });
+  };
+  social.roomSendSourceAdmission = async source => {
+    if ((await assistant.globalRoomBinding())?.id !== source.threadId) return false;
+    return source.projectId === null ? source.projectCwd === null : (await engine.store.project(source.projectId)).cwd === source.projectCwd;
+  };
+  social.withRoomSendSource = async (source, effect) => {
+    if (!(await social.roomSendSourceAdmission!(source))) throw new Error("Room social source changed.");
+    return assistantPorts.withSummarySourceDisclosure!(source.threadId, source.projectId ? [{ projectId: source.projectId, cwd: source.projectCwd! }] : [], [{ accountId: source.accountId, version: source.accountGrantVersion }], effect);
+  };
+  const roomRemote = new AssistantRoomRemote({
+    read: async key => { const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key); return row ? JSON.parse(String(row.value)) : undefined; },
+    write: async (key, value) => { await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value)); },
+    native: (action, input, source, authorized) => conversationDesktop.callAssistantThread(action, input, source, authorized),
+  });
+  const roomInbox = new AssistantRoomInbox({
+    read: async key => { const row = await engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key); return row ? JSON.parse(String(row.value)) : undefined; },
+    write: async (key, value) => { await engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value)); },
+    execute: (input, source, authorized) => conversationDesktop.callAssistantThread("inbox.room.execute", input, { threadId: source.threadId, environmentId: source.environmentId, projectId: source.projectId, targetProjectCwd: source.projectCwd, targetDeviceHash: source.deviceHash }, authorized),
+  });
+  const roomSocialSend = new AssistantRoomSocialSend({
+    receipt: roomResourceReceipts.receipt,
+    saveReceipt: roomResourceReceipts.saveReceipt,
+    approve: (operation, principal, authorized) => conversationDesktop.callAssistantThread("management.write.authorize", { operation }, principal, authorized) as Promise<{ approved?: boolean; operationHash?: string }>,
+    snapshot: async (proposal, principal, authorized) => social.prepareRoomSend(proposal, principal, proposal.projectId ? (await engine.store.project(proposal.projectId)).cwd : null, authorized),
+    enqueue: (proposal, snapshot, principal, authorized, review) => social.enqueueReviewedRoomSend(proposal, snapshot, principal, authorized, review),
+    readback: (jobId, principal, authorized) => social.roomSendJobStatus(jobId, principal, authorized),
+  });
+  const executeRoomSocialSend = async (call: import("./assistant/management/assistant-management-turn").RoomManagementCall, admission: import("./assistant/management/assistant-management-turn").RoomManagementAdmission, authorized: () => Promise<boolean>) => {
+    validateConversationTool(call.action, call.input);
+    const accountId = String(call.input.accountId), projectId = call.input.projectId as string | null;
+    if ((call.projectId ?? null) !== projectId || (call.accountId && call.accountId !== accountId)) throw new Error("Room social target changed.");
+    const source = { kind: "assistant-thread" as const, threadId: call.threadId, environmentId: engine.store.environmentId };
+    const grant = await social.issueAccountThreadGrant(call.threadId, accountId, admission.deviceHash);
+    const proof = { accountId, version: grant.scope.version };
+    const projectProofs = projectId ? [{ projectId, cwd: (await engine.store.project(projectId)).cwd }] : [];
+    let scopeValid = () => true;
+    const current = async () => scopeValid() && await authorized() && scopeValid();
+    const qualify = <T>(effect: () => Promise<T>) => assistantPorts.withSummarySourceDisclosure!(call.threadId, projectProofs, [proof], async valid => {
+      if (!valid() || !(await authorized())) throw new Error("Room social authority changed.");
+      scopeValid = valid;
+      for (const project of projectProofs) captureRoomProject(project.projectId, project.cwd);
+      try { const result = await effect(); if (!(await current())) throw new Error("Room social authority changed."); return result; }
+      finally { scopeValid = () => true; }
+    });
+    try {
+      const result = call.action === "social.send.status"
+        ? await roomSocialSend.status(source, String(call.input.operationId), current, qualify)
+        : await roomSocialSend.submit(call.input, source, current, call.requestId, qualify);
+      return roomAccountResult(result ?? { state: "unknown" }, [proof]);
+    } finally { social.revokeSessionGrant(grant.token); }
+  };
+  assistantPorts.withRoomResponseDisclosure = async (scopes, admission, effect) => {
+    if (scopes.length > 1000 || scopes.reduce((sum, item) => sum + item.projects.length, 0) > 1000) throw new Error("Room response source scope is too large.");
+    const authorized = async () => {
+      if (admission.signal?.aborted || !(await admission.authorized())) return false;
+      for (const scope of scopes) {
+        const thread = await assistant.threadBinding(scope.threadId);
+        if (!thread || thread.id !== scope.threadId || (thread.projectId && scope.projects.some(id => id !== thread.projectId)) || (thread.projectId && scope.accounts.length)) return false;
+      }
+      return true;
+    };
+    if (!(await authorized())) throw new Error("Room response authority is unavailable.");
+    const nativeProofs = mergeNativeLibraryProofs(...scopes.map(scope => scope.nativeProofs ?? []));
+    for (const scope of scopes) for (const proof of scope.nativeProofs ?? []) {
+      if (proof.environmentId !== engine.store.environmentId || proof.threadId !== scope.threadId || (await assistant.globalRoomBinding())?.id !== proof.threadId) throw new Error("Native library response source changed.");
+    }
+    const requestId = randomUUID();
+    const operationHash = createHash("sha256").update(JSON.stringify(["room.response.disclosure", scopes.map(scope => [scope.threadId, scope.projects.slice().sort()]), requestId])).digest("hex");
+    const captures: Array<{ envelope: unknown; expected: import("./assistant/native/assistant-visibility-admission").ExpectedVisibilityCapture }> = [];
+    const nativeCaptures: Array<{ envelope: unknown; expected: { environmentId: string; threadId: string; relayId: string; requestId: string; operationHash: string } }> = [];
+    for (const proof of nativeProofs) {
+      const captured = await conversationDesktop.callAssistantThread("privacy.account.capture", { requestId, operationHash }, { threadId: proof.threadId, environmentId: engine.store.environmentId }, authorized) as { relayId: string; envelope: unknown };
+      nativeCaptures.push({ envelope: captured.envelope, expected: { environmentId: engine.store.environmentId, threadId: proof.threadId, requestId, operationHash, relayId: captured.relayId } });
+    }
+    for (const scope of scopes) for (const projectId of scope.projects) {
+      const project = await engine.store.project(projectId);
+      const captured = await conversationDesktop.callAssistantThread("privacy.scope.capture", { action: "room.disclosure", requestId, operationHash }, { threadId: scope.threadId, environmentId: engine.store.environmentId, projectId, targetProjectCwd: project.cwd }, authorized) as { relayId: string; envelope: unknown };
+      captures.push({ envelope: captured.envelope, expected: { environmentId: engine.store.environmentId, threadId: scope.threadId, projectId, targetCwd: project.cwd, action: "room.disclosure", requestId, operationHash, relayId: captured.relayId } });
+    }
+    const accountScopes = scopes.filter(scope => scope.accounts.length);
+    const holdAccounts = (index: number, valid: () => boolean): ReturnType<typeof effect> => {
+      if (!valid()) throw new Error("Room response scope changed.");
+      if (index === accountScopes.length) return effect(valid);
+      const scope = accountScopes[index];
+      return social.withAssistantAccountProofs(scope.threadId, scope.accounts, authorized, accountValid => holdAccounts(index + 1, () => valid() && accountValid()));
+    };
+    if (!captures.length && !nativeCaptures.length) return holdAccounts(0, () => true);
+    const proofs = scopes.flatMap(scope => {
+      const expected = [...(scope.projectProofs ?? [])];
+      if (expected.some(proof => !scope.projects.includes(proof.projectId))) throw new Error("Room response contains an unqualified project source.");
+      for (const item of captures.filter(item => item.expected.threadId === scope.threadId)) {
+        const found = expected.filter(proof => proof.projectId === item.expected.projectId);
+        if (found.some(proof => proof.cwd !== item.expected.targetCwd)) throw new Error("Room project identity changed before response disclosure.");
+        if (!found.length) expected.push({ projectId: item.expected.projectId, cwd: item.expected.targetCwd });
+      }
+      return expected;
+    });
+    return visibilityAdmission.withCaptures(captures, authorized, (valid, identity) => {
+      if (nativeProofs.some(proof => proof.installationId !== identity.installationId || proof.issuer !== identity.issuer || proof.registryRevision !== identity.registryRevision || proof.visibilityEpoch !== identity.visibilityEpoch || proof.policyGeneration !== identity.policyGeneration)) throw new Error("Native library response privacy changed.");
+      return engine.store.withProjectIdentityRead(proofs, identityValid => holdAccounts(0, () => valid() && identityValid()));
+    }, nativeCaptures);
+  };
+  assistantPorts.roomNativeProofsValid = async (proofs, admission) => {
+    try {
+      const sources = mergeNativeLibraryProofs(proofs);
+      if (!sources.length) return true;
+      if (!admission) {
+        for (const expected of sources) {
+          const authorized = async () => expected.environmentId === engine.store.environmentId && (await assistant.globalRoomBinding())?.id === expected.threadId;
+          const current = await withNativeObservationScope(expected.threadId, randomUUID(), { action: "native.provenance.check" }, authorized, async (valid, captured) => valid() && nativeObservationGeneration(expected) === nativeObservationGeneration(captured));
+          if (!current) return false;
+        }
+        return true;
+      }
+      if (admission.environmentId !== engine.store.environmentId) return false;
+      return await assistantPorts.withRoomResponseDisclosure!(sources.map(proof => ({ threadId: proof.threadId, projects: [], accounts: [], nativeProofs: [proof] })), admission, async valid => valid());
+    } catch { return false; }
+  };
+  assistantPorts.withNativeVoiceSourcesRetired = effect => nativeVoiceLeases.retireAll(retireNativeVoiceGenerations, effect);
+  assistantPorts.withNativeVoiceRuntimeRegistration = async (input, admission, effect) => {
+    const authorized = async () => !admission.signal?.aborted && admission.environmentId === engine.store.environmentId && /^[a-f0-9]{64}$/.test(admission.deviceHash) && await admission.authorized() && (await assistant.globalRoomBinding())?.id === input.threadId;
+    if (!(await authorized()) || !input.nativeProofs.length) throw new Error("Native voice runtime source is unavailable.");
+    const requestId = randomUUID();
+    const operationHash = createHash("sha256").update(JSON.stringify(["voice.runtime.register", input, admission.deviceHash, requestId])).digest("hex");
+    const captured = await conversationDesktop.callAssistantThread("voice.generation.source", { generationKey: input.generationKey, requestId, operationHash }, { threadId: input.threadId, environmentId: engine.store.environmentId, targetDeviceHash: admission.deviceHash }, authorized) as { relayId: string; envelope: unknown };
+    const source = await captureVoiceRuntimeSource(nativeAdmissionOwner, { environmentId: engine.store.environmentId, threadId: input.threadId, generationKey: input.generationKey, requestId, operationHash }, captured, authorized);
+    if (input.nativeProofs.some(proof => proof.installationId !== source.installationId || proof.issuer !== source.issuer || proof.registryRevision !== source.revision)) throw new Error("Native voice runtime belongs to another source.");
+    return assistantPorts.withRoomResponseDisclosure!([{ threadId: input.threadId, projects: input.projectProofs.map(proof => proof.projectId), projectProofs: input.projectProofs, accounts: input.accountProofs, nativeProofs: input.nativeProofs }], admission, async valid => {
+      if (!valid() || !(await authorized())) throw new Error("Native voice runtime authority changed.");
+      if (input.accountProofs.length) await social.registerAssistantVoiceLease({ threadId: input.threadId, generationKey: input.generationKey, deviceHash: admission.deviceHash, accounts: input.accountProofs }, valid);
+      return nativeVoiceLeases.withRegistration({ threadId: input.threadId, generationKey: input.generationKey, deviceHash: admission.deviceHash, nativeProofs: input.nativeProofs }, () => valid() && !admission.signal?.aborted, effect);
+    });
+  };
+  const executeRoomObservation = async (call: import("./assistant/management/assistant-management-turn").RoomManagementCall, admission: import("./assistant/management/assistant-management-turn").RoomManagementAdmission, authorized: () => Promise<boolean>) => {
+    const fetchNativePage = async (native: { capture: NativeObservationCapture; deviceHash: string; projectId?: string; cwd?: string }, source: "note" | "server" | "native-session", valid: () => boolean, pageOffset: number, fingerprint?: string) => {
+      const requestId = randomUUID();
+      const operationHash = createHash("sha256").update(JSON.stringify(["native.observations.baseline", call.threadId, source, pageOffset, fingerprint, requestId])).digest("hex");
+      const captured = await conversationDesktop.callAssistantThread(source === "native-session" ? "observations.native.projectBaseline" : "observations.native.baseline", { requestId, operationHash, source, offset: pageOffset, ...(fingerprint ? { fingerprint } : {}) }, { threadId: call.threadId, environmentId: engine.store.environmentId, targetDeviceHash: native.deviceHash, ...(source === "native-session" ? { projectId: native.projectId, targetProjectCwd: native.cwd } : {}) }, authorized) as { relayId: string; envelope: unknown };
+      return verifyNativeObservationPage(nativeAdmissionOwner, native.capture, { relayId: captured.relayId, requestId, operationHash, source, offset: pageOffset, ...(source === "native-session" ? { projectId: native.projectId, targetCwd: native.cwd } : {}) }, captured.envelope, valid);
+    };
+    const run = (valid: () => boolean, consumerGeneration?: string, goalProofs?: { projectId: string; cwd: string }[], native?: { proof: NativeLibraryProof; capture: NativeObservationCapture; deviceHash: string; projectId?: string; cwd?: string }) => executeAssistantObservationTool({
+      journal: observationJournal,
+      consumerGeneration,
+      ...(native ? { nativeInstallationId: native.proof.installationId } : {}),
+      ...(native ? { nativeSourceGap: async (_scope: unknown, source: string) => {
+        if (source === "crew") return !(await observationHostPages.covered({ threadId: call.threadId, generation: consumerGeneration!, consumer: observationRoomConsumer(call.threadId, consumerGeneration, "crew") }));
+        if (source !== "note" && source !== "server" && source !== "native-session") throw new Error("Native observation source is unavailable.");
+        const status = await fetchNativePage(native, source, valid, 0);
+        const scope: NativePageScope = { threadId: call.threadId, installationId: native.proof.installationId, generation: consumerGeneration!, consumer: observationRoomConsumer(call.threadId, consumerGeneration, source), source };
+        const [uncertain, covered] = await Promise.all([observationNativePages.uncertain(scope), observationNativePages.covered(scope)]);
+        return status.sourceGap || uncertain || !covered;
+      } } : {}),
+      authorizeScope: async () => valid() && await authorized(),
+      authorizeEvent: async (_thread, scope, event) => valid() && ("nativeInstallationId" in scope
+        ? event.nativeInstallationId === scope.nativeInstallationId && event.projectIds.length === 0 && !event.accountId
+        : "hostLibrary" in scope ? event.source === "crew" && event.hostLibrary === true && event.projectIds.length === 0 && !event.accountId && !event.nativeInstallationId
+        : "accountId" in scope
+        ? event.source === "social" && event.accountId === scope.accountId && event.projectIds.length === 0
+        : event.source !== "social" && event.projectIds.includes(scope.projectId)),
+      guard: () => valid,
+      resnapshot: async (_thread, scope, _admission, offset, snapshotId, consumer, source) => {
+        if ("hostLibrary" in scope) {
+          if (!native || !consumerGeneration || source !== "crew") throw new Error("Host Crew observation source unavailable.");
+          return observationHostPages.page({ threadId: call.threadId, generation: consumerGeneration, consumer }, offset, snapshotId, valid);
+        }
+        if ("nativeInstallationId" in scope || ("projectId" in scope && source === "native-session")) {
+          if (!native || !consumerGeneration || (source !== "note" && source !== "server" && source !== "native-session")) return { complete: false, value: { reason: "This Native source has no qualified baseline." } };
+          return observationNativePages.page({ threadId: call.threadId, installationId: native.proof.installationId, generation: consumerGeneration, consumer, source }, offset, snapshotId, async (pageOffset, fingerprint) => {
+            return fetchNativePage(native, source, valid, pageOffset, fingerprint);
+          }, valid, async request => {
+            const operationHash = createHash("sha256").update(JSON.stringify(["native.observations.complete", call.threadId, source, request.fingerprint, request.watermark, request.requestId])).digest("hex");
+            const captured = await conversationDesktop.callAssistantThread(source === "native-session" ? "observations.native.projectComplete" : "observations.native.complete", { ...request, source, operationHash }, { threadId: call.threadId, environmentId: engine.store.environmentId, targetDeviceHash: native.deviceHash, ...(source === "native-session" ? { projectId: native.projectId, targetProjectCwd: native.cwd } : {}) }, authorized) as { relayId: string; envelope: unknown };
+            await verifyNativeObservationCompletion(nativeAdmissionOwner, native.capture, { relayId: captured.relayId, requestId: request.requestId, operationHash, source, fingerprint: request.fingerprint, watermark: request.watermark, ...(source === "native-session" ? { projectId: native.projectId, targetCwd: native.cwd } : {}) }, captured.envelope, valid);
+          });
+        }
+        if (!("accountId" in scope)) {
+          if (source === "task" || source === "session" || (source === "goal" && goalProofs)) return observationProjectPages.page({ threadId: call.threadId, projectId: scope.projectId, consumer, source }, offset, snapshotId, valid, goalProofs);
+          return { complete: false, value: { reason: "Select task, session or goal for a source-qualified project baseline. Other sources require their own visibility-qualified baseline." } };
+        }
+        if (!consumerGeneration) throw new Error("Observation account grant generation is unavailable.");
+        return observationPages.page({ threadId: call.threadId, accountId: scope.accountId, version: consumerGeneration, consumer }, offset, snapshotId, valid);
+      },
+    }, call, admission);
+    if (call.input.nativeLibrary === true) {
+      if (call.projectId || call.accountId) throw new Error("Native library does not use project or account scope.");
+      return withNativeObservationScope(call.threadId, call.requestId, call.input, authorized, async (valid, proof, capture, deviceHash) => {
+        const value = await run(valid, nativeObservationGeneration(proof), undefined, { proof, capture, deviceHash });
+        return roomNativeResult(value, [proof]);
+      });
+    }
+    if (call.projectId && call.input.source === "native-session") {
+      return withNativeSessionScope(call, authorized, async (valid,proof,capture,deviceHash,cwd) => {
+        const generation=createHash("sha256").update(JSON.stringify([nativeObservationGeneration(proof),call.projectId,cwd])).digest("hex");
+        return roomNativeResult(await run(valid,generation,undefined,{ proof,capture,deviceHash,projectId:call.projectId,cwd }),[proof]);
+      });
+    }
+    if (call.projectId && !call.accountId) {
+      if (call.input.source === "goal") {
+        const proofs = await collectGoalObservationProjects(engine.store, call.projectId);
+        return assistantPorts.withRoomProjectDisclosure!(call.threadId, proofs.map(proof => proof.projectId), admission, valid => {
+          for (const proof of proofs) captureRoomProject(proof.projectId, proof.cwd);
+          return run(valid, undefined, proofs);
+        }, proofs);
+      }
+      return withRoomProjectScope(call, authorized, valid => run(valid));
+    }
+    if (!call.accountId || call.projectId) throw new Error("Choose exactly one observation scope.");
+    const grant = await social.issueAccountThreadGrant(call.threadId, call.accountId, admission.deviceHash);
+    try {
+      const proof = { accountId: grant.scope.accountId, version: grant.scope.version };
+      const result = await social.withAssistantAccountProofs(call.threadId, [proof], authorized, valid => run(valid, proof.version));
+      return roomAccountResult(result, [proof]);
+    } finally { social.revokeSessionGrant(grant.token); }
+  };
+  assistantPorts.roomManagement = createRoomManagementDispatcher({
+    environmentId: engine.store.environmentId,
+    thread: (id) => assistant.threadBinding(id),
+    visibleProject: roomVisibleProject,
+    execute: async (call, admission) => {
+      const authorized = async () => {
+        if (admission.signal?.aborted || !(await admission.authorized())) return false;
+        const thread = await assistant.threadBinding(call.threadId);
+        return !!thread && thread.id === call.threadId && (!thread.projectId || thread.projectId === call.projectId);
+      };
+      const value = await engine.store.db.withAuthorization(authorized, async () => {
+        if (call.family === "conversation" && ["remote.grants.list", "remote.call", "remote.result"].includes(call.action)) {
+          if (call.projectId || (await assistant.globalRoomBinding())?.id !== call.threadId) throw new Error("Remote operations require the original Global Room.");
+          return roomRemote.call(call.action, call.input, { threadId: call.threadId, environmentId: engine.store.environmentId }, call.requestId, authorized);
+        }
+        if (call.family === "conversation" && ["social.send.propose", "social.send.status"].includes(call.action))
+          return executeRoomSocialSend(call, admission, authorized);
+        if (call.family === "conversation" && isAssistantObservationAction(call.action))
+          return executeRoomObservation(call, admission, authorized);
+        if (call.family === "social" && !call.projectId && !call.accountId && call.action === "accounts.list")
+          { const result = await social.listAssistantAccountsWithProof(call.threadId, admission.deviceHash, call.input); return roomAccountResult(result.value, result.accounts); }
+        if (call.family === "social" && !call.projectId && call.accountId)
+          return executeAccountSocial({ ...call, accountId: call.accountId }, admission.deviceHash, authorized, true);
+        if (call.family === "conversation" && isRoomNotebookAction(call.action))
+          return roomNotebook.call(
+            call.action,
+            call.input,
+            {
+              kind: "assistant-thread",
+              threadId: call.threadId,
+              environmentId: engine.store.environmentId,
+            },
+            authorized,
+            call.requestId,
+          );
+      if (call.family !== "conversation") {
+        if (call.projectId && call.family === "social") throw new Error("Project Room social disclosure requires explicit combined account and project authority.");
+        if (!call.projectId) throw new Error("Choose a visible project for this Room tool.");
+        const delegated = await prepareVoiceToolDispatch(call, {
+          authorized,
+          environmentId: engine.store.environmentId,
+          deviceHash: admission.deviceHash,
+          threadIdentity: (id) => assistant.threadBinding(id),
+          sessionIdentity: async () => { throw new Error("Room tools do not borrow sessions."); },
+          issuers: { conversation: conversationAccess, social, "runtime-logs": runtimeLogAccess },
+        });
+        try {
+          if (call.family === "social") {
+            const principal = await social.principalForToken(delegated.token);
+            if (!principal) throw new Error("Room social authority unavailable.");
+            const socialAuthorized = social.authorization(delegated.token);
+            const socialCheck = typeof socialAuthorized === "function" ? socialAuthorized : socialAuthorized.check;
+            return await engine.store.db.withAuthorization({
+              check: async () => (await authorized()) && (await socialCheck()),
+              prepare: async () => {
+                const prepared = typeof socialAuthorized === "function" ? socialAuthorized : await socialAuthorized.prepare();
+                return async () => (await authorized()) && (await prepared());
+              },
+            }, () => socialTransport.rpc(principal, "social.tools.call", delegated.params));
+          }
+          const principal = await runtimeLogAccess.principalForToken(delegated.token);
+          if (!principal) throw new Error("Room log authority unavailable.");
+          await refreshLogSources();
+          const query = runtimeLogToolQuery(call.action, call.input, principal);
+          return await withRoomProjectScope(call, authorized, async () => {
+            const result = call.action === "sources" || call.action === "runtimeLogs.sources" ? runtimeLogs.sources(query) : runtimeLogs.read(query);
+            if (!(await runtimeLogAccess.principalForToken(delegated.token))) throw new Error("Room log authority revoked.");
+            return result;
+          });
+        } finally { delegated.release(); }
+      }
+      if (!call.projectId) {
+        const principal: GlobalManagementPrincipal = { kind: "assistant-thread", threadId: call.threadId, environmentId: engine.store.environmentId };
+        if (isGlobalRuntimeRead(call.action))
+          return conversationManagementRuntime.call(call.action as import("./conversation/conversation-management-runtime").RuntimeManagementAction, call.input, principal, authorized);
+        if (["tools.list", "tools.search", "tools.describe", "tools.status"].includes(call.action)) return roomManagementDiscovery(call.action, call.input);
+        if (call.action === "servers.ssh.execute" && call.input.requestId !== call.requestId)
+          throw new Error("SSH operation identity changed.");
+        if (["servers.list", "servers.get", "servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"].includes(call.action))
+          return conversationDesktop.callAssistantThread(call.action, call.input, principal, authorized);
+        if (call.action === "servers.ssh.save" || call.action === "servers.ssh.remove") {
+          if (call.input.operationId !== call.requestId || typeof call.input.expectedInventoryRevision !== "string" || !/^[a-f0-9]{64}$/.test(call.input.expectedInventoryRevision)) throw new Error("Server operation identity or inventory revision is missing.");
+          return globalServerManagement.call(call.action, { requestId: call.requestId, serverInput: call.input }, principal, authorized);
+        }
+        if (!isManagementAction(call.action)) throw new Error("This global Room operation is unavailable.");
+        if (!["preferences.read", "preferences.status", "providers.status", "providers.operation.status", "projects.organization.read"].includes(call.action) && call.input.requestId !== call.requestId)
+          throw new Error("Management operation identity changed.");
+        return globalAssistantManagement.call(call.action, call.input, principal, authorized);
+      }
+      const principal = { kind: "assistant-thread" as const, threadId: call.threadId, projectId: call.projectId, provider: "assistant" as const };
+      let effectValid = () => true;
+      const effectAuthorized = async () => effectValid() && await authorized() && effectValid();
+      const qualifyEffect = <T>(effect: () => Promise<T>) => withRoomProjectScope(call, authorized, async valid => {
+        effectValid = valid;
+        try { return await effect(); } finally { effectValid = () => true; }
+      });
+      if (isRoomBrowserAction(call.action)) return withRoomProjectScope(call, authorized, async (valid, captured) => {
+        const current = async () => valid() && await authorized() && valid();
+        return roomBrowser.call(call.action, call.input, { environmentId: engine.store.environmentId, projectId: call.projectId!, projectCwd: captured.projectCwd, threadId: call.threadId, deviceHash: admission.deviceHash }, call.requestId, current, undefined,
+          async () => await conversationDesktop.callAssistantThread("ui.tools.open", { tab: "browser", projectHost: true }, { threadId: call.threadId, environmentId: engine.store.environmentId, projectId: call.projectId!, targetProjectCwd: captured.projectCwd, targetDeviceHash: captured.deviceHash }, current) as PreviewPresentation);
+      });
+      if (isRoomFileAction(call.action) || isRoomDevServerAction(call.action) || isRoomTerminalAction(call.action)) {
+        const project = await engine.store.project(call.projectId);
+        const source = { ...principal, projectCwd: project.cwd };
+        const input = (isRoomFileWrite(call.action) || isRoomTerminalWrite(call.action) || ["devServers.start", "devServers.stop", "devServers.restart"].includes(call.action)) ? { ...call.input, requestId: call.requestId } : call.input;
+        const qualify = <T>(effect: () => Promise<T>) => withRoomProjectScope(call, authorized, async (valid, captured) => {
+          if (captured.projectCwd !== source.projectCwd) throw new Error("Room resource project changed during review.");
+          effectValid = valid;
+          try { return await effect(); } finally { effectValid = () => true; }
+        });
+        if (isRoomTerminalAction(call.action)) return roomTerminals.call(call.action, input, { ...source, environmentId: engine.store.environmentId, deviceHash: admission.deviceHash }, effectAuthorized, qualify);
+        return isRoomFileAction(call.action)
+          ? roomFiles.call(call.action, input, source, effectAuthorized, qualify)
+          : roomDevServers.call(call.action, input, source, effectAuthorized, qualify);
+      }
+      if (isRoomSessionAction(call.action)) {
+        const input = validateRoomSessionAction(call.action, call.input, call.requestId);
+        return roomSessions.call(call.action, input, principal, effectAuthorized, qualifyEffect);
+      }
+      if (call.action === "workspace.operation.status" || call.action === "projects.organization.status") {
+        const organizationStatus = call.action === "projects.organization.status" ? validateRoomOrganization(call.action, call.input, call.requestId) as { requestId: string; originalInput?: Record<string, unknown> } : undefined;
+        if (organizationStatus && !organizationStatus.originalInput) throw new Error("Inspect the original organization patch with its exact originalInput.");
+        const input = validateRoomWorkspaceAction("workspace.operation.status", organizationStatus ? { operationId: organizationStatus.requestId, action: "organization.patch", originalInput: organizationStatus.originalInput } : call.input, call.requestId) as { operationId: string; action: string; originalInput: Record<string, unknown> };
+        return withRoomProjectScope(call, authorized, async (valid, source) => {
+          const current = async () => valid() && await authorized() && valid();
+          const owner = await assistantWorkspaceOwner.lookup(engine.store.environmentId, call.threadId, input.operationId);
+          if (!owner) return { state: "unknown" };
+          const operationHash = createHash("sha256").update(workspaceOperationJson({ action: input.action as typeof owner.action, targetProjectCwd: source.projectCwd, originalInput: input.originalInput }), "utf8").digest("hex");
+          if (owner.projectId !== call.projectId || owner.targetProjectCwd !== source.projectCwd || owner.action !== input.action || owner.operationHash !== operationHash) throw new Error("Workspace original request identity changed.");
+          if (owner.targetDeviceHash !== source.deviceHash || owner.installationId !== source.installationId) throw new Error("Reconnect the original desktop device to inspect this request.");
+          const captured = await conversationDesktop.callAssistantThread("workspace.operation.status", input, { threadId: call.threadId, environmentId: engine.store.environmentId, projectId: call.projectId, targetProjectCwd: source.projectCwd, targetDeviceHash: owner.targetDeviceHash }, current) as { relayId: string; envelope: unknown };
+          return verifyWorkspaceReceipt(nativeAdmissionOwner, captured, { environmentId: engine.store.environmentId, threadId: call.threadId, projectId: call.projectId!, targetCwd: source.projectCwd, operationId: input.operationId, action: input.action, originalInput: input.originalInput }, current, source);
+        });
+      }
+      if (call.action === "workspace.sessions.submit.status") {
+        const input = validateRoomWorkspaceAction(call.action, call.input, call.requestId);
+        return withRoomProjectScope(call, authorized, () => roomWorkspace.call(call.action, input, principal, authorized));
+      }
+      if (call.action === "projects.organization.read") {
+        const input = validateRoomOrganization(call.action, call.input, call.requestId);
+        return withRoomProjectScope(call, authorized, async (valid, source) => conversationDesktop.callAssistantThread("organization.read", input, { threadId: call.threadId, environmentId: engine.store.environmentId, projectId: call.projectId, targetProjectCwd: source.projectCwd, targetDeviceHash: source.deviceHash }, async () => valid() && await authorized() && valid()));
+      }
+      if (isRoomWorkspaceAction(call.action) || call.action === "projects.organization.patch") {
+        const action = call.action === "projects.organization.patch" ? "organization.patch" : call.action;
+        const input = call.action === "projects.organization.patch" ? validateRoomOrganization(call.action, call.input, call.requestId) : validateRoomWorkspaceAction(action, call.input, call.requestId);
+        return describeWorkspaceTransfer(await roomWorkspace.call(action, input, principal, effectAuthorized, effect => withRoomProjectScope(call, authorized, async (valid, source) => {
+          effectValid = valid;
+          try { return await workspaceTransferSource.run({ valid, source }, effect); }
+          finally { effectValid = () => true; }
+        })));
+      }
+      if (["tools.list", "tools.search", "tools.describe", "tools.status"].includes(call.action)) return roomManagementDiscovery(call.action, call.input, call.projectId);
+      if ((call.action.startsWith("preferences.") || call.action.startsWith("providers.")) && isManagementAction(call.action)) {
+        if (!call.action.endsWith(".status") && call.action !== "preferences.read" && call.input.requestId !== call.requestId) throw new Error("Management operation identity changed.");
+        return globalAssistantManagement.call(call.action, call.input, { kind: "assistant-thread", threadId: call.threadId, environmentId: engine.store.environmentId }, authorized);
+      }
+      if (call.action === "sessions.list") return withRoomProjectScope(call, authorized, async () => {
+        const { list } = await projectSessionList(call.projectId!);
+        return conversationSessionPage(list.map((row) => ({ ...row, busy: row.status === "running" })), call.input);
+      });
+      if (call.action === "sessions.read") return withRoomProjectScope(call, authorized, async () => {
+        const target = await featureSession(String(call.input.sessionId));
+        if (target.projectId !== call.projectId) throw new Error("Conversation belongs to another project.");
+        return sessionConversationPage({ ...target.session, busy: target.status === "running" }, call.input, await localSessionReference(target.session.id));
+      });
+      if (threadCrewAction(call.action)) {
+        if (call.input.operationId !== undefined && call.input.operationId !== call.requestId) throw new Error("Crew operation identity changed.");
+        return conversationThreadCrews.call(call.action, call.input, principal, effectAuthorized, qualifyEffect);
+      }
+      if (THREAD_WORK_ACTIONS.has(call.action)) return conversationThreadWork.call(call.action, call.input, principal, effectAuthorized, call.requestId, qualifyEffect);
+      if (isManagementAction(call.action)) {
+        if (call.input.requestId !== undefined && call.input.requestId !== call.requestId && !call.action.endsWith(".status")) throw new Error("Management operation identity changed.");
+        if (call.action === "history.import.status")
+          throw new Error("Choose a real focused session for history import status.");
+        return conversationManagement.call(call.action, call.input, principal, effectAuthorized, qualifyEffect);
+      }
+      if (call.action === "notes.list" || call.action === "notes.read")
+        return withRoomProjectScope(call, authorized, () => conversationWorkspace.call(call.action as ConversationTool, call.input, principal, undefined, authorized));
+      if (["notes.create", "notes.update", "notes.delete"].includes(call.action))
+        return roomProjectNotes.call(call.action, { requestId: call.requestId, noteInput: call.input }, principal, effectAuthorized, qualifyEffect);
+      if (call.action === "inbox.list") return withRoomProjectScope(call, authorized, async () => {
+        const result = hostInbox({ sessions: (await projectSessionList(call.projectId!)).list, tasks: await tasks.list(), goals: await goals.list(), automations: await automations.list(), threads: [] }, call.projectId);
+        return { ...managementPage(result.items, call.input), scope: result.scope, socialIncluded: false, externalProviderInboxAvailable: false };
+      });
+      if (call.action === "inbox.providers.status") return withRoomProjectScope(call, authorized, async () => {
+        return { state: "unknown", supportedProviders: ["github", "jira"], credentialsChecked: false, reason: "Provider discovery verifies the current Native account and saved visibility. Supply an explicit provider to inbox.providers.list; keep its accountProof for follow-up operations." };
+      });
+      if (isRoomInboxAction(call.action)) return withRoomProjectScope(call, authorized, async (valid, source) => roomInbox.call(call.action, call.input, { environmentId: engine.store.environmentId, threadId: call.threadId, projectId: call.projectId!, projectCwd: source.projectCwd, deviceHash: source.deviceHash }, call.requestId, async () => valid() && await authorized() && valid()));
+      if (/^inbox\./.test(call.action)) throw new Error("Project Room inbox remote transport requires a qualified owner workflow.");
+      throw new Error("This project Room operation is unavailable in text turns.");
+      });
+      if (call.projectId && !hasRoomProjectCapture(call.projectId)) {
+        // These return public schemas or application-wide metadata, never a
+        // project read. A missing fence on project data must not be repaired by
+        // attaching a later cwd after the data has already been read.
+        const metadataOnly = ["tools.list", "tools.search", "tools.describe", "tools.status", "preferences.read", "preferences.patch", "preferences.status", "providers.status", "providers.quota.refresh", "providers.operation.status"].includes(call.action);
+        if (!metadataOnly) throw new Error("Room project data was not captured under its source permit.");
+        await withRoomProjectScope(call, authorized, async () => undefined);
+      }
+      return value;
+    },
+  });
   const automationsService = createHostAutomationsService({ automations });
   const stewardsService = createHostStewardsService({ stewards });
   const crewsService = createHostCrewsService({ crews });
@@ -2383,10 +3937,14 @@ export async function createHostServer(
         context,
       ),
   });
-  const nativeServicesOwner = (token: string) =>
+  type NativeBrowserResultLifetime = (read: (publish: (value: unknown, valid: () => boolean) => Promise<void>) => Promise<void>) => Promise<unknown>;
+  const nativeServicesOwner = (token: string, retainBrowserResult?: NativeBrowserResultLifetime) =>
     bindNativeServicesOwner(
       {
         store: engine.store,
+        delegation: (action, input, authorized) => action === "publicKey" || action === "nativeChallenge" || action === "origin" || action === "attest"
+          ? createRoomNativeSourceAdapter({ environmentId: engine.store.environmentId, admission: nativeAdmissionOwner, signer: roomAttestationSigner, thread: id => assistant.threadBinding(id) })(action, input, authorized)
+          : roomDelegationTarget(action, input, authorized),
         social,
         peers: socialPeers,
         conversation: conversationAccess,
@@ -2396,6 +3954,67 @@ export async function createHostServer(
         desktopControl,
         assistantName: () => assistant.identityName(),
         assistantPresence: () => assistant.nativePresenceStatus(),
+        visibilityEpoch: async () => ({ epoch: visibilityFence.currentEpoch() }),
+        observationsIngest: async raw => {
+          const envelope = z.strictObject({ operationJson: z.string().max(32768), proof: z.unknown() }).parse(raw);
+          const operation = nativeObservationOperation.parse(JSON.parse(envelope.operationJson));
+          const proof = envelope.proof as import("./assistant/native/assistant-native-admission").NativeAdmissionProof;
+          if (operation.hostId !== engine.store.environmentId || proof?.challenge?.installationId !== operation.installationId) throw new Error("Native observation source changed.");
+          const revision = await nativeAdmissionOwner.consume({ installationId: operation.installationId, hostId: engine.store.environmentId, action: "assistant.observations.ingest", requestDigest: createHash("sha256").update(envelope.operationJson).digest("hex") }, proof);
+          const projects = await engine.store.projects();
+          const scopes = operation.entries.flatMap(entry => {
+            const project = entry.sourceCwd ? projects.find(project => project.cwd === entry.sourceCwd) : undefined;
+            return project ? [{ projectId: project.id, cwd: project.cwd }] : [];
+          });
+          return nativeAdmissionOwner.withEffect(operation.installationId, revision, lease => engine.store.withProjectIdentityRead(scopes, projectValid => ingestNativeObservations({ store: engine.store, journal: observationJournal, operation, verifiedHostId: engine.store.environmentId, verifiedInstallationId: operation.installationId, valid: () => lease.valid() && projectValid(), resolve: async cwd => {
+            const project = scopes.find(project => project.cwd === cwd);
+            return project ? { projectId: project.projectId, valid: () => lease.valid() && projectValid() } : null;
+          }, resolvePersonal: async () => ({ valid: () => lease.valid() && projectValid() }) })));
+        },
+        browserPanel: retainBrowserResult ? async raw => {
+          const params = NativeAssistantBrowserPanelParamsSchema.parse(raw);
+          if (!params.projectCwd || params.projectCwd.length > 4096 || params.projectCwd.includes("\u0000")) throw new Error("Invalid Room browser project path.");
+          if (params.environmentId !== engine.store.environmentId) throw new Error("Room browser Host changed.");
+          const thread = await assistant.threadBinding(params.threadId);
+          if (!thread || (thread.projectId && thread.projectId !== params.projectId)) throw new Error("Room browser source changed.");
+          if ((await engine.store.project(params.projectId)).cwd !== params.projectCwd) throw new Error("Room browser project changed.");
+          const { requestId: inputRequestId, takeover, ...input } = params.input;
+          if (params.action === "browser.input" && inputRequestId !== params.requestId) throw new Error("Original browser input identity changed.");
+          if (takeover !== undefined && (params.action !== "browser.claim" || typeof takeover !== "boolean")) throw new Error("Invalid browser control request.");
+          // The native panel echoes its current lease on status/claim. It is
+          // not a target override and does not grant control for either read.
+          if (params.action === "browser.status" || params.action === "browser.claim") delete input.leaseId;
+          validateConversationTool(params.action, input);
+          const deviceHash = createHash("sha256").update(token).digest("hex");
+          const authorized = async () => !!(await engine.store.authenticated(token)) && !!(await assistant.threadBinding(params.threadId));
+          const call = { threadId: params.threadId, projectId: params.projectId, family: "conversation" as const, action: params.action, input, requestId: params.requestId };
+          return retainBrowserResult(async publish => withRoomProjectScope(call, authorized, async (valid, captured) => {
+            if (captured.projectCwd !== params.projectCwd) throw new Error("Room browser project changed during qualification.");
+            const rawResult = await roomBrowser.call(params.action, input, { environmentId: params.environmentId, projectId: params.projectId, projectCwd: captured.projectCwd, threadId: params.threadId, deviceHash }, params.requestId, async () => valid() && await authorized() && valid(), { takeover: takeover === true });
+            let value = rawResult;
+            if (params.action === "browser.input") {
+              const receipt = rawResult as { state?: string; result?: object };
+              if (receipt.state !== "completed" || !receipt.result) throw new Error(`Browser input outcome is unknown. Original operation: ${params.requestId}. Check its status; do not resend it.`);
+              value = { ...receipt.result, operationId: params.requestId };
+            }
+            await publish(value, valid);
+          }, deviceHash));
+        } : undefined,
+        authorizeAssistantNotification: input => assistant.authorizeObservedNotification(input, createHash("sha256").update(token).digest("hex")),
+        authorizeAssistantWorkspace: input => assistantWorkspaceOwner.authorize(
+          { ...input, environmentId: engine.store.environmentId },
+          createHash("sha256").update(token).digest("hex"),
+        ),
+        visibilityRevoke: async () => {
+          const drained = visibilityFence.revokeAll();
+          const epoch = visibilityFence.currentEpoch();
+          return nativeVoiceLeases.retireAll(retireNativeVoiceGenerations, async valid => {
+            await drained;
+            if (!valid()) throw new Error("Native voice closure is not confirmed.");
+            return { epoch };
+          });
+        },
+        visibilityReopen: (input, authorized) => visibilityAdmission.reopen(input, authorized),
         setAssistantPresence: async (state) => {
           await assistant.request({ op: "presence.set", state }, "owner");
         },
@@ -2681,6 +4300,7 @@ export async function createHostServer(
           let value: unknown;
           let revision: number | undefined;
           let baseRevision: number | undefined;
+          let sourceEpoch: string | undefined;
           let kind: "snapshot" | "delta" = "snapshot";
           if (target.kind === "environment") value = { projects: await projectsService.list() };
           else if (target.kind === "project") {
@@ -2692,13 +4312,13 @@ export async function createHostServer(
             value = { etag: current.etag, sessions: current.list };
           } else {
             if (
-              !(await engine.store.sessionStateMetadata(target.sessionId)) &&
-              !(await desktop.projectCwdAsync(target.sessionId))
+              !(await engine.store.withReadCancellation(signal, () => engine.store.sessionStateMetadata(target.sessionId))) &&
+              !(await desktop.projectCwdAsync(target.sessionId, signal))
             )
               return null;
-            const projectRow = await engine.store.db
+            const projectRow = await sessionRead(signal, () => engine.store.db
               .prepare("SELECT project_id FROM session_state WHERE id=?")
-              .get(target.sessionId);
+              .get(target.sessionId));
             const projectId = projectRow ? String(projectRow.project_id) : undefined;
             if (projectId) {
               streamProjects.set(target.sessionId, projectId);
@@ -2707,12 +4327,13 @@ export async function createHostServer(
             }
             const sync = await engine.store.db.withAuthorization(context.authorized, () =>
               sessionService.stream(
-                { sessionId: target.sessionId, revision: context.revision },
+                { sessionId: target.sessionId, revision: context.revision, sourceEpoch: context.sourceEpoch },
                 { authorized: context.authorized, signal },
               ),
             );
+            sourceEpoch = sync.kind === "unchanged" ? sync.sourceEpoch : sync.value.sourceEpoch;
             if (sync.kind === "unchanged")
-              return { kind: "unchanged" as const, revision: sync.revision };
+              return { kind: "unchanged" as const, revision: sync.revision, sourceEpoch: sync.sourceEpoch };
             if (sync.kind === "delta") {
               value = sync;
               kind = "delta";
@@ -2726,6 +4347,7 @@ export async function createHostServer(
             kind,
             revision,
             baseRevision,
+            ...(sourceEpoch ? { sourceEpoch } : {}),
             data: bulkTransfers.encode(lease, data, WS_LIMITS.streamChunkBytes - 1024),
           };
         } finally {
@@ -2783,6 +4405,7 @@ export async function createHostServer(
       );
   });
   const unsubscribeAuthority = engine.store.subscribeAuthorityChanges((change) => {
+    invalidateSessionSource(change.sessionId);
     bulkTransfers.invalidate(`session:${change.sessionId}`);
     transfers.forget(change.sessionId);
     subscriptionHub.resnapshot({ kind: "session", sessionId: change.sessionId });
@@ -2792,6 +4415,16 @@ export async function createHostServer(
     }
   });
   const previousDesktopChange = desktop.live.onChange;
+  const previousDesktopSourceChange = desktop.live.onSourceChange;
+  desktop.live.onSourceChange = (sessionIds) => {
+    previousDesktopSourceChange?.(sessionIds);
+    for (const sessionId of sessionIds) {
+      invalidateSessionSource(sessionId);
+      bulkTransfers.invalidate(`session:${sessionId}`);
+      transfers.forget(sessionId);
+      subscriptionHub.resnapshot({ kind: "session", sessionId });
+    }
+  };
   desktop.live.onChange = (sessionIds) => {
     previousDesktopChange?.(sessionIds);
     subscriptionHub.invalidate({ kind: "environment" });
@@ -2849,6 +4482,11 @@ export async function createHostServer(
         let releaseVoiceTool: (() => void) | undefined;
         let voiceDisclosure: HostVoiceToolDisclosure | undefined;
         let voiceBrowserOwner: string | undefined;
+        const resultScopeReleases: Array<() => void> = [];
+        const resultScopeSettlements: Promise<void>[] = [];
+        let voiceToolLog:
+          | { action: string; requestId: string | null; startedAt: number; outcome: string }
+          | undefined;
         try {
           if (await bulkHandler(request, response)) return;
           if (await mobilePairing.handle(request, response)) return;
@@ -2943,7 +4581,25 @@ export async function createHostServer(
             retainResultAuthority: (check: () => Promise<boolean>) => {
               resultAuthorities.push(check);
             },
-            nativeServices: nativeServicesOwner(token),
+            nativeServices: nativeServicesOwner(token, read => {
+              let resolveReady!: (value: unknown) => void;
+              let rejectReady!: (reason: unknown) => void;
+              const ready = new Promise<unknown>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+              let release!: () => void;
+              const released = new Promise<void>(resolve => { release = resolve; });
+              let published = false;
+              const settled = read(async (value, valid) => {
+                if (published) throw new Error("Native browser result was already published.");
+                published = true;
+                resultAuthorities.push(async () => valid());
+                resolveReady(value);
+                await released;
+              });
+              resultScopeReleases.push(release);
+              resultScopeSettlements.push(settled);
+              void settled.then(() => { if (!published) rejectReady(new Error("Native browser result is unavailable.")); }).catch(rejectReady);
+              return ready;
+            }),
             workspaceOwner: requestWorkspaceOwner(token),
             principalId: tokenHash,
             devServerAccess: (
@@ -2963,7 +4619,7 @@ export async function createHostServer(
           dispatchStarted = performance.now();
           dispatchMethod = input.method;
           let result: unknown;
-          const endResult = async (value: unknown, verify?: () => Promise<void>) => {
+          const endResult = async (value: unknown, verify?: () => Promise<void>, awaitWrite = false) => {
             const inline = serializedResponse(value);
             const body = voiceDisclosure
               ? await voiceDisclosure.body(value)
@@ -2971,9 +4627,49 @@ export async function createHostServer(
                 ? JSON.stringify({ result: value })
                 : `{"result":${inline}}`;
             await verify?.();
-            response.end(body);
-            voiceDisclosure?.markSent();
+            if (awaitWrite || voiceDisclosure) {
+              await new Promise<void>((resolve, reject) => {
+                const closed = () => { cleanup(); reject(new Error("Response closed before write completed.")); };
+                const failed = (error: Error) => { cleanup(); reject(error); };
+                const cleanup = () => { response.off("close", closed); response.off("error", failed); };
+                response.once("close", closed);
+                response.once("error", failed);
+                response.end(body, () => {
+                  try { voiceDisclosure?.markSent(); cleanup(); resolve(); }
+                  catch (error) { cleanup(); reject(error); }
+                });
+              });
+            } else response.end(body);
           };
+          if (input.method === "assistant.request" && (params.op === "observation.delivery.list" || params.op === "observation.delivery.refresh")) {
+            if (request.headers.origin || peerIdentity || socialPrincipal || runtimePrincipal || conversationPrincipal) throw new Error("Native owner device required for notification recovery.");
+            const ownerToken = token;
+            if (!ownerToken) throw new Error("Native owner device required for notification recovery.");
+            const recovery = AssistantRequestValidationSchema.parse(params);
+            if (recovery.op !== "observation.delivery.list" && recovery.op !== "observation.delivery.refresh") throw new Error("Invalid notification recovery request.");
+            const room = await assistant.canonicalGlobalRoomBinding();
+            const ownerAuthorized = async () => await engine.store.authenticated(ownerToken);
+            const authorized = async () => !!room && (await assistant.canonicalGlobalRoomBinding())?.id === room.id && await ownerAuthorized() && await assistantPorts.manualProjectVisible?.(recovery.projectId) === true;
+            if (!room || !(await authorized())) throw new Error("Notification recovery source is unavailable.");
+            const target = { threadId: room.id, projectId: recovery.projectId, family: "conversation" as const, action: recovery.op, input: recovery.op === "observation.delivery.refresh" ? { notificationId: recovery.notificationId } : {}, requestId: randomUUID() };
+            await withRoomProjectScope(target, authorized, async (valid, source) => {
+              let rows: { notificationId: string; projectId: string; state: "pending" | "unknown" | "accepted" | "suppressed" }[];
+              if (recovery.op === "observation.delivery.list") rows = await assistant.observedNotificationRecovery(recovery.projectId);
+              else {
+                const intent = await assistant.observedNotificationIntent(recovery.notificationId);
+                if (!intent || intent.projectId !== recovery.projectId || intent.threadId !== room.id || intent.deviceHash !== source.deviceHash) throw new Error("Reconnect the original notification device to check its status.");
+                const requestId = `observation-${intent.operationHash}`;
+                const nativeInput = { notificationId: intent.notificationId, kind: intent.kind, requestId, operationHash: intent.operationHash, projectCwds: [source.projectCwd] };
+                const captured = await conversationDesktop.callAssistantThread("assistant.notification.status", nativeInput, { threadId: room.id, environmentId: engine.store.environmentId, targetDeviceHash: intent.deviceHash }, authorized) as { relayId: string; envelope: unknown };
+                const receipt = await verifyAssistantNotificationReceipt(nativeAdmissionOwner, captured, { environmentId: engine.store.environmentId, threadId: room.id, notificationId: intent.notificationId, kind: intent.kind, requestId, operationHash: intent.operationHash }, authorized);
+                if (receipt.state !== "unknown") await assistant.settleObservedNotification(intent, receipt.state);
+                rows = [{ notificationId: intent.notificationId, projectId: intent.projectId, state: receipt.state === "unknown" ? "unknown" : receipt.state }];
+              }
+              if (!valid()) throw new Error("Notification recovery scope changed.");
+              await endResult(AssistantResponseValidationSchema.parse({ observationDeliveries: rows }), async () => { if (!valid() || !(await authorized())) throw new Error("Notification recovery authority changed."); }, true);
+            });
+            return;
+          }
           if (await mcpHttp.rpc(input.method, params, token, response)) return;
           if (peerIdentity) {
             result = await engine.store.db.withAuthorization(
@@ -2999,18 +4695,36 @@ export async function createHostServer(
             const ownerToken = token;
             if (input.method === "voice.tools.list") {
               validateVoiceToolList(params);
-              const project = await engine.store.project(String(params.projectId));
+              const project = params.projectId === undefined
+                ? undefined
+                : await engine.store.project(String(params.projectId));
+              if (!project) {
+                const thread = await assistant.threadBinding(String(params.threadId));
+                if (!thread || thread.id !== params.threadId || thread.projectId)
+                  throw new Error("A verified global assistant thread is required.");
+              }
               if (params.sessionId !== undefined) {
                 const own = await featureMeta(String(params.sessionId));
-                if (own.projectId !== project.id)
+                if (!project || own.projectId !== project.id)
                   throw new Error("Voice tool session belongs to another project.");
               }
               if (!(await engine.store.authenticated(ownerToken)))
                 throw new Error("Native owner authority revoked.");
-              response.end(JSON.stringify({ result: { tools: voiceToolCatalog() } }));
+              const tools = voiceToolCatalog().filter(tool => params.sessionId === undefined || tool.family !== "conversation" || !isRoomOnlyConversationAction(tool.action));
+              response.end(JSON.stringify({ result: { tools } }));
               return;
             }
             const call = parseVoiceToolCall(params);
+            voiceToolLog = {
+              action: call.action,
+              requestId: call.requestId ?? null,
+              startedAt: monotonicNow(),
+              outcome: "response",
+            };
+            console.info("Voice tool started", {
+              action: voiceToolLog.action,
+              requestId: voiceToolLog.requestId,
+            });
             if (call.causalContextId) {
               voiceDisclosure = new HostVoiceToolDisclosure(
                 {
@@ -3026,6 +4740,150 @@ export async function createHostServer(
               response.once("close", () => {
                 void voiceDisclosure?.fail().catch(() => undefined);
               });
+            }
+            if (!call.projectId && (call.family === "social" || (call.family === "conversation" && isAssistantObservationAction(call.action) && call.accountId))) {
+              if (!call.causalContextId || !call.threadId || !call.requestId || !voiceDisclosure || !social.retireAssistantVoiceGenerations)
+                throw new Error("Account-scoped voice disclosure is unavailable until the active voice generation can be revoked.");
+              const authorized = async () => !response.destroyed && !!(await engine.store.authenticated(ownerToken));
+              const admission = { environmentId: engine.store.environmentId, deviceHash: tokenHash, authorized };
+              const generation = await assistant.pendingVoiceGeneration(call.causalContextId, call.requestId, call.threadId);
+              const qualifiedCall = { threadId: call.threadId, ...(call.accountId ? { accountId: call.accountId } : {}), family: call.family, action: call.action, input: call.input, requestId: call.requestId };
+              voiceDisclosure.bind({ threadId: call.threadId, ...(call.accountId ? { accountId: call.accountId } : {}), family: call.family, action: call.action });
+              const output = await assistantPorts.roomManagement!(qualifiedCall, admission);
+              const proofs = output.contributorAccounts;
+              if (!proofs || (call.accountId && !proofs.some(proof => proof.accountId === call.accountId))) throw new Error("Room account provenance is unavailable.");
+              voiceDisclosure.bindAccountProofs(proofs);
+              await social.withAssistantAccountProofs(call.threadId, proofs, authorized, async valid => {
+                if (proofs.length) await social.registerAssistantVoiceLease({ threadId: call.threadId!, generationKey: generation.generationKey, deviceHash: tokenHash, accounts: proofs }, valid);
+                if (!valid()) throw new Error("Room account scope revoked.");
+                await endResult(output.value, async () => { if (!(await authorized())) throw new Error("Native owner authority revoked."); }, true);
+                await assistantPorts.roomObservationDelivered?.(call.threadId!, [{ source: output.source, value: output.value }], proofs, valid);
+              });
+              return;
+            }
+            if (call.family === "conversation" && isAssistantObservationAction(call.action) && (call.input.nativeLibrary === true || call.input.source === "native-session")) {
+              const nativeSession = call.input.source === "native-session";
+              if (!call.threadId || !call.requestId || !call.causalContextId || !voiceDisclosure || call.accountId || (nativeSession ? !call.projectId : !!call.projectId)) throw new Error("Native observation voice disclosure requires the original Room and active voice generation.");
+              const authorized = async () => !response.destroyed && !!(await engine.store.authenticated(ownerToken));
+              const admission = { environmentId: engine.store.environmentId, deviceHash: tokenHash, authorized };
+              const qualifiedCall = { threadId: call.threadId, ...(call.projectId ? { projectId: call.projectId } : {}), family: "conversation" as const, action: call.action, input: call.input, requestId: call.requestId };
+              const generation = await assistant.pendingVoiceGeneration(call.causalContextId, call.requestId, call.threadId);
+              voiceDisclosure.bind({ threadId: call.threadId, ...(call.projectId ? { projectId: call.projectId } : {}), family: call.family, action: call.action, nativeLibrary: true });
+              const output = await assistantPorts.roomManagement!(qualifiedCall, admission);
+              const nativeProofs = output.contributorNativeProofs;
+              if (!nativeProofs?.length) throw new Error("Native library provenance is unavailable.");
+              voiceDisclosure.bindNativeProofs(nativeProofs);
+              const projectProofs = output.contributorProjects ?? [];
+              if (nativeSession && !projectProofs.some(proof => proof.projectId === call.projectId)) throw new Error("Native session project provenance is unavailable.");
+              if (projectProofs.length) voiceDisclosure.bindProjectProofs(projectProofs);
+              await assistantPorts.withNativeVoiceRuntimeRegistration!({ threadId: call.threadId, generationKey: generation.generationKey, nativeProofs, projectProofs, accountProofs: [] }, admission, async valid => {
+                if (!valid()) throw new Error("Native library scope revoked.");
+                await endResult(output.value, async () => { if (!(await authorized()) || !valid()) throw new Error("Native owner authority revoked."); }, true);
+                  await assistantPorts.roomObservationDelivered?.(call.threadId!, [{ source: output.source, value: output.value }], [], valid, projectProofs, nativeProofs);
+              });
+              return;
+            }
+            if (call.family === "conversation" && isAssistantObservationAction(call.action)) {
+              if (!call.threadId || !call.requestId || (!!call.projectId === !!call.accountId))
+                throw new Error("Choose one verified observation scope and a Room thread.");
+              const authorized = async () => !response.destroyed && !!(await engine.store.authenticated(ownerToken));
+              const admission = { environmentId: engine.store.environmentId, deviceHash: tokenHash, authorized };
+              const qualifiedCall = { threadId: call.threadId, ...(call.projectId ? { projectId: call.projectId } : {}), ...(call.accountId ? { accountId: call.accountId } : {}), family: "conversation" as const, action: call.action, input: call.input, requestId: call.requestId };
+              voiceDisclosure?.bind({ threadId: call.threadId, ...(call.projectId ? { projectId: call.projectId } : {}), ...(call.accountId ? { accountId: call.accountId } : {}), family: call.family, action: call.action });
+              const output = await assistantPorts.roomManagement!(qualifiedCall, admission);
+              const send = () => endResult(output.value, async () => { if (!(await authorized())) throw new Error("Native owner authority revoked."); }, true);
+              if (call.projectId) {
+                voiceDisclosure?.bindProjectProofs(output.contributorProjects ?? []);
+                const projectProofs = output.contributorProjects ?? [];
+                const projects = [...new Set([call.projectId, ...projectProofs.map(proof => proof.projectId)])];
+                await assistantPorts.withRoomProjectDisclosure!(call.threadId, projects, admission, async valid => {
+                  if (!valid()) throw new Error("Room project scope revoked.");
+                  await send();
+                  await assistantPorts.roomObservationDelivered?.(call.threadId!, [{ source: output.source, value: output.value }], [], valid, projectProofs);
+                }, projectProofs);
+              }
+              else {
+                if (!output.contributorAccounts?.some(proof => proof.accountId === call.accountId)) throw new Error("Room account provenance is unavailable.");
+                await social.withAssistantAccountProofs(call.threadId, output.contributorAccounts, authorized, async valid => { if (!valid()) throw new Error("Room account scope revoked."); await send(); });
+              }
+              return;
+            }
+            if (!call.projectId) {
+              const authorizeGlobal = async () => {
+                if (response.destroyed || !(await engine.store.authenticated(ownerToken))) return false;
+                const thread = await assistant.threadBinding(call.threadId!);
+                return !!thread && thread.id === call.threadId && !thread.projectId;
+              };
+              if (!voiceGlobalToolAllowed(call.family, call.action) || !(await authorizeGlobal()))
+                throw new Error(
+                  "A verified global assistant thread and supported global operation are required.",
+                );
+              voiceDisclosure?.bind({
+                threadId: call.threadId,
+                ...(call.accountId ? { accountId: call.accountId } : {}),
+                family: call.family,
+                action: call.action,
+              });
+              if (call.family === "social") {
+                if (call.accountId) result = await executeAccountSocial({ ...call, threadId: call.threadId!, accountId: call.accountId, requestId: call.requestId! }, tokenHash, authorizeGlobal);
+                else if (call.action === "accounts.list") result = await social.listAssistantAccounts(call.threadId!, tokenHash, call.input);
+                else throw new Error("Choose an explicitly granted social account.");
+              }
+              else if (isRoomNotebookAction(call.action))
+                result = await roomNotebook.call(
+                  call.action,
+                  call.input,
+                  {
+                    kind: "assistant-thread",
+                    threadId: call.threadId!,
+                    environmentId: engine.store.environmentId,
+                  },
+                  authorizeGlobal,
+                  call.requestId!,
+                );
+              else if (isGlobalRuntimeRead(call.action))
+                result = await conversationManagementRuntime.call(call.action as import("./conversation/conversation-management-runtime").RuntimeManagementAction, call.input, { kind: "assistant-thread", threadId: call.threadId!, environmentId: engine.store.environmentId }, authorizeGlobal);
+              else if (call.action === "tools.list")
+                result = { environmentId: engine.store.environmentId, tools: voiceToolCatalog() };
+              else if (["tools.search", "tools.describe", "tools.status"].includes(call.action))
+                result = managedDiscoveryResult(call.action, call.input, managedMcpCatalog());
+              else if (["servers.list", "servers.get", "servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"].includes(call.action))
+                result = await conversationDesktop.callAssistantThread(call.action, call.input, { threadId: call.threadId!, environmentId: engine.store.environmentId }, authorizeGlobal);
+              else if (call.action === "servers.ssh.save" || call.action === "servers.ssh.remove") {
+                if (typeof call.input.operationId !== "string" || !call.input.operationId || typeof call.input.expectedInventoryRevision !== "string" || !/^[a-f0-9]{64}$/.test(call.input.expectedInventoryRevision))
+                  throw new Error("Read the server inventory and provide its revision and a stable operationId.");
+                result = await globalServerManagement.call(call.action, { requestId: call.input.operationId, serverInput: call.input }, { kind: "assistant-thread", threadId: call.threadId!, environmentId: engine.store.environmentId }, authorizeGlobal);
+              }
+              else {
+                if (!isManagementAction(call.action)) throw new Error("Unsupported global assistant operation.");
+                result = await globalAssistantManagement.call(call.action, call.input, {
+                  kind: "assistant-thread", threadId: call.threadId!, environmentId: engine.store.environmentId,
+                }, authorizeGlobal);
+              }
+              await endResult(result, async () => { if (!(await authorizeGlobal())) throw new Error("Native owner authority revoked."); });
+              return;
+            }
+            if (call.threadId && !call.sessionId && !(call.family === "conversation" && call.action === "desktop.status")) {
+              const inputRequestId = typeof call.input.requestId === "string" ? call.input.requestId : typeof call.input.operationId === "string" ? call.input.operationId : undefined;
+              const readOnly = /(?:^|\.)(?:list|get|read|status|search|describe|inspect|runs|schema|sources)$/.test(call.action);
+              if (!call.requestId && !inputRequestId && !readOnly) throw new Error("A stable Room operation identity is required.");
+              const requestId = call.requestId ?? inputRequestId ?? randomUUID();
+              // Normal completion retires the socket too. Preserve authority
+              // through final lease settlement while rejecting premature close.
+              const authorized = async () => (!response.destroyed || response.writableFinished) && !!(await engine.store.authenticated(ownerToken));
+              const qualifiedCall = { threadId: call.threadId, projectId: call.projectId, family: call.family, action: call.action, input: call.input, requestId };
+              voiceDisclosure?.bind({ threadId: call.threadId, projectId: call.projectId, family: call.family, action: call.action });
+              const output = await assistantPorts.roomManagement!(qualifiedCall, { environmentId: engine.store.environmentId, deviceHash: tokenHash, authorized });
+              voiceDisclosure?.bindProjectProofs(output.contributorProjects ?? []);
+              await withRoomProjectScope(qualifiedCall, authorized, async () => {
+                if (!output.source.projectCwd || (await engine.store.project(call.projectId!)).cwd !== output.source.projectCwd) throw new Error("Voice project identity changed before disclosure.");
+                await endResult(output.value, async () => { if (!(await authorized())) throw new Error("Native owner authority revoked."); });
+                if (!response.writableFinished) await new Promise<void>((resolve, reject) => {
+                  response.once("finish", resolve);
+                  response.once("close", () => response.writableFinished ? resolve() : reject(new Error("Voice response delivery is unknown.")));
+                });
+              });
+              return;
             }
             const delegated = await prepareVoiceToolDispatch(params, {
               authorized: async () =>
@@ -3086,6 +4944,72 @@ export async function createHostServer(
               result = await engine.store.db.withAuthorization(
                 conversationAccess.authorization(token),
                 async () => {
+                  if (action === "tools.list")
+                    return {
+                      environmentId: engine.store.environmentId,
+                      projectId: boundPrincipal.projectId,
+                      tools: voiceToolCatalog().filter((tool) =>
+                        voiceThreadToolAllowed(tool.family, tool.action),
+                      ),
+                    };
+                  if (["tools.search", "tools.describe", "tools.status"].includes(action))
+                    return managedDiscoveryResult(action, args, managedMcpCatalog());
+                  if (action === "sessions.list") {
+                    const { list } = await projectSessionList(boundPrincipal.projectId);
+                    const page = conversationSessionPage(
+                      list.map((row) => ({
+                        id: row.id,
+                        title: row.title,
+                        harness: row.harness,
+                        model: row.model,
+                        busy: row.status === "running",
+                        hasDraft: !!row.draft,
+                        updatedAt: row.updatedAt,
+                        lastActivityAt:
+                          row.runActivity?.lastActivityAt ?? row.lastActivityAt ?? null,
+                        runActivity: row.runActivity ?? null,
+                      })),
+                      args,
+                    );
+                    return {
+                      ...page,
+                      sessions: await Promise.all(
+                        page.sessions.map(async (row) => {
+                          const locator = await localSessionReference(row.id);
+                          return {
+                            ...row,
+                            ...(locator ? localSessionLinkFields(locator, row.title) : {}),
+                          };
+                        }),
+                      ),
+                    };
+                  }
+                  if (action === "sessions.read") {
+                    const target = await featureSession(String(args.sessionId));
+                    if (target.projectId !== boundPrincipal.projectId)
+                      throw new Error("Conversation belongs to another project.");
+                    return sessionConversationPage(
+                      { ...target.session, busy: target.status === "running" },
+                      args,
+                      await localSessionReference(target.session.id),
+                    );
+                  }
+                  if (isRoomNotebookAction(action))
+                    return roomNotebook.call(action, args, { kind: "assistant-thread", threadId: boundPrincipal.threadId, environmentId: engine.store.environmentId }, authorized, String(params.requestId));
+                  if (isRoomWorkspaceAction(action))
+                    return roomWorkspace.call(action, validateRoomWorkspaceAction(action, args, String(params.requestId)), boundPrincipal, authorized);
+                  if (threadCrewAction(action))
+                    return conversationThreadCrews.call(action, args, boundPrincipal, authorized);
+                  if (THREAD_WORK_ACTIONS.has(action))
+                    return conversationThreadWork.call(
+                      action,
+                      args,
+                      boundPrincipal,
+                      authorized,
+                      typeof params.requestId === "string" ? params.requestId : undefined,
+                    );
+                  if (isManagementAction(action))
+                    return conversationManagement.call(action, args, boundPrincipal, authorized);
                   if (isDesktopControlConversationTool(action))
                     return conversationDesktopControl.call(
                       action,
@@ -3117,8 +5041,9 @@ export async function createHostServer(
               conversationAccess.authorization(token),
               async () => {
                 const action = String(params.action ?? "");
-                const args = params.input as Record<string, unknown>;
-                validateConversationTool(action, args);
+                const originalArgs = params.input as Record<string, unknown>;
+                validateSessionConversationTool(action, originalArgs);
+                const args = conversationListArguments(action, originalArgs);
                 const scopedDeviceAuthorized = async () => {
                   const current = await conversationAccess.principalForToken(token);
                   return (
@@ -3130,7 +5055,14 @@ export async function createHostServer(
                 const scopedDeviceEffect = { authorized: scopedDeviceAuthorized };
                 const projectId = boundPrincipal.projectId;
                 const project = await engine.store.project(projectId);
-                if (isDesktopControlConversationTool(action)) {
+                if (isManagementAction(action)) {
+                  result = await conversationManagement.call(
+                    action,
+                    args,
+                    boundPrincipal,
+                    scopedDeviceAuthorized,
+                  );
+                } else if (isDesktopControlConversationTool(action)) {
                   const cwd = sessionWorkCwd((await featureMeta(boundPrincipal.sessionId)).session);
                   result = await conversationDesktopControl.call(
                     action,
@@ -3150,12 +5082,19 @@ export async function createHostServer(
                     );
                   else if (action === "sessions.list") {
                     const { list } = await projectSessionList(projectId);
+                    const page = conversationSessionPage(
+                      list.map((row) => ({ ...row, busy: row.status === "running" })),
+                      args,
+                    );
                     if (!(await conversationAccess.principalForToken(token)))
                       throw new Error("Session authority revoked.");
                     result = {
                       cwd: project.cwd,
+                      total: page.total,
+                      nextCursor: page.nextCursor,
+                      state: page.state,
                       sessions: await Promise.all(
-                        list.map(async (session) => {
+                        page.sessions.map(async (session) => {
                           const locator = await localSessionReference(session.id);
                           return {
                             id: session.id,
@@ -3164,6 +5103,10 @@ export async function createHostServer(
                             model: session.model,
                             busy: session.status === "running",
                             hasDraft: !!session.draft,
+                            updatedAt: session.updatedAt,
+                            lastActivityAt:
+                              session.runActivity?.lastActivityAt ?? session.lastActivityAt ?? null,
+                            runActivity: session.runActivity ?? null,
                             ...(locator ? localSessionLinkFields(locator, session.title) : {}),
                           };
                         }),
@@ -3182,12 +5125,13 @@ export async function createHostServer(
                   if (!(await scopedDeviceAuthorized()))
                     throw new Error("Session authority revoked.");
                 } else if (action === "skills.search")
-                  result = searchHarnessSkills(
+                  result = await searchHarnessSkills(
                     sessionWorkCwd((await featureMeta(boundPrincipal.sessionId)).session),
                     args,
                     undefined,
                     boundPrincipal.sessionId,
                     await explicitSkillNames(boundPrincipal.sessionId),
+                    (await featureMeta(boundPrincipal.sessionId)).session.harness,
                   );
                 else if (action === "skills.read")
                   result = await readHarnessSkill(
@@ -3202,6 +5146,7 @@ export async function createHostServer(
                     undefined,
                     boundPrincipal.sessionId,
                     await explicitSkillNames(boundPrincipal.sessionId),
+                    (await featureMeta(boundPrincipal.sessionId)).session.harness,
                   );
                 else if (action.startsWith("crews."))
                   result = await crews.call(action, args, projectId, boundPrincipal);
@@ -3288,10 +5233,10 @@ export async function createHostServer(
                   result = {
                     environmentId: engine.store.environmentId,
                     projectId,
-                    tools: conversationToolCatalog(),
+                    tools: sessionConversationToolCatalog(),
                   };
                 else if (["tools.search", "tools.describe", "tools.status"].includes(action))
-                  result = managedDiscoveryResult(action, args, managedMcpCatalog());
+                  result = managedDiscoveryResult(action, args, managedMcpCatalog().filter(tool => tool.group !== "conversation" || !isRoomOnlyConversationAction(tool.action)));
                 else if (
                   action.startsWith("ui.") ||
                   action.startsWith("servers.") ||
@@ -3361,12 +5306,30 @@ export async function createHostServer(
                   result = await deviceHost.boot(String(args.deviceId), scopedDeviceEffect);
                 else if (action === "devices.capture")
                   result = await deviceHost.capture(String(args.deviceId), scopedDeviceEffect);
+                else if (action === "devices.control.status")
+                  result = await deviceHost.control.status(String(args.deviceId));
+                else if (action === "devices.control.claim")
+                  result = await deviceHost.control.claim(String(args.deviceId), `conversation:${tokenHash}:${boundPrincipal.sessionId}`, String(args.requestId), scopedDeviceAuthorized);
+                else if (action === "devices.control.release")
+                  result = await deviceHost.control.release(String(args.deviceId), `conversation:${tokenHash}:${boundPrincipal.sessionId}`, String(args.leaseId));
+                else if (action === "devices.control.renew")
+                  result = await deviceHost.control.renew(String(args.deviceId), `conversation:${tokenHash}:${boundPrincipal.sessionId}`, String(args.leaseId));
+                else if (action === "devices.inspect") {
+                  const id = String(args.deviceId), owner = `conversation:${tokenHash}:${boundPrincipal.sessionId}`, lease = String(args.leaseId);
+                  await deviceHost.control.assert(id, owner, lease);
+                  result = await deviceHost.inspect(id, `${owner}:${lease}`, { authorized: async () => {
+                    if (!(await scopedDeviceAuthorized())) return false;
+                    try { await deviceHost.control.assert(id, owner, lease); return true; } catch { return false; }
+                  } });
+                }
                 else if (action === "devices.action")
-                  result = await deviceHost.action(
-                    String(args.deviceId),
-                    args.action as DeviceAction,
-                    scopedDeviceEffect,
-                  );
+                  result = await deviceHost.control.execute(String(args.deviceId), `conversation:${tokenHash}:${boundPrincipal.sessionId}`, String(args.leaseId), String(args.requestId), args.action, (track) => deviceHost.action(
+                    String(args.deviceId), args.action as DeviceAction,
+                    { track, authorized: async () => {
+                      if (!(await scopedDeviceAuthorized())) return false;
+                      try { await deviceHost.control.assert(String(args.deviceId), `conversation:${tokenHash}:${boundPrincipal.sessionId}`, String(args.leaseId)); return true; } catch { return false; }
+                    } }, `conversation:${tokenHash}:${boundPrincipal.sessionId}:${String(args.leaseId)}`,
+                  ));
                 else if (action === "browser.preview")
                   result = await conversationPreviews.run(
                     args as unknown as ConversationPreviewInput,
@@ -3663,7 +5626,13 @@ export async function createHostServer(
                     }
                   }
                 } else if (action === "resources.read")
-                  result = diagnostics.read(`session:${boundPrincipal.sessionId}`);
+                  result = {
+                    ...diagnostics.read(`session:${boundPrincipal.sessionId}`),
+                    health: hostDegradedSince === undefined
+                      ? { state: "unknown" }
+                      : { state: "degraded", since: hostDegradedSince, reason: "unhandled-rejection" },
+                  };
+                result = pageConversationListResult(action, originalArgs, result);
                 await endResult(result, async () => {
                   if (!(await scopedDeviceAuthorized()))
                     throw new Error("Session authority revoked.");
@@ -4261,7 +6230,23 @@ export async function createHostServer(
                   );
                   break;
                 case "native.services.desktop.stop":
+                case "native.services.assistant.delegation.publicKey":
+                case "native.services.assistant.observations.ingest":
+                case "native.services.assistant.delegation.origin":
+                case "native.services.assistant.delegation.nativeChallenge":
+                case "native.services.assistant.delegation.attest":
+                case "native.services.assistant.delegation.issue":
+                case "native.services.assistant.delegation.issue.status":
+                case "native.services.assistant.delegation.challenge":
+                case "native.services.assistant.delegation.call":
+                case "native.services.assistant.delegation.revoke":
                 case "native.services.assistant.presence.get":
+                case "native.services.assistant.visibility.epoch":
+                case "native.services.assistant.notification.authorize":
+                case "native.services.assistant.workspace.authorize":
+                case "native.services.assistant.browser.panel":
+                case "native.services.assistant.visibility.revoke":
+                case "native.services.assistant.visibility.reopen":
                 case "native.services.assistant.presence.set":
                 case "native.services.desktop.status":
                 case "native.services.runtimeLogs.bridge.describe":
@@ -4353,7 +6338,12 @@ export async function createHostServer(
                   break;
                 }
                 case "resources.read":
-                  result = diagnostics.read(token);
+                  result = {
+                    ...diagnostics.read(token),
+                    health: hostDegradedSince === undefined
+                      ? { state: "unknown" }
+                      : { state: "degraded", since: hostDegradedSince, reason: "unhandled-rejection" },
+                  };
                   break;
                 case "browser.setup":
                   // Explicit machine tools are authorized by the paired host credential.
@@ -4373,29 +6363,17 @@ export async function createHostServer(
                 case "browser.frame":
                 case "browser.input":
                 case "browser.close": {
-                  if (params.projectId !== undefined)
+                  if (params.ownerPresentationScope === undefined && params.projectId !== undefined)
                     await engine.store.project(String(params.projectId));
                   let browserParams = params;
-                  if (params.sessionId !== undefined) {
-                    // The conversation only labels the browser's logs. One this host
-                    // cannot read (not yet synced, another provider) must not block the
-                    // owner's own browser; it opens without that label instead.
-                    const session = await featureMeta(String(params.sessionId)).catch(
-                      (error: unknown) => {
-                        if (
-                          error instanceof Error &&
-                          error.message === "Session not found on this machine"
-                        )
-                          return undefined;
-                        throw error;
-                      },
-                    );
-                    if (!session) browserParams = { ...params, sessionId: undefined };
-                    else if (
-                      params.projectId !== undefined &&
-                      session.projectId !== params.projectId
-                    )
+                  if (
+                    params.ownerPresentationScope === undefined &&
+                    params.sessionId !== undefined
+                  ) {
+                    const session = await featureMeta(String(params.sessionId));
+                    if (params.projectId !== undefined && session.projectId !== params.projectId)
                       throw new Error("Browser belongs to another project");
+                    browserParams = { ...params, projectId: session.projectId };
                   }
                   // Only paired owner RPCs may explicitly take control. Conversation
                   // tools use dispatchForSession and cannot enable this option.
@@ -4409,13 +6387,25 @@ export async function createHostServer(
                 case "browser.annotation.start":
                 case "browser.annotation.hover":
                 case "browser.annotation.select":
+                case "browser.annotation.parent":
+                case "browser.annotation.traverse":
                 case "browser.annotation.clear":
                 case "browser.annotation.read":
                 case "browser.annotation.cancel": {
                   const projectId = String(params.projectId ?? "");
-                  await engine.store.project(projectId);
-                  if ((await featureMeta(String(params.sessionId ?? ""))).projectId !== projectId)
-                    throw new Error("Conversation belongs to another project");
+                  if (params.ownerPresentationScope === undefined) {
+                    await engine.store.project(projectId);
+                    if ((await featureMeta(String(params.sessionId ?? ""))).projectId !== projectId)
+                      throw new Error("Conversation belongs to another project");
+                  } else if (
+                    !projectId ||
+                    typeof params.sessionId !== "string" ||
+                    !params.sessionId
+                  ) {
+                    throw new Error(
+                      "Owner browser presentation requires project and conversation identity",
+                    );
+                  }
                   result = await sharedBrowser.dispatch(input.method, params, token);
                   break;
                 }
@@ -4596,6 +6586,11 @@ export async function createHostServer(
                 case "devices.list":
                 case "devices.boot":
                 case "devices.capture":
+                case "devices.control.status":
+                case "devices.control.claim":
+                case "devices.control.release":
+                case "devices.control.renew":
+                case "devices.inspect":
                 case "devices.action":
                   result = await nativeDevicesService.call(input.method, params, domainContext, {
                     legacy: true,
@@ -4663,6 +6658,7 @@ export async function createHostServer(
                         ? (params.sessions as {
                             sessionId: string;
                             revision: number;
+                          sourceEpoch?: string;
                           }[])
                         : [],
                       projects: Array.isArray(params.projects)
@@ -4677,18 +6673,28 @@ export async function createHostServer(
                       demandChanged: params.demandChanged === true,
                     },
                     async (sessionId) => {
+                      const known = await engine.store.sessionStateMetadata(sessionId);
+                      if (!known && !(await desktop.stampAsync(sessionId, WATCH_STAMP_MS))) return undefined;
+                      const epoch = await sessionSourceEpoch(sessionId);
                       const host = await engine.store.sessionStateMetadata(sessionId);
-                      if (host && (!host.desktop || host.status === "running"))
-                        return host.revision;
+                      if (host && (!host.desktop || host.status === "running")) {
+                        if (epoch !== await sessionSourceEpoch(sessionId)) throw new Error("Session read owner changed; retry");
+                        return { revision: host.revision, sourceEpoch: epoch };
+                      }
                       // A change-poll tick: a fraction-of-a-second old read is fine.
                       const stamp = await desktop.stampAsync(sessionId, WATCH_STAMP_MS);
-                      if (host && (!stamp || !stamp.running)) return host.revision;
                       if (!host && !stamp) return undefined;
+                      if (host && (!stamp || !stamp.running)) {
+                        if (epoch !== await sessionSourceEpoch(sessionId)) throw new Error("Session read owner changed; retry");
+                        return { revision: host.revision, sourceEpoch: epoch };
+                      }
                       const overlay = desktop.live.overlay(sessionId);
-                      return Math.max(
+                      const revision = Math.max(
                         stamp?.updatedAt ?? host?.revision ?? 0,
                         overlay?.changedAt ?? 0,
                       );
+                      if (epoch !== await sessionSourceEpoch(sessionId)) throw new Error("Session read owner changed; retry");
+                      return { revision, sourceEpoch: epoch };
                     },
                     projectChangeSnapshot,
                     () => closing || response.destroyed || pollState.revoked,
@@ -4713,7 +6719,7 @@ export async function createHostServer(
                     {
                       inlineSync: params.inlineSync === true,
                       inlineSessionIds: inlineSessionIds as string[] | undefined,
-                      sessions: params.sessions as { sessionId: string; revision: number }[],
+                      sessions: params.sessions as { sessionId: string; revision: number; sourceEpoch?: string }[],
                       projects: [],
                     },
                     result as Awaited<ReturnType<RemoteChanges["read"]>>,
@@ -4721,12 +6727,15 @@ export async function createHostServer(
                       // Desktop rows may require transcript IO. Keep those on sessions.sync.
                       const metadata = await engine.store.sessionStateMetadata(id);
                       if (!metadata || (await desktopWatch(id, true))) return undefined;
+                      const sourceEpoch = await sessionSourceEpoch(id);
                       const sync = await engine.store.sync(id, revision);
+                      if (sourceEpoch !== await sessionSourceEpoch(id)) return undefined;
                       return sync.kind === "delta"
                         ? {
                             ...sync,
                             value: {
                               ...sync.value,
+                              sourceEpoch,
                               session: {
                                 ...sync.value.session,
                                 ...previewRewindHistory(sync.value.session),
@@ -4738,6 +6747,30 @@ export async function createHostServer(
                   );
                   if (!(await engine.store.authenticated(token)))
                     throw new Error("Device authorization was revoked");
+                  break;
+                }
+                case "sessions.pin.state":
+                case "sessions.pin.apply":
+                case "sessions.pin.receipt": {
+                  const sessionId = String(params.sessionId ?? "");
+                  const projectId = String(params.projectId ?? "");
+                  if (!sessionId || !projectId || sessionId.length > 4096 || projectId.length > 4096) throw new Error("Invalid pin scope");
+                  const operationId = String(params.operationId ?? "");
+                  if (input.method !== "sessions.pin.state" && (!operationId || operationId.length > 4096)) throw new Error("Invalid pin operation ID");
+                  if (input.method === "sessions.pin.receipt") {
+                    result = await engine.store.pinReceipt(sessionId, projectId, operationId);
+                    break;
+                  }
+                  const authorityGeneration = params.authorityGeneration === undefined ? undefined : SafeCounterSchema.min(1).parse(params.authorityGeneration);
+                  await engine.store.assertAuthority(sessionId, authorityGeneration);
+                  if (input.method === "sessions.pin.state") {
+                    result = await engine.store.pinState(sessionId, projectId, authorityGeneration);
+                  } else {
+                    if (authorityGeneration === undefined) await adopt(sessionId);
+                    if (typeof params.desiredPinned !== "boolean") throw new Error("Invalid pin value");
+                    const expectedVersion = SafeCounterSchema.parse(params.expectedVersion);
+                    result = await engine.store.pinApply(sessionId, projectId, operationId, params.desiredPinned, expectedVersion, authorityGeneration);
+                  }
                   break;
                 }
                 case "sessions.update": {
@@ -4927,9 +6960,11 @@ export async function createHostServer(
                             admittedGeneration
                           )
                             throw new Error("Session authority changed; refresh before deleting");
+                          let historyCwd = cwd;
                           if (await inHost(sessionId)) {
                             await engine.store.assertAuthority(sessionId, authorityGeneration);
                             const current = await engine.store.session(sessionId);
+                            historyCwd = current.session.cwd || cwd;
                             if (current.projectId !== project.id)
                               throw new Error("Session does not belong to this project");
                             await engine.store.deleteSession(sessionId, authorityGeneration, {
@@ -4938,6 +6973,9 @@ export async function createHostServer(
                           }
                           invalidateSessionCopies(sessionId, project.id);
                           await sessionQueues.delete(sessionId);
+                          await engine.checkpoints.retireDeletedSessionHistory(sessionId, historyCwd).then((result) => {
+                            if (result.retainedUnknown) console.warn("Deleted session legacy or unreferenced file history retained; ownership is not proven.");
+                          }).catch((error) => console.warn("Deleted session file history retained:", error));
                           return { deleted: true };
                         }
                         const current = await engine.store.session(sessionId);
@@ -4949,6 +6987,9 @@ export async function createHostServer(
                         });
                         invalidateSessionCopies(sessionId, current.projectId);
                         await sessionQueues.delete(sessionId);
+                        await engine.checkpoints.retireDeletedSessionHistory(sessionId, current.session.cwd).then((result) => {
+                          if (result.retainedUnknown) console.warn("Deleted session legacy or unreferenced file history retained; ownership is not proven.");
+                        }).catch((error) => console.warn("Deleted session file history retained:", error));
                         return { deleted: true };
                       },
                       admittedDelete,
@@ -4971,7 +7012,9 @@ export async function createHostServer(
                   const beat = desktop.live.beat(params);
                   const durableCommands = await withinBeat(
                     () =>
-                      desktopCommandDelivery.poll(params, () => assertDomainAuthority(domainContext)),
+                      desktopCommandDelivery.poll(params, () =>
+                        assertDomainAuthority(domainContext),
+                      ),
                     [],
                   );
                   // Renew the reported epoch before queued busy bookkeeping can
@@ -5724,15 +7767,19 @@ export async function createHostServer(
                   result = await attachmentOwnership.claims(token, params);
                   break;
                 case "attachments.status": {
-                  await attachmentOwnership.touch(token, params);
-                  const status = await attachmentUploadStatus(engine.store, params);
+                  const status = await attachmentUploadStatus(engine.store, params, async () => {
+                    await bindQuestionUpload(tokenHash, params);
+                    await attachmentOwnership.touch(token, params);
+                  });
                   await attachmentOwnership.uploaded(params, status.offset);
                   result = status;
                   break;
                 }
                 case "attachments.upload": {
-                  await attachmentOwnership.touch(token, params);
-                  const uploaded = await writeAttachmentChunk(engine.store, params);
+                  const uploaded = await writeAttachmentChunk(engine.store, params, async () => {
+                    await bindQuestionUpload(tokenHash, params);
+                    await attachmentOwnership.touch(token, params);
+                  });
                   await attachmentOwnership.uploaded(params, uploaded.offset);
                   result = uploaded;
                   break;
@@ -5881,12 +7928,20 @@ export async function createHostServer(
               }
             },
           );
-          await endResult(result, async () => {
+          const finishResult = () => endResult(result, async () => {
             for (const check of resultAuthorities)
               if (!(await check())) throw new Error("Result authority expired.");
-          });
+          }, input.method === "assistant.request" || input.method === "native.services.assistant.browser.panel");
+          if (input.method === "assistant.request") {
+            await assistant.withResponseDisclosure(AssistantResponseValidationSchema.parse(result), {
+              environmentId: engine.store.environmentId,
+              deviceHash: tokenHash,
+              authorized: domainContext.authorized,
+            }, finishResult);
+          } else await finishResult();
         } catch (error) {
-          if (!response.destroyed)
+          if (voiceToolLog) voiceToolLog.outcome = "error";
+          if (!response.destroyed && !response.headersSent)
             response
               .writeHead(
                 error instanceof RequestAuthorizationError ||
@@ -5915,7 +7970,20 @@ export async function createHostServer(
                     : {}),
                 }),
               );
+          else if (!response.destroyed && !response.writableEnded) response.destroy();
         } finally {
+          for (const release of resultScopeReleases) release();
+          await Promise.allSettled(resultScopeSettlements);
+          if (voiceToolLog)
+            console.info("Voice tool", {
+              action: voiceToolLog.action,
+              requestId: voiceToolLog.requestId,
+              elapsedMs: elapsedSince(voiceToolLog.startedAt),
+              outcome:
+                response.destroyed && !response.writableEnded
+                  ? "disconnected"
+                  : voiceToolLog.outcome,
+            });
           await voiceDisclosure?.fail().catch(() => undefined);
           releaseVoiceTool?.();
           if (dispatchStarted !== undefined)
@@ -5937,8 +8005,11 @@ export async function createHostServer(
   const websocket = attachHostWebSocketTransport({
     server,
     environmentId: engine.store.environmentId,
+    mobileIngressSecret,
     methods: domainDispatcher.methods,
     capabilities: [
+      "browser.sessionScopes.v1",
+      "browser.ownerPresentationScopes.v1",
       "native.buffers.recovery.v1",
       "transport.ws.models.v1",
       "transport.ws.devices.v1",
@@ -5948,6 +8019,7 @@ export async function createHostServer(
       "native.buffers.upload.v1",
       "native.buffers.delivery.v1",
       "native.services.delivery.v1",
+      "native.services.workspace.format.bounded.v1",
       "native.buffers.delivery.ack.v1",
       "native.services.delivery.ack.v1",
       "native.delivery.epochs.v2",
@@ -6013,10 +8085,14 @@ export async function createHostServer(
   server.on("listening", () => {
     if (closing) return;
     startup = engine.store.db.outsideScope(async () => {
-      // Optional subsystems start in the original order but fail independently, so one
-      // failing step (for example mobile LAN) cannot prevent later ones (social scheduler).
+      // Keep the actual startup promises owned through shutdown, even after a
+      // deadline warning. Independent starts must not wait behind a hung peer.
       const step = async (name: string, action: () => unknown) => {
         if (closing) return;
+        const timer = setTimeout(() => {
+          if (!closing) console.warn(`Host background startup step "${name}" has not settled after 30 seconds.`);
+        }, 30_000);
+        timer.unref();
         try {
           await action();
         } catch (error) {
@@ -6024,16 +8100,20 @@ export async function createHostServer(
             console.warn(
               `Host background startup step "${name}" failed: ${error instanceof Error ? error.name : "Error"}.`,
             );
+        } finally {
+          clearTimeout(timer);
         }
       };
-      await step("retention", () => managed.retention.start());
-      await step("queue-drainer", () => queueDrainer.start());
-      await step("crews", () => crews.start());
-      await step("assistant", () => assistant.start());
-      await step("perf-metrics", () => perfMetrics.start());
-      await step("attachment-ownership", () => attachmentOwnership.start());
-      await step("mobile-lan", () => mobileLan.start());
-      await step("social", () => social.start());
+      await Promise.all([
+        step("retention", () => managed.retention.start()),
+        step("queue-drainer", () => queueDrainer.start()),
+        step("crews", () => crews.start()),
+        step("assistant", () => assistant.start()),
+        step("perf-metrics", () => perfMetrics.start()),
+        step("attachment-ownership", () => attachmentOwnership.start()),
+        step("mobile-lan", () => mobileLan.start()),
+        step("social", () => social.start()),
+      ]);
     });
     void startup.catch(() => {
       if (!closing) console.warn("Host background startup failed.");
@@ -6139,12 +8219,19 @@ export async function createHostServer(
       socialPeers.ready,
       mcpHttp.tokens.ready,
       queueDrainer.ready,
+      tasks.ready,
+      goals.ready,
     ]);
+    observationCoverage = await installAssistantObservationProducers(engine.store, observationJournal);
   } catch (error) {
     await closeResources().catch(() => {});
     throw error;
   }
   return Object.assign(server, {
+    assistant,
+    desktop,
+    observationJournal,
+    observationCoverage,
     tasks,
     automations,
     goals,

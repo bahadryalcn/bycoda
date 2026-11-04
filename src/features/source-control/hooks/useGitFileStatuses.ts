@@ -6,11 +6,30 @@ import { subscribeDirsChanged } from "../../files/model/fileTree";
 import { parentPath } from "../../../shared/lib/paths";
 import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { IS_MAC } from "../../../platform/tauri/platform";
 
 export type GitStatusMap = {
   files: Map<string, string>;
   dirs: Map<string, string>;
 };
+
+const normalizedStatuses = new WeakMap<Map<string, string>, Map<string, string | null>>();
+
+/** Match decomposed native macOS names without changing the actual operation path. */
+export function gitStatusForPath(map: Map<string, string> | undefined, path: string): string | undefined {
+  const exact = map?.get(path);
+  if (exact !== undefined || !map || !IS_MAC || isRemoteProjectPath(path)) return exact;
+  let aliases = normalizedStatuses.get(map);
+  if (!aliases) {
+    aliases = new Map();
+    for (const [key, status] of map) {
+      const normalized = key.normalize("NFC");
+      aliases.set(normalized, aliases.has(normalized) ? null : status);
+    }
+    normalizedStatuses.set(map, aliases);
+  }
+  return aliases.get(path.normalize("NFC")) ?? undefined;
+}
 
 const STATUS_PRIORITY: Record<string, number> = {
   modified: 3,

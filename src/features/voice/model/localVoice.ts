@@ -5,11 +5,13 @@ import {
   type LocalVoiceTranscript,
   type VoiceRuntimeConfig,
 } from "./localVoiceClient";
-import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
+import { VoiceVad, decodePcmBase64, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { speechTranscript } from "./voiceTranscript";
 import { openMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { voiceRuntimeDeadline } from "./voiceRuntimeDeadline";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
@@ -27,18 +29,30 @@ type Callbacks = {
 
 /** Local audio capture + local ASR. No remote audio or provider credentials. */
 export class LocalVoice {
+  isOutputReady(): boolean {
+    if (this.closed || !this.info || this.outputMuted) return false;
+    if (this.config?.natural) return this.audio?.state === "running" && (!this.output || this.output.state === "running");
+    return !!globalThis.speechSynthesis && !speechSynthesis.paused && speechSynthesis.getVoices().some((voice) => voice.localService && voice.lang.toLowerCase().split("-")[0] === this.language);
+  }
   private stream?: MediaStream;
   private audio?: AudioContext;
   /** Playback runs at the device rate; the 16 kHz capture context would turn
    * 44–48 kHz speech into telephone quality. */
   private output?: AudioContext;
+  private outputGain?: GainNode;
+  private outputMuted = false;
+  private readonly lifetime = new AbortController();
+  private utterances = new Set<SpeechSynthesisUtterance>();
   private source?: MediaStreamAudioSourceNode;
   private capture?: AudioWorkletNode;
   private vad?: VoiceVad;
   private info?: LocalVoiceInfo;
   private heartbeat?: ReturnType<typeof setInterval>;
   private closed = false;
+  private resourceClosure: Promise<void> = Promise.resolve();
   private muted = false;
+  private capturePaused = false;
+  private pushToTalkActive = false;
   private requests = 0;
   private speechEpoch = 0;
   /** Only accepted words (or explicit mic reset) supersede pending ASR. */
@@ -126,6 +140,7 @@ export class LocalVoice {
         if (
           this.closed ||
           this.muted ||
+          this.capturePaused ||
           (this.playbackActive && this.conversation.allowBargeIn === false)
         ) {
           this.level.current = 0;
@@ -184,10 +199,46 @@ export class LocalVoice {
     this.conversation = { ...this.conversation, ...options };
     const vadOptions = this.vadOptions();
     this.vad?.setEndSilence(vadOptions.endSilence, vadOptions.pause);
-    this.vad?.setManualTurnEnd(this.conversation.manualTurnEnd === true);
+    this.vad?.setManualTurnEnd(this.pushToTalkActive || this.conversation.manualTurnEnd === true);
   }
   finishTurn() {
-    if (!this.closed && !this.muted) this.vad?.flush();
+    if (!this.closed && !this.muted && !this.capturePaused) this.vad?.flush();
+  }
+
+  /** Owner key gesture resumes an existing paused capture; it never opens a microphone. */
+  beginPushToTalk(): boolean {
+    const tracks = this.stream?.getAudioTracks();
+    if (
+      this.closed ||
+      !this.info ||
+      !this.vad ||
+      !tracks?.length ||
+      tracks.some((track) => track.readyState === "ended")
+    )
+      return false;
+    if (this.pushToTalkActive) return true;
+    if (!this.muted && !this.capturePaused) return false;
+    if (this.muted) this.mute(false);
+    this.capturePaused = false;
+    this.pushToTalkActive = true;
+    this.vad.setManualTurnEnd(true);
+    tracks.forEach((track) => {
+      track.enabled = true;
+    });
+    return true;
+  }
+
+  /** Stop capture while retaining the just-submitted recognition and its onset target. */
+  endPushToTalk(): void {
+    if (this.closed || !this.pushToTalkActive) return;
+    this.vad?.flush();
+    this.pushToTalkActive = false;
+    this.capturePaused = true;
+    this.level.current = 0;
+    this.vad?.setManualTurnEnd(this.conversation.manualTurnEnd === true);
+    this.stream?.getAudioTracks().forEach((track) => {
+      track.enabled = false;
+    });
   }
 
   private async transcribe(audio: Int16Array, binding: SpeechBinding, epoch: number) {
@@ -298,6 +349,8 @@ export class LocalVoice {
     // Queued utterances play in order; a new reply replaces them.
     if (!append) this.silence();
     const utterance = new SpeechSynthesisUtterance(text.slice(0, 700));
+    utterance.volume = this.outputMuted ? 0 : 1;
+    this.utterances.add(utterance);
     utterance.voice = voice;
     utterance.lang = voice.lang;
     const epoch = this.playbackEpoch;
@@ -305,12 +358,14 @@ export class LocalVoice {
       if (!this.closed && epoch === this.playbackEpoch) this.setPlayback(true);
     };
     utterance.onend = () => {
+      this.utterances.delete(utterance);
       if (!this.closed && epoch === this.playbackEpoch) {
         this.setPlayback(false);
         delivered?.();
       }
     };
     utterance.onerror = () => {
+      this.utterances.delete(utterance);
       if (epoch === this.playbackEpoch) this.setPlayback(false);
     };
     speechSynthesis.speak(utterance);
@@ -334,7 +389,12 @@ export class LocalVoice {
       }
       this.speechId = id;
       const context = (this.output ??= new AudioContext());
-      await context.resume();
+      if (!this.outputGain) {
+        this.outputGain = context.createGain();
+        this.outputGain.gain.value = this.outputMuted ? 0 : 1;
+        this.outputGain.connect(context.destination);
+      }
+      await voiceRuntimeDeadline(() => context.resume(), this.lifetime.signal, 12_000);
       while (!this.closed && epoch === this.playbackEpoch) {
         const chunk = await localVoiceBackend.speechNext(lease, id);
         if (this.closed || epoch !== this.playbackEpoch) break;
@@ -347,15 +407,13 @@ export class LocalVoice {
         const rate = chunk.sampleRate ?? 0;
         if (!Number.isInteger(rate) || rate < 16000 || rate > 48000 || chunk.audio.length > 262144)
           throw new Error("Invalid local speech audio.");
-        const bytes = Uint8Array.from(atob(chunk.audio), (value) => value.charCodeAt(0));
-        if (!bytes.length || bytes.length % 2) throw new Error("Invalid local speech audio.");
-        const samples = new DataView(bytes.buffer);
-        const buffer = context.createBuffer(1, bytes.length / 2, rate);
+        const samples = decodePcmBase64(chunk.audio);
+        const buffer = context.createBuffer(1, samples.length, rate);
         const channel = buffer.getChannelData(0);
-        for (let i = 0; i < channel.length; i++) channel[i] = samples.getInt16(i * 2, true) / 32768;
+        for (let i = 0; i < channel.length; i++) channel[i] = samples[i] / 32768;
         const source = context.createBufferSource();
         source.buffer = buffer;
-        source.connect(context.destination);
+        source.connect(this.outputGain);
         this.playback.add(source);
         let finishPlayback!: () => void;
         completed.push(
@@ -385,9 +443,11 @@ export class LocalVoice {
         this.nextTime = start + buffer.duration;
       }
       if (successful && completed.length) {
-        void Promise.all(completed).then(() => {
-          if (!this.closed && epoch === this.playbackEpoch) delivered?.();
-        });
+        void Promise.all(completed)
+          .then(() => {
+            if (!this.closed && epoch === this.playbackEpoch) delivered?.();
+          })
+          .catch(() => this.callbacks.error("Local voice playback completion failed."));
       }
     } catch (cause) {
       if (!this.closed && epoch === this.playbackEpoch) {
@@ -416,20 +476,35 @@ export class LocalVoice {
   ) {
     // Web Audio has no onstart event. Use its clock, rather than reporting queued
     // synthesis as audible speech. A suspended context must not start the visual.
+    let suspendedAt: number | undefined;
     const check = () => {
       if (this.closed || epoch !== this.playbackEpoch || !this.playback.has(source)) return;
       const remaining = startTime - context.currentTime;
+      if (context.state !== "running") {
+        suspendedAt ??= monotonicNow();
+        if (elapsedSince(suspendedAt) >= 5_000 || context.state === "closed") {
+          this.silence();
+          this.callbacks.error("Voice playback is suspended. Start voice again.");
+          return;
+        }
+      } else suspendedAt = undefined;
       if (context.state === "running" && remaining <= 0) {
         this.playbackStarts.delete(source);
         this.setPlayback(true);
       } else {
-        this.playbackStarts.set(source, setTimeout(check, Math.max(16, remaining * 1000)));
+        this.playbackStarts.set(
+          source,
+          setTimeout(check, context.state === "running" ? Math.max(16, remaining * 1000) : 100),
+        );
       }
     };
     check();
   }
 
   mute(value: boolean) {
+    this.capturePaused = false;
+    this.pushToTalkActive = false;
+    this.vad?.setManualTurnEnd(this.conversation.manualTurnEnd === true);
     this.muted = value;
     this.level.current = 0;
     this.vad?.reset();
@@ -439,6 +514,11 @@ export class LocalVoice {
     this.stream?.getAudioTracks().forEach((track) => {
       track.enabled = !value;
     });
+  }
+  setOutputMuted(value: boolean) {
+    this.outputMuted = value;
+    if (this.outputGain) this.outputGain.gain.value = value ? 0 : 1;
+    for (const utterance of this.utterances) utterance.volume = value ? 0 : 1;
   }
   silence() {
     this.playbackEpoch++;
@@ -455,11 +535,45 @@ export class LocalVoice {
     if (this.speechId && this.info)
       void localVoiceBackend.speechCancel(this.info.lease, this.speechId).catch(() => {});
     this.speechId = undefined;
+    this.utterances.clear();
     globalThis.speechSynthesis?.cancel();
+  }
+  async retire(): Promise<void> {
+    this.close();
+    await this.resourceClosure;
+    const speech = globalThis.speechSynthesis;
+    if (speech)
+      await new Promise<void>((resolve, reject) => {
+        let interval: ReturnType<typeof setInterval> | undefined;
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const finish = (error?: Error) => {
+          if (interval) clearInterval(interval);
+          if (deadline) clearTimeout(deadline);
+          if (error) reject(error);
+          else resolve();
+        };
+        const check = () => {
+          if (typeof speech.speaking !== "boolean" || typeof speech.pending !== "boolean")
+            finish(new Error("Speech output closure is unavailable."));
+          else if (!speech.speaking && !speech.pending) finish();
+        };
+        interval = setInterval(check, 20);
+        deadline = setTimeout(
+          () => finish(new Error("Speech output closure is unconfirmed.")),
+          10000,
+        );
+        check();
+      });
+    if (
+      [this.audio, this.output].some((context) => context && context.state !== "closed") ||
+      this.stream?.getTracks().some((track) => track.readyState !== "ended")
+    )
+      throw new Error("Local voice generation closure is unconfirmed.");
   }
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.lifetime.abort();
     this.bindings.clear();
     this.level.current = 0;
     this.silence();
@@ -469,8 +583,12 @@ export class LocalVoice {
     this.source?.disconnect();
     this.capture?.disconnect();
     if (this.capture) this.capture.port.onmessage = null;
-    if (this.audio && this.audio.state !== "closed") void this.audio.close();
-    if (this.output && this.output.state !== "closed") void this.output.close();
-    if (this.info) void localVoiceBackend.release(this.info.lease).catch(() => {});
+    this.resourceClosure = Promise.all([
+      ...[this.audio, this.output].map((context) =>
+        context && context.state !== "closed" ? context.close() : undefined,
+      ),
+      ...(this.info ? [localVoiceBackend.release(this.info.lease)] : []),
+    ]).then(() => {});
+    void this.resourceClosure.catch(() => {});
   }
 }

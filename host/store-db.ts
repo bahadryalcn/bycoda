@@ -75,6 +75,7 @@ export class StoreDatabase {
   private busyFailures = 0;
   private recoveryAttempts = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
+  private queuedCancellableReads = 0;
   private pending = new Map<
     number,
     {
@@ -409,7 +410,8 @@ export class StoreDatabase {
       });
   }
 
-  scope<T>(work: () => T | Promise<T>): Promise<T> {
+  scope<T>(work: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) return Promise.reject(new Error("Database read admission cancelled."));
     const current = this.owners.getStore();
     if (current) {
       if (current.phase !== "open")
@@ -424,11 +426,17 @@ export class StoreDatabase {
     if (authorization && typeof authorization !== "function")
       return this.authorizations
         .exit(() => authorization.prepare())
-        .then((prepared) => this.authorizations.run(prepared, () => this.scope(work)));
+        .then((prepared) => this.authorizations.run(prepared, () => this.scope(work, signal)));
+    if (signal && this.queuedCancellableReads >= 128)
+      return Promise.reject(new Error("Database cancellable read queue is full."));
+    if (signal) this.queuedCancellableReads++;
     this.admissionVersion++;
+    let entered = false;
     const pending = this.tail.then(async () => {
       if (this.failed) throw this.failed;
       await this.ready;
+      if (signal?.aborted) throw new Error("Database read admission cancelled.");
+      entered = true;
       const owner: Owner = { id: randomUUID(), phase: "open" };
       return this.owners.run(owner, async () => {
         await this.request("enter", undefined, [], owner);
@@ -465,8 +473,19 @@ export class StoreDatabase {
         return result as Awaited<ReturnType<typeof work>>;
       });
     });
-    this.tail = pending.catch(() => undefined);
-    return pending;
+    const settled = pending.finally(() => { if (signal) this.queuedCancellableReads--; });
+    this.tail = settled.catch(() => undefined);
+    if (!signal) return settled;
+    return new Promise<T>((resolve, reject) => {
+      const cancelled = () => {
+        // The queued closure checks the same signal before enter. Once entered,
+        // observer abort cannot release an accepted SQL owner or its writes.
+        if (!entered) reject(new Error("Database read admission cancelled."));
+      };
+      signal.addEventListener("abort", cancelled, { once: true });
+      if (signal.aborted) cancelled();
+      settled.then(resolve, reject).finally(() => signal.removeEventListener("abort", cancelled)).catch(() => undefined);
+    });
   }
 
   private request(

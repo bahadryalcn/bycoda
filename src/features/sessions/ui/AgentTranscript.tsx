@@ -588,11 +588,22 @@ function AgentTranscriptComponent({
       }
     };
     restoreCodeFolds();
-    const observer = new MutationObserver(restoreCodeFolds);
+    let frame: number | undefined;
+    const observer = new MutationObserver((records) => {
+      if (frame !== undefined || !retention.read().disclosures) return;
+      if (!records.some((record) => [...record.addedNodes].some((node) =>
+        node instanceof Element && (node.matches(".markdown-code-shell") || node.querySelector(".markdown-code-shell")),
+      ))) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        restoreCodeFolds();
+      });
+    });
     observer.observe(el, { childList: true, subtree: true });
     const timeout = setTimeout(() => observer.disconnect(), 1000);
     return () => {
       observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
       clearTimeout(timeout);
     };
   }, [retention, scroller, scrollerEl, visible]);
@@ -2392,7 +2403,7 @@ function UserMessageBlock({
       <SessionMessageAuthor
         author={block.author}
         onOpen={
-          block.author?.kind === "assistant" || block.author?.kind === "assistant-manual"
+          block.author?.kind === "assistant" || block.author?.kind === "assistant-manual" || block.author?.kind === "assistant-room"
             ? () =>
                 window.dispatchEvent(
                   new CustomEvent("bycoda:open-assistant", {
@@ -2423,7 +2434,7 @@ function UserMessageBlock({
               : `user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
                   block.draft
                     ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-                    : "bg-(--ui-surface)"
+                    : "bg-(--ui-workspace-reading)"
                 } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`
           }
           style={{ zIndex: stickyIndex }}

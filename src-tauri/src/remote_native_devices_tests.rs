@@ -151,6 +151,11 @@ fn paired_factory_is_finite_and_does_not_grant_setup_stop_or_other_private_scope
         "devices.start",
         "devices.boot",
         "devices.capture",
+        "devices.control.status",
+        "devices.control.claim",
+        "devices.control.renew",
+        "devices.control.release",
+        "devices.inspect",
         "devices.action",
     ] {
         assert_eq!(wire_method(method).as_deref(), Some(method));
@@ -273,7 +278,7 @@ fn dispatched_action_capture_and_reads_never_replay_over_http() {
     for (method, params) in [
         (
             "devices.action",
-            json!({"deviceId":"simulator","action":{"type":"press","x":1,"y":2}}),
+            json!({"deviceId":"simulator","leaseId":"lease","requestId":"request","action":{"type":"press","x":1,"y":2}}),
         ),
         ("devices.capture", json!({"deviceId":"simulator"})),
         ("devices.list", json!({})),

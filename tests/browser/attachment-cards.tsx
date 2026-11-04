@@ -86,6 +86,19 @@ const samples: Attachment[] = [
   },
 ];
 
+// Historical remote attachments retain metadata and an owning-Host reader,
+// rather than the temporary preview URL available while composing.
+const persistedImage: Attachment = {
+  id: "persisted-image",
+  name: "saved-mountain-reference.svg",
+  kind: "image",
+  mimeType: "image/svg+xml",
+  size: 320,
+  path: "/isolated-host/saved-mountain-reference.svg",
+  loadPreview: async () => btoa(decodeURIComponent(image.slice(image.indexOf(",") + 1))),
+};
+const messageAttachments = [samples[0], persistedImage, ...samples.slice(1, 5)];
+
 function EditableExample({ name, initial }: { name: string; initial: Attachment[] }) {
   const [attachments, setAttachments] = useState(initial);
   const [text, setText] = useState(
@@ -169,17 +182,16 @@ function Fixture() {
         <h2 className="mb-2 text-ui-secondary font-medium">Message</h2>
         <p className="mb-3 text-ui-body leading-7">
           <AttachmentTokenText
-            text={`Compare ${attachmentTokens(samples.slice(0, 5)).join(" and ")} with these references.`}
-            attachments={samples.slice(0, 5)}
+            text={`Compare ${attachmentTokens(messageAttachments).join(" and ")} with these references.`}
+            attachments={messageAttachments}
           />
         </p>
         <div className="flex flex-wrap items-start gap-2">
-          {samples.slice(0, 5).map((attachment, index) => (
+          {messageAttachments.map((attachment, index) => (
             <AttachmentChip
               key={attachment.id}
               attachment={attachment}
-              token={attachmentTokens(samples)[index]}
-              tokenLabelPlacement="overlay"
+              token={attachmentTokens(messageAttachments)[index]}
             />
           ))}
         </div>

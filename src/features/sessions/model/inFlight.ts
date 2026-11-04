@@ -2,9 +2,9 @@ import { t } from "../../../shared/i18n/core";
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout";
 import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../../shared/lib/paths";
 import { sessionNeedsInput, type Session } from "./session";
-import { isTurnInterruptionNotice } from "./turnInterruption";
+import { isOwnerStoppedTurn, isTurnInterruptionNotice } from "./turnInterruption";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
 import type { ProjectReturnMemory } from "../../projects/model/projectReturn";
 
@@ -105,6 +105,8 @@ export function markTurnInterrupted(session: Session): Session {
     return withoutDuration;
   });
   const sealed = { ...sealOpenWork(stopped), busy: false };
+  // A stale in-flight snapshot cannot override the owner's terminal Stop.
+  if (isOwnerStoppedTurn(sealed.blocks)) return sealed;
   if (lastBlockIsInterrupt(sealed)) return sealed;
   return {
     ...sealed,
@@ -150,6 +152,7 @@ export function canAutoContinue(session: Session): boolean {
 }
 
 function lastBlockIsInterrupt(session: Session): boolean {
+  if (isOwnerStoppedTurn(session.blocks)) return false;
   const last = session.blocks[session.blocks.length - 1];
   return isTurnInterruptionNotice(last);
 }

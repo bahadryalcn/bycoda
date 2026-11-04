@@ -52,7 +52,7 @@ export function useSessionReminderActions({
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);
       setProjectCwd(session.cwd);
-      setRecents(rememberProject(session.cwd));
+      setRecents(await rememberProject(session.cwd));
       await onSelectHistorySession(sessionId);
     },
     [ensureOpenSession, onSelectHistorySession],

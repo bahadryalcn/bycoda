@@ -7,7 +7,7 @@
   flex: 1 1 0;
   min-block-size: 0;
   min-inline-size: 0;
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   container-type: inline-size;
   container-name: settings-loading;
 }
@@ -18,7 +18,7 @@
   gap: 16px;
   inline-size: 200px;
   padding: 16px 16px 24px;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
   border-inline-end: 1px solid var(--ui-pane-border);
 }
 .settings-loading-panel {

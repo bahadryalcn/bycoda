@@ -43,7 +43,7 @@ export function AssistantNotifications() {
           title: notification.title,
           body: notification.body,
           kind:
-            notification.kind === "job.waiting"
+            notification.kind === "job.waiting" || notification.kind === "task.needsInput"
               ? "input"
               : notification.kind === "job.failed" || notification.kind === "budget.exhausted"
                 ? "failed"

@@ -15,6 +15,7 @@ import {
 import { dirname, join, relative } from "node:path";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 import { safeGitPath } from "./workspace";
+import { writeFileAtomic } from "./storage/atomic-write";
 import type { HarnessFileChange } from "../src/integrations/harness/core/types";
 
 type Image = { raw: string; mode: number } | null;
@@ -26,6 +27,8 @@ type Turn = {
   unavailable?: string;
 };
 type History = { version: 1; cwd: string; turns: Turn[] };
+type HistoryIndexEntry = { id: string; userBlockId: string; hash: string; bytes: number; settled: boolean };
+type HistoryIndex = { version: 3; cwd: string; turns: HistoryIndexEntry[]; checksum: string };
 type Active = {
   cwd: string;
   turn: Turn;
@@ -341,13 +344,159 @@ export class SessionFileRevert {
   private path(session: string) {
     return join(this.root, validId(session), "file-history.json");
   }
+  private indexPath(session: string) {
+    return join(this.root, validId(session), "file-history.v2.json");
+  }
+  private blobPath(session: string, hash: string) {
+    if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error("Invalid file history block");
+    return join(this.root, validId(session), "file-history-v2", `${hash}.json`);
+  }
+  private indexChecksum(cwd: string, turns: HistoryIndexEntry[]) {
+    return createHash("sha256").update(JSON.stringify({ version: 3, cwd, turns })).digest("hex");
+  }
+  private async readTurn(session: string, entry: HistoryIndexEntry): Promise<Turn> {
+    const text = await readFile(this.blobPath(session, entry.hash), "utf8");
+    if (Buffer.byteLength(text) !== entry.bytes || createHash("sha256").update(text).digest("hex") !== entry.hash)
+      throw new Error("File history block failed integrity check");
+    const turn = JSON.parse(text) as Turn;
+    if (!turn || turn.id !== entry.id || turn.userBlockId !== entry.userBlockId ||
+        (entry.settled !== undefined && entry.settled !== !turn.unavailable) || !turn.files || typeof turn.files !== "object")
+      throw new Error("File history block does not match its index");
+    turn.files = Object.assign(Object.create(null), turn.files);
+    return turn;
+  }
+  private async readIndex(session: string, cwd: string, startFresh = false): Promise<HistoryIndex> {
+    let raw: string;
+    try { raw = await readFile(this.indexPath(session), "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const legacy = await this.load(session, cwd, startFresh);
+      await this.save(session, legacy);
+      raw = await readFile(this.indexPath(session), "utf8");
+    }
+    const value = JSON.parse(raw) as HistoryIndex | { version: 2; cwd: string; turns: string[] };
+    if (value.version === 2) {
+      // Existing v2 data is upgraded once, after each block passes its hash.
+      const legacy = await this.load(session, cwd, startFresh);
+      await this.save(session, legacy);
+      return this.readIndex(session, cwd);
+    }
+    if (value.version === 3 && Array.isArray(value.turns) && value.turns.some((entry) => entry && entry.settled === undefined)) {
+      const legacy = await this.load(session, cwd, startFresh);
+      await this.save(session, legacy);
+      return this.readIndex(session, cwd);
+    }
+    if (value.version !== 3 || value.cwd !== cwd || !Array.isArray(value.turns) ||
+        value.turns.length > 2048 || value.turns.some((entry) => !entry ||
+          typeof entry.id !== "string" || typeof entry.userBlockId !== "string" ||
+          typeof entry.hash !== "string" || !/^[a-f0-9]{64}$/.test(entry.hash) ||
+          !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || typeof entry.settled !== "boolean") ||
+        value.checksum !== this.indexChecksum(value.cwd, value.turns))
+      throw new Error("File history index is invalid or belongs to another checkout");
+    return value;
+  }
+  private async writeIndex(session: string, cwd: string, turns: HistoryIndexEntry[], previous: HistoryIndexEntry[]) {
+    let bytes = Buffer.byteLength(JSON.stringify({ version: 1, cwd, turns: [] })) +
+      turns.reduce((sum, entry) => sum + entry.bytes, 0) + Math.max(0, turns.length - 1);
+    while ((bytes > this.budget || turns.length > 2048) && turns.length) {
+      if (!turns[0].settled) throw new Error("File history capacity is held by unresolved captures");
+      bytes -= turns[0].bytes + (turns.length > 1 ? 1 : 0);
+      turns.shift();
+    }
+    await writeFileAtomic(this.indexPath(session), JSON.stringify({ version: 3, cwd, turns, checksum: this.indexChecksum(cwd, turns) }));
+    const retained = new Set(turns.map((entry) => entry.hash));
+    for (const hash of new Set(previous.map((entry) => entry.hash)))
+      if (!retained.has(hash)) await rm(this.blobPath(session, hash), { force: true }).catch(() => undefined);
+  }
+  private async storeTurn(session: string, turn: Turn): Promise<HistoryIndexEntry> {
+    const text = JSON.stringify(turn);
+    const hash = createHash("sha256").update(text).digest("hex");
+    const path = this.blobPath(session, hash);
+    try {
+      const stored = await readFile(path, "utf8");
+      if (stored !== text) throw new Error("File history block failed integrity check");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await writeFileAtomic(path, text);
+    }
+    return { id: turn.id, userBlockId: turn.userBlockId, hash, bytes: Buffer.byteLength(text), settled: !turn.unavailable };
+  }
+  /** Called only after writer retirement while the checkpoint session queue is held. */
+  async retireDeletedSession(session: string, cwd: string): Promise<{ retainedUnknown: boolean }> {
+    if (this.active.has(session)) throw new Error("File history capture is still active");
+    const marker = join(this.root, validId(session), "file-history-retirement.json");
+    const pendingRetirement = await lstat(marker).then(() => true, (error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    });
+    if (pendingRetirement) throw new Error("Previous file history retirement is unresolved; evidence retained");
+    let raw: string;
+    try { raw = await readFile(this.indexPath(session), "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { retainedUnknown: true };
+      throw error;
+    }
+    if ((JSON.parse(raw) as { version?: number }).version === 2) {
+      await this.readIndex(session, cwd);
+      raw = await readFile(this.indexPath(session), "utf8");
+    }
+    const index = JSON.parse(raw) as HistoryIndex;
+    if (index.version !== 3 || index.cwd !== cwd || !Array.isArray(index.turns) ||
+        index.checksum !== this.indexChecksum(index.cwd, index.turns))
+      throw new Error("File history retirement requires a valid current index");
+    // Verify all named evidence before retiring the index. An orphan is not
+    // presumed dead merely because it is absent from the published index.
+    for (const entry of index.turns) {
+      const turn = await this.readTurn(session, entry);
+      if (turn.unavailable) throw new Error("File capture outcome is unresolved; file history retained");
+    }
+    await writeFileAtomic(marker, raw);
+    await writeFileAtomic(this.indexPath(session), JSON.stringify({
+      version: 3, cwd, turns: [], checksum: this.indexChecksum(cwd, []),
+    }));
+    for (const hash of new Set(index.turns.map((entry) => entry.hash)))
+      await rm(this.blobPath(session, hash), { force: true });
+    await rm(marker, { force: true });
+    // Legacy backups and unreferenced blocks have no proven retirement owner.
+    return { retainedUnknown: true };
+  }
   /** `startFresh`: a turn is beginning, so history that cannot be read for this
    * checkout (the session moved to another folder, or the file is damaged) is
    * replaced instead of failing every later turn of the session. Reverting
    * still refuses it. */
   private async load(session: string, cwd: string, startFresh = false): Promise<History> {
     try {
-      const history = JSON.parse(await readFile(this.path(session), "utf8")) as History;
+      let history: History | undefined;
+      try {
+        const index = JSON.parse(await readFile(this.indexPath(session), "utf8")) as
+          HistoryIndex | { version: 2; cwd: string; turns: string[] };
+        if ((index.version !== 2 && index.version !== 3) || typeof index.cwd !== "string" || !Array.isArray(index.turns))
+          throw new Error("Invalid file history index");
+        const turns: Turn[] = [];
+        if (index.version === 3) {
+          if (index.checksum !== this.indexChecksum(index.cwd, index.turns)) throw new Error("Invalid file history index checksum");
+          for (const entry of index.turns) turns.push(await this.readTurn(session, entry));
+        } else {
+          for (const hash of index.turns) {
+            const text = await readFile(this.blobPath(session, hash), "utf8");
+            if (createHash("sha256").update(text).digest("hex") !== hash)
+              throw new Error("File history block failed integrity check");
+            turns.push(JSON.parse(text) as Turn);
+          }
+        }
+        history = { version: 1, cwd: index.cwd, turns };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        // Only a missing index permits legacy fallback. Missing indexed blocks
+        // are corruption and must not resurrect an older legacy snapshot.
+        try { await lstat(this.indexPath(session)); } catch (missing) {
+          if ((missing as NodeJS.ErrnoException).code === "ENOENT") {
+            history = JSON.parse(await readFile(this.path(session), "utf8")) as History;
+          } else throw missing;
+        }
+        if (!history) throw new Error("Indexed file history block is missing", { cause: error });
+      }
+      if (!history) throw new Error("File history is unavailable");
       if (history.version !== 1 || history.cwd !== cwd || !Array.isArray(history.turns))
         throw new Error("File history belongs to another checkout or format");
       for (const turn of history.turns) turn.files = Object.assign(Object.create(null), turn.files);
@@ -355,6 +504,11 @@ export class SessionFileRevert {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, cwd, turns: [] };
       if (startFresh) {
+        const indexed = await lstat(this.indexPath(session)).then(() => true, (failure) => {
+          if ((failure as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw failure;
+        });
+        if (indexed) throw error;
         console.warn("File history was reset for a new turn:", error);
         return { version: 1, cwd, turns: [] };
       }
@@ -362,15 +516,19 @@ export class SessionFileRevert {
     }
   }
   private async save(session: string, history: History) {
-    while (Buffer.byteLength(JSON.stringify(history)) > this.budget && history.turns.length)
-      history.turns.shift();
-    // Empty turns are bounded too; missing IDs intentionally report unavailable.
-    if (history.turns.length > 2048) history.turns.splice(0, history.turns.length - 2048);
-    const path = this.path(session);
-    await mkdir(dirname(path), { recursive: true });
-    const tmp = `${path}.${randomUUID()}.tmp`;
-    await writeFile(tmp, JSON.stringify(history));
-    await rename(tmp, path);
+    let previous: HistoryIndexEntry[] = [];
+    try {
+      const stored = JSON.parse(await readFile(this.indexPath(session), "utf8")) as HistoryIndex | { version: 2; turns: string[] };
+      if (!Array.isArray(stored.turns)) throw new Error("Invalid file history index");
+      if (stored.version === 2) previous = stored.turns.map((hash) => ({ hash, id: "", userBlockId: "", bytes: 0, settled: false }));
+      else if (stored.version === 3 && stored.checksum === this.indexChecksum(stored.cwd, stored.turns)) previous = stored.turns;
+      else throw new Error("Invalid file history index");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const entries: HistoryIndexEntry[] = [];
+    for (const turn of history.turns) entries.push(await this.storeTurn(session, turn));
+    await this.writeIndex(session, history.cwd, entries, previous);
   }
   private async paths(cwd: string): Promise<string[]> {
     try {
@@ -419,8 +577,8 @@ export class SessionFileRevert {
     if (this.active.get(session)?.turn.id === turnId) return;
     if (this.active.has(session))
       await this.finish(session, cwd, this.active.get(session)!.turn.id, true);
-    const history = await this.load(session, cwd, true);
-    if (history.turns.some((previous) => previous.id === turnId))
+    const index = await this.readIndex(session, cwd, true);
+    if (index.turns.some((previous) => previous.id === turnId))
       throw new Error("File history turn was already recorded; a new turn ID is required");
     const turn: Turn = {
       id: turnId,
@@ -428,8 +586,8 @@ export class SessionFileRevert {
       files: Object.create(null),
       unavailable: "Turn file capture was interrupted",
     };
-    history.turns.push(turn);
-    await this.save(session, history);
+    const entry = await this.storeTurn(session, turn);
+    await this.writeIndex(session, cwd, [...index.turns, entry], index.turns);
     const active: Active = {
       cwd,
       turn,
@@ -600,9 +758,10 @@ export class SessionFileRevert {
     const active = this.active.get(session);
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
     try {
-      const history = await this.load(session, active.cwd);
-      const turn = history.turns.find((t) => t.id === turnId);
-      if (!turn) return;
+      const index = await this.readIndex(session, active.cwd);
+      const position = index.turns.findIndex((entry) => entry.id === turnId);
+      if (position < 0) return;
+      const turn = await this.readTurn(session, index.turns[position]);
       const discovered = shared ? new Set<string>() : new Set(await this.paths(active.cwd));
       const candidates = shared
         ? [...new Set([...active.claimed.keys(), ...active.proofs.keys()])]
@@ -656,7 +815,9 @@ export class SessionFileRevert {
       }
       if (active.complete) delete turn.unavailable;
       else turn.unavailable = "The turn exceeded file capture limits or contains unsupported files";
-      await this.save(session, history);
+      const entries = [...index.turns];
+      entries[position] = await this.storeTurn(session, turn);
+      await this.writeIndex(session, active.cwd, entries, index.turns);
       return turn.unavailable ? undefined : { files: turn.files, shared };
     } finally {
       this.active.delete(session);

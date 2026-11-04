@@ -1,4 +1,5 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
+import { saveWorkspaceBackground, WORKSPACE_BACKGROUND_DEFAULT } from "../model/workspaceBackground";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   readAppearanceSaveIssues,
@@ -383,6 +384,7 @@ export function useAppearanceSettings(
   );
 
   const restoreDefaults = useCallback(() => {
+    saveWorkspaceBackground(WORKSPACE_BACKGROUND_DEFAULT, { replace: true });
     onPreferences({
       ...APPEARANCE_DEFAULTS,
       chatWidth: preferences.chatWidth,

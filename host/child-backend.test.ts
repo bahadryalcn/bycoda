@@ -11,7 +11,7 @@ import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
 import { HostRunWriters } from "./run-writers";
 import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
-import type { SocialService } from "./social";
+import type { SocialService } from "./social/social";
 import { PROVIDER_STDERR_LINE_BYTES } from "./provider-lines";
 import {
   requireHarnessProcessReceipt,

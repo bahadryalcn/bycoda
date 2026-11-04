@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { deviceCommand } from "./device-process";
+import { deviceCommand } from "./devices/device-process";
 
 export function expoPreviewUrl(value: string): URL {
   const url = new URL(value);

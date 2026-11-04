@@ -65,7 +65,7 @@
 .actions {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 10px 12px;
   border-block-start: 1px solid var(--ui-tone-neutral-border);

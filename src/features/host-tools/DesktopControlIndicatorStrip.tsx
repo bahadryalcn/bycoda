@@ -79,10 +79,18 @@ export function DesktopControlStrip({
       })
       .catch(() => undefined);
     void refresh();
-    const timer = setInterval(() => void refresh(), 3000);
+    // Push owns ordinary changes. Periodic reads remain a reconciliation fallback.
+    const reconcile = () => {
+      if (!document.hidden) void refresh();
+    };
+    const timer = setInterval(reconcile, 30_000);
+    window.addEventListener("focus", reconcile);
+    document.addEventListener("visibilitychange", reconcile);
     return () => {
       disposed = true;
       clearInterval(timer);
+      window.removeEventListener("focus", reconcile);
+      document.removeEventListener("visibilitychange", reconcile);
       unlisten?.();
       shortcut?.();
     };

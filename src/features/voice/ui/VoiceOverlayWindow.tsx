@@ -4,12 +4,24 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
-import { Maximize2, Minimize2, Mic, MicOff, Square, VolumeX, X } from "../../../shared/ui/icons";
+import {
+  Maximize2,
+  Minimize2,
+  Mic,
+  MicOff,
+  Square,
+  VolumeX,
+  Volume2,
+  Pause,
+  X,
+} from "../../../shared/ui/icons";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   VOICE_OVERLAY_COMMAND_EVENT,
   VOICE_OVERLAY_CHOICE_EVENT,
   VOICE_OVERLAY_JOB_EVENT,
+  VOICE_OVERLAY_ACTIVITY_EVENT,
   VOICE_OVERLAY_COMPACT_SIZE,
   VOICE_OVERLAY_EXPANDED_WIDTH,
   VOICE_OVERLAY_LEVEL_EVENT,
@@ -25,6 +37,10 @@ import styles from "./VoiceOverlayWindow.module.css";
 import { VoiceChoiceCard } from "./VoiceChoiceCard";
 import { VoiceJobReview } from "./VoiceJobReview";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { VoiceToolActivityPanel } from "./VoiceToolActivityPanel";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
+import { useVoicePushToTalk } from "./useVoicePushToTalk";
 
 const MOVES: Record<string, [number, number]> = {
   ArrowLeft: [-16, 0],
@@ -60,19 +76,42 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const root = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    const current = getCurrentWebviewWindow();
+    let disposed = false;
+    const stops: (() => void)[] = [];
+    const keep = (stop: () => void) => {
+      if (disposed) stop();
+      else stops.push(stop);
+    };
     const subscriptions = Promise.all([
-      current.listen<VoiceOverlayState>(VOICE_OVERLAY_STATE_EVENT, ({ payload }) =>
-        setState(payload),
-      ),
-      current.listen<number>(VOICE_OVERLAY_LEVEL_EVENT, ({ payload }) => {
+      listenWindowAsync<VoiceOverlayState>(VOICE_OVERLAY_STATE_EVENT, ({ payload }) =>
+        setState({
+          ...payload,
+          activity: payload.activity?.map((entry) => ({
+            ...entry,
+            startedAt: monotonicNow() - (entry.elapsedMs ?? 0),
+            elapsedMs:
+              entry.state === "running" || entry.state === "waiting-owner"
+                ? undefined
+                : entry.elapsedMs,
+          })),
+        }),
+      ).then(keep),
+      listenWindowAsync<number>(VOICE_OVERLAY_LEVEL_EVENT, ({ payload }) => {
         level.current = Number.isFinite(payload) ? payload : 0;
-      }),
+      }).then(keep),
     ]);
     // Ask for the current state once both listeners exist.
-    void subscriptions.then(() => send("sync")).catch(() => undefined);
+    void subscriptions
+      .then(() => {
+        if (!disposed) send("sync");
+      })
+      .catch(() => {
+        if (!disposed)
+          setMenuError(t("Voice window could not connect. Return to the app and retry."));
+      });
     return () => {
-      void subscriptions.then((stops) => stops.forEach((stop) => stop())).catch(() => undefined);
+      disposed = true;
+      stops.forEach((stop) => stop());
     };
   }, []);
 
@@ -115,6 +154,29 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
 
   const status = state?.status ?? "idle";
   const muted = state?.muted ?? false;
+  useVoicePushToTalk({
+    enabled: status === "live",
+    begin: () => {
+      if (!state?.muted) return false;
+      send("beginPushToTalk");
+      return true;
+    },
+    end: () => send("endPushToTalk"),
+    cancel: () => send("cancelPushToTalk"),
+  });
+  const speakerMuted = state?.speakerMuted ?? false;
+  const speakerButton = (
+    <Button
+      iconOnly
+      label={t(speakerMuted ? "Unmute speaker" : "Mute speaker")}
+      selected={speakerMuted}
+      aria-pressed={speakerMuted}
+      disabled={!state}
+      onClick={() => send("toggleSpeaker")}
+    >
+      {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
+    </Button>
+  );
   const statusText = state?.statusText ?? t("Connecting voice...");
   const summary = state ? voiceSummaryLine(state) : statusText;
   const moveLabel = t("Move voice window. Use arrow keys to reposition.");
@@ -196,6 +258,12 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             onFinish={() => send("finishTurn")}
           />
         )}
+        {compact && status !== "idle" && (
+          <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
+            <Square className="icon-sm" />
+          </Button>
+        )}
+        {compact && speakerButton}
         {compact && (
           <Button
             iconOnly
@@ -227,18 +295,28 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           <X className="icon-sm" />
         </Button>
       </header>
-      <div role="status" className={compact ? styles.srOnly : styles.status}>
-        {compact && state?.error ? t("Voice needs attention") : statusText}
-        {state?.working ? ` | ${t("Agent working")}` : ""}
-      </div>
+      <LiveText
+        className={compact ? styles.srOnly : styles.status}
+        text={`${compact && state?.error ? t("Voice needs attention") : statusText}${state?.working ? ` | ${state.workingStatus || t("Session working")}` : ""}`}
+      />
       {!compact && (
         <>
           <div className={styles.body}>
+            <VoiceToolActivityPanel
+              entries={state?.activity ?? []}
+              onStopWaiting={(id) => {
+                void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
+                  setMenuError(t("Voice window could not connect. Return to the app and retry.")),
+                );
+              }}
+            />
             {menuError && (
-              <div role="alert" className={styles.feedback}>
-                <p>{menuError}</p>
-                <Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>
-              </div>
+              <InlineError
+                className={styles.feedback}
+                action={<Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>}
+              >
+                {menuError}
+              </InlineError>
             )}
             {state?.choice ? (
               <VoiceChoiceCard
@@ -367,8 +445,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
                 </Button>
                 <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
-                  <VolumeX className="icon-sm" />
+                  <Pause className="icon-sm" />
                 </Button>
+                {speakerButton}
                 <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
                   <Square className="icon-sm" />
                 </Button>

@@ -15,6 +15,7 @@ export type MobileAccessStatus = {
   addresses?: string[];
   endpoint?: string;
   machineName?: string;
+  reason?: string;
   approvalUrl?: string;
   tls?: import("../shared/model/host-contracts").MobileTlsBootstrap;
 };

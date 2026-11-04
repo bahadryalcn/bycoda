@@ -18,6 +18,7 @@ export async function inlineSessionSync(
     if (entry.deleted || remaining <= 0 || (selected && !selected.has(entry.sessionId))) continue;
     const cursor = input.sessions.find((value) => value.sessionId === entry.sessionId);
     if (!cursor || cursor.revision <= 0) continue;
+    if (entry.sourceEpoch !== cursor.sourceEpoch) continue;
     try {
       const sync = await read(entry.sessionId, cursor.revision);
       if (

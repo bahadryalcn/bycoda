@@ -317,6 +317,7 @@ export function remoteRequest<T>(
   fresh = false,
   userInitiated = false,
   expectedEnvironmentId?: string,
+  syncCycleId?: string,
 ): Promise<T> {
   if (method === "commands.dispatch" && requiresDesktopControlReceipts(params))
     params = structuredClone(params);
@@ -375,6 +376,7 @@ export function remoteRequest<T>(
       machineId,
       method,
       params,
+      ...(syncCycleId ? { syncCycleId } : {}),
       ...(expectedEnvironment ? { expectedEnvironmentId: expectedEnvironment } : {}),
       ...(fresh ? { fresh } : {}),
       ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
@@ -521,6 +523,7 @@ async function syncRemoteSession(
   known?: HostSession,
   digests = false,
   client?: SessionExecutionClient,
+  partialHistory = false,
 ): Promise<SessionSync> {
   const done = startPerformanceSpan("remote-sync");
   try {
@@ -529,6 +532,8 @@ async function syncRemoteSession(
       machineId,
       sessionId,
       revision,
+      known?.sourceEpoch,
+      partialHistory,
       known?.history?.before,
       loaded?.map((block) => block.id),
       digests,
@@ -536,9 +541,10 @@ async function syncRemoteSession(
     return sharedRead(pendingSessionSyncs, key, async () => {
       const options = {
         revision,
+        ...(known?.sourceEpoch ? { sourceEpoch: known.sourceEpoch } : {}),
         waitMs,
         ...(digests ? { digests: true } : {}),
-        ...(known?.history
+        ...(partialHistory && known?.history
           ? {
               partial: true,
               loadedBlockIds: [...new Set((loaded ?? []).map((block) => block.id))],
@@ -596,6 +602,9 @@ async function assembleSessionSync(
   });
   try {
     const decoded = await decodeSessionSync(pieces, response.length);
+    const decodedEpoch = decoded.kind === "unchanged" ? decoded.sourceEpoch : decoded.value.sourceEpoch;
+    if (response.sourceEpoch !== undefined && decodedEpoch !== response.sourceEpoch)
+      throw new Error("Session transfer source changed");
     decodeDone({ units: response.length });
     return decoded;
   } catch (error) {
@@ -706,9 +715,10 @@ export async function loadRemoteSession(
       sessionId,
       revision,
       revision === undefined ? 0 : options.waitMs,
-      options.partialHistory ? base : undefined,
+      base,
       options.digests,
       options.executionClient,
+      options.partialHistory,
     );
   const update = await sync(known?.revision, known);
   let snapshot: HostSession;

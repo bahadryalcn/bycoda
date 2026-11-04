@@ -36,6 +36,11 @@ function Harness() {
   return null;
 }
 
+it("carries the Room privacy mutation through a history open", async () => {
+  await act(async () => { await actions.onSelectHistorySession(sessions[0].id, { workspaceRequestId: "native-pending" }); });
+  expect(deps.followProject).toHaveBeenCalledWith(sessions[0].cwd, expect.anything());
+});
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(message).mockClear();

@@ -3547,3 +3547,20 @@ test("tag suggestions for selected contacts are saved only for the tags the owne
   for (const save of saves)
     expect(Object.keys(save.input).sort()).toEqual(["accountId", "platformId", "tags"]);
 });
+
+test("Assistant account grant controls remain readable across themes and widths", async ({ page }) => {
+  await seedWorkflow(page);
+  await selectSection(page, "Hesaplar");
+  const details = page.locator("details").filter({ has: page.locator("summary", { hasText: "Assistant account access" }) });
+  await details.locator("summary").click();
+  await expect(details.getByText("Assistant permissions")).toBeVisible();
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate((light) => document.documentElement.classList.toggle("theme-light", light), theme === "light");
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await details.scrollIntoViewIfNeeded();
+      await expect(details.getByText("Assistant permissions")).toBeVisible();
+      await page.screenshot({ path: `temp/verification/assistant-social-account/${theme}-${width}.png`, animations: "disabled" });
+    }
+  }
+});

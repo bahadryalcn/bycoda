@@ -194,6 +194,8 @@ pub fn skill_policy_set(name: String, enabled: bool) -> Result<SkillPolicy, Stri
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredSkill {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model_invocable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_invocable: Option<bool>,
@@ -270,15 +272,17 @@ fn normalize_path_for_compare(path: &str) -> String {
 pub fn list_skills(
     cwd: String,
     disabled_paths: Option<Vec<String>>,
+    provider: Option<String>,
 ) -> Result<Vec<DiscoveredSkill>, String> {
     // No folder: this computer's own skills only, as for a project that
     // lives on another machine.
     let project = (!cwd.trim().is_empty()).then(|| expand_home(&cwd));
     let home = dirs_home().map(PathBuf::from);
-    Ok(list_skills_from(
+    Ok(list_skills_from_provider(
         project.as_deref(),
         home.as_deref(),
         disabled_paths.as_deref(),
+        provider.as_deref(),
     ))
 }
 
@@ -286,6 +290,15 @@ pub(crate) fn list_skills_from(
     project: Option<&Path>,
     home: Option<&Path>,
     disabled_paths: Option<&[String]>,
+) -> Vec<DiscoveredSkill> {
+    list_skills_from_provider(project, home, disabled_paths, None)
+}
+
+fn list_skills_from_provider(
+    project: Option<&Path>,
+    home: Option<&Path>,
+    disabled_paths: Option<&[String]>,
+    provider: Option<&str>,
 ) -> Vec<DiscoveredSkill> {
     let disabled_filter = DisabledFilter::new(disabled_paths);
     let mut by_name: HashMap<String, DiscoveredSkill> = HashMap::new();
@@ -300,6 +313,14 @@ pub(crate) fn list_skills_from(
             return;
         }
         for skill in scan_root(&root, scope, source) {
+            if provider.is_some_and(|provider| {
+                skill
+                    .install_provider
+                    .as_deref()
+                    .is_some_and(|target| target != "all" && target != provider)
+            }) {
+                continue;
+            }
             if disabled_filter
                 .as_ref()
                 .is_some_and(|f| f.is_disabled(&skill.path))
@@ -351,6 +372,13 @@ pub(crate) fn list_skills_from(
         add_root(home.join(".codex/skills/.system"), "user", "codex");
         // New-provider roots come after every pre-existing root so an
         // identically named skill can never shadow an established provider.
+        if let Some(project) = project {
+            add_root(
+                project.join(".gemini/antigravity/skills"),
+                "project",
+                "antigravity",
+            );
+        }
         let root = home.join(".gemini/antigravity/skills");
         if root.is_dir() {
             add_root(root, "user", "antigravity");
@@ -583,6 +611,9 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         if folder.starts_with('.') || folder == "skills-cursor" {
             continue;
         }
+        let Ok(install_provider) = installed_provider(&dir) else {
+            continue;
+        };
         let skill_md = skill_md_path(&dir);
         let Some(skill_md) = skill_md else { continue };
         let Ok(bytes) = read_prefix(&skill_md, MAX_FRONTMATTER_BYTES) else {
@@ -601,6 +632,7 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         }
         let (model_invocable, user_invocable) = skill_invocation_flags(&text);
         out.push(DiscoveredSkill {
+            install_provider,
             model_invocable,
             user_invocable,
             name,
@@ -611,6 +643,43 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         });
     }
     out
+}
+
+fn installed_provider(dir: &Path) -> Result<Option<String>, ()> {
+    let marker = dir.join(".bycoda-install.json");
+    let info = match std::fs::symlink_metadata(&marker) {
+        Ok(info) => info,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(()),
+    };
+    if !info.is_file() || info.len() > MAX_FRONTMATTER_BYTES as u64 {
+        return Err(());
+    }
+    let bytes = read_prefix(&marker, MAX_FRONTMATTER_BYTES).map_err(|_| ())?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| ())?;
+    let provider = value
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .ok_or(())?;
+    if value.get("schemaVersion").and_then(|value| value.as_u64()) != Some(1)
+        || ![
+            "all",
+            "claude",
+            "codex",
+            "cursor",
+            "opencode",
+            "pi",
+            "omp",
+            "fx",
+            "grok",
+            "hermes",
+            "antigravity",
+        ]
+        .contains(&provider)
+    {
+        return Err(());
+    }
+    Ok(Some(provider.to_string()))
 }
 
 fn skill_md_path(dir: &Path) -> Option<PathBuf> {
@@ -1211,6 +1280,29 @@ mod tests {
         let dir = root.join(folder);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("SKILL.md"), body).unwrap();
+    }
+
+    #[test]
+    fn catalog_provider_filter_preserves_same_name_fallback_and_legacy_skills() {
+        let project = tmp("provider-project");
+        let home = tmp("provider-home");
+        write_skill(&project.0.join(".agents/skills"), "review", "# Codex copy");
+        write_skill(&home.0.join(".agents/skills"), "review", "# Legacy copy");
+        let marker = project.0.join(".agents/skills/review/.bycoda-install.json");
+        std::fs::write(&marker, r#"{"schemaVersion":1,"provider":"codex"}"#).unwrap();
+        let claude =
+            list_skills_from_provider(Some(&project.0), Some(&home.0), None, Some("claude"));
+        assert_eq!(claude.len(), 1);
+        assert!(claude[0].path.contains(&crate::fs::path_to_js(&home.0)));
+        let codex = list_skills_from_provider(Some(&project.0), Some(&home.0), None, Some("codex"));
+        assert_eq!(codex[0].install_provider.as_deref(), Some("codex"));
+        for invalid in ["broken", r#"{"schemaVersion":2,"provider":"all"}"#] {
+            std::fs::write(&marker, invalid).unwrap();
+            let listed =
+                list_skills_from_provider(Some(&project.0), Some(&home.0), None, Some("codex"));
+            assert_eq!(listed.len(), 1);
+            assert!(listed[0].path.contains(&crate::fs::path_to_js(&home.0)));
+        }
     }
 
     #[test]

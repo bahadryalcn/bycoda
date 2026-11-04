@@ -37,6 +37,7 @@ function session(id: string) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   mocks.invoke.mockReset();
 });
 
@@ -46,6 +47,71 @@ const lastUpsert = () =>
   mocks.invoke.mock.calls.filter(([command]) => command === "session_upsert").at(-1);
 
 describe("session persistence concurrency", () => {
+  it("checks exact deleted layout IDs without hydrating their transcript", async () => {
+    const { isSessionDeleted, listDeletedSessionIds } = await loadStore();
+    mocks.invoke.mockResolvedValue(["gone"]);
+    expect(await listDeletedSessionIds(["gone", "kept"])).toEqual(["gone"]);
+    expect(isSessionDeleted("gone")).toBe(true);
+    expect(isSessionDeleted("kept")).toBe(false);
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_deleted_ids", {
+      sessionIds: ["gone", "kept"],
+    });
+  });
+
+  it("does not treat unreadable deletion status as an empty result", async () => {
+    const { listDeletedSessionIds } = await loadStore();
+    mocks.invoke.mockResolvedValue(undefined);
+    await expect(listDeletedSessionIds(["unknown"])).rejects.toThrow(
+      "Deleted conversation status could not be verified.",
+    );
+  });
+  it.each(["Session was deleted", new Error("Session was deleted")])(
+    "keeps native deleted-read confirmation separate from an absent blank draft: %s",
+    async (error) => {
+      const { getSession, isSessionDeleted, upsertSession } = await loadStore();
+      mocks.invoke.mockRejectedValueOnce(error);
+      expect(await getSession("native-deleted")).toBeNull();
+      expect(isSessionDeleted("native-deleted")).toBe(true);
+      mocks.invoke.mockClear();
+      expect(await upsertSession(session("native-deleted"))).toBeNull();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+
+      mocks.invoke.mockResolvedValue(null);
+      expect(await getSession("blank-draft")).toBeNull();
+      expect(isSessionDeleted("blank-draft")).toBe(false);
+    },
+  );
+  it("keeps explicit deletion final when stale snapshots arrive after one minute", async () => {
+    const { deleteSession, getSession, setSessionQueue, upsertSession } = await loadStore();
+    mocks.invoke.mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    await deleteSession("deleted");
+    await vi.advanceTimersByTimeAsync(120_000);
+    mocks.invoke.mockClear();
+
+    expect(await upsertSession(session("deleted"))).toBeNull();
+    expect(await getSession("deleted")).toBeNull();
+    await setSessionQueue("deleted", []);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not return a stale read that completed after explicit deletion", async () => {
+    const reading = deferred<unknown>();
+    const { deleteSession, getSession } = await loadStore();
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "session_get" ? reading.promise : Promise.resolve(undefined),
+    );
+    const result = getSession("deleted-during-read");
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("session_get", {
+        sessionId: "deleted-during-read",
+      }),
+    );
+    await deleteSession("deleted-during-read");
+    reading.resolve({ ...session("deleted-during-read"), createdAt: 1, updatedAt: 1 });
+    expect(await result).toBeNull();
+  });
+
   it("passes original dates for a newly adopted row without changing ordinary saves", async () => {
     const { upsertSession } = await loadStore();
     mocks.invoke.mockResolvedValue(null);
@@ -241,6 +307,32 @@ describe("session persistence concurrency", () => {
 });
 
 describe("guarded session save", () => {
+  it("waits for a missing-row native acknowledgement before accepting an empty Room conversation", async () => {
+    let release!: (value: unknown) => void;
+    mocks.invoke.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const { createRoomSession } = await loadStore();
+    const empty = { ...session("room-create"), blocks: [] };
+    const creation = createRoomSession(empty as never);
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("session_upsert", expect.objectContaining({ expectMissing: true })));
+    let settled = false;
+    void creation.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release({ id: "room-create", cwd: empty.cwd, updatedAt: 1, transcriptRevision: 1 });
+    await expect(creation).resolves.toMatchObject({ id: "room-create" });
+  });
+  it("does not report Room creation accepted after an unknown native write", async () => {
+    mocks.invoke.mockResolvedValue(null);
+    const { createRoomSession } = await loadStore();
+    await expect(createRoomSession({ ...session("room-unknown"), blocks: [] } as never)).rejects.toThrow("Room conversation creation outcome is unknown");
+  });
+  it("persists the original Room draft with its request identity", async () => {
+    mocks.invoke.mockResolvedValue({ id: "room-draft", cwd: "/repo", updatedAt: 1, transcriptRevision: 1 });
+    const { createRoomSession } = await loadStore();
+    const draft = { ...session("room-draft"), blocks: [{ id: "draft", role: "user", draft: true, text: "unsent", appRequestId: "original" }] };
+    await createRoomSession(draft as never);
+    expect(mocks.invoke).toHaveBeenCalledWith("session_upsert", expect.objectContaining({ expectMissing: true, session: expect.objectContaining({ blocks: [expect.objectContaining({ draft: true, text: "unsent", appRequestId: "original" })] }) }));
+  });
   it("writes only while the stored updatedAt is the one the caller read", async () => {
     let stored = 10;
     const writes: unknown[] = [];

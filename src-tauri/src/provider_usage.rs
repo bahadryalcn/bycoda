@@ -12,7 +12,7 @@
 //! back from the cache, and the cutoff is applied afterwards. A plain log that
 //! only grew is read from the byte where the last scan stopped, with the
 //! parser's carried state, instead of from the start. The cache stays in memory
-//! between scans and is written to disk at most every `SAVE_INTERVAL`.
+//! between scans and each changed scan is persisted.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -190,7 +190,6 @@ const CACHE_VERSION: u32 = 2;
 /// How often a changed cache is written back. Between writes it lives in memory,
 /// so a growing log costs one write per interval, not one per scan. A crash only
 /// loses incremental progress, which the next scan reads again.
-const SAVE_INTERVAL: Duration = Duration::from_secs(120);
 
 /// One request in the cache: key, time, model and project (indexes into the
 /// file's strings), then the five token counts.
@@ -324,21 +323,26 @@ fn forget_cache(path: &Path) {
     }
 }
 
-/// Keeps the cache in memory and writes it out when it has changes and the last
-/// write is older than `SAVE_INTERVAL`, so an unchanged scan never touches the disk.
+/// Keeps a bounded in-memory cache and persists each changed scan.
 fn keep_cache(path: &Path, cache: ScanCache, saved_at: Option<Instant>, unsaved: bool) {
     let mut saved_at = saved_at;
     let mut unsaved = unsaved;
-    if unsaved && saved_at.is_none_or(|at| at.elapsed() >= SAVE_INTERVAL) {
-        save_cache(path, &cache);
-        saved_at = Some(Instant::now());
-        unsaved = false;
+    // Persist each changed scan: a final scan may be followed immediately by
+    // process exit, with no later call available to flush the cache.
+    if unsaved {
+        if save_cache(path, &cache) {
+            saved_at = Some(Instant::now());
+            unsaved = false;
+        }
     }
-    CACHES
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .get_or_insert_with(HashMap::new)
-        .insert(
+    let mut held = CACHES.lock().unwrap_or_else(|error| error.into_inner());
+    let caches = held.get_or_insert_with(HashMap::new);
+    if caches.len() >= 8 && !caches.contains_key(path) {
+        if let Some(old) = caches.keys().next().cloned() {
+            caches.remove(&old);
+        }
+    }
+    caches.insert(
             path.to_path_buf(),
             MemoryCache {
                 cache,
@@ -358,17 +362,17 @@ fn load_cache(path: &Path) -> ScanCache {
 
 /// Written beside the target and renamed into place, so a crash mid-write
 /// leaves the previous cache intact. Failure only costs the next scan time.
-fn save_cache(path: &Path, cache: &ScanCache) {
+fn save_cache(path: &Path, cache: &ScanCache) -> bool {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let Ok(bytes) = serde_json::to_vec(cache) else {
-        return;
+        return false;
     };
     let temp = path.with_extension("tmp");
-    if std::fs::write(&temp, bytes).is_ok() && std::fs::rename(&temp, path).is_err() {
-        let _ = std::fs::remove_file(&temp);
-    }
+    let saved = std::fs::write(&temp, bytes).and_then(|_| std::fs::rename(&temp, path)).is_ok();
+    if !saved { let _ = std::fs::remove_file(&temp); }
+    saved
 }
 
 /// Size and modification time in milliseconds: what says a file is unchanged.

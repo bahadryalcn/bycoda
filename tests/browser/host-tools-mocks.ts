@@ -62,6 +62,10 @@ if (new URLSearchParams(location.search).get("servers") === "many") {
 export const fixtureControl = {
   scanFailure: false,
   scanDelayMs: 0,
+  deviceCaptureFailure: false,
+  deviceControlBusy: new URLSearchParams(location.search).get("deviceState") === "busy",
+  deviceLeaseMs: 60_000,
+  deviceRenewDelayMs: 0,
   updateServer: () => {
     devServers = devServers.map((server) =>
       server.id === "fixture-server-23" ? { ...server, name: "Updated preview server" } : server,
@@ -77,6 +81,8 @@ export const calls: {
   target?: HostToolTarget;
 }[] = [];
 let browser = {
+  documentId: "fixture-document",
+  navigationId: "fixture-navigation",
   open: false,
   url: null as string | null,
   controlling: false,
@@ -88,6 +94,7 @@ let deviceStatus: DeviceHostStatus = {
   running: false,
   installed: true,
   agentInstalled: true,
+  controlProtocol: 1,
   platform: "win32",
   platforms: [
     { platform: "android", available: true },
@@ -99,9 +106,13 @@ let device: DeviceSummary = {
   name: "Demo Android emulator",
   platform: "android",
   version: "16",
-  booted: false,
+  booted: new URLSearchParams(location.search).has("devicesReady"),
   physical: false,
 };
+if (new URLSearchParams(location.search).get("deviceName") === "long") {
+  device.name = "Development emulator with a very long accessible device name 日本語 العربية Türkçe 0123456789";
+}
+let deviceLease: { deviceId: string; leaseId: string; expiresAt: number } | undefined;
 const toolMachines: RemoteMachine[] = [
   {
     id: "fixture-local",
@@ -199,7 +210,8 @@ export async function hostFeatureRequest<T>(
   const machineId = target.kind === "machine" ? target.machineId : "fixture-local";
   calls.push({ cwd, method, params, ...(target.kind === "project" ? {} : { target }) });
   await new Promise((resolve) => setTimeout(resolve, 35));
-  let browser = machineBrowsers.get(machineId)!;
+  const browserKey = `${machineId}:${String(params.sessionId ?? params.ownerPresentationScope ?? "legacy")}`;
+  let browser = machineBrowsers.get(browserKey) ?? { ...machineBrowsers.get(machineId)! };
   let { status: deviceStatus, device } = machineDevices.get(machineId)!;
   let result: unknown;
   switch (method) {
@@ -377,16 +389,43 @@ export async function hostFeatureRequest<T>(
       result = deviceStatus;
       break;
     case "devices.list":
-      result = { devices: [device], errors: [] };
+      result = { devices: new URLSearchParams(location.search).has("devicesReady") ? [device, { ...device, id: "second-emulator", name: "Second Android emulator" }] : [device], errors: [] };
       break;
     case "devices.boot":
       device = { ...device, booted: true };
       result = device;
       break;
     case "devices.capture":
+      if (fixtureControl.deviceCaptureFailure) throw new Error("Fixture capture unavailable");
       result = frame();
       break;
+    case "devices.control.status":
+      result = { deviceId: params.deviceId, busy: fixtureControl.deviceControlBusy };
+      break;
+    case "devices.control.claim":
+      if (fixtureControl.deviceControlBusy) throw new Error("Device control held by another controller");
+      deviceLease = { deviceId: String(params.deviceId), leaseId: `fixture-device-lease-${calls.length}`, expiresAt: Date.now() + fixtureControl.deviceLeaseMs };
+      result = deviceLease;
+      break;
+    case "devices.control.renew":
+      if (fixtureControl.deviceRenewDelayMs) await new Promise((resolve) => setTimeout(resolve, fixtureControl.deviceRenewDelayMs));
+      if (!deviceLease || deviceLease.expiresAt <= Date.now()) throw new Error("Device control lease expired");
+      deviceLease = { ...deviceLease, expiresAt: Date.now() + fixtureControl.deviceLeaseMs };
+      result = deviceLease;
+      break;
+    case "devices.control.release":
+      deviceLease = undefined;
+      result = { released: true };
+      break;
+    case "devices.inspect":
+      result = { deviceId: params.deviceId, inspectionId: "fixture-inspection", inspectedAt: new Date().toISOString(), raw: "Fixture native accessibility snapshot", frame: frame(), coordinateSpace: "pixels", viewport: { width: 360, height: 640 }, nodes: [
+        { id: "fixture-title", label: "Device preview", role: "TextView", bounds: { x: 24, y: 85, width: 312, height: 75 }, enabled: true, clickable: false },
+        { id: "fixture-open", label: "Open workspace", role: "LinearLayout", bounds: { x: 24, y: 190, width: 312, height: 76 }, enabled: true, clickable: true },
+        { id: "fixture-open-label", label: "Open workspace", role: "TextView", bounds: { x: 30, y: 205, width: 300, height: 30 }, enabled: true, clickable: false },
+      ] };
+      break;
     case "devices.action":
+      if (!deviceLease || deviceLease.leaseId !== params.leaseId || deviceLease.expiresAt <= Date.now()) throw new Error("Device control lease expired");
       result = "Device action completed";
       break;
     case "browser.claim":
@@ -448,7 +487,7 @@ export async function hostFeatureRequest<T>(
     default:
       throw new Error("Unexpected fixture request: " + method);
   }
-  machineBrowsers.set(machineId, browser);
+  machineBrowsers.set(browserKey, browser);
   machineDevices.set(machineId, { status: deviceStatus, device });
   return result as T;
 }

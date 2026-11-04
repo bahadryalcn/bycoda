@@ -11,10 +11,14 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub(crate) mod authority;
 pub(crate) mod cohort;
+pub(crate) mod canonical_store;
+pub(crate) mod pin_receipts;
 mod content_search;
 mod delete_with_images;
+mod deletions;
 pub(crate) mod host_notes_fence;
 pub(crate) mod incremental;
+mod interruption_repair;
 mod legacy_blob;
 pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
@@ -191,7 +195,7 @@ impl SessionStore {
     /// behind a long write on `conn` (WAL lets readers run alongside it). An
     /// in-memory store has no second connection, so it reads on `conn`.
     /// Only for commands that never write, even lazily.
-    fn with_read_conn<T>(
+    pub(crate) fn with_read_conn<T>(
         &self,
         read: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
@@ -1118,6 +1122,24 @@ pub async fn session_list_recent_since_page(
 }
 
 #[tauri::command]
+pub async fn session_deleted_ids(
+    app: AppHandle,
+    session_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    if session_ids.len() > 10_000 {
+        return Err("Too many session deletion lookups".into());
+    }
+    for id in &session_ids {
+        validate_id(id, "session")?;
+    }
+    crate::harness::run_blocking("session_deleted_ids", move || {
+        let store = app.state::<SessionStore>();
+        store.with_read_conn(|conn| deletions::deleted_ids(conn, &session_ids))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn session_get(
     app: AppHandle,
     window: tauri::Window,
@@ -1128,7 +1150,11 @@ pub async fn session_get(
         validate_id(&session_id, "session")?;
         reconcile_pending_before_read(&app, &window, &store, &session_id);
         store
-            .with_read_conn(|conn| get_session_json(conn, &session_id).map_err(|e| e.to_string()))
+            .with_read_conn(|conn| {
+                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+                deletions::assert_readable(&tx, &session_id)?;
+                get_session_json(&tx, &session_id).map_err(|e| e.to_string())
+            })
             .map(tauri::ipc::Response::new)
     })
     .await
@@ -1426,15 +1452,19 @@ pub async fn session_delete(
     app: AppHandle,
     session_id: String,
     image_paths: Vec<String>,
+    allow_recreate: Option<bool>,
 ) -> Result<(), String> {
     crate::harness::run_blocking("session_delete", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         // Also cleans shared generated-image files. Keep the entire operation in
         // the shared lane rather than acquiring another barrier under the SQL lock.
         crate::native_window_lifecycle::persistence_write_observed(&window, || {
-            let result = delete_with_images::run(&store, &session_id, image_paths, |paths| {
-                crate::fs::delete_generated_images_sync(&app, paths)
-            });
+            let cleanup = |paths: &[String]| crate::fs::delete_generated_images_sync(&app, paths);
+            let result = if allow_recreate.unwrap_or(false) {
+                delete_with_images::run_with_mode(&store, &session_id, image_paths, true, cleanup)
+            } else {
+                delete_with_images::run(&store, &session_id, image_paths, cleanup)
+            };
             if result.0.is_ok() {
                 let _ = app.emit(crate::reminders::CHANGED, ());
             }
@@ -1581,7 +1611,7 @@ fn get_session_queue(conn: &Connection, session_id: &str) -> rusqlite::Result<Op
 }
 
 const COMPOSER_DRAFT_MAX_BYTES: usize = 8_000_000;
-/// A draft nobody touched for this long is not coming back; listing drops it.
+#[cfg(test)]
 const COMPOSER_DRAFT_MAX_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// Write-through for the unsent text in a session's composer. Keyed by the
@@ -1780,13 +1810,9 @@ fn set_composer_draft(
     Ok(())
 }
 
-/// Rows as `{ sessionId, draft }`, oldest-expired ones deleted first. A row
+/// Rows as `{ sessionId, draft }`. A row
 /// that no longer parses is skipped rather than failing the whole list.
 fn list_composer_drafts(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
-    conn.execute(
-        "DELETE FROM composer_drafts WHERE updated_at < ?1",
-        [now_millis() - COMPOSER_DRAFT_MAX_AGE_MS],
-    )?;
     let mut statement = conn
         .prepare("SELECT session_id, draft_json FROM composer_drafts ORDER BY updated_at DESC")?;
     let rows = statement.query_map([], |row| {
@@ -2592,7 +2618,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // markers must commit together, including the fresh-database path. Existing
     // legacy prefixes are repaired by the column checks in migrate_versions.
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    canonical_store::ensure_schema(&tx)?;
     migrate_versions(&tx)?;
+    crate::sync_owner::migrate(&tx)?;
+    crate::assistant_session_observation::install(&tx)?;
+    pin_receipts::migrate(&tx)?;
     ensure_column(&tx, "last_activity_at", "INTEGER")?;
     tx.execute_batch("CREATE INDEX IF NOT EXISTS sessions_activity_project_v2_idx ON sessions (cwd, COALESCE(last_activity_at,updated_at) DESC, id);
         CREATE INDEX IF NOT EXISTS sessions_activity_recent_v2_idx ON sessions (pinned, COALESCE(last_activity_at,updated_at) DESC, id) WHERE has_user_message = 1 AND archived = 0;
@@ -2686,6 +2716,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     authority::ensure_schema(conn)?;
     native_raw_capture::ensure_schema(conn)?;
     row_identity::ensure_schema(conn)?;
+    deletions::ensure_schema(conn)?;
     Ok(())
 }
 
@@ -2768,7 +2799,7 @@ fn ensure_list_summaries(conn: &Connection) -> rusqlite::Result<()> {
         }
         tx.commit()?;
     }
-    Ok(())
+    interruption_repair::repair_owner_stop_summaries(conn)
 }
 
 pub(crate) fn update_list_summary(
@@ -3314,7 +3345,7 @@ fn upsert_session_core(
     }
     Ok(Some(SessionSummary {
         last_activity_at: updated_at,
-        interrupted: turn_interrupted(session.blocks.as_array().and_then(|blocks| blocks.last())),
+        interrupted: turn_interrupted(session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[])),
         provider_history: Some(provider_history::derive(
             session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[]),
             &session.harness,
@@ -4020,39 +4051,73 @@ fn stored_activity_at(conn: &Connection, id: &str) -> rusqlite::Result<i64> {
     )
 }
 
-fn turn_interrupted(block: Option<&Value>) -> bool {
-    block.is_some_and(|block| {
-        block.get("role").and_then(Value::as_str) == Some("system")
-            && block.get("text").and_then(Value::as_str).map(str::trim) != Some("Stopped by you.")
-            && (block.get("notice").and_then(Value::as_str) == Some("interrupt")
-                || matches!(
+fn owner_stop_before_quit(blocks: &[Value]) -> bool {
+    blocks.len() >= 2
+        && blocks.last().is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && matches!(
                     block.get("text").and_then(Value::as_str),
                     Some(
                         "Turn interrupted when bycoda quit." | "Turn interrupted when Bycoda quit."
                     )
-                ))
-    })
+                )
+        })
+        && blocks.get(blocks.len() - 2).is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && block.get("text").and_then(Value::as_str).map(str::trim)
+                    == Some("Stopped by you.")
+        })
+}
+
+fn turn_interrupted(blocks: &[Value]) -> bool {
+    !owner_stop_before_quit(blocks)
+        && blocks.last().is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && block.get("text").and_then(Value::as_str).map(str::trim)
+                    != Some("Stopped by you.")
+                && (block.get("notice").and_then(Value::as_str) == Some("interrupt")
+                    || matches!(
+                        block.get("text").and_then(Value::as_str),
+                        Some(
+                            "Turn interrupted when bycoda quit."
+                                | "Turn interrupted when Bycoda quit."
+                        )
+                    ))
+        })
+}
+
+fn stored_turn_tail(conn: &Connection, id: &str) -> rusqlite::Result<Vec<Value>> {
+    let mut statement = conn.prepare(
+        "SELECT block_json FROM session_blocks WHERE session_id=?1
+         AND EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)
+         ORDER BY ordinal DESC LIMIT 2",
+    )?;
+    let mut raw = statement
+        .query_map([id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    raw.reverse();
+    if raw.is_empty() {
+        let legacy: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT json_extract(blocks_json,'$[#-2]'),json_extract(blocks_json,'$[#-1]')
+             FROM sessions WHERE id=?1 AND json_valid(blocks_json)
+             AND NOT EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((previous, last)) = legacy {
+            raw.extend(previous.into_iter().chain(last));
+        }
+    }
+    Ok(raw
+        .into_iter()
+        .filter_map(|raw| serde_json::from_str(&raw).ok())
+        .collect())
 }
 
 fn stored_turn_interrupted(conn: &Connection, id: &str) -> rusqlite::Result<bool> {
-    let normalized: Option<String> = conn.query_row(
-        "SELECT block_json FROM session_blocks WHERE session_id=?1 ORDER BY ordinal DESC LIMIT 1",
-        [id], |row| row.get(0),
-    ).optional()?;
-    let block = if let Some(raw) = normalized {
-        serde_json::from_str::<Value>(&raw).ok()
-    } else {
-        let raw: Option<String> = conn
-            .query_row(
-                "SELECT blocks_json FROM sessions WHERE id=?1",
-                [id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        raw.and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-            .and_then(|value| value.as_array().and_then(|blocks| blocks.last().cloned()))
-    };
-    Ok(turn_interrupted(block.as_ref()))
+    Ok(turn_interrupted(&stored_turn_tail(conn, id)?))
 }
 
 /// Mirrors the sidebar's notion of a listable session: a transcript that the
@@ -4088,9 +4153,26 @@ fn optional_json(raw: Option<String>) -> Option<Value> {
     raw.and_then(|value| serde_json::from_str(&value).ok())
 }
 
+#[cfg(test)]
 fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
+    delete_session_with_mode(conn, session_id, false)
+}
+
+fn delete_session_with_mode(
+    conn: &Connection,
+    session_id: &str,
+    allow_recreate: bool,
+) -> rusqlite::Result<()> {
     authority::assert_mutation_sql(conn, session_id)?;
     let tx = conn.unchecked_transaction()?;
+    if allow_recreate {
+        deletions::assert_recreatable_draft(&tx, session_id)?;
+    } else {
+        tx.execute(
+            "INSERT OR IGNORE INTO session_deletions(session_id,deleted_at) VALUES (?1,?2)",
+            params![session_id, now_millis()],
+        )?;
+    }
     let parent = worker_parent(&tx, session_id)?;
     // Ownership is also carried in transcripts for older clients. Release
     // that metadata along with the index so reopening a worker stays detached.
@@ -4207,6 +4289,11 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
         [session_id],
     )?;
     tx.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
+    // This projection's delete trigger also removes per-window and legacy rows.
+    tx.execute(
+        "DELETE FROM in_flight_sessions WHERE session_id = ?1",
+        [session_id],
+    )?;
     tx.commit()
 }
 
@@ -4353,6 +4440,7 @@ fn get_session_json(conn: &Connection, session_id: &str) -> rusqlite::Result<Str
 }
 
 fn ensure_window_in_flight(conn: &Connection) -> rusqlite::Result<()> {
+    deletions::ensure_markers(conn)?;
     let migrated: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'in_flight_legacy_sessions')", [], |row| row.get(0))?;
     if !migrated {
         conn.execute_batch("SAVEPOINT window_in_flight_migration;
@@ -4372,7 +4460,13 @@ fn ensure_window_in_flight(conn: &Connection) -> rusqlite::Result<()> {
     END;
     CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_insert AFTER INSERT ON in_flight_sessions
       WHEN NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = NEW.session_id)
-      BEGIN INSERT OR REPLACE INTO in_flight_legacy_sessions (session_id, cwd, sort_index) VALUES (NEW.session_id, NEW.cwd, NEW.sort_index); END;",
+      BEGIN INSERT OR REPLACE INTO in_flight_legacy_sessions (session_id, cwd, sort_index) VALUES (NEW.session_id, NEW.cwd, NEW.sort_index); END;
+    CREATE TRIGGER IF NOT EXISTS session_deleted_window_in_flight BEFORE INSERT ON in_flight_window_sessions
+      WHEN EXISTS(SELECT 1 FROM session_deletions WHERE session_id=NEW.session_id)
+      BEGIN SELECT RAISE(IGNORE); END;
+    CREATE TRIGGER IF NOT EXISTS session_deleted_legacy_in_flight BEFORE INSERT ON in_flight_legacy_sessions
+      WHEN EXISTS(SELECT 1 FROM session_deletions WHERE session_id=NEW.session_id)
+      BEGIN SELECT RAISE(IGNORE); END;",
     )
 }
 
@@ -6899,7 +6993,7 @@ mod tests {
     }
 
     #[test]
-    fn composer_draft_listing_drops_expired_and_unparseable_rows() {
+    fn composer_draft_listing_keeps_old_and_unparseable_rows() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         set_composer_draft(&conn, "fresh", Some(&json!({ "text": "keep" }))).unwrap();
@@ -6917,12 +7011,13 @@ mod tests {
         .unwrap();
 
         let listed = list_composer_drafts(&conn).unwrap();
-        assert_eq!(listed.len(), 1);
+        assert_eq!(listed.len(), 2);
         assert_eq!(listed[0]["sessionId"], "fresh");
+        assert_eq!(listed[1]["sessionId"], "old");
         let left: i64 = conn
             .query_row("SELECT COUNT(*) FROM composer_drafts", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(left, 2, "only the expired row is deleted");
+        assert_eq!(left, 3, "listing must not delete unsent drafts");
     }
 
     #[test]

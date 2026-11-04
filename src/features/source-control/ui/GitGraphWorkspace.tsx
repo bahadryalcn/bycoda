@@ -302,7 +302,7 @@ export function GitGraphWorkspace({
   return (
     <div
       ref={workspaceRef}
-      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface-panel) text-content"
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-workspace-panel) text-content"
     >
       <PaneHeader
         leading={

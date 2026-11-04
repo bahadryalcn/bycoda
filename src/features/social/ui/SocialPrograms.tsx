@@ -50,7 +50,7 @@ export function SocialPrograms({
     queryFn: () => client.request<SocialProgram[]>("programs.list", projectId ? { projectId } : {}),
     enabled,
     staleTime: 5_000,
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
   });
   const programs = listQuery.data ?? [];
   const selectedProgram = selection ?? programs[0]?.id;
@@ -60,7 +60,7 @@ export function SocialPrograms({
     queryFn: () => client.request<ProgramDetail>("programs.status", { id: selectedProgram }),
     enabled: enabled && !!selectedProgram,
     staleTime: 5_000,
-    refetchInterval: 5_000,
+    refetchInterval: (query) => query.state.data?.program.enabled ? 5_000 : 30_000,
   });
   const detail = detailQuery.data;
   // A chosen program from another project filter falls back to the first listed program.

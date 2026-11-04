@@ -29,6 +29,7 @@ import {
 } from "../../sessions/model/deliveryProgress";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 import { LOCAL_HOST_REACHABLE_EVENT } from "./hostWake";
+import { hasInlineQueueAttachments, storeInlineQueueAttachments } from "./queuedAttachmentStorage";
 
 type Entry = {
   client: SharedQueueClient;
@@ -232,6 +233,12 @@ export async function submitSharedLocalQueue(
 ): Promise<boolean> {
   const entry = localQueues.get(sessionId);
   if (!entry) return send(); // Local-only installs keep their existing queue contract.
+  if (hasInlineQueueAttachments(entry.read().messages)) {
+    wakeSharedLocalQueues([sessionId]);
+    throw new QueueNotReadyError(
+      t("The conversation is still getting ready. This message will be sent when it is free."),
+    );
+  }
   if (entry.claiming) return false;
   const { release, owns } = takeQueue(entry);
   const progress = beginDeliveryProgress(sessionId, id, "syncing");
@@ -550,7 +557,11 @@ export function sharedLocalQueueReady(sessionId: string): boolean {
   const entry = localQueues.get(sessionId);
   // While a given-up send may still be answered, sending its row again could duplicate it.
   return (
-    !entry || (!entry.claiming && entry.client.canDrain() && !lateSettlementPossible(sessionId))
+    !entry ||
+    (!entry.claiming &&
+      !hasInlineQueueAttachments(entry.read().messages) &&
+      entry.client.canDrain() &&
+      !lateSettlementPossible(sessionId))
   );
 }
 export function sharedLocalQueueClaiming(sessionId: string): boolean {
@@ -606,6 +617,8 @@ export function useSharedLocalQueues(
       for (const id of owned) {
         const entry = localQueues.get(id);
         if (!entry || entry.claiming) continue;
+        if (hasInlineQueueAttachments(sessionById(sessionsRef.current, id)?.queuedMessages))
+          continue;
         const before = entry.observed;
         entry.publish();
         // A local edit (even one that empties the queue) goes out on this tick.
@@ -620,6 +633,7 @@ export function useSharedLocalQueues(
       catchUp = false;
       again = false;
       let initPending = false;
+      let preparationFailed = false;
       running = true;
       try {
         if (!machine || Date.now() - checkedAt > 15_000) {
@@ -666,6 +680,7 @@ export function useSharedLocalQueues(
             !justChanged &&
             !forceAll &&
             !(catchingUp && interactive) &&
+            !hasInlineQueueAttachments(session.queuedMessages) &&
             !entry.client.snapshot().error &&
             Date.now() < entry.nextIdleSyncAt
           )
@@ -744,6 +759,7 @@ export function useSharedLocalQueues(
             current.publish = () => {
               const value = sessionById(sessionsRef.current, session.id);
               if (!value) return true;
+              if (hasInlineQueueAttachments(value.queuedMessages)) return false;
               const next = outgoing(value, current.observed);
               if (sameQueueValue(current.observed, next)) return true;
               const before = current.observed;
@@ -758,15 +774,35 @@ export function useSharedLocalQueues(
             localQueues.set(session.id, current);
             notifyQueues();
             owned.add(session.id);
-            await client.initialize(current.observed);
-            current.nextIdleSyncAt = Date.now() + IDLE_SYNC_MS;
-            current.apply();
-          } else if (entry.claiming) {
+          }
+          if (entry.claiming) {
             // A send owns the queue: the change is read once it is released.
             if (justChanged) woken.add(session.id);
           } else {
+            if (hasInlineQueueAttachments(session.queuedMessages)) {
+              const original = session.queuedMessages!;
+              try {
+                const messages = await storeInlineQueueAttachments(original);
+                if (stopped) return;
+                // A concurrent edit, deletion or reorder owns its new queue.
+                setSessions((sessions) =>
+                  sessions.map((value) =>
+                    value.id === session.id && value.queuedMessages === original
+                      ? { ...value, queuedMessages: messages }
+                      : value,
+                  ),
+                );
+                again = true;
+              } catch (error) {
+                preparationFailed = true;
+                entry.client.hold(error);
+                console.warn("Queued attachment storage is pending", error);
+              }
+              continue;
+            }
             entry.nextIdleSyncAt = Date.now() + IDLE_SYNC_MS;
             if (!entry.client.snapshot().loaded) {
+              entry.observed = fields(session);
               await entry.client.initialize(entry.observed);
               entry.apply();
               continue;
@@ -783,7 +819,7 @@ export function useSharedLocalQueues(
       } finally {
         running = false;
         if (!stopped) {
-          rearm(initPending && !hidden);
+          rearm(initPending && !hidden, preparationFailed);
           if (again) void tick();
         }
       }
@@ -792,12 +828,12 @@ export function useSharedLocalQueues(
      * the earliest expiry of another window's lease on a queue waiting to be sent
      * (this window may take it over then), a failed queue's retry with backoff,
      * and the next batch of idle queues still to be looked at once. */
-    const rearm = (moreIdleQueues: boolean) => {
+    const rearm = (moreIdleQueues: boolean, preparationFailed = false) => {
       if (leaseTimer !== undefined) clearTimeout(leaseTimer);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       leaseTimer = retryTimer = undefined;
       let leaseAt: number | undefined;
-      let failed = false;
+      let failed = preparationFailed;
       for (const id of owned) {
         const client = localQueues.get(id)?.client;
         if (!client) continue;

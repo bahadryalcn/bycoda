@@ -33,7 +33,7 @@ export interface HostGitServicePorts {
     expectedOriginal?: unknown,
   ): Promise<string | void>;
 }
-type Options = { legacy?: boolean };
+type Options = { legacy?: boolean; beforeEffect?: (cwd: string) => Promise<void> };
 export function createHostGitService(ports: HostGitServicePorts) {
   function parse<S extends z.ZodObject>(schema: S, raw: unknown, options: Options): z.output<S> {
     return (options.legacy ? schema.strip() : schema).parse(raw) as z.output<S>;
@@ -96,6 +96,8 @@ export function createHostGitService(ports: HostGitServicePorts) {
             const latest = await resolve(params, context);
             if (latest.cwd !== current.cwd || latest.project.cwd !== current.project.cwd)
               throw new Error("Project checkout changed while Git mutation was queued");
+            await options.beforeEffect?.(latest.cwd);
+            await assertDomainAuthority(context);
             return operation(latest.cwd, params, latest.project.cwd);
           },
           scope,
@@ -108,6 +110,14 @@ export function createHostGitService(ports: HostGitServicePorts) {
     }
   }
   return {
+    /** Internal composition only: a fixed operation supplied by the Host, never
+     * a model command. Shares checkout resolution, idle and exclusive mutation gates. */
+    managedAction: <T>(
+      p: unknown,
+      c: HostDomainContext,
+      operation: (cwd: string) => Promise<T>,
+      o: Options = {},
+    ) => mutate(dto.GitReadParamsSchema, p, c, o, (cwd) => operation(cwd), true),
     diff: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       read(dto.GitReadParamsSchema, p, c, o, (cwd) => ports.diff(cwd)),
     branches: (p: unknown, c: HostDomainContext, o: Options = {}) =>

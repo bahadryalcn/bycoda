@@ -9,6 +9,8 @@ export const DEFAULT_ASSISTANT_POLICY = {
   notificationAway: "urgent" as const,
   notificationDnd: "none" as const,
   summaryRefreshMessages: 20,
+  observationTaskDone: false,
+  observationTaskNeedsInput: false,
 };
 export type AssistantPolicy = {
   idleMinutes?: number;
@@ -21,6 +23,8 @@ export type AssistantPolicy = {
   notificationAway?: "all" | "urgent" | "none";
   notificationDnd?: "none";
   summaryRefreshMessages?: number;
+  observationTaskDone?: boolean;
+  observationTaskNeedsInput?: boolean;
 };
 export function assistantPolicy(input: AssistantPolicy = {}) {
   return {

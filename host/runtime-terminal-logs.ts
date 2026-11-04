@@ -125,6 +125,19 @@ export class RuntimeTerminalLogs {
   }
 
   private consume(stream: Stream, text: string) {
+    // Ordinary ASCII output without control sequences can be appended in bulk.
+    // Keep overflow observation so redaction still sees delimiters beyond the cap.
+    if (stream.escape === "text" && /^[\x20-\x7e\t]*$/.test(text)) {
+      const room = Math.max(0, 8192 - stream.line.length);
+      const retained = text.slice(0, room);
+      stream.line += retained;
+      const overflow = text.slice(room);
+      if (overflow) {
+        stream.redactor.observeOverflow(overflow, stream.line);
+        stream.truncated = true;
+      }
+      return;
+    }
     for (const char of text) {
       if (stream.escape === "osc") {
         if (char === "\x07") stream.escape = "text";

@@ -180,6 +180,19 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
     ),
   );
 }
+it("opens Room at its global conversation even when a coding project is selected", async () => {
+  mock.snapshot!.threads = [
+    { id: "project-thread", projectId: "project-one", version: 1, createdAt: 1, updatedAt: 5, summary: "" },
+    { id: "global-thread", version: 1, createdAt: 1, updatedAt: 1, summary: "" },
+  ];
+  localStorage.setItem("bycoda.assistant.thread-drafts", JSON.stringify({
+    "global-thread": "Manage all projects", "project-thread": "Coding draft",
+  }));
+  await render({ initialTab: "conversations" });
+  expect(container.querySelector("textarea")?.value).toBe("Manage all projects");
+  await click("Open conversation");
+  expect(mock.request).toHaveBeenCalledWith({ op: "threads.open" }, "room-fixture");
+});
 it("shows the Host's working-hours hold without changing the saved job or autonomy", async () => {
   mock.snapshot!.workHoursActive = false;
   await render();
@@ -417,6 +430,10 @@ it("hides a selected private transcript and draft immediately, retaining its can
     projectPath: "/secret",
     visibleProjectPaths: ["/one", "/secret"],
   });
+  const unlockedThread = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.startsWith("Secret name"),
+  )!;
+  await act(async () => unlockedThread.click());
   expect(container.querySelector("textarea")?.value).toBe("Secret unsent draft");
 });
 it("shows recorded actions with their transcript and hides the whole row when a contributor disappears", async () => {
@@ -471,7 +488,10 @@ it("shows recorded actions with their transcript and hides the whole row when a 
     projectPath: "/one",
     visibleProjectPaths: ["/one", "/secret"],
   });
-  await click("One");
+  const sourceThread = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.startsWith("One"),
+  )!;
+  await act(async () => sourceThread.click());
   expect(container.textContent).toContain("Accepted owner request with recorded activity");
   expect(container.querySelector("details summary")?.textContent).toContain("Recorded actions");
   expect(container.textContent).toContain("tasks.get");

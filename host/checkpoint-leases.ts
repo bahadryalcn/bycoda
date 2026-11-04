@@ -55,6 +55,10 @@ export class CheckpointLeases {
     }
     return result;
   }
+  /** An unreadable lease is unknown, never evidence that a session is idle. */
+  async hasSession(sessionId: string): Promise<boolean> {
+    return (await this.read()).some(([, lease]) => lease.sessionId === sessionId);
+  }
   private async write(name: string, lease: Lease) {
     await mkdir(this.root, { recursive: true });
     const tmp = join(this.root, `lease-${randomUUID()}.tmp`);

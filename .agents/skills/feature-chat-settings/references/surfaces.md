@@ -14,6 +14,12 @@ Code paths are repository-relative.
 
 ## Data and capabilities
 
+- Conversation titles use `src/features/settings/ui/TitleGenerationSettings.tsx`
+  and `src/features/sessions/model/titlePreferences.ts`, stored independently as
+  `bycoda.title.default.v1` with `bycoda:title-default` and sibling storage updates.
+  `title-model-default` reveals the Chat row. Automatic choice matches enabled
+  Haiku/Terra/Flash catalog entries before other economical families; explicit
+  model/account/settings choices remain unchanged and failed writes retain Retry.
 - Templates use `bycoda.promptTemplates` and `bycoda:prompt-templates-change`. Verify current name/body/count limits and normalization in the model; preserve explicit Save and disk comparison instead of introducing autosave.
 - Preserve exact Chat reveal targets in `src/features/settings/model/settings.ts`, including display, continuation, translation/reprompt, voice-companion and prompt-template controls.
 - Desktop controller routes `preferences.desktop.read`, `preferences.desktop.template.read`, `preferences.desktop.patch/status` under `preferences.desktop.v1`; reviewed template body access requires expected revision. Metadata visibility is not unrestricted body-read permission or general Chat-flag management.

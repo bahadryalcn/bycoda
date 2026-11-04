@@ -397,8 +397,8 @@ function UsageProviderDetails({
         </>
       ) : (
         <>
-          <div className="flex items-start gap-2.5 px-1 pb-2.5 pt-0.5">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
+          <div className="flex items-start gap-2 px-1 pb-2 pt-0.5">
+            <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
               <HarnessIcon harness={iconHarness} className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
@@ -457,7 +457,7 @@ function UsageProviderDetails({
           ) : null}
 
           {detailWindows.length > 0 ? (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2.5">
               {detailWindows.map((entry) => (
                 <UsageWindowCard key={entry.key} kind={entry.key} window={entry.window} now={now} />
               ))}
@@ -840,7 +840,7 @@ function UsageWindowCard({
           ? "Monthly limit"
           : `${formatWindowLabel(window.windowMinutes)} limit`;
   return (
-    <Surface as="section" variant="outline">
+    <section className="px-1">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-ui-micro font-medium text-(--ui-text-secondary)">{t(title)}</h3>
       </div>
@@ -848,7 +848,7 @@ function UsageWindowCard({
         showValue
         valuePlacement="inside"
         valueLabel={`${formatUsagePercent(shown)} ${showRemaining ? t("remaining") : t("used")}`}
-        className="mbs-2"
+        className="mbs-1.5"
         aria-label={`${title} ${showRemaining ? "remaining" : "used"}`}
         value={Math.round(shown)}
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
@@ -872,7 +872,7 @@ function UsageWindowCard({
           </span>
         </Tooltip>
       </div>
-    </Surface>
+    </section>
   );
 }
 
@@ -919,8 +919,8 @@ function BankedResets({
   const showTitles = new Set(rows.map((credit) => credit?.title?.trim() ?? "")).size > 1;
   const refreshing = limits.status === "fetching";
   return (
-    <section className="mbs-2.5 border-t border-(--color-stroke) pbs-2.5">
-      <div className="flex items-center justify-between gap-3 px-1 py-1">
+    <section className="mbs-2 border-t border-(--color-stroke) pbs-1.5">
+      <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <h3 className="text-ui-micro font-medium">{t("Banked resets")}</h3>
           <Badge
@@ -945,7 +945,7 @@ function BankedResets({
       </div>
 
       <div
-        className="mt-1 max-h-56 overflow-y-auto overscroll-contain"
+        className="mt-0.5 max-h-56 overflow-y-auto overscroll-contain"
         role="list"
         aria-label={t("Available banked resets")}
       >
@@ -988,13 +988,13 @@ function BankedResetMascot({
   const mascot = projectMascot(project, name);
   return (
     <div
-      className="grid size-9 shrink-0 place-items-center"
+      className="grid size-5 shrink-0 place-items-center"
       data-reset-mascot-mood="happy"
       data-mascot-name={mascot.name}
       style={{ color }}
       aria-hidden
     >
-      <ProjectMascot project={project} name={name} color={color} className="size-7" />
+      <ProjectMascot project={project} name={name} color={color} className="size-5" />
     </div>
   );
 }
@@ -1025,7 +1025,7 @@ function BankedResetRow({
   const outcome = isResetOutcome(action) || action === "error";
   const retryable = action === "error";
   return (
-    <article role="listitem" className="px-1 py-1.5">
+    <article role="listitem" className="px-1 py-0.5">
       {showTitle && credit?.title ? (
         <h4 className="text-ui-caption font-medium leading-4 text-(--ui-text-secondary)">
           {credit.title}

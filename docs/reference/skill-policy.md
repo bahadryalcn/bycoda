@@ -47,6 +47,14 @@ reads, alternative-copy reads and skill prompt expansion enforce the same policy
 
 ## State and lifecycle boundaries
 
+Recommended catalog installations retain a `.bycoda-install.json` provider target.
+Host/native discovery filters that target before same-name precedence; composer
+and provider turn boundaries also apply fresh per-operation exclusions. This does
+not modify machine preferences or override provider restrictions. Legacy skills
+without catalog metadata keep their existing visibility. See
+[recommended skills](../guides/recommended-skills.md) for installation scope,
+source provenance and uncertain-result recovery.
+
 Search excludes bycoda-disabled and known provider-disabled skills. Returned
 `enabled` refers to the bycoda gate; `providerEnabled` is `enabled` only when native
 discovery establishes it, otherwise `unknown`. `active` continues to mean the

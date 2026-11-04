@@ -3,6 +3,12 @@
 Source paths are repository-relative. Inspect current manifests and imports when
 changing a boundary; these are starting points, not a frozen file-count inventory.
 
+Host feature implementations and their focused tests belong together under their
+feature directory (for example `host/assistant/` and `host/conversation/`). Keep
+runtime composition and actual process entry points at `host/`; place RPC adapters
+in their existing domain directory under `host/domains/`. Moving modules also requires updating runtime asset
+paths, reviewed test-selection inputs, source maps and invariant baseline keys.
+
 | Concern                             | Owners / checks                                                                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Root runtime composition            | `apps/desktop/`, `packages/`, `package.json`, `pnpm-workspace.yaml`, Cargo manifests; `.artifact` owns placement                        |

@@ -72,6 +72,7 @@ export interface CommandServicePorts<View> {
     persistenceReady(): boolean;
     /** Existing semantic admission (notes, prompts, accounts, workspace etc.). */
     validateCommand(raw: unknown): void;
+    validateQuestionAttachments?(command: SessionCommand, context: HostDomainContext): Promise<void>;
     attachmentRefs(raw: unknown): readonly { id: string; size: number }[];
     previewContextual(command: Contextual, view: View): Promise<{ digest: string }>;
     command(command: SessionCommand): Promise<CommandReceipt>;
@@ -261,6 +262,11 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           await assertDomainAuthority(context);
           return receipt;
         }
+        if (command.type === "answer" && !(await accepted())) {
+          await assertDomainAuthority(context);
+          await ports.execution.validateQuestionAttachments?.(command, context);
+          await assertDomainAuthority(context);
+        }
         const watch = await ports.nativeProjection.watch(sessionId);
         if (watch?.running) {
           if (!ports.nativeProjection.alive())
@@ -324,6 +330,14 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       if (command.type === "rewind") {
         await assertDomainAuthority(context);
         const receipt = await ports.execution.rewind(command);
+        await assertDomainAuthority(context);
+        return receipt;
+      }
+      // Utility generation can wait for a provider; never hold an SQL transaction
+      // across that wait. The engine atomically records its title and receipt.
+      if (command.type === "regenerateTitle") {
+        await assertDomainAuthority(context);
+        const receipt = await ports.execution.command(command);
         await assertDomainAuthority(context);
         return receipt;
       }

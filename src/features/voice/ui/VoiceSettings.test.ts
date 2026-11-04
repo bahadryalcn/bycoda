@@ -46,6 +46,80 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
+it("enables dictation independently without microphone capture or companion settings", async () => {
+  await setup(false);
+  const capture = vi.fn();
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia: capture },
+  });
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Enable dictation"]',
+  )!;
+  await act(async () => toggle.click());
+  await advance();
+  expect(loadVoiceSettings()).toMatchObject({
+    enabled: false,
+    dictationEnabled: true,
+    natural: true,
+  });
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: false });
+  expect(container.textContent).toContain("Dictation setup");
+  expect(container.querySelector('[data-setting-id="voice-mode"]')).toBeNull();
+  expect(container.querySelector('[data-setting-id="speech-microphone"]')).not.toBeNull();
+  expect(capture).not.toHaveBeenCalled();
+});
+
+it("applies recognition-only installation paths without changing companion playback preferences", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    enabled: false,
+    dictationEnabled: true,
+    natural: true,
+    engine: "voxcpm2",
+  });
+  backend.setupStatus.mockResolvedValue({
+    state: "ready",
+    requestedConfig: { natural: false },
+    config: { natural: false, python: "private-python", whisperPath: "recognizer" },
+  });
+  await setup(false);
+  expect(loadVoiceSettings()).toMatchObject({
+    enabled: false,
+    dictationEnabled: true,
+    natural: true,
+    engine: "voxcpm2",
+    python: "private-python",
+    whisperPath: "recognizer",
+  });
+});
+
+it("does not apply an old default-engine setup after the owner selects another engine", async () => {
+  let finish!: (value: unknown) => void;
+  backend.setupStatus.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await setup();
+  await act(async () =>
+    saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2", device: "gpu" }),
+  );
+  await act(async () =>
+    finish({
+      state: "ready",
+      requestedConfig: { natural: true },
+      config: { python: "old-python", whisperPath: "old-whisper" },
+    }),
+  );
+  expect(loadVoiceSettings()).toMatchObject({
+    engine: "voxcpm2",
+    device: "gpu",
+    python: "",
+    whisperPath: "",
+  });
+});
 it("retains the saved automatic pause while disabling its control in manual mode", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),

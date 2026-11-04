@@ -1,14 +1,15 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import { emit } from "@tauri-apps/api/event";
 import { listenWindow, listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import type { HarnessId } from "../../sessions/model/session";
 import {
   applyQuickCatalog,
+  acceptQuickCatalog,
   initialQuickChoice,
   initialQuickProject,
   loadQuickProjects,
   QUICK_COMPOSER_CATALOG_EVENT,
-  QUICK_COMPOSER_CATALOG_REQUEST_EVENT,
+  requestQuickCatalog,
+  stopQuickCatalogRequests,
   QUICK_COMPOSER_SHOWN_EVENT,
 } from "../model/quickComposer";
 import type { QuickComposerDraft, QuickComposerOwner } from "../model/quickComposerClosure";
@@ -61,7 +62,7 @@ export function useQuickNativeListeners({
       setChoice(nextChoice);
       setModelSettings({});
       resetTransient();
-      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, nextChoice.harness).catch(() => undefined);
+      requestQuickCatalog(nextChoice.harness);
       focusPrompt();
     });
     focusPrompt();
@@ -83,7 +84,9 @@ export function useQuickNativeListeners({
     let unlisten: (() => void) | undefined;
     void listenWindowAsync(QUICK_COMPOSER_CATALOG_EVENT, (event) => {
       if (!disposed) {
-        const available = applyQuickCatalog(event.payload);
+        const payload = acceptQuickCatalog(event.payload);
+        if (payload === undefined) return;
+        const available = applyQuickCatalog(payload);
         if (available) setAvailableHarnesses(available);
       }
     })
@@ -93,11 +96,12 @@ export function useQuickNativeListeners({
           return;
         }
         unlisten = stop;
-        await emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, initialQuickChoice().harness);
+        requestQuickCatalog(initialQuickChoice().harness);
       })
       .catch(() => undefined);
     return () => {
       disposed = true;
+      stopQuickCatalogRequests();
       unlisten?.();
     };
   }, [setAvailableHarnesses]);

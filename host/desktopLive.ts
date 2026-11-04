@@ -51,6 +51,8 @@ export type DesktopCommand = {
 
 type LiveSession = {
   clientId: string;
+  /** Identity of this live overlay, distinct from its changing contents. */
+  sourceEpoch: string;
   pageToken?: string;
   turnReceipt?: { version: 1; sessionId: string; turnId: string };
   busy: boolean;
@@ -176,6 +178,7 @@ export class DesktopLive {
   private lastChange = 0;
 
   onChange?: (sessionIds: string[]) => void;
+  onSourceChange?: (sessionIds: string[]) => void;
   /** A window reported a conversation busy (each beat while it runs). */
   onBusy?: (sessionId: string, clientId: string) => void;
   /** A conversation a window ran is no longer busy there (`idle`), or the window stopped answering (`gone`). */
@@ -308,6 +311,11 @@ export class DesktopLive {
       else if (previous?.busy && previous.clientId === clientId) this.onIdle?.(entry.id, clientId);
       next.set(entry.id, {
         clientId,
+        sourceEpoch:
+          previous?.clientId === clientId && this.clientAlive(clientId) && previous.pageToken === pageToken &&
+          previous.busy === (entry.busy === true)
+            ? previous.sourceEpoch
+            : randomUUID(),
         pageToken,
         turnReceipt,
         busy: entry.busy === true,
@@ -332,6 +340,7 @@ export class DesktopLive {
         if (previous.busy) this.onIdle?.(id, clientId);
         next.set(id, {
           clientId,
+          sourceEpoch: randomUUID(),
           busy: false,
           pending: [],
           patch: {},
@@ -358,6 +367,10 @@ export class DesktopLive {
       ) next.delete(id);
     }
     const changedIds = new Set<string>();
+    const sourceChangedIds = new Set<string>();
+    for (const [id, value] of next)
+      if (this.sessions.get(id)?.sourceEpoch !== value.sourceEpoch) sourceChangedIds.add(id);
+    for (const id of this.sessions.keys()) if (!next.has(id)) sourceChangedIds.add(id);
     for (const [id, value] of next)
       if (this.sessions.get(id)?.changedAt !== value.changedAt) changedIds.add(id);
     for (const id of this.sessions.keys()) if (!next.has(id)) changedIds.add(id);
@@ -379,11 +392,13 @@ export class DesktopLive {
           this.sessions.delete(sessionId);
           if (session.busy) this.onIdle?.(sessionId, id, "gone");
           changedIds.add(sessionId);
+          sourceChangedIds.add(sessionId);
         }
     }
     // Watchers must read the committed sessions and heartbeat, including on the
     // first beat. Signalling earlier can expose the previous running state.
     this.reclaimCommands();
+    if (sourceChangedIds.size) this.onSourceChange?.([...sourceChangedIds]);
     if (changedIds.size) this.onChange?.([...changedIds]);
     return {
       ...(revision && this.directories.get(clientId)?.revision === revision
@@ -581,7 +596,7 @@ export class DesktopLive {
   /** Live prompts laid over a stored session, and when they last changed. */
   overlay(
     id: string,
-  ): { pending: Block[]; patch: Partial<Session>; changedAt: number } | undefined {
+  ): { pending: Block[]; patch: Partial<Session>; changedAt: number; sourceEpoch: string } | undefined {
     const session = this.sessions.get(id);
     return session && this.clientAlive(session.clientId) ? session : undefined;
   }

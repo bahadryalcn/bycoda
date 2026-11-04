@@ -3,15 +3,15 @@ import {
   parseGeneratedSessionTitle,
 } from "../src/features/sessions/model/sessionTitle";
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
-import { RUNTIME_READ_ACTIONS } from "../host/conversation-runtime-read-tools";
-import { conversationToolCatalog, validateConversationTool } from "../host/conversation-tools";
+import { RUNTIME_READ_ACTIONS } from "../host/conversation/conversation-runtime-read-tools";
+import { conversationToolCatalog, validateConversationTool } from "../host/conversation/conversation-tools";
 import { assertSessionGrantScope } from "../host/session-authority";
 import { HOST_RPC_METHODS } from "../src/shared/model/host-contracts/methods";
 import { SessionSyncSchema } from "../src/shared/model/host-contracts/session-reads";
 import { RpcSuccessResponseSchema } from "../src/shared/model/host-contracts/schemas";
 import { toolWorkflowGuidance } from "../src/integrations/harness/core/toolWorkflowGuidance";
 import { skillPolicyInstructions } from "../src/integrations/harness/core/skillPolicy";
-import { socialToolCatalog } from "../host/social-tools";
+import { socialToolCatalog } from "../host/social/social-tools";
 import type { EvalCase } from "./types";
 import { voiceInstructions } from "../src/features/voice/model/realtimeVoice";
 import { voiceOwnerProfileInstructions } from "../src/features/voice/model/voiceOwner";

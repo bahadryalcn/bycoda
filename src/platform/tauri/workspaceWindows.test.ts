@@ -21,9 +21,9 @@ it("elects only workspace windows and transfers after original leader leaves", a
   expect(await isLeadWindow()).toBe(false);
 });
 
-it("retains one canonical fallback without granting an unidentified window ownership", async () => {
+it("does not elect an owner when the native window census is unknown or empty", async () => {
   api.failed = true;
-  expect(await isLeadWindow()).toBe(true);
+  expect(await isLeadWindow()).toBe(false);
   api.own = "window-b";
   expect(await isLeadWindow()).toBe(false);
   api.failed = false;

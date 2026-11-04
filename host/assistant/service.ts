@@ -1,5 +1,8 @@
+import type { AssistantObservation } from "./observations/assistant-observation-journal";
 import { createHash, randomUUID } from "node:crypto";
-import { AssistantTextPreflightError } from "../assistant-text-budget";
+import { AssistantNarrationReceipts, type NarrationEvent, type NarrationReceipt, type NarrationIdentity } from "./voice/assistant-narration";
+import { mergeNativeLibraryProofs, type NativeLibraryProof } from "./native/assistant-native-library-proof";
+import { AssistantTextPreflightError } from "./core/assistant-text-budget";
 import {
   DesktopOperationAuditSchema,
   desktopOperationAuditId,
@@ -37,12 +40,12 @@ import {
   assistantCacheMeasurement,
   assistantCacheUsage,
   type AssistantCacheMeasurement,
-} from "../assistant-cache-usage";
+} from "./work/assistant-cache-usage";
 import { compareAssistantJobPriority } from "../../src/shared/model/assistantJobPriority";
 import { assistantRoleExecution } from "../../src/shared/model/assistantRoles";
 import { assistantDetailedBriefingText, assistantUpdateFallback } from "./briefing";
 import { readBriefingApprovals, recentBriefingNotes, briefingNoteLines } from "./briefing-sources";
-import type { HostAssistantManualSessions } from "../assistant-manual-sessions";
+import type { HostAssistantManualSessions } from "./sessions/assistant-manual-sessions";
 import type {
   ManualSupervisionGrant,
   ManualSupervisionPolicy,
@@ -53,13 +56,13 @@ import { normalizeAssistantQuickNoteAction } from "../../src/shared/model/assist
 import type {
   AssistantRecoveryRecord,
   AssistantRecoveryResult,
-} from "../assistant-worker-recovery";
-import { HostAssistantQuickJobs, assistantQuickFingerprint } from "../assistant-quick-jobs";
+} from "./work/assistant-worker-recovery";
+import { HostAssistantQuickJobs, assistantQuickFingerprint } from "./work/assistant-quick-jobs";
 import {
   HostAssistantQuickAutomations,
   assistantQuickAutomationId,
   type AssistantQuickAutomationService,
-} from "../assistant-quick-automations";
+} from "./work/assistant-quick-automations";
 import { normalizeAssistantQuickAutomationAction } from "../../src/shared/model/assistantQuickAutomation";
 import {
   DEFAULT_WORKER_CONTEXT_SETTINGS,
@@ -71,29 +74,38 @@ import {
   assistantActiveHours,
   validAssistantPolicy,
 } from "../../src/shared/model/assistantPolicy";
-import type { HostAssistantJobDeletion } from "../assistant-job-deletion";
+import type { HostAssistantJobDeletion } from "./work/assistant-job-deletion";
 import type { AsyncHostNotes } from "../host-notes-async";
 import {
   assistantQuestionToken,
   type AssistantQuestionAnswer,
   type AssistantQuestionStatus,
-} from "../assistant-questions";
-import { parseChiefReadRequests, type ChiefReadRequest } from "../assistant-chief-reads";
-import { assertAssistantGoalProjects } from "../assistant-job-scope";
+} from "./core/assistant-questions";
+import { parseChiefReadRequests, type ChiefReadRequest } from "./chief/assistant-chief-reads";
+import { assertAssistantGoalProjects } from "./work/assistant-job-scope";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import {
   HostAssistantVoiceContexts,
   type AssistantVoiceToolSource,
-} from "../assistant-voice-context";
-import { HostAssistantThreadSummaries } from "../assistant-thread-summary";
+} from "./voice/assistant-voice-context";
+import { HostAssistantThreadSummaries } from "./summary/assistant-thread-summary";
 import {
   HostAssistantOwnerQuestions,
   type AssistantOwnerProposalSource,
   type AssistantOwnerProposalBinding,
-} from "../assistant-owner-questions";
+} from "./core/assistant-owner-questions";
 import type { AssistantOwnerQuestion } from "../../src/shared/model/assistantOwnerQuestions";
 import { replaceControlCharacters } from "../../src/shared/lib/controlCharacters";
+import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
+import {
+  runRoomManagementTurn,
+  type RoomManagementCall,
+  type RoomManagementAdmission,
+  type RoomManagementResult,
+  type RoomManagementTurnResult,
+  type RoomManagementTurnState,
+} from "./management/assistant-management-turn";
 
 export type AssistantPrincipal = "owner" | "assistant" | "chief";
 export type AssistantUsageTurn = {
@@ -119,6 +131,35 @@ export type AssistantGoalStatus = {
   sessionQuestions?: AssistantQuestionStatus[];
 };
 export interface AssistantPorts {
+  withNativeVoiceRuntimeRegistration?<T>(input: { threadId: string; generationKey: string; nativeProofs: NativeLibraryProof[]; projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[] }, admission: RoomManagementAdmission, effect: (valid: () => boolean) => Promise<T>): Promise<T>;
+  roomNativeProofsValid?(proofs: NativeLibraryProof[], admission?: RoomManagementAdmission): Promise<boolean>;
+  withNativeVoiceSourcesRetired?<T>(effect: (valid: () => boolean) => Promise<T>): Promise<T>;
+  withVoiceNarrationAuthorization?<T>(input: { threadId: string; generation: string; eventId: string; projectIds: string[]; accountProofs?: { accountId: string; version: string }[] }, admission: RoomManagementAdmission, effect: (valid: () => boolean) => Promise<T>): Promise<T>;
+  roomManagement?(
+    call: RoomManagementCall,
+    admission: RoomManagementAdmission,
+  ): Promise<RoomManagementResult>;
+  roomAccountProofsValid?(threadId: string, proofs: { accountId: string; version: string }[]): Promise<boolean>;
+  roomProjectProofsValid?(proofs: { projectId: string; cwd: string }[]): Promise<boolean>;
+  withSummarySourceDisclosure?<T>(targetThreadId: string, projectProofs: { projectId: string; cwd: string }[], accountProofs: { accountId: string; version: string }[], effect: (valid: () => boolean) => Promise<T>, expectedNative?: { installationId: string; revision: string; issuer: string; deviceHash: string }, nativeProofs?: NativeLibraryProof[]): Promise<T>;
+  withRoomProjectDisclosure?<T>(threadId: string, projectIds: string[], admission: RoomManagementAdmission, effect: (valid: () => boolean) => Promise<T>, projectProofs?: { projectId: string; cwd: string }[]): Promise<T>;
+  withRoomAccountDisclosure?<T>(threadId: string, proofs: { accountId: string; version: string }[], admission: RoomManagementAdmission, effect: (valid: () => boolean) => Promise<T>): Promise<T>;
+  withRoomResponseDisclosure?<T>(scopes: { threadId: string; projects: string[]; accounts: { accountId: string; version: string }[]; projectProofs?: { projectId: string; cwd: string }[]; nativeProofs?: NativeLibraryProof[] }[], admission: RoomManagementAdmission, effect: (valid: () => boolean) => Promise<T>): Promise<T>;
+  roomObservationDelivered?(threadId: string, observations: unknown[], accounts: { accountId: string; version: string }[], valid: () => boolean, projectProofs?: { projectId: string; cwd: string }[], nativeProofs?: NativeLibraryProof[]): Promise<void>;
+  roomManagementVisible?(
+    threadId: string,
+    projectIds: string[],
+    admission: RoomManagementAdmission,
+  ): Promise<boolean>;
+  observationTasksReady?(): boolean;
+  observedTaskDeliveryConfigured?(): boolean;
+  pollObservedTasks?(
+    projectIds: string[],
+    accept: (event: AssistantObservation & { id: string; sequence: number }, guard: () => boolean) => Promise<boolean>,
+    active: () => boolean,
+  ): Promise<void>;
+  /** Transport supplies a live source permit and holds it through actual disclosure. */
+  taskNotificationAllowed?(notification: AssistantNotification): Promise<boolean>;
   listProjects?(): Promise<{ id: string; path: string; name: string }[]>;
   createGoal?(input: { job: AssistantJob; profile: AssistantProfile }): Promise<{ goalId: string }>;
   findGoal?(jobId: string, job?: AssistantJob): Promise<{ goalId: string } | undefined>;
@@ -196,6 +237,7 @@ export interface AssistantPorts {
     tokenCap: number;
     operationId: string;
     signal: AbortSignal;
+    managementPrompt?: string;
   }): Promise<{ text: string; tokens?: number }>;
   summarize?(input: {
     profile: AssistantProfile;
@@ -216,8 +258,8 @@ export interface AssistantPorts {
     title: string;
     body: string;
     expectedUpdatedAt?: number;
-  }): Promise<AssistantNote>;
-  deleteNote?(id: string, expectedUpdatedAt: number): Promise<void>;
+  }, authorized?: () => Promise<boolean>): Promise<AssistantNote>;
+  deleteNote?(id: string, expectedUpdatedAt: number, authorized?: () => Promise<boolean>): Promise<void>;
   now?(): number;
   onChange?(): void;
   onError?(error: unknown): void;
@@ -238,6 +280,7 @@ type PendingNotification = Omit<AssistantNotification, "eligible" | "deferredRea
   acknowledgedAt?: number;
   supersededBy?: string;
 };
+type ObservedNotificationIntent = { threadId: string; notificationId: string; projectId: string; taskId: string; taskCreatedAt: number; taskRevision: number; deviceHash: string; kind: "task.done" | "task.needsInput"; operationHash: string; state: "prepared" | "pending" | "accepted" | "suppressed" | "unknown" };
 type ChiefWakeInput = Omit<Parameters<NonNullable<AssistantPorts["chiefWake"]>>[0], "signal">;
 type ChiefIntent = {
   operationId: string;
@@ -268,6 +311,7 @@ const defaults: AssistantProfile = {
   keepAwakeWhileWorking: false,
   setupComplete: false,
   voiceSetupComplete: false,
+  voiceNarration: false,
   proactiveSpeech: "return",
   quietStart: 22,
   quietEnd: 8,
@@ -289,6 +333,7 @@ const terminal = new Set<AssistantJobStatus>(["done", "failed", "cancelled"]);
  * transactions contain only local durable work; external effects use durable
  * dispatch intent and a stable goal id. Ambiguous effects are read, never replayed. */
 export class HostAssistant {
+  private readonly nativeSendInstance = randomUUID();
   private readonly pendingJobStops = new Set<string>();
   readonly ready: Promise<void>;
   private readonly repository: AssistantRepository;
@@ -324,7 +369,11 @@ export class HostAssistant {
         const message = await this.repository.get<AssistantMessage>("messages", id);
         return message ? this.messageProjectScope(message) : null;
       },
+      messageProjectProofs: message => this.messageProjectProofs(message),
+      messageNativeProofs: message => this.messageNativeProofs(message),
       summary: async (threadId, id) => this.threadSummaries.proof(threadId, "", id),
+      summarySources: async (threadId, id) => this.threadSummaries.sourceProofs(threadId, id),
+      summarySourcesValid: async (threadId, sources) => (!sources.projectProofs.length || !!this.ports.roomProjectProofsValid && await this.ports.roomProjectProofsValid(sources.projectProofs)) && (!sources.accountProofs.length || !!this.ports.roomAccountProofsValid && await this.ports.roomAccountProofsValid(threadId, sources.accountProofs)),
     });
     this.threadSummaries = new HostAssistantThreadSummaries(store, {
       ready: repositoryReady,
@@ -335,6 +384,38 @@ export class HostAssistant {
         return message ? this.messageProjectScope(message) : null;
       },
       visible: async (id) => (await this.ports.manualProjectVisible?.(id)) === true,
+      sourceProofs: async (messages, projectIds, previous) => {
+        const projects = new Map<string, string>(), accounts = new Map<string, string>();
+        let nativeProofs = mergeNativeLibraryProofs(previous?.nativeProofs ?? []);
+        const add = (map: Map<string, string>, key: string, value: string) => {
+          if (!key || !value || (map.has(key) && map.get(key) !== value)) throw new Error("Summary source identity changed.");
+          map.set(key, value);
+        };
+        for (const proof of previous?.projectProofs ?? []) add(projects, proof.projectId, proof.cwd);
+        for (const proof of previous?.accountProofs ?? []) add(accounts, proof.accountId, proof.version);
+        for (const message of messages) {
+          const projectProofs = await this.messageProjectProofs(message), accountProofs = await this.messageAccountProofs(message);
+          const messageNative = await this.messageNativeProofs(message);
+          if (!messageNative) throw new Error("Summary Native source provenance is unavailable.");
+          nativeProofs = mergeNativeLibraryProofs(nativeProofs, messageNative);
+          if (!projectProofs || !accountProofs || (message.role === "assistant" && (message.projectIds ?? []).some(id => !projectProofs.some(proof => proof.projectId === id)))) throw new Error("Summary source provenance is unavailable.");
+          for (const proof of projectProofs) add(projects, proof.projectId, proof.cwd);
+          for (const proof of accountProofs) add(accounts, proof.accountId, proof.version);
+        }
+        for (const projectId of projectIds) if (!projects.has(projectId)) add(projects, projectId, (await this.store.project(projectId)).cwd);
+        if (projects.size > 1000 || accounts.size > 100) throw new Error("Summary source scope is too large.");
+        return { projectProofs: [...projects].map(([projectId, cwd]) => ({ projectId, cwd })), accountProofs: [...accounts].map(([accountId, version]) => ({ accountId, version })), nativeProofs };
+      },
+      validateSourceProofs: async (threadId, proofs) => (!proofs.projectProofs.length || !!this.ports.roomProjectProofsValid && await this.ports.roomProjectProofsValid(proofs.projectProofs)) && (!proofs.accountProofs.length || !!this.ports.roomAccountProofsValid && await this.ports.roomAccountProofsValid(threadId, proofs.accountProofs)) && (!proofs.nativeProofs?.length || !!this.ports.roomNativeProofsValid && await this.ports.roomNativeProofsValid(proofs.nativeProofs)),
+      withDisclosure: async (threadId, proofs, effect) => {
+        if (proofs.nativeProofs?.length) {
+          if (!this.ports.withSummarySourceDisclosure) throw new Error("Summary Native source admission is unavailable.");
+          return this.ports.withSummarySourceDisclosure(threadId, proofs.projectProofs, proofs.accountProofs, effect, undefined, proofs.nativeProofs);
+        }
+        if (!proofs.projectProofs.length && !proofs.accountProofs.length) return effect(() => true);
+        if (!this.ports.withSummarySourceDisclosure) throw new Error("Summary source admission is unavailable.");
+        return this.ports.withSummarySourceDisclosure(threadId, proofs.projectProofs, proofs.accountProofs, effect);
+      },
       admission: () => this.summaryAdmission(),
       reserve: (id, admission) => this.reserveSummary(id, admission),
       settle: (id, day, reserved, tokens, estimated) =>
@@ -392,7 +473,92 @@ export class HostAssistant {
       this.quickJobs?.ready,
       this.quickAutomations?.ready,
       ports.jobDeletion?.ready,
-    ]).then(() => undefined);
+    ]).then(async () => {
+      const profile = await this.profile();
+      if (profile.enabled && profile.setupComplete) await this.store.transaction(() => this.ensureGlobalRoom(), "critical");
+    });
+  }
+  private async ensureGlobalRoom(): Promise<AssistantThread> {
+    return await this.repository.byKey<AssistantThread>("threads", "global") ?? await this.repository.put("threads", { ...this.stamp(), summary: "" }, 0, "global");
+  }
+  async globalRoomBinding(): Promise<{ id: string } | null> {
+    await this.ready;
+    const profile = await this.profile();
+    if (!profile.enabled || !profile.setupComplete || this.closing || this.emergencyStop || await this.runtime("paused", false)) return null;
+    return this.canonicalGlobalRoomBinding();
+  }
+  async canonicalGlobalRoomBinding(): Promise<{ id: string } | null> {
+    await this.ready;
+    const room = await this.repository.byKey<AssistantThread>("threads", "global");
+    return room && !room.projectId ? { id: room.id } : null;
+  }
+  /** Read-only native handoff check; unknown or changed canonical state denies delivery. */
+  async authorizeObservedNotification(input: { threadId: string; notificationId: string; operationHash: string }, deviceHash: string, allowPrepared = false): Promise<boolean> {
+    if ((await this.globalRoomBinding())?.id !== input.threadId) return false;
+    const intent = await this.runtime<ObservedNotificationIntent | null>(`observed-notification-intent:${input.notificationId}`, null);
+    if (!intent || intent.state === "unknown" || intent.state === "suppressed" || (!allowPrepared && intent.state === "prepared") || intent.deviceHash !== deviceHash || intent.threadId !== input.threadId || intent.notificationId !== input.notificationId || intent.operationHash !== input.operationHash || !(await this.manualProjectAllowed(intent.projectId))) return false;
+    return this.store.db.scope(async () => {
+      const current = await this.runtime<ObservedNotificationIntent | null>(`observed-notification-intent:${input.notificationId}`, null);
+      const notification = await this.runtime<PendingNotification | null>(`notification:${input.notificationId}`, null);
+      const profile = await this.profile(), policy = assistantPolicy(profile), manual = await this.manualPolicy();
+      const presence = await this.effectivePresence(), hour = new Date(this.now()).getHours();
+      const quiet = profile.quietStart !== profile.quietEnd && (profile.quietStart < profile.quietEnd ? hour >= profile.quietStart && hour < profile.quietEnd : hour >= profile.quietStart || hour < profile.quietEnd);
+      const choice = presence === "present" ? policy.notificationPresent : policy.notificationAway;
+      const urgent = intent.kind === "task.needsInput";
+      if (!current || JSON.stringify(current) !== JSON.stringify(intent) || !notification || notification.acknowledgedAt || notification.supersededBy || notification.kind !== intent.kind || notification.projectId !== intent.projectId || notification.taskId !== intent.taskId || notification.taskCreatedAt !== intent.taskCreatedAt || this.closing || this.emergencyStop || await this.runtime("paused", false) || !profile.enabled || !profile.setupComplete || !manual.enabled || !manual.projectIds.includes(intent.projectId) || (intent.kind === "task.done" ? !policy.observationTaskDone : !policy.observationTaskNeedsInput) || presence === "unknown" || presence === "dnd" || quiet || !(choice === "all" || choice === "urgent" && urgent)) return false;
+      const revision = await this.store.db.prepare("SELECT version FROM assistant_observation_source_revisions WHERE source='task' AND source_id=?").get(intent.taskId);
+      const row = await this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(intent.taskId);
+      const task = row ? JSON.parse(String(row.value)) as { id?: string; projectId?: string; createdAt?: number; status?: string; needsInput?: boolean } : undefined;
+      return Number(revision?.version) === intent.taskRevision && !!task && task.id === intent.taskId && task.projectId === intent.projectId && task.createdAt === intent.taskCreatedAt && (intent.kind === "task.done" ? task.status === "done" : task.needsInput === true && task.status !== "done");
+    });
+  }
+  async observedNotificationTargets(): Promise<{ id: string; projectId: string }[]> {
+    await this.ready;
+    const rows = await this.store.db.prepare("SELECT n.value FROM assistant_runtime n WHERE n.id LIKE 'notification:%' AND n.deleted_at IS NULL AND json_extract(n.value,'$.value.acknowledgedAt') IS NULL AND json_extract(n.value,'$.value.supersededBy') IS NULL AND json_extract(n.value,'$.value.kind') IN ('task.done','task.needsInput') AND NOT EXISTS (SELECT 1 FROM assistant_runtime i WHERE i.id='observed-notification-intent:' || json_extract(n.value,'$.value.id') AND json_extract(i.value,'$.value.state') IN ('accepted','suppressed')) ORDER BY n.updated_at,n.id LIMIT 20").all();
+    return rows.map(row => (JSON.parse(String(row.value)) as Runtime).value as PendingNotification).filter((item): item is PendingNotification & { projectId: string } => !!item.projectId).map(item => ({ id: item.id, projectId: item.projectId }));
+  }
+  async observedNotificationIntent(notificationId: string): Promise<ObservedNotificationIntent | null> {
+    return this.runtime<ObservedNotificationIntent | null>(`observed-notification-intent:${notificationId}`, null);
+  }
+  async observedNotificationRecovery(projectId: string): Promise<{ notificationId: string; projectId: string; state: "pending" | "unknown" }[]> {
+    const rows = await this.store.db.prepare("SELECT value FROM assistant_runtime WHERE id LIKE 'observed-notification-intent:%' AND deleted_at IS NULL AND json_extract(value,'$.value.projectId')=? AND json_extract(value,'$.value.state') IN ('pending','unknown') ORDER BY updated_at,id LIMIT 100").all(projectId);
+    return rows.map(row => (JSON.parse(String(row.value)) as Runtime).value as ObservedNotificationIntent).map(intent => ({ notificationId: intent.notificationId, projectId: intent.projectId, state: intent.state as "pending" | "unknown" }));
+  }
+  async prepareObservedNotification(threadId: string, notificationId: string, projectId: string, deviceHash: string, valid: () => boolean): Promise<ObservedNotificationIntent | null> {
+    if (!valid() || (await this.globalRoomBinding())?.id !== threadId || !(await this.manualProjectAllowed(projectId))) return null;
+    const intent = await this.store.transaction(async () => {
+      if (!valid()) throw new Error("Task notification source changed.");
+      const existing = await this.runtime<ObservedNotificationIntent | null>(`observed-notification-intent:${notificationId}`, null);
+      if (existing && existing.state !== "prepared") return null;
+      const item = await this.runtime<PendingNotification | null>(`notification:${notificationId}`, null);
+      if (!item || item.acknowledgedAt || item.supersededBy || item.projectId !== projectId || !item.taskId || item.taskCreatedAt === undefined || (item.kind !== "task.done" && item.kind !== "task.needsInput")) return null;
+      const revision = await this.store.db.prepare("SELECT version FROM assistant_observation_source_revisions WHERE source='task' AND source_id=?").get(item.taskId);
+      const taskRevision = Number(revision?.version);
+      if (!Number.isSafeInteger(taskRevision) || taskRevision < 1) return null;
+      const identity = { threadId, notificationId, projectId, taskId: item.taskId, taskCreatedAt: item.taskCreatedAt, taskRevision, deviceHash, kind: item.kind };
+      const operationHash = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+      const next: ObservedNotificationIntent = { ...identity, operationHash, state: "prepared" };
+      await this.setRuntime(`observed-notification-intent:${notificationId}`, next);
+      if (!valid()) throw new Error("Task notification source changed.");
+      return next;
+    }, "critical");
+    if (!intent || !valid() || !(await this.authorizeObservedNotification(intent, deviceHash, true))) return null;
+    return intent;
+  }
+  async armObservedNotification(intent: ObservedNotificationIntent, valid: () => boolean): Promise<boolean> {
+    return this.store.transaction(async () => {
+      const current = await this.runtime<ObservedNotificationIntent | null>(`observed-notification-intent:${intent.notificationId}`, null);
+      if (!valid() || !current || current.state !== "prepared" || current.operationHash !== intent.operationHash) return false;
+      await this.setRuntime(`observed-notification-intent:${intent.notificationId}`, { ...current, state: "pending" });
+      if (!valid()) throw new Error("Task notification source changed.");
+      return true;
+    }, "critical");
+  }
+  async settleObservedNotification(intent: ObservedNotificationIntent, state: "accepted" | "suppressed" | "unknown"): Promise<void> {
+    await this.store.transaction(async () => {
+      const current = await this.runtime<ObservedNotificationIntent | null>(`observed-notification-intent:${intent.notificationId}`, null);
+      if ((current?.state === "pending" || current?.state === "unknown") && current.operationHash === intent.operationHash) await this.setRuntime(`observed-notification-intent:${intent.notificationId}`, { ...current, state });
+    }, "critical");
   }
   private now() {
     return this.ports.now?.() ?? Date.now();
@@ -607,9 +773,9 @@ export class HostAssistant {
   private async notifications(profile: AssistantProfile): Promise<AssistantNotification[]> {
     const rows = await this.store.db
       .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'notification:%' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL ORDER BY updated_at,id LIMIT 100",
+        "SELECT value FROM assistant_runtime WHERE id LIKE 'notification:%' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
       )
-      .all();
+      .all(this.ports.taskNotificationAllowed ? 1 : 0);
     const presence = await this.effectivePresence(),
       hour = new Date(this.now()).getHours();
     const quiet =
@@ -618,14 +784,29 @@ export class HostAssistant {
         ? hour >= profile.quietStart && hour < profile.quietEnd
         : hour >= profile.quietStart || hour < profile.quietEnd);
     const approvals = new Map<string, Promise<boolean>>();
-    return Promise.all(
+    const disclosed = await Promise.all(
       rows.map(async (row) => {
         const {
           acknowledgedAt: _,
           supersededBy: __,
           ...value
         } = (JSON.parse(row.value) as Runtime).value as PendingNotification;
-        let urgent = value.kind === "budget.exhausted" || value.kind === "job.failed";
+        if (value.kind === "task.done" || value.kind === "task.needsInput") {
+          if (!value.projectId || !value.taskId || value.taskCreatedAt === undefined || !this.ports.taskNotificationAllowed ||
+              !(await this.ports.taskNotificationAllowed({ ...value, eligible: false, deferredReason: "unknown" }))) return null;
+          const currentManual = await this.manualPolicy();
+          const currentProfile = await this.profile();
+          const currentPolicy = assistantPolicy(currentProfile);
+          if (!currentManual.enabled || !currentManual.projectIds.includes(value.projectId) ||
+              !currentProfile.enabled || !currentProfile.setupComplete ||
+              (value.kind === "task.done" ? !currentPolicy.observationTaskDone : !currentPolicy.observationTaskNeedsInput)) return null;
+          const row = await this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(value.taskId);
+          const task = row ? JSON.parse(String(row.value)) as { id?: string; projectId?: string; status?: string; needsInput?: boolean; createdAt?: number } : undefined;
+          if (!task || task.id !== value.taskId || task.projectId !== value.projectId || task.createdAt !== value.taskCreatedAt ||
+              (value.kind === "task.done" ? task.status !== "done" : task.needsInput !== true || task.status === "done")) return null;
+          if (!(await this.ports.taskNotificationAllowed({ ...value, eligible: false, deferredReason: "unknown" }))) return null;
+        }
+        let urgent = value.kind === "budget.exhausted" || value.kind === "job.failed" || value.kind === "task.needsInput";
         if (value.kind === "job.waiting" && value.jobId) {
           let pending = approvals.get(value.jobId);
           if (!pending) {
@@ -660,6 +841,7 @@ export class HostAssistant {
         };
       }),
     );
+    return disclosed.filter((item): item is AssistantNotification => item !== null).slice(0, 100);
   }
   /** Notes are a separate worker/database: never await its admission while holding Host SQL. */
   private async prepareBriefing(since: number, key?: string, returnAt?: number) {
@@ -880,6 +1062,9 @@ export class HostAssistant {
     await this.ready;
     return this.voiceContexts.begin(input);
   }
+  async pendingVoiceGeneration(contextId: string, requestId: string, threadId: string) {
+    return this.voiceContexts.pendingGeneration(contextId, requestId, threadId);
+  }
   async finishVoiceToolDisclosure(id: string, source: AssistantVoiceToolSource) {
     await this.ready;
     return this.voiceContexts.finish(id, source);
@@ -1063,7 +1248,48 @@ export class HostAssistant {
   ): Promise<AssistantMessage> {
     // Never trust a persisted/client-derived convenience stamp. Rebuild every
     // acknowledgement, page and search result from canonical linked records.
-    const { projectIds: _, toolActions: _actions, ...value } = message;
+    const {
+      projectIds: _,
+      toolActions: _actions,
+      visibilityProjectIds: _visibility,
+      unverifiedToolContext: _unverified,
+      ...canonicalValue
+    } = message;
+    let value: AssistantMessage = canonicalValue;
+    {
+      const source = await this.runtime<{ managementTurnId?: string } | null>(
+        message.role === "assistant"
+          ? `messageScopeSources:${message.id}`
+          : `messageRoomTurn:${message.id}`,
+        null,
+      );
+      if (source?.managementTurnId) {
+        const turn = await this.runtime<RoomManagementTurnState | null>(
+          source.managementTurnId,
+          null,
+        );
+        const restrictions = new Set<string>();
+        if (turn?.threadId === message.threadId) {
+          for (const record of turn.calls)
+            if (record.call.projectId) restrictions.add(record.call.projectId);
+          for (const id of turn.result?.contributorProjectIds ?? []) restrictions.add(id);
+          try {
+            const context = JSON.parse(turn.context) as { messages?: AssistantMessage[] };
+            for (const entry of context.messages ?? [])
+              for (const id of entry.projectIds ?? []) restrictions.add(id);
+          } catch {
+            /* Missing context cannot prove global provenance. */
+          }
+        }
+        value = {
+          ...value,
+          visibilityProjectIds: [...restrictions].sort(),
+          ...(message.role === "assistant" && !turn?.result?.contributorProjectIds
+            ? { unverifiedToolContext: true as const }
+            : {}),
+        };
+      }
+    }
     if (ancestors.has(message.id) || ancestors.size >= 64) return value;
     const cached = context.cache.get(message.id);
     if (cached) return cached;
@@ -1139,6 +1365,7 @@ export class HostAssistant {
           messageIds: string[];
           summaryUsed: boolean;
           summaryProofId?: string;
+          managementTurnId?: string;
         } | null>(`messageScopeSources:${message.id}`, null);
         // Direct voice/assistant appends have broader uncaptured context. An
         // empty refs array cannot certify their text as global or project-only.
@@ -1157,6 +1384,20 @@ export class HostAssistant {
           if (!proof) return value;
           for (const id of proof.projectIds) projects.add(id);
         }
+        if (sources.managementTurnId) {
+          const turn = await this.runtime<RoomManagementTurnState | null>(
+            sources.managementTurnId,
+            null,
+          );
+          if (
+            !turn ||
+            turn.phase !== "settled" ||
+            turn.threadId !== message.threadId ||
+            !turn.result?.contributorProjectIds
+          )
+            return value;
+          for (const id of turn.result.contributorProjectIds) projects.add(id);
+        }
         const path = new Set(ancestors);
         path.add(message.id);
         for (const id of sources.messageIds) {
@@ -1172,6 +1413,217 @@ export class HostAssistant {
     context.cache.set(message.id, work);
     return work;
   }
+  /** Rebuild account restrictions from trusted Room receipts and their source messages. */
+  private async messageNativeProofs(message: AssistantMessage, ancestors = new Set<string>()): Promise<NativeLibraryProof[] | undefined> {
+    if (message.role !== "assistant") return [];
+    if (message.via === "voice") {
+      const voice = await this.runtime<{ contextId: string; version: number; threadId: string } | null>(`messageScopeVoice:${message.id}`, null);
+      if (voice) return voice.threadId === message.threadId ? this.voiceContexts.historicalNativeProofs(voice.contextId, voice.version, message.threadId) : undefined;
+    }
+    if (ancestors.has(message.id) || ancestors.size >= 64) return undefined;
+    const path = new Set(ancestors); path.add(message.id);
+    const sources = await this.runtime<{ threadId?: string; messageIds?: string[]; managementTurnId?: string; summaryProofId?: string } | null>(`messageScopeSources:${message.id}`, null);
+    if (!sources) return [];
+    if (sources.threadId !== message.threadId || !Array.isArray(sources.messageIds) || sources.messageIds.length > 6) return undefined;
+    let proofs: NativeLibraryProof[] = [];
+    try {
+      if (sources.summaryProofId) {
+        const summary = await this.threadSummaries.sourceProofs(message.threadId, sources.summaryProofId);
+        if (!summary) return undefined;
+        proofs = mergeNativeLibraryProofs(proofs, summary.nativeProofs ?? []);
+      }
+      if (sources.managementTurnId) {
+        const turn = await this.runtime<RoomManagementTurnState | null>(sources.managementTurnId, null);
+        if (!turn || turn.threadId !== message.threadId || turn.phase !== "settled" || !turn.result) return undefined;
+        for (const record of turn.calls) {
+          if (record.call.input.nativeLibrary === true && record.status === "completed" && !record.contributorNativeProofs?.length) return undefined;
+          proofs = mergeNativeLibraryProofs(proofs, record.contributorNativeProofs ?? []);
+        }
+        proofs = mergeNativeLibraryProofs(proofs, turn.result.contributorNativeProofs ?? []);
+      }
+      for (const id of sources.messageIds) {
+        const source = await this.repository.get<AssistantMessage>("messages", id);
+        if (!source || source.threadId !== message.threadId) return undefined;
+        const inherited = await this.messageNativeProofs(source, path);
+        if (!inherited) return undefined;
+        proofs = mergeNativeLibraryProofs(proofs, inherited);
+      }
+      return proofs;
+    } catch { return undefined; }
+  }
+  private async messageAccountProofs(message: AssistantMessage, ancestors = new Set<string>()): Promise<{ accountId: string; version: string }[] | undefined> {
+    if (message.role !== "assistant") return [];
+    if (ancestors.has(message.id) || ancestors.size >= 64) return undefined;
+    const path = new Set(ancestors); path.add(message.id);
+    const sources = await this.runtime<{ threadId?: string; messageIds?: string[]; managementTurnId?: string; summaryProofId?: string } | null>(`messageScopeSources:${message.id}`, null);
+    if (!sources) return [];
+    if (sources.threadId !== message.threadId || !Array.isArray(sources.messageIds) || sources.messageIds.length > 6) return undefined;
+    const result = new Map<string, string>();
+    const add = (proofs: { accountId: string; version: string }[]) => {
+      for (const proof of proofs) {
+        if (!proof?.accountId || !proof.version || (result.has(proof.accountId) && result.get(proof.accountId) !== proof.version)) return false;
+        result.set(proof.accountId, proof.version);
+      }
+      return result.size <= 100;
+    };
+    if (sources.summaryProofId) {
+      const summary = await this.threadSummaries.sourceProofs(message.threadId, sources.summaryProofId);
+      if (!summary || !add(summary.accountProofs)) return undefined;
+    }
+    if (sources.managementTurnId) {
+      const turn = await this.runtime<RoomManagementTurnState | null>(sources.managementTurnId, null);
+      if (!turn || turn.threadId !== message.threadId || turn.phase !== "settled" || !turn.result) return undefined;
+      for (const record of turn.calls) {
+        if ((record.call.family === "social" && !record.call.projectId || record.call.family === "conversation" && record.call.action.startsWith("observations.") && !!record.call.accountId) && record.status === "completed" && !record.contributorAccounts) return undefined;
+        if (record.contributorAccounts && !add(record.contributorAccounts)) return undefined;
+      }
+      if (turn.result.contributorAccounts && !add(turn.result.contributorAccounts)) return undefined;
+    }
+    for (const id of sources.messageIds) {
+      const source = await this.repository.get<AssistantMessage>("messages", id);
+      if (!source || source.threadId !== message.threadId) return undefined;
+      const inherited = await this.messageAccountProofs(source, path);
+      if (!inherited || !add(inherited)) return undefined;
+    }
+    return [...result].map(([accountId, version]) => ({ accountId, version }));
+  }
+  private async messageProjectProofs(message: AssistantMessage, ancestors = new Set<string>()): Promise<{ projectId: string; cwd: string }[] | undefined> {
+    if (message.role !== "assistant") return [];
+    if (message.via === "voice") {
+      const voice = await this.runtime<{ contextId: string; version: number; threadId: string } | null>(`messageScopeVoice:${message.id}`, null);
+      if (voice) return voice.threadId === message.threadId ? this.voiceContexts.historicalProjectProofs(voice.contextId, voice.version, message.threadId) : undefined;
+    }
+    if (ancestors.has(message.id) || ancestors.size >= 64) return undefined;
+    const path = new Set(ancestors); path.add(message.id);
+    const sources = await this.runtime<{ threadId?: string; messageIds?: string[]; managementTurnId?: string; summaryProofId?: string } | null>(`messageScopeSources:${message.id}`, null);
+    if (!sources) return [];
+    if (sources.threadId !== message.threadId || !Array.isArray(sources.messageIds) || sources.messageIds.length > 6) return undefined;
+    const result = new Map<string, string>();
+    const add = (proofs: { projectId: string; cwd: string }[]) => {
+      for (const proof of proofs) {
+        if (!proof?.projectId || !proof.cwd || (result.has(proof.projectId) && result.get(proof.projectId) !== proof.cwd)) return false;
+        result.set(proof.projectId, proof.cwd);
+      }
+      return result.size <= 1000;
+    };
+    if (sources.summaryProofId) {
+      const summary = await this.threadSummaries.sourceProofs(message.threadId, sources.summaryProofId);
+      if (!summary || !add(summary.projectProofs)) return undefined;
+    }
+    if (sources.managementTurnId) {
+      const turn = await this.runtime<RoomManagementTurnState | null>(sources.managementTurnId, null);
+      if (!turn || turn.threadId !== message.threadId || turn.phase !== "settled" || !turn.result) return undefined;
+      for (const record of turn.calls) {
+        if (record.call.projectId && record.status === "completed" && !record.contributorProjects?.some(proof => proof.projectId === record.call.projectId)) return undefined;
+        if (record.contributorProjects && !add(record.contributorProjects)) return undefined;
+      }
+      if (turn.result.contributorProjects && !add(turn.result.contributorProjects)) return undefined;
+    }
+    for (const id of sources.messageIds) {
+      const source = await this.repository.get<AssistantMessage>("messages", id);
+      if (!source || source.threadId !== message.threadId) return undefined;
+      const inherited = await this.messageProjectProofs(source, path);
+      if (!inherited || !add(inherited)) return undefined;
+    }
+    return [...result].map(([projectId, cwd]) => ({ projectId, cwd }));
+  }
+  private async withRoomDisclosure<T>(threadId: string, projects: string[], accounts: { accountId: string; version: string }[], admission: RoomManagementAdmission | undefined, effect: (valid: () => boolean) => Promise<T>, projectProofs: { projectId: string; cwd: string }[] = [], nativeProofs: NativeLibraryProof[] = []): Promise<T> {
+    if (nativeProofs.length) {
+      if (!admission || !this.ports.withRoomResponseDisclosure) throw new Error("Native library source authority is unavailable.");
+      return this.ports.withRoomResponseDisclosure([{ threadId, projects, accounts, projectProofs, nativeProofs }], admission, effect);
+    }
+    if (!projects.length && !accounts.length) return effect(() => true);
+    if (!admission) throw new Error("Room disclosure authority is unavailable.");
+    const withAccounts = async (projectValid: () => boolean) => {
+      if (!projectValid()) throw new Error("Room project visibility changed.");
+      if (projectProofs.length && (!this.ports.roomProjectProofsValid || !(await this.ports.roomProjectProofsValid(projectProofs)) || !projectValid())) throw new Error("Room project source changed.");
+      if (!accounts.length) return effect(projectValid);
+      if (!this.ports.withRoomAccountDisclosure) throw new Error("Room account disclosure authority is unavailable.");
+      return this.ports.withRoomAccountDisclosure(threadId, accounts, admission, (accountValid) => effect(() => projectValid() && accountValid()));
+    };
+    if (!projects.length) return withAccounts(() => true);
+    if (!this.ports.withRoomProjectDisclosure) throw new Error("Room project disclosure authority is unavailable.");
+    return this.ports.withRoomProjectDisclosure(threadId, projects, admission, withAccounts, projectProofs);
+  }
+  /** Hold source permits until the transport has completed its write callback. */
+  async withResponseDisclosure<T>(response: AssistantResponse, admission: RoomManagementAdmission, effect: () => Promise<T>): Promise<T> {
+    const groups = new Map<string, { projects: Set<string>; accounts: Map<string, string>; projectProofs: Map<string, string>; nativeProofs?: NativeLibraryProof[] }>();
+    for (const thread of [response.thread, ...(response.snapshot?.threads ?? [])]) {
+      if (!thread?.summary) continue;
+      const sources = thread.summaryProof ? await this.threadSummaries.sourceProofs(thread.id, thread.summaryProof.id) : undefined;
+      if (!sources) throw new Error("Room summary source proof is unavailable.");
+      const group = groups.get(thread.id) ?? { projects: new Set<string>(), accounts: new Map<string, string>(), projectProofs: new Map<string, string>(), nativeProofs: [] as NativeLibraryProof[] };
+      group.nativeProofs = mergeNativeLibraryProofs(group.nativeProofs ?? [], sources.nativeProofs ?? []);
+      for (const proof of sources.projectProofs) {
+        if (group.projectProofs.has(proof.projectId) && group.projectProofs.get(proof.projectId) !== proof.cwd) throw new Error("Room response contains incompatible project sources.");
+        group.projects.add(proof.projectId);
+        group.projectProofs.set(proof.projectId, proof.cwd);
+      }
+      for (const proof of sources.accountProofs) {
+        if (group.accounts.has(proof.accountId) && group.accounts.get(proof.accountId) !== proof.version) throw new Error("Room response contains incompatible account grants.");
+        group.accounts.set(proof.accountId, proof.version);
+      }
+      groups.set(thread.id, group);
+    }
+    for (const message of [response.message, ...(response.messages ?? [])]) {
+      if (!message) continue;
+      const scoped = await this.messageProjectScope(message);
+      const projects = new Set([...(scoped.projectIds ?? []), ...(scoped.visibilityProjectIds ?? [])]);
+      const accounts = message.text === "This message is unavailable because its source access changed."
+        ? [] : await this.messageAccountProofs(message);
+      if (!accounts) throw new Error("Room response source proof is unavailable.");
+      const projectProofs = message.text === "This message is unavailable because its source access changed." ? [] : await this.messageProjectProofs(message);
+      if (!projectProofs) throw new Error("Room response project source proof is unavailable.");
+      const nativeProofs = message.text === "This message is unavailable because its source access changed." ? [] : await this.messageNativeProofs(message);
+      if (!nativeProofs) throw new Error("Room response Native library source proof is unavailable.");
+      if (!projects.size && !accounts.length && !nativeProofs.length) continue;
+      const group = groups.get(message.threadId) ?? { projects: new Set<string>(), accounts: new Map<string, string>(), projectProofs: new Map<string, string>(), nativeProofs: [] as NativeLibraryProof[] };
+      group.nativeProofs = mergeNativeLibraryProofs(group.nativeProofs ?? [], nativeProofs);
+      for (const id of projects) group.projects.add(id);
+      for (const proof of projectProofs) {
+        if (group.projectProofs.has(proof.projectId) && group.projectProofs.get(proof.projectId) !== proof.cwd) throw new Error("Room response contains incompatible project sources.");
+        group.projectProofs.set(proof.projectId, proof.cwd);
+      }
+      for (const account of accounts) {
+        if (group.accounts.has(account.accountId) && group.accounts.get(account.accountId) !== account.version)
+          throw new Error("Room response contains incompatible account grants.");
+        group.accounts.set(account.accountId, account.version);
+      }
+      groups.set(message.threadId, group);
+    }
+    if (groups.size > 1 || [...groups.values()].some(group => group.nativeProofs?.length)) {
+      if (!this.ports.withRoomResponseDisclosure) throw new Error("Room response source authority is unavailable.");
+      const scopes = [...groups].map(([threadId, scope]) => ({ threadId, projects: [...scope.projects], accounts: [...scope.accounts].map(([accountId, version]) => ({ accountId, version })), projectProofs: [...scope.projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })), nativeProofs: scope.nativeProofs ?? [] }));
+      return this.ports.withRoomResponseDisclosure(scopes, admission, async (valid) => {
+        if (!valid()) throw new Error("Room response source access changed.");
+        const proofs = [...groups.values()].flatMap(group => [...group.projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })));
+        if (proofs.length && (!this.ports.roomProjectProofsValid || !(await this.ports.roomProjectProofsValid(proofs)) || !valid())) throw new Error("Room response project source changed.");
+        return effect();
+      });
+    }
+    const group = groups.entries().next().value;
+    if (!group) return effect();
+    const [threadId, scope] = group;
+    return this.withRoomDisclosure(threadId, [...scope.projects], [...scope.accounts].map(([accountId, version]) => ({ accountId, version })), admission, async (valid) => {
+      if (!valid()) throw new Error("Room response source access changed.");
+      return effect();
+    }, [...scope.projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })));
+  }
+  private async accountSafeMessage(message: AssistantMessage): Promise<AssistantMessage> {
+    const nativeProofs = await this.messageNativeProofs(message);
+    if (!nativeProofs || (nativeProofs.length && (!this.ports.roomNativeProofsValid || !(await this.ports.roomNativeProofsValid(nativeProofs))))) return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+    const proofs = await this.messageAccountProofs(message);
+    const projectProofs = await this.messageProjectProofs(message);
+    const scoped = message.role === "assistant" ? await this.messageProjectScope(message) : message;
+    const projectIds = new Set([...(scoped.projectIds ?? []), ...(scoped.visibilityProjectIds ?? [])]);
+    if (message.role === "assistant" && projectIds.size && (!projectProofs || [...projectIds].some(id => !projectProofs.some(proof => proof.projectId === id))))
+      return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+    if (!projectProofs || (projectProofs.length && (!this.ports.roomProjectProofsValid || !(await this.ports.roomProjectProofsValid(projectProofs)))))
+      return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+    if (!proofs || (proofs.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(message.threadId, proofs)))))
+      return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+    return message;
+  }
   private async messageProjectScopes(messages: AssistantMessage[]): Promise<AssistantMessage[]> {
     const context = { cache: new Map<string, Promise<AssistantMessage>>(), visited: 0 },
       result: AssistantMessage[] = [];
@@ -1182,6 +1634,32 @@ export class HostAssistant {
   }
   private async messageAnnotations(message: AssistantMessage): Promise<AssistantMessage> {
     const { toolActions: _actions, ...value } = message;
+    const management = await this.runtime<{ managementTurnId?: string } | null>(
+      message.role === "assistant"
+        ? `messageScopeSources:${message.id}`
+        : `messageRoomTurn:${message.id}`,
+      null,
+    );
+    if (management?.managementTurnId) {
+      const turn = await this.runtime<RoomManagementTurnState | null>(
+        management.managementTurnId,
+        null,
+      );
+      if (
+        turn?.threadId === message.threadId &&
+        (message.role === "assistant" || turn.ownerMessageId === message.id)
+      )
+        return {
+          ...value,
+          toolActions: turn.calls.slice(0, 20).map(({ call, status, createdAt }) => ({
+            id: call.requestId,
+            family: call.family,
+            action: call.action,
+            status: status === "completed" ? ("completed" as const) : ("unknown" as const),
+            createdAt,
+          })),
+        };
+    }
     if (!Array.isArray(value.projectIds)) return value;
     const proof = await this.voiceActionsForMessage(message.id);
     if (!proof?.actions.length) return value;
@@ -1665,6 +2143,69 @@ export class HostAssistant {
       value,
     });
   }
+  private async narrationSource(eventId: string): Promise<NarrationEvent | undefined> {
+    if (eventId.startsWith("question:")) {
+      const row = await this.store.db.prepare("SELECT value FROM assistant_owner_questions WHERE id=?").get(eventId.slice(9));
+      if (!row) return undefined;
+      const question = JSON.parse(String(row.value)) as { id: string; status: string; origin: string; jobId: string | null; createdAt: number; projectIds: string[]; sourceToken: string; version: number };
+      // Chief questions derive from the canonical job/goal/task/session graph. Proposal
+      // questions can carry account context and need a separately verified account lease.
+      if (question.origin !== "chief" || !question.jobId || question.status !== "open" || !Array.isArray(question.projectIds) || question.createdAt > this.now() || this.now() - question.createdAt > 300_000) return undefined;
+      return { eventId, kind: "question", text: "Your assistant needs a decision.", createdAt: question.createdAt, projectIds: question.projectIds, accountProofs: [], sourceVersion: `${question.version}:${question.sourceToken}` };
+    }
+    if (eventId.startsWith("notification:observation:")) {
+      const notificationId = eventId.slice("notification:".length);
+      const notice = await this.runtime<PendingNotification | null>(`notification:${notificationId}`, null);
+      if (!notice || notice.supersededBy || !notice.taskId || !notice.projectId || notice.taskCreatedAt === undefined || !["task.done", "task.needsInput"].includes(notice.kind) || notice.createdAt > this.now() || this.now() - notice.createdAt > 300_000) return undefined;
+      const observedId = notificationId.slice("observation:".length);
+      const observed = await this.store.db.prepare("SELECT source_id,source_revision,project_ids FROM assistant_observation_events WHERE event_id=? AND source='task'").get(observedId);
+      const revision = await this.store.db.prepare("SELECT version FROM assistant_observation_source_revisions WHERE source='task' AND source_id=?").get(notice.taskId);
+      const taskRow = await this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(notice.taskId);
+      const task = taskRow ? JSON.parse(String(taskRow.value)) as { id: string; projectId: string; createdAt: number; status: string; needsInput?: boolean } : undefined;
+      const manual = await this.manualPolicy(), policy = assistantPolicy(await this.profile());
+      if (!observed || observed.source_id !== notice.taskId || observed.source_revision !== `db:${Number(revision?.version)}` || JSON.stringify(JSON.parse(String(observed.project_ids))) !== JSON.stringify([notice.projectId]) || !manual.enabled || !manual.projectIds.includes(notice.projectId) || (notice.kind === "task.done" ? !policy.observationTaskDone : !policy.observationTaskNeedsInput) || !task || task.id !== notice.taskId || task.projectId !== notice.projectId || task.createdAt !== notice.taskCreatedAt || (notice.kind === "task.done" ? task.status !== "done" : task.status === "done" || !task.needsInput)) return undefined;
+      return { eventId, kind: notice.kind === "task.done" ? "completed" : "question", text: notice.kind === "task.done" ? "An observed task completed." : "An observed task needs your input.", createdAt: notice.createdAt, projectIds: [notice.projectId], sourceVersion: String(observed.source_revision) };
+    }
+    const activity = await this.repository.get<AssistantActivity>("activity", eventId);
+    if (!activity?.jobId) return undefined;
+    if (activity.createdAt > this.now() || this.now() - activity.createdAt > 300_000) return undefined;
+    const kind = activity.kind === "job.done" ? "completed" : activity.kind === "job.waiting" ? "question" : activity.kind === "job.running" ? "progress" : undefined;
+    if (!kind) return undefined;
+    const job = await this.repository.get<AssistantJob>("jobs", activity.jobId);
+    if (!job?.projectId) return undefined;
+    if ((kind === "completed" && job.status !== "done") || (kind === "question" && job.status !== "waiting") || (kind === "progress" && job.status !== "running")) return undefined;
+    const text = kind === "completed" ? "A job completed." : kind === "question" ? "A job needs your input." : "A job is making progress.";
+    return { eventId, kind, text, createdAt: activity.createdAt, projectIds: assistantJobProjectIds(job) };
+  }
+  private async narrationSourceAuthorized(event: NarrationEvent): Promise<boolean> {
+    if (event.eventId.startsWith("question:")) {
+      const question = (await this.ownerQuestions.get(event.eventId.slice(9))).ownerQuestion;
+      return question?.status === "open" && question.sourceCurrent === true && `${question.version}:${question.sourceToken}` === event.sourceVersion && JSON.stringify(question.projectIds) === JSON.stringify(event.projectIds);
+    }
+    if (event.eventId.startsWith("notification:observation:")) {
+      const notice = await this.runtime<PendingNotification | null>(`notification:${event.eventId.slice("notification:".length)}`, null);
+      return !!notice && (!this.ports.taskNotificationAllowed || await this.ports.taskNotificationAllowed({ ...notice, eligible: false, deferredReason: "unknown" }));
+    }
+    return true;
+  }
+  private narrationReceipts(admission: RoomManagementAdmission) {
+    return new AssistantNarrationReceipts({
+      transaction: effect => this.store.transaction(effect, "critical"),
+      read: key => this.runtime<NarrationReceipt | null>(key, null),
+      write: async (key, receipt) => { await this.setRuntime(key, receipt); },
+      source: id => this.narrationSource(id),
+      withAuthorization: async (identity, event, effect) => {
+        const profile = await this.profile();
+        const hour = new Date(this.now()).getHours();
+        const quiet = profile.quietStart !== profile.quietEnd && (profile.quietStart < profile.quietEnd ? hour >= profile.quietStart && hour < profile.quietEnd : hour >= profile.quietStart || hour < profile.quietEnd);
+        if (!profile.voiceNarration || !profile.enabled || !profile.setupComplete || quiet || await this.effectivePresence() !== "present" || !this.ports.withVoiceNarrationAuthorization || !await admission.authorized() || admission.signal?.aborted || !await this.narrationSourceAuthorized(event)) throw new Error("Narration authority unavailable.");
+        return this.ports.withVoiceNarrationAuthorization({ threadId: identity.threadId, generation: identity.generation, eventId: event.eventId, projectIds: event.projectIds, accountProofs: event.accountProofs }, admission, async valid => {
+          if (!valid() || !await this.narrationSourceAuthorized(event) || !valid()) throw new Error("Narration source changed.");
+          return effect(valid);
+        });
+      },
+    });
+  }
   private stamp() {
     const now = this.now();
     return { id: randomUUID(), version: 0, createdAt: now, updatedAt: now };
@@ -1732,7 +2273,45 @@ export class HostAssistant {
     }
     return safe;
   }
-  async request(raw: unknown, principal: AssistantPrincipal): Promise<AssistantResponse> {
+  /** Direct Room notebook port. Never re-enters the serialized assistant request queue. */
+  async roomNotebookList() {
+    if (!this.ports.listNotes) throw new Error("Global assistant notes are unavailable on this Host.");
+    return this.ports.listNotes();
+  }
+  async roomNotebookGet(id: string) {
+    return this.assertNote(id);
+  }
+  async roomNotebookSave(input: { id?: string; title: string; body: string; expectedUpdatedAt: number }, authorized: () => Promise<boolean>) {
+    if (!this.ports.saveNote) throw new Error("Global assistant notes are unavailable on this Host.");
+    if (input.id && input.expectedUpdatedAt !== 0) await this.assertNote(input.id);
+    if (!(await authorized())) throw new Error("Conversation authority revoked.");
+    return this.ports.saveNote(input, authorized);
+  }
+  async roomNotebookDelete(id: string, expectedUpdatedAt: number, authorized: () => Promise<boolean>) {
+    if (!this.ports.deleteNote) throw new Error("Global assistant notes are unavailable on this Host.");
+    const note = await this.assertNote(id);
+    if (note.updatedAt !== expectedUpdatedAt) throw new Error("Note changed; reload before deleting.");
+    if (!(await authorized())) throw new Error("Conversation authority revoked.");
+    const backup = await this.store.transaction(async () => {
+      const item = await this.repository.put("notetrash", { ...this.stamp(), note, title: note.title });
+      await this.repository.trash("notetrash", item.id, item.version, this.now());
+      await this.setRuntime(`notebookSuppressed:${note.title}`, true);
+      return item;
+    }, "critical");
+    try {
+      if (!(await authorized())) throw new Error("Conversation authority revoked.");
+      await this.ports.deleteNote(id, expectedUpdatedAt, authorized);
+    } catch (error) {
+      this.ports.onError?.(error);
+      throw new Error(`Note deletion outcome is unknown; its recovery copy ${backup.id} is in Recently deleted.`);
+    }
+    return { ok: true, trashId: `notetrash:${backup.id}` };
+  }
+  async request(
+    raw: unknown,
+    principal: AssistantPrincipal,
+    admission?: RoomManagementAdmission,
+  ): Promise<AssistantResponse> {
     if (!["owner", "assistant", "chief"].includes(principal))
       throw new Error("A captured assistant principal is required.");
     const input = AssistantRequestValidationSchema.parse(raw);
@@ -1786,7 +2365,64 @@ export class HostAssistant {
     }
     return this.serialize(async () => {
       try {
-        const response = await this.dispatch(input, principal);
+        const causalId = input.op === "voice.context.open" ? input.previousContextId : input.op === "voice.context.get" ? input.id : input.op === "questions.present" || input.op === "threads.append" ? input.causalContextId : undefined;
+        let nativeScope: { threadId: string; nativeProofs: NativeLibraryProof[]; projectProofs: { projectId: string; cwd: string }[] } | undefined;
+        let causalVersion: number | undefined;
+        const nativeSeedFingerprints = new Map<string, string>();
+        if (input.op === "voice.context.open") {
+          let nativeProofs: NativeLibraryProof[] = [];
+          const projectProofs: { projectId: string; cwd: string }[] = [];
+          for (const id of input.seedMessageIds) {
+            const message = await this.repository.get<AssistantMessage>("messages", id);
+            if (!message || message.threadId !== input.threadId) continue;
+            nativeSeedFingerprints.set(id, createHash("sha256").update(JSON.stringify(message)).digest("hex"));
+            const native = await this.messageNativeProofs(message);
+            if (!native) throw new Error("Voice Native seed provenance is unavailable.");
+            nativeProofs = mergeNativeLibraryProofs(nativeProofs, native);
+            const projects = await this.messageProjectProofs(message);
+            if (!projects && native.length) throw new Error("Voice Native seed project scope is unavailable.");
+            projectProofs.push(...(projects ?? []));
+          }
+          if (input.summaryProofId) {
+            const summary = await this.threadSummaries.sourceProofs(input.threadId, input.summaryProofId);
+            if (summary) {
+              nativeProofs = mergeNativeLibraryProofs(nativeProofs, summary.nativeProofs ?? []);
+              projectProofs.push(...summary.projectProofs);
+            }
+          }
+          if (nativeProofs.length) nativeScope = { threadId: input.threadId, nativeProofs, projectProofs };
+        }
+        if (causalId) {
+          const current = await this.voiceContexts.get(causalId);
+          causalVersion = current.version;
+          const nativeProofs = await this.voiceContexts.historicalNativeProofs(current.id, current.version, current.threadId, true);
+          if (!nativeProofs && current.status !== "unknown") throw new Error("Voice Native source provenance is unavailable.");
+          if (nativeProofs?.length) {
+            const projectProofs = await this.voiceContexts.historicalProjectProofs(current.id, current.version, current.threadId);
+            if (!projectProofs || !admission || !this.ports.withRoomResponseDisclosure) throw new Error("Voice Native source authority is unavailable.");
+            nativeScope = nativeScope ? { threadId: current.threadId, nativeProofs: mergeNativeLibraryProofs(nativeScope.nativeProofs, nativeProofs), projectProofs: [...nativeScope.projectProofs, ...projectProofs] } : { threadId: current.threadId, nativeProofs, projectProofs };
+          }
+        }
+        const dispatchFenced = async (valid: () => boolean) => {
+          if (!causalId && input.op !== "voice.context.open") return this.dispatch(input, principal, admission);
+          return this.store.db.scope(async () => {
+            if (!valid()) throw new Error("Voice Native source authority changed.");
+            if (causalId && await this.voiceContexts.currentVersion(causalId) !== causalVersion) throw new Error("Voice Native context changed.");
+            for (const [id, fingerprint] of nativeSeedFingerprints) {
+              const seed = await this.repository.get<AssistantMessage>("messages", id);
+              if (!seed || createHash("sha256").update(JSON.stringify(seed)).digest("hex") !== fingerprint) throw new Error("Voice Native seed changed.");
+            }
+            const result = await this.dispatch(input, principal, admission);
+            if (!valid()) throw new Error("Voice Native source authority changed.");
+            return result;
+          });
+        };
+        if (nativeScope && (!admission || !this.ports.withRoomResponseDisclosure)) throw new Error("Voice Native source authority is unavailable.");
+        const response = nativeScope
+          ? await this.ports.withRoomResponseDisclosure!([{ threadId: nativeScope.threadId, projects: nativeScope.projectProofs.map(proof => proof.projectId), accounts: [], projectProofs: nativeScope.projectProofs, nativeProofs: nativeScope.nativeProofs }], admission!, async valid => {
+              return dispatchFenced(valid);
+            })
+          : await dispatchFenced(() => true);
         if (response.profile) await this.syncHoursHolds(response.profile);
         if (response.job) response.job = this.jobOutput(response.job);
         if (response.snapshot)
@@ -1800,16 +2436,28 @@ export class HostAssistant {
         if (response.message) await this.threadSummaries.record(response.message.id);
         if (response.message)
           response.message = await this.messageAnnotations(
-            await this.messageProjectScope(response.message),
+            await this.accountSafeMessage(await this.messageProjectScope(response.message)),
           );
+        if (response.messages && input.op === "conversations.search") {
+          const visible: AssistantMessage[] = [];
+          for (const message of response.messages) {
+            const safe = await this.accountSafeMessage(message);
+            if (safe.text === message.text) visible.push(message);
+          }
+          response.messages = visible;
+        }
         if (response.messages) {
           response.messages = await this.messageProjectScopes(response.messages);
           for (let index = 0; index < response.messages.length; index++)
-            response.messages[index] = await this.messageAnnotations(response.messages[index]);
+            response.messages[index] = await this.messageAnnotations(await this.accountSafeMessage(response.messages[index]));
         }
         await this.syncKeepAwake();
         if (response.snapshot && this.keepAwakeStatus)
           response.snapshot.keepAwake = this.keepAwakeStatus;
+        if (response.message) response.message = await this.accountSafeMessage(response.message);
+        if (response.messages) response.messages = await Promise.all(response.messages.map((message) => this.accountSafeMessage(message)));
+        if (response.messages && input.op === "conversations.search")
+          response.messages = response.messages.filter((message) => message.text !== "This message is unavailable because its source access changed.");
         AssistantResponseValidationSchema.parse(response);
         this.ports.onChange?.();
         return response;
@@ -1828,12 +2476,93 @@ export class HostAssistant {
   private async dispatch(
     input: AssistantRequest,
     principal: AssistantPrincipal,
+    admission?: RoomManagementAdmission,
   ): Promise<AssistantResponse> {
     switch (input.op) {
+      case "narration.pending":
+      case "narration.claim":
+      case "narration.settle": {
+        this.owner(principal);
+        if (!admission || !await admission.authorized() || admission.signal?.aborted || (await this.globalRoomBinding())?.id !== input.threadId) throw new Error("Narration source unavailable.");
+        const identity: NarrationIdentity = { threadId: input.threadId, environmentId: admission.environmentId, deviceHash: admission.deviceHash, generation: input.generation };
+        const receipts = this.narrationReceipts(admission);
+        if (input.op === "narration.settle") return { narrationClaimed: await receipts.settle(identity, input.eventId, input.state) };
+        if (input.op === "narration.claim") {
+          const event = await receipts.claim(identity, input.eventId);
+          return { narrationClaimed: !!event, narrationEvents: event ? [{ eventId: event.eventId, kind: event.kind, text: event.text, createdAt: event.createdAt }] : [] };
+        }
+        const profile = await this.profile();
+        const hour = new Date(this.now()).getHours();
+        const quiet = profile.quietStart !== profile.quietEnd && (profile.quietStart < profile.quietEnd ? hour >= profile.quietStart && hour < profile.quietEnd : hour >= profile.quietStart || hour < profile.quietEnd);
+        if (!profile.voiceNarration || !profile.enabled || !profile.setupComplete || quiet || await this.effectivePresence() !== "present") return { narrationEvents: [] };
+        const rows = await this.store.db.prepare("SELECT id FROM assistant_activity WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100").all();
+        const notifications = await this.store.db.prepare("SELECT id FROM assistant_runtime WHERE id LIKE 'notification:observation:%' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100").all();
+        const questions = await this.store.db.prepare("SELECT id FROM assistant_owner_questions WHERE json_extract(value,'$.status')='open' ORDER BY json_extract(value,'$.createdAt') DESC LIMIT 40").all();
+        const events: NarrationEvent[] = [];
+        const candidates = [...rows.map(row => String(row.id)), ...notifications.map(row => String(row.id)), ...questions.map(row => `question:${String(row.id)}`)];
+        for (const id of candidates) {
+          try {
+          const event = await this.narrationSource(id);
+          if (!event || this.now() - event.createdAt > 300_000 || event.createdAt > this.now() || !(await receipts.available(identity.threadId, event.eventId))) continue;
+          if (!(await this.narrationSourceAuthorized(event))) continue;
+          const port = this.ports.withVoiceNarrationAuthorization;
+          if (!port) break;
+          const allowed = await port({ threadId: identity.threadId, generation: identity.generation, eventId: event.eventId, projectIds: event.projectIds, accountProofs: event.accountProofs }, admission, async valid => valid() && await this.narrationSourceAuthorized(event) && JSON.stringify(await this.narrationSource(event.eventId)) === JSON.stringify(event) && valid());
+          if (allowed) events.push(event);
+          if (events.length === 20) break;
+          } catch {
+            // A missing or revoked source is unavailable; continue with other events.
+          }
+        }
+        return { narrationEvents: events.map(({ eventId, kind, text, createdAt }) => ({ eventId, kind, text, createdAt })) };
+      }
       case "projects.list":
         return { projects: ((await this.ports.listProjects?.()) ?? []).slice(0, 1000) };
       case "snapshot":
         return { snapshot: await this.snapshot(input.limit ?? 50) };
+      case "voice.runtime.register": {
+        this.owner(principal);
+        if (!admission || !await admission.authorized() || admission.signal?.aborted) throw new Error("Voice runtime owner authority is unavailable.");
+        const thread = await this.require<AssistantThread>("threads", input.threadId);
+        let nativeProofs: NativeLibraryProof[] = [];
+        const projectProofs: { projectId: string; cwd: string }[] = [], accountProofs: { accountId: string; version: string }[] = [];
+        const fingerprints = new Map<string, string>();
+        for (const id of input.seedMessageIds) {
+          const message = await this.require<AssistantMessage>("messages", id);
+          if (message.threadId !== thread.id) throw new Error("Voice runtime seed belongs to another Room.");
+          fingerprints.set(id, createHash("sha256").update(JSON.stringify(message)).digest("hex"));
+          const native = await this.messageNativeProofs(message), projects = await this.messageProjectProofs(message), accounts = await this.messageAccountProofs(message);
+          if (!native || !projects || !accounts) throw new Error("Voice runtime seed provenance is unavailable.");
+          if (native.length) {
+            const scoped = await this.messageProjectScope(message);
+            if (!scoped.projectIds || scoped.projectIds.some(projectId => !projects.some(proof => proof.projectId === projectId))) throw new Error("Voice runtime seed project scope is unavailable.");
+          }
+          nativeProofs = mergeNativeLibraryProofs(nativeProofs, native);
+          projectProofs.push(...projects); accountProofs.push(...accounts);
+        }
+        if (input.summaryProofId) {
+          const currentProof = await this.threadSummaries.proof(thread.id, thread.summary);
+          const sources = await this.threadSummaries.sourceProofs(thread.id, input.summaryProofId);
+          if (!currentProof || currentProof.id !== input.summaryProofId || !sources) throw new Error("Voice runtime summary provenance is unavailable.");
+          nativeProofs = mergeNativeLibraryProofs(nativeProofs, sources.nativeProofs ?? []);
+          projectProofs.push(...sources.projectProofs); accountProofs.push(...sources.accountProofs);
+        }
+        if (!nativeProofs.length) return { ok: true };
+        if (!this.ports.withNativeVoiceRuntimeRegistration) throw new Error("Voice runtime Native registration is unavailable.");
+        return this.ports.withNativeVoiceRuntimeRegistration({ threadId: thread.id, generationKey: input.generationKey, nativeProofs, projectProofs, accountProofs }, admission, async valid => {
+          if (!valid()) throw new Error("Voice runtime source changed.");
+          const currentThread = await this.require<AssistantThread>("threads", thread.id);
+          if (currentThread.version !== thread.version || currentThread.summary !== thread.summary) throw new Error("Voice runtime Room changed.");
+          for (const [id, fingerprint] of fingerprints) {
+            const message = await this.require<AssistantMessage>("messages", id);
+            if (createHash("sha256").update(JSON.stringify(message)).digest("hex") !== fingerprint) throw new Error("Voice runtime seed changed.");
+            const current = await this.messageNativeProofs(message);
+            if (!current || current.some(proof => !nativeProofs.some(expected => JSON.stringify(expected) === JSON.stringify(proof)))) throw new Error("Voice runtime source changed.");
+          }
+          if (!valid()) throw new Error("Voice runtime source changed.");
+          return { ok: true };
+        });
+      }
       case "voice.context.open":
         this.owner(principal);
         return { voiceContext: await this.voiceContexts.open(input) };
@@ -1875,6 +2604,9 @@ export class HostAssistant {
       case "manual.list":
         this.owner(principal);
         return this.manualResult();
+      case "observation.delivery.list":
+      case "observation.delivery.refresh":
+        throw new Error("Task notification recovery requires the native Room transport.");
       case "manual.policy": {
         this.owner(principal);
         if (!this.ports.manual) throw new Error("Manual supervision is unavailable on this Host.");
@@ -1958,7 +2690,7 @@ export class HostAssistant {
       }
       case "profile.update": {
         this.owner(principal);
-        return this.store.transaction(async () => {
+        const save = () => this.store.transaction(async () => {
           const previous = await this.profile();
           if (previous.version !== input.expectedVersion)
             throw new Error("Assistant settings changed; reload before saving.");
@@ -1983,9 +2715,16 @@ export class HostAssistant {
             { ...next, id: "profile", createdAt: this.now() },
             input.expectedVersion,
           );
+          if (next.enabled && next.setupComplete) await this.ensureGlobalRoom();
           await this.activity("profile.updated", "Assistant settings updated.");
           return { profile: await this.profile() };
         }, "critical");
+        const previous = await this.profile();
+        const removesVoiceSource = (previous.enabled && input.patch.enabled === false) || (previous.setupComplete && input.patch.setupComplete === false) || (previous.voiceSetupComplete && input.patch.voiceSetupComplete === false);
+        if (removesVoiceSource && this.ports.withNativeVoiceSourcesRetired) {
+          return this.ports.withNativeVoiceSourcesRetired(valid => this.store.db.withAuthorization(async () => valid(), save));
+        }
+        return save();
       }
       case "memory.save": {
         if (principal !== "owner" && (input.kind !== "fact" || input.source !== "learned"))
@@ -2057,6 +2796,7 @@ export class HostAssistant {
       case "threads.open": {
         if (input.projectId) await this.assertProject(input.projectId);
         return this.store.transaction(async () => {
+          if (!input.projectId) return { thread: await this.ensureGlobalRoom() };
           const key = input.projectId ? `project:${input.projectId}` : "global";
           const existing = await this.repository.byKey<AssistantThread>("threads", key);
           const thread =
@@ -2265,15 +3005,49 @@ export class HostAssistant {
           };
         }, "critical");
       }
+      case "threads.sendIdentity": {
+        this.owner(principal);
+        return { sendIdentity: { instanceId: this.nativeSendInstance } };
+      }
+      case "threads.sendStatus": {
+        this.owner(principal);
+        if (input.expectedHostInstance !== this.nativeSendInstance) throw new Error("The original Host instance changed.");
+        await this.require<AssistantThread>("threads", input.threadId);
+        const key = `reply:${input.threadId}:${input.idempotencyKey}`;
+        const receipt = await this.runtime<{
+          status: string; text: string; via?: "text" | "voice"; userMessageId?: string; userFingerprint?: string; messageId?: string;
+        } | null>(key, null);
+        // Absence can mean admission is still in progress. It never permits a resend.
+        if (!receipt) return { sendReceipt: { status: "unknown" } };
+        if (receipt.text !== input.text || (receipt.via && receipt.via !== "text"))
+          throw new Error("Conversation receipt identity changed.");
+        if (!receipt.userMessageId || !receipt.userFingerprint) return { sendReceipt: { status: "unknown" } };
+        const user = await this.require<AssistantMessage>("messages", receipt.userMessageId);
+        if (user.threadId !== input.threadId || user.role !== "user" || user.via !== "text" || user.text !== input.text ||
+            user.sessionId !== input.sessionId || createHash("sha256").update(JSON.stringify(user)).digest("hex") !== receipt.userFingerprint)
+          throw new Error("Conversation receipt identity changed.");
+        if (receipt.status === "settled" && receipt.messageId) {
+          const reply = await this.require<AssistantMessage>("messages", receipt.messageId);
+          if (reply.threadId !== input.threadId || reply.role !== "assistant")
+            throw new Error("Conversation receipt identity changed.");
+          return { sendReceipt: { status: "settled" }, messages: [reply] };
+        }
+        return { sendReceipt: { status: receipt.status === "refused" ? "refused" : "unknown" } };
+      }
       case "threads.send": {
         this.owner(principal);
+        if (input.expectedHostInstance && input.expectedHostInstance !== this.nativeSendInstance)
+          throw new Error("The original Host instance changed.");
         if (!this.ports.reply)
           throw new Error("Conversation replies are unavailable on this Host.");
         const profile = await this.profile();
         if (!profile.setupComplete || !profile.enabled || !assistantRoleExecution(profile, "reply"))
           throw new Error("Configure and enable the assistant before starting a conversation.");
         const thread = await this.require<AssistantThread>("threads", input.threadId);
-        const replySummaryProof = await this.threadSummaries.proof(thread.id, thread.summary);
+        const rawSummaryProof = await this.threadSummaries.proof(thread.id, thread.summary);
+        const summarySources = rawSummaryProof ? await this.threadSummaries.sourceProofs(thread.id, rawSummaryProof.id) : undefined;
+        const summaryValid = summarySources && (!summarySources.projectProofs.length || !!this.ports.roomProjectProofsValid && await this.ports.roomProjectProofsValid(summarySources.projectProofs)) && (!summarySources.accountProofs.length || !!this.ports.roomAccountProofsValid && await this.ports.roomAccountProofsValid(thread.id, summarySources.accountProofs));
+        const replySummaryProof = summaryValid ? rawSummaryProof : undefined;
         const key = `reply:${thread.id}:${input.idempotencyKey}`;
         const existing = await this.runtime<{
           status: string;
@@ -2283,6 +3057,8 @@ export class HostAssistant {
           userMessageId?: string;
           userFingerprint?: string;
           attemptFingerprint?: string;
+          tokenCap?: number;
+          day?: string;
         } | null>(key, null);
         if (existing) {
           if (existing.text !== input.text) throw new Error("Conversation retry payload changed.");
@@ -2292,6 +3068,130 @@ export class HostAssistant {
             return {
               messages: [await this.require<AssistantMessage>("messages", existing.messageId)],
             };
+          const saved =
+            admission && this.ports.roomManagement
+              ? await this.runtime<RoomManagementTurnState | null>(`room-turn:${key}`, null)
+              : null;
+          if (
+            saved?.phase === "settled" &&
+            saved.result &&
+            existing.day &&
+            existing.tokenCap &&
+            admission
+          ) {
+            const check = async () => {
+              admission.signal?.throwIfAborted();
+              if (
+                !(await admission.authorized()) ||
+                saved.environmentId !== admission.environmentId ||
+                saved.deviceHash !== admission.deviceHash ||
+                saved.threadId !== thread.id ||
+                saved.ownerMessageId !== existing.userMessageId
+              )
+                throw new Error("The original Room management source is unavailable.");
+              const owner = await this.require<AssistantMessage>("messages", saved.ownerMessageId);
+              if (
+                createHash("sha256").update(JSON.stringify(owner)).digest("hex") !==
+                existing.userFingerprint
+              )
+                throw new Error("The original Room owner message changed.");
+              const context = JSON.parse(saved.context) as {
+                summary: string;
+                messages: AssistantMessage[];
+              };
+              if (
+                !Array.isArray(context.messages) ||
+                context.messages.length > 6 ||
+                (context.summary && context.summary !== thread.summary)
+              )
+                throw new Error("The original Room context changed.");
+              const projects = new Set(saved.result!.contributorProjectIds ?? []);
+              for (const record of saved.calls) {
+                if (record.call.input.nativeLibrary === true && record.status === "completed" && (!record.contributorNativeProofs?.length || record.contributorNativeProofs.some(proof => !saved.result!.contributorNativeProofs?.some(item => JSON.stringify(item) === JSON.stringify(proof))))) throw new Error("The original Native library provenance is unavailable.");
+                if (record.call.projectId) {
+                  projects.add(record.call.projectId);
+                  if (record.status === "completed" && !record.contributorProjects?.some(proof => proof.projectId === record.call.projectId && saved.result!.contributorProjects?.some(savedProof => savedProof.projectId === proof.projectId && savedProof.cwd === proof.cwd)))
+                    throw new Error("The original Room project provenance is unavailable.");
+                }
+              }
+              const canonical = (message: AssistantMessage) => {
+                const {
+                  projectIds: _scope,
+                  toolActions: _actions,
+                  visibilityProjectIds: _visibility,
+                  unverifiedToolContext: _unknown,
+                  ...raw
+                } = message;
+                return JSON.stringify(raw);
+              };
+              for (const message of context.messages) {
+                const current = await this.require<AssistantMessage>("messages", message.id);
+                if (canonical(current) !== canonical(message))
+                  throw new Error("The original Room context changed.");
+                for (const id of message.projectIds ?? []) projects.add(id);
+              }
+              if (context.summary) {
+                if (!replySummaryProof)
+                  throw new Error("The original Room summary proof is unavailable.");
+                for (const id of replySummaryProof.projectIds) projects.add(id);
+              }
+              if ([...projects].some((id) => !saved.result!.visibilityProjectIds?.includes(id)))
+                throw new Error("The original Room project disclosure proof is unavailable.");
+              const accountProofs = saved.result!.contributorAccounts ?? [];
+              if (accountProofs.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(thread.id, accountProofs))))
+                throw new Error("The original Room account access became unavailable or changed.");
+              if (
+                projects.size &&
+                (!this.ports.roomManagementVisible ||
+                  !(await this.ports.roomManagementVisible(thread.id, [...projects], admission)))
+              )
+                throw new Error("The original Room context became private.");
+              return context;
+            };
+            const context = await this.reason(async () => check());
+            const output = await this.safeOutput(truncateGraphemes(saved.result.text, 16000));
+            await check();
+            return this.withRoomDisclosure(thread.id, saved.result!.visibilityProjectIds ?? [], saved.result!.contributorAccounts ?? [], admission, (valid) => this.store.transaction(async () => {
+              if (!valid()) throw new Error("Room source visibility changed.");
+              if (saved.result!.contributorAccounts?.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(thread.id, saved.result!.contributorAccounts))))
+                throw new Error("The original Room account access became unavailable or changed.");
+              const reply = (
+                await this.dispatch(
+                  {
+                    op: "threads.append",
+                    threadId: thread.id,
+                    role: "assistant",
+                    via: input.via,
+                    text: output,
+                    jobIds: [],
+                    idempotencyKey: `reply:${input.idempotencyKey}`,
+                  },
+                  "assistant",
+                )
+              ).message!;
+              await this.setRuntime(`messageScopeSources:${reply.id}`, {
+                threadId: thread.id,
+                messageIds: context.messages.map((message) => message.id),
+                summaryUsed: !!context.summary,
+                ...(replySummaryProof ? { summaryProofId: replySummaryProof.id } : {}),
+                managementTurnId: `room-turn:${key}`,
+              });
+              await this.setRuntime(key, { ...existing, status: "settled", messageId: reply.id });
+              await this.settleChiefUsage(
+                existing.day!,
+                existing.tokenCap!,
+                saved.result!.tokens ?? existing.tokenCap!,
+                saved.result!.tokens === undefined,
+              );
+              if (!valid()) throw new Error("Room source visibility changed.");
+              return {
+                messages: [
+                  await this.require<AssistantMessage>("messages", saved.ownerMessageId),
+                  reply,
+                ],
+              };
+            }, "critical"), saved.result!.contributorProjects ?? [], saved.result!.contributorNativeProofs ?? []);
+          }
           if (existing.status !== "refused")
             throw new Error(
               "The previous reply has an uncertain outcome. Read History before sending another request.",
@@ -2326,8 +3226,45 @@ export class HostAssistant {
         const recent = (
           await this.dispatch({ op: "threads.messages", threadId: thread.id, limit: 6 }, principal)
         ).messages!;
-        const messages = [...recent.filter((message) => message.id !== user.id).slice(-5), user];
+        const messages = await Promise.all([...recent.filter((message) => message.id !== user.id).slice(-5), user].map((message) => this.accountSafeMessage(message)));
         const instructions = await this.instructions("all");
+        const management = admission && this.ports.roomManagement;
+        const scopedMessages = management ? await this.messageProjectScopes(messages) : messages;
+        const contextAccounts = new Map<string, string>();
+        const contextProjects = new Map<string, string>();
+        let contextNativeProofs: NativeLibraryProof[] = [];
+        if (replySummaryProof && summarySources) {
+          contextNativeProofs = mergeNativeLibraryProofs(contextNativeProofs, summarySources.nativeProofs ?? []);
+          for (const proof of summarySources.accountProofs) contextAccounts.set(proof.accountId, proof.version);
+          for (const proof of summarySources.projectProofs) contextProjects.set(proof.projectId, proof.cwd);
+        }
+        const managementMessages: AssistantMessage[] = [];
+        for (const message of scopedMessages) {
+          const native = await this.messageNativeProofs(message);
+          if (!native || (native.length && (!this.ports.roomNativeProofsValid || !await this.ports.roomNativeProofsValid(native, admission)))) continue;
+          contextNativeProofs = mergeNativeLibraryProofs(contextNativeProofs, native);
+          const proofs = await this.messageAccountProofs(message);
+          if (!proofs || (proofs.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(thread.id, proofs))))) continue;
+          const projectProofs = await this.messageProjectProofs(message);
+          if (!projectProofs || (projectProofs.length && (!this.ports.roomProjectProofsValid || !(await this.ports.roomProjectProofsValid(projectProofs))))) continue;
+          for (const proof of projectProofs) {
+            if (contextProjects.has(proof.projectId) && contextProjects.get(proof.projectId) !== proof.cwd) throw new Error("Room project source changed while preparing context.");
+            contextProjects.set(proof.projectId, proof.cwd);
+          }
+          for (const proof of proofs) {
+            const previous = contextAccounts.get(proof.accountId);
+            if (previous && previous !== proof.version) throw new Error("Room account access changed while preparing context.");
+            contextAccounts.set(proof.accountId, proof.version);
+          }
+          if (!management || message.id === user.id || Array.isArray(message.projectIds) || (proofs.length && message.text !== "This message is unavailable because its source access changed."))
+            managementMessages.push(message);
+        }
+        const contextProjectIds = [
+          ...new Set(scopedMessages.flatMap((message) => message.projectIds ?? [])),
+        ];
+        if (replySummaryProof)
+          for (const id of replySummaryProof.projectIds)
+            if (!contextProjectIds.includes(id)) contextProjectIds.push(id);
         const attemptFingerprint = createHash("sha256")
           .update(
             JSON.stringify({
@@ -2347,6 +3284,8 @@ export class HostAssistant {
           userMessageId: user.id,
           userFingerprint,
           attemptFingerprint,
+          tokenCap,
+          day: usage.day,
         };
         await this.store.transaction(async () => {
           await this.setRuntime(key, { ...receipt, status: "unknown" });
@@ -2357,19 +3296,101 @@ export class HostAssistant {
             estimated: true,
           });
         }, "critical");
-        let result: { text: string; tokens?: number };
+        let result: RoomManagementTurnResult;
         try {
-          result = await this.reason(async (signal) =>
-            this.ports.reply!({
-              profile,
-              thread,
-              messages,
-              instructions,
-              tokenCap,
-              operationId: key,
-              signal,
-            }),
-          );
+          result = await this.reason(async (signal) => {
+            const reply = (managementPrompt?: string, remaining = tokenCap, replySignal = signal) =>
+              this.ports.reply!({
+                profile,
+                thread,
+                messages,
+                instructions,
+                tokenCap: remaining,
+                operationId: key,
+                signal: replySignal,
+                ...(managementPrompt ? { managementPrompt } : {}),
+              });
+            if (!admission || !this.ports.roomManagement) return reply();
+            const contextFingerprints = new Map(
+              managementMessages.map((message) => [
+                message.id,
+                createHash("sha256")
+                  .update(JSON.stringify(messages.find((source) => source.id === message.id)))
+                  .digest("hex"),
+              ]),
+            );
+            return runRoomManagementTurn(
+              {
+                operationId: key,
+                ownerMessageId: user.id,
+                threadId: thread.id,
+                ...(thread.projectId ? { projectId: thread.projectId } : {}),
+                execution: assistantRoleExecution(profile, "reply"),
+                tokenCap,
+                signal,
+                admission,
+                context: JSON.stringify({
+                  instructions,
+                  summary: replySummaryProof ? thread.summary : "",
+                  messages: managementMessages,
+                }),
+                contextProjectIds,
+                contextAccounts: [...contextAccounts].map(([accountId, version]) => ({ accountId, version })),
+                contextProjects: [...contextProjects].map(([projectId, cwd]) => ({ projectId, cwd })),
+                contextNativeProofs,
+                validateNativeProofs: async proofs => !!this.ports.roomNativeProofsValid && await this.ports.roomNativeProofsValid(proofs, admission),
+                validateProjects: async proofs => !!this.ports.roomProjectProofsValid && await this.ports.roomProjectProofsValid(proofs),
+                validateAccounts: async (proofs) => !!this.ports.roomAccountProofsValid && await this.ports.roomAccountProofsValid(thread.id, proofs),
+                validateContext: async (ids) => {
+                  const current = await this.repository.get<AssistantThread>("threads", thread.id);
+                  if (
+                    !current ||
+                    current.summary !== thread.summary ||
+                    current.projectId !== thread.projectId
+                  )
+                    return false;
+                  for (const [id, fingerprint] of contextFingerprints) {
+                    const currentMessage = await this.repository.get<AssistantMessage>(
+                      "messages",
+                      id,
+                    );
+                    if (
+                      !currentMessage ||
+                      createHash("sha256").update(JSON.stringify(currentMessage)).digest("hex") !==
+                        fingerprint
+                    )
+                      return false;
+                  }
+                  return (
+                    ids.length === 0 ||
+                    (!!this.ports.roomManagementVisible &&
+                      (await this.ports.roomManagementVisible(thread.id, ids, admission)))
+                  );
+                },
+              },
+              {
+                load: () => this.runtime<RoomManagementTurnState | null>(`room-turn:${key}`, null),
+                save: (state) =>
+                  this.store.transaction(async () => {
+                    await this.setRuntime(`room-turn:${key}`, state);
+                    await this.setRuntime(`messageRoomTurn:${user.id}`, {
+                      managementTurnId: `room-turn:${key}`,
+                    });
+                  }, "critical"),
+                model: (prompt, remaining, modelSignal, projects, proofs, projectProofs, nativeProofs) =>
+                  this.withRoomDisclosure(thread.id, projects, proofs, admission, async (valid) => {
+                    if (!valid()) throw new Error("Room source visibility changed.");
+                    return await reply(prompt, remaining, modelSignal);
+                  }, projectProofs, nativeProofs),
+                delivered: (observations, proofs, projectProofs, nativeProofs) => this.withRoomDisclosure(thread.id, projectProofs.map(proof => proof.projectId), proofs, admission, valid => this.ports.roomObservationDelivered?.(thread.id, observations, proofs, valid, projectProofs, nativeProofs) ?? Promise.resolve(), projectProofs, nativeProofs),
+                tool: (call, owner) =>
+                  this.ports.roomManagement!(call, {
+                    ...owner,
+                    signal: owner.signal ? AbortSignal.any([signal, owner.signal]) : signal,
+                  }),
+              },
+            );
+          });
         } catch (error) {
           // Only this local preflight type proves no provider request was made.
           // Accepted/uncertain provider failures retain the original reservation.
@@ -2380,8 +3401,20 @@ export class HostAssistant {
             }, "critical");
           throw error;
         }
+        if (result.contributorAccounts?.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(thread.id, result.contributorAccounts))))
+          throw new Error("Room account access became unavailable or changed.");
         const output = await this.safeOutput(result.text.slice(0, 16000));
-        const reply = (
+        if (result.contributorAccounts?.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(thread.id, result.contributorAccounts))))
+          throw new Error("Room account access became unavailable or changed.");
+        const tokens =
+          result.tokens !== undefined && Number.isFinite(result.tokens)
+            ? Math.max(0, Math.ceil(result.tokens))
+            : tokenCap;
+        const reply = await this.withRoomDisclosure(thread.id, result.visibilityProjectIds ?? [], result.contributorAccounts ?? [], admission, (valid) => this.store.transaction(async () => {
+          if (!valid()) throw new Error("Room source visibility changed.");
+          if (result.contributorAccounts?.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(thread.id, result.contributorAccounts))))
+            throw new Error("Room account access became unavailable or changed.");
+          const reply = (
           await this.dispatch(
             {
               op: "threads.append",
@@ -2395,23 +3428,24 @@ export class HostAssistant {
             "assistant",
           )
         ).message!;
-        const tokens =
-          result.tokens !== undefined && Number.isFinite(result.tokens)
-            ? Math.max(0, Math.ceil(result.tokens))
-            : tokenCap;
-        await this.store.transaction(async () => {
+
           await this.setRuntime(`messageScopeSources:${reply.id}`, {
             threadId: thread.id,
-            messageIds: messages.map((message) => message.id),
-            summaryUsed: !!thread.summary,
+            messageIds: (management ? managementMessages : messages).map((message) => message.id),
+            summaryUsed: management ? !!replySummaryProof && !!thread.summary : !!thread.summary,
             ...(replySummaryProof ? { summaryProofId: replySummaryProof.id } : {}),
+            ...(admission && this.ports.roomManagement
+              ? { managementTurnId: `room-turn:${key}` }
+              : {}),
           });
           await this.setRuntime(key, { ...receipt, status: "settled", messageId: reply.id });
           await this.settleChiefUsage(usage.day, tokenCap, tokens, result.tokens === undefined);
           await this.activity("conversation.replied", "A conversation reply was recorded.", {
             tokens,
           });
-        }, "critical");
+          if (!valid()) throw new Error("Room source visibility changed.");
+          return reply;
+        }, "critical"), result.contributorProjects ?? [], result.contributorNativeProofs ?? []);
         return { messages: [user, reply] };
       }
       case "threads.summary": {
@@ -2893,32 +3927,7 @@ export class HostAssistant {
       }
       case "notes.delete": {
         this.owner(principal);
-        if (!this.ports.deleteNote)
-          throw new Error("Global assistant notes are unavailable on this Host.");
-        const note = await this.assertNote(input.id);
-        if (note.updatedAt !== input.expectedUpdatedAt)
-          throw new Error("Note changed; reload before deleting.");
-        // Notes live in the existing desktop database. Persist a restore copy in
-        // the Host before crossing that database's independent commit boundary.
-        const backup = await this.store.transaction(async () => {
-          const item = await this.repository.put("notetrash", {
-            ...this.stamp(),
-            note,
-            title: note.title,
-          });
-          await this.repository.trash("notetrash", item.id, item.version, this.now());
-          await this.setRuntime(`notebookSuppressed:${note.title}`, true);
-          return item;
-        }, "critical");
-        try {
-          await this.ports.deleteNote(input.id, input.expectedUpdatedAt);
-        } catch (error) {
-          this.ports.onError?.(error);
-          throw new Error(
-            `Note deletion outcome is unknown; its recovery copy ${backup.id} is in Recently deleted.`,
-          );
-        }
-        return { ok: true, trashId: `notetrash:${backup.id}` };
+        return this.roomNotebookDelete(input.id, input.expectedUpdatedAt, async () => true);
       }
       case "trash.restore":
       case "trash.purge": {
@@ -4153,6 +5162,48 @@ export class HostAssistant {
       }
     }, "critical");
   }
+  /** Called only with a live, exact project permit captured by the Host observation owner. */
+  async acceptObservedTaskEvent(event: AssistantObservation & { id: string; sequence: number }, guard: () => boolean): Promise<boolean> {
+    if (event.source !== "task" || event.projectIds.length !== 1 || event.accountId || !guard()) return false;
+    const projectId = event.projectIds[0];
+    if (!(await this.manualProjectAllowed(projectId)) || !guard()) return false;
+    return this.store.transaction(async () => {
+      if (!guard() || this.closing || this.emergencyStop || (await this.runtime("paused", false))) return false;
+      const profile = await this.profile();
+      const policy = assistantPolicy(profile);
+      const manual = await this.manualPolicy();
+      if (!profile.enabled || !profile.setupComplete || !manual.enabled || !manual.projectIds.includes(projectId) ||
+          (!policy.observationTaskDone && !policy.observationTaskNeedsInput)) return false;
+      const receipt = `observation-task-event:${event.id}`;
+      if (await this.runtime(receipt, false)) return guard();
+      const match = /^db:([1-9]\d*)$/.exec(event.sourceRevision);
+      if (!match || !Number.isSafeInteger(Number(match[1]))) return false;
+      const revision = await this.store.db.prepare("SELECT version FROM assistant_observation_source_revisions WHERE source='task' AND source_id=?").get(event.sourceId);
+      if (!revision || Number(revision.version) < Number(match[1])) return false;
+      if (Number(revision.version) > Number(match[1])) {
+        await this.setRuntime(receipt, true);
+        if (!guard()) throw new Error("Observation source was revoked before commit.");
+        return true;
+      }
+      const row = await this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(event.sourceId);
+      const task = row ? JSON.parse(String(row.value)) as { id?: string; projectId?: string; status?: string; needsInput?: boolean; createdAt?: number } : undefined;
+      const category = task?.projectId === projectId && task.id === event.sourceId && Number.isSafeInteger(task.createdAt) && task.createdAt! >= 0
+        ? task.status === "done" ? "task.done" : task.needsInput === true ? "task.needsInput" : undefined : undefined;
+      const stateKey = `observation-task-state:${createHash("sha256").update(JSON.stringify([projectId, event.sourceId])).digest("hex")}`;
+      const previous = await this.runtime<string | null>(stateKey, null);
+      if (!guard()) return false;
+      if (category !== previous && ((category === "task.done" && policy.observationTaskDone) || (category === "task.needsInput" && policy.observationTaskNeedsInput))) {
+        await this.queueNotification({ id: `observation:${event.id}`, kind: category,
+          title: category === "task.done" ? "Task completed" : "Task needs input",
+          body: category === "task.done" ? "An observed task completed." : "An observed task needs your input.",
+          createdAt: this.now(), taskId: event.sourceId, taskCreatedAt: task!.createdAt, projectId, projectIds: [projectId] });
+      }
+      await this.setRuntime(stateKey, category ?? null);
+      await this.setRuntime(receipt, true);
+      if (!guard()) throw new Error("Observation source was revoked before commit.");
+      return true;
+    }, "critical");
+  }
   private async tickInner() {
     await this.cleanupDeletedRecords();
     await this.store.transaction(() => this.queueOwnerQuestionReminders(), "critical");
@@ -4176,6 +5227,26 @@ export class HostAssistant {
       return;
     await this.store.transaction(() => this.setRuntime("heartbeat", this.now()));
     await this.syncBudgetHolds(profile);
+    const observationPolicy = assistantPolicy(profile);
+    if (this.ports.pollObservedTasks && (this.ports.observedTaskDeliveryConfigured?.() === true || this.ports.observationTasksReady?.() === true) && (observationPolicy.observationTaskDone || observationPolicy.observationTaskNeedsInput)) {
+      const scope = await this.manualPolicy();
+      if (scope.enabled) {
+        let active = true;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            this.ports.pollObservedTasks(scope.projectIds, (event, guard) =>
+              this.acceptObservedTaskEvent(event, () => active && guard()), () => active),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Observation poll timed out.")), 10000); }),
+          ]);
+        } catch (error) {
+          this.ports.onError?.(error);
+        } finally {
+          active = false;
+          if (timer) clearTimeout(timer);
+        }
+      }
+    }
     let usage = await this.usage(profile);
     let incompleteUsage = false;
     const events: AssistantActivity[] = [];
@@ -4582,8 +5653,10 @@ export class HostAssistant {
         notes: !!this.ports.listNotes && !notesError,
         quickNotes: !!this.ports.quickNotes && !notesError,
         quickAutomations: !!this.ports.quickAutomations,
+        observationTasks: !!this.ports.pollObservedTasks && (!!this.ports.taskNotificationAllowed || this.ports.observedTaskDeliveryConfigured?.() === true) && this.ports.observationTasksReady?.() === true,
         conversations: !!this.ports.reply,
       },
     };
   }
 }
+

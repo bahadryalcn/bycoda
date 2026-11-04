@@ -76,7 +76,7 @@ import { basename, clipboardFilePaths, type FsEntry } from "../../../platform/ta
 import { parentPath } from "../../../shared/lib/paths";
 import { MOD } from "../../../platform/tauri/platform";
 import type { OpenFileFn } from "../../search/model/search";
-import type { GitStatusMap } from "../../source-control/hooks/useGitFileStatuses";
+import { gitStatusForPath, type GitStatusMap } from "../../source-control/hooks/useGitFileStatuses";
 import {
   announceDrag,
   clearDropFeedback,
@@ -216,8 +216,8 @@ function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEn
           (next.renaming === path) !== (previous.renaming === path) ||
           next.cutPaths.has(path) !== previous.cutPaths.has(path) ||
           (next.dragOverPath === path) !== (previous.dragOverPath === path) ||
-          (isDir ? next.gitStatuses?.dirs.get(path) : next.gitStatuses?.files.get(path)) !==
-            (isDir ? previous.gitStatuses?.dirs.get(path) : previous.gitStatuses?.files.get(path)),
+          gitStatusForPath(isDir ? next.gitStatuses?.dirs : next.gitStatuses?.files, path) !==
+            gitStatusForPath(isDir ? previous.gitStatuses?.dirs : previous.gitStatuses?.files, path),
       );
     if (changed) previous = next;
     return previous;
@@ -1391,9 +1391,7 @@ function TreeChildren({
         cut={ctx.cutPaths.has(child.path)}
         dragOver={ctx.dragOverPath === child.path}
         gitStatus={
-          child.isDir
-            ? ctx.gitStatuses?.dirs.get(child.path)
-            : ctx.gitStatuses?.files.get(child.path)
+          gitStatusForPath(child.isDir ? ctx.gitStatuses?.dirs : ctx.gitStatuses?.files, child.path)
         }
       />
     );

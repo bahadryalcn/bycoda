@@ -18,6 +18,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `src/app/workspace/layout/`, `surfaces/`, `actions/`: panes, mounting, navigation and action wiring.
 - `src/shared/ui/`: public pane/header/row/action/feedback primitives.
 - `src/features/sessions/ui/`: inspect actual transcript/composer/activity consumers when shell composition affects them.
+- `src/features/sessions/ui/ActivityDock.tsx`: provider/model above title, metrics beside chevron, distinct lifecycle icons. Keep unknown child models unspecified and step failures separate from run failure.
+- `src/features/sessions/ui/PromptOutline.tsx`: transcript prompt ruler and compact hover preview; suppress the shared Button tooltip because the preview already supplies the prompt. Keep the single-line title, two-line reply snippet, keyboard navigation and narrow-pane visibility policy.
 
 ## Preserve
 

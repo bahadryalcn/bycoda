@@ -6,6 +6,7 @@ import type { HostSessionSummary, SessionSync } from "../src/features/connection
 export type SessionRef = {
   sessionId: string;
   revision: number;
+  sourceEpoch?: string;
   deleted?: boolean;
   sync?: SessionSync;
 };
@@ -21,7 +22,7 @@ export type RemoteChangesInput = {
   inlineSync?: boolean;
   inlineSessionIds?: string[];
   instanceId?: string;
-  sessions: { sessionId: string; revision: number }[];
+  sessions: { sessionId: string; revision: number; sourceEpoch?: string }[];
   projects: { projectId: string; known?: string }[];
   tasksKnown?: string;
   git?: { cwd: string; known?: string }[];
@@ -46,13 +47,14 @@ export type RemoteChangesValue = {
 
 /** A repeated question about the same missing session waits this long for its answer. */
 const DELETED_REPEAT_MS = 2_000;
+type SessionRead = number | { revision: number; sourceEpoch: string } | undefined;
 
 /** One bounded metadata poll for a set of session and project cursors. */
 export class RemoteChanges {
   constructor(private readonly signal = new ChangeSignal()) {}
   readonly instanceId = randomUUID();
   private active = 0;
-  private sessionCache = new Map<string, { at: number; revision: number | undefined }>();
+  private sessionCache = new Map<string, { at: number; revision: SessionRead }>();
   /** When a missing session was last reported deleted at a given cursor. A client
    * still subscribed to it would otherwise get an instant answer on every poll. */
   private deletedReported = new Map<string, number>();
@@ -65,7 +67,7 @@ export class RemoteChanges {
 
   async read(
     input: RemoteChangesInput,
-    readSession: (id: string) => number | undefined | Promise<number | undefined>,
+    readSession: (id: string) => SessionRead | Promise<SessionRead>,
     readProject: (id: string) => Promise<{ etag: string; sessions: HostSessionSummary[] }>,
     cancelled: () => boolean = () => false,
     readTasks?: () => Promise<string>,
@@ -111,7 +113,7 @@ export class RemoteChanges {
 
   private async readOwned(
     input: RemoteChangesInput,
-    readSession: (id: string) => number | undefined | Promise<number | undefined>,
+    readSession: (id: string) => SessionRead | Promise<SessionRead>,
     readProject: (id: string) => Promise<{ etag: string; sessions: HostSessionSummary[] }>,
     cancelled: () => boolean,
     readTasks: (() => Promise<string>) | undefined,
@@ -130,7 +132,8 @@ export class RemoteChanges {
         typeof entry.sessionId !== "string" ||
         !entry.sessionId ||
         !Number.isSafeInteger(entry.revision) ||
-        entry.revision < 0
+        entry.revision < 0 ||
+        (entry.sourceEpoch !== undefined && (typeof entry.sourceEpoch !== "string" || entry.sourceEpoch.length > 1024))
       )
         throw new Error("Invalid session subscription");
       return entry;
@@ -180,7 +183,7 @@ export class RemoteChanges {
       if (authorized && !(await authorized())) throw new Error("Device authorization was revoked");
       const sessionValues = (
         await Promise.all(
-          sessions.map(async ({ sessionId, revision }) => {
+          sessions.map(async ({ sessionId, revision, sourceEpoch }) => {
             const current = await readCachedSession(sessionId);
             if (current === undefined) {
               if (reset) return [{ sessionId, revision: 0, deleted: true }];
@@ -194,7 +197,11 @@ export class RemoteChanges {
                 this.deletedReported.delete(this.deletedReported.keys().next().value!);
               return [{ sessionId, revision, deleted: true }];
             }
-            return reset || current !== revision ? [{ sessionId, revision: current }] : [];
+            const currentRevision = typeof current === "number" ? current : current.revision;
+            const currentEpoch = typeof current === "number" ? undefined : current.sourceEpoch;
+            return reset || currentRevision !== revision || (sourceEpoch !== undefined && currentEpoch !== sourceEpoch)
+              ? [{ sessionId, revision: currentRevision, ...(currentEpoch ? { sourceEpoch: currentEpoch } : {}) }]
+              : [];
           }),
         )
       ).flat();

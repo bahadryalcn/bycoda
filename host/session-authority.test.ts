@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { HostStore } from "./store";
-import { SocialService } from "./social";
+import { SocialService } from "./social/social";
 import type { SocialAdapters } from "../src/integrations/social/adapter";
 import { RuntimeLogAccess } from "./runtime-log-tools";
 import { createSessionAuthorityResolver, SessionAuthorityUnavailable } from "./session-authority";

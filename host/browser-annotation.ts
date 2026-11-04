@@ -16,6 +16,8 @@ export function inspectBrowserElement(point: {
   y: number;
   full: boolean;
   opaqueHosts?: string[];
+  ancestorDepth?: number;
+  traversal?: ("parent" | "child" | "previousSibling" | "nextSibling")[];
 }): ElementInspection {
   const scrub = (value: string) =>
     value
@@ -104,7 +106,20 @@ export function inspectBrowserElement(point: {
       element.getClientRects().length > 0
     );
   };
-  const node = document.elementFromPoint(point.x, point.y);
+  let node = document.elementFromPoint(point.x, point.y);
+  for (let depth = 0; node && depth < (point.ancestorDepth ?? 0); depth++)
+    node = node.parentElement;
+  for (const step of point.traversal ?? []) {
+    if (!node) break;
+    node =
+      step === "parent"
+        ? node.parentElement
+        : step === "child"
+          ? node.firstElementChild
+          : step === "previousSibling"
+            ? node.previousElementSibling
+            : node.nextElementSibling;
+  }
   if (!node || !visible(node))
     return {
       ...result,
@@ -127,6 +142,58 @@ export function inspectBrowserElement(point: {
     };
   const box = node.getBoundingClientRect();
   const bounds = { x: box.x, y: box.y, width: box.width, height: box.height };
+  const style = getComputedStyle(node);
+  let transformed = node.getClientRects().length !== 1;
+  for (let ancestor: Element | null = node; ancestor; ancestor = ancestor.parentElement) {
+    const ancestorStyle = getComputedStyle(ancestor);
+    const transform = ancestorStyle.transform;
+    const zoom = ancestorStyle.getPropertyValue("zoom");
+    if ((transform && transform !== "none") || (zoom && zoom !== "normal" && zoom !== "1")) {
+      transformed = true;
+      break;
+    }
+  }
+  const edge = (name: string) =>
+    ["top", "right", "bottom", "left"].map((side) => {
+      const value = style.getPropertyValue(
+        name === "border" ? `border-${side}-width` : `${name}-${side}`,
+      );
+      return value ? Number.parseFloat(value) : 0;
+    });
+  const inset = (
+    rect: { x: number; y: number; width: number; height: number },
+    values: number[],
+  ) => ({
+    x: rect.x + values[3],
+    y: rect.y + values[0],
+    width: rect.width - values[1] - values[3],
+    height: rect.height - values[0] - values[2],
+  });
+  const borderWidths = edge("border"),
+    paddings = edge("padding"),
+    margins = edge("margin");
+  const paddingBox = inset(bounds, borderWidths);
+  const contentBox = inset(paddingBox, paddings);
+  const marginBox = inset(
+    bounds,
+    margins.map((value) => -value),
+  );
+  const validBoxes =
+    [
+      ...borderWidths,
+      ...paddings,
+      ...margins,
+      ...Object.values(contentBox),
+      ...Object.values(marginBox),
+    ].every(Number.isFinite) &&
+    contentBox.width >= 0 &&
+    contentBox.height >= 0 &&
+    marginBox.width >= 0 &&
+    marginBox.height >= 0;
+  const boxModel =
+    !transformed && validBoxes
+      ? { content: contentBox, padding: paddingBox, border: bounds, margin: marginBox }
+      : undefined;
   const ancestry = [];
   for (let parent = node.parentElement; parent; parent = parent.parentElement)
     ancestry.unshift({ tag: parent.localName, selectorPart: part(parent) });
@@ -153,6 +220,10 @@ export function inspectBrowserElement(point: {
       "flex-direction",
       "justify-content",
       "align-items",
+      "grid-template-columns",
+      "grid-template-rows",
+      "box-sizing",
+      "border-width",
       "gap",
       "text-align",
     ])
@@ -208,8 +279,70 @@ export function inspectBrowserElement(point: {
       throw new Error("Page exceeds safe redaction budget");
     result.masks = Array.from(masks);
   }
+  const explicitRole = node.getAttribute("role");
+  const inferredRole: Record<string, string> = {
+    button: "button",
+    a: "link",
+    nav: "navigation",
+    main: "main",
+    form: "form",
+    img: "img",
+    select: "combobox",
+    textarea: "textbox",
+  };
+  const nativeDisabled = node.matches(":disabled");
+  const disabled = nativeDisabled || node.getAttribute("aria-disabled") === "true";
+  const htmlNode = node instanceof HTMLElement ? node : undefined;
+  const explicitTabIndex = htmlNode?.getAttribute("tabindex");
+  const focusable =
+    !!htmlNode &&
+    !nativeDisabled &&
+    !node.closest("[inert]") &&
+    (htmlNode.tabIndex >= 0 ||
+      (htmlNode.isContentEditable && (explicitTabIndex === null || Number(explicitTabIndex) >= 0)));
+  const layout: NonNullable<BrowserElementTarget["layout"]> = {
+    display: scrub(style.display).slice(0, 100),
+  };
+  if (point.full && /^(inline-)?(flex|grid)$/.test(style.display)) {
+    const children = Array.from(node.children).filter(visible);
+    if (
+      transformed ||
+      children.length > 32 ||
+      children.some((child) => {
+        const cs = getComputedStyle(child);
+        const zoom = cs.getPropertyValue("zoom");
+        return (
+          (cs.transform && cs.transform !== "none") ||
+          (zoom && zoom !== "1" && zoom !== "normal") ||
+          child.getClientRects().length !== 1
+        );
+      })
+    )
+      layout.limitation = "Layout guides unavailable for transformed, fragmented or large layouts.";
+    else
+      layout.childBounds = children.map((child) => {
+        const bounds = child.getBoundingClientRect();
+        return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+      });
+  }
   result.element = {
     tag: node.localName,
+    inspectionVersion: 1,
+    role: explicitRole
+      ? scrub(explicitRole).slice(0, 100)
+      : node.localName === "a" && !node.hasAttribute("href")
+        ? undefined
+        : inferredRole[node.localName],
+    interaction: {
+      disabled,
+      focusable,
+    },
+    layout,
+    parentSelector: node.parentElement ? selector(node.parentElement) : undefined,
+    boxModel,
+    boxModelLimitation: boxModel
+      ? undefined
+      : "Box geometry unavailable for transformed or non-rectangular layout.",
     text: privateElement(node) ? "[form or sensitive content omitted]" : text.trim().slice(0, 2000),
     selector: selector(node),
     path: [...ancestry.map((entry) => entry.selectorPart), part(node)].join(" > "),

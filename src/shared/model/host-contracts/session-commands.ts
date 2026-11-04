@@ -114,6 +114,7 @@ export const DraftCommandSchema = z.strictObject({
   ...commandBase,
   ...queued,
   type: z.literal("draft"),
+  expectedRevision: SafeCounterSchema.optional(),
   ...prompt,
 });
 /** A nested first turn inherits the outer reserved session ID or Host allocation.
@@ -133,6 +134,15 @@ export const ContextualSessionInputSchema = z.strictObject({
   modelSettings: ModelSettingsSchema,
 });
 export const CommandDispatchParamsSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    ...commandBase,
+    type: z.literal("regenerateTitle"),
+    expectedTitle: text,
+    harness: SessionProviderSchema,
+    model: text,
+    modelSettings: ModelSettingsSchema.optional(),
+    providerAccountId: text.optional(),
+  }),
   SendCommandSchema,
   DraftCommandSchema,
   z.strictObject({
@@ -164,6 +174,7 @@ export const CommandDispatchParamsSchema = z.discriminatedUnion("type", [
     ...commandBase,
     ...queued,
     type: z.literal("configure"),
+    expectedRevision: SafeCounterSchema.optional(),
     harness: SessionProviderSchema.optional(),
     providerAccountId: text.nullable().optional(),
     model: text,

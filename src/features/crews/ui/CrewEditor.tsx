@@ -637,7 +637,6 @@ function ConnectedCrewEditor({
                           ? t("Add a name")
                           : memberModelSummary(data.catalog, agent);
                     const groups = agent.groups?.join(", ");
-                    const instruction = agent.instructions.split(/\r?\n/)[0]?.trim();
                     return (
                       <li key={agent.id} className="min-w-0">
                         <ActionHost>
@@ -658,7 +657,6 @@ function ConnectedCrewEditor({
                               agent.name || t("Unnamed member"),
                               `${roleLabel(agent.role)} · ${summary}`,
                               groups,
-                              instruction,
                             ]
                               .filter(Boolean)
                               .join("\n")}
@@ -676,11 +674,6 @@ function ConnectedCrewEditor({
                                   {[summary, groups].filter(Boolean).join(" · ")}
                                 </span>
                               </span>
-                              {instruction ? (
-                                <span className="block truncate text-ui-caption text-(--ui-text-muted)">
-                                  {instruction}
-                                </span>
-                              ) : null}
                             </span>
                             <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                               {t("Edit")}

@@ -53,7 +53,7 @@ export type RecentSessionsSource = {
   history: SessionSummary[];
   /** Sessions held in memory: running state, and remote sessions the store never sees. */
   live: LiveSessionInfo[];
-  onPin: (sessionId: string, pinned: boolean) => Promise<void>;
+  onPin: (row: RecentSessionRow, pinned: boolean) => Promise<unknown>;
 };
 
 export type Appearance = {
@@ -92,7 +92,9 @@ export function useLastSessionsRows({
     saveRecentSessionsPrefs(next);
   };
   const togglePin = (row: RecentSessionRow) => {
-    void source.onPin(row.id, !row.pinned).then(refresh);
+    void source.onPin(row, !row.pinned).then(refresh).catch((error: unknown) => {
+      console.error("Could not refresh pinned session:", error);
+    });
   };
   return { prefs, update, rows, hasRows: rows.length > 0, togglePin, refresh };
 }
@@ -246,7 +248,7 @@ export function LastSessionsRows({
       >
         {rows.map((row) => (
           <SessionRow
-            key={row.id}
+            key={JSON.stringify([row.cwd, row.id])}
             row={row}
             now={now}
             selected={!searchActive && row.id === activeSessionId}

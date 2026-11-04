@@ -22,14 +22,14 @@ const controls: GroupLockControls = {
 };
 let container: HTMLDivElement;
 let root: Root;
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("crypto", webcrypto);
   localStorage.clear();
   window.dispatchEvent(new StorageEvent("storage", { key: null }));
   saveProjectGroups([{ id: "secret", name: "My secret project group", collapsed: false }]);
   saveProjectGroupAssignments({ [pathKey("/private")]: "secret" });
-  hideGroup("secret");
+  await hideGroup("secret");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -56,12 +56,12 @@ it("restores temporarily and permanently through Settings without the rail icon"
   expect(container.querySelector("#group-lock-groups")?.textContent).not.toContain(
     "My secret project group",
   );
-  act(() => button("Show temporarily").click());
+  await act(async () => { button("Show temporarily").click(); await Promise.resolve(); });
   expect(isProjectLocked("/private")).toBe(false);
   expect(button("Hide again")).toBeDefined();
-  act(() => button("Hide again").click());
+  await act(async () => { button("Hide again").click(); await Promise.resolve(); });
   expect(isProjectLocked("/private")).toBe(true);
-  act(() => button("Make visible").click());
+  await act(async () => { button("Make visible").click(); await Promise.resolve(); });
   expect(isProjectLocked("/private")).toBe(false);
   expect(container.querySelector("#hidden-project-groups")?.textContent).toContain(
     "No hidden groups",

@@ -940,12 +940,15 @@ pub struct ProjectFileEntry {
 pub struct ProjectFileListing {
     root: String,
     files: Vec<ProjectFileEntry>,
+    truncated: bool,
 }
 
 fn project_file_listing(cwd: &str) -> Result<ProjectFileListing, String> {
-    let files = list_project_files_sync(cwd)?;
+    let truncated = AtomicBool::new(false);
+    let files = list_project_files_inner(cwd, None, &truncated)?;
     Ok(ProjectFileListing {
         root: path_to_js(&expand_home(cwd)),
+        truncated: truncated.load(Ordering::Relaxed),
         files: files
             .into_iter()
             .map(|f| ProjectFileEntry {
@@ -979,6 +982,10 @@ pub(crate) fn list_project_files_sync_cancellable(
     cwd: &str,
     cancel: Option<&AtomicBool>,
 ) -> Result<Vec<ProjectFile>, String> {
+    list_project_files_inner(cwd, cancel, &AtomicBool::new(false))
+}
+
+fn list_project_files_inner(cwd: &str, cancel: Option<&AtomicBool>, truncated: &AtomicBool) -> Result<Vec<ProjectFile>, String> {
     let root = expand_home(cwd);
     if !root.is_dir() {
         return Err(format!("{}: Not a directory", root.display()));
@@ -989,7 +996,7 @@ pub(crate) fn list_project_files_sync_cancellable(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    if let Some(files) = git_ls_files(&root, cancel) {
+    if let Some(files) = git_ls_files_inner(&root, cancel, truncated) {
         return Ok(files);
     }
     // `git_ls_files` returns `None` for "not a git repo", truncation, and
@@ -998,7 +1005,7 @@ pub(crate) fn list_project_files_sync_cancellable(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    Ok(walk_project_files(&root, cancel.into()))
+    Ok(walk_project_files_inner(&root, cancel.into(), truncated))
 }
 
 /// `git check-ignore` queues behind the Windows spawn gate, and the tree
@@ -1107,6 +1114,10 @@ fn git_ignored_names(dir: &Path, names: &[&str]) -> Option<HashSet<String>> {
 const MAX_LS_FILES_BYTES: usize = 8 * 1024 * 1024;
 
 fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectFile>> {
+    git_ls_files_inner(root, cancel, &AtomicBool::new(false))
+}
+
+fn git_ls_files_inner(root: &Path, cancel: Option<&AtomicBool>, incomplete: &AtomicBool) -> Option<Vec<ProjectFile>> {
     // Routed through the bounded reader rather than `Command::output()`: this
     // is the path a cancelled search actually takes, because a repository with
     // a git index never reaches the walk. `output()` buffers the whole listing
@@ -1120,6 +1131,7 @@ fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectF
         cancel,
     )?;
     if truncated {
+        incomplete.store(true, Ordering::Relaxed);
         // A partial listing would silently hide files from search. Fall back to
         // the walk, which is bounded by its own budget.
         return None;
@@ -1150,6 +1162,7 @@ fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectF
             relative,
         });
         if files.len() >= MAX_PROJECT_FILES {
+            incomplete.store(true, Ordering::Relaxed);
             break;
         }
     }
@@ -4430,6 +4443,13 @@ fn git_github_work_items_for(
     search: &str,
     limit: u32,
 ) -> Result<Vec<GitHubWorkItem>, String> {
+    git_github_work_items_for_token(root, repo, kind, assigned_to_me, state, search, limit, None)
+}
+
+pub(crate) fn git_github_work_items_for_token(
+    root: &Path, repo: &str, kind: &str, assigned_to_me: bool, state: &str,
+    search: &str, limit: u32, token: Option<&str>,
+) -> Result<Vec<GitHubWorkItem>, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4469,7 +4489,7 @@ fn git_github_work_items_for(
         args.push(search.to_string());
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let json = gh_checked(root, &refs)?;
+    let json = match token { Some(token) => gh_checked_with_token(root, &refs, token)?, None => gh_checked(root, &refs)? };
     parse_github_work_items(&json, kind, &repo)
 }
 
@@ -4479,6 +4499,9 @@ fn git_github_work_item_for(
     kind: &str,
     number: i64,
 ) -> Result<GitHubWorkItem, String> {
+    git_github_work_item_for_token(root, repo, kind, number, None)
+}
+fn git_github_work_item_for_token(root: &Path, repo: &str, kind: &str, number: i64, token: Option<&str>) -> Result<GitHubWorkItem, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4494,10 +4517,8 @@ fn git_github_work_item_for(
     } else {
         "number,title,url,state,stateReason,createdAt,updatedAt,labels,assignees"
     };
-    let json = gh_checked(
-        root,
-        &[kind, "view", &number, "--repo", &repo, "--json", fields],
-    )?;
+    let args = &[kind, "view", &number, "--repo", &repo, "--json", fields];
+    let json = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
     parse_github_work_item(&json, kind, &repo)
 }
 
@@ -4548,13 +4569,16 @@ fn git_github_pr_action_for(
     action: &str,
     expected_head_oid: &str,
 ) -> Result<GitHubWorkItem, String> {
+    git_github_pr_action_for_token(root, repo, number, action, expected_head_oid, None)
+}
+pub(crate) fn git_github_pr_action_for_token(root: &Path, repo: &str, number: i64, action: &str, expected_head_oid: &str, token: Option<&str>) -> Result<GitHubWorkItem, String> {
     let args = github_pr_action_args(repo, number, action, expected_head_oid)?;
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // Successful mutation commands do not always write to stdout. Their exit
     // status confirms the action ran; the follow-up view fetches the new state.
-    gh_run(root, &refs, true)?;
+    match token { Some(token) => gh_run_with_token(root, &refs, true, Some(token)).map_err(|error| error.replace(token, "[redacted]"))?, None => gh_run(root, &refs, true)? };
     // The mutation already happened: a failed refresh must not be reported as a failed action.
-    Ok(git_github_work_item_for(root, repo, "pr", number)
+    Ok(git_github_work_item_for_token(root, repo, "pr", number, token)
         .unwrap_or_else(|error| github_pr_action_refresh_failed(repo, number, action, &error)))
 }
 
@@ -4596,6 +4620,9 @@ fn git_github_work_item_details_for(
     kind: &str,
     number: i64,
 ) -> Result<GitHubWorkItemDetails, String> {
+    git_github_work_item_details_for_token(root, repo, kind, number, None)
+}
+pub(crate) fn git_github_work_item_details_for_token(root: &Path, repo: &str, kind: &str, number: i64, token: Option<&str>) -> Result<GitHubWorkItemDetails, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4611,10 +4638,8 @@ fn git_github_work_item_details_for(
     } else {
         "body,author"
     };
-    let json = gh_checked(
-        root,
-        &[kind, "view", &number, "--repo", &repo, "--json", fields],
-    )?;
+    let args = &[kind, "view", &number, "--repo", &repo, "--json", fields];
+    let json = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
     parse_github_work_item_details(&json)
 }
 
@@ -4762,6 +4787,9 @@ fn git_github_work_item_thread_for(
     kind: &str,
     number: i64,
 ) -> Result<GitHubWorkItemThread, String> {
+    git_github_work_item_thread_for_token(root, repo, kind, number, None)
+}
+pub(crate) fn git_github_work_item_thread_for_token(root: &Path, repo: &str, kind: &str, number: i64, token: Option<&str>) -> Result<GitHubWorkItemThread, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4778,9 +4806,7 @@ fn git_github_work_item_thread_for(
     let owner_field = format!("owner={owner}");
     let name_field = format!("name={name}");
     let number_field = format!("number={number}");
-    let json = gh_checked(
-        root,
-        &[
+    let args = &[
             "api",
             "graphql",
             "-f",
@@ -4791,8 +4817,8 @@ fn git_github_work_item_thread_for(
             &name_field,
             "-F",
             &number_field,
-        ],
-    )?;
+        ];
+    let json = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
     parse_github_work_item_thread(&json, kind)
 }
 
@@ -4823,11 +4849,15 @@ fn git_github_work_item_comment_for(
     body: &str,
     in_reply_to: &str,
 ) -> Result<String, String> {
+    git_github_work_item_comment_for_token(root, repo, kind, number, body, in_reply_to, None)
+}
+pub(crate) fn git_github_work_item_comment_for_token(root: &Path, repo: &str, kind: &str, number: i64, body: &str, in_reply_to: &str, token: Option<&str>) -> Result<String, String> {
     let (kind, body) = github_comment_input(kind, number, body)?;
     let (owner, name) = split_github_repo(repo)?;
     let repo = format!("{owner}/{name}");
     let reply = in_reply_to.trim();
     if !reply.is_empty() {
+        if token.is_some() { return Err("Room threaded replies are unavailable".into()); }
         if kind != "pr" {
             return Err("Review replies require a pull request".into());
         }
@@ -4836,9 +4866,7 @@ fn git_github_work_item_comment_for(
     }
     let number = number.to_string();
     with_temp_markdown(body, |path| {
-        let output = gh_checked(
-            root,
-            &[
+        let args = &[
                 kind,
                 "comment",
                 &number,
@@ -4846,8 +4874,8 @@ fn git_github_work_item_comment_for(
                 &repo,
                 "--body-file",
                 path,
-            ],
-        )?;
+            ];
+        let output = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
         github_url_from_output(&output, "GitHub did not return a comment URL")
     })
 }
@@ -5419,6 +5447,14 @@ pub(crate) fn git_github_pr_diff_for(
     number: i64,
     full_context: bool,
 ) -> Result<GitHubPrDiff, String> {
+    git_github_pr_diff_for_token(root, repo, number, full_context, None, || Ok(()))
+}
+pub(crate) fn git_github_pr_diff_for_token(root: &Path, repo: &str, number: i64, full_context: bool, token: Option<&str>, guard: impl Fn() -> Result<(), String>) -> Result<GitHubPrDiff, String> {
+    if token.is_some() && full_context { return Err("Room full-context diff unavailable".into()); }
+    let run = |args: &[&str], empty: bool| -> Result<String, String> {
+        guard()?;
+        match token { Some(token) => gh_run_with_token(root, args, empty, Some(token)).map_err(|error| error.replace(token, "[redacted]")), None => gh_run(root, args, empty) }
+    };
     if number <= 0 {
         return Err("Invalid pull request number".into());
     }
@@ -5430,8 +5466,7 @@ pub(crate) fn git_github_pr_diff_for(
     } else {
         "files,additions,deletions,headRefOid"
     };
-    let json = gh_run(
-        root,
+    let json = run(
         &["pr", "view", &number, "--repo", &repo, "--json", fields],
         false,
     )?;
@@ -5447,13 +5482,12 @@ pub(crate) fn git_github_pr_diff_for(
         git_diff_full_context(root, &base, &head)?
     } else {
         (
-            gh_run(root, &["pr", "diff", &number, "--repo", &repo], true)?,
+            run(&["pr", "diff", &number, "--repo", &repo], true)?,
             false,
         )
     };
     if !full_context {
-        let current = gh_checked(
-            root,
+        let current = run(
             &[
                 "pr",
                 "view",
@@ -5462,7 +5496,7 @@ pub(crate) fn git_github_pr_diff_for(
                 &repo,
                 "--json",
                 "headRefOid",
-            ],
+            ], false,
         )?;
         let current: serde_json::Value =
             serde_json::from_str(&current).map_err(|error| error.to_string())?;
@@ -5959,7 +5993,17 @@ pub(crate) fn gh_checked(root: &Path, args: &[&str]) -> Result<String, String> {
     gh_run(root, args, false)
 }
 
+/// Run the existing GitHub CLI owner with an explicitly captured credential.
+/// The token stays in the child environment and is redacted from all errors.
+pub(crate) fn gh_checked_with_token(root: &Path, args: &[&str], token: &str) -> Result<String, String> {
+    gh_run_with_token(root, args, false, Some(token)).map_err(|error| error.replace(token, "[redacted]"))
+}
+
 fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, String> {
+    gh_run_with_token(root, args, allow_empty, None)
+}
+
+fn gh_run_with_token(root: &Path, args: &[&str], allow_empty: bool, token: Option<&str>) -> Result<String, String> {
     let program = crate::harness::resolve_gui_binary("gh")
         .ok_or_else(|| "GitHub CLI (`gh`) is not installed.".to_string())?;
     let mut cmd = Command::new(&program);
@@ -5970,6 +6014,9 @@ fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, Strin
         .env("GH_PAGER", "cat")
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
+    if let Some(token) = token {
+        cmd.env("GH_TOKEN", token).env_remove("GITHUB_TOKEN").env_remove("GH_ENTERPRISE_TOKEN").env_remove("GITHUB_ENTERPRISE_TOKEN");
+    }
     crate::hide_window_console(&mut cmd);
     let output = output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT).map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
@@ -7888,6 +7935,10 @@ impl<'a> From<Option<&'a AtomicBool>> for WalkStop<'a> {
 }
 
 fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
+    walk_project_files_inner(root, stop, &AtomicBool::new(false))
+}
+
+fn walk_project_files_inner(root: &Path, stop: WalkStop<'_>, incomplete: &AtomicBool) -> Vec<ProjectFile> {
     let ignore = Ignore::load(root);
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
@@ -7900,6 +7951,7 @@ fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
         }
         visited += 1;
         if visited > MAX_WALK_DIRS || files.len() >= MAX_PROJECT_FILES {
+            incomplete.store(true, Ordering::Relaxed);
             break;
         }
         let Ok(reader) = std::fs::read_dir(&dir) else {
@@ -7942,6 +7994,7 @@ fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
                 relative,
             });
             if files.len() >= MAX_PROJECT_FILES {
+                incomplete.store(true, Ordering::Relaxed);
                 break;
             }
         }
@@ -8336,7 +8389,11 @@ fn read_file_preview_sync(
             return Err("Binary file".into());
         }
         if line.len() > 200 {
-            line.truncate(199);
+            let mut end = 199;
+            while !line.is_char_boundary(end) {
+                end -= 1;
+            }
+            line.truncate(end);
             line.push('…');
         }
         lines.push(line);
@@ -8593,6 +8650,122 @@ pub async fn read_project_image(
 }
 
 /// Persist a pasted blob so non-image attachments have a real path.
+/// Receipt-backed question attachments are kept separately from generic pasted
+/// files. An incomplete operation is never retried automatically or deleted.
+fn question_attachment_dir(app: &AppHandle, scope: &str, question_id: &str, operation_id: &str) -> Result<PathBuf, String> {
+    use sha2::{Digest, Sha256};
+    if scope.is_empty() || scope.len() > 65536 || question_id.is_empty() || question_id.len() > 4096 {
+        return Err("Invalid question attachment identity".into());
+    }
+    let id = Uuid::parse_str(operation_id).map_err(|_| "Invalid question attachment operation")?;
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&(scope, question_id)).map_err(|e| e.to_string())?));
+    let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    let dir = base.join("question-attachments").join(digest).join(id.to_string());
+    crate::file_access::produced_target(&dir, &base, "question-attachments")?;
+    Ok(dir)
+}
+
+#[tauri::command]
+pub async fn create_question_attachment(app: AppHandle, window: tauri::Window, scope: String, question_id: String, operation_id: String, name: String, data: String) -> Result<serde_json::Value, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        use sha2::{Digest, Sha256};
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &data).map_err(|_| "Attachment data is not valid base64.")?;
+        if bytes.len() as u64 > MAX_ATTACHMENT_EMBED_BYTES { return Err("Attachment exceeds size limit".into()); }
+        let dir = question_attachment_dir(&app, &scope, &question_id, &operation_id)?;
+        let parent = dir.parent().ok_or("Invalid question attachment directory")?;
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let mut hasher = Sha256::new();
+        hasher.update((name.len() as u64).to_be_bytes());
+        hasher.update(name.as_bytes());
+        hasher.update(&bytes);
+        let signature = format!("{:x}", hasher.finalize());
+        match std::fs::create_dir(&dir) {
+            Ok(()) => {
+                let mut manifest = std::fs::OpenOptions::new().write(true).create_new(true).open(dir.join("pending")).map_err(|e| e.to_string())?;
+                manifest.write_all(signature.as_bytes()).and_then(|_| manifest.sync_all()).map_err(|e| e.to_string())?;
+                let content = dir.join("content");
+                std::fs::create_dir(&content).map_err(|e| e.to_string())?;
+                let path = content.join(safe_attachment_name(&name));
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+                let mut file = options.open(&path).map_err(|e| e.to_string())?;
+                file.write_all(&bytes).and_then(|_| file.sync_all()).map_err(|e| e.to_string())?;
+                let record = serde_json::json!({"signature":signature,"name":safe_attachment_name(&name)}).to_string();
+                let mut marker = std::fs::OpenOptions::new().write(true).create_new(true).open(dir.join("created.tmp")).map_err(|e| e.to_string())?;
+                marker.write_all(record.as_bytes()).and_then(|_| marker.sync_all()).map_err(|e| e.to_string())?;
+                drop(marker);
+                std::fs::rename(dir.join("created.tmp"), dir.join("created")).map_err(|e| e.to_string())?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        let record: serde_json::Value = match std::fs::read(dir.join("created")) {
+            Ok(data) => serde_json::from_slice(&data).map_err(|_| "Question attachment receipt is corrupt")?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({"state":"pending"})),
+            Err(error) => return Err(error.to_string()),
+        };
+        if record["signature"].as_str() != Some(signature.as_str()) { return Err("Question attachment operation already used with different data".into()); }
+        let path = dir.join("content").join(record["name"].as_str().ok_or("Question attachment receipt is corrupt")?);
+        let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        crate::file_access::grant_produced_file(&app, &path, &base, "question-attachments")?;
+        Ok(serde_json::json!({"state":"created","path":path.to_string_lossy(),"receipt":operation_id}))
+    }).await
+}
+
+#[tauri::command]
+pub async fn read_question_attachment(app: AppHandle, window: tauri::Window, scope: String, question_id: String, operation_id: String) -> Result<serde_json::Value, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let dir = question_attachment_dir(&app, &scope, &question_id, &operation_id)?;
+        match std::fs::metadata(&dir) {
+            Ok(_) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({"state":"absent"})),
+            Err(error) => return Err(error.to_string()),
+        }
+        let record: serde_json::Value = match std::fs::read(dir.join("created")) {
+            Ok(data) => serde_json::from_slice(&data).map_err(|_| "Question attachment receipt is corrupt")?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({"state":"pending"})),
+            Err(error) => return Err(error.to_string()),
+        };
+        let path = dir.join("content").join(record["name"].as_str().ok_or("Question attachment receipt is corrupt")?);
+        let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        crate::file_access::grant_produced_file(&app, &path, &base, "question-attachments")?;
+        Ok(serde_json::json!({"state":"created","path":path.to_string_lossy(),"receipt":operation_id}))
+    }).await
+}
+
+#[tauri::command]
+pub async fn retain_question_attachment(app: AppHandle, window: tauri::Window, scope: String, question_id: String, receipt: String) -> Result<(), String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let dir = question_attachment_dir(&app, &scope, &question_id, &receipt)?;
+        if !dir.join("created").is_file() { return Err("Question attachment is not confirmed created".into()); }
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(dir.join("retained")) {
+            Ok(file) => file.sync_all().map_err(|e| e.to_string()),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    }).await
+}
+
+#[tauri::command]
+pub async fn release_question_attachment(app: AppHandle, window: tauri::Window, scope: String, question_id: String, receipt: String) -> Result<serde_json::Value, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let dir = question_attachment_dir(&app, &scope, &question_id, &receipt)?;
+        match std::fs::metadata(&dir) {
+            Ok(_) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({"state":"absent"})),
+            Err(error) => return Err(error.to_string()),
+        }
+        // Cross-window references are not authoritatively inventoried yet.
+        Ok(serde_json::json!({"state":"deferred"}))
+    }).await
+}
+
 #[tauri::command]
 pub async fn write_attachment(
     app: AppHandle,
@@ -8942,7 +9115,7 @@ fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
         }
         drop(file);
-        std::fs::rename(&temporary_path, &destination).map_err(|e| e.to_string())?;
+        rename_atomic_with_retry(&temporary_path, &destination).map_err(|e| e.to_string())?;
         if let Ok(dir) = std::fs::File::open(parent) {
             let _ = dir.sync_all();
         }
@@ -8953,6 +9126,24 @@ fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
         let _ = std::fs::remove_file(&temporary_path);
     }
     write_result
+}
+
+fn rename_atomic_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    for attempt in 0..5 {
+        // ast-grep-ignore: rust-rename-without-fsync -- sole caller syncs the temporary file before this retry helper
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                #[cfg(windows)]
+                let transient = matches!(error.raw_os_error(), Some(5 | 32 | 33));
+                #[cfg(not(windows))]
+                let transient = false;
+                if !transient || attempt == 4 { return Err(error); }
+                std::thread::sleep(Duration::from_millis(25 * (attempt + 1)));
+            }
+        }
+    }
+    unreachable!()
 }
 
 fn same_entry(a: &Path, b: &Path) -> bool {
@@ -8996,7 +9187,7 @@ fn unique_name_in(dir: &Path, name: &str) -> String {
             1 => format!("{stem} copy{ext}"),
             _ => format!("{stem} copy {n}{ext}"),
         };
-        if !dir.join(&candidate).exists() {
+        if std::fs::symlink_metadata(dir.join(&candidate)).is_err() {
             return candidate;
         }
         n += 1;
@@ -9011,7 +9202,24 @@ fn unique_name_in(dir: &Path, name: &str) -> String {
 }
 
 fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
-    let meta = std::fs::metadata(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    let meta = std::fs::symlink_metadata(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(from).map_err(|e| format!("{}: {e}", from.display()))?;
+        #[cfg(unix)]
+        return std::os::unix::fs::symlink(target, to).map_err(|e| format!("{}: {e}", to.display()));
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            let result = if meta.file_attributes() & 0x10 != 0 {
+                std::os::windows::fs::symlink_dir(target, to)
+            } else {
+                std::os::windows::fs::symlink_file(target, to)
+            };
+            return result.map_err(|e| format!("{}: {e}", to.display()));
+        }
+        #[cfg(not(any(unix, windows)))]
+        return Err("Copying symbolic links is not supported on this platform".into());
+    }
     if meta.is_dir() {
         std::fs::create_dir(to).map_err(|e| format!("{}: {e}", to.display()))?;
         for ent in std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
@@ -9028,7 +9236,7 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
 
 fn rename_path_sync(path: &str, name: &str) -> Result<String, String> {
     let from = expand_home(path);
-    if !from.exists() {
+    if std::fs::symlink_metadata(&from).is_err() {
         return Err(format!("{}: No such file or directory", from.display()));
     }
     let parent = from
@@ -9054,7 +9262,7 @@ fn rename_path_sync(path: &str, name: &str) -> Result<String, String> {
         }
         return Ok(dest.to_string_lossy().into_owned());
     }
-    if dest.exists() {
+    if std::fs::symlink_metadata(&dest).is_ok() {
         return Err(already_exists(&file_label(&dest, name)));
     }
     if dest.starts_with(&from) {
@@ -9078,8 +9286,12 @@ pub async fn rename_path(
     let admission = admit_window_buffers(&window)?;
     run_admitted_blocking(admission, move || {
         let source = expand_home(&path);
-        crate::file_access::require(&app, &source, true)?;
         let parent = source.parent().ok_or("File has no parent directory")?;
+        if std::fs::symlink_metadata(&source).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            crate::file_access::require(&app, parent, true)?;
+        } else {
+            crate::file_access::require(&app, &source, true)?;
+        }
         let destination = resolve_under(parent, &name)?;
         crate::file_access::require(&app, &destination, true)?;
         rename_path_sync(&path, &name)
@@ -9089,10 +9301,15 @@ pub async fn rename_path(
 
 fn delete_path_sync(path: &str) -> Result<(), String> {
     let path = expand_home(path);
-    if !path.exists() {
-        return Err(format!("{}: No such file or directory", path.display()));
+    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    #[cfg(windows)]
+    if meta.file_type().is_symlink() {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x10 != 0 {
+            return std::fs::remove_dir(&path).map_err(|e| format!("{}: {e}", path.display()));
+        }
     }
-    if path.is_dir() {
+    if meta.is_dir() && !meta.file_type().is_symlink() {
         std::fs::remove_dir_all(&path).map_err(|e| format!("{}: {e}", path.display()))
     } else {
         std::fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))
@@ -9107,7 +9324,12 @@ pub async fn delete_path(
 ) -> Result<(), String> {
     let admission = admit_window_buffers(&window)?;
     run_admitted_blocking(admission, move || {
-        crate::file_access::require(&app, &expand_home(&path), true)?;
+        let source = expand_home(&path);
+        if std::fs::symlink_metadata(&source).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            crate::file_access::require(&app, source.parent().ok_or("Link has no parent")?, true)?;
+        } else {
+            crate::file_access::require(&app, &source, true)?;
+        }
         delete_path_sync(&path)
     })
     .await
@@ -9131,14 +9353,14 @@ fn copy_path_checked(
     validate: impl FnOnce(&Path, &Path) -> Result<(), String>,
 ) -> Result<String, String> {
     let from = expand_home(from);
-    if !from.exists() {
+    if std::fs::symlink_metadata(&from).is_err() {
         return Err(format!("{}: No such file or directory", from.display()));
     }
     let dest_parent = expand_home(dest_parent);
     if !dest_parent.is_dir() {
         return Err(format!("{} is not a folder", dest_parent.display()));
     }
-    if from.is_dir() && dir_contains(&from, &dest_parent) {
+    if std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.is_dir() && !meta.file_type().is_symlink()) && dir_contains(&from, &dest_parent) {
         return Err("Cannot paste a folder into itself.".into());
     }
     let name = unique_name_in(
@@ -9162,7 +9384,11 @@ pub async fn copy_path(
     run_admitted_blocking(admission, move || {
         let source = expand_home(&from);
         let parent = expand_home(&dest_parent);
-        crate::file_access::require(&app, &source, false)?;
+        if std::fs::symlink_metadata(&source).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            crate::file_access::require(&app, source.parent().ok_or("Link has no parent")?, false)?;
+        } else {
+            crate::file_access::require(&app, &source, false)?;
+        }
         crate::file_access::require(&app, &parent, false)?;
         copy_path_checked(&from, &dest_parent, |source, destination| {
             crate::file_access::validate_copy_tree(&app, source, destination)

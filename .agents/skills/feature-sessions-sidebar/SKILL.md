@@ -23,13 +23,23 @@ semantics. Source paths below are repository-relative.
 
 ## Preserve
 
+- Keep the final row fully readable in short and scrollable lists; no trailing
+  gradient layer may cover branch/provider content when the list ends.
+
 - Project identity, selected session and execution workspace are distinct. Use
   existing adoption/navigation routing for remote records; never fabricate IDs.
 - Archive, delete, stop, close and dismiss recovery are different operations.
   Recheck locks/permissions and use existing confirmation and recovery owners.
 - Standard/detailed rows show saved project identity above the title, status at
   the top right, and branch/provider history below. Reuse the rail label, logo or
-  mascot. Project-local lists keep project identity neutral with no custom ground.
+  mascot. Local rows keep neutral grounds; branch omits repo prefix equal to project.
+  Noncompact rows keep pin/archive/delete in the project header and reclaim their
+  hidden space through shared ActionHost slots. Pin replaces the project mark
+  in the same leading slot on interaction; pinned rows keep the pin visible.
+  Footer uses plain branch text
+  and 16px provider icons; title and footer do not shift on hover.
+  Hover/focus collapses status words to icons, preserving accessible names and
+  Working elapsed time. Resting rows retain their normal status labels.
   Last Sessions combines the last seven days across allowed projects; only that
   list applies project colors/grounds, preserving ActionHost interaction states.
   Global New first requires an explicit visible project choice; cancellation must
@@ -60,6 +70,12 @@ semantics. Source paths below are repository-relative.
   Sessions retains the complete list. Compare canonical project keys, including
   remote machine identity, rather than display names or execution-folder prefixes.
 - Preserve title drafts, focus, drag targets and native tree/menu semantics.
+- Inline rename occupies the existing card title slot, retaining project/status
+  and footer context. Regenerate title follows Rename in the single-row menu;
+  keep pending/error/retry on that row and prevent duplicate generation.
+- Title regeneration uses `src/features/sessions/model/regenerateSessionTitle.ts`
+  and Chat's `titlePreferences.ts`; preserve original owner, command receipt,
+  concurrent title checks and existing locks. It never submits a conversation turn.
 - Unsent text or attachments use the existing composer-draft subscription,
   including disk-restored drafts. Do not mark the session currently being typed
   in as an inactive draft; retain existing saved-draft/status precedence.
@@ -78,7 +94,9 @@ semantics. Source paths below are repository-relative.
   separate success banner. Preserve failures, skipped records and cleanup warnings.
 - Session detail hints cancel both pending and open previews when an ancestor
   scrolls, the window resizes or loses focus; unrelated pane scrolling does not
-  dismiss them. Dismissal must not restore focus to a row that moved out of view.
+  dismiss them. Show the full locale-formatted activity date/time using
+  `lastActivityAt`, with `updatedAt` as the legacy fallback.
+  Dismissal must not restore focus to a row that moved out of view.
 
 ## Conditional references and checks
 

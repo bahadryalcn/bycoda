@@ -513,6 +513,14 @@ fn finish_drag_preview(window: &WebviewWindow, state: &WindowTransferState) {
     }
 }
 
+/// Retire only the previous page's visual drag hint. Transfer reservations and
+/// ownership have independent lifetimes and must not be discarded on reload.
+pub(crate) fn page_reloaded(app: &AppHandle, label: &str) {
+    if let (Some(window), Some(state)) = (app.get_webview_window(label), app.try_state::<WindowTransferState>()) {
+        finish_drag_preview(&window, &state);
+    }
+}
+
 /// Destroying a destination releases its source immediately. Destroying a drag
 /// source also clears its last hover in every still-live destination.
 pub fn window_closed(app: &AppHandle, label: &str) {

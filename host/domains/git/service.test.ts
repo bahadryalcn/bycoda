@@ -3,9 +3,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileAsync as exec } from "../../../src/shared/lib/processExecution.node";
-import { hostBranches, createHostBranch, switchHostBranch } from "../../git-branches";
-import { hostWorktrees, resolveHostWorktreeAsync, createHostWorktree } from "../../git-worktrees";
-import { withHostGitMutation } from "../../git-mutations";
+import { hostBranches, createHostBranch, switchHostBranch } from "../../git/git-branches";
+import { hostWorktrees, resolveHostWorktreeAsync, createHostWorktree } from "../../git/git-worktrees";
+import { withHostGitMutation } from "../../git/git-mutations";
 import { hostGitAction, hostGitIndex, hostFileDiff } from "../../workspace";
 import { createHostGitService, type HostGitServicePorts } from "./service";
 

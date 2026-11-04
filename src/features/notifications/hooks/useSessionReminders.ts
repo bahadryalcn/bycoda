@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { loadNotificationsEnabled, NOTIFICATIONS_CHANGE_EVENT } from "../model/notifications";
-import { loadSoundsEnabled, SOUNDS_CHANGE_EVENT } from "../../settings/model/sounds";
+import { loadNotificationsEnabled, subscribeNotificationsEnabled } from "../model/notifications";
+import { loadSoundsEnabled, subscribeSoundsEnabled } from "../../settings/model/sounds";
 import {
   getProjectNotificationRule,
   subscribeNotificationPreferences,
@@ -204,9 +204,8 @@ export function useSessionReminders(
     }, 30_000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener(NOTIFICATIONS_CHANGE_EVENT, configureCurrent);
-    window.addEventListener(SOUNDS_CHANGE_EVENT, configureCurrent);
-    window.addEventListener("storage", configureCurrent);
+    const unsubscribeNotifications = subscribeNotificationsEnabled(configureCurrent);
+    const unsubscribeSounds = subscribeSoundsEnabled(configureCurrent);
     const unsubscribePreferences = subscribeNotificationPreferences(configureCurrent);
     return () => {
       disposed = true;
@@ -217,9 +216,8 @@ export function useSessionReminders(
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener(NOTIFICATIONS_CHANGE_EVENT, configureCurrent);
-      window.removeEventListener(SOUNDS_CHANGE_EVENT, configureCurrent);
-      window.removeEventListener("storage", configureCurrent);
+      unsubscribeNotifications();
+      unsubscribeSounds();
     };
   }, [openHere, refresh, configure]);
 

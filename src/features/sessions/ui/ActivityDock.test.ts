@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import { ActivityDock } from "./ActivityDock";
+import { SubagentStateLine } from "./SubagentAnatomy";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
@@ -74,6 +75,95 @@ afterEach(() => {
 });
 
 describe("ActivityDock", () => {
+  it("keeps counts behind an info card without toggling the agent list", async () => {
+    render({ sessionId: "info-card", busy: true, blocks: [user, agent] });
+    expect(visibleSessionTestText(dock()!)).not.toContain("1 running");
+    const info = container.querySelector<HTMLButtonElement>('[aria-label="Background work"]')!;
+    act(() => info.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("1 running");
+    expect(container.querySelector("[data-dock-toggle]")?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    act(() => info.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => {
+      info.dispatchEvent(new Event("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 330));
+    });
+    expect(document.querySelector("[data-hover-card]")?.textContent).toContain("1 running");
+  });
+  it("keeps child identity and failed step metrics separate from lifecycle and opens the exact run", () => {
+    const onOpenAgent = vi.fn();
+    const run: Block = {
+      ...agent,
+      tool: { ...agent.tool!, status: "completed" },
+      agentRun: {
+        name: "Completed review",
+        model: "gpt-6.1-sol",
+        steps: [{ id: "check", kind: "tool", text: "Check", status: "failed" }],
+        startedAt: 10_000,
+        endedAt: 72_000,
+      },
+    };
+    render({
+      sessionId: "compact-identity",
+      harness: "codex",
+      busy: true,
+      blocks: [user, run],
+      onOpenAgent,
+    });
+    act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
+    const row = container.querySelector<HTMLButtonElement>('[data-dock-agent="a1"]')!;
+    expect(row.getAttribute("data-dock-agent-state")).toBe("done");
+    expect(row.getAttribute("aria-label")).toContain("Done");
+    expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
+      "Completed review",
+    );
+    expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
+      "gpt-6.1-sol",
+    );
+    expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1 failed");
+    expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1m 2s");
+    act(() => row.click());
+    expect(onOpenAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ blockId: "a1", status: "done" }),
+    );
+  });
+
+  it("highlights failed steps without marking a running or completed agent as failed", () => {
+    const steps = [
+      { id: "read", kind: "tool" as const, text: "Read", status: "completed" },
+      { id: "test", kind: "tool" as const, text: "Test", status: "failed" },
+    ];
+    const run = { ...agent, agentRun: { name: "Reviewer", steps } };
+    render({ sessionId: "status-colors", busy: true, blocks: [user, run] });
+    act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
+    const row = dock()!.querySelector('[data-dock-agent="a1"]')!;
+    expect(row.getAttribute("aria-label")).toContain("Running");
+    const failed = [...row.querySelectorAll("span")].find(
+      (span) => span.textContent === "1 failed" && span.className.includes("--ui-tone-danger-fg"),
+    );
+    expect(failed?.className).toContain("--ui-tone-danger-fg");
+    expect(row.textContent).toContain("2 steps, 1 failed");
+
+    act(() =>
+      root.render(
+        createElement(SubagentStateLine, {
+          block: { ...run, tool: { ...run.tool!, status: "completed" } },
+          busy: false,
+          steps,
+        }),
+      ),
+    );
+    const state = container.querySelector("[data-subagent-state]")!;
+    expect(state.textContent).toContain("Done");
+    expect(state.querySelector(".font-medium")?.className).toContain("--ui-tone-success-fg");
+    const completedFailure = [...state.querySelectorAll("span")].find(
+      (span) => span.textContent === "1 failed" && span.className.includes("--ui-tone-danger-fg"),
+    );
+    expect(completedFailure?.className).toContain("--ui-tone-danger-fg");
+  });
+
   it("renders nothing for a session that was idle when opened", () => {
     render();
     expect(dock()).toBeNull();
@@ -160,7 +250,7 @@ describe("ActivityDock", () => {
   it("keeps agent activity available while a question form is visible", () => {
     render({ busy: true, pendingQuestion: true, questionPresented: true, blocks: [user, agent] });
     expect(dock()).not.toBeNull();
-    expect(container.querySelector("button[aria-expanded]")).not.toBeNull();
+    expect(container.querySelector("button[data-dock-toggle]")).not.toBeNull();
   });
 
   it("lists agents behind a button and opens one on click", () => {
@@ -168,8 +258,9 @@ describe("ActivityDock", () => {
     render({ busy: true, blocks: [user, agent], onOpenAgent });
     expect(container.querySelector("[data-dock-agent]")).toBeNull();
 
-    const chip = container.querySelector<HTMLButtonElement>("button[aria-expanded]");
-    expect(chip?.textContent).toContain("1 running");
+    const chip = container.querySelector<HTMLButtonElement>("button[data-dock-toggle]");
+    expect(chip?.getAttribute("aria-label")).toContain("1 running");
+    expect(chip?.textContent).not.toContain("1 running");
     act(() => chip?.click());
 
     const row = container.querySelector<HTMLButtonElement>("[data-dock-agent='a1']");
@@ -188,7 +279,7 @@ describe("ActivityDock", () => {
     };
     // Its own session id: the list's open state is remembered per session.
     render({ busy: true, blocks: [user, timed], sessionId: "s-timing" });
-    act(() => container.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
+    act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
     expect(container.querySelector("[data-dock-agent='a1']")?.textContent).toContain("1m 2s");
   });
 
@@ -198,7 +289,7 @@ describe("ActivityDock", () => {
         /^Stop(ping)? /.test(button.getAttribute("aria-label") ?? ""),
       );
     const expand = () =>
-      act(() => container.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
+      act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
 
     it("stops one running agent on its own and reads Stopping until it settles", async () => {
       let finish = () => {};

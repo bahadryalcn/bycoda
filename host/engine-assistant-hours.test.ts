@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
 import type { HostProvider } from "./providers";
-import { AssistantTurnPolicyDeferredError, deferredAssistantTurn } from "./assistant-turn-policy";
+import { AssistantTurnPolicyDeferredError, deferredAssistantTurn } from "./assistant/core/assistant-turn-policy";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();

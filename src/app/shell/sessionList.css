@@ -6,6 +6,11 @@
   container: session-list / inline-size;
 }
 
+/* Keep the selected row legible while the independent sidebar glass is active. */
+html.has-native-glass:not(.theme-light) .bycoda-sidebar [data-session-card][data-selected] {
+  --action-host-selected: var(--ui-navigation-selected-layer);
+}
+
 /* Keep prior providers recognizable while the last active provider retains its brand. */
 .session-provider-inactive {
   filter: grayscale(1);
@@ -73,4 +78,33 @@
   to {
     stroke-dashoffset: 0;
   }
+}
+
+/* The pin replaces the project mark in one stable slot, using shared action reveal states. */
+[data-session-card]:is(:hover, :focus-within, [data-selected])
+  .session-project-slot:has([data-action-inline])
+  [data-session-project-mark],
+.session-project-slot[data-pinned="true"]:has([data-action-inline]) [data-session-project-mark] {
+  visibility: hidden;
+}
+@media (hover: none), (pointer: coarse) {
+  .session-project-slot:has([data-action-inline]) [data-session-project-mark] {
+    visibility: hidden;
+  }
+}
+
+/* Free header space for row actions while retaining the status name for assistive technology. */
+[data-session-card]:is(:hover, :focus-within) .session-row-status-label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+[data-session-card]:is(:hover, :focus-within) .session-working-label {
+  display: none;
 }

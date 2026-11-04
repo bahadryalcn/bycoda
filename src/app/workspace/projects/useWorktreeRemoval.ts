@@ -189,7 +189,7 @@ export function useWorktreeRemoval({
         const affected = new Set([...ids, ...removed.sessionIds]);
         if (isEqualOrInside(projectCwdRef.current, path)) {
           setProjectCwd(removed.projectCwd);
-          setRecents(rememberProject(removed.projectCwd));
+          setRecents(await rememberProject(removed.projectCwd));
         }
         for (const id of affected) {
           invalidateLoadedSession(id);

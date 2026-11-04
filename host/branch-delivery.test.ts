@@ -8,7 +8,7 @@ import {
   DeliveryEffectNotAppliedError,
   type DeliveryPublicationAdapter,
 } from "./branch-delivery";
-import { hostGitRepositoryKey } from "./git-mutations";
+import { hostGitRepositoryKey } from "./git/git-mutations";
 import type { ManagedWorkspace, WorkspaceOperation } from "./workspace-contracts";
 import type {
   ExecutionActivityReservations,

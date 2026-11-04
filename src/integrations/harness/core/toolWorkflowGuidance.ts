@@ -6,7 +6,7 @@ export type ToolWorkflowAvailability = {
 };
 
 /** Change when routing or recovery instructions change; delivery fingerprints include this text. */
-export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-04.1";
+export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-04.2";
 
 /** Keep these routes aligned with the host registry; exact schemas and permissions stay host-owned. */
 export const CONVERSATION_TOOL_WORKFLOWS = [
@@ -24,7 +24,7 @@ export const CONVERSATION_TOOL_WORKFLOWS = [
   ],
   [
     "devices",
-    "machines.list, devices.status/list, then preflight/open or preview; verify the matching device/preview result.",
+    "machines.list, devices.status/list and preflight for the exact target. Before input claim devices.control.claim with a unique requestId, keep its leaseId, renew before expiry, and release when done. Inspect with devices.inspect; pressNode requires its fresh inspectionId and nodeId. Bind every action to the leaseId and a unique requestId; reconcile uncertain outcomes without sending again. Preview and capture results do not prove app behavior.",
   ],
   [
     "machines",

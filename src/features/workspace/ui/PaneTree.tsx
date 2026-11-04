@@ -75,6 +75,7 @@ import { useShellSessionsSelector } from "../../sessions/model/sessionsStore";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
 import type { SessionFolderTarget } from "../../sessions/model/sessionFolders";
+import type { SessionOrganizationResult } from "../../sessions/model/sessionOrganizationStore";
 import type { Worktree } from "../../source-control/model/worktrees";
 
 type Shared = {
@@ -136,7 +137,7 @@ type Shared = {
   onCompactContext: (sessionId: string) => boolean;
   onRewindMessage?: SessionPaneProps["onRewindMessage"];
   onNewSession?: SessionPaneProps["onNewSession"];
-  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void;
+  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void | Promise<void | SessionOrganizationResult>;
   onResumeProviderSession?: (sessionId: string) => void;
   onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
   onEditQueuedMessage: (

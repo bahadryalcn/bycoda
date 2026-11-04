@@ -15,6 +15,13 @@ export type NativeOutputSessionStart = {
   ready: Promise<string | undefined>;
 };
 
+/** Room sends cannot transfer ownership until the exact local row exists. */
+export async function requireRoomNativeOutput(start: NativeOutputSessionStart | undefined, isCurrent: () => boolean): Promise<void> {
+  if (!start) throw new Error("Room submission requires its local durable session owner.");
+  if (!(await start.ready)) throw new Error("Room submission could not be durably recorded before dispatch.");
+  if (!isCurrent()) throw new Error("Turn changed before it started");
+}
+
 /** Begins the pre-provider save without waiting for it, so registry preparation
  * overlaps the write. The caller must await `ready` before any provider effect. */
 export function startNativeOutputSession(

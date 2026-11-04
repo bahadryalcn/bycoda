@@ -104,7 +104,7 @@ export class LiveAgentWindowWatches {
     this.queued = true;
     queueMicrotask(() => {
       this.queued = false;
-      if (!this.disposed) void this.check();
+      if (!this.disposed) void this.check().catch(() => this.retryMissing());
     });
   }
   private retryMissing(): void {

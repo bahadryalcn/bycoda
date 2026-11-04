@@ -2,6 +2,9 @@
 
 Voice is **off by default**. Enable **Settings → Chat → Voice companion** on
 this device. When disabled, no voice launcher or companion is shown in chat.
+**Enable dictation** is a separate device preference in the same section. Turning
+voice companion off does not turn dictation off, and enabling dictation does not
+enable the companion or its tools.
 Disabling it unmounts the companion, cancels pending speech and side replies,
 and releases the microphone and local engines without stopping coding work.
 
@@ -42,6 +45,12 @@ In **Global** mode, a project missing from the connected Host's directory does
 not prevent listening. Unverified history and summaries remain excluded. Hiding
 or locking a project captured by the conversation still closes the microphone.
 
+## Waiting and recovery
+
+Host discovery, native presence checks, voice tool responses and speech streams have bounded waits. A failed presence check means unknown presence. A tool timeout can mean its operation is still running: inspect the original request or work item before retrying. Reopening voice does not replay operations.
+
+The session work indicator describes the selected coding conversation, separately from listening and playback. No recent session updates means no new transcript update was observed for 90 seconds; background work can still be running. Use the existing Stop work control to request cancellation. Disconnecting voice only closes the voice connection.
+
 ## Identity, language and memory
 
 Identity and communication rules belong to the Host assistant profile. **Customize**
@@ -81,11 +90,11 @@ choose **Finish turn** to transcribe and send the captured turn. Silence and Sma
 Turn cannot finish it automatically. Long silent intervals are omitted from the
 capture buffer. At its two-minute audio limit, capture waits for Finish turn and
 shows a notice rather than answering automatically. While voice is connected,
-the companion and floating window show the current **Automatic replies** mode
-(**Automatic** when compact). Click it or the adjacent **Turn ending** arrow to
-choose **Wait until I finish**. The main action then becomes **Finish turn**
-(**Finish** when compact), which submits the captured speech only when clicked.
-The menu checks the current mode and also offers **Automatic replies**. Floating
+the companion and floating window offer **Reply when I pause** and
+**I'll finish when ready** with short explanations. In manual mode, **Finish turn**
+submits the captured speech only when clicked. Compact mode uses an icon with a
+tooltip; choose the turn mode from its options menu.
+The menu checks the current mode. Floating
 windows use a native menu so both choices remain reachable in the compact pill.
 The same choice remains available as **I decide when my turn ends**
 in Voice settings, independently of the saved rule.
@@ -176,7 +185,10 @@ voice connection running. The choice is saved on this device.
 
 The visual distinguishes disconnected, connecting, listening, your speech,
 preparing a reply, assistant playback, microphone paused and error states through
-shape as well as motion. Your speech responds to the microphone level. Assistant
+shape as well as motion. Listening reacts to the actual microphone level on both
+local and cloud voice. **Sound detected** confirms incoming audio, not recognized
+words or delivery to a model. Reduced motion retains an input-sensitive still
+indicator. Assistant
 speech appears when reply audio actually starts playing, rather than while it is
 being prepared. A separate corner indicator means the target session's agent is
 working; it can appear alongside any voice state. The status text remains the
@@ -184,7 +196,9 @@ accessible description. Reduced motion keeps recognizable still poses.
 
 Choose **Compact voice companion** in the panel header to keep a small pill with
 the visual, session title, the latest spoken line (reply, your words or an error),
-microphone pause/resume and expand actions. The voice
+microphone pause/resume, speaker mute, disconnect and expand actions. Manual turn
+ending has an icon instead of a text button. Speaker mute leaves the conversation
+connected; disconnect ends voice without stopping the coding session. The voice
 session keeps running, and the compact preference is saved with voice settings.
 Choose **Expand voice companion**, or double-click the pill's visual, to restore
 the full panel and its controls. Drag the pill's visual, or focus that move
@@ -202,7 +216,7 @@ floats, the app shows a **Return voice companion to this window** button in the
 companion's usual corner.
 
 The floating window offers the same visual, session title, latest line,
-**Start voice**, **Pause mic**/**Resume**, **Silence**, **Disconnect voice** and
+**Start voice**, **Pause mic**/**Resume**, speaker mute, **Silence**, **Disconnect voice** and
 compact/expand actions. Its close button (**Return voice companion to the app**)
 puts the companion back in bycoda and brings the app forward; voice keeps running.
 Use **Disconnect voice** to end the conversation. Drag its visual or empty surface to move it;
@@ -216,6 +230,21 @@ your commands back. Closing that bycoda window or reloading it closes the floati
 window. Closing the floating window returns the controls to the app without
 disconnecting voice. On Linux Wayland compositors, staying on top depends on the
 compositor.
+
+### Push to talk and tool activity
+
+Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
+While voice is connected and the microphone is paused, hold the shortcut to
+capture one turn. Release it to submit the captured speech and pause the microphone
+again. Escape or losing focus cancels capture. The shortcut never starts a closed
+voice connection or opens the microphone while disconnected.
+
+The expanded companion and floating window show recent tool activity with the
+tool, target, elapsed wait and observed outcome. **Stop waiting** releases voice
+from a pending result; it does not certify that the underlying action stopped.
+An uncertain action keeps its request identity for a status check. A late result
+updates the activity entry without replaying the action. Cards asking for your
+choice or job review can wait for your answer; closing voice cancels that wait.
 
 ## Audio stays on this computer
 
@@ -372,7 +401,11 @@ for transcription and is not written to recordings or logs.
 
 ## Dictation in the message box
 
-When voice is enabled, the message box shows a microphone button next to Send.
+Enable **Settings → Chat → Enable dictation** to show a microphone button next to
+Send. It works even when voice companion is disabled. Both features default to off
+on a new device. Existing voice users retain dictation after upgrading; after that,
+each switch is independent. Disabling dictation cancels capture and pending
+transcription without changing the message draft.
 Select it and speak: each time you pause, the phrase is recognized on this
 computer and inserted where the caret is, with a space between words. Select it
 again to stop; anything you were still saying is transcribed before the
@@ -387,6 +420,35 @@ opens right away, so you can start speaking while it loads: those phrases are
 inserted, in order, as soon as the recognizer is ready. Dictating again within
 five minutes skips the wait. Select the button while it is preparing to cancel. Errors, such as a missing installation or a
 blocked microphone, appear above the message box.
+
+With only dictation enabled, **Dictation setup** installs recognition support
+without reply-voice packages or models. Existing Python/model locations and voice
+companion playback preferences are retained. Detection never installs anything;
+choose **Install** explicitly to prepare missing files.
+
+### Microphone permission
+
+Feature switches do not grant OS or browser permission and never open the
+microphone. **Microphone access** shows the browser's reported permission where
+supported; otherwise permission stays unknown. **Check microphone access**
+explicitly requests access, then immediately closes all captured tracks. It checks
+access, not speech recognition or sound quality. Cancel or leaving the page
+invalidates the result; a late grant is immediately closed. Dismiss a pending
+system permission prompt before starting another check.
+
+- macOS: allow bycoda in **System Settings → Privacy & Security → Microphone**.
+- Windows: allow microphone access and desktop apps in **Settings → Privacy &
+  security → Microphone** (Windows 10 uses **Privacy → Microphone**).
+- Linux: check the sound input and microphone permissions for the app's sandbox
+  or desktop environment. There is no universal privacy-pane shortcut.
+- Browser: allow microphone access for the current site and check system input
+  access. A secure context is required.
+
+Native macOS and Windows denial messages offer **Open Privacy Settings** in
+settings, the message box, companion and setup test. Opening that pane does not
+grant permission; allow access there, return and retry explicitly. Missing input
+devices, unavailable selected devices and capture failures have separate recovery
+messages. Permission errors do not automatically retry or submit text.
 
 The button shows a rotating ring while preparing, microphone-level bars while
 listening, and animated dots while finishing transcription. Silence lowers the
@@ -404,8 +466,15 @@ A newer accepted transcript cancels an older
 pending side reply and prevents a stale decision from submitting work. An acoustic
 onset alone does not cancel the reply or stop playback.
 
+**Experimental OpenAI turn detection** is off by default. In automatic mode it
+sends microphone frames continuously to OpenAI while listening and uses semantic
+turn detection. Reconnect voice after changing it. Manual turn ending and push
+to talk cannot be combined with this experiment. Local speech onset and a matching
+completed transcript remain required before a response. This setting grants no
+background microphone permission.
+
 Local recognition rejects uncertain final decodes using speech probability,
-decoder confidence and repetition checks. Grok and OpenAI use local candidate
+decoder confidence and repetition checks. By default, Grok and OpenAI use local candidate
 segmentation and manual response creation after a matching completed transcript;
 provider speech-start events cannot interrupt playback or authorize work. Empty
 results and non-speech event annotations do not request a reply or run tools.
@@ -492,8 +561,30 @@ Existing owner approvals still apply, including social sends and Inbox/PR writes
 An automation's **pause** stops future launches; **stop run** targets a specific
 active run. Acceptance or queuing does not mean completion. When a tool result
 is uncertain, the assistant must inspect its state rather than blindly retry.
-Owner-only settings, sign-in, permissions and operations without an exposed API
-remain in the existing UI; voice can open supported panels/settings sections.
+Application tools also expose session configuration and unsent handoff/drafts,
+workspace lifecycle and delivery review, sprints, project organization, Git
+status/stage/unstage/commit/selected-file stash/fast-forward pull, provider status
+and quota refresh, and theme/density/language/voice preferences. Every mutation
+requires its exact native review and existing scope/revision checks. Global
+application preferences and provider metadata use the registered Assistant Room
+thread without a coding session; project-specific defaults still need an explicit
+target. Visible project discovery excludes locked projects. Creating
+global tasks, goals or automations requires explicit reviewed execution settings;
+goal plan approval remains separate. New handoffs and drafts do not send a turn.
+
+Crew management can use the same Room thread against an explicit project. Read
+its current state first, then retain the returned revision and a stable operation
+ID for a change. The operation ID is separate from a crew run or directive ID.
+Starting work creates a real supervised coordinator through the existing Crew
+owner. Native review does not replace task review, permission decisions or
+delivery approval. If a result is uncertain, inspect the original operation and
+run before requesting another start.
+
+Lists are bounded and report pagination. Session lists include activity evidence;
+absence of recent activity does not prove a stuck provider. The event subscription
+is a bounded long poll of committed project changes, without durable replay or an
+external PR event feed. Sign-in, credential changes, pairing, publication and
+destructive recovery remain in their existing owner workflows.
 
 Optional native computer use exposes `desktop.status`, `desktop.snapshot` and
 `desktop.act`. The owner configures the verified helper and app allowlist in
@@ -548,6 +639,21 @@ explicitly. Draft/file contents remain data and never authorize a send, deletion
 or permission change.
 
 ## Verification boundary
+
+**Speak job updates while voice is connected** is a separate, default-off Room
+preference. Eligible progress, completion and needs-input events use the existing
+voice connection. Presence, quiet hours, microphone/speaker mute and held
+announcements still apply. A delivery receipt requires actual playback completion;
+uncertain output is not replayed. The first update can arrive before you speak.
+
+Private Native history is registered against the original Room, Host and runtime
+before cloud connection seeding. Missing registration or an uncertain reply keeps
+the provider disconnected. Privacy revocation waits for that exact runtime's
+closure; reopening the panel does not prove an old connection has closed.
+
+Background wake word is unavailable until a qualified local keyword engine,
+model provenance and explicit microphone lifecycle are provided. The semantic
+turn experiment does not enable wake word.
 
 Synthetic offline Turkish audio and subscription-login smoke checks can verify
 the individual runtime paths. They do not prove physical microphone acoustics,

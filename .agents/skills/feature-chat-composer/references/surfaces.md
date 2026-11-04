@@ -4,6 +4,8 @@ Paths below are repository-root relative. Use this map for cross-producer, persi
 
 ## Input and choices
 
+- `src/features/sessions/ui/BycodaWelcome.tsx`: decorative model-change acknowledgment. `SessionPane.tsx` captures the selected harness with each animation run; render its shared `HarnessIcon` and preserve motion/visibility dismissal.
+
 - `src/features/sessions/ui/Composer.tsx`, `ComposerSuggestions.tsx`, `ComposerTips.tsx`, `QuestionForm.tsx`, `QueuedMessageEditDialog.tsx`: input, suggestions, questions and queue editing (basenames are in the same UI directory).
 - In that directory, `ModelPicker.tsx`, `ModelFlyout.tsx`, `ModelExtras.tsx`, `ProviderAccountMenu.tsx`, `ProviderAccountRecoveryDialog.tsx`, `ProviderSignInDialog.tsx`, `AccessPicker.tsx`, `SessionDirsPicker.tsx` and `SessionFolderPicker.tsx` compose choices; policies remain with their domain owners.
 - `AttachmentChip.tsx`, `AttachmentFilePreview.tsx`, `AttachmentTokenText.tsx`, `SkillTokenText.tsx`, `FileMentionPicker.tsx`, `McpServerPicker.tsx`, `TranslationResultDialog.tsx`, `TranscriptSelectionMenu.tsx` preserve attachment/token/translation/selection actions.

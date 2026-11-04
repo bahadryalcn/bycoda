@@ -27,6 +27,14 @@ export interface SessionDraftActionDeps {
   setStoredLinkedSessions: Dispatch<SetStateAction<SessionSummary[]>>;
 }
 
+/** Shared draft construction for interactive and explicitly owned Room creation. */
+export function addSessionDraft(session: Session, text: string, attachments: Attachment[] = [], appRequestId?: string): Session {
+  if (sessionDraftBlock(session)) return session;
+  const title = canReplaceSessionTitle(session.title, session.harness, HARNESS_LABEL[session.harness])
+    ? titleFromPrompt(text, session.harness, attachments) : session.title;
+  return { ...session, title, blocks: [...session.blocks, { id: crypto.randomUUID(), role: "user", text, ...(attachments.length ? { attachments } : {}), draft: true, ...(appRequestId ? { appRequestId } : {}) }] };
+}
+
 export function useSessionDraftActions({
   pendingPersist,
   lastPersisted,
@@ -50,32 +58,10 @@ export function useSessionDraftActions({
       ) {
         return false;
       }
-      const placeholderTitle = canReplaceSessionTitle(
-        current.title,
-        current.harness,
-        HARNESS_LABEL[current.harness],
-      );
-      const title = placeholderTitle
-        ? titleFromPrompt(text, current.harness, attachments)
-        : current.title;
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId && !sessionDraftBlock(session)
-            ? {
-                ...session,
-                title,
-                blocks: [
-                  ...session.blocks,
-                  {
-                    id: crypto.randomUUID(),
-                    role: "user",
-                    text,
-                    ...(attachments.length > 0 ? { attachments } : {}),
-                    draft: true,
-                    ...(appRequestId ? { appRequestId } : {}),
-                  },
-                ],
-              }
+            ? addSessionDraft(session, text, attachments, appRequestId)
             : session,
         ),
       );

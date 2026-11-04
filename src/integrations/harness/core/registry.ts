@@ -23,8 +23,12 @@ import {
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { NativeCommandProvider } from "./nativeCommands";
 import { loadSkillRestrictions } from "../../../features/skills/model/skillPreferences";
+import { withInstalledSkillScope } from "../../../features/skills/model/skillProviderScope";
+import { listSkills } from "../../../platform/tauri/fs";
 import { withSkillPolicy } from "./skillPolicy";
-import { captureChildProcess, captureChildControlTurn, type ChildProcessHandle } from "./child";
+import { captureChildProcess, captureChildControlTurn, hasHeadlessChildBackend, type ChildProcessHandle } from "./child";
+import { flushHostSessionBindings } from "../../../features/connections/model/sessionExecutionBinding";
+import { acquireNativeSessionClaim, markNativeSessionClaim, settleNativeSessionClaim } from "../../../features/connections/model/hostSessionBindingDatabase";
 import {
   beginNativeControlTurn,
   finishNativeControlTurn,
@@ -35,6 +39,19 @@ import { drainRetirementsForWriter, retireProviderOwner } from "./providerRetire
 import { beginHandoffPhase } from "./handoffPhase";
 import { formatDuration } from "../../../shared/i18n/format";
 import { TurnNotReadyError } from "./types";
+import { retireProviderEpoch } from "./providerEpoch";
+import { releaseOwnedOpenCodeForCapability } from "../providers/opencode/opencodeService";
+
+async function operationSkillPolicy(cwd: string, provider: string) {
+  const policy = await loadSkillRestrictions(cwd);
+  // Unit/fixture callers outside native desktop have no filesystem bridge.
+  if (!cwd.startsWith("remote://") && !(typeof isTauri === "function" && isTauri())) return policy;
+  const [inventory, eligible] = await Promise.all([
+    listSkills(cwd),
+    listSkills(cwd, null, provider),
+  ]);
+  return withInstalledSkillScope(policy, provider, [...inventory, ...eligible]);
+}
 import type {
   ApprovalDecision,
   CompactContextInput,
@@ -51,6 +68,9 @@ export type TitleInput = {
   sessionId: string;
   cwd: string;
   message: string;
+  model?: string;
+  modelSettings?: Record<string, string>;
+  operationContext?: HarnessOperationContext;
   providerAccountId?: string;
 };
 
@@ -233,6 +253,38 @@ const adapters = new Map<HarnessId, HarnessAdapter>();
 export const HARNESS_IDLE_PARK_MS = 5 * 60_000;
 const idleParkTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const retainedWriters = new Map<string, HarnessId>();
+// A claim survives turn completion and follows the warm physical writer. A
+// rejected/unknown acquisition stays in this map: silently issuing another ID
+// could overlap an accepted original request.
+const nativeSessionClaims = new Map<string, Promise<import("./controlTurn").NativeSessionCapability | null>>();
+function captureNativeSessionClaim(sessionId: string): Promise<import("./controlTurn").NativeSessionCapability | null> | undefined {
+  if (!(typeof isTauri === "function" && isTauri()) || hasHeadlessChildBackend()) return undefined;
+  const existing = nativeSessionClaims.get(sessionId);
+  if (existing) return existing;
+  let acquisitionStarted = false;
+  const claim: Promise<import("./controlTurn").NativeSessionCapability | null> = (async () => {
+    await flushHostSessionBindings(sessionId);
+    acquisitionStarted = true;
+    const capability = await acquireNativeSessionClaim(sessionId);
+    if (capability) await markNativeSessionClaim(capability);
+    return capability;
+  })().catch((error: unknown) => {
+    // A failure before native admission is known unstarted and can be retried.
+    if (!acquisitionStarted && nativeSessionClaims.get(sessionId) === claim)
+      nativeSessionClaims.delete(sessionId);
+    throw error;
+  });
+  // The caller can be cancelled before reaching its queued operation.
+  void claim.catch(() => undefined);
+  nativeSessionClaims.set(sessionId, claim);
+  return claim;
+}
+async function confirmCapturedNativeClaim(sessionId: string, claim: Promise<import("./controlTurn").NativeSessionCapability | null> | undefined): Promise<void> {
+  if (!claim) return;
+  await claim;
+  if (nativeSessionClaims.get(sessionId) !== claim)
+    throw new Error("The captured Native session owner retired before this operation started.");
+}
 const sessionOperationTails = new Map<string, Promise<void>>();
 /** Idle releases the last turn left running; joined by the session's queue tail. */
 const deferredIdleReleases = new Map<string, Promise<void>>();
@@ -364,16 +416,17 @@ function operationInput<I extends HarnessSessionInput>(input: I, owner: AdapterO
   };
 }
 
-async function beginOperationControl(input: HarnessSessionInput): Promise<{
+async function beginOperationControl(input: HarnessSessionInput, claim: Promise<import("./controlTurn").NativeSessionCapability | null> | undefined): Promise<{
   control?: ControlTurnHandle;
   processes: Set<ChildProcessHandle>;
 }> {
   const processes = new Set<ChildProcessHandle>();
   const original = captureChildProcess(input.sessionId);
   if (original) processes.add(original);
+  const capability = await claim;
   const control =
     typeof isTauri === "function" && isTauri()
-      ? await beginNativeControlTurn(input.sessionId, input.cwd, input.appAccess === true, invoke)
+      ? await beginNativeControlTurn(input.sessionId, input.cwd, input.appAccess === true, invoke, capability ?? undefined)
       : undefined;
   if (control) nativeControlTurns.set(input.sessionId, { handle: control, processes });
   activeTurnSessions.add(input.sessionId);
@@ -575,6 +628,7 @@ export function sendHarnessTurn(
   },
 ) {
   const { prepareText, lightweightWorktree, onReplyEnded, ...input } = request;
+  const nativeClaim = captureNativeSessionClaim(input.sessionId);
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   let ready!: () => void;
   const started = new Promise<void>((resolve) => {
@@ -591,6 +645,7 @@ export function sendHarnessTurn(
   turnSubmissions.set(input.sessionId, submission);
   return queueSessionOperation(input.sessionId, async () => {
     try {
+      await confirmCapturedNativeClaim(input.sessionId, nativeClaim);
       assertHarnessModel(input.harness, input);
       if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
         throw new Error("Turn cancelled before it started");
@@ -603,9 +658,9 @@ export function sendHarnessTurn(
       await drainRetirementsBestEffort(input.sessionId, input.harness);
       const guidance = Promise.allSettled([
         harnessRuntimeHints(input.sessionId),
-        loadSkillRestrictions(input.cwd),
+        operationSkillPolicy(input.cwd, input.harness),
       ]);
-      const { control: controlTurn, processes } = await beginOperationControl(input);
+      const { control: controlTurn, processes } = await beginOperationControl(input, nativeClaim);
       submission.resolveControl(controlTurn);
       try {
         const [runtime, policy] = await guidance;
@@ -713,8 +768,10 @@ export function compactHarnessContext(
     ...request,
     modelSettings: request.modelSettings ? { ...request.modelSettings } : undefined,
   };
+  const nativeClaim = captureNativeSessionClaim(input.sessionId);
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
+    await confirmCapturedNativeClaim(input.sessionId, nativeClaim);
     assertHarnessModel(input.harness, input);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Compaction cancelled before it started");
@@ -728,11 +785,11 @@ export function compactHarnessContext(
     cancelIdlePark(input.sessionId);
     assertAdapterOperationReady(input.sessionId);
     await drainRetirementsBestEffort(input.sessionId, input.harness);
-    const { control, processes } = await beginOperationControl(input);
+    const { control, processes } = await beginOperationControl(input, nativeClaim);
     try {
       const owner = beginAdapterOperation(input.sessionId, adapter, control, processes);
       try {
-        const skillPolicy = await loadSkillRestrictions(input.cwd);
+        const skillPolicy = await operationSkillPolicy(input.cwd, input.harness);
         if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
           throw new Error("Compaction cancelled before it started");
         owner.entered = true;
@@ -772,8 +829,10 @@ export function rewindHarnessLastTurn(
     modelSettings: request.modelSettings ? { ...request.modelSettings } : undefined,
     attachments: request.attachments?.map((attachment) => ({ ...attachment })),
   };
+  const nativeClaim = captureNativeSessionClaim(input.sessionId);
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
+    await confirmCapturedNativeClaim(input.sessionId, nativeClaim);
     assertHarnessModel(input.harness, input);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Edit cancelled before it started");
@@ -784,11 +843,11 @@ export function rewindHarnessLastTurn(
     cancelIdlePark(input.sessionId);
     assertAdapterOperationReady(input.sessionId);
     await drainRetirementsBestEffort(input.sessionId, input.harness);
-    const { control, processes } = await beginOperationControl(input);
+    const { control, processes } = await beginOperationControl(input, nativeClaim);
     try {
       const owner = beginAdapterOperation(input.sessionId, adapter, control, processes);
       try {
-        const policy = await loadSkillRestrictions(input.cwd);
+        const policy = await operationSkillPolicy(input.cwd, input.harness);
         if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
           throw new Error("Edit cancelled before it started");
         owner.entered = true;
@@ -848,7 +907,7 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
     cancelIdlePark(input.sessionId);
     const control = submission ? await submission.control : sourceOwner?.control;
     const originalContext = operationContext(originalOwner);
-    const policy = await loadSkillRestrictions(input.cwd);
+    const policy = await operationSkillPolicy(input.cwd, input.harness);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Follow-up cancelled because the turn was stopped");
     assertOriginal();
@@ -1131,11 +1190,12 @@ export function retireHarnessWriter(sessionId: string): Promise<void> {
     if (activeTurnSessions.has(sessionId) || adapterOperations.has(sessionId))
       throw new Error("The desktop session is still running. Retry after it finishes.");
     const harness = retainedWriters.get(sessionId);
-    if (!harness) return;
+    const claim = nativeSessionClaims.get(sessionId);
+    if (!harness && !claim) return;
     cancelIdlePark(sessionId);
     try {
       // Mute intentional exit events first; the native receipt survives kill.
-      await requireHarness(harness).stopSession(sessionId);
+      if (harness) await requireHarness(harness).stopSession(sessionId);
     } catch (error) {
       warnCleanup("writer stop", error);
       throw error;
@@ -1143,6 +1203,14 @@ export function retireHarnessWriter(sessionId: string): Promise<void> {
     try {
       await retireProviderOwner(sessionId);
       await invoke("harness_retire", { sessionId });
+      if (claim) {
+        const capability = await claim;
+        if (capability) {
+          await releaseOwnedOpenCodeForCapability(capability);
+          await settleNativeSessionClaim(capability);
+        }
+        if (nativeSessionClaims.get(sessionId) === claim) nativeSessionClaims.delete(sessionId);
+      }
       retainedWriters.delete(sessionId);
     } catch (error) {
       warnCleanup("writer retire", error);
@@ -1167,6 +1235,7 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
     else await adapter.forgetSession(sessionId);
     await retireProviderOwner(sessionId);
     if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
+    retireProviderEpoch(cancellationEpoch, sessionOperationTails, sessionId, sessionSteerTails, turnReady);
   } catch (error) {
     warnCleanup("forget session", error);
     throw error;

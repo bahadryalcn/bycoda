@@ -181,7 +181,7 @@ export function LiveAgentsPreview({
             : t("Finished agents")
       }
       className={`min-w-0 shrink-0 ${
-        collapsible ? "mb-2 rounded-lg bg-(--ui-surface-quiet) data-[collapsed]:mb-0.5" : "px-2"
+        collapsible ? "mb-2 rounded-lg bg-(--ui-navigation-quiet) data-[collapsed]:mb-0.5" : "px-2"
       } ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
       data-live-agents-headline={summary.headline}

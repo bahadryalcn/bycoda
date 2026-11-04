@@ -1,5 +1,5 @@
 import { composeJsonWire, normalizeJsonField, normalizeJsonWire, readNormalizedJsonWire, type NormalizedJsonWire } from "../normalized-wire";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
@@ -57,6 +57,7 @@ export type HostWsPrincipal = {
 export type HostWebSocketOptions = {
   server: Server;
   environmentId: string;
+  mobileIngressSecret?: string;
   authenticate: (token: string, signal: AbortSignal) => Promise<HostWsPrincipal | null>;
   dispatch: (method: string, params: unknown, context: HostDispatchContext) => Promise<unknown>;
   /** An explicit routed service allowlist, never the whole schema registry. */
@@ -735,10 +736,20 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   }
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const source =
+    const remoteSource =
       socket instanceof Object && "remoteAddress" in socket
         ? String(socket.remoteAddress ?? "unknown")
         : "unknown";
+    const claimedIngress = request.headers["x-bycoda-mobile-ingress"];
+    const secret = options.mobileIngressSecret;
+    const mobile = typeof claimedIngress === "string" && typeof secret === "string" &&
+      Buffer.byteLength(claimedIngress) === Buffer.byteLength(secret) &&
+      timingSafeEqual(Buffer.from(claimedIngress), Buffer.from(secret));
+    if (claimedIngress !== undefined && !mobile) {
+      rejectUpgrade(socket, 401);
+      return;
+    }
+    const source = `${mobile ? "mobile" : "direct"}:${remoteSource}`;
     const protocol = request.headers["sec-websocket-protocol"]
       ?.split(",")
       .map((value) => value.trim());

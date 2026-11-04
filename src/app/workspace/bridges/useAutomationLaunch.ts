@@ -1,6 +1,7 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
+import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
 import {
   listAutomationRuns,
   updateAutomationRun,
@@ -28,6 +29,8 @@ import {
   placeSessionInFolder,
   saveSessionFolders,
 } from "../../../features/sessions/model/sessionFolders";
+import { executeOrganizationOperation } from "../../../features/sessions/model/sessionOrganizationOperations";
+import { NATIVE_SESSION_ORGANIZATION_ACTIVE } from "../../../features/sessions/model/sessionOrganizationStore";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { pathKey } from "../../../shared/lib/paths";
 import { submitWithSettlement } from "../../model/managedSubmission";
@@ -193,15 +196,42 @@ export function useAutomationLaunch({
 
         reservationId = session.id;
         automationSessionReservations.current.add(session.id);
+        // Retain the admitted session identity before optional organization work.
+        await updateAutomationRun(run.id, "running", { sessionId: session.id });
 
         if (automation.sessionFolderId && looksLikeProject(automation.cwd)) {
-          saveSessionFolders(
-            automation.cwd,
-            placeSessionInFolder(loadSessionFolders(automation.cwd), session.id, {
-              kind: "existing",
-              folderId: automation.sessionFolderId,
-            }),
-          );
+          if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+            const gestureId = `automation:${run.id}`;
+            let folderAdmitted = false;
+            try {
+              const result = await withRoomPrivacyMutation(() => {
+                if (isProjectPasswordLocked(automation.cwd)) throw new Error("Project is locked.");
+                folderAdmitted = true;
+                return executeOrganizationOperation(gestureId, {
+                  kind: "batch", cwd: automation.cwd, operations: [
+                    { kind: "assign", cwd: automation.cwd, folderId: automation.sessionFolderId!, sessionIds: [session.id] },
+                    { kind: "folderCollapsed", cwd: automation.cwd, folderId: automation.sessionFolderId!, collapsed: false },
+                  ],
+                });
+              });
+              if (result.state !== "applied") window.dispatchEvent(new CustomEvent("bycoda:organization-operation-feedback", {
+                detail: { cwd: automation.cwd, sessionId: session.id, runId: run.id, result },
+              }));
+            } catch (error) {
+              window.dispatchEvent(new CustomEvent("bycoda:organization-operation-feedback", {
+                detail: { cwd: automation.cwd, sessionId: session.id, runId: run.id,
+                  ...(folderAdmitted ? { result: { state: "unknown", operationId: gestureId } } : { error: String(error) }) },
+              }));
+            }
+          } else {
+            saveSessionFolders(
+              automation.cwd,
+              placeSessionInFolder(loadSessionFolders(automation.cwd), session.id, {
+                kind: "existing",
+                folderId: automation.sessionFolderId,
+              }),
+            );
+          }
         }
 
         if (reveal) {
@@ -213,9 +243,6 @@ export function useAutomationLaunch({
           setSidebarTab("sessions", session.cwd);
         }
 
-        await updateAutomationRun(run.id, "running", {
-          sessionId: session.id,
-        });
         started();
         if (limits.maxRunMinutes > 0) {
           const duration = new ObservedRunDuration(Date.now(), monotonicNow());
@@ -261,6 +288,7 @@ export function useAutomationLaunch({
       } catch (reason: unknown) {
         if (admitted) {
           await updateAutomationRun(run.id, "failed", {
+            ...(reservationId ? { sessionId: reservationId } : {}),
             error: reason instanceof Error ? reason.message : String(reason),
           }).catch((error) => {
             console.warn("App operation failed", error);

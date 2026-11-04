@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   getReportedCommands,
   subscribeReportedCommands,
@@ -51,8 +51,12 @@ export function useCliCommands(input: {
   files: readonly Skill[];
 }): { slashCommands: Skill[]; dollarSkills: Skill[] } {
   const { harness, localCwd, sessionId, menuOpen, taken, files } = input;
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeReportedCommands(sessionId, listener),
+    [sessionId],
+  );
   const reported = useSyncExternalStore(
-    (listener) => subscribeReportedCommands(sessionId, listener),
+    subscribe,
     () => getReportedCommands(sessionId),
   );
   // The module cache is the source of truth; a finished load only asks this hook to re-read it.

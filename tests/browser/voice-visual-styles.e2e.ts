@@ -21,11 +21,13 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await panel.screenshot({ path: join(output, `${theme}-${width}-full-automatic.png`) });
-      await panel.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await panel.getByRole("button", { name: "Reply when I pause", exact: true }).click();
       await expect(
-        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+        page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }),
       ).toBeChecked();
-      await page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await page
+        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
+        .click();
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
       const selected = await page.evaluate(() => ({
         settings: JSON.parse(localStorage.getItem("bycoda.voice")!),
@@ -39,10 +41,10 @@ for (const theme of ["light", "dark"])
       await panel.screenshot({ path: join(output, `${theme}-${width}-full-manual.png`) });
       await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
       await expect(
-        page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+        page.getByRole("menuitemradio", { name: "I'll finish when ready", exact: true }),
       ).toBeChecked();
       await expect(
-        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+        page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }),
       ).not.toBeChecked();
       await page.screenshot({
         path: join(output, `${theme}-${width}-policy-menu.png`),
@@ -52,31 +54,31 @@ for (const theme of ["light", "dark"])
         path: join(menuOutput, `${theme}-${width}-in-app-expanded-manual-menu.png`),
         animations: "disabled",
       });
-      await page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }).click();
+      await page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }).click();
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-      await expect(
-        panel.getByRole("button", { name: "Automatic replies", exact: true }),
-      ).toBeVisible();
+      await expect(panel.getByRole("button", { name: "Turn ending", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-compact-automatic.png`) });
-      await panel.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
       await expect(
-        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+        page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }),
       ).toBeChecked();
       await page.screenshot({
         path: join(menuOutput, `${theme}-${width}-in-app-compact-auto-menu.png`),
         animations: "disabled",
       });
-      await page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await page
+        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
+        .click();
       await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
       await expect(
-        page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+        page.getByRole("menuitemradio", { name: "I'll finish when ready", exact: true }),
       ).toBeChecked();
       await page.screenshot({
         path: join(menuOutput, `${theme}-${width}-in-app-compact-manual-menu.png`),
         animations: "disabled",
       });
       await page
-        .getByRole("menuitemradio", { name: "Wait until I finish", exact: true })
+        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
         .press("Escape");
       await panel.getByRole("button", { name: "Finish turn", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(1);
@@ -87,7 +89,7 @@ for (const theme of ["light", "dark"])
         .locator("#root")
         .evaluate((node) => ((node as HTMLElement).style.maxWidth = "380px"));
       const floating = page.locator("main[aria-label]");
-      await floating.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await floating.getByRole("button", { name: "Reply when I pause", exact: true }).click();
       await expect
         .poll(() =>
           page.evaluate(
@@ -139,7 +141,7 @@ for (const theme of ["light", "dark"])
       await floating.screenshot({
         path: join(output, `${theme}-${width}-floating-compact-automatic.png`),
       });
-      await floating.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await floating.getByRole("button", { name: "Turn ending", exact: true }).click();
       await expect
         .poll(() =>
           page.evaluate(

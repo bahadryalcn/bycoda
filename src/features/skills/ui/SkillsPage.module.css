@@ -5,7 +5,7 @@
   min-inline-size: 0;
   min-block-size: 0;
   color: var(--color-content);
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
 }
 
 .library,
@@ -21,7 +21,7 @@
    editor still needs 28rem+; below 44rem the two panes become one (see the container query below). */
 .library {
   flex: 0 0 clamp(16rem, 32%, 25rem);
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
   border-inline-end: 1px solid var(--ui-pane-border);
 }
 
@@ -77,6 +77,10 @@
   font-size: var(--ui-font-caption);
 }
 .count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   font-variant-numeric: tabular-nums;
 }
 .list {

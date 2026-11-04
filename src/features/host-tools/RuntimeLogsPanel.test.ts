@@ -36,6 +36,19 @@ vi.mock("../../shared/i18n/technical", () => ({
 
 let root: Root;
 let container: HTMLDivElement;
+it("pauses hidden conversation reads and retains the cursor on return", async () => {
+  const props = { cwd: "/repo", sessionId: "session" };
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: true })));
+  const reads = () =>
+    vi.mocked(hostToolRequest).mock.calls.filter((call) => call[2] === "runtimeLogs.read");
+  const count = reads().length;
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: false })));
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(reads()).toHaveLength(count);
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: true })));
+  expect(reads().length).toBeGreaterThan(count);
+  expect(reads().at(-1)?.[3]).toMatchObject({ after: 4 });
+});
 const base: RuntimeLogEntry = {
   id: "1",
   cursor: 1,

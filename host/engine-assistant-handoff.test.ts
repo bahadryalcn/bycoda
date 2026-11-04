@@ -6,7 +6,7 @@ import { HostStore } from "./store";
 import { HostEngine } from "./engine";
 import { HostTasks } from "./tasks";
 import { HostAssistant } from "./assistant/service";
-import { assistantSessionRuntime } from "./assistant-session-runtime";
+import { assistantSessionRuntime } from "./assistant/sessions/assistant-session-runtime";
 import type { HostProvider } from "./providers";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 

@@ -386,7 +386,16 @@ html[data-performance-no-blur] [data-message-queue-card] {
 .activity-dock {
   container: activity-dock / inline-size;
 }
+.activity-dock-agent-metrics {
+  max-inline-size: 52%;
+  font-variant-numeric: tabular-nums;
+}
 @container activity-dock (max-width: 28rem) {
+  .activity-dock-agent-metrics {
+    flex-direction: column;
+    align-items: flex-end;
+    max-inline-size: 48%;
+  }
   .activity-dock-summary {
     flex-basis: 100%;
   }

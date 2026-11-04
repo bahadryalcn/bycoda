@@ -124,7 +124,9 @@ describe("managed tool discovery", () => {
     expect(() => searchManagedTools([], { limit: 1.2 })).toThrow();
     expect(() => searchManagedTools([], { query: "x".repeat(201) })).toThrow();
     expect(() => searchManagedTools([], { cursor: "0" })).toThrow("cursor");
-    expect(() => searchManagedTools([], { group: "external" as never })).toThrow("Unsupported");
+    expect(() => searchManagedTools([], { group: "external" as never })).toThrow(
+      'Unsupported tool group. Expected one of: "conversation", "social", "runtime-logs". Omit group to search all groups; use family for domains such as sessions, providers or browser.',
+    );
   });
 
   it("resolves exact tool names and IDs, explicitly reports unknown names and rejects ambiguity", () => {

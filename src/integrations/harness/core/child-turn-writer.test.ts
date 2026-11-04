@@ -4,6 +4,7 @@ import type { HostRunHandle, HostRunBinding } from "./hostRun";
 
 const transport = vi.hoisted(() => ({ invoke: vi.fn(), bridge: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: transport.invoke }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ label: "main" }) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("./socialBridge", () => ({
   socialBridge: transport.bridge,

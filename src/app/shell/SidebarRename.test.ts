@@ -871,6 +871,69 @@ describe("sidebar session IDs", () => {
 });
 
 describe("sidebar session rename", () => {
+  it("edits the title inside its existing project and status row", () => {
+    act(render);
+    const row = card();
+    const project = row.querySelector("[data-session-row-project]")?.textContent;
+    const input = startRename();
+    expect(card()).toBe(row);
+    expect(row.querySelector("[data-session-row-project]")?.textContent).toBe(project);
+    expect(row.querySelector("[data-session-rename]")?.contains(input)).toBe(true);
+    act(() => input.click());
+    expect(props.onSelectSession).not.toHaveBeenCalled();
+    expect(renameInput()).toBe(input);
+    typeTitle(input, "日本語の題名");
+    act(() =>
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
+      ),
+    );
+    expect(props.onRenameSession).not.toHaveBeenCalled();
+    pressKey(input, "Escape");
+  });
+
+  it("regenerates below Rename, prevents duplicate requests and keeps a retry on its row", async () => {
+    let reject!: (reason: Error) => void;
+    const regenerate = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, fail) => {
+            reject = fail;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    props.onRegenerateSessionTitle = regenerate;
+    act(render);
+    const openMenu = () => {
+      act(() =>
+        card().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+      );
+      return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    };
+    let items = openMenu();
+    const index = items.findIndex((item) => item.textContent?.startsWith("Rename"));
+    expect(items[index + 1].textContent).toBe("Regenerate title");
+    await act(async () => items[index + 1].click());
+    expect(regenerate).toHaveBeenCalledExactlyOnceWith("session-1", "/workspace/project");
+    expect(card().textContent).toContain("Regenerating title…");
+    expect(card().textContent).toContain("Original conversation");
+    items = openMenu();
+    expect(items.find((item) => item.textContent === "Regenerate title")?.disabled).toBe(true);
+    await act(async () => reject(new Error("Provider unavailable")));
+    expect(card().querySelector('[role="alert"]')?.textContent).toContain("Provider unavailable");
+    act(() =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    const retry = [...card().querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    expect(regenerate).toHaveBeenCalledTimes(2);
+    expect(card().querySelector('[role="alert"]')).toBeNull();
+    expect(props.onSelectSession).not.toHaveBeenCalled();
+  });
+
   it("keeps a rejected async rename draft visible and allows retry", async () => {
     const commit = props.onRenameSession!;
     const rename = vi
@@ -1328,10 +1391,10 @@ describe("sidebar orchestration card", () => {
     const pullRequest = card().querySelector('[aria-label="Open PR #42"]');
     expect(card().querySelectorAll('[aria-label^="Archive "]')).toHaveLength(1);
     const rowActions = card().querySelector("[data-session-row-actions]");
-    expect(rowActions?.contains(orchestrationIcon)).toBe(true);
-    expect(rowActions?.contains(pullRequest)).toBe(true);
-    // The actions are direct siblings: each Button owns its tooltip.
-    expect(archive.nextElementSibling).toBe(pullRequest);
+    expect(rowActions?.contains(orchestrationIcon)).toBe(false);
+    expect(rowActions?.contains(pullRequest)).toBe(false);
+    // Commands stay in the header; linked work and orchestration retain footer ownership.
+    expect(card().querySelector("[data-session-row-project]")?.contains(archive)).toBe(true);
     expect(orchestrationIcon?.parentElement?.lastElementChild).toBe(orchestrationIcon);
     act(() => archive.click());
     expect(props.onArchiveSession).toHaveBeenCalledExactlyOnceWith(lead.id, true);
@@ -1545,8 +1608,8 @@ describe("sidebar linked work item updates", () => {
     const pullRequest = card().querySelector('[aria-label="Open PR #42"]');
     expect(card().querySelectorAll('img[alt=""]')).toHaveLength(1);
     expect(rows.item(rows.length - 1)?.contains(pullRequest)).toBe(true);
-    expect(archive?.parentElement).toBe(pullRequest?.parentElement);
-    expect(archive?.nextElementSibling).toBe(pullRequest);
+    expect(card().querySelector("[data-session-row-project]")?.contains(archive)).toBe(true);
+    expect(archive?.parentElement).not.toBe(pullRequest?.parentElement);
   });
 
   it("renders an unread dot without changing session order", () => {
@@ -2378,6 +2441,23 @@ it.each<SessionListDensity>(["compact", "standard", "detailed"])(
     }
   },
 );
+
+it("drops a repository prefix that repeats the project in detailed rows", () => {
+  saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "detailed" });
+  try {
+    const branchRow = () => card().querySelector("[data-session-row-branch]")?.textContent;
+    props.sessions = [{ ...props.sessions[0], repo: "project", branch: "fix/audit" }];
+    act(render);
+    expect(branchRow()).toContain("fix/audit");
+    expect(branchRow()).not.toContain("project/fix/audit");
+    expect(card().querySelector("[data-session-row-project] svg")).not.toBeNull();
+    props.sessions = [{ ...props.sessions[0], repo: "acme/widgets", branch: "fix/audit" }];
+    act(render);
+    expect(branchRow()).toContain("acme/widgets/fix/audit");
+  } finally {
+    saveSessionListDisplay(DEFAULT_SESSION_LIST_DISPLAY);
+  }
+});
 
 describe("long-press selection", () => {
   function press(clientX = 100) {

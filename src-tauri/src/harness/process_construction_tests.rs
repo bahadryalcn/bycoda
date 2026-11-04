@@ -148,6 +148,11 @@ impl ProcessFixture {
             construction_id: output.epoch().to_owned(),
             issuer: Some(Arc::new(crate::control::receipts::WindowIssuer::default())),
             _control_turn: None,
+            native_session_capability: None,
+            native_process_purpose: None,
+            management_input_policy: None,
+            management_route_id: None,
+            utility_endpoint: None,
             account: None,
             owners: Arc::new(Owners::default()),
             output: Some(Arc::clone(&output)),
@@ -307,6 +312,7 @@ fn missing_foreign_noncanonical_and_closed_sources_cannot_select_or_kill() {
             issuer: None,
             owners: Arc::new(Owners::default()),
             output: None,
+            native_session_capability: None,
         }),
     );
     let foreign = uuid::Uuid::new_v4().to_string();
@@ -353,6 +359,7 @@ fn late_original_after_replacement_cannot_write_kill_or_remove_the_replacement()
             issuer: None,
             owners: Arc::new(Owners::default()),
             output: None,
+            native_session_capability: None,
         }),
     );
     assert!(Arc::ptr_eq(&removed, &original.live));
