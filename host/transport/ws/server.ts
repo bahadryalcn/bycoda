@@ -1,3 +1,4 @@
+import { composeJsonWire, normalizeJsonField, normalizeJsonWire, readNormalizedJsonWire, type NormalizedJsonWire } from "../normalized-wire";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -199,22 +200,25 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   function send(
     peer: Peer,
     value: unknown,
-    normalized?: { serialized: string; wire: unknown },
+    normalized?: NormalizedJsonWire,
   ): boolean {
     if (peer.closed || peer.socket.readyState !== WebSocket.OPEN) return false;
     let serialized: string;
+    let byteLength: number;
     try {
-      serialized = normalized?.serialized ?? JSON.stringify(value);
-      if (Buffer.byteLength(serialized) > WS_LIMITS.maxMessageBytes)
+      const capture = normalized ? readNormalizedJsonWire(normalized) : undefined;
+      serialized = capture?.serialized ?? JSON.stringify(value);
+      byteLength = capture?.byteLength ?? Buffer.byteLength(serialized);
+      if (byteLength > WS_LIMITS.maxMessageBytes)
         throw new Error("Response too large.");
-      const wire = normalized ? normalized.wire : JSON.parse(serialized);
+      const wire = capture ? capture.wire : JSON.parse(serialized);
       if (wire?.method === "subscription.event") SubscriptionEventSchema.parse(wire);
       else RpcResponseSchema.parse(wire);
     } catch {
       closePeer(peer, 1011, "Response cannot be represented by this transport.");
       return false;
     }
-    if (peer.socket.bufferedAmount + Buffer.byteLength(serialized) > limits.maxSocketQueuedBytes) {
+    if (peer.socket.bufferedAmount + byteLength > limits.maxSocketQueuedBytes) {
       closePeer(peer, 1013, "Slow consumer; reconnect explicitly.");
       return false;
     }
@@ -397,6 +401,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             authorized: () => authorized(peer),
             executionAuthorized: () => executionAuthorized(peer),
             send: (event) => send(peer, event),
+            sendNormalized: (capture) => send(peer, undefined, capture),
           },
           SubscriptionOpenParamsSchema.parse(request.params),
         );
@@ -460,22 +465,23 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           });
           for (const check of resultAuthorities)
             if (!(await check())) throw new HostBulkError(409, "Result authority expired.");
-          const encoded = JSON.stringify(result);
-          const validated = definition.resultSchema.parse(JSON.parse(encoded));
+          const initial = normalizeJsonWire(result);
+          const validated = definition.resultSchema.parse(readNormalizedJsonWire(initial).wire);
+          // Keep the pre-toJSON JSON check for bulk exactly where it was. Typed
+          // transforms may strip fields or construct new values; normalize that
+          // output with its real enclosing result key before reusing bytes.
           const bulkValue = lease ? JsonValueSchema.parse(validated) : undefined;
+          const capture = definition.resultSchema === JsonValueSchema
+            ? initial
+            : normalizeJsonField(lease ? bulkValue : validated, "result");
           const delivered = lease
-            ? options.bulk!.encode(lease, bulkValue!, WS_LIMITS.maxMessageBytes - 1024)
-            : validated;
+            ? options.bulk!.encodeNormalized(lease, capture, WS_LIMITS.maxMessageBytes - 1024)
+            : readNormalizedJsonWire(capture).wire;
           return {
             value: delivered,
-            // Only this exact built-in JSON schema preserves the normalized wire value.
-            // Typed schemas may strip/transform fields and must use send's full wire check.
-            encoded:
-              definition.resultSchema === JsonValueSchema &&
-              encoded.length <= WS_LIMITS.maxMessageBytes - 1024 &&
-              delivered === (lease ? bulkValue : validated)
-                ? encoded
-                : undefined,
+            capture: lease && delivered !== readNormalizedJsonWire(capture).wire
+              ? normalizeJsonField(delivered, "result")
+              : capture,
           };
         } finally {
           if (lease) options.bulk!.release(lease);
@@ -501,19 +507,10 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           if (!(await waitFor(check(), controller.signal)))
             throw new HostBulkError(409, "Result authority expired.");
         if (!controller.signal.aborted) {
-          const wire = { jsonrpc: "2.0", id: request.id, result: result.value };
-          send(
-            peer,
-            wire,
-            result.encoded === undefined
-              ? undefined
-              : {
-                  // The result was normalized from these exact bytes before validation. Only
-                  // the validated primitive request ID is added; no service toJSON runs twice.
-                  serialized: `{"jsonrpc":"2.0","id":${JSON.stringify(request.id)},"result":${result.encoded}}`,
-                  wire,
-                },
-          );
+          const response = composeJsonWire({ jsonrpc: "2.0", id: request.id }, "result", result.capture);
+          // send still validates the complete actual wire envelope/schema and
+          // enforces frame/backpressure limits after the final authority awaits.
+          send(peer, undefined, response);
         }
       }
     } catch (error) {

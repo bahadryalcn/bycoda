@@ -1,3 +1,4 @@
+import { readNormalizedJsonWire, type NormalizedJsonWire } from "../normalized-wire";
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -114,8 +115,23 @@ export class HostBulkTransfers {
       throw new HostBulkError(409, "Transfer context changed; refresh the resource.");
     if (!Number.isSafeInteger(inlineBytes) || inlineBytes < 1)
       throw new Error("Invalid inline bulk budget.");
-    const text = JSON.stringify(value);
-    const bytes = Buffer.from(text, "utf8");
+    return this.encodeBytes(lease, Buffer.from(JSON.stringify(value), "utf8"), inlineBytes, value);
+  }
+
+  /** Internal captured-byte path; caller retains domain/JSON schema validation. */
+  encodeNormalized(lease: BulkLease, capture: NormalizedJsonWire, inlineBytes: number): JsonValue {
+    return this.encodeCaptured(lease, capture, inlineBytes);
+  }
+  private encodeCaptured(lease: BulkLease, capture: NormalizedJsonWire, inlineBytes: number): JsonValue {
+    if (!this.leases.has(lease) || this.stopped)
+      throw new HostBulkError(409, "Transfer context changed; refresh the resource.");
+    if (!Number.isSafeInteger(inlineBytes) || inlineBytes < 1)
+      throw new Error("Invalid inline bulk budget.");
+    const normalized = readNormalizedJsonWire(capture);
+    if (normalized.byteLength <= inlineBytes) return normalized.wire as JsonValue;
+    return this.encodeBytes(lease, Buffer.from(normalized.serialized, "utf8"), inlineBytes, normalized.wire as JsonValue);
+  }
+  private encodeBytes(lease: BulkLease, bytes: Buffer, inlineBytes: number, value: JsonValue): JsonValue {
     if (bytes.length <= inlineBytes) return value;
     if (bytes.length > this.limits.maxSnapshotBytes || bytes.length > this.limits.maxBytes)
       throw new HostBulkError(

@@ -1149,3 +1149,20 @@ describe("WS framing and orderly disposal", () => {
     });
   });
 });
+
+
+it.each([false, true])("normalizes typed actual result bytes once with bulk=%s", async (withBulk) => {
+  const toJSON = vi.fn((key: string) => {
+    expect(key).toBe("");
+    return [{ id: "project-a", name: "Typed 雪", cwd: "C:/Fixture", optional: undefined }];
+  });
+  const host = await fixture({
+    ...(withBulk ? { bulk: new HostBulkTransfers({ environmentId: ENVIRONMENT }) } : {}),
+    dispatch: async () => ({ toJSON }),
+  });
+  const client = await host.ready();
+  expect(await client.request("typed-normalized", "projects.list")).toMatchObject({
+    result: [{ id: "project-a", name: "Typed 雪", cwd: "C:/Fixture" }],
+  });
+  expect(toJSON).toHaveBeenCalledExactlyOnceWith("");
+});

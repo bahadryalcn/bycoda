@@ -1,3 +1,4 @@
+import { composeJsonWire, extendJsonWire, normalizeJsonWire, readNormalizedJsonWire, type NormalizedJsonWire } from "../normalized-wire";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -26,6 +27,7 @@ export type HostStreamConsumer = {
   authorized: () => Promise<boolean>;
   executionAuthorized?: () => Promise<boolean>;
   send: (event: SubscriptionEvent) => boolean;
+  sendNormalized?: (capture: NormalizedJsonWire) => boolean;
 };
 type Event = Omit<SubscriptionEvent["params"], "subscriptionId">;
 type Retained = { event: Event; bytes: number; at: number };
@@ -76,6 +78,7 @@ export class HostSubscriptionHub {
   private readonly subscriptions = new Map<string, { stream: Stream; consumer: Consumer }>();
   private readonly limits;
   private readonly now: () => number;
+  private readonly eventCaptures = new WeakMap<Event, NormalizedJsonWire>();
   private bytes = 0;
   private reads = 0;
   private readonly connectionReads = new Map<string, number>();
@@ -339,7 +342,16 @@ export class HostSubscriptionHub {
       method: "subscription.event",
       params: { ...event, subscriptionId: consumer.id },
     };
-    const bytes = Buffer.byteLength(JSON.stringify(message));
+    let eventCapture = this.eventCaptures.get(event);
+    if (!eventCapture) {
+      eventCapture = normalizeJsonWire(event);
+      this.eventCaptures.set(event, eventCapture);
+    }
+    const normalized = composeJsonWire(
+      { jsonrpc: "2.0", method: "subscription.event" },
+      "params", extendJsonWire(eventCapture, { subscriptionId: consumer.id }),
+    );
+    const bytes = readNormalizedJsonWire(normalized).byteLength;
     if (event.kind === "snapshot" || event.kind === "delta") {
       if (event.kind === "delta" && consumer.needsSnapshot) return;
       if (event.cursor.sequence <= consumer.sent) return;
@@ -367,12 +379,17 @@ export class HostSubscriptionHub {
       consumer.sent = event.cursor.sequence;
       if (event.kind === "snapshot") consumer.needsSnapshot = false;
     }
-    if (!this.send(consumer, message)) consumer.active = false;
+    if (!this.send(consumer, message, normalized)) consumer.active = false;
   }
 
-  private send(consumer: Consumer, message: SubscriptionEvent): boolean {
+  private send(consumer: Consumer, message: SubscriptionEvent, normalized?: NormalizedJsonWire): boolean {
     try {
-      return consumer.owner.send(message);
+      if (normalized && consumer.owner.sendNormalized) return consumer.owner.sendNormalized(normalized);
+      // Compatibility consumers receive their own wire copy, so mutation cannot
+      // corrupt retained bytes or the next consumer's validation view.
+      return consumer.owner.send(normalized
+        ? JSON.parse(readNormalizedJsonWire(normalized).serialized) as SubscriptionEvent
+        : message);
     } catch {
       return false;
     }
@@ -509,8 +526,10 @@ export class HostSubscriptionHub {
       }
       if (snapshot.kind === "delta" && (forceSnapshot || snapshot.baseRevision !== stream.revision))
         throw new Error("Stream delta does not follow its committed baseline.");
-      const text = JSON.stringify(JsonValueSchema.parse(snapshot.data));
-      if (Buffer.byteLength(text) + 1024 > this.limits.streamChunkBytes)
+      const dataCapture = normalizeJsonWire(JsonValueSchema.parse(snapshot.data));
+      const dataWire = readNormalizedJsonWire(dataCapture);
+      const text = dataWire.serialized;
+      if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
         throw new Error("Stream snapshot requires a bounded bulk descriptor.");
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (!forceSnapshot && fingerprint === stream.fingerprint && stream.events.length) return;
@@ -519,12 +538,15 @@ export class HostSubscriptionHub {
       const revision =
         snapshot.revision === undefined ? undefined : SafeCounterSchema.parse(snapshot.revision);
       const event = {
-        ...this.event(stream, snapshot.kind ?? "snapshot", JSON.parse(text), revision),
+        ...this.event(stream, snapshot.kind ?? "snapshot", dataWire.wire as JsonValue, revision),
         ...(snapshot.baseRevision === undefined
           ? {}
           : { baseRevision: SafeCounterSchema.parse(snapshot.baseRevision) }),
       };
-      const retained = { event, bytes: Buffer.byteLength(JSON.stringify(event)), at: this.now() };
+      const { data: _data, ...metadata } = event;
+      const eventCapture = composeJsonWire(metadata, "data", dataCapture);
+      this.eventCaptures.set(event, eventCapture);
+      const retained = { event, bytes: readNormalizedJsonWire(eventCapture).byteLength, at: this.now() };
       stream.events.push(retained);
       stream.bytes += retained.bytes;
       this.bytes += retained.bytes;

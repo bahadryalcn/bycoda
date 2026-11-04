@@ -1,3 +1,4 @@
+import { readNormalizedJsonWire } from "../normalized-wire";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   HostSubscriptionHub,
@@ -556,4 +557,39 @@ it("does not cache a canceled snapshot while its final authorization check is pe
   await vi.waitFor(() => expect(snapshots(next.events)).toHaveLength(1));
   expect(snapshots(next.events)[0].params.data).toEqual({ read: 2 });
   expect(snapshots(first.events)).toHaveLength(0);
+});
+
+
+it("encodes one data snapshot across consumers and keeps legacy consumer mutations isolated", async () => {
+  const payload = "雪".repeat(1000);
+  const f = fixture({ load: async () => ({ revision: 1, data: { payload } }) });
+  const first = client("first");
+  const second = client("second");
+  first.owner.send = (event) => {
+    first.events.push(event);
+    if (event.params.data && typeof event.params.data === "object")
+      (event.params.data as Record<string, unknown>).payload = "mutated consumer";
+    return true;
+  };
+  const encoded: string[] = [];
+  second.owner.sendNormalized = (capture) => {
+    const wire = readNormalizedJsonWire(capture);
+    expect(JSON.parse(wire.serialized)).toEqual(wire.wire);
+    expect(wire.byteLength).toBe(Buffer.byteLength(wire.serialized));
+    encoded.push(wire.serialized);
+    return true;
+  };
+  const stringify = vi.spyOn(JSON, "stringify");
+  try {
+    subscribe(f.hub, first.owner, "first-sub");
+    subscribe(f.hub, second.owner, "second-sub");
+    await settle();
+    expect(encoded).toHaveLength(1);
+    expect(JSON.parse(encoded[0]).params.data).toEqual({ payload });
+    expect(stringify.mock.calls.filter(([value]) =>
+      value && typeof value === "object" && (value as Record<string, unknown>).payload === payload,
+    )).toHaveLength(1);
+  } finally {
+    stringify.mockRestore();
+  }
 });

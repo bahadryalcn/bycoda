@@ -1,3 +1,4 @@
+import { normalizeJsonWire, readNormalizedJsonWire } from "../normalized-wire";
 import { afterEach, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
@@ -328,3 +329,21 @@ it.each(["guard", "body"])(
     expect(retain("owner", "next", { text: "y".repeat(50) }).totalBytes).toBeGreaterThan(50);
   },
 );
+
+
+it("retains exact normalized bytes for bulk hash/chunks and rechecks original lease", () => {
+  const { pool } = fixture();
+  const capture = normalizeJsonWire({ text: "雪😀".repeat(100) });
+  const expected = Buffer.from(readNormalizedJsonWire(capture).serialized);
+  const lease = pool.begin("device", "exact-resource");
+  const value = pool.encodeNormalized(lease, capture, 1) as { $bulk: unknown };
+  const descriptor = BulkDescriptorSchema.parse(value.$bulk);
+  expect(descriptor.totalBytes).toBe(expected.length);
+  expect(descriptor.sha256).toBe(createHash("sha256").update(expected).digest("hex"));
+  const chunks: Buffer[] = [];
+  for (let offset = 0; offset < expected.length; offset += descriptor.chunkBytes)
+    chunks.push(pool.chunk("device", descriptor.transferId, offset));
+  expect(Buffer.concat(chunks)).toEqual(expected);
+  pool.release(lease);
+  expect(() => pool.encodeNormalized(lease, capture, 1)).toThrow("Transfer context changed");
+});
