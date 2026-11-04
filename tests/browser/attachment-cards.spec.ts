@@ -43,7 +43,16 @@ test("broken thumbnail falls back to image identity", async ({ page }) => {
   const image = composer.locator('[data-attachment-kind="image"]');
   await expect(image.locator("img")).toHaveCount(0);
   await expect(image.locator("svg").first()).toBeVisible();
-  await expect(image).toContainText("mountain-reference-for-the-new-project.png");
+  const preview = image.getByRole("button", {
+    name: "Open mountain-reference-for-the-new-project.png full screen",
+    exact: true,
+  });
+  await expect(preview).toBeVisible();
+  await preview.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "mountain-reference-for-the-new-project.png",
+  );
+  await expect(page.getByRole("tooltip")).toContainText("237 KB");
 });
 
 test("attachment card themes and widths", async ({ page }) => {

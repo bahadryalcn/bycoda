@@ -5,7 +5,7 @@ import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
 import { attachmentPreviewSrc } from "../model/attachments";
 import { tokenLabel } from "../model/attachmentTokens";
-import { attachmentPresentation } from "../model/attachmentPresentation";
+import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
 import { AttachmentIdentity } from "./AttachmentIdentity";
 import styles from "./AttachmentChip.module.css";
 import type { Attachment } from "../model/session";
@@ -24,30 +24,15 @@ type Props = {
   onRemove?: () => void;
   /** The token that refers to this attachment in the message text. */
   token?: string;
-  /** Transcript thumbnails keep their reference inside the image, saving a caption row. */
-  tokenLabelPlacement?: "below" | "overlay";
   /** Puts the token into the message text again. */
   onInsertToken?: () => void;
 };
 
-export function AttachmentChip({
-  attachment,
-  onRemove,
-  token,
-  tokenLabelPlacement = "below",
-  onInsertToken,
-}: Props) {
+export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: Props) {
   const t = useT();
   const presentation = attachmentPresentation(attachment);
   const [failedThumbnail, setFailedThumbnail] = useState<string>();
-  const size =
-    Number.isFinite(attachment.size) && attachment.size > 0
-      ? attachment.size < 1024
-        ? `${attachment.size} B`
-        : attachment.size < 1024 * 1024
-          ? `${Math.round(attachment.size / 1024)} KB`
-          : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`
-      : null;
+  const size = formatAttachmentSize(attachment.size);
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   const canOpenFile = canOpenFileAttachment(attachment);
@@ -64,33 +49,13 @@ export function AttachmentChip({
   const image =
     attachment.kind === "image" && !attachment.missing && attachmentPreviewSrc(attachment);
   const label = token ? tokenLabel(token) : null;
-  const labelClass = image
-    ? "block max-w-14 truncate text-center text-ui-caption leading-5 text-(--ui-text-secondary)"
-    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary)";
-  const labelNode =
-    image && label && onInsertToken ? (
-      <Button
-        motion="none"
-        variant={image ? "link" : "ghost"}
-        layout={image ? "text" : undefined}
-        className={image ? "block max-w-full truncate text-center" : undefined}
-        type="button"
-        tooltip={t("Insert {p0} into the message", { p0: token })}
-        aria-label={t("Insert {p0} into the message", { p0: token })}
-        // Keeps focus, and so the caret, in the message box.
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onInsertToken();
-        }}
-      >
-        <span className={image ? "text-ui-caption leading-5" : undefined}>{label}</span>
-      </Button>
-    ) : label ? (
-      <span className={image && tokenLabelPlacement === "overlay" ? styles.reference : labelClass}>
-        {label}
-      </span>
-    ) : null;
+  const labelNode = label ? (
+    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
+      {label}
+    </span>
+  ) : null;
+  // An image card is only its thumbnail; the message text names it as `image1 113 KB`.
+  const imageDetails = [label, attachment.name, size].filter(Boolean).join(" · ");
 
   const chip = (
     <>
@@ -98,10 +63,10 @@ export function AttachmentChip({
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
         className={`group ${styles.card} ${image ? styles.image : styles.file}`}
-        title={attachment.path ?? attachment.name}
+        title={image ? undefined : (attachment.path ?? attachment.name)}
       >
         {image ? (
-          <span className="relative flex w-full shrink-0 flex-col items-center">
+          <span className="relative flex size-full shrink-0">
             <Button
               motion="none"
               layout="media"
@@ -110,7 +75,7 @@ export function AttachmentChip({
               variant="ghost"
               type="button"
               aria-label={t("Open {p0} full screen", { p0: attachment.name })}
-              tooltip={t("Open {p0} full screen", { p0: attachment.name })}
+              tooltip={imageDetails}
               onClick={(event) => {
                 event.stopPropagation();
                 void show();
@@ -129,12 +94,27 @@ export function AttachmentChip({
                 <AttachmentIdentity attachment={attachment} />
               )}
             </Button>
-            <span className={styles.imageName}>{attachment.name}</span>
-            <span className={styles.metadata}>
-              {t(presentation.label)}
-              {size ? ` · ${size}` : ""}
-            </span>
-            {labelNode}
+            {token && onInsertToken ? (
+              <Button
+                motion="none"
+                className="absolute bottom-0.5 left-0.5 shrink-0"
+                iconOnly
+                label={t("Insert {p0} into the message", { p0: token })}
+                variant="secondary"
+                shape="pill"
+                type="button"
+                tooltip={t("Insert {p0} into the message", { p0: token })}
+                aria-label={t("Insert {p0} into the message", { p0: token })}
+                // Keeps focus, and so the caret, in the message box.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInsertToken();
+                }}
+              >
+                <Link className="icon-xs" />
+              </Button>
+            ) : null}
           </span>
         ) : (
           <>

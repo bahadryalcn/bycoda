@@ -16,6 +16,7 @@ import {
   Inbox,
   StickyNote,
   Server,
+  Sparkles,
   Zap,
   Wrench,
   Terminal,
@@ -83,7 +84,7 @@ const icons = {
   notes: StickyNote,
   "conversation-tools": Wrench,
   terminal: Terminal,
-  assistant: Zap,
+  assistant: Sparkles,
 };
 
 /** Mount on first visit, retain edits and selection, suspend effects while hidden. */

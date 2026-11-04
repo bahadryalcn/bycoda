@@ -27,6 +27,12 @@ the interrupted work that still needs a look. Unknown, unavailable and unverifie
 entries stay listed. After launch the dialog opens by itself only when such work
 remains.
 
+Stopping a turn yourself is not an interruption. Older conversations may store
+"Stopped by you." with the same internal notice kind as a crash; those notices
+do not produce an Interrupted badge or qualify for automatic continuation.
+The stop stays in conversation history. App/Host interruption notices still
+show Interrupted until the conversation continues.
+
 The dialog is one compact list. Tabs for File drafts and Earlier file reports
 appear only when there are file copies to show; with conversations alone there is
 no tab strip. The Needs attention / All filter appears only while it separates

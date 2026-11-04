@@ -4,6 +4,7 @@ import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout
 import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { sessionNeedsInput, type Session } from "./session";
+import { isTurnInterruptionNotice } from "./turnInterruption";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
 import type { ProjectReturnMemory } from "../../projects/model/projectReturn";
 
@@ -150,9 +151,7 @@ export function canAutoContinue(session: Session): boolean {
 
 function lastBlockIsInterrupt(session: Session): boolean {
   const last = session.blocks[session.blocks.length - 1];
-  return (
-    last?.role === "system" && (last.notice === "interrupt" || isTurnInterruptMessage(last.text))
-  );
+  return isTurnInterruptionNotice(last);
 }
 
 export function inFlightSnapshotKey(refs: InFlightRef[]): string {

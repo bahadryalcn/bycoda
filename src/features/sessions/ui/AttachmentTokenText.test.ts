@@ -57,6 +57,12 @@ describe("AttachmentTokenText", () => {
     ).toBe("[file1]");
   });
 
+  it("shows the attachment size beside the token without adding it to the text", () => {
+    render("see [image1]", [image]);
+    expect(container.querySelector("[data-size]")?.getAttribute("data-size")).toBe("3 B");
+    expect(container.textContent).toBe("see [image1]");
+  });
+
   it("leaves unknown tokens and legacy messages as plain text", () => {
     render("see [image2]", [image, doc]);
     expect(container.querySelector("button, span")).toBeNull();

@@ -862,6 +862,11 @@ html[data-canvas-background="pure"] {
   --ui-surface-floating: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
   /* Keep the writing area visibly above the dark chat canvas while retaining the user's tint. */
   --ui-composer-surface: color-mix(in srgb, var(--color-content) 9%, var(--color-background-base));
+  /* A canvas-tinted veil vanishes on pure black, so the activity/queue glass is a faint light
+     veil over an undimmed blur here: translucent, yet distinct from the transcript
+     (owner 2026-11-04: "full siyahtı ... yarı saydam ve glass efektli olması gerekiyor"). */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-content) 8%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.6);
 }
 html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
@@ -872,6 +877,9 @@ html.theme-light[data-canvas-background="pure"] {
   /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
      bubbles, code and cards readable as surfaces. Hover/pressed/selected derive from it. */
   --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
+  /* Light mirror of the pure glass: a faint ink veil, so the pane still reads on white. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-content) 4%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.04);
 }
 
 /* Native ranges keep their text readable; transparent overlay editors below

@@ -191,6 +191,7 @@ type Props = {
   onAddToChat?: (text: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onSaveSelectionNote?: (text: string) => void | Promise<void>;
   onOpenFile?: (path: string) => void;
@@ -259,6 +260,7 @@ function AgentTranscriptComponent({
   onAddToChat,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   onSaveSelectionNote,
   onOpenFile,
@@ -454,6 +456,7 @@ function AgentTranscriptComponent({
   const stableApproval = useStableCallback(onApproval);
   const stableSaveNote = useStableCallback(onSaveNote);
   const stableSendDraft = useStableCallback(onSendDraft);
+  const stableEditDraft = useStableCallback(onEditDraft);
   const stableRemoveDraft = useStableCallback(onRemoveDraft);
   // Image files preview in a dialog first (Ctrl/Cmd+click skips it); every other file opens a tab.
   const imageOpen = useTranscriptImageOpen(cwd, onOpenFile);
@@ -702,6 +705,7 @@ function AgentTranscriptComponent({
                 onApproval={stableApproval}
                 onSaveNote={stableSaveNote}
                 onSendDraft={stableSendDraft}
+                onEditDraft={stableEditDraft}
                 onRemoveDraft={stableRemoveDraft}
                 onOpenFile={stableOpenFile}
                 onOpenDiff={stableOpenDiff}
@@ -860,6 +864,7 @@ type TurnProps = {
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
@@ -918,6 +923,7 @@ const Turn = memo(function Turn({
   onApproval,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   onOpenFile,
   onOpenDiff,
@@ -1056,6 +1062,7 @@ const Turn = memo(function Turn({
           onApproval={onApproval}
           onSaveNote={onSaveNote}
           onSendDraft={onSendDraft}
+          onEditDraft={onEditDraft}
           onRemoveDraft={onRemoveDraft}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
@@ -1818,6 +1825,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   onApproval,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   onOpenFile,
   onOpenDiff,
@@ -1845,6 +1853,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
@@ -1918,6 +1927,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
         editing={editing}
         onSaveNote={onSaveNote}
         onSendDraft={onSendDraft}
+        onEditDraft={onEditDraft}
         onRemoveDraft={onRemoveDraft}
       />
     );
@@ -2094,6 +2104,7 @@ function UserMessageBlock({
   cwd,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   busy = false,
   questionAnswer = false,
@@ -2109,6 +2120,7 @@ function UserMessageBlock({
   cwd?: string;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   busy?: boolean;
   questionAnswer?: boolean;
@@ -2276,12 +2288,7 @@ function UserMessageBlock({
               className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
             >
               {block.attachments.map((file, index) => (
-                <AttachmentChip
-                  key={file.id}
-                  attachment={file}
-                  token={referencedTokens[index]}
-                  tokenLabelPlacement="overlay"
-                />
+                <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
               ))}
             </div>
           ) : null}
@@ -2367,6 +2374,20 @@ function UserMessageBlock({
                 {deliveryLabel}
               </span>
               <span className="flex items-center gap-1">
+                {onEditDraft ? (
+                  <Button
+                    motion="none"
+                    variant="ghost"
+                    type="button"
+                    tooltip={deliveryActive ? heldActionTitle : t("Edit draft")}
+                    aria-label={t("Edit draft")}
+                    disabled={deliveryActive}
+                    onClick={() => onEditDraft(block)}
+                  >
+                    <Pencil className="icon-sm" strokeWidth={1.75} />
+                    {t("Edit")}
+                  </Button>
+                ) : null}
                 <Button
                   motion="none"
                   variant="ghost"

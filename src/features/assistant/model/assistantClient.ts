@@ -153,6 +153,19 @@ export function useAssistantIdentity() {
   return { ...assistantIdentity(snapshot?.profile, locale), loading, error };
 }
 
+/** Rail label for the assistant room; before setup it names the tool instead of "Set up". */
+export function useAssistantRoomLabel() {
+  const identity = useAssistantIdentity();
+  return identity.name ? identity.room : t("Assistant");
+}
+
+export type AssistantRoomTab = "today" | "memory" | "settings" | "history";
+
+/** Opens the assistant room through the workspace tool panels. */
+export function openAssistantRoom(tab: AssistantRoomTab = "today") {
+  window.dispatchEvent(new CustomEvent("bycoda:open-assistant", { detail: { tab } }));
+}
+
 export function operationId() {
   return crypto.randomUUID();
 }

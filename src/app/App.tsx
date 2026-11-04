@@ -3121,6 +3121,7 @@ function Workspace({
                       notesViewOpen={notesViewOpen}
                       serversViewOpen={serversViewOpen}
                       automationsViewOpen={automationsViewOpen}
+                      auxiliaryTool={auxiliaryTool}
                       surfaceForward={surfaceForward}
                       onGoBack={sidebarActions.onGoBack}
                       onGoForward={sidebarActions.onGoForward}

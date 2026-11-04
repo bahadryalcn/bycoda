@@ -2,6 +2,7 @@ import { memo, type ComponentProps } from "react";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import { pickTextHarness } from "../../../integrations/harness";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
+import type { AuxiliaryToolId } from "../../model/toolWindows";
 import { Sidebar } from "../../shell/Sidebar";
 import {
   selectedChangeKind,
@@ -25,7 +26,8 @@ type DerivedSidebarProp =
   | "onOpenNotes"
   | "automationsActive"
   | "tasksActive"
-  | "socialActive";
+  | "socialActive"
+  | "assistantActive";
 
 /**
  * Sidebar props passed through unchanged, plus the raw workspace inputs the
@@ -42,6 +44,8 @@ export interface WorkspaceSidebarProps extends Omit<SidebarProps, DerivedSidebar
   automationsViewOpen: boolean;
   taskBoardShown: boolean;
   socialBoardShown: boolean;
+  /** Assistant, terminal and conversation tools share the automations surface. */
+  auxiliaryTool?: AuxiliaryToolId | null;
   tabVisitNav: { canBack: boolean; canForward: boolean };
   surfaceForward: { canForward: boolean };
   activeTab: WorkspaceTab | undefined;
@@ -60,6 +64,7 @@ export const WorkspaceSidebar = memo(
     automationsViewOpen,
     taskBoardShown,
     socialBoardShown,
+    auxiliaryTool,
     tabVisitNav,
     surfaceForward,
     activeTab,
@@ -84,9 +89,12 @@ export const WorkspaceSidebar = memo(
         selectedCommitSha={activeTab ? selectedCommitSha(activeTab) : undefined}
         textHarness={pickTextHarness(activeHarness)}
         onOpenNotes={props.notesEnabled ? onOpenNotes : undefined}
-        automationsActive={automationsViewOpen && !taskBoardShown && !socialBoardShown}
-        tasksActive={automationsViewOpen && taskBoardShown}
-        socialActive={automationsViewOpen && socialBoardShown}
+        automationsActive={
+          automationsViewOpen && !taskBoardShown && !socialBoardShown && !auxiliaryTool
+        }
+        tasksActive={automationsViewOpen && taskBoardShown && !auxiliaryTool}
+        socialActive={automationsViewOpen && socialBoardShown && !auxiliaryTool}
+        assistantActive={automationsViewOpen && auxiliaryTool === "assistant"}
       />
     );
   },

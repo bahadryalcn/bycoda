@@ -143,7 +143,12 @@ export type LastTurnRecall = {
 
 export function lastTurnRecall(session: Session): LastTurnRecall | null {
   const block = lastUserTurnBlock(session.blocks);
-  if (!block?.text.trim() && !block?.attachments?.length) return null;
+  return block ? userBlockRecall(block) : null;
+}
+
+/** A user message as composer input, e.g. a saved draft taken back for editing. */
+export function userBlockRecall(block: Block): LastTurnRecall | null {
+  if (!block.text.trim() && !block.attachments?.length) return null;
   return {
     text: isOperatorUserTurn(block) ? `/operator ${operatorUserPrompt(block)}` : block.text,
     attachments: block.attachments ?? [],

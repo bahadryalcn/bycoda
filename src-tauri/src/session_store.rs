@@ -3409,6 +3409,7 @@ fn stored_activity_at(conn: &Connection, id: &str) -> rusqlite::Result<i64> {
 fn turn_interrupted(block: Option<&Value>) -> bool {
     block.is_some_and(|block| {
         block.get("role").and_then(Value::as_str) == Some("system")
+            && block.get("text").and_then(Value::as_str).map(str::trim) != Some("Stopped by you.")
             && (block.get("notice").and_then(Value::as_str) == Some("interrupt")
                 || matches!(
                     block.get("text").and_then(Value::as_str),
@@ -3951,6 +3952,64 @@ mod tests {
             adopted_base: None,
             created_at: None,
             updated_at: None,
+        }
+    }
+
+    #[test]
+    fn owner_stop_is_idle_in_saved_and_legacy_session_summaries() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        for (notice, text, interrupted) in [
+            ("interrupt", "Stopped by you.", false),
+            ("interrupt", "  Stopped by you.\n", false),
+            ("info", "Stopped by you.", false),
+            (
+                "interrupt",
+                "Host restarted while this turn was running.",
+                true,
+            ),
+            ("interrupt", "Connection lost.", true),
+            ("", "Turn interrupted when bycoda quit.", true),
+            ("", "Turn interrupted when Bycoda quit.", true),
+        ] {
+            let mut session = sample("stopped", "/project", "Stopped");
+            session.blocks = json!([
+                { "id": "u", "role": "user", "text": "hello" },
+                { "id": "stop", "role": "system", "notice": notice, "text": text }
+            ]);
+            let saved =
+                upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(saved.interrupted, interrupted, "{text}");
+            for legacy in [false, true] {
+                if legacy {
+                    conn.execute("DELETE FROM session_blocks WHERE session_id='stopped'", [])
+                        .unwrap();
+                    conn.execute(
+                        "DELETE FROM session_block_state WHERE session_id='stopped'",
+                        [],
+                    )
+                    .unwrap();
+                    conn.execute(
+                        "UPDATE sessions SET blocks_json=?1 WHERE id='stopped'",
+                        [session.blocks.to_string()],
+                    )
+                    .unwrap();
+                }
+                assert_eq!(
+                    list_recent(&conn, 10).unwrap()[0].interrupted,
+                    interrupted,
+                    "{text}, legacy={legacy}"
+                );
+                assert_eq!(
+                    list_by_project_with_git(&conn, "/project", crate::fs::GitInfo::default())
+                        .unwrap()[0]
+                        .interrupted,
+                    interrupted,
+                    "{text}, legacy={legacy}"
+                );
+            }
         }
     }
 

@@ -11,9 +11,12 @@
   border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
 }
+/* Thumbnail only: the message text carries the reference and size. */
 .image {
-  width: 144px;
-  flex-direction: column;
+  width: 88px;
+  height: 64px;
+  padding: 0;
+  overflow: clip;
 }
 .file {
   width: 272px;
@@ -21,10 +24,9 @@
 }
 .thumbnail {
   width: 100%;
-  height: 72px;
-  overflow: hidden;
+  height: 100%;
+  overflow: clip;
 }
-.imageName,
 .name {
   display: block;
   min-width: 0;
@@ -36,21 +38,11 @@
   font-weight: 500;
   color: var(--color-content);
 }
-.imageName {
-  width: 100%;
-  margin-top: 5px;
-  text-align: start;
-}
 .metadata {
   display: block;
   font-size: var(--text-ui-caption);
   color: var(--ui-text-secondary);
   white-space: nowrap;
-}
-.reference {
-  font-size: var(--text-ui-caption);
-  color: var(--ui-text-secondary);
-  font-variant-numeric: tabular-nums;
 }
 .fileBody {
   flex: 1;

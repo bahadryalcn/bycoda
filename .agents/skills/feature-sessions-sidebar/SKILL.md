@@ -48,6 +48,9 @@ semantics. Source paths below are repository-relative.
   loading until continuation. Order/time filters use `lastActivityAt`, falling
   back to `updatedAt` for old summaries. Quit/recovery preserves activity while
   `updatedAt` still advances for Host synchronization and conflict checks.
+- Owner Stop is not interruption: `Stopped by you.` notices retain
+  their transcript bytes but do not set the list interruption flag. Keep the
+  TypeScript classifier and native summary projection consistent.
 - Working summarizes the open project's running rows while keeping global header
   counts and other-project paging. Attention/finished rows stay available; Last
   Sessions retains the complete list. Compare canonical project keys, including

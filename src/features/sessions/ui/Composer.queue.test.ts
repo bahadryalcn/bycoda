@@ -467,7 +467,8 @@ describe("a queue restored after a restart", () => {
       container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
     ).toContain("Waiting for confirmation");
     await act(async () => finish(false));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("It remains queued");
+    // A refused send keeps the message queued without an extra notice line.
+    expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).toContain("first");
     expect(send.disabled).toBe(false);
   });

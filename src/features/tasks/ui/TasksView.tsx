@@ -226,8 +226,13 @@ function TasksContent({
   } = useTaskBoardQueries(projectFilter, { planningCatalog: true });
   const ops = useTaskBoardOperations(refreshQueries);
   const { error, setError, saving, setSaving, acting, act, refresh, confirm, confirmDialog } = ops;
+  // Background polls refresh silently; the spinner belongs to the first read and
+  // to a refresh the user asked for.
+  const [manualRefresh, setManualRefresh] = useState(false);
   const retryBoard = () => {
-    if (!board.pending) void refreshQueries(true);
+    if (board.pending || manualRefresh) return;
+    setManualRefresh(true);
+    void refreshQueries(true).finally(() => setManualRefresh(false));
   };
   const { boardDataState, now } = useBoardDataState(board);
   // Machines whose host keeps a task board, this computer's included.
@@ -244,6 +249,7 @@ function TasksContent({
   const storedTasks = board.tasks;
   const limits = board.limits;
   const loading = board.pending && !board.hasTaskAnswer && !board.taskError;
+  const refreshing = manualRefresh || loading;
   const [sessionPreview, setSessionPreview] = useState<BackgroundSessionTarget | null>(null);
   const [statusDetails, setStatusDetails] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -1227,13 +1233,13 @@ function TasksContent({
             />
           ) : null}
           <div className="task-board-status" data-remote-data-state={boardDataState.phase}>
-            {error || missingNotice || boardDataState.error || board.pending ? (
+            {error || missingNotice || boardDataState.error || refreshing ? (
               <Button
                 variant="ghost"
                 onClick={() => setStatusDetails(true)}
                 tone={error || missingNotice || boardDataState.error ? "warning" : "neutral"}
               >
-                {board.pending ? (
+                {refreshing ? (
                   <Spinner size="xs" />
                 ) : (
                   <CircleHelp className="icon-sm" strokeWidth={1.75} />
@@ -1252,7 +1258,7 @@ function TasksContent({
               iconOnly
               label={boardDataState.error ? t("Retry") : t("Refresh")}
               tooltip={boardDataState.error ? t("Retry") : t("Refresh")}
-              loading={board.pending}
+              loading={refreshing}
               onClick={retryBoard}
             >
               <RefreshCw className="icon-sm" strokeWidth={1.75} />

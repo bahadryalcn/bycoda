@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
@@ -395,17 +395,20 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     stewardData,
     limitData,
   ]);
-  const initialReadReady = useRef(false);
+  // Change subscriptions start after the first read and then follow only the
+  // machine set. Re-subscribing on every poll restarted each change channel,
+  // whose first message invalidated tasks again and kept the board refreshing.
+  const [initialReadReady, setInitialReadReady] = useState(false);
+  if (!initialReadReady && !board.pending) setInitialReadReady(true);
   useEffect(() => {
-    if (!initialReadReady.current && board.pending) return;
-    initialReadReady.current = true;
+    if (!initialReadReady) return;
     const releases = machines.map((machine) =>
       subscribeBoardTaskChanges([machine], () => {
         void client.invalidateQueries({ queryKey: ["task-board", ...identity(machine), "tasks"] });
       }),
     );
     return () => releases.forEach((release) => release());
-  }, [client, subscriptionKey, board.pending]);
+  }, [client, subscriptionKey, initialReadReady]);
   /** Patches one machine's cached list. Reads that started before the
    * confirmed mutation are cancelled first, so an older host answer cannot put
    * the previous state back; the query cache stays the only collection owner. */

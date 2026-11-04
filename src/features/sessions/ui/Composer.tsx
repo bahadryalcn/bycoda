@@ -570,12 +570,9 @@ function MessageQueue({
             t("This queue action is unavailable. Reopen the conversation and try again."),
           );
         const result = await action();
-        if (result === false)
-          throw new Error(
-            t(
-              "The message was not accepted. It remains queued. Check the conversation and try again.",
-            ),
-          );
+        // A refused send leaves the message in the queue, where its row and the queue header
+        // already show it; no extra notice line under the queue.
+        if (result === false) return;
         setFeedback({
           error: false,
           actionId: id,
@@ -728,11 +725,7 @@ function MessageQueue({
       {queueClosed ? (
         <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
       ) : null}
-      <div
-        className="relative z-0 rounded-t-xl bg-(--ui-surface-panel) px-2 py-1"
-        data-message-queue-card
-        ref={card}
-      >
+      <div className="relative z-0 rounded-t-xl px-2 py-1" data-message-queue-card ref={card}>
         {paused ? (
           <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
             <Pause className="icon-sm" />

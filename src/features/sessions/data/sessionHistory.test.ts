@@ -27,6 +27,19 @@ function summary(id: string, cwd: string, updatedAt = 1): SessionSummary {
 }
 
 describe("historyWithLiveSessions", () => {
+  it("removes a legacy interruption warning once the loaded transcript proves owner Stop", () => {
+    const session: Session = {
+      ...newSession("codex", "/tmp/stopped"),
+      id: "stopped",
+      blocks: [
+        { id: "u", role: "user", text: "Work" },
+        { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+      ],
+    };
+    const stored = { ...summary(session.id, session.cwd), interrupted: true };
+    expect(historyWithLiveSessions([stored], [session], session.cwd)[0].interrupted).toBe(false);
+    expect(session.blocks.at(-1)?.text).toBe("Stopped by you.");
+  });
   it("retains a stored interruption during hydration and clears it after a newer turn", () => {
     const session: Session = {
       ...newSession("codex", "/tmp/interrupted"),

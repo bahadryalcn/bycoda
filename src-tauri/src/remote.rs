@@ -484,6 +484,10 @@ fn rpc_agent() -> &'static ureq::Agent {
 const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The renderer abandons a run-lease acquire after 4 s (`RUN_LEASE_ACQUIRE_TIMEOUT_MS`).
 const INTERACTIVE_LEASE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+/// A writer-retirement acquire may wait 20 s on the Host. The renderer gives up
+/// at 25 s (`RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS`); the wire must outlast it
+/// so a late grant or refusal still reaches the abandoned request.
+const RETIREMENT_LEASE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const INTERACTIVE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Workspace and policy reads resolve the repository identity with git, which
 /// takes seconds on a large repository or a cold disk.
@@ -509,6 +513,9 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         // Interactive HTTP-only methods that a send, the composer or an open
         // pane awaits. A hung Host must not hold a native worker (and the user's
         // send) for the 30 s default; these reply in milliseconds when healthy.
+        "sessions.runLease" if params.get("action").and_then(Value::as_str) == Some("acquire") => {
+            RETIREMENT_LEASE_RPC_TIMEOUT
+        }
         "sessions.runLease" => INTERACTIVE_LEASE_RPC_TIMEOUT,
         "sessions.desktopLive"
         | "sessions.adopted"
@@ -4176,6 +4183,19 @@ mod tests {
         assert_eq!(
             rpc_timeout("assistant.request", &json!({"op":"snapshot"})),
             DEFAULT_RPC_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn run_lease_acquire_outlasts_host_writer_retirement() {
+        // The Host waits up to 20 s for retirement; the renderer gives up at 25 s.
+        assert!(
+            rpc_timeout("sessions.runLease", &json!({"action":"acquire"}))
+                > std::time::Duration::from_secs(25)
+        );
+        assert_eq!(
+            rpc_timeout("sessions.runLease", &json!({"action":"release"})),
+            INTERACTIVE_LEASE_RPC_TIMEOUT
         );
     }
 

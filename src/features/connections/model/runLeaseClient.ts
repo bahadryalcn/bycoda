@@ -4,6 +4,7 @@ import {
   isLeaseHeld,
   leaseHeldText,
   RUN_LEASE_CAPABILITY,
+  RUN_LEASE_TTL_MS,
   HOST_WRITER_RETIREMENT_CAPABILITY,
   type RunLease,
 } from "../../sync/model/runLease";
@@ -39,6 +40,17 @@ const MACHINE_RECHECK_MS = 15_000;
 const FIRST_LOOK_MS = 2_000;
 /** How long a send waits for the host's answer before it starts without a lease. */
 export const RUN_LEASE_ACQUIRE_TIMEOUT_MS = 4_000;
+/**
+ * A retirement-capable Host waits up to 20 s for the previous provider writer
+ * to stop before it answers. Wait past that window so a slow but healthy
+ * retirement is granted instead of refused and left uncertain.
+ */
+export const RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS = 25_000;
+/**
+ * An abandoned grant whose return is uncertain is never renewed by this window,
+ * so the Host drops it once its TTL passes. The guard clears after that.
+ */
+export const RUN_LEASE_UNCERTAIN_GUARD_MS = RUN_LEASE_TTL_MS + 5_000;
 /** A lease whose turn never becomes busy here (it failed to start) is given back after this. */
 export const RUN_LEASE_IDLE_RELEASE_MS = 30_000;
 
@@ -224,7 +236,7 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
   if (retirementWaits.has(sessionId))
     return {
       kind: "failed",
-      text: "Message not sent: the previous ownership transfer is still pending or unknown. Your message is retained. Check the task repair state or Host connection before continuing.",
+      text: "Message not sent: the previous ownership transfer is still pending or unknown. Your message is retained. Sending is allowed again within about two minutes; check the Host connection if this persists.",
     };
   const retirement = machine?.retirement === true;
   pending.add(sessionId);
@@ -239,10 +251,13 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
     // A slow host (a busy notes worker, a handoff) must not hold a send invisibly:
     // after a moment the turn starts as before, as when the host is unreachable.
     const limit = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        timedOut = true;
-        reject(new Error("Run lease request timed out"));
-      }, RUN_LEASE_ACQUIRE_TIMEOUT_MS);
+      timer = setTimeout(
+        () => {
+          timedOut = true;
+          reject(new Error("Run lease request timed out"));
+        },
+        retirement ? RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS : RUN_LEASE_ACQUIRE_TIMEOUT_MS,
+      );
     });
     const { lease } = await Promise.race([request, limit]);
     trackLease(sessionId, lease);
@@ -272,12 +287,15 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
           },
         );
         retirementWaits.set(sessionId, cleanup);
-        void cleanup.then(
-          () => {
-            if (retirementWaits.get(sessionId) === cleanup) retirementWaits.delete(sessionId);
-          },
-          () => {},
-        ); // Uncertain grant/release remains held, never reused by a new send.
+        const clear = () => {
+          if (retirementWaits.get(sessionId) === cleanup) retirementWaits.delete(sessionId);
+        };
+        void cleanup.then(clear, () => {
+          // Uncertain grant/release stays guarded until any late lease has
+          // expired on the Host, then a fresh acquire may ask again.
+          const timer = setTimeout(clear, RUN_LEASE_UNCERTAIN_GUARD_MS);
+          timer.unref?.();
+        });
         return {
           kind: "failed",
           text: "Message not sent: the previous Host writer's retirement is still unconfirmed. Your message is retained. Check the task or Host connection before continuing.",

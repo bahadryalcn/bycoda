@@ -160,8 +160,16 @@ test("queue actions expose progress and recovery in both themes at narrow widths
     await steer.press("Enter");
     await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
     await expect(card.locator("[data-queue-feedback]")).toHaveText("Waiting for confirmation…");
-    await expect(card.getByRole("alert")).toContainText("It remains queued");
     await expect(steer).toBeEnabled();
+    await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
+    await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
+    await expect(card.getByRole("alert")).toHaveCount(0);
+    await expect(
+      card
+        .locator("[data-message-queue-rows]")
+        .getByText("Queued task waiting for the current turn", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   }
   await card.getByRole("button", { name: "Resume", exact: true }).click();

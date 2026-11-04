@@ -10,6 +10,7 @@ import type {
 } from "../src/features/connections/model/protocol";
 import type { Block, Session } from "../src/features/sessions/model/session";
 import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
+import { isTurnInterruptionNotice } from "../src/features/sessions/model/turnInterruption";
 import { assistantSessionManagement } from "../src/features/sessions/model/sessionProvenance";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "./host-notes-async";
@@ -523,12 +524,7 @@ export class DesktopSessions {
                 )
                 .get(String(row.id))?.block;
         const marker = typeof last === "string" ? parse(last) : undefined;
-        row.interrupted =
-          !!marker &&
-          marker.role === "system" &&
-          (marker.notice === "interrupt" ||
-            marker.text === "Turn interrupted when bycoda quit." ||
-            marker.text === "Turn interrupted when Bycoda quit.");
+        row.interrupted = isTurnInterruptionNotice(marker);
         if (meta) this.readTranscriptFacts(db, row, transcriptView);
         else if (
           transcriptView &&

@@ -10,8 +10,9 @@ import {
   replaceEditedResend,
   truncateBeforeLastEditableTurn,
   truncateBeforeLastUserTurn,
+  userBlockRecall,
 } from "./editLastTurn";
-import { newSession, type Block } from "./session";
+import { newSession, type Attachment, type Block } from "./session";
 
 function chat(blocks: Block[]) {
   return { ...newSession("pi", "/tmp"), blocks };
@@ -118,6 +119,20 @@ describe("editLastTurn", () => {
       { id: "a1", role: "assistant", text: "Here they are." },
     ]);
     expect(lastTurnRecall(session)?.text).toBe("/operator list notes");
+  });
+
+  it("takes a saved draft back as composer input with its files", () => {
+    const image = { id: "img", name: "image.png", mime: "image/png", size: 92_000 } as Attachment;
+    expect(
+      userBlockRecall({
+        id: "d",
+        role: "user",
+        text: "[image1]",
+        attachments: [image],
+        draft: true,
+      }),
+    ).toEqual({ text: "[image1]", attachments: [image] });
+    expect(userBlockRecall({ id: "e", role: "user", text: "  ", draft: true })).toBeNull();
   });
 
   it("allows edit on idle pi sessions without queued follow-ups", () => {

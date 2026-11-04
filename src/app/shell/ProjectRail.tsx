@@ -45,6 +45,7 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   Zap,
   DashboardSquare,
   Server,
@@ -135,6 +136,10 @@ import {
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
 import { DevModeIndicator, TabVisitNav } from "./TitleBar";
+import {
+  openAssistantRoom,
+  useAssistantRoomLabel,
+} from "../../features/assistant/model/assistantClient";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
@@ -231,6 +236,7 @@ type Props = {
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
+  assistantActive?: boolean;
   onOpenServers?: () => void;
   serversActive?: boolean;
   onTogglePanel?: () => void;
@@ -298,6 +304,7 @@ export function ProjectRail({
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
+  assistantActive = false,
   onOpenServers,
   serversActive = false,
   onTogglePanel,
@@ -331,7 +338,7 @@ export function ProjectRail({
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
   const automationsShortcut = useKeybindingShortcut("App: Open Automations");
   const tasksShortcut = useKeybindingShortcut("App: Open Tasks");
-  const settingsShortcut = useKeybindingShortcut("App: Settings");
+  const assistantLabel = useAssistantRoomLabel();
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
@@ -739,6 +746,7 @@ export function ProjectRail({
     automationsActive ||
     tasksActive ||
     socialActive ||
+    assistantActive ||
     serversActive;
   const brand = (
     <div
@@ -1062,7 +1070,9 @@ export function ProjectRail({
                                 ? "social"
                                 : tasksActive
                                   ? "tasks"
-                                  : null
+                                  : assistantActive
+                                    ? "assistant"
+                                    : null
                     }
                     items={[
                       {
@@ -1162,14 +1172,11 @@ export function ProjectRail({
                           ]
                         : []),
                       {
-                        id: "settings",
-                        label: t("Settings"),
-                        icon: <Settings />,
-                        // Only a real open page or dialog is selected; opening the label never paints selection.
-                        active: settingsOpen || settingsDialogOpen,
-                        shortcut: settingsShortcut,
-                        onSelect: onOpenSettings,
-                        disabled: !onOpenSettings,
+                        id: "assistant",
+                        label: assistantLabel,
+                        icon: <Sparkles />,
+                        active: assistantActive,
+                        onSelect: () => openAssistantRoom(),
                       },
                     ]}
                   />
@@ -1249,12 +1256,11 @@ export function ProjectRail({
                     />
                   </WorkspaceFeatureGate>
                   <RailAction
-                    label={t("Settings")}
-                    icon={Settings}
-                    onClick={onOpenSettings}
-                    active={settingsOpen || settingsDialogOpen}
-                    command="App: Settings"
-                    guide="rail-settings"
+                    label={assistantLabel}
+                    icon={Sparkles}
+                    onClick={() => openAssistantRoom()}
+                    active={assistantActive}
+                    guide="rail-assistant"
                   />
                 </nav>
               </>
@@ -1312,15 +1318,30 @@ export function ProjectRail({
                     onDismissUpdate={onDismissUpdate}
                   />
                 </div>
-                <div className="flex shrink-0 flex-col gap-px p-2">
-                  <div className="@max-[140px]/rail:hidden">
+                <div className="flex shrink-0 flex-col gap-px px-2 pt-2 empty:hidden">
+                  <div className="empty:hidden @max-[140px]/rail:hidden">
                     <SidebarUpdateFooter repositoryPrompt />
                   </div>
-                  <div className="hidden items-center gap-1 @max-[140px]/rail:flex @max-[140px]/rail:flex-col">
+                  <div className="hidden items-center gap-1 empty:hidden @max-[140px]/rail:flex @max-[140px]/rail:flex-col">
                     <SidebarUpdateFooter />
                   </div>
                 </div>
                 <DevModeIndicator />
+                {/* Settings closes the rail: always the last, lowest item. */}
+                <nav
+                  aria-label={t("Settings")}
+                  className="bycoda-rail-tools bycoda-rail-tools--footer shrink-0"
+                >
+                  <RailAction
+                    label={t("Settings")}
+                    icon={Settings}
+                    onClick={onOpenSettings}
+                    // Only a real open page or dialog is selected; opening the label never paints selection.
+                    active={settingsOpen || settingsDialogOpen}
+                    command="App: Settings"
+                    guide="rail-settings"
+                  />
+                </nav>
               </>
             ) : null}
           </>

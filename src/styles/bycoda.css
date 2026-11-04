@@ -375,6 +375,11 @@ html.theme-light .project-sigil {
 .bycoda-rail-tools--compact {
   display: none;
 }
+/* Settings sits at the rail's bottom edge, below the update and repository footers. */
+.bycoda-rail-tools--footer {
+  padding-block: 2px 8px;
+  margin-block-end: 0;
+}
 @container rail (width <= 280px) {
   .bycoda-rail-tools--expanding {
     display: none;

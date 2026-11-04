@@ -125,6 +125,38 @@ for (const layout of ["chat", "full"] as const) {
   });
 }
 
+test("a saved draft offers edit, remove and send on one row", async ({ page }, info) => {
+  await page.goto("/tests/browser/transcript.html?message-bubbles");
+  const draft = page.locator('[data-prompt-anchor="draft-user"] .user-message-bubble');
+  const actions = [
+    draft.getByRole("button", { name: "Edit draft", exact: true }),
+    draft.getByRole("button", { name: "Remove draft", exact: true }),
+    draft.getByRole("button", { name: "Send draft", exact: true }),
+  ];
+  for (const width of [800, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const bubble = (await draft.boundingBox())!;
+      const boxes = await Promise.all(actions.map(async (action) => (await action.boundingBox())!));
+      for (const box of boxes) {
+        expect(box.y).toBeCloseTo(boxes[0].y, 0);
+        expect(box.x).toBeGreaterThanOrEqual(bubble.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(bubble.x + bubble.width);
+      }
+      expect(boxes[0].x).toBeLessThan(boxes[1].x);
+      expect(boxes[1].x).toBeLessThan(boxes[2].x);
+      await draft.screenshot({ path: info.outputPath(`draft-actions-${width}-${theme}.png`) });
+    }
+  }
+  await actions[0].focus();
+  await page.keyboard.press("Tab");
+  await expect(actions[1]).toBeFocused();
+});
+
 test("chat messages, attachment references and running work keep a readable hierarchy", async ({
   page,
 }, info) => {
@@ -153,15 +185,18 @@ test("chat messages, attachment references and running work keep a readable hier
         .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
       expect(new Set(thumbnailTops).size).toBe(1);
       const card = rail.locator('[data-attachment-chip="image"]').first();
-      // Image cards retain filename, type/size and reference rows below a 72px
-      // thumbnail. Compare the usable content height with the tallest card;
-      // native scrollbars and the rail's padding are not another row.
-      await expect(card.getByText("screenshot-1.png", { exact: true })).toBeVisible();
-      await expect(card.getByText("Image · 42 B", { exact: true })).toBeVisible();
-      await expect(card.getByText("image1", { exact: true })).toBeVisible();
+      // Compact image cards contain only a thumbnail. File identity remains on
+      // the preview action and tooltip; size sits beside the copied text token.
+      await expect(image).toHaveAccessibleName("Open screenshot-1.png full screen");
+      await image.hover();
+      await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png · 42 B");
+      await page.mouse.move(0, 0);
       const cardBox = (await card.boundingBox())!;
-      expect(cardBox.width).toBe(144);
-      expect((await image.boundingBox())!.height).toBe(72);
+      expect(cardBox.width).toBe(88);
+      expect(cardBox.height).toBe(64);
+      expect((await image.boundingBox())!.height).toBe(
+        await card.evaluate((node) => node.clientHeight),
+      );
       const railContent = await rail.evaluate((node) => {
         const style = getComputedStyle(node);
         return {
@@ -180,6 +215,7 @@ test("chat messages, attachment references and running work keep a readable hier
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
       });
+      await expect(token.locator("[data-size]")).toHaveAttribute("data-size", "42 B");
       expect((await token.boundingBox())!.height).toBeLessThan(26);
       const track = dock.locator('[data-pacing-track="reserved"]');
       const summary = dock.locator(".activity-dock-summary");

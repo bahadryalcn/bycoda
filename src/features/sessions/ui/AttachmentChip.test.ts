@@ -300,7 +300,7 @@ describe("AttachmentChip image preview", () => {
     const label = container.querySelector<HTMLButtonElement>(
       '[aria-label="Insert [image2] into the message"]',
     )!;
-    expect(label.textContent).toBe("image2");
+    expect(label).not.toBeNull();
 
     act(() => label.click());
 
@@ -308,24 +308,18 @@ describe("AttachmentChip image preview", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("shows a plain label when the token cannot be inserted", () => {
+  it("shows only the thumbnail and keeps the details in its tooltip", () => {
     act(() => root.render(createElement(AttachmentChip, { attachment, token: "[image1]" })));
-    expect(container.textContent).toContain("image1");
+    // The message text names the image; the card repeats nothing.
+    expect(container.textContent).toBe("");
     expect(container.querySelector('[aria-label^="Insert "]')).toBeNull();
-  });
-
-  it("keeps image filename, type and size visible without a token", () => {
-    render();
-    expect(container.textContent).toContain("diagram.png");
-    expect(container.textContent).toContain("Image · 42 B");
-    expect(container.querySelector('[aria-label^="Insert "]')).toBeNull();
+    expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).not.toBeNull();
   });
 
   it("falls back to an image identity when thumbnail decoding fails", () => {
     render();
     act(() => container.querySelector("img")!.dispatchEvent(new Event("error")));
     expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain("diagram.png");
     expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).not.toBeNull();
   });
 });

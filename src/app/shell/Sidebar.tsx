@@ -76,6 +76,7 @@ import {
   Search,
   Share,
   Settings,
+  Sparkles,
   SplitSquare,
   StickyNote,
   Server,
@@ -83,6 +84,10 @@ import {
   Zap,
   PenLine,
 } from "../../shared/ui/icons";
+import {
+  openAssistantRoom,
+  useAssistantRoomLabel,
+} from "../../features/assistant/model/assistantClient";
 import {
   memo,
   createContext,
@@ -449,6 +454,7 @@ type Props = {
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
+  assistantActive?: boolean;
   notesEnabled?: boolean;
   onToggleProjectRail?: () => void;
   projectRailOpen?: boolean;
@@ -568,6 +574,7 @@ function SidebarComponent({
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
+  assistantActive = false,
   notesEnabled = true,
   onToggleProjectRail,
   projectRailOpen = true,
@@ -2776,6 +2783,7 @@ function SidebarComponent({
               automationsActive={automationsActive}
               tasksActive={tasksActive}
               socialActive={socialActive}
+              assistantActive={assistantActive}
               inboxUnseen={inboxUnseen}
             />
           ) : null}
@@ -3543,6 +3551,7 @@ function SidebarComponent({
           automationsActive={automationsActive}
           tasksActive={tasksActive}
           socialActive={socialActive}
+          assistantActive={assistantActive}
           onOpenSettings={onOpenSettings}
           onOpenCrews={
             onSelectSettingsSection && onOpenSettings
@@ -3596,6 +3605,7 @@ function SidebarComponent({
           automationsActive={automationsActive}
           tasksActive={tasksActive}
           socialActive={socialActive}
+          assistantActive={assistantActive}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -3839,6 +3849,7 @@ function SidebarProjectPicker({
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
+  assistantActive = false,
   inboxUnseen = false,
 }: {
   cwd: string;
@@ -3862,11 +3873,13 @@ function SidebarProjectPicker({
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
+  assistantActive?: boolean;
   inboxUnseen?: boolean;
 }) {
   const t = useT();
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
   const inboxTrigger = useRef<HTMLElement | null>(null);
+  const assistantLabel = useAssistantRoomLabel();
   return (
     <PaneHeader
       dragRegion
@@ -3959,6 +3972,15 @@ function SidebarProjectPicker({
               </WorkspaceFeatureGate>
             </span>
           ) : null}
+          <span className="contents @max-[320px]/picker:hidden">
+            <IconButton
+              label={assistantLabel}
+              active={assistantActive}
+              onClick={() => openAssistantRoom()}
+            >
+              <Sparkles className="icon-sm" strokeWidth={1.75} />
+            </IconButton>
+          </span>
         </>
       }
     >
@@ -4013,6 +4035,7 @@ function CompactProjectRail({
   automationsActive,
   tasksActive,
   socialActive,
+  assistantActive = false,
   onOpenSettings,
   onOpenCrews,
   onTogglePanel,
@@ -4045,6 +4068,7 @@ function CompactProjectRail({
   automationsActive: boolean;
   tasksActive: boolean;
   socialActive: boolean;
+  assistantActive?: boolean;
   onOpenSettings?: () => void;
   onOpenCrews?: () => void;
   onTogglePanel?: () => void;
@@ -4068,7 +4092,9 @@ function CompactProjectRail({
     !serversActive &&
     !automationsActive &&
     !tasksActive &&
-    !socialActive;
+    !socialActive &&
+    !assistantActive;
+  const assistantLabel = useAssistantRoomLabel();
 
   return (
     <nav
@@ -4134,7 +4160,14 @@ function CompactProjectRail({
           />
         </WorkspaceFeatureGate>
         <CompactRailTools
-          active={notesActive || serversActive || automationsActive || tasksActive || socialActive}
+          active={
+            notesActive ||
+            serversActive ||
+            automationsActive ||
+            tasksActive ||
+            socialActive ||
+            assistantActive
+          }
         >
           {onOpenCrews ? (
             <CompactRailAction label={t("Crews")} icon={Bot} onClick={onOpenCrews} />
@@ -4175,6 +4208,12 @@ function CompactProjectRail({
               onClick={action(tasksActive, onOpenTasks)}
             />
           </WorkspaceFeatureGate>
+          <CompactRailAction
+            label={assistantLabel}
+            icon={Sparkles}
+            active={assistantActive}
+            onClick={action(assistantActive, () => openAssistantRoom())}
+          />
         </CompactRailTools>
         {/* Same order as the full sidebar: panel, search and tools first, then the
             work sections (recovered work, projects, last sessions, workspace). */}

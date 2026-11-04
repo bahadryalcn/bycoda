@@ -214,6 +214,18 @@ describe("durable session recovery", () => {
     expect(recoveryNeedsAttention("done")).toBe(false);
     expect(recoveryNeedsAttention("idle")).toBe(false);
   });
+  it("resolves an explicit owner stop without reviving an earlier interruption", () => {
+    const stopped = markTurnInterrupted(chat("stopped"));
+    stopped.blocks.push(
+      { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+      { id: "metadata", role: "system", text: "Restored from disk" },
+    );
+    const status = recoveryStatus(stopped, false, true);
+    expect(status).toBe("idle");
+    expect(recoveryNeedsAttention(status)).toBe(false);
+    expect(recoveryStatus(stopped, true, false)).toBe("unknown");
+    expect(recoveryStatus({ ...stopped, busy: true }, false, true)).toBe("working");
+  });
   it("keeps failed and unfinished turns separate from completed sessions", () => {
     const failed = chat("a");
     failed.blocks.push({ id: "error", role: "system", text: "Provider failed", notice: "error" });

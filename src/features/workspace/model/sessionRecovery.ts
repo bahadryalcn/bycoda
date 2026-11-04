@@ -1,5 +1,5 @@
 import { sessionNeedsInput, type Session } from "../../sessions/model/session";
-import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
+import { isOwnerStopNotice, isTurnInterruptionNotice } from "../../sessions/model/turnInterruption";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import { parseWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspaceSnapshot";
@@ -261,11 +261,8 @@ export function recoveryStatus(
       if (session.historyLoading || session.historyLoadError) return "unknown";
       return block.durationMs !== undefined ? "done" : "unknown";
     }
-    if (
-      block.notice === "interrupt" ||
-      (block.role === "system" && isTurnInterruptMessage(block.text))
-    )
-      return "interrupted";
+    if (isOwnerStopNotice(block)) return "idle";
+    if (isTurnInterruptionNotice(block)) return "interrupted";
   }
   return "idle";
 }

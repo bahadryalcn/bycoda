@@ -130,7 +130,12 @@ import { getComposerDraft, setComposerDraft } from "../model/draftCache";
 import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { userPromptHistory } from "../model/composerHistory";
-import { lastTurnRecall, lastUserTurnBlock } from "../model/editLastTurn";
+import {
+  lastTurnRecall,
+  lastUserTurnBlock,
+  userBlockRecall,
+  type LastTurnRecall,
+} from "../model/editLastTurn";
 import { canRewindConversation } from "../model/conversationRewind";
 import {
   loadProjectChatBackgroundSettings,
@@ -760,6 +765,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     activeSessionIdRef,
     currentSessionRef,
   });
+  const [draftEditSignal, setDraftEditSignal] = useState<{
+    sessionId: string;
+    id: string;
+    value: LastTurnRecall;
+  } | null>(null);
   const modelWelcomeSequence = useRef(0);
   const decorativeMotionEnabled = useDecorativeMotionEnabled();
   const [modelWelcome, setModelWelcome] = useState<{
@@ -1122,6 +1132,18 @@ const LocalSessionPane = memo(function LocalSessionPane({
     }),
   );
   const removeDraft = useStableCallback((block: Block) => onRemoveDraft(session.id, block.id));
+  // Editing takes the saved draft back into the composer: the card goes and its
+  // text and files return as unsent input, kept and saved like any other draft.
+  const editDraft = useStableCallback((block: Block) => {
+    const value = userBlockRecall(block);
+    if (!value || onRemoveDraft(session.id, block.id) === false) return false;
+    setDraftEditSignal({ sessionId: session.id, id: crypto.randomUUID(), value });
+    return true;
+  });
+  const recalledMessageApplied = useStableCallback((id: string) => {
+    acknowledgeDraftSignal(id);
+    setDraftEditSignal((current) => (current?.id === id ? null : current));
+  });
   const secondOpinion = useStableCallback((target: ModelTarget, turn: Block[]) =>
     onSecondOpinion?.(session.id, target, turn),
   );
@@ -1367,11 +1389,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
       promptHistory={composerPromptHistory}
       onRecallLastTurn={rewindLastTurnToDraft}
       recalledMessage={
-        rewindDraftSignal?.sessionId === session.id
-          ? { id: rewindDraftSignal.id, value: rewindDraftSignal.value }
-          : undefined
+        draftEditSignal?.sessionId === session.id
+          ? { id: draftEditSignal.id, value: draftEditSignal.value }
+          : rewindDraftSignal?.sessionId === session.id
+            ? { id: rewindDraftSignal.id, value: rewindDraftSignal.value }
+            : undefined
       }
-      onRecalledMessageApplied={acknowledgeDraftSignal}
+      onRecalledMessageApplied={recalledMessageApplied}
       editingLastTurn={editingLastTurn}
       onEditingLastTurnChange={setEditingLastTurn}
     >
@@ -1721,6 +1745,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onAddToChat={addSelectionToChat}
                       onSaveNote={notesEnabled ? saveNote : undefined}
                       onSendDraft={draftBlock ? sendDraft : undefined}
+                      onEditDraft={draftBlock && !remote ? editDraft : undefined}
                       onRemoveDraft={draftBlock ? removeDraft : undefined}
                       onSaveSelectionNote={notesEnabled ? saveSelectionNote : undefined}
                       onOpenFile={onOpenFile}

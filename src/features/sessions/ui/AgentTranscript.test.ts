@@ -391,6 +391,19 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain('aria-label="Send draft"');
     expect(markup).toContain('aria-label="Remove draft"');
     expect(markup).toContain(">Draft</span>");
+    expect(markup).not.toContain('aria-label="Edit draft"');
+  });
+
+  it("offers editing a saved draft only when the pane can take it back", () => {
+    const blocks: Block[] = [{ id: "draft", role: "user", text: "Explore this", draft: true }];
+    const markup = renderToStaticMarkup(
+      createElement(AgentTranscript, { blocks, onEditDraft: () => true }),
+    );
+
+    expect(markup).toContain('aria-label="Edit draft"');
+    expect(markup.indexOf('aria-label="Edit draft"')).toBeLessThan(
+      markup.indexOf('aria-label="Remove draft"'),
+    );
   });
 
   it("shows uncertain delivery guidance from a restored saved draft", () => {

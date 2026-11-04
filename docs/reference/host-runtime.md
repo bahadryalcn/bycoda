@@ -58,7 +58,10 @@ A late acquire refusal (`HOST_WRITER_RETIREMENT_PENDING`,
 `HOST_WRITER_RETIREMENT_FAILED` or `LEASE_HELD`) confirms no lease was granted,
 so a later owner attempt may query the Host again. It does not authorize a
 provider start or replay the retained input. A transport failure or a failed
-release after a late grant still leaves ownership unknown and guarded.
+release after a late grant still leaves ownership unknown and guarded until the
+run-lease TTL has passed, because this window never renews that lease. Desktop
+acquire waits 25 s against a retirement-capable Host so the Host's 20 s
+retirement window can answer first.
 
 The provider retirement ledger retains captured handles and failed cleanup after
 provider Live-map removal. Host activity release callbacks belong to the original

@@ -32,13 +32,16 @@
 
 /* The composer box surface, edge and shadow are owned by bycoda.css
    ([data-composer-box]); nothing here repaints it. */
-/* The turn activity band sits on the composer, so it shares the composer surface. */
-html [data-activity-dock] {
+/* The turn activity band and the message queue sit on the composer as one frosted glass pane
+   over the transcript; the composer surface is the opaque fallback. */
+html [data-activity-dock],
+html [data-message-queue-card] {
   background: var(--ui-composer-surface);
 }
 
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  html [data-activity-dock] {
+  html [data-activity-dock],
+  html [data-message-queue-card] {
     background: var(--ui-activity-dock-glass);
     box-shadow: var(--ui-activity-dock-edge);
     -webkit-backdrop-filter: var(--ui-activity-dock-filter);
@@ -46,7 +49,8 @@ html [data-activity-dock] {
   }
 }
 
-html[data-performance-no-blur] [data-activity-dock] {
+html[data-performance-no-blur] [data-activity-dock],
+html[data-performance-no-blur] [data-message-queue-card] {
   background: var(--ui-composer-surface);
   box-shadow: none;
   -webkit-backdrop-filter: none;
@@ -54,7 +58,8 @@ html[data-performance-no-blur] [data-activity-dock] {
 }
 
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  html [data-activity-dock] {
+  html [data-activity-dock],
+  html [data-message-queue-card] {
     background: var(--ui-composer-surface);
     box-shadow: none;
     -webkit-backdrop-filter: none;

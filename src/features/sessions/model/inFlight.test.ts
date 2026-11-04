@@ -10,6 +10,7 @@ import {
   markTurnInterrupted,
   quitWhileBusyMessage,
   shouldWriteInFlightSnapshot,
+  wasTurnInterrupted,
   workspaceFromResumed,
 } from "./inFlight";
 import { newSession, type Session } from "./session";
@@ -258,6 +259,37 @@ describe("workspaceFromResumed", () => {
 });
 
 describe("canAutoContinue", () => {
+  it.each(["Stopped by you.", "  Stopped by you.\n"])(
+    "does not warn or auto-continue an owner stop saved with the old interrupt kind: %s",
+    (text) => {
+      const session = chat("/tmp/a", {
+        providerSessionId: "p1",
+        blocks: [
+          { id: "u1", role: "user", text: "hello" },
+          { id: "stop", role: "system", notice: "interrupt", text },
+        ],
+      });
+      expect(wasTurnInterrupted(session)).toBe(false);
+      expect(canAutoContinue(session)).toBe(false);
+      expect(session.blocks.at(-1)?.notice).toBe("interrupt");
+    },
+  );
+  it("keeps unexpected Host interruption eligible for recovery", () => {
+    const session = chat("/tmp/a", {
+      providerSessionId: "p1",
+      blocks: [
+        { id: "u1", role: "user", text: "hello" },
+        {
+          id: "restart",
+          role: "system",
+          notice: "interrupt",
+          text: "Host restarted. This turn was interrupted; inspect its work before continuing.",
+        },
+      ],
+    });
+    expect(wasTurnInterrupted(session)).toBe(true);
+    expect(canAutoContinue(session)).toBe(true);
+  });
   it("resumes legacy interrupted sessions without adding a duplicate notice", () => {
     const legacy = chat("/tmp/a", {
       providerSessionId: "p1",

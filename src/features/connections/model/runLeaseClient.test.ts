@@ -19,6 +19,8 @@ import {
   releaseRunLease,
   RUN_LEASE_IDLE_RELEASE_MS,
   RUN_LEASE_ACQUIRE_TIMEOUT_MS,
+  RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS,
+  RUN_LEASE_UNCERTAIN_GUARD_MS,
   runLeaseMachine,
   probeRunLease,
 } from "./runLeaseClient";
@@ -146,7 +148,7 @@ it("holds a pending retirement and returns a late grant by its original epoch", 
           })
         : {};
     const pending = acquireRunLease("chat");
-    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
     expect(await pending).toMatchObject({
       kind: "failed",
       text: expect.stringContaining("unconfirmed"),
@@ -182,7 +184,7 @@ it("retains unknown ownership if returning an abandoned late lease fails", async
       throw new Error("release acknowledgement lost");
     };
     const pending = acquireRunLease("chat");
-    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
     expect(await pending).toMatchObject({ kind: "failed" });
     finish({ lease });
     await vi.advanceTimersByTimeAsync(0);
@@ -218,7 +220,7 @@ it.each([
         reject = fail;
       });
     const first = acquireRunLease("chat");
-    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
     expect(await first).toMatchObject({ kind: "failed" });
     expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
     expect(calls).toHaveLength(1);
@@ -259,7 +261,7 @@ it("keeps a late transport failure guarded because it cannot exclude a grant", a
         reject = fail;
       });
     const first = acquireRunLease("chat");
-    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
     expect(await first).toMatchObject({ kind: "failed" });
     reject(new Error("RPC_HOST_UNAVAILABLE: response lost"));
     await vi.advanceTimersByTimeAsync(0);
@@ -268,6 +270,47 @@ it("keeps a late transport failure guarded because it cannot exclude a grant", a
       text: expect.stringContaining("unknown"),
     });
     expect(calls).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("waits through a slow Host writer retirement instead of refusing at the short limit", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    answer = () => new Promise((resolve) => setTimeout(() => resolve({ lease }), 10_000));
+    const pending = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(isRunLeasePending("chat")).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await pending).toMatchObject({ kind: "granted", lease: { epoch: 7 } });
+    expect(calls.map((call) => call.params.action)).toEqual(["acquire"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("lets a fresh ownership check through once an uncertain late lease has expired", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    let reject!: (error: Error) => void;
+    answer = () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      });
+    const first = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await first).toMatchObject({ kind: "failed" });
+    reject(new Error("RPC_HOST_UNAVAILABLE: response lost"));
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_UNCERTAIN_GUARD_MS - 1_000);
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
+    expect(calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    answer = () => ({ lease: { ...lease, epoch: 8 } });
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "granted", lease: { epoch: 8 } });
+    expect(calls.map((call) => call.params.action)).toEqual(["acquire", "acquire"]);
   } finally {
     vi.useRealTimers();
   }
@@ -285,7 +328,7 @@ it("waits for the abandoned grant's release ACK before allowing a newer epoch", 
         else release = resolve;
       });
     const first = acquireRunLease("chat");
-    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
     expect(await first).toMatchObject({ kind: "failed" });
     grant({ lease });
     await vi.advanceTimersByTimeAsync(0);
@@ -315,7 +358,7 @@ it("does not mistake a late grant's release refusal for an acquisition refusal",
       throw new Error("HOST_WRITER_RETIREMENT_FAILED: release not acknowledged");
     };
     const first = acquireRunLease("chat");
-    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS + 1);
     expect(await first).toMatchObject({ kind: "failed" });
     finish({ lease });
     await vi.advanceTimersByTimeAsync(0);

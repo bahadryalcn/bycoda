@@ -129,6 +129,52 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it.each(["legacy", "normalized"] as const)(
+    "distinguishes owner stops from interruptions in %s desktop history",
+    async (storage) => {
+      const s = await setup();
+      s.seed({ id: "stopped", cwd: s.projectDir });
+      if (storage === "normalized") {
+        s.desktopDb
+          .exec(`CREATE TABLE session_block_state(session_id TEXT PRIMARY KEY, revision INTEGER, length INTEGER);
+          CREATE TABLE session_blocks(session_id TEXT, ordinal INTEGER, block_json TEXT);
+          CREATE INDEX session_blocks_roles ON session_blocks(session_id,json_extract(block_json,'$.role'),json_extract(block_json,'$.draft'));
+          INSERT INTO session_block_state VALUES ('stopped',1,2);`);
+      }
+      const desktop = new DesktopSessions(() => [s.dbPath]);
+      try {
+        for (const [notice, text, status] of [
+          ["interrupt", "Stopped by you.", "idle"],
+          ["interrupt", "  Stopped by you.\n", "idle"],
+          ["info", "Stopped by you.", "idle"],
+          ["interrupt", "Host restarted while this turn was running.", "interrupted"],
+          ["interrupt", "Connection lost.", "interrupted"],
+          [undefined, "Turn interrupted when bycoda quit.", "interrupted"],
+          [undefined, "Turn interrupted when Bycoda quit.", "interrupted"],
+        ] as const) {
+          const blocks = [
+            { id: "u", role: "user", text: "hello" },
+            { id: "stop", role: "system", notice, text },
+          ];
+          if (storage === "normalized") {
+            s.desktopDb.exec("DELETE FROM session_blocks WHERE session_id='stopped'");
+            for (const [ordinal, block] of blocks.entries()) {
+              s.desktopDb
+                .prepare("INSERT INTO session_blocks VALUES ('stopped',?,?)")
+                .run(ordinal, JSON.stringify(block));
+            }
+          } else {
+            s.desktopDb
+              .prepare("UPDATE sessions SET blocks_json=? WHERE id='stopped'")
+              .run(JSON.stringify(blocks));
+          }
+          expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].status, text).toBe(status);
+        }
+      } finally {
+        desktop.close();
+      }
+    },
+  );
   it("projects the latest desktop interruption and its separate activity time", async () => {
     const s = await setup();
     s.seed({ id: "interrupted", cwd: s.projectDir, updated: 200 });
