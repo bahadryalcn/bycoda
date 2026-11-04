@@ -357,12 +357,16 @@ it("shows a recoverable error when persisting a pasted image fails", async () =>
       preventDefault: vi.fn(),
     } as never);
     await vi.waitFor(() => {
-      expect(onError).toHaveBeenLastCalledWith("Disk full");
+      expect(onError).toHaveBeenLastCalledWith(
+        "Could not attach pasted.png: Disk full. Paste or attach the file again.",
+      );
       expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
     });
   });
   expect(api.files).toEqual([]);
-  expect(onError).toHaveBeenLastCalledWith("Disk full");
+  expect(onError).toHaveBeenLastCalledWith(
+    "Could not attach pasted.png: Disk full. Paste or attach the file again.",
+  );
   expect(api.loading).toBe(false);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });
