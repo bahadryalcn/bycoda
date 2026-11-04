@@ -833,3 +833,63 @@ it("authenticates preparation cancellation and fences late same-key requests wit
   });
   expect((await f.call("native.rewind.status", operation)).phase).toBe("prepared");
 });
+
+
+it("retains durable editor activity across connections and rejects wrong-workspace or retired callbacks", async () => {
+  const f = await fixture();
+  const prepare = async (name: string) => (await f.call("workspaces.prepare", {
+    ...f.projectScope,
+    idempotencyKey: `editor-${name}`,
+    owner: { kind: "session", id: randomUUID() },
+    slug: `Editor ${name}`,
+  })).workspace as ManagedWorkspace;
+  const original = await prepare("original");
+  const unrelated = await prepare("unrelated");
+  // Each response closes its physical HTTP connection. Disconnect is not proof
+  // that this device's retained editor buffers or native resources disappeared.
+  const request = async (method: string, params: unknown, token = f.device.token) => {
+    const response = await fetch(`http://127.0.0.1:${(f.server.address() as AddressInfo).port}/rpc`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+      body: JSON.stringify({ version: 1, environmentId: f.store.environmentId, method, params }),
+    });
+    return { status: response.status, value: await response.json() as { result?: any; error?: string } };
+  };
+  const started = await request("workspaces.activities.start", {
+    workspaceId: original.id, kind: "editor", dirtyBuffer: true,
+  });
+  expect(started.status).toBe(200);
+  const editor = started.value.result;
+  expect((await request("workspaces.activities.list", { workspaceId: original.id })).value.result)
+    .toContainEqual(expect.objectContaining({ id: editor.id, dirtyBuffer: true }));
+  const wrongWorkspace = await request("workspaces.activities.stop", {
+    workspaceId: unrelated.id, activityId: editor.id,
+  });
+  expect(wrongWorkspace.status).toBe(400);
+  expect(wrongWorkspace.value.error).toMatch(/not owned/i);
+  expect(await f.server.managedWorkspaces.activity.list(original.id))
+    .toContainEqual(expect.objectContaining({ id: editor.id }));
+  const otherDevice = await f.store.issueDevice("Foreign editor device");
+  expect((await request("workspaces.activities.stop", {
+    workspaceId: original.id, activityId: editor.id,
+  }, otherDevice.token)).status).toBe(400);
+  // Authoritative retirement outside this RPC must make the old callback stale,
+  // even when that same server accepted its original start request.
+  await f.server.managedWorkspaces.activity.stop(editor.id);
+  const next = await request("workspaces.activities.start", {
+    workspaceId: original.id, kind: "editor", dirtyBuffer: true,
+  });
+  expect(next.status).toBe(200);
+  const stale = await request("workspaces.activities.stop", {
+    workspaceId: original.id, activityId: editor.id,
+  });
+  expect(stale.status).toBe(400);
+  expect(stale.value.error).toMatch(/not owned/i);
+  expect(await f.server.managedWorkspaces.activity.list(original.id))
+    .toContainEqual(expect.objectContaining({ id: next.value.result.id, dirtyBuffer: true }));
+  expect(await request("workspaces.activities.stop", {
+    workspaceId: original.id, activityId: next.value.result.id,
+  })).toMatchObject({ status: 200, value: { result: { stopped: true } } });
+  expect(await f.server.managedWorkspaces.activity.list(original.id)).not
+    .toContainEqual(expect.objectContaining({ id: next.value.result.id }));
+});

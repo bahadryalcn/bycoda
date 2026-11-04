@@ -548,7 +548,6 @@ export async function createHostServer(
     }
   };
   terminals.setActivityGate((cwd, terminalId) => startWorkspaceActivity(cwd, "shell", terminalId));
-  const editorActivities = new Map<string, { workspaceId: string; ownerId: string }>();
   const workspaceOwnerDeviceId = async (token: string) => {
     const current = (await engine.store.pairedDevices(token)).devices.find(
       (device) => device.isCurrent,
@@ -4123,21 +4122,17 @@ export async function createHostServer(
                     ownerId,
                     dirtyBuffer: params.dirtyBuffer === true,
                   });
-                  editorActivities.set((result as { id: string }).id, {
-                    workspaceId: value.id,
-                    ownerId,
-                  });
                   break;
                 }
                 case "workspaces.activities.stop": {
                   const id = String(params.activityId ?? "");
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (!value) throw new Error("Managed workspace not found");
-                  const entry =
-                    editorActivities.get(id) ??
-                    (await managed.activity.list(value.id)).find(
-                      (activity) => activity.id === id && activity.kind === "editor",
-                    );
+                  // Resolve exact current durable owner, not an unbounded duplicate
+                  // receipt cache. Disconnect never proves a dirty/native editor idle.
+                  const entry = (await managed.activity.list(value.id)).find(
+                    (activity) => activity.id === id && activity.kind === "editor",
+                  );
                   if (
                     !entry ||
                     entry.ownerId !==
@@ -4148,7 +4143,6 @@ export async function createHostServer(
                     throw new Error("Editor activity is not owned by this device");
                   await workspaceForOwnerRpc(entry.workspaceId);
                   await managed.activity.stop(id);
-                  editorActivities.delete(id);
                   result = { stopped: true };
                   break;
                 }
