@@ -63,6 +63,25 @@ recovery preserves its last activity time, so that maintenance alone does not
 move it to the top of the recent list. Existing timestamps changed by older
 versions cannot be reconstructed reliably.
 
+Reload asks for confirmation when this window has running local conversations or
+unsaved file changes. It interrupts this window's local conversations; work on a
+remote Host and work in other windows continue. Cancelling keeps the window open.
+When quitting the app, file and terminal close dialogs remain open until answered.
+Time spent answering those dialogs does not consume the timeout for saving the
+workspace. A failed save keeps the app open and reports the failure.
+
+Opening a conversation already held by another window focuses that window.
+Local conversations and remote Host conversations keep one window owner, including
+idle tabs. If the owner cannot be verified, opening stops with an error so you can
+retry. Moving tabs keeps the source until the destination confirms receipt;
+running local turns wait until they finish before moving.
+
+The primary window restores the saved workspace. Additional windows start blank
+unless they receive an explicit tab transfer. Each window records its own running
+conversations for recovery without replacing another window's records. A local
+conversation enters recovery only after its original process has stopped; unknown
+process state stays protected.
+
 Click **Last sessions** in the project rail to open a combined workspace list. It
 shows conversations active during the last seven days, newest first, with each
 project's saved icon, color and background. This view stays open when a conversation

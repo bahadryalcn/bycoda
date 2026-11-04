@@ -3,6 +3,98 @@
 use super::*;
 use crate::native_provider_output::NativeOutputChild;
 
+#[test]
+fn page_retirement_selects_only_the_original_physical_owner() {
+    let host = HarnessHost::new();
+    let first = ProcessFixture::new(&host, "first", None);
+    let second = ProcessFixture::new(&host, "second", None);
+    let owner = first.live.issuer.as_ref().unwrap().clone();
+    let other = second.live.issuer.as_ref().unwrap().clone();
+    {
+        let mut inner = host.lock_inner();
+        inner.children.insert("first".into(), first.live.clone());
+        inner.children.insert("second".into(), second.live.clone());
+    }
+    assert!(host.assert_spawn_owner("first", &owner).is_ok());
+    assert_eq!(
+        host.assert_spawn_owner("first", &other).unwrap_err(),
+        "NATIVE_SESSION_OWNED_BY_ANOTHER_WINDOW"
+    );
+    assert!(host.get("first").is_some());
+    let retired = host.retire_issuer(&owner);
+    assert_eq!(retired.len(), 1);
+    assert!(Arc::ptr_eq(&retired[0], &first.live));
+    assert!(host.get("first").is_none());
+    assert!(Arc::ptr_eq(&host.get("second").unwrap(), &second.live));
+    assert!(host.retire_issuer(&owner).is_empty());
+    assert!(!Arc::ptr_eq(&owner, &other));
+}
+
+#[test]
+fn retired_page_cannot_admit_a_pending_spawn() {
+    use tauri::Resource;
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    Resource::close(issuer.clone());
+    let mut started = false;
+    let result = issuer.with_live(|| {
+        started = true;
+        Ok(())
+    });
+    assert!(result.is_err());
+    assert!(!started);
+}
+
+#[test]
+fn page_retirement_proof_waits_for_pending_start_and_actual_exit() {
+    use tauri::Resource;
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let id = page_proof_id(&issuer).unwrap();
+    let mut start = PageStart::new(&issuer).unwrap();
+    let exit = Arc::new(ManagedProviderExit::default());
+    start.attach(exit.clone()).unwrap();
+    Resource::close(issuer);
+    assert_eq!(page_retirement_status(&id), PageRetirement::Pending);
+    start.completed = true;
+    drop(start);
+    assert_eq!(page_retirement_status(&id), PageRetirement::Pending);
+    exit.finish(Ok(()));
+    assert_eq!(page_retirement_status(&id), PageRetirement::Confirmed);
+    assert_eq!(page_retirement_status("missing"), PageRetirement::Unknown);
+}
+
+#[test]
+fn uncertain_spawn_and_failed_exit_never_prove_retirement() {
+    use tauri::Resource;
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let id = page_proof_id(&issuer).unwrap();
+    let start = PageStart::new(&issuer).unwrap();
+    Resource::close(issuer);
+    drop(start);
+    assert_eq!(page_retirement_status(&id), PageRetirement::Unknown);
+
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let id = page_proof_id(&issuer).unwrap();
+    let mut start = PageStart::new(&issuer).unwrap();
+    let exit = Arc::new(ManagedProviderExit::default());
+    start.attach(exit.clone()).unwrap();
+    start.completed = true;
+    drop(start);
+    Resource::close(issuer);
+    exit.finish(Err("unknown exit".into()));
+    assert_eq!(page_retirement_status(&id), PageRetirement::Unknown);
+}
+
+#[test]
+fn external_stream_without_provider_retirement_proof_keeps_page_unknown() {
+    use tauri::Resource;
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let id = page_proof_id(&issuer).unwrap();
+    mark_page_external_unverified(&issuer).unwrap();
+    Resource::close(issuer);
+    assert_eq!(page_retirement_status(&id), PageRetirement::Unknown);
+    assert!(!page_retirement_waiting(&id));
+}
+
 pub(super) struct ProcessFixture {
     pub(super) live: Arc<LiveChild>,
     process: Arc<NativeOutputChild>,
@@ -212,6 +304,7 @@ fn missing_foreign_noncanonical_and_closed_sources_cannot_select_or_kill() {
         "protected".into(),
         Arc::new(LiveSse {
             stop: Arc::clone(&stream_stopped),
+            issuer: None,
             owners: Arc::new(Owners::default()),
             output: None,
         }),
@@ -257,6 +350,7 @@ fn late_original_after_replacement_cannot_write_kill_or_remove_the_replacement()
         "reused".into(),
         Arc::new(LiveSse {
             stop: Arc::clone(&replacement_stream_stopped),
+            issuer: None,
             owners: Arc::new(Owners::default()),
             output: None,
         }),

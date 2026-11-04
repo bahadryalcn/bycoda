@@ -1,4 +1,6 @@
 {
+  "Running chats will be interrupted.": "Running chats will be interrupted.",
+  "Running chats will be interrupted and unsaved changes in open files will be discarded.": "Running chats will be interrupted and unsaved changes in open files will be discarded.",
   "Assistant name": "Assistant name",
   "Save profile settings": "Save profile settings",
   "Profile settings saved.": "Profile settings saved.",

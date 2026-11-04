@@ -90,6 +90,7 @@ mod session_import;
 mod session_store;
 mod session_tools_bridge;
 mod session_transfer;
+mod session_window_ownership;
 mod skills;
 mod social_bridge;
 mod ssh_agent_forwarding;
@@ -316,12 +317,23 @@ fn set_dock_badge(
 #[tauri::command]
 async fn open_new_window(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     transfer: Option<String>,
     x: Option<f64>,
     y: Option<f64>,
 ) -> Result<(), String> {
+    let source = if transfer.is_some() {
+        Some(control::receipts::capture(&window)?)
+    } else {
+        None
+    };
     tauri::async_runtime::spawn_blocking(move || match transfer {
-        Some(payload) => window::open_transfer_window(&app, payload, x.zip(y)),
+        Some(payload) => window::open_transfer_window(
+            &app,
+            source.expect("transfer issuer captured"),
+            payload,
+            x.zip(y),
+        ),
         None => window::open_new_window(&app),
     })
     .await
@@ -859,6 +871,9 @@ pub fn run() {
             harness::harness_resolve_antigravity,
             harness::harness_free_port,
             harness::harness_spawn,
+            session_window_ownership::claim_session_windows,
+            session_window_ownership::release_session_windows,
+            session_window_ownership::verify_session_window_owner,
             harness::harness_write,
             harness::turn_writes::harness_bind_turn,
             harness::turn_writes::harness_write_controlled,
@@ -933,6 +948,7 @@ pub fn run() {
             session_store::session_attachment_references,
             session_store::session_set_in_flight,
             session_store::session_list_in_flight,
+            session_store::session_recovery_candidates,
             session_store::session_take_in_flight,
             session_store::workspace_set_snapshot,
             session_store::workspace_get_snapshot,
@@ -985,6 +1001,7 @@ pub fn run() {
             window::destroy_window,
             window::quit_poll_reply,
             window::quit_decision,
+            window::quit_commit_dialog,
             window::quit_ready,
             window::set_window_glass_enabled,
             window_fullscreen::set_window_fullscreen,

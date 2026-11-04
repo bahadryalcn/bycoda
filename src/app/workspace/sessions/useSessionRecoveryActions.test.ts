@@ -4,7 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../../features/sessions/model/session";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
-import { saveWorkspaceSnapshot } from "../../../features/sessions/data/sessionStore";
+import {
+  getSession,
+  isPrimaryWorkspaceWindow,
+  saveWorkspaceSnapshot,
+} from "../../../features/sessions/data/sessionStore";
+import { invoke } from "@tauri-apps/api/core";
+import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { newTab } from "../../../features/workspace/model/layout";
 import { collectWorkspaceSnapshot } from "../../../features/workspace/model/workspaceSnapshot";
 import {
@@ -22,7 +28,14 @@ import {
 vi.mock("../../../features/sessions/data/sessionStore", async (original) => ({
   ...(await original<typeof import("../../../features/sessions/data/sessionStore")>()),
   saveWorkspaceSnapshot: vi.fn(),
+  getSession: vi.fn(),
+  isPrimaryWorkspaceWindow: vi.fn(() => false),
 }));
+vi.mock("@tauri-apps/api/core", async (original) => ({
+  ...(await original<typeof import("@tauri-apps/api/core")>()),
+  invoke: vi.fn(),
+}));
+vi.mock("../../../platform/tauri/listenWindow", () => ({ listenWindow: vi.fn(() => vi.fn()) }));
 
 let root: Root;
 let actions: SessionRecoveryActions;
@@ -30,6 +43,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   vi.mocked(saveWorkspaceSnapshot).mockReset();
+  vi.mocked(isPrimaryWorkspaceWindow).mockReturnValue(false);
   root = createRoot(document.createElement("div"));
 });
 afterEach(async () => {
@@ -38,6 +52,54 @@ afterEach(async () => {
   setSessionRecovery(null);
   setRecoverySaveFailure(null);
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+it("merges a page that retires after boot once and stops polling after native proof settles", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isPrimaryWorkspaceWindow).mockReturnValue(true);
+  const session = newSession("codex", "/retired");
+  const tab = newTab(session.id);
+  const candidates = { sessions: [{ sessionId: session.id, cwd: session.cwd }], pending: false };
+  vi.mocked(invoke).mockReset();
+  vi.mocked(invoke)
+    .mockResolvedValue(candidates)
+    .mockResolvedValueOnce({ sessions: [], pending: true });
+  vi.mocked(getSession).mockResolvedValue(session);
+  vi.mocked(saveWorkspaceSnapshot).mockResolvedValue(undefined);
+  setSessionRecovery(null);
+  const update = vi.fn();
+  const open = vi.fn();
+  const deps: SessionRecoveryActionsDeps = {
+    sessionRecovery: null,
+    updateSessionRecovery: update,
+    setRecoveryOpen: open,
+    projectCwd: session.cwd,
+    projectReturnRef: { current: new Map() },
+    projectTerminals: [],
+    lastDockSide: null,
+    keepWorkspaceTab: () => true,
+    lockSnapshot: { lockedProjectKeys: new Set() } as SessionRecoveryActionsDeps["lockSnapshot"],
+    tabsRef: { current: [tab] },
+    activeTabIdRef: { current: tab.id },
+  };
+  function Harness() {
+    useSessionRecoveryActions(deps);
+    return null;
+  }
+  await act(async () => root.render(createElement(Harness)));
+  expect(update).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(update).toHaveBeenCalledOnce();
+  expect(open).toHaveBeenCalledWith(true);
+  expect(saveWorkspaceSnapshot).toHaveBeenCalledOnce();
+  const reads = vi.mocked(invoke).mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(vi.mocked(invoke).mock.calls).toHaveLength(reads);
+  const notify = vi.mocked(listenWindow).mock.calls.at(-1)![1];
+  await act(async () => notify({ event: "session-recovery-changed", id: 1, payload: null }));
+  expect(update).toHaveBeenCalledOnce();
+  expect(saveWorkspaceSnapshot).toHaveBeenCalledOnce();
 });
 
 it("closes immediately, retries the latest snapshot context, and retires retries on unmount", async () => {

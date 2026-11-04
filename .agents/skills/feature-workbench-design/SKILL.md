@@ -30,6 +30,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
   checkout. Keep it open on session selection; Explorer/Changes follow the selected
   session checkout. Project navigation exits the collection without losing drafts.
 - Composition changes grant no Host, filesystem, Git, send or credential authority. Keep operation feedback with its initiating control or affected item.
+- Reload and unload act on the captured native page owner, never the global provider pool or remote Host turns. Keep reload confirmation for local running chats and dirty files, and retain the one-shot unload guard.
+- Quit dialog pauses authenticate the quit run and physical page. Pause only the interactive confirmation itself; editor settlement, saving, terminal status reads and persistence retain the bounded watchdog. Abort before showing close failures. Keep stale replies from extending a newer quit.
+- Claim conversation panes before opening or restoring them through `src/app/model/sessionWindowOwnership.ts` and the native `session_window_ownership` registry. Remote keys use environment and Host session identity, not generated local shell IDs. Focus the verified physical owner; unknown ownership never authorizes a duplicate tab or process replacement. Transfers retain source drafts until native destination acknowledgement, preserve the same transfer identity on uncertain replies, and keep running local turns queued until quiescent.
 
 ## Workflow
 

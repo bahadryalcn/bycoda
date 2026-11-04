@@ -2,6 +2,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../features/sessions/model/session";
 import { newTab } from "../../features/workspace/model/layout";
 import { collectWorkspaceSnapshot } from "../../features/workspace/model/workspaceSnapshot";
+vi.mock("./sessionWindowOwnership", () => ({
+  claimRestoredSession: vi.fn().mockResolvedValue(true),
+  abortRestoredSession: vi.fn().mockResolvedValue(undefined),
+  remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
+}));
 
 const store = vi.hoisted(() => ({
   loadWorkspaceSnapshot: vi.fn(),

@@ -66,6 +66,9 @@ impl WindowIssuer {
     pub(crate) fn is_live(&self) -> bool {
         !self.closed.load(Ordering::Acquire) && !self.admission.is_poisoned()
     }
+    pub(crate) fn is_retired(&self) -> bool {
+        self.closed.load(Ordering::Acquire) && !self.admission.is_poisoned()
+    }
     pub(crate) fn with_live<T>(
         &self,
         work: impl FnOnce() -> Result<T, String>,
@@ -96,9 +99,12 @@ pub(crate) fn capture(window: &WebviewWindow) -> Result<Arc<WindowIssuer>, Strin
     };
     if created {
         let original = owner.clone();
+        let app = window.app_handle().clone();
         window.on_window_event(move |event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 Resource::close(original.clone());
+                crate::harness::page_retired(&app, &original);
+                crate::session_window_ownership::release_issuer(&original);
             }
         });
     }

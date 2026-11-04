@@ -2,16 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { platformConfirm } from "../../shared/model/appConfirm";
+import { registerClosingEditor } from "../../features/files/model/editorClose";
 import { flushComposerDrafts } from "../../features/sessions/data/composerDraftStore";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
-import { killAllChildren } from "../../integrations/harness/core/child";
+import { forgetWindowChildren, killAllChildren } from "../../integrations/harness/core/child";
 import { newSession } from "../../features/sessions/model/session";
-import { newTab } from "../../features/workspace/model/layout";
+import { newTab, splitPane } from "../../features/workspace/model/layout";
 import {
   askQuitConfirmation,
   closeBusyWindow,
   commitQuit,
   confirmReload,
+  reapUnloadRuntime,
   handleQuitRequested as handleCurrentWorkspaceQuit,
   reportQuitPoll,
   setQuitWorkspace,
@@ -31,6 +33,7 @@ import { reconcileProjectReturn } from "../../features/projects/model/projectRet
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockImplementation((command: string) => nativeSuccess(command)),
 }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "main" }) }));
 
 function nativeSuccess(command: string) {
   return Promise.resolve(
@@ -47,6 +50,11 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 vi.mock("./windowTransferBootstrap", () => ({
   loadWindowTransfer: vi.fn().mockResolvedValue(null),
 }));
+vi.mock("./sessionWindowOwnership", () => ({
+  claimRestoredSession: vi.fn().mockResolvedValue(true),
+  abortRestoredSession: vi.fn().mockResolvedValue(undefined),
+  remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
+}));
 vi.mock("../../features/sessions/data/sessionStore", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../features/sessions/data/sessionStore")>();
   return {
@@ -54,6 +62,7 @@ vi.mock("../../features/sessions/data/sessionStore", async (importOriginal) => {
     loadWorkspaceSnapshot: vi.fn().mockResolvedValue(null),
     listInFlightSessions: vi.fn().mockResolvedValue([]),
     listSessionsByProject: vi.fn().mockResolvedValue([]),
+    isPrimaryWorkspaceWindow: vi.fn().mockReturnValue(true),
     getSession: vi.fn().mockResolvedValue(null),
   };
 });
@@ -64,6 +73,7 @@ vi.mock("../../integrations/harness/core/registry", () => ({
 }));
 vi.mock("../../integrations/harness/core/child", () => ({
   killAllChildren: vi.fn().mockResolvedValue(undefined),
+  forgetWindowChildren: vi.fn(),
 }));
 vi.mock("../../features/sessions/data/composerDraftStore", async (original) => {
   const actual = await original<typeof import("../../features/sessions/data/composerDraftStore")>();
@@ -464,6 +474,91 @@ describe("coordinated quit", () => {
       release();
     }
   });
+
+  it("pauses commit watchdog only around close confirmation before saving", async () => {
+    const release = busyWorkspace();
+    const unregister = registerClosingEditor({
+      path: "/dirty",
+      dirty: () => true,
+      settle: async () => {},
+      save: async () => false,
+    });
+    vi.mocked(message).mockResolvedValueOnce("Discard");
+    try {
+      await commitQuit(88);
+      const calls = vi.mocked(invoke).mock.calls;
+      const open = calls.findIndex(
+        ([name, args]) =>
+          name === "quit_commit_dialog" && (args as { open?: boolean }).open === true,
+      );
+      const close = calls.findIndex(
+        ([name, args]) =>
+          name === "quit_commit_dialog" && (args as { open?: boolean }).open === false,
+      );
+      const save = calls.findIndex(([name]) => name === "session_upsert");
+      expect(open).toBeGreaterThanOrEqual(0);
+      expect(close).toBeGreaterThan(open);
+      expect(save).toBeGreaterThan(close);
+    } finally {
+      unregister();
+      release();
+    }
+  });
+
+  it("aborts the native quit before showing a close failure", async () => {
+    const release = busyWorkspace();
+    const unregister = registerClosingEditor({
+      path: "/dirty",
+      dirty: () => true,
+      settle: async () => {},
+      save: async () => false,
+    });
+    let abortObserved = false;
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === "quit_commit_dialog" && (args as { open?: boolean }).open)
+        return Promise.reject(new Error("offline"));
+      if (command === "quit_ready") abortObserved = true;
+      return Promise.resolve(undefined);
+    });
+    vi.mocked(message).mockImplementation(async () => {
+      expect(abortObserved).toBe(true);
+    });
+    try {
+      await commitQuit(89);
+      expect(invokedWith("quit_ready")).toEqual({ id: 89, persisted: false });
+      expect(message).toHaveBeenCalled();
+    } finally {
+      unregister();
+      release();
+    }
+  });
+
+  it("keeps the watchdog running while editor settlement is pending", async () => {
+    const release = busyWorkspace();
+    let settle!: () => void;
+    const unregister = registerClosingEditor({
+      path: "/pending",
+      dirty: () => false,
+      settle: () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      save: async () => true,
+    });
+    try {
+      const pending = commitQuit(90);
+      await vi.waitFor(() => expect(settle).toBeTypeOf("function"));
+      expect(vi.mocked(invoke).mock.calls.some(([name]) => name === "quit_commit_dialog")).toBe(
+        false,
+      );
+      settle();
+      await pending;
+      expect(invokedWith("quit_ready")).toEqual({ id: 90, persisted: true });
+    } finally {
+      unregister();
+      release();
+    }
+  });
 });
 
 describe("confirming reload", () => {
@@ -490,6 +585,28 @@ describe("confirming reload", () => {
   it("cancels reload when unsaved changes are kept", async () => {
     vi.mocked(platformConfirm).mockResolvedValue(false);
     await expect(confirmReload(true)).resolves.toBe(false);
+  });
+
+  it("asks about running local chats, including when files are dirty", async () => {
+    await expect(confirmReload(false, true)).resolves.toBe(true);
+    expect(platformConfirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: "Running chats will be interrupted." }),
+    );
+    vi.mocked(platformConfirm).mockResolvedValue(false);
+    await expect(confirmReload(true, true)).resolves.toBe(false);
+    expect(platformConfirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message:
+          "Running chats will be interrupted and unsaved changes in open files will be discarded.",
+      }),
+    );
+  });
+
+  it("unload clears page routes without stopping global or Host children", async () => {
+    await reapUnloadRuntime([newSession("cursor", "/repo")]);
+    expect(forgetWindowChildren).toHaveBeenCalledOnce();
+    expect(killAllChildren).not.toHaveBeenCalled();
+    expect(forgetHarnessSession).not.toHaveBeenCalled();
   });
 });
 
@@ -613,6 +730,94 @@ it("paints transferred tabs without waiting for sidebar history", async () => {
     historyCwd: null,
   });
   expect(listSessionsByProject).not.toHaveBeenCalled();
+});
+
+it("boots secondary windows blank without reading the shared recovery snapshot", async () => {
+  vi.resetModules();
+  const store = await import("../../features/sessions/data/sessionStore");
+  vi.mocked(store.isPrimaryWorkspaceWindow).mockReturnValueOnce(false);
+  vi.mocked(store.loadWorkspaceSnapshot).mockClear();
+  const { loadBootWorkspace } = await import("./appLifecycle");
+  expect(await loadBootWorkspace()).toEqual({
+    windowTransfer: null,
+    resumed: null,
+    history: [],
+    historyCwd: null,
+  });
+  expect(store.loadWorkspaceSnapshot).not.toHaveBeenCalled();
+});
+
+it("restores only sessions whose native window ownership is confirmed", async () => {
+  vi.resetModules();
+  const store = await import("../../features/sessions/data/sessionStore");
+  const ownership = await import("./sessionWindowOwnership");
+  const first = { ...newSession("cursor", "/repo"), id: "first" };
+  const second = { ...newSession("cursor", "/repo"), id: "second" };
+  const base = newTab(first.id);
+  const tabs = [
+    {
+      ...base,
+      layout: splitPane(base.layout, first.id, "right", "editor"),
+      editorPanes: [
+        {
+          id: "editor",
+          files: [{ id: "file", path: "/repo/a.txt", cwd: "/repo" }],
+          activeFileId: "file",
+        },
+      ],
+    },
+    newTab(second.id),
+  ];
+  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(
+    collectWorkspaceSnapshot(tabs, [first, second], tabs[0].id, "/repo", new Map()),
+  );
+  vi.mocked(ownership.claimRestoredSession).mockImplementation(async (id) => id !== "first");
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  const restored = await loadResumedWorkspace();
+  expect(restored?.sessions.map((session) => session.id)).toEqual(["second"]);
+  expect(restored?.tabs).toHaveLength(2);
+  expect(restored?.tabs[0].editorPanes[0].files[0].path).toBe("/repo/a.txt");
+  expect(ownership.claimRestoredSession).toHaveBeenCalledTimes(2);
+});
+
+it("keeps saved workspace protected when a boot ownership read fails", async () => {
+  vi.resetModules();
+  const store = await import("../../features/sessions/data/sessionStore");
+  const ownership = await import("./sessionWindowOwnership");
+  const session = { ...newSession("cursor", "/repo"), id: "unknown" };
+  const tab = newTab(session.id);
+  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(
+    collectWorkspaceSnapshot([tab], [session], tab.id, "/repo", new Map()),
+  );
+  vi.mocked(ownership.claimRestoredSession).mockRejectedValueOnce(new Error("offline"));
+  const lifecycle = await import("./appLifecycle");
+  expect(await lifecycle.loadResumedWorkspace()).toBeNull();
+  expect(lifecycle.workspaceSnapshotWriteBlocked()).toBe(true);
+});
+
+it("does not restore a remote shell whose Host session is owned elsewhere", async () => {
+  vi.resetModules();
+  const store = await import("../../features/sessions/data/sessionStore");
+  const ownership = await import("./sessionWindowOwnership");
+  const session = { ...newSession("cursor", "/repo"), id: "remote-shell" };
+  const tab = newTab(session.id);
+  const snapshot = collectWorkspaceSnapshot([tab], [session], tab.id, "/repo", new Map());
+  snapshot.sessions[0] = {
+    ...snapshot.sessions[0],
+    cwd: "remote://machine/repo",
+    remoteSessionId: "host-session",
+  };
+  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(snapshot);
+  vi.mocked(ownership.claimRestoredSession).mockImplementation(
+    async (id) => !id.startsWith("remote:"),
+  );
+  vi.mocked(ownership.abortRestoredSession).mockClear();
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  expect(await loadResumedWorkspace()).toBeNull();
+  expect(ownership.claimRestoredSession).toHaveBeenCalledWith(
+    "remote:remote://machine/repo:host-session",
+  );
+  expect(ownership.abortRestoredSession).toHaveBeenCalledWith("remote-shell");
 });
 
 describe("destructive window close safeguards", () => {

@@ -101,3 +101,22 @@ it("rejects requests for another project rather than changing its tools workspac
   });
   expect(open).not.toHaveBeenCalled();
 });
+
+it("rejects an owned-focus request when its session has since closed", async () => {
+  await act(async () =>
+    root.render(h(Harness, { value: { ...state, tools: false, sessionIds: [] } })),
+  );
+  await listeners.get("workspace_navigation_open")!({
+    payload: {
+      id: "focus",
+      replyTo: "main",
+      target: { kind: "session", sessionId: "closed", requireOwned: true },
+    },
+  });
+  expect(open).not.toHaveBeenCalled();
+  expect(api.emitTo).toHaveBeenCalledWith(
+    "main",
+    "workspace_navigation_result",
+    expect.objectContaining({ id: "focus", error: expect.stringContaining("no longer open") }),
+  );
+});

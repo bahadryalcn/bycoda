@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { message } from "@tauri-apps/plugin-dialog";
-import { prepareEditorsToClose, registerClosingEditor, type ClosingEditor } from "./editorClose";
+import {
+  prepareEditorsToClose,
+  registerClosingEditor,
+  type ClosingEditor,
+  type CloseDialog,
+} from "./editorClose";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
 const releases: (() => void)[] = [];
@@ -66,4 +71,39 @@ it("rejects failed saves and keeps the dirty editor available for retry", async 
   await expect(prepareEditorsToClose()).rejects.toThrow("Could not save");
   expect(entry.dirty()).toBe(true);
   expect(await prepareEditorsToClose()).toBe(true);
+});
+
+it("pauses only the interactive dialog, not settling or saving editors", async () => {
+  let paused = false;
+  let dirty = true;
+  const states: string[] = [];
+  editor({
+    dirty: () => dirty,
+    settle: async () => {
+      expect(paused).toBe(false);
+      states.push("settle");
+    },
+    save: async () => {
+      expect(paused).toBe(false);
+      states.push("save");
+      dirty = false;
+      return true;
+    },
+  });
+  vi.mocked(message).mockImplementation(async () => {
+    expect(paused).toBe(true);
+    states.push("dialog");
+    return "Save";
+  });
+  const dialog: CloseDialog = async (show) => {
+    paused = true;
+    try {
+      return await show();
+    } finally {
+      paused = false;
+    }
+  };
+  expect(await prepareEditorsToClose(dialog)).toBe(true);
+  expect(states).toEqual(["settle", "dialog", "save"]);
+  expect(paused).toBe(false);
 });

@@ -1,4 +1,6 @@
 {
+  "Running chats will be interrupted.": "正在运行的聊天将被中断。",
+  "Running chats will be interrupted and unsaved changes in open files will be discarded.": "正在运行的聊天将被中断，打开文件中未保存的更改将被丢弃。",
   "Assistant name": "助手名称",
   "Save profile settings": "保存个人资料设置",
   "Profile settings saved.": "个人资料设置已保存。",

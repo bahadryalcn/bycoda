@@ -5,19 +5,19 @@ import { announceSessionIssue } from "../../../features/notifications/model/noti
 import { newSession } from "../../../features/sessions/model/session";
 
 export interface LiveAgentAnnouncementDeps {
-  onOpenApprovalSession: (sessionId: string) => void;
+  onFocusOwnedApprovalSession: (sessionId: string) => void;
   unopenedRemote: ReturnType<typeof useRemoteRailProjects>["unopenedRemote"];
 }
 
 /** Window live-agent listener, and announcements for remote sessions that are not open in this window. */
 export function useLiveAgentAnnouncements({
-  onOpenApprovalSession,
+  onFocusOwnedApprovalSession,
   unopenedRemote,
 }: LiveAgentAnnouncementDeps): void {
   useEffect(() => {
     let disposed = false;
     let release: (() => void) | undefined;
-    void listenForWindowLiveAgent(onOpenApprovalSession)
+    void listenForWindowLiveAgent(onFocusOwnedApprovalSession)
       .then((unlisten) => {
         if (disposed) unlisten();
         else release = unlisten;
@@ -29,7 +29,7 @@ export function useLiveAgentAnnouncements({
       disposed = true;
       release?.();
     };
-  }, [onOpenApprovalSession]);
+  }, [onFocusOwnedApprovalSession]);
 
   // Sessions for the rail's "Last sessions". Kept referentially stable so the
   // rail only refetches when a title or status really changed.

@@ -1,4 +1,6 @@
 {
+  "Running chats will be interrupted.": "Laufende Chats werden unterbrochen.",
+  "Running chats will be interrupted and unsaved changes in open files will be discarded.": "Laufende Chats werden unterbrochen und nicht gespeicherte Änderungen in geöffneten Dateien werden verworfen.",
   "Assistant name": "Name des Assistenten",
   "Save profile settings": "Profileinstellungen speichern",
   "Profile settings saved.": "Profileinstellungen gespeichert.",

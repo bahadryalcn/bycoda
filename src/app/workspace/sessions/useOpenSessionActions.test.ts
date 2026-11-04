@@ -1,4 +1,8 @@
 // @vitest-environment happy-dom
+vi.mock("../../model/sessionWindowOwnership", () => ({
+  reserveSessionWindow: vi.fn(async () => async () => {}),
+}));
+import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -246,4 +250,32 @@ it("keeps a preview when its workspace gains an editor", async () => {
   expect(deps.tabsRef.current).toHaveLength(2);
   expect(deps.tabsRef.current[0].editorPanes[0].files[0].path).toBe("a.ts");
   expect(deps.tabsRef.current[0].previewSessionId).toBeUndefined();
+});
+
+it("does not create a local pane when another window owns the requested session", async () => {
+  vi.mocked(reserveSessionWindow).mockResolvedValueOnce(null);
+  await act(async () => {
+    await actions.onSelectHistorySession(sessions[0].id);
+  });
+  expect(deps.tabsRef.current).toHaveLength(0);
+  expect(deps.replaceBlankPaneWithSession).not.toHaveBeenCalled();
+});
+
+it("releases an in-flight reservation when navigation becomes stale", async () => {
+  let resolve!: (value: (retain?: boolean) => Promise<void>) => void;
+  const release = vi.fn(async () => {});
+  vi.mocked(reserveSessionWindow).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const opened = actions.onSelectHistorySession(sessions[0].id);
+  await vi.waitFor(() => expect(reserveSessionWindow).toHaveBeenCalled());
+  currentNavigation = false;
+  await act(async () => {
+    resolve(release);
+    await opened;
+  });
+  expect(release).toHaveBeenCalledWith(false);
+  expect(deps.tabsRef.current).toHaveLength(0);
 });

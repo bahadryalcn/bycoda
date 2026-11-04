@@ -1,4 +1,9 @@
 // @vitest-environment happy-dom
+vi.mock("../../model/sessionWindowOwnership", () => ({
+  reserveSessionWindow: vi.fn(async () => async () => {}),
+  remoteSessionOwnershipKey: (project: string, id: string) => `${project.split("/")[2]}:${id}`,
+}));
+import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -109,7 +114,7 @@ it("creates only after an explicit project choice and uses that project's worktr
   }
 });
 
-it("reuses remote previews while protecting drafts, explicit keep-open and existing sessions", () => {
+it("reuses remote previews while protecting drafts, explicit keep-open and existing sessions", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -152,8 +157,11 @@ it("reuses remote previews while protecting drafts, explicit keep-open and exist
   }
   try {
     act(() => root.render(createElement(Harness)));
+    vi.mocked(reserveSessionWindow).mockResolvedValueOnce(null);
+    await act(async () => actions.onSelectRemoteSession(deps.projectCwd, "foreign"));
+    expect(tabsRef.current).toHaveLength(0);
     for (let index = 0; index < 10; index++) {
-      act(() =>
+      await act(async () =>
         actions.onSelectRemoteSession(deps.projectCwd, `remote-${index}`, { preview: true }),
       );
     }
@@ -161,28 +169,36 @@ it("reuses remote previews while protecting drafts, explicit keep-open and exist
     const draftedId = tabsRef.current[0].focusedId;
     expect(remoteSessionFor(draftedId)).toBe("remote-9");
     setComposerDraft(draftedId, "Unsent remote work");
-    act(() => actions.onSelectRemoteSession(deps.projectCwd, "remote-next", { preview: true }));
+    await act(async () =>
+      actions.onSelectRemoteSession(deps.projectCwd, "remote-next", { preview: true }),
+    );
     expect(tabsRef.current).toHaveLength(2);
     expect(tabsRef.current[0].previewSessionId).toBeUndefined();
-    act(() => actions.onSelectRemoteSession(deps.projectCwd, "remote-next"));
+    await act(async () => actions.onSelectRemoteSession(deps.projectCwd, "remote-next"));
     expect(tabsRef.current[1].previewSessionId).toBeUndefined();
-    act(() => actions.onSelectRemoteSession(deps.projectCwd, "remote-final", { preview: true }));
+    await act(async () =>
+      actions.onSelectRemoteSession(deps.projectCwd, "remote-final", { preview: true }),
+    );
     expect(tabsRef.current).toHaveLength(3);
-    act(() => actions.onSelectRemoteSession(deps.projectCwd, "remote-9", { preview: true }));
+    await act(async () =>
+      actions.onSelectRemoteSession(deps.projectCwd, "remote-9", { preview: true }),
+    );
     expect(tabsRef.current).toHaveLength(3);
     expect(deps.activateTab).toHaveBeenLastCalledWith(tabsRef.current[0].id, draftedId);
     const originId = listedRemoteSessionId(sessionsRef.current, deps.projectCwd, draftedId);
     expect(originId).toBe("remote-9");
-    act(() => actions.onSelectRemoteSession(deps.projectCwd, originId, { preview: true }));
+    await act(async () =>
+      actions.onSelectRemoteSession(deps.projectCwd, originId, { preview: true }),
+    );
     expect(tabsRef.current).toHaveLength(3);
     expect(deps.activateTab).toHaveBeenLastCalledWith(tabsRef.current[0].id, draftedId);
     const otherProject = "remote://fixture/other";
     expect(listedRemoteSessionId(sessionsRef.current, otherProject, draftedId)).toBe(draftedId);
-    act(() => actions.onSelectRemoteSession(otherProject, "remote-9", { preview: true }));
-    expect(remoteSessionFor(tabsRef.current[tabsRef.current.length - 1].focusedId)).toBe(
-      "remote-9",
+    await act(async () =>
+      actions.onSelectRemoteSession(otherProject, "remote-9", { preview: true }),
     );
-    expect(deps.followProject).toHaveBeenLastCalledWith(otherProject);
+    expect(tabsRef.current).toHaveLength(3);
+    expect(deps.activateTab).toHaveBeenLastCalledWith(tabsRef.current[0].id, draftedId);
   } finally {
     act(() => root.unmount());
     for (const session of getSessions()) {

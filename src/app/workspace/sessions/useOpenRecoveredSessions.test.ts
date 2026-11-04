@@ -2,6 +2,14 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const ownership = vi.hoisted(() => ({
+  reserve:
+    vi.fn<(ids: readonly string[]) => Promise<((retain?: boolean) => Promise<void>) | null>>(),
+}));
+vi.mock("../../model/sessionWindowOwnership", () => ({
+  reserveSessionWindow: ownership.reserve,
+  remoteSessionOwnershipKey: (project: string, id: string) => `${project.split("/")[2]}:${id}`,
+}));
 import { rememberRemoteSession } from "../../../features/connections/model/connections";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import { newSession } from "../../../features/sessions/model/session";
@@ -19,6 +27,7 @@ let root: Root;
 let actions: OpenRecoveredSessions;
 
 beforeEach(() => {
+  ownership.reserve.mockReset().mockImplementation(async () => async () => {});
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   root = createRoot(document.createElement("div"));
@@ -91,6 +100,7 @@ it("resolves a remote stub whose host session is already open instead of restori
   await act(async () => actions.openRecoveredSessions([stale.id, fresh.id], false));
   expect(sessionsRef.current.map((session) => session.id)).toEqual([open.id, fresh.id]);
   expect(removeRecoveredSessions).toHaveBeenLastCalledWith([fresh.id, stale.id]);
+  expect(ownership.reserve).toHaveBeenCalledWith([fresh.id, "env:host-new"]);
 });
 
 it("retains opened tabs after acknowledgment failure and retries without reopening them", async () => {
@@ -145,4 +155,53 @@ it("retains opened tabs after acknowledgment failure and retries without reopeni
   expect(ensureOpenSession).toHaveBeenCalledOnce();
   expect(tabsRef.current.map((tab) => tab.id)).toEqual([openedTabId]);
   expect(removeRecoveredSessions).toHaveBeenCalledTimes(2);
+});
+
+it("focuses foreign ownership without creating a pane and releases stale reservations", async () => {
+  const session = newSession("codex", "/repo");
+  const recovery = captureSessionRecovery(
+    null,
+    collectWorkspaceSnapshot([newTab(session.id)], [session], "tab", "/repo", new Map()),
+    100,
+  )!;
+  const tabsRef = { current: [] as WorkspaceTab[] };
+  const ensure = vi.fn(async () => session);
+  const remove = vi.fn(async () => undefined);
+  const removing = { current: new Set<string>() };
+  const deps: OpenRecoveredSessionsDeps = {
+    sessionRecovery: recovery,
+    lockSnapshot: { lockedProjectKeys: new Set() } as OpenRecoveredSessionsDeps["lockSnapshot"],
+    removingSessionIds: removing,
+    movingSessionIds: { current: new Set() },
+    switchingWorktrees: { current: new Map() },
+    workspaceNavigation: {
+      cancel: vi.fn(),
+    } as unknown as OpenRecoveredSessionsDeps["workspaceNavigation"],
+    ensureOpenSession: ensure,
+    tabsRef,
+    setTabs: vi.fn(),
+    activeTabIdRef: { current: "" },
+    setActiveTabId: vi.fn(),
+    followProject: vi.fn(),
+    removeRecoveredSessions: remove,
+  };
+  function Harness() {
+    actions = useOpenRecoveredSessions(deps);
+    return null;
+  }
+  await act(async () => root.render(createElement(Harness)));
+  ownership.reserve.mockResolvedValueOnce(null);
+  await act(async () => actions.openRecoveredSessions([session.id], false));
+  expect(ensure).not.toHaveBeenCalled();
+  expect(tabsRef.current).toHaveLength(0);
+  expect(remove).toHaveBeenCalledWith([session.id]);
+  const release = vi.fn(async (_retain?: boolean) => {});
+  ownership.reserve.mockImplementationOnce(async () => {
+    removing.current.add(session.id);
+    return release;
+  });
+  await act(async () => actions.openRecoveredSessions([session.id], false));
+  expect(release).toHaveBeenCalledWith(false);
+  expect(ensure).not.toHaveBeenCalled();
+  expect(tabsRef.current).toHaveLength(0);
 });

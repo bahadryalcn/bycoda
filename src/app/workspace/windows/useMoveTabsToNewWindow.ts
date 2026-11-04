@@ -1,3 +1,6 @@
+import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -248,7 +251,15 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
         try {
           timing.stage("native-start");
           const outcome = await invoke<string>("move_window_tabs", {
-            transfer: JSON.stringify(payload),
+            transfer: JSON.stringify({
+              ...payload,
+              ownershipIds: payload.sessions.flatMap((session) => {
+                const remoteId = remoteSessionFor(session.id);
+                return remoteId && parseRemotePath(session.cwd)
+                  ? [remoteSessionOwnershipKey(session.cwd, remoteId)]
+                  : [];
+              }),
+            }),
             targetWindowLabel: opts?.targetWindowLabel ?? null,
             x: opts?.position?.x ?? null,
             y: opts?.position?.y ?? null,

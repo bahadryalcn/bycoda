@@ -19,7 +19,8 @@ import {
   zoomInUiScale,
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
-import { confirmReload } from "../../model/appLifecycle";
+import { confirmReload, hasInFlightSessions } from "../../model/appLifecycle";
+import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 
 export interface WindowChromeActionDeps {
   /** Committed values, so the toggles persist outside a state updater. */
@@ -133,7 +134,13 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
   }, []);
   const onReload = useCallback(() => {
     void (async () => {
-      if (!(await confirmReload(dirtyFilesRef.current.size > 0))) return;
+      if (
+        !(await confirmReload(
+          dirtyFilesRef.current.size > 0,
+          hasInFlightSessions(sessionsRef.current),
+        ))
+      )
+        return;
       window.location.reload();
     })();
   }, []);

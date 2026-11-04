@@ -1,4 +1,6 @@
 {
+  "Running chats will be interrupted.": "As conversas em andamento serão interrompidas.",
+  "Running chats will be interrupted and unsaved changes in open files will be discarded.": "As conversas em andamento serão interrompidas e as alterações não salvas nos arquivos abertos serão descartadas.",
   "Assistant name": "Nome do assistente",
   "Save profile settings": "Salvar configurações do perfil",
   "Profile settings saved.": "Configurações do perfil salvas.",

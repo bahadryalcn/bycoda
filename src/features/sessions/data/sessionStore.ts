@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { inlineVisualSnapshot } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
@@ -1760,8 +1761,20 @@ export async function takeInFlightSessions(): Promise<{ sessionId: string; cwd: 
  */
 let workspaceWrite: Promise<unknown> = Promise.resolve();
 
-export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
-  if (readToolWindow()) return;
+/** Native window identity owns the persisted workspace layout. */
+export function isPrimaryWorkspaceWindow(): boolean {
+  try {
+    return getCurrentWindow().label === "main";
+  } catch {
+    return false;
+  }
+}
+
+export async function saveWorkspaceSnapshot(
+  snapshot: unknown,
+  recoveryReceipt?: string,
+): Promise<void> {
+  if (readToolWindow() || !isPrimaryWorkspaceWindow()) return;
   const durableSnapshot =
     snapshot && typeof snapshot === "object"
       ? {
@@ -1788,7 +1801,7 @@ export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
             Object.assign(durableSnapshot, { sessionRecovery: saved.sessionRecovery });
           }
         }
-        await invoke("workspace_set_snapshot", { snapshot: durableSnapshot });
+        await invoke("workspace_set_snapshot", { snapshot: durableSnapshot, recoveryReceipt });
         work.confirmRecovery();
       }),
   );

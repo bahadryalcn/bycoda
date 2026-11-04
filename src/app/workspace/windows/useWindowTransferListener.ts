@@ -1,3 +1,8 @@
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
+import { syncSessionWindowOwnership } from "../../model/sessionWindowOwnership";
+import { openSessionIds } from "../helpers/sessionHelpers";
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -214,7 +219,37 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
             setProjectCwd(incoming.projectCwd);
             activateTab(merged.activeTabId);
           });
-          await invoke("window_transfer_ready", { transferId });
+          try {
+            await invoke("window_transfer_ready", { transferId });
+          } catch {
+            try {
+              // Native retains the exact receipt, so retry cannot transfer twice.
+              await invoke("window_transfer_ready", { transferId });
+            } catch {
+              // The acknowledgement may have committed despite a lost response.
+              // Keep both copies and let native ownership prevent execution until recovery.
+              rollback = undefined;
+              publishWindowTransferNotice(
+                "danger",
+                "The transfer result is unknown. Check both windows before retrying.",
+              );
+              return;
+            }
+          }
+          // ACK has committed the native move. A refresh failure cannot roll it back.
+          const known = new Set(merged.sessions.map((session) => session.id));
+          void syncSessionWindowOwnership(
+            [...openSessionIds(merged.tabs)].flatMap((id) => {
+              if (!known.has(id)) return [];
+              const session = merged.sessions.find((entry) => entry.id === id);
+              const remoteId = remoteSessionFor(id);
+              return session && remoteId && parseRemotePath(session.cwd)
+                ? [id, remoteSessionOwnershipKey(session.cwd, remoteId)]
+                : [id];
+            }),
+          ).catch((error) => {
+            console.error("Conversation ownership synchronization failed", error);
+          });
         } catch (error) {
           rollback?.();
           // The user hears about the refusal even if the native reject call is slow.

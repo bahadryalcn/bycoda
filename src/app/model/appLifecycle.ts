@@ -11,7 +11,7 @@ import {
   forgetHarnessSession,
   isLiveHarness,
 } from "../../integrations/harness/core/registry";
-import { killAllChildren } from "../../integrations/harness/core/child";
+import { forgetWindowChildren, killAllChildren } from "../../integrations/harness/core/child";
 import {
   hasInFlightSessions,
   inFlightRefs,
@@ -22,7 +22,14 @@ import {
   workspaceFromResumed,
   type ResumedWorkspace,
 } from "../../features/sessions/model/inFlight";
-import { leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
+import { closeLeaf, leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
+import {
+  abortRestoredSession,
+  claimRestoredSession,
+  remoteSessionOwnershipKey,
+} from "./sessionWindowOwnership";
+import { parseRemotePath } from "../../features/connections/model/remoteProjects";
+import { remoteSessionFor } from "../../features/connections/model/connections";
 import { killPty } from "../../platform/tauri/pty";
 import {
   projectTerminalFileIds,
@@ -36,6 +43,7 @@ import {
   listInFlightSessions,
   listSessionsByProject,
   loadWorkspaceSnapshot,
+  isPrimaryWorkspaceWindow,
   replaceInFlightSessions,
   saveWorkspaceSnapshot,
   setSessionQueue,
@@ -268,12 +276,28 @@ export function setQuitWorkspace(
  * Persist this window for a quit the coordinator has already confirmed.
  * Exiting is `confirm_quit`'s job, once every window has reported ready.
  */
-export async function handleQuitRequested(): Promise<boolean> {
+export async function handleQuitRequested(commitId?: number): Promise<boolean> {
   if (liveWorkspace) {
     liveWorkspace.flush();
     quitting = true;
     try {
-      if (!(await prepareWindowToClose(liveWorkspace.tabs(), liveWorkspace.projectTerminals()))) {
+      const withDialog =
+        commitId === undefined
+          ? undefined
+          : async <T>(show: () => Promise<T>): Promise<T> => {
+              await invoke("quit_commit_dialog", { id: commitId, open: true });
+              try {
+                return await show();
+              } finally {
+                await invoke("quit_commit_dialog", { id: commitId, open: false });
+              }
+            };
+      const prepared = await prepareWindowToClose(
+        liveWorkspace.tabs(),
+        liveWorkspace.projectTerminals(),
+        withDialog,
+      );
+      if (!prepared) {
         quitting = false;
         return false;
       }
@@ -291,6 +315,16 @@ export async function handleQuitRequested(): Promise<boolean> {
       return true;
     } catch (error) {
       quitting = false;
+      // Abort the native coordinator before opening an error dialog, otherwise
+      // its watchdog could exit while the user is reading the failure.
+      if (commitId !== undefined) {
+        try {
+          await invoke("quit_ready", { id: commitId, persisted: false });
+        } catch (abortError) {
+          console.warn("Aborting quit failed", abortError);
+          return false;
+        }
+      }
       await reportCloseFailure(error);
       return false;
     }
@@ -347,7 +381,7 @@ export async function askQuitConfirmation(id: number, inFlight: number): Promise
 }
 
 export async function commitQuit(id: number): Promise<void> {
-  const persisted = await handleQuitRequested();
+  const persisted = await handleQuitRequested(id);
   await invoke("quit_ready", { id, persisted }).catch((error) => {
     console.warn("appLifecycle operation failed", error);
   });
@@ -407,6 +441,11 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
           history: [],
           historyCwd: null,
         };
+      }
+      // Only the primary window restores the shared snapshot. An unavailable
+      // native identity is not permission to recover another window's turns.
+      if (!isPrimaryWorkspaceWindow()) {
+        return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
       }
       const hintedCwd = lastProjectPath();
       const historyHint: { value: Awaited<ReturnType<typeof listProjectHistory>> } = {
@@ -474,7 +513,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     // No desktop window authority: leave this optional state uninitialized.
   }
   if (serverRestoreOwner) serverTerminalRestoreState.beginLoad();
-  const [snapshotResult, refs] = await Promise.all([
+  const [snapshotResult, savedRefs] = await Promise.all([
     readWorkspaceSnapshot(),
     listInFlightSessions().catch((error) => {
       console.warn("appLifecycle could not list interrupted sessions", error);
@@ -498,8 +537,65 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   } else if (serverRestoreOwner) {
     serverTerminalRestoreState.loadFailed();
   }
+  let snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  const paneIds = new Set(
+    snapshot?.tabs.flatMap((tab) =>
+      [...tab.editorPanes, ...(tab.terminalPanes ?? [])].map((pane) => pane.id),
+    ) ?? [],
+  );
+  const claimIds = new Set(snapshot?.sessions.map((session) => session.id) ?? []);
+  const remoteKeys = new Map<string, string>();
+  for (const stub of snapshot?.sessions ?? []) {
+    const remoteId = stub.remoteSessionId ?? remoteSessionFor(stub.id);
+    if (remoteId && parseRemotePath(stub.cwd))
+      remoteKeys.set(stub.id, remoteSessionOwnershipKey(stub.cwd, remoteId));
+  }
+  for (const tab of snapshot?.tabs ?? [])
+    for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);
+  for (const ref of savedRefs) claimIds.add(ref.sessionId);
+  const foreign = new Set<string>();
+  const claimed = new Set<string>();
+  try {
+    for (const id of claimIds) {
+      const local = await claimRestoredSession(id);
+      if (!local) {
+        foreign.add(id);
+        continue;
+      }
+      claimed.add(id);
+      const remoteKey = remoteKeys.get(id);
+      if (remoteKey) {
+        if (await claimRestoredSession(remoteKey)) claimed.add(remoteKey);
+        else {
+          foreign.add(id);
+          await abortRestoredSession(id);
+          claimed.delete(id);
+        }
+      }
+    }
+  } catch (error) {
+    // Unknown ownership cannot safely paint or rewrite the saved workspace.
+    snapshotReadFailed = true;
+    console.warn("[boot] conversation ownership could not be verified", error);
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+    await Promise.all([...claimed].map((id) => abortRestoredSession(id).catch(() => {})));
+    return null;
+  }
+  const refs = savedRefs.filter((ref) => !foreign.has(ref.sessionId));
   const interrupted = new Set(refs.map((ref) => ref.sessionId));
-  const snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  if (snapshot && foreign.size) {
+    const tabs = snapshot.tabs.flatMap((original) => {
+      let tab: WorkspaceTab | null = original;
+      for (const id of leafIds(original.layout))
+        if (foreign.has(id)) tab = tab && closeLeaf(tab, id);
+      return tab ? [tab] : [];
+    });
+    snapshot = {
+      ...snapshot,
+      tabs,
+      sessions: snapshot.sessions.filter((session) => !foreign.has(session.id)),
+    };
+  }
   const savedRecovery = parseSessionRecovery(
     snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
       ? snapshotRaw.sessionRecovery
@@ -566,6 +662,20 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   );
 
   let workspace = snapshot ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted) : null;
+  if (
+    !workspace &&
+    snapshot &&
+    snapshot.tabs.length === 0 &&
+    snapshot.projectTerminals.length > 0
+  ) {
+    workspace = {
+      tabs: [],
+      sessions: [],
+      activeTabId: "",
+      projectCwd: snapshot.projectCwd,
+      projectTerminals: snapshot.projectTerminals,
+    };
+  }
   if (workspace) reconcileRestoredProject(workspace);
   if (!workspace && refs.length > 0) {
     const sessions: Session[] = [];
@@ -677,6 +787,16 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     );
   }
 
+  const paintedIds = new Set(workspace?.tabs.flatMap((tab) => leafIds(tab.layout)) ?? []);
+  for (const id of paintedIds) {
+    const key = remoteKeys.get(id);
+    if (key) paintedIds.add(key);
+  }
+  await Promise.all(
+    [...claimed]
+      .filter((id) => !paintedIds.has(id))
+      .map((id) => abortRestoredSession(id).catch(() => {})),
+  );
   if (!liveWorkspace && !quitting) bootingResumed = workspace;
   if (workspace) {
     // Recovery is for work the app closed in the middle of, not for every open chat.
@@ -867,12 +987,21 @@ export async function closeCurrentWindow(): Promise<void> {
   await invoke("destroy_window");
 }
 
-export async function confirmReload(hasUnsavedFiles: boolean): Promise<boolean> {
-  if (!hasUnsavedFiles) return true;
+export async function confirmReload(
+  hasUnsavedFiles: boolean,
+  hasRunningChats = false,
+): Promise<boolean> {
+  if (!hasUnsavedFiles && !hasRunningChats) return true;
   // The native dialog cannot hang behind page state while the window is going away.
   return platformConfirm({
     title: t("Reload {p0}?", { p0: PRODUCT_IDENTITY.displayName }),
-    message: t("Unsaved changes in open files will be discarded."),
+    message: hasRunningChats
+      ? hasUnsavedFiles
+        ? t(
+            "Running chats will be interrupted and unsaved changes in open files will be discarded.",
+          )
+        : t("Running chats will be interrupted.")
+      : t("Unsaved changes in open files will be discarded."),
     confirmLabel: t("Reload"),
     tone: "danger",
   });
@@ -1038,6 +1167,7 @@ async function confirmAndCloseWindow(
 async function prepareWindowToClose(
   tabs: WorkspaceTab[],
   docks: ProjectTerminalDock[],
+  withDialog?: <T>(show: () => Promise<T>) => Promise<T>,
 ): Promise<boolean> {
   const files = [
     ...tabs.flatMap((tab) =>
@@ -1049,8 +1179,11 @@ async function prepareWindowToClose(
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),
   ];
   // Native dialog: the window is going away, so page state must not be able to hide the ask.
-  if (!(await confirmCloseTerminals(unique, platformConfirm))) return false;
-  return prepareEditorsToClose();
+  const confirm = withDialog
+    ? (request: Parameters<typeof platformConfirm>[0]) => withDialog(() => platformConfirm(request))
+    : platformConfirm;
+  if (!(await confirmCloseTerminals(unique, confirm))) return false;
+  return prepareEditorsToClose(withDialog);
 }
 
 async function reportCloseFailure(error: unknown): Promise<void> {
@@ -1093,11 +1226,10 @@ export async function reapWindowRuntime(
  * same ids and reattaches, and the backend reaps them when the window itself
  * is destroyed.
  */
-export async function reapUnloadRuntime(sessions: Session[]): Promise<void> {
-  await forgetSessionChildren(sessions);
-  await killAllChildren().catch((error) => {
-    console.warn("appLifecycle operation failed", error);
-  });
+export async function reapUnloadRuntime(_sessions: Session[]): Promise<void> {
+  // Native page retirement owns physical child cleanup. Never stop Host turns
+  // or another window's processes from a renderer unload.
+  forgetWindowChildren();
 }
 
 async function forgetSessionChildren(sessions: Session[]): Promise<void> {

@@ -275,3 +275,57 @@ it("does not invoke a changed or removed session and preserves the original capt
     callback: "not-started",
   });
 });
+
+it("never opens a missing session from a stale cross-window focus request", async () => {
+  const value = request();
+  const focus = vi.fn(() => false);
+  const open = vi.fn(async () => {});
+  const inspected = vi.fn();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let actions!: ReturnType<typeof useApprovalActions>;
+  function Fixture() {
+    actions = useApprovalActions({
+      sessionsRef: { current: [value] },
+      setInspectedWorkerId: inspected,
+      focusOpenSession: focus,
+      onSelectHistorySession: open,
+    });
+    return null;
+  }
+  await act(async () => root.render(createElement(Fixture)));
+  act(() => actions.onFocusOwnedApprovalSession(value.id));
+  expect(focus).toHaveBeenCalledWith(value.id);
+  expect(open).not.toHaveBeenCalled();
+  expect(inspected).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  container.remove();
+});
+
+it("focuses an existing parent pane before inspecting its worker", async () => {
+  const value = { ...request(), orchestrationLeadId: "parent" };
+  const focus = vi.fn(() => true);
+  const open = vi.fn(async () => {});
+  const inspected = vi.fn();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let actions!: ReturnType<typeof useApprovalActions>;
+  function Fixture() {
+    actions = useApprovalActions({
+      sessionsRef: { current: [value] },
+      setInspectedWorkerId: inspected,
+      focusOpenSession: focus,
+      onSelectHistorySession: open,
+    });
+    return null;
+  }
+  await act(async () => root.render(createElement(Fixture)));
+  act(() => actions.onFocusOwnedApprovalSession(value.id));
+  expect(focus).toHaveBeenCalledWith("parent");
+  expect(inspected).toHaveBeenCalledWith(value.id);
+  expect(open).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  container.remove();
+});

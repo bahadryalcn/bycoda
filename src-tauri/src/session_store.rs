@@ -53,6 +53,7 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 pub struct SessionStore {
     /// Native construction identity, never a persisted store ID or IPC grant.
     native_instance_id: uuid::Uuid,
+    _recovery_lease: Option<std::fs::File>,
     conn: Arc<Mutex<cohort::RegisteredConnection>>,
     read_conn: Mutex<Option<Connection>>,
     /// Query-only connection for the UI's list/get reads. Search holds
@@ -108,6 +109,7 @@ impl SessionStore {
         )
         .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
+        ensure_window_in_flight(&conn).map_err(|e| e.to_string())?;
         authority::clear_stale_cli_ingress(&conn, started_at);
         crate::ssh_group_defaults::migrate(&conn)?;
         crate::worktrees::reconcile_removals(&conn)?;
@@ -124,8 +126,11 @@ impl SessionStore {
         let read_conn = open_reader()?;
         let list_conn = open_reader()?;
         let background_conn = open_reader()?;
+        let native_instance_id = uuid::Uuid::new_v4();
+        let recovery_lease = conn.create_recovery_lease(&native_instance_id.to_string())?;
         Ok(Self {
-            native_instance_id: uuid::Uuid::new_v4(),
+            native_instance_id,
+            _recovery_lease: Some(recovery_lease),
             conn: Arc::new(Mutex::new(conn)),
             read_conn: Mutex::new(Some(read_conn)),
             list_conn: Mutex::new(Some(list_conn)),
@@ -150,6 +155,7 @@ impl SessionStore {
         crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
             native_instance_id: uuid::Uuid::new_v4(),
+            _recovery_lease: None,
             conn: Arc::new(Mutex::new(cohort::RegisteredConnection::in_memory(conn))),
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
@@ -1775,9 +1781,13 @@ pub async fn session_set_in_flight(
     window: tauri::Window,
     sessions: Vec<InFlightSession>,
 ) -> Result<(), String> {
+    let captured_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_set_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        crate::native_window_lifecycle::persistence_write(&window, || {
+        let result = crate::native_window_lifecycle::persistence_write(&window, || {
+            if !crate::window::is_workspace_window(window.label()) {
+                return Err("Only workspace windows can record in-flight sessions".into());
+            }
             for session in &sessions {
                 validate_id(&session.session_id, "session")?;
                 if session.cwd.trim().is_empty() {
@@ -1785,8 +1795,31 @@ pub async fn session_set_in_flight(
                 }
             }
             let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            replace_in_flight(&mut conn, &sessions).map_err(|e| e.to_string())
-        })
+            let page = crate::harness::page_incarnation(&window)?;
+            if page != captured_page {
+                return Err("In-flight owner page has changed".into());
+            }
+            replace_window_in_flight(
+                &mut conn,
+                &store.native_instance_id().to_string(),
+                window.label(),
+                &page,
+                &sessions,
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(page)
+        });
+        if let Ok(page) = &result {
+            if crate::harness::page_retirement_waiting(page)
+                || matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            {
+                let _ = app.emit_to("main", "session-recovery-changed", ());
+            }
+        }
+        result.map(|_| ())
     })
     .await
 }
@@ -1798,7 +1831,271 @@ pub async fn session_list_in_flight(app: tauri::AppHandle) -> Result<Vec<InFligh
     crate::harness::run_blocking("session_list_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        list_in_flight(&conn).map_err(|e| e.to_string())
+        list_interrupted_in_flight(&conn, |id, page| {
+            if id == store.native_instance_id().to_string() {
+                matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            } else {
+                matches!(
+                    conn.recovery_lease_state(id),
+                    Ok(cohort::LeaseState::Unleased)
+                )
+            }
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecoveryCandidates {
+    sessions: Vec<InFlightSession>,
+    pending: bool,
+    receipt: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct RecoveryReceiptRow {
+    process: Option<String>,
+    page: Option<String>,
+    session: String,
+    cwd: String,
+}
+#[derive(Clone)]
+struct RecoveryReceipt {
+    store: String,
+    page: String,
+    rows: Vec<RecoveryReceiptRow>,
+    settled: Option<std::time::Instant>,
+}
+fn prune_recovery_receipts(
+    receipts: &mut HashMap<String, RecoveryReceipt>,
+    now: std::time::Instant,
+) {
+    receipts.retain(|_, receipt| {
+        receipt.settled.is_none_or(|settled| {
+            now.checked_duration_since(settled).unwrap_or_default()
+                < std::time::Duration::from_secs(600)
+        })
+    });
+}
+fn recovery_receipts() -> &'static Mutex<HashMap<String, RecoveryReceipt>> {
+    static RECEIPTS: std::sync::OnceLock<Mutex<HashMap<String, RecoveryReceipt>>> =
+        std::sync::OnceLock::new();
+    RECEIPTS.get_or_init(Mutex::default)
+}
+
+fn issue_recovery_receipt(
+    conn: &Connection,
+    owner_store: &str,
+    owner_page: &str,
+    sessions: &[InFlightSession],
+    stale: &[(String, String)],
+) -> Result<Option<String>, String> {
+    let included = |id: &str, cwd: &str| {
+        sessions
+            .iter()
+            .any(|item| item.session_id == id && item.cwd == cwd)
+    };
+    let mut result = Vec::new();
+    let mut statement = conn
+        .prepare("SELECT session_id, cwd FROM in_flight_legacy_sessions ORDER BY session_id, cwd")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (session, cwd) = row.map_err(|e| e.to_string())?;
+        if included(&session, &cwd) {
+            result.push(RecoveryReceiptRow {
+                process: None,
+                page: None,
+                session,
+                cwd,
+            });
+        }
+    }
+    let mut statement = conn.prepare("SELECT DISTINCT process_id, page_id, session_id, cwd FROM in_flight_window_sessions ORDER BY process_id, page_id, session_id, cwd").map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (process, page, session, cwd) = row.map_err(|e| e.to_string())?;
+        if stale.contains(&(process.clone(), page.clone())) && included(&session, &cwd) {
+            result.push(RecoveryReceiptRow {
+                process: Some(process),
+                page: Some(page),
+                session,
+                cwd,
+            });
+        }
+    }
+    if result.is_empty() {
+        return Ok(None);
+    }
+    let mut receipts = recovery_receipts()
+        .lock()
+        .map_err(|_| "Recovery receipts unavailable")?;
+    prune_recovery_receipts(&mut receipts, std::time::Instant::now());
+    if let Some((id, _)) = receipts.iter().find(|(_, receipt)| {
+        receipt.settled.is_none()
+            && receipt.store == owner_store
+            && receipt.page == owner_page
+            && receipt.rows == result
+    }) {
+        return Ok(Some(id.clone()));
+    }
+    if receipts
+        .values()
+        .filter(|receipt| receipt.settled.is_none())
+        .count()
+        >= 64
+    {
+        return Err("Recovery receipt capacity reached; retry after pending saves settle".into());
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    if receipts.len() >= 128 {
+        if let Some(id) = receipts
+            .iter()
+            .filter_map(|(id, receipt)| receipt.settled.map(|at| (id.clone(), at)))
+            .min_by_key(|(_, at)| *at)
+            .map(|(id, _)| id)
+        {
+            receipts.remove(&id);
+        }
+    }
+    receipts.insert(
+        id.clone(),
+        RecoveryReceipt {
+            store: owner_store.to_owned(),
+            page: owner_page.to_owned(),
+            rows: result,
+            settled: None,
+        },
+    );
+    Ok(Some(id))
+}
+
+fn acknowledge_recovery_rows(
+    conn: &Connection,
+    snapshot: &Value,
+    rows: &[RecoveryReceiptRow],
+    stale: &[(String, String)],
+) -> rusqlite::Result<()> {
+    let journal = &snapshot["sessionRecovery"];
+    for row in rows {
+        let covered = journal["workspace"]["sessions"]
+            .as_array()
+            .is_some_and(|sessions| {
+                sessions.iter().any(|session| {
+                    session["id"].as_str() == Some(row.session.as_str())
+                        && session["cwd"].as_str() == Some(row.cwd.as_str())
+                })
+            })
+            || journal["resolvedIds"].as_array().is_some_and(|ids| {
+                ids.iter()
+                    .any(|id| id.as_str() == Some(row.session.as_str()))
+            });
+        if !covered {
+            continue;
+        }
+        let protected: bool = {
+            let mut statement = conn.prepare("SELECT DISTINCT process_id, page_id FROM in_flight_window_sessions WHERE session_id = ?1")?;
+            let owners = statement.query_map([&row.session], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            owners
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|owner| !stale.contains(owner))
+        };
+        if protected {
+            continue;
+        }
+        match (&row.process, &row.page) {
+            (Some(process), Some(page)) if stale.contains(&(process.clone(), page.clone())) => {
+                conn.execute("DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2 AND session_id = ?3 AND cwd = ?4", params![process, page, row.session, row.cwd])?;
+            }
+            (None, None) => {
+                conn.execute(
+                    "DELETE FROM in_flight_legacy_sessions WHERE session_id = ?1 AND cwd = ?2",
+                    params![row.session, row.cwd],
+                )?;
+            }
+            _ => continue,
+        }
+        conn.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1 AND cwd = ?2 AND NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = ?1) AND NOT EXISTS (SELECT 1 FROM in_flight_legacy_sessions WHERE session_id = ?1)", params![row.session, row.cwd])?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_recovery_candidates(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+) -> Result<SessionRecoveryCandidates, String> {
+    if window.label() != "main" {
+        return Err("Only the primary workspace can read recovery candidates".into());
+    }
+    let owner_page = crate::harness::page_incarnation(&window)?;
+    crate::harness::run_blocking("session_recovery_candidates", move || {
+        let store = app.state::<SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let process = store.native_instance_id().to_string();
+        let mut statement = conn
+            .prepare("SELECT DISTINCT page_id FROM in_flight_window_sessions WHERE process_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let pages = statement
+            .query_map([&process], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut pending = false;
+        for page in pages {
+            if crate::harness::page_retirement_waiting(&page.map_err(|e| e.to_string())?) {
+                pending = true;
+                break;
+            }
+        }
+        // Read waiting first: a proof that settles during this call either
+        // requests another poll or is visible as confirmed below.
+        let stale = interrupted_processes(&conn, |id, page| {
+            if id == process {
+                matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            } else {
+                matches!(
+                    conn.recovery_lease_state(id),
+                    Ok(cohort::LeaseState::Unleased)
+                )
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        let sessions = list_interrupted_in_flight(&conn, |id, page| {
+            stale.iter().any(|item| item.0 == id && item.1 == page)
+        })
+        .map_err(|e| e.to_string())?;
+        if crate::harness::page_incarnation(&window)? != owner_page {
+            return Err("Recovery owner page has changed".into());
+        }
+        let receipt = issue_recovery_receipt(&conn, &process, &owner_page, &sessions, &stale)?;
+        Ok(SessionRecoveryCandidates {
+            sessions,
+            pending,
+            receipt,
+        })
     })
     .await
 }
@@ -1813,7 +2110,24 @@ pub async fn session_take_in_flight(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
             let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            take_in_flight(&mut conn).map_err(|e| e.to_string())
+            if window.label() != "main" {
+                return Err("Only the primary workspace can take interrupted sessions".into());
+            }
+            let stale = interrupted_processes(&conn, |id, page| {
+                if id == store.native_instance_id().to_string() {
+                    matches!(
+                        crate::harness::page_retirement_status(page),
+                        crate::harness::PageRetirement::Confirmed
+                    )
+                } else {
+                    matches!(
+                        conn.recovery_lease_state(id),
+                        Ok(cohort::LeaseState::Unleased)
+                    )
+                }
+            })
+            .map_err(|e| e.to_string())?;
+            take_interrupted_in_flight(&mut conn, &stale).map_err(|e| e.to_string())
         })
     })
     .await
@@ -1829,14 +2143,23 @@ pub async fn workspace_set_snapshot(
     app: tauri::AppHandle,
     window: tauri::Window,
     mut snapshot: Value,
+    recovery_receipt: Option<String>,
 ) -> Result<(), String> {
+    let owner_page = if recovery_receipt.is_some() {
+        Some(crate::harness::page_incarnation(&window)?)
+    } else {
+        None
+    };
     crate::harness::run_blocking("workspace_set_snapshot", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
+            if window.label() != "main" {
+                return Err("Only the primary workspace can save its snapshot".into());
+            }
             if !snapshot.is_object() {
                 return Err("workspace snapshot must be an object".into());
             }
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
             let owner = window.label() == "main";
             let previous = if owner && snapshot.get("serversRestore").is_some() {
                 None
@@ -1854,7 +2177,36 @@ pub async fn workspace_set_snapshot(
             if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
                 return Err("workspace snapshot is too large".into());
             }
-            set_workspace_snapshot(&conn, &json).map_err(|e| e.to_string())
+            let receipt_rows = if let Some(id) = recovery_receipt.as_deref() {
+                let mut receipts = recovery_receipts().lock().map_err(|_| "Recovery receipts unavailable")?;
+                prune_recovery_receipts(&mut receipts, std::time::Instant::now());
+                let receipt = receipts.get(id).cloned().ok_or("Recovery receipt unavailable; refresh candidates")?;
+                if receipt.store != store.native_instance_id().to_string() || Some(&receipt.page) != owner_page.as_ref() || crate::harness::page_incarnation(&window)? != receipt.page { return Err("Recovery receipt belongs to a different page or store".into()); }
+                if receipt.settled.is_some() { None } else { Some(receipt.rows) }
+            } else { None };
+            let stale = if receipt_rows.is_some() {
+                interrupted_processes(&conn, |id, page| {
+                    if id == store.native_instance_id().to_string() {
+                        matches!(crate::harness::page_retirement_status(page), crate::harness::PageRetirement::Confirmed)
+                    } else { matches!(conn.recovery_lease_state(id), Ok(cohort::LeaseState::Unleased)) }
+                }).map_err(|e| e.to_string())?
+            } else { Vec::new() };
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            set_workspace_snapshot(&tx, &json).map_err(|e| e.to_string())?;
+            if let Some(rows) = &receipt_rows { acknowledge_recovery_rows(&tx, &snapshot, rows, &stale).map_err(|e| e.to_string())?; }
+            tx.commit().map_err(|e| e.to_string())?;
+            if let Some(id) = recovery_receipt.as_deref() { if let Some(receipt) = recovery_receipts().lock().map_err(|_| "Recovery receipts unavailable")?.get_mut(id) { receipt.settled.get_or_insert_with(std::time::Instant::now); } }
+            if let Some(rows) = receipt_rows {
+                for row in rows {
+                    if let (Some(process), Some(page)) = (row.process, row.page) {
+                        if process == store.native_instance_id().to_string() {
+                            let remaining: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2)", params![process, page], |r| r.get(0)).map_err(|e| e.to_string())?;
+                            if !remaining { crate::harness::release_page_proof(&page); }
+                        }
+                    }
+                }
+            }
+            Ok(())
         })
     })
     .await
@@ -3843,6 +4195,148 @@ fn get_session_json(conn: &Connection, session_id: &str) -> rusqlite::Result<Str
     Ok(head)
 }
 
+fn ensure_window_in_flight(conn: &Connection) -> rusqlite::Result<()> {
+    let migrated: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'in_flight_legacy_sessions')", [], |row| row.get(0))?;
+    if !migrated {
+        conn.execute_batch("SAVEPOINT window_in_flight_migration;
+            CREATE TABLE IF NOT EXISTS in_flight_legacy_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL);
+            INSERT OR IGNORE INTO in_flight_legacy_sessions SELECT session_id, cwd, sort_index FROM in_flight_sessions;
+            RELEASE window_in_flight_migration;")?;
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS in_flight_window_sessions (
+        process_id TEXT NOT NULL, window_label TEXT NOT NULL, page_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        cwd TEXT NOT NULL, sort_index INTEGER NOT NULL,
+        PRIMARY KEY (process_id, window_label, page_id, session_id, cwd)
+    );
+    CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_delete AFTER DELETE ON in_flight_sessions BEGIN
+        DELETE FROM in_flight_window_sessions WHERE session_id = OLD.session_id;
+        DELETE FROM in_flight_legacy_sessions WHERE session_id = OLD.session_id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_insert AFTER INSERT ON in_flight_sessions
+      WHEN NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = NEW.session_id)
+      BEGIN INSERT OR REPLACE INTO in_flight_legacy_sessions (session_id, cwd, sort_index) VALUES (NEW.session_id, NEW.cwd, NEW.sort_index); END;",
+    )
+}
+
+fn replace_window_in_flight(
+    conn: &mut Connection,
+    process: &str,
+    window: &str,
+    page: &str,
+    sessions: &[InFlightSession],
+) -> rusqlite::Result<()> {
+    ensure_window_in_flight(conn)?;
+    let tx = conn.transaction()?;
+    let prior = {
+        let mut statement = tx.prepare("SELECT session_id FROM in_flight_window_sessions WHERE process_id = ?1 AND window_label = ?2 AND page_id = ?3")?;
+        let rows = statement.query_map(params![process, window, page], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute(
+        "DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND window_label = ?2 AND page_id = ?3",
+        params![process, window, page],
+    )?;
+    for (index, session) in sessions.iter().enumerate() {
+        tx.execute("INSERT OR IGNORE INTO in_flight_window_sessions (process_id, window_label, page_id, session_id, cwd, sort_index) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![process, window, page, session.session_id, session.cwd, index as i64])?;
+        tx.execute("INSERT INTO in_flight_sessions (session_id, cwd, sort_index) VALUES (?1, ?2, ?3) ON CONFLICT(session_id) DO UPDATE SET cwd = excluded.cwd, sort_index = excluded.sort_index", params![session.session_id, session.cwd, index as i64])?;
+    }
+    for id in prior {
+        tx.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1 AND NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = ?1) AND NOT EXISTS (SELECT 1 FROM in_flight_legacy_sessions WHERE session_id = ?1)", [id])?;
+    }
+    tx.commit()
+}
+
+fn interrupted_processes(
+    conn: &Connection,
+    is_stale: impl Fn(&str, &str) -> bool,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    ensure_window_in_flight(conn)?;
+    let mut statement =
+        conn.prepare("SELECT DISTINCT process_id, page_id FROM in_flight_window_sessions")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(id, page)| is_stale(id, page))
+        .collect())
+}
+
+fn list_interrupted_in_flight(
+    conn: &Connection,
+    is_stale: impl Fn(&str, &str) -> bool,
+) -> rusqlite::Result<Vec<InFlightSession>> {
+    let stale = interrupted_processes(conn, is_stale)?;
+    let mut statement = conn.prepare(
+        "SELECT session_id, cwd FROM in_flight_legacy_sessions ORDER BY sort_index, session_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(InFlightSession {
+            session_id: row.get(0)?,
+            cwd: row.get(1)?,
+        })
+    })?;
+    let mut result = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    let mut protected = std::collections::HashSet::new();
+    {
+        let mut statement = conn.prepare("SELECT process_id, page_id, session_id, cwd FROM in_flight_window_sessions ORDER BY sort_index, session_id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                InFlightSession {
+                    session_id: row.get(2)?,
+                    cwd: row.get(3)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (id, page, item) = row?;
+            if stale.contains(&(id, page)) {
+                result.push(item);
+            } else {
+                protected.insert(item.session_id);
+            }
+        }
+    }
+    result.retain(|item| !protected.contains(&item.session_id));
+    result.sort_by(|a, b| (&a.session_id, &a.cwd).cmp(&(&b.session_id, &b.cwd)));
+    result.dedup_by(|a, b| a.session_id == b.session_id && a.cwd == b.cwd);
+    Ok(result)
+}
+
+fn take_interrupted_in_flight(
+    conn: &mut Connection,
+    stale: &[(String, String)],
+) -> rusqlite::Result<Vec<InFlightSession>> {
+    ensure_window_in_flight(conn)?;
+    let tx = conn.transaction()?;
+    let sessions = list_interrupted_in_flight(&tx, |id, page| {
+        stale.iter().any(|item| item.0 == id && item.1 == page)
+    })?;
+    for item in &sessions {
+        tx.execute(
+            "DELETE FROM in_flight_sessions WHERE session_id = ?1 AND cwd = ?2",
+            params![item.session_id, item.cwd],
+        )?;
+        tx.execute(
+            "DELETE FROM in_flight_legacy_sessions WHERE session_id = ?1 AND cwd = ?2",
+            params![item.session_id, item.cwd],
+        )?;
+        for (id, page) in stale {
+            tx.execute("DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2 AND session_id = ?3 AND cwd = ?4", params![id, page, item.session_id, item.cwd])?;
+        }
+    }
+    tx.commit()?;
+    Ok(sessions)
+}
+
+#[cfg(test)]
 fn list_in_flight(conn: &Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     let mut statement = conn.prepare(
         "SELECT session_id, cwd FROM in_flight_sessions ORDER BY sort_index ASC, session_id ASC",
@@ -3856,6 +4350,7 @@ fn list_in_flight(conn: &Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     rows.collect()
 }
 
+#[cfg(test)]
 fn replace_in_flight(conn: &mut Connection, sessions: &[InFlightSession]) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM in_flight_sessions", [])?;
@@ -3872,6 +4367,7 @@ fn replace_in_flight(conn: &mut Connection, sessions: &[InFlightSession]) -> rus
     Ok(())
 }
 
+#[cfg(test)]
 fn take_in_flight(conn: &mut Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     let tx = conn.transaction()?;
     let sessions = {
@@ -6123,6 +6619,256 @@ mod tests {
         assert_eq!(first[1].session_id, "s1");
         let second = take_in_flight(&mut conn).unwrap();
         assert!(second.is_empty());
+    }
+
+    #[test]
+    fn in_flight_windows_keep_separate_rows_and_only_prior_process_is_interrupted() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let entry = |id: &str| InFlightSession {
+            session_id: id.into(),
+            cwd: "/repo".into(),
+        };
+        replace_in_flight(&mut conn, &[entry("legacy")]).unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "old",
+            "secondary",
+            "oldpage",
+            &[entry("crashed")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[entry("main")])
+            .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "current",
+            "secondary",
+            "secondarypage",
+            &[entry("secondary")],
+        )
+        .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "current",
+            "popout",
+            "popoutpage",
+            &[entry("crashed")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[]).unwrap();
+        let canonical = list_in_flight(&conn).unwrap();
+        assert!(canonical.iter().any(|item| item.session_id == "secondary"));
+        assert!(!canonical.iter().any(|item| item.session_id == "main"));
+        conn.execute(
+            "DELETE FROM in_flight_sessions WHERE session_id = 'secondary'",
+            [],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[]).unwrap();
+        assert!(!list_in_flight(&conn)
+            .unwrap()
+            .iter()
+            .any(|item| item.session_id == "secondary"));
+        conn.execute(
+            "INSERT INTO in_flight_sessions VALUES ('secondary', '/repo', 0)",
+            [],
+        )
+        .unwrap();
+        let old = list_interrupted_in_flight(&conn, |id, _| id == "old").unwrap();
+        assert_eq!(
+            old.iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["legacy", "secondary"]
+        );
+        assert_eq!(
+            take_interrupted_in_flight(&mut conn, &[("old".into(), "oldpage".into())])
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(list_interrupted_in_flight(&conn, |id, _| id == "old")
+            .unwrap()
+            .is_empty());
+        replace_window_in_flight(&mut conn, "current", "popout", "popoutpage", &[]).unwrap();
+        assert_eq!(
+            list_interrupted_in_flight(&conn, |id, _| id == "old")
+                .unwrap()
+                .len(),
+            1
+        );
+        let after_restart = list_interrupted_in_flight(&conn, |id, _| id == "current").unwrap();
+        assert_eq!(
+            after_restart
+                .iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn recovery_lease_distinguishes_live_closed_and_unknown_owners() {
+        let dir =
+            std::env::temp_dir().join(format!("bycoda-recovery-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("sessions.sqlite");
+        let first = SessionStore::open(path.clone()).unwrap();
+        let id = first.native_instance_id().to_string();
+        let second = SessionStore::open(path).unwrap();
+        assert!(matches!(
+            second.conn.lock().unwrap().recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Live)
+        ));
+        assert!(second
+            .conn
+            .lock()
+            .unwrap()
+            .recovery_lease_state(&uuid::Uuid::new_v4().to_string())
+            .is_err());
+        drop(first);
+        assert!(matches!(
+            second.conn.lock().unwrap().recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Unleased)
+        ));
+        drop(second);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn retired_page_recovers_without_clearing_live_or_unknown_siblings() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let entry = |id: &str| InFlightSession {
+            session_id: id.into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old-page",
+            &[entry("retired")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "process", "main", "new-page", &[entry("new")])
+            .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "sibling",
+            "unknown-page",
+            &[entry("unknown")],
+        )
+        .unwrap();
+        let result = list_interrupted_in_flight(&conn, |_, page| page == "old-page").unwrap();
+        assert_eq!(
+            result
+                .iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["retired"]
+        );
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn recovery_ack_only_consumes_receipted_covered_occurrences() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let item = InFlightSession {
+            session_id: "same".into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(&mut conn, "process", "main", "old", &[item.clone()]).unwrap();
+        let rows = vec![RecoveryReceiptRow {
+            process: Some("process".into()),
+            page: Some("old".into()),
+            session: "same".into(),
+            cwd: "/repo".into(),
+        }];
+        replace_window_in_flight(&mut conn, "process", "main", "new", &[item]).unwrap();
+        let stale = vec![
+            ("process".into(), "old".into()),
+            ("process".into(), "new".into()),
+        ];
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"workspace":{"sessions":[{"id":"same","cwd":"/repo"}]}}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        let remaining: Vec<String> = conn
+            .prepare("SELECT page_id FROM in_flight_window_sessions")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(remaining, vec!["new"]);
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recovery_ack_preserves_uncovered_and_live_owned_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let item = InFlightSession {
+            session_id: "same".into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(&mut conn, "process", "main", "old", &[item.clone()]).unwrap();
+        let rows = vec![RecoveryReceiptRow {
+            process: Some("process".into()),
+            page: Some("old".into()),
+            session: "same".into(),
+            cwd: "/repo".into(),
+        }];
+        let stale = vec![("process".into(), "old".into())];
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"workspace":{"sessions":[]}}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "process", "other", "live", &[item]).unwrap();
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"resolvedIds":["same"]}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM in_flight_window_sessions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recovery_receipt_ttl_evicts_only_settled_entries() {
+        let now = std::time::Instant::now();
+        let receipt = |settled| RecoveryReceipt {
+            store: "store".into(),
+            page: "page".into(),
+            rows: vec![],
+            settled,
+        };
+        let mut receipts = HashMap::from([
+            ("pending".into(), receipt(None)),
+            ("settled".into(), receipt(Some(now))),
+        ]);
+        prune_recovery_receipts(&mut receipts, now + std::time::Duration::from_secs(599));
+        assert_eq!(receipts.len(), 2);
+        prune_recovery_receipts(&mut receipts, now + std::time::Duration::from_secs(600));
+        assert!(receipts.contains_key("pending"));
+        assert!(!receipts.contains_key("settled"));
     }
 
     #[test]

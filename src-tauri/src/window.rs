@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,43 @@ enum Stage {
     Polling,
     Confirming,
     Committing,
+    Exiting,
+}
+
+/// The persistence watchdog measures only time outside interactive close decisions.
+/// Repeated open/close notifications are idempotent and cannot reset its budget.
+struct CommitClock {
+    remaining: Duration,
+    running_since: Option<Instant>,
+    dialogs: HashSet<String>,
+}
+
+impl CommitClock {
+    fn new(now: Instant) -> Self {
+        Self {
+            remaining: COMMIT_TIMEOUT,
+            running_since: Some(now),
+            dialogs: HashSet::new(),
+        }
+    }
+
+    fn remaining_at(&self, now: Instant) -> Duration {
+        self.remaining
+            .saturating_sub(self.running_since.map_or(Duration::ZERO, |since| {
+                now.checked_duration_since(since).unwrap_or_default()
+            }))
+    }
+
+    fn dialog(&mut self, label: &str, open: bool, now: Instant) {
+        if open {
+            if self.dialogs.insert(label.to_owned()) && self.dialogs.len() == 1 {
+                self.remaining = self.remaining_at(now);
+                self.running_since = None;
+            }
+        } else if self.dialogs.remove(label) && self.dialogs.is_empty() {
+            self.running_since = Some(now);
+        }
+    }
 }
 
 /// One quit at a time, decided in one place. Quit events reach every window, so
@@ -55,6 +92,8 @@ struct QuitRun {
     in_flight: u32,
     /// The window showing the dialog, so its close can abort the quit.
     prompt: Option<String>,
+    commit_clock: Option<CommitClock>,
+    commit_owners: HashMap<String, Arc<crate::control::receipts::WindowIssuer>>,
 }
 
 static QUIT_RUN: Mutex<Option<QuitRun>> = Mutex::new(None);
@@ -115,11 +154,13 @@ fn tool_window_url(tool: &str, cwd: &str, grouped: bool) -> Result<tauri::Webvie
 /// take, so two quick pop-outs cannot swap or overwrite each other's tabs.
 pub fn open_transfer_window(
     app: &AppHandle,
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: Option<(f64, f64)>,
 ) -> Result<(), String> {
     open_transfer_window_position(
         app,
+        source,
         payload,
         position.map(|(x, y)| tauri::LogicalPosition::new(x, y).into()),
     )
@@ -129,19 +170,29 @@ pub fn open_transfer_window(
 /// desktops. Browser screen coordinates alone do not share that coordinate space.
 pub fn open_transfer_window_at_point(
     app: &AppHandle,
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: tauri::PhysicalPosition<i32>,
 ) -> Result<(), String> {
-    open_transfer_window_position(app, payload, Some(position.into()))
+    open_transfer_window_position(app, source, payload, Some(position.into()))
 }
 
 fn open_transfer_window_position(
     app: &AppHandle,
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: Option<tauri::Position>,
 ) -> Result<(), String> {
     // The source keeps its tab until the destination has actually mounted.
-    let (window, ready) = build_session_window(app, true, Some(WindowSeed { payload, position }))?;
+    let (window, ready) = build_session_window(
+        app,
+        true,
+        Some(WindowSeed {
+            source,
+            payload,
+            position,
+        }),
+    )?;
     let state = app.state::<crate::window_transfer::WindowTransferState>();
     // Registered before build below; boot can acknowledge before build returns.
     let result = ready
@@ -168,6 +219,7 @@ fn open_transfer_window_position(
 }
 
 struct WindowSeed {
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: Option<tauri::Position>,
 }
@@ -361,8 +413,12 @@ fn build_session_window_with_url(
     let ready = if let Some(seed) = seed {
         // Staged before the webview exists, so its boot always finds it.
         let state = app.state::<crate::window_transfer::WindowTransferState>();
-        state.stage(&label, seed.payload)?;
-        Some(state.watch_ready(&label)?)
+        let ready = state.watch_ready_owned(&label, seed.source, &seed.payload)?;
+        if let Err(error) = state.stage(&label, seed.payload) {
+            state.discard(&label);
+            return Err(error);
+        }
+        Some(ready)
     } else {
         None
     };
@@ -605,6 +661,8 @@ fn begin_run(slot: &mut Option<QuitRun>, id: u32, labels: Vec<String>) -> bool {
         replied: HashSet::new(),
         in_flight: 0,
         prompt: None,
+        commit_clock: None,
+        commit_owners: HashMap::new(),
     });
     true
 }
@@ -647,6 +705,7 @@ fn open_commit(slot: &mut Option<QuitRun>, id: u32, labels: Vec<String>) -> bool
     };
     run.stage = Stage::Committing;
     run.pending = labels.into_iter().collect();
+    run.commit_clock = Some(CommitClock::new(Instant::now()));
     true
 }
 
@@ -657,7 +716,14 @@ fn record_ready(slot: &mut Option<QuitRun>, id: u32, label: &str) -> Next {
     if run.id != id || run.stage != Stage::Committing {
         return Next::Wait;
     }
-    run.pending.remove(label);
+    if run
+        .commit_clock
+        .as_ref()
+        .is_some_and(|clock| clock.dialogs.contains(label))
+        || !run.pending.remove(label)
+    {
+        return Next::Wait;
+    }
     if run.pending.is_empty() {
         Next::Exit
     } else {
@@ -669,6 +735,13 @@ fn drop_window(slot: &mut Option<QuitRun>, label: &str) -> Next {
     let Some(run) = slot.as_mut() else {
         return Next::Wait;
     };
+    if run
+        .commit_clock
+        .as_ref()
+        .is_some_and(|clock| clock.dialogs.contains(label))
+    {
+        return Next::Abort;
+    }
     if run.stage == Stage::Confirming {
         return if run.prompt.as_deref() == Some(label) {
             Next::Abort
@@ -764,6 +837,52 @@ pub fn quit_decision(app: AppHandle, window: WebviewWindow, id: u32, confirmed: 
     }
 }
 
+fn record_commit_dialog(
+    slot: &mut Option<QuitRun>,
+    id: u32,
+    label: &str,
+    issuer: &Arc<crate::control::receipts::WindowIssuer>,
+    open: bool,
+    now: Instant,
+) -> Result<(), String> {
+    let run = slot
+        .as_mut()
+        .filter(|run| run.id == id && run.stage == Stage::Committing)
+        .ok_or("Quit commit is no longer active")?;
+    if !run.pending.contains(label)
+        || !run
+            .commit_owners
+            .get(label)
+            .is_some_and(|owner| Arc::ptr_eq(owner, issuer))
+        || !issuer.is_live()
+    {
+        return Err("Quit participant is no longer current".into());
+    }
+    run.commit_clock
+        .as_mut()
+        .ok_or("Quit commit clock is unavailable")?
+        .dialog(label, open, now);
+    Ok(())
+}
+
+/// The caller must receive this acknowledgement before opening close dialogs.
+#[tauri::command]
+pub fn quit_commit_dialog(window: WebviewWindow, id: u32, open: bool) -> Result<(), String> {
+    let issuer = crate::control::receipts::existing(&window)?;
+    issuer.with_live(|| {
+        record_commit_dialog(
+            &mut *QUIT_RUN
+                .lock()
+                .map_err(|_| "Quit coordinator unavailable")?,
+            id,
+            window.label(),
+            &issuer,
+            open,
+            Instant::now(),
+        )
+    })
+}
+
 /// One window has persisted. The last one out turns the lights off, so a slow
 /// window cannot lose its workspace to a faster window's exit.
 #[tauri::command]
@@ -771,16 +890,36 @@ pub fn quit_ready(app: AppHandle, window: WebviewWindow, id: u32, persisted: boo
     // A window that could not save its workspace keeps the app open, the way a
     // failed persist did before the handshake existed. The windows that did
     // save are staying too, so take them back out of quitting.
-    if !persisted {
-        clear_run(id);
-        let _ = app.emit(QUIT_ABORTED, ());
+    let Ok(issuer) = crate::control::receipts::existing(&window) else {
         return;
+    };
+    let next = issuer
+        .with_live(|| {
+            let mut guard = QUIT_RUN
+                .lock()
+                .map_err(|_| "Quit coordinator unavailable")?;
+            let valid = guard.as_ref().is_some_and(|run| {
+                run.id == id
+                    && run.stage == Stage::Committing
+                    && run.pending.contains(window.label())
+                    && run
+                        .commit_owners
+                        .get(window.label())
+                        .is_some_and(|owner| Arc::ptr_eq(owner, &issuer))
+            });
+            if !valid {
+                return Ok(Next::Wait);
+            }
+            if !persisted {
+                *guard = None;
+                return Ok(Next::Abort);
+            }
+            Ok(record_ready(&mut guard, id, window.label()))
+        })
+        .unwrap_or(Next::Wait);
+    if next == Next::Abort {
+        let _ = app.emit(QUIT_ABORTED, ());
     }
-    let next = record_ready(
-        &mut QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()),
-        id,
-        window.label(),
-    );
     if next == Next::Exit {
         confirm_quit(app);
     }
@@ -798,7 +937,10 @@ pub fn forget_quit_window(app: &AppHandle, label: &str) {
     match next {
         Next::Confirm => start_confirm(app, id),
         Next::Exit => confirm_quit(app.clone()),
-        Next::Abort => clear_run(id),
+        Next::Abort => {
+            clear_run(id);
+            let _ = app.emit(QUIT_ABORTED, ());
+        }
         Next::Wait => {}
     }
 }
@@ -856,14 +998,32 @@ fn start_confirm(app: &AppHandle, id: u32) {
 }
 
 fn start_commit(app: &AppHandle, id: u32) {
-    let labels = workspace_labels(app);
-    let empty = labels.is_empty();
-    if !open_commit(
-        &mut QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()),
-        id,
-        labels,
-    ) {
+    let windows = workspace_windows(app);
+    let labels: Vec<String> = windows
+        .iter()
+        .map(|window| window.label().to_owned())
+        .collect();
+    let owners: Result<HashMap<_, _>, _> = windows
+        .iter()
+        .map(|window| {
+            crate::control::receipts::capture(window)
+                .map(|owner| (window.label().to_owned(), owner))
+        })
+        .collect();
+    let Ok(owners) = owners else {
+        clear_run(id);
+        let _ = app.emit(QUIT_ABORTED, ());
         return;
+    };
+    let empty = labels.is_empty();
+    {
+        let mut guard = QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner());
+        if !open_commit(&mut guard, id, labels) {
+            return;
+        }
+        if let Some(run) = guard.as_mut() {
+            run.commit_owners = owners;
+        }
     }
     if empty {
         confirm_quit(app.clone());
@@ -913,10 +1073,69 @@ fn prompt_window(app: &AppHandle, replied: &HashSet<String>) -> Option<String> {
 }
 
 /// Nothing waits forever: a webview that never answers still lets the app quit.
+enum CommitDeadline {
+    Stop,
+    Wait(Duration),
+    Exit,
+    Abort,
+}
+
+fn commit_deadline(slot: &mut Option<QuitRun>, id: u32, now: Instant) -> CommitDeadline {
+    let Some(run) = slot
+        .as_mut()
+        .filter(|run| run.id == id && run.stage == Stage::Committing)
+    else {
+        return CommitDeadline::Stop;
+    };
+    // A retired page cannot keep a pause alive or answer for its replacement.
+    if run.pending.iter().any(|label| {
+        run.commit_owners
+            .get(label)
+            .is_some_and(|owner| !owner.is_live())
+    }) {
+        *slot = None;
+        return CommitDeadline::Abort;
+    }
+    let Some(clock) = run.commit_clock.as_ref() else {
+        return CommitDeadline::Stop;
+    };
+    if !clock.dialogs.is_empty() {
+        return CommitDeadline::Wait(Duration::from_millis(250));
+    }
+    let remaining = clock.remaining_at(now);
+    if remaining.is_zero() {
+        run.stage = Stage::Exiting;
+        CommitDeadline::Exit
+    } else {
+        CommitDeadline::Wait(remaining)
+    }
+}
+
 fn watch_stage(app: &AppHandle, id: u32, stage: Stage, wait: Duration) {
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(wait);
+        if stage == Stage::Committing {
+            loop {
+                let decision = commit_deadline(
+                    &mut QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()),
+                    id,
+                    Instant::now(),
+                );
+                match decision {
+                    CommitDeadline::Stop => return,
+                    CommitDeadline::Wait(wait) => std::thread::sleep(wait),
+                    CommitDeadline::Exit => {
+                        confirm_quit(app);
+                        return;
+                    }
+                    CommitDeadline::Abort => {
+                        let _ = app.emit(QUIT_ABORTED, ());
+                        return;
+                    }
+                }
+            }
+        }
         let stalled = QUIT_RUN
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -929,6 +1148,7 @@ fn watch_stage(app: &AppHandle, id: u32, stage: Stage, wait: Duration) {
             Stage::Polling => start_confirm(&app, id),
             Stage::Committing => confirm_quit(app),
             Stage::Confirming => clear_run(id),
+            Stage::Exiting => {}
         }
     });
 }
@@ -1140,6 +1360,102 @@ mod tests {
 
     fn in_flight(slot: &Option<QuitRun>) -> Option<u32> {
         slot.as_ref().map(|run| run.in_flight)
+    }
+
+    #[test]
+    fn commit_clock_pauses_for_all_dialogs_without_resetting_elapsed_work() {
+        let start = Instant::now();
+        let mut clock = CommitClock::new(start);
+        clock.dialog("main", true, start + Duration::from_secs(3));
+        clock.dialog("main", true, start + Duration::from_secs(30));
+        clock.dialog("window-2", true, start + Duration::from_secs(40));
+        clock.dialog("main", false, start + Duration::from_secs(50));
+        assert_eq!(
+            clock.remaining_at(start + Duration::from_secs(90)),
+            Duration::from_secs(7)
+        );
+        clock.dialog("window-2", false, start + Duration::from_secs(100));
+        clock.dialog("window-2", false, start + Duration::from_secs(101));
+        assert_eq!(
+            clock.remaining_at(start + Duration::from_secs(106)),
+            Duration::from_secs(1)
+        );
+        assert!(clock
+            .remaining_at(start + Duration::from_secs(107))
+            .is_zero());
+    }
+
+    fn committing(now: Instant) -> (Option<QuitRun>, Arc<crate::control::receipts::WindowIssuer>) {
+        let mut slot = polling(&["main"]);
+        close_poll(&mut slot, 1);
+        open_commit(&mut slot, 1, vec!["main".into()]);
+        let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+        let run = slot.as_mut().unwrap();
+        run.commit_clock = Some(CommitClock::new(now));
+        run.commit_owners.insert("main".into(), issuer.clone());
+        (slot, issuer)
+    }
+
+    #[test]
+    fn commit_dialog_requires_original_pending_window_and_run() {
+        let now = Instant::now();
+        let (mut slot, issuer) = committing(now);
+        let replacement = Arc::new(crate::control::receipts::WindowIssuer::default());
+        assert!(record_commit_dialog(&mut slot, 99, "main", &issuer, true, now).is_err());
+        assert!(record_commit_dialog(&mut slot, 1, "other", &issuer, true, now).is_err());
+        assert!(record_commit_dialog(&mut slot, 1, "main", &replacement, true, now).is_err());
+        record_commit_dialog(&mut slot, 1, "main", &issuer, true, now).unwrap();
+        assert_eq!(record_ready(&mut slot, 1, "main"), Next::Wait);
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(60)),
+            CommitDeadline::Wait(_)
+        ));
+        record_commit_dialog(
+            &mut slot,
+            1,
+            "main",
+            &issuer,
+            false,
+            now + Duration::from_secs(60),
+        )
+        .unwrap();
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(69)),
+            CommitDeadline::Wait(_)
+        ));
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(70)),
+            CommitDeadline::Exit
+        ));
+        assert!(record_commit_dialog(&mut slot, 1, "main", &issuer, true, now).is_err());
+    }
+
+    #[test]
+    fn destroyed_or_reloaded_dialog_owner_aborts_instead_of_forcing_exit() {
+        let now = Instant::now();
+        let (mut slot, issuer) = committing(now);
+        record_commit_dialog(&mut slot, 1, "main", &issuer, true, now).unwrap();
+        assert_eq!(drop_window(&mut slot, "main"), Next::Abort);
+        tauri::Resource::close(issuer);
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(60)),
+            CommitDeadline::Abort
+        ));
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn stalled_noninteractive_commit_still_has_a_bounded_deadline() {
+        let now = Instant::now();
+        let (mut slot, _) = committing(now);
+        assert!(matches!(
+            commit_deadline(&mut slot, 99, now + COMMIT_TIMEOUT),
+            CommitDeadline::Stop
+        ));
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + COMMIT_TIMEOUT),
+            CommitDeadline::Exit
+        ));
     }
 
     #[test]

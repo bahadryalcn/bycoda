@@ -1163,7 +1163,7 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
   return run;
 }
 
-export function killAllChildren(): Promise<void> {
+function clearPageChildren(): void {
   // A naturally ended child can still have undelivered buffered output here.
   // Native kill_all cannot cancel that already-removed lifetime for us.
   invalidateNativeOutputDelivery("children-reset");
@@ -1180,6 +1180,15 @@ export function killAllChildren(): Promise<void> {
   ownedSse.clear();
   currentChildren.clear();
   guardedSpawns.clear();
+}
+
+/** Discard this page's local routes; native page retirement stops its children. */
+export function forgetWindowChildren(): void {
+  clearPageChildren();
+}
+
+export function killAllChildren(): Promise<void> {
+  clearPageChildren();
   return invoke("harness_kill_all");
 }
 

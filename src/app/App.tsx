@@ -1,3 +1,9 @@
+import { parseRemotePath } from "../features/connections/model/remoteProjects";
+import {
+  configureSessionWindowFocus,
+  remoteSessionOwnershipKey,
+  syncSessionWindowOwnership,
+} from "./model/sessionWindowOwnership";
 import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
@@ -15,7 +21,7 @@ import {
   type ConversationTerminalDeps,
 } from "./workspace/control/conversationTerminalControl";
 import { type ToolWindow } from "./model/toolWindows";
-import { useWindowNavigation } from "./model/windowNavigation";
+import { focusSessionWindow, useWindowNavigation } from "./model/windowNavigation";
 import { useTraySessions } from "./model/useTraySessions";
 import { useInitializeSessions } from "./hooks/useInitializeSessions";
 import { useNativeSkillWarmup } from "../features/sessions/ui/useNativeSkillWarmup";
@@ -2099,13 +2105,18 @@ function Workspace({
     projectTerminalFocusedRef,
     onStopRef,
   });
-  const { onApproval, onQuestionReply, onQuestionInteraction, onOpenApprovalSession } =
-    useApprovalActions({
-      sessionsRef,
-      setInspectedWorkerId,
-      focusOpenSession,
-      onSelectHistorySession,
-    });
+  const {
+    onApproval,
+    onQuestionReply,
+    onQuestionInteraction,
+    onOpenApprovalSession,
+    onFocusOwnedApprovalSession,
+  } = useApprovalActions({
+    sessionsRef,
+    setInspectedWorkerId,
+    focusOpenSession,
+    onSelectHistorySession,
+  });
 
   useDesktopLiveHandlers({
     desktopLiveHandlers,
@@ -2165,7 +2176,7 @@ function Workspace({
     setAutomationsViewOpen,
   });
 
-  useLiveAgentAnnouncements({ onOpenApprovalSession, unopenedRemote });
+  useLiveAgentAnnouncements({ onFocusOwnedApprovalSession, unopenedRemote });
   const { railLiveSessions, recentSessions, titleTabs } = useRailSessionLists({
     sessions,
     unseenFinishedIds,
@@ -2380,14 +2391,34 @@ function Workspace({
     setRecents,
   });
 
-  const announcedSessionIds = useMemo(
-    () =>
-      [...openSessionIds(tabs)].flatMap((id) => [
-        id,
-        ...(remoteSessionFor(id) ? [remoteSessionFor(id)!] : []),
-      ]),
-    [tabs, sessions],
-  );
+  configureSessionWindowFocus(focusSessionWindow);
+  const { ownedWindowSessionIds, announcedSessionIds } = useMemo(() => {
+    const byId = new Map(sessions.map((session) => [session.id, session]));
+    const ownedWindowSessionIds: string[] = [];
+    const announcedSessionIds: string[] = [];
+    for (const id of openSessionIds(tabs)) {
+      const session = byId.get(id);
+      if (!session) continue;
+      ownedWindowSessionIds.push(id);
+      announcedSessionIds.push(id);
+      const remoteId = remoteSessionFor(id);
+      if (remoteId) {
+        announcedSessionIds.push(remoteId);
+        if (parseRemotePath(session.cwd)) {
+          const key = remoteSessionOwnershipKey(session.cwd, remoteId);
+          ownedWindowSessionIds.push(key);
+          announcedSessionIds.push(key);
+        }
+      }
+    }
+    return { ownedWindowSessionIds, announcedSessionIds };
+  }, [sessions, tabs, remoteBindingRevision]);
+  useEffect(() => {
+    void syncSessionWindowOwnership(ownedWindowSessionIds).catch((error) => {
+      console.error("Conversation ownership synchronization failed", error);
+    });
+  }, [ownedWindowSessionIds]);
+
   useWindowNavigation(
     {
       tools: !!toolWindow,
@@ -2418,9 +2449,21 @@ function Workspace({
             sessionsRef.current.find(
               (session) =>
                 session.id === target.sessionId ||
-                remoteSessionFor(session.id) === target.sessionId,
+                remoteSessionFor(session.id) === target.sessionId ||
+                (!!remoteSessionFor(session.id) &&
+                  !!parseRemotePath(session.cwd) &&
+                  remoteSessionOwnershipKey(session.cwd, remoteSessionFor(session.id)!) ===
+                    target.sessionId),
             )?.id ?? target.sessionId;
-          await onOpenAutomationSession(localId, true);
+          if (target.requireOwned) {
+            if (!focusOpenSession(localId))
+              throw new Error(
+                "The conversation is no longer open in this window. Retry opening it.",
+              );
+            if (target.inspectSessionId) setInspectedWorkerId(target.inspectSessionId);
+          } else {
+            await onOpenAutomationSession(localId, true);
+          }
         }
         return;
       }

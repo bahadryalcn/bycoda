@@ -1,4 +1,6 @@
 {
+  "Running chats will be interrupted.": "Çalışan sohbetler kesintiye uğrayacak.",
+  "Running chats will be interrupted and unsaved changes in open files will be discarded.": "Çalışan sohbetler kesintiye uğrayacak ve açık dosyalardaki kaydedilmemiş değişiklikler atılacak.",
   "Assistant name": "Asistan adı",
   "Save profile settings": "Profil ayarlarını kaydet",
   "Profile settings saved.": "Profil ayarları kaydedildi.",
