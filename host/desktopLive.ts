@@ -339,6 +339,24 @@ export class DesktopLive {
           changedAt: this.changeStamp(),
         });
       }
+    // Omitted idle tombstones own no work. Keep one transition beat so observers
+    // see busy/pending become idle, then drop only the exact still-empty record.
+    const heldSessions = new Set([
+      ...this.commands.map((command) => command.sessionId),
+      ...[...this.durablePending.values()].map((command) => command.sessionId),
+      ...[...this.durableOffered.values()].map((command) => command.sessionId),
+      ...[...this.writerTransfers.values()].map((transfer) => transfer.sessionId),
+    ]);
+    for (const [id, previous] of this.sessions) {
+      if (
+        previous.clientId === clientId &&
+        !reported.has(id) &&
+        !previous.busy &&
+        previous.fingerprint === "[[],{}]" &&
+        next.get(id) === previous &&
+        !heldSessions.has(id)
+      ) next.delete(id);
+    }
     const changedIds = new Set<string>();
     for (const [id, value] of next)
       if (this.sessions.get(id)?.changedAt !== value.changedAt) changedIds.add(id);

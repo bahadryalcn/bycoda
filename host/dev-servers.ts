@@ -1110,10 +1110,15 @@ export class DevServersService {
         ([, record]) =>
           record.exitCode !== undefined &&
           ["stopped", "error"].includes(record.server.state) &&
-          (!record.guardian || record.guardian.retirementVerified),
+          (!record.guardian || record.guardian.retirementVerified) &&
+          !this.serverLeases.has(record.server.id) &&
+          !this.activityReleases.has(record.server.id),
       );
       if (!retired) throw new Error("Too many managed dev servers are active.");
+      // Only this exact verified-retired record loses restart metadata. Held
+      // leases/releases remain authoritative and are never evicted for capacity.
       this.managed.delete(retired[0]);
+      this.workspaceLaunches.delete(retired[0]);
     }
     const profile =
       this.options.shellProfile === undefined ? resolveShellProfile() : this.options.shellProfile;

@@ -717,3 +717,27 @@ describe("in-flight marks believed without a heartbeat", () => {
     expect(live.nextStoredExpiry()).toBeUndefined();
   });
 });
+
+
+it("drops omitted empty tab metadata while retaining reported command routes", () => {
+  const live = new DesktopLive();
+  live.beat({ clientId: "owner", sessions: [{ id: "closed", busy: false }, { id: "open", busy: false }] });
+  live.beat({ clientId: "owner", sessions: [{ id: "open", busy: false }] });
+  const cache = live as unknown as { sessions: Map<string, unknown> };
+  expect(cache.sessions.has("closed")).toBe(false);
+  expect(cache.sessions.has("open")).toBe(true);
+});
+
+it("publishes an omitted busy-to-idle transition before pruning its empty metadata", () => {
+  const live = new DesktopLive();
+  const idle = vi.fn();
+  live.onIdle = idle;
+  live.beat({ clientId: "owner", sessions: [{ id: "original", busy: true }] });
+  live.beat({ clientId: "owner", sessions: [] });
+  const cache = live as unknown as { sessions: Map<string, unknown> };
+  expect(idle).toHaveBeenCalledWith("original", "owner");
+  expect(cache.sessions.has("original")).toBe(true);
+  live.beat({ clientId: "owner", sessions: [] });
+  expect(cache.sessions.has("original")).toBe(false);
+  expect(idle).toHaveBeenCalledTimes(1);
+});

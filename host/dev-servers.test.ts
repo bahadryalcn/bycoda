@@ -1397,3 +1397,25 @@ it("starts, logs, stops, and restarts a real dedicated test-owned command", asyn
     await new Promise((resolve) => setTimeout(resolve, 100));
   } while (Date.now() < restartUntil);
 }, 60_000);
+
+
+it("evicts only verified retired metadata and preserves held lease ownership", async () => {
+  const f = fixture();
+  const maps = f.service as unknown as {
+    managed: Map<string, unknown>;
+    workspaceLaunches: Map<string, unknown>;
+    serverLeases: Map<string, string>;
+  };
+  for (let index = 0; index < 100; index++) {
+    const id = `retired-${index}`;
+    maps.managed.set(id, { exitCode: 0, server: { id, state: "stopped" }, guardian: { retirementVerified: true } });
+    maps.workspaceLaunches.set(id, { workspaceId: id });
+  }
+  maps.serverLeases.set("retired-0", "held-exact-lease");
+  await f.service.handle("devServers.start", { command: "server", projectId: "project" }, projects);
+  expect(maps.managed.has("retired-0")).toBe(true);
+  expect(maps.workspaceLaunches.has("retired-0")).toBe(true);
+  expect(maps.serverLeases.get("retired-0")).toBe("held-exact-lease");
+  expect(maps.managed.has("retired-1")).toBe(false);
+  expect(maps.workspaceLaunches.has("retired-1")).toBe(false);
+});
