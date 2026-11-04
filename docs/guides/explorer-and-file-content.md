@@ -8,6 +8,12 @@ draft remain available. Opening a file beside the conversation again reuses its
 pane. File opens outside the conversation continue to follow the saved file-tab
 preference.
 
+HTML previews keep their live page while you read or switch to Source. Closing
+the viewer releases its preview, including when the opening reply was lost.
+Reloading or closing the desktop window retires its old preview capabilities;
+another window cannot close a live preview it does not own. If opening fails,
+the error and Reload preview action remain beside the original source.
+
 When a reply names an output folder and then lists filenames, file links also
 check that folder. A project-prefixed folder such as `ui-tests/investor-deck/`
 works when the conversation already runs inside `ui-tests`. Existing direct

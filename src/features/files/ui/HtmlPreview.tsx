@@ -40,7 +40,13 @@ export function HtmlPreview({
     setSelection(null);
     if (!active) return;
     let cancelled = false;
-    let token: string | undefined;
+    const requestToken = crypto.randomUUID();
+    let token: string = requestToken;
+    const close = (id: string) => {
+      void invoke("close_html_preview", { token: id }).catch((error: unknown) => {
+        console.error("Could not close HTML preview:", error);
+      });
+    };
     opening.current = true;
     setState({});
     const channel = crypto.randomUUID();
@@ -52,13 +58,14 @@ export function HtmlPreview({
     };
     window.addEventListener("message", onMessage);
     void invoke<string>("create_html_preview", {
+      token: requestToken,
       path,
       content: withHtmlSelectionBridge(source, channel),
     })
       .then((id) => {
         token = id;
         if (cancelled) {
-          void invoke("close_html_preview", { token: id });
+          close(id);
           return;
         }
         // Tauri encodes the full path argument, including slashes. Convert only
@@ -67,6 +74,7 @@ export function HtmlPreview({
         setState({ url: `${convertFileSrc(id, "html-preview")}/index.html` });
       })
       .catch((error: unknown) => {
+        close(requestToken);
         if (!cancelled) {
           opening.current = false;
           setState({ error: String(error) });
@@ -75,7 +83,7 @@ export function HtmlPreview({
     return () => {
       cancelled = true;
       window.removeEventListener("message", onMessage);
-      if (token) void invoke("close_html_preview", { token });
+      close(token);
     };
   }, [path, source, active, reload]);
 

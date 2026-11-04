@@ -1,20 +1,210 @@
+use crate::control::receipts::WindowIssuer;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 struct Preview {
     content: String,
     root: Option<PathBuf>,
 }
 
-fn previews() -> &'static Mutex<HashMap<String, Preview>> {
-    static PREVIEWS: OnceLock<Mutex<HashMap<String, Preview>>> = OnceLock::new();
-    PREVIEWS.get_or_init(|| Mutex::new(HashMap::new()))
+enum PreviewState {
+    Pending,
+    Cancelled,
+    Failed,
+    Ready(Preview),
+}
+struct PreviewRecord {
+    owner: Arc<WindowIssuer>,
+    state: PreviewState,
+}
+#[derive(Default)]
+struct PreviewRegistry {
+    entries: HashMap<String, PreviewRecord>,
+    sealed: bool,
+    expired: PreviewFence,
+}
+
+const FENCE_BYTES: usize = 1024 * 1024;
+struct PreviewFence {
+    bits: Vec<u8>,
+    set_bits: usize,
+}
+impl Default for PreviewFence {
+    fn default() -> Self {
+        Self {
+            bits: vec![0; FENCE_BYTES],
+            set_bits: 0,
+        }
+    }
+}
+impl PreviewFence {
+    fn indexes(key: &str) -> [usize; 4] {
+        let digest = Sha256::digest(key.as_bytes());
+        std::array::from_fn(|i| {
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&digest[i * 8..i * 8 + 8]);
+            (u64::from_le_bytes(bytes) % (FENCE_BYTES as u64 * 8)) as usize
+        })
+    }
+    fn contains(&self, key: &str) -> bool {
+        Self::indexes(key)
+            .into_iter()
+            .all(|i| self.bits[i / 8] & (1 << (i % 8)) != 0)
+    }
+    fn insert(&mut self, key: &str) {
+        for i in Self::indexes(key) {
+            let bit = 1 << (i % 8);
+            if self.bits[i / 8] & bit == 0 {
+                self.bits[i / 8] |= bit;
+                self.set_bits += 1;
+            }
+        }
+    }
+    fn saturated(&self) -> bool {
+        self.set_bits >= FENCE_BYTES * 8 / 4
+    }
+}
+
+impl PreviewRegistry {
+    fn reap(&mut self) {
+        let expired = &mut self.expired;
+        self.entries.retain(|token, entry| {
+            if entry.owner.is_retired() {
+                expired.insert(token);
+                false
+            } else {
+                true
+            }
+        });
+    }
+    fn begin(&mut self, owner: &Arc<WindowIssuer>, token: &str) -> Result<(), String> {
+        self.reap();
+        if let Some(entry) = self.entries.get(token) {
+            if !Arc::ptr_eq(&entry.owner, owner) {
+                return Err("Preview belongs to another page.".into());
+            }
+            if matches!(entry.state, PreviewState::Cancelled) {
+                self.expired.insert(token);
+                self.entries.remove(token);
+                return Err("Preview was closed before creation.".into());
+            }
+            return Err("Preview token was already used.".into());
+        }
+        if self.sealed || self.expired.saturated() {
+            return Err("HTML preview admission is unavailable until restart.".into());
+        }
+        if self.expired.contains(token) {
+            return Err("Preview token was already used.".into());
+        }
+        if self.entries.len() >= 64 {
+            return Err("Too many open HTML previews.".into());
+        }
+        self.entries.insert(
+            token.into(),
+            PreviewRecord {
+                owner: owner.clone(),
+                state: PreviewState::Pending,
+            },
+        );
+        Ok(())
+    }
+    fn finish(
+        &mut self,
+        owner: &Arc<WindowIssuer>,
+        token: &str,
+        result: Result<Preview, String>,
+    ) -> Result<String, String> {
+        let entry = self
+            .entries
+            .get_mut(token)
+            .ok_or("Preview creation is unavailable.")?;
+        if !Arc::ptr_eq(&entry.owner, owner) {
+            return Err("Preview belongs to another page.".into());
+        }
+        if matches!(entry.state, PreviewState::Cancelled) {
+            self.expired.insert(token);
+            self.entries.remove(token);
+            return Err("Preview was closed before creation.".into());
+        }
+        if !matches!(entry.state, PreviewState::Pending) {
+            return Err("Preview creation is unavailable.".into());
+        }
+        match result {
+            Ok(preview) => {
+                entry.state = PreviewState::Ready(preview);
+                Ok(token.into())
+            }
+            Err(error) => {
+                entry.state = PreviewState::Failed;
+                Err(error)
+            }
+        }
+    }
+    fn close(&mut self, owner: &Arc<WindowIssuer>, token: &str) -> Result<(), String> {
+        self.reap();
+        if let Some(entry) = self.entries.get_mut(token) {
+            if !Arc::ptr_eq(&entry.owner, owner) {
+                return Err("Preview belongs to another page.".into());
+            }
+            if matches!(entry.state, PreviewState::Pending | PreviewState::Cancelled) {
+                entry.state = PreviewState::Cancelled;
+            } else {
+                self.expired.insert(token);
+                self.entries.remove(token);
+            }
+        } else {
+            if self.expired.contains(token) {
+                return Ok(());
+            }
+            if self.entries.len() >= 4096 {
+                self.sealed = true;
+                return Err("HTML preview admission is unavailable until restart.".into());
+            }
+            self.entries.insert(
+                token.into(),
+                PreviewRecord {
+                    owner: owner.clone(),
+                    state: PreviewState::Cancelled,
+                },
+            );
+        }
+        Ok(())
+    }
+}
+
+fn previews() -> &'static Mutex<PreviewRegistry> {
+    static PREVIEWS: OnceLock<Mutex<PreviewRegistry>> = OnceLock::new();
+    PREVIEWS.get_or_init(|| Mutex::new(PreviewRegistry::default()))
 }
 
 #[tauri::command(async)]
-pub fn create_html_preview(path: String, content: String) -> Result<String, String> {
+pub fn create_html_preview(
+    window: tauri::WebviewWindow,
+    token: String,
+    path: String,
+    content: String,
+) -> Result<String, String> {
+    validate_token(&token)?;
+    let owner = crate::control::receipts::capture(&window)?;
+    owner.with_live(|| {
+        previews()
+            .lock()
+            .map_err(|e| e.to_string())?
+            .begin(&owner, &token)
+    })?;
+    let result = make_preview(path, content);
+    owner.with_live(|| {
+        previews()
+            .lock()
+            .map_err(|e| e.to_string())?
+            .finish(&owner, &token, result)
+    })
+}
+
+fn make_preview(path: String, content: String) -> Result<Preview, String> {
     if content.len() > 16 * 1024 * 1024 {
         return Err("HTML preview is limited to 16 MiB.".into());
     }
@@ -31,20 +221,27 @@ pub fn create_html_preview(path: String, content: String) -> Result<String, Stri
                 .to_path_buf(),
         )
     };
-    let token = uuid::Uuid::new_v4().to_string();
-    let mut entries = previews().lock().map_err(|e| e.to_string())?;
-    if entries.len() >= 64 {
-        return Err("Too many open HTML previews.".into());
-    }
-    entries.insert(token.clone(), Preview { content, root });
-    Ok(token)
+    Ok(Preview { content, root })
 }
 
 #[tauri::command]
-pub fn close_html_preview(token: String) {
-    if let Ok(mut entries) = previews().lock() {
-        entries.remove(&token);
+pub fn close_html_preview(window: tauri::WebviewWindow, token: String) -> Result<(), String> {
+    validate_token(&token)?;
+    let owner = crate::control::receipts::capture(&window)?;
+    owner.with_live(|| {
+        previews()
+            .lock()
+            .map_err(|e| e.to_string())?
+            .close(&owner, &token)
+    })
+}
+
+fn validate_token(token: &str) -> Result<(), String> {
+    let id = uuid::Uuid::parse_str(token).map_err(|_| "Invalid preview token.")?;
+    if id.to_string() != token || id.get_version_num() != 4 {
+        return Err("Invalid preview token.".into());
     }
+    Ok(())
 }
 
 fn preview_asset(root: &Path, relative: &str) -> Result<PathBuf, String> {
@@ -107,7 +304,13 @@ fn preview_content(path: &str) -> Result<(Vec<u8>, &'static str), String> {
         .split_once('/')
         .ok_or("Invalid preview URL")?;
     let entries = previews().lock().map_err(|e| e.to_string())?;
-    let entry = entries.get(token).ok_or("Preview has closed")?;
+    let record = entries.entries.get(token).ok_or("Preview has closed")?;
+    if !record.owner.is_live() {
+        return Err("Preview has closed".into());
+    }
+    let PreviewState::Ready(entry) = &record.state else {
+        return Err("Preview has closed".into());
+    };
     if relative == "index.html" {
         return Ok((
             entry.content.as_bytes().to_vec(),
@@ -225,6 +428,172 @@ pub async fn open_html_in_chrome(path: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn test_create(path: String, content: String) -> (Arc<WindowIssuer>, String) {
+        let owner = Arc::new(WindowIssuer::default());
+        let token = uuid::Uuid::new_v4().to_string();
+        let mut entries = previews().lock().unwrap();
+        entries.begin(&owner, &token).unwrap();
+        entries
+            .finish(&owner, &token, make_preview(path, content))
+            .unwrap();
+        (owner, token)
+    }
+
+    #[test]
+    fn retired_pages_reclaim_lost_replies_and_preserve_live_other_pages() {
+        let mut registry = PreviewRegistry::default();
+        let live = Arc::new(WindowIssuer::default());
+        let active = uuid::Uuid::new_v4().to_string();
+        registry.begin(&live, &active).unwrap();
+        registry
+            .finish(
+                &live,
+                &active,
+                make_preview("remote://host/x".into(), "live".into()),
+            )
+            .unwrap();
+        for _ in 0..100 {
+            let old = Arc::new(WindowIssuer::default());
+            let id = uuid::Uuid::new_v4().to_string();
+            registry.begin(&old, &id).unwrap();
+            registry
+                .finish(
+                    &old,
+                    &id,
+                    make_preview("remote://host/x".into(), "lost".into()),
+                )
+                .unwrap();
+            tauri::Resource::close(old);
+        }
+        registry.reap();
+        assert_eq!(registry.entries.len(), 1);
+        assert!(matches!(
+            registry.entries.get(&active).unwrap().state,
+            PreviewState::Ready(_)
+        ));
+    }
+
+    #[test]
+    fn early_close_fences_late_creation_and_other_pages_cannot_close() {
+        let mut registry = PreviewRegistry::default();
+        let owner = Arc::new(WindowIssuer::default());
+        let foreign = Arc::new(WindowIssuer::default());
+        let id = uuid::Uuid::new_v4().to_string();
+        registry.close(&owner, &id).unwrap();
+        assert!(registry.close(&foreign, &id).is_err());
+        assert!(registry.begin(&owner, &id).is_err());
+        registry.close(&owner, &id).unwrap();
+        assert!(registry.begin(&owner, &id).is_err());
+    }
+
+    #[test]
+    fn close_during_creation_rejects_late_result_without_reopening() {
+        let mut registry = PreviewRegistry::default();
+        let owner = Arc::new(WindowIssuer::default());
+        let foreign = Arc::new(WindowIssuer::default());
+        let token = uuid::Uuid::new_v4().to_string();
+        registry.begin(&owner, &token).unwrap();
+        registry.close(&owner, &token).unwrap();
+        registry.close(&owner, &token).unwrap();
+        assert!(matches!(
+            registry.entries[&token].state,
+            PreviewState::Cancelled
+        ));
+        assert!(registry
+            .finish(
+                &foreign,
+                &token,
+                make_preview("remote://host/x".into(), "late".into())
+            )
+            .is_err());
+        assert!(registry
+            .finish(
+                &owner,
+                &token,
+                make_preview("remote://host/x".into(), "late".into())
+            )
+            .is_err());
+        assert!(!registry.entries.contains_key(&token));
+        assert!(registry.expired.contains(&token));
+        assert!(registry.begin(&owner, &token).is_err());
+    }
+
+    #[test]
+    fn pending_unknown_capacity_refuses_without_eviction() {
+        let mut registry = PreviewRegistry::default();
+        let owner = Arc::new(WindowIssuer::default());
+        let ids: Vec<_> = (0..64).map(|_| uuid::Uuid::new_v4().to_string()).collect();
+        for id in &ids {
+            registry.begin(&owner, id).unwrap();
+        }
+        assert!(registry
+            .begin(&owner, &uuid::Uuid::new_v4().to_string())
+            .is_err());
+        assert!(ids.iter().all(|id| registry.entries.contains_key(id)));
+        let delayed = uuid::Uuid::new_v4().to_string();
+        registry.close(&owner, &delayed).unwrap();
+        assert!(registry.begin(&owner, &delayed).is_err());
+    }
+
+    #[test]
+    fn saturated_fence_refuses_admission_without_dropping_pending() {
+        let mut registry = PreviewRegistry::default();
+        let owner = Arc::new(WindowIssuer::default());
+        let pending = uuid::Uuid::new_v4().to_string();
+        registry.begin(&owner, &pending).unwrap();
+        registry.expired.set_bits = FENCE_BYTES * 8 / 4;
+        assert!(registry
+            .begin(&owner, &uuid::Uuid::new_v4().to_string())
+            .is_err());
+        assert!(registry.entries.contains_key(&pending));
+    }
+
+    #[test]
+    fn exact_live_owner_precedes_fence_false_positive() {
+        let mut registry = PreviewRegistry::default();
+        let owner = Arc::new(WindowIssuer::default());
+        let foreign = Arc::new(WindowIssuer::default());
+        let id = uuid::Uuid::new_v4().to_string();
+        registry.begin(&owner, &id).unwrap();
+        registry
+            .finish(
+                &owner,
+                &id,
+                make_preview("remote://host/x".into(), "live".into()),
+            )
+            .unwrap();
+        registry.expired.insert(&id);
+        assert!(registry.close(&foreign, &id).is_err());
+        registry.close(&owner, &id).unwrap();
+        assert!(!registry.entries.contains_key(&id));
+        assert!(registry.begin(&owner, &id).is_err());
+    }
+
+    #[test]
+    fn completed_previews_release_live_capacity_for_same_owner() {
+        let mut registry = PreviewRegistry::default();
+        let owner = Arc::new(WindowIssuer::default());
+        let mut first = String::new();
+        for i in 0..5000 {
+            let id = uuid::Uuid::new_v4().to_string();
+            if i == 0 {
+                first = id.clone();
+            }
+            registry.begin(&owner, &id).unwrap();
+            registry
+                .finish(
+                    &owner,
+                    &id,
+                    make_preview("remote://host/x".into(), "content".into()),
+                )
+                .unwrap();
+            registry.close(&owner, &id).unwrap();
+            registry.close(&owner, &id).unwrap();
+        }
+        assert!(registry.entries.is_empty());
+        assert!(registry.begin(&owner, &first).is_err());
+    }
+
     #[test]
     fn preview_serves_scripts_and_assets_only_inside_its_folder() {
         let root = std::env::temp_dir().join(format!("bycoda-preview-{}", uuid::Uuid::new_v4()));
@@ -234,11 +603,10 @@ mod tests {
         std::fs::write(&html, "disk content").unwrap();
         std::fs::write(folder.join("mağaza #1.css"), "body { color: red }").unwrap();
         std::fs::write(root.join("secret.txt"), "secret").unwrap();
-        let token = create_html_preview(
+        let (owner, token) = test_create(
             html.to_string_lossy().into(),
             "<script>document.body.textContent='live'</script>".into(),
-        )
-        .unwrap();
+        );
         let response = respond(
             tauri::http::Request::builder()
                 .uri(format!("html-preview://localhost/{token}/index.html"))
@@ -254,7 +622,7 @@ mod tests {
         assert!(preview_content(&format!("/{token}/../secret.txt")).is_err());
         assert!(preview_content(&format!("/{token}/%2e%2e/secret.txt")).is_err());
         assert!(preview_content(&format!("/{token}/file:///secret.txt")).is_err());
-        close_html_preview(token.clone());
+        previews().lock().unwrap().close(&owner, &token).unwrap();
         assert!(preview_content(&format!("/{token}/index.html")).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -279,17 +647,16 @@ mod tests {
 
     #[test]
     fn remote_preview_uses_supplied_content_without_local_assets() {
-        let token = create_html_preview(
+        let (owner, token) = test_create(
             "remote://mac/repo/page.html".into(),
             "<h1>Remote</h1>".into(),
-        )
-        .unwrap();
+        );
         assert_eq!(
             preview_content(&format!("/{token}/index.html")).unwrap().0,
             b"<h1>Remote</h1>"
         );
         assert!(preview_content(&format!("/{token}/style.css")).is_err());
-        close_html_preview(token);
+        previews().lock().unwrap().close(&owner, &token).unwrap();
     }
 
     #[test]

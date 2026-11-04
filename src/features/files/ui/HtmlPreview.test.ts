@@ -22,6 +22,28 @@ const { invoke, convertFileSrc, urlFormat } = vi.hoisted(() => {
 });
 vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc }));
 
+it("closes the original attempt token when creation reply is lost", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  invoke.mockReset().mockImplementation(async (command: string) => {
+    if (command === "create_html_preview") throw new Error("reply lost");
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(HtmlPreview, { path: "example.html", source: "x", active: true })),
+    );
+    const args = invoke.mock.calls.find(([command]) => command === "create_html_preview")![1];
+    expect(args.token).toMatch(/^[0-9a-f-]{36}$/);
+    expect(invoke).toHaveBeenCalledWith("close_html_preview", { token: args.token });
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("retains reload after failure and prevents duplicate preview creation while retrying", async () => {
   (window as unknown as Window).happyDOM.settings.navigation.disableChildFrameNavigation = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

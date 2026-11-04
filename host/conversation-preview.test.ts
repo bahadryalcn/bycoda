@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { ConversationPreviewWorkflow, type PreviewBrowserState } from "./conversation-preview";
 
 const scope = { projectId: "project", sessionId: "session", principalId: "principal" };
-function fixture() {
+function fixture(now?: () => number) {
   let state: PreviewBrowserState = {
     open: false,
     controlling: false,
@@ -26,7 +26,7 @@ function fixture() {
       : { ...state };
   });
   return {
-    workflow: new ConversationPreviewWorkflow(),
+    workflow: new ConversationPreviewWorkflow(now),
     ports: {
       browser,
       present: vi.fn(async () => ({
@@ -228,4 +228,233 @@ it("rejects invalid URL and viewport inputs before any browser or UI effect", as
     expect(ports.browser).not.toHaveBeenCalled();
     expect(ports.present).not.toHaveBeenCalled();
   }
+});
+
+it("expires over 4096 confirmed receipts without replaying retired IDs", async () => {
+  let now = 0;
+  const { workflow, ports } = fixture(() => now);
+  for (let i = 0; i < 4100; i++) {
+    const result = await workflow.run(
+      { requestId: `completed-${i}`, url: "http://localhost:3000", show: false },
+      scope,
+      ports,
+    );
+    expect(result.execution.state).toBe("succeeded");
+    now += 10 * 60 * 1000 + 1;
+  }
+  const count = ports.browser.mock.calls.length;
+  await expect(
+    workflow.run(
+      { requestId: "completed-0", url: "http://localhost:3000", show: false },
+      scope,
+      ports,
+    ),
+  ).rejects.toThrow("receipt expired");
+  expect(ports.browser).toHaveBeenCalledTimes(count);
+});
+
+it("retains unknown outcomes and their input identity beyond TTL and revocation", async () => {
+  let now = 0;
+  const { workflow, ports } = fixture(() => now);
+  const execute = ports.browser.getMockImplementation()!;
+  ports.browser.mockImplementation(async (method, args) => {
+    if (method === "browser.open") throw new Error("unknown after open");
+    return execute(method, args);
+  });
+  const input = { requestId: "unknown-ttl", url: "http://localhost:3000" };
+  expect((await workflow.run(input, scope, ports)).execution.state).toBe("outcome-unknown");
+  now += 20 * 60 * 1000;
+  expect((await workflow.run(input, scope, ports)).execution.state).toBe("outcome-unknown");
+  await expect(
+    workflow.run({ ...input, url: "http://localhost:4000" }, scope, ports),
+  ).rejects.toThrow("different input");
+  workflow.revoke(scope.principalId);
+  await expect(workflow.run(input, scope, { ...ports, authorize: async () => {} })).rejects.toThrow(
+    "revoked",
+  );
+  expect(ports.browser.mock.calls.filter(([method]) => method === "browser.open")).toHaveLength(1);
+});
+
+it("requires original authority even when a new callback approves replay", async () => {
+  const { workflow, ports } = fixture();
+  let original = true;
+  const input = { requestId: "original-auth", url: "http://localhost:3000" };
+  const originalPorts = {
+    ...ports,
+    authorize: async () => {
+      if (!original) throw new Error("original revoked");
+    },
+  };
+  await workflow.run(input, scope, originalPorts);
+  original = false;
+  await expect(workflow.run(input, scope, { ...ports, authorize: async () => {} })).rejects.toThrow(
+    "original revoked",
+  );
+});
+
+it("retains in-flight work after revocation and never repeats its pending effect", async () => {
+  const { workflow, ports } = fixture();
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const execute = ports.browser.getMockImplementation()!;
+  ports.browser.mockImplementation(async (method, args) => {
+    if (method === "browser.open") {
+      entered();
+      await gate;
+    }
+    return execute(method, args);
+  });
+  const input = { requestId: "pending-revoke", url: "http://localhost:3000" };
+  const running = workflow.run(input, scope, ports);
+  await started;
+  workflow.revoke(scope.principalId);
+  await expect(workflow.run(input, scope, ports)).rejects.toThrow("revoked");
+  release();
+  await expect(running).rejects.toThrow("revoked");
+  expect(ports.browser.mock.calls.filter(([method]) => method === "browser.open")).toHaveLength(1);
+});
+
+it("keeps pending work past TTL and joins the original in-flight request", async () => {
+  let now = 0;
+  const { workflow, ports } = fixture(() => now);
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const execute = ports.browser.getMockImplementation()!;
+  ports.browser.mockImplementation(async (method, args) => {
+    if (method === "browser.open") {
+      entered();
+      await gate;
+    }
+    return execute(method, args);
+  });
+  const input = { requestId: "pending-ttl", url: "http://localhost:3000", show: false };
+  const first = workflow.run(input, scope, ports);
+  await started;
+  now += 20 * 60 * 1000;
+  const second = workflow.run(input, scope, ports);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  expect(a.execution.state).toBe("succeeded");
+  expect(b.execution.state).toBe("succeeded");
+  expect(ports.browser.mock.calls.filter(([method]) => method === "browser.open")).toHaveLength(1);
+});
+
+it("retains unknown effects in concurrent admission even after TTL", async () => {
+  let now = 0;
+  const { workflow, ports } = fixture(() => now);
+  const execute = ports.browser.getMockImplementation()!;
+  ports.browser.mockImplementation(async (method, args) => {
+    if (method === "browser.open") throw new Error("unknown after open");
+    return execute(method, args);
+  });
+  for (let i = 0; i < 4; i++) {
+    expect(
+      (
+        await workflow.run(
+          { requestId: `unknown-${i}`, url: "http://localhost:3000" },
+          scope,
+          ports,
+        )
+      ).execution.state,
+    ).toBe("outcome-unknown");
+    now += 20 * 60 * 1000;
+  }
+  await expect(
+    workflow.run({ requestId: "another", url: "http://localhost:3000" }, scope, ports),
+  ).rejects.toThrow("busy");
+});
+
+it("expires confirmed read-only status failures while preserving their request fence", async () => {
+  let now = 0;
+  const { workflow, ports } = fixture(() => now);
+  ports.browser.mockRejectedValue(new Error("status unavailable"));
+  const input = { requestId: "status-only", url: "http://localhost:3000" };
+  expect((await workflow.run(input, scope, ports)).execution).toMatchObject({
+    state: "blocked",
+    stage: "status",
+  });
+  now += 10 * 60 * 1000 + 1;
+  await expect(workflow.run(input, scope, ports)).rejects.toThrow("receipt expired");
+  expect(ports.browser).toHaveBeenCalledOnce();
+});
+
+it("rejects disclosure when a receipt expires during original authorization", async () => {
+  let now = 0;
+  let block = false;
+  let entered!: () => void;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const { workflow, ports } = fixture(() => now);
+  const original = {
+    ...ports,
+    authorize: async () => {
+      if (block) {
+        entered();
+        await gate;
+      }
+    },
+  };
+  const input = { requestId: "auth-cross-expiry", url: "http://localhost:3000", show: false };
+  await workflow.run(input, scope, original);
+  block = true;
+  const replay = workflow.run(input, scope, ports);
+  await started;
+  now += 10 * 60 * 1000 + 1;
+  release();
+  await expect(replay).rejects.toThrow("receipt expired");
+});
+
+it("preserves first caller frame while its authority check is delayed", async () => {
+  const { workflow, ports } = fixture();
+  let calls = 0;
+  let release!: () => void;
+  let entered!: () => void;
+  let frameObserved!: () => void;
+  const frameReady = new Promise<void>((resolve) => {
+    frameObserved = resolve;
+  });
+  const execute = ports.browser.getMockImplementation()!;
+  ports.browser.mockImplementation(async (method, args) => {
+    const value = await execute(method, args);
+    if (method === "browser.frame") frameObserved();
+    return value;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  ports.authorize.mockImplementation(async () => {
+    if (++calls === 3) {
+      entered();
+      await gate;
+    }
+  });
+  const result = workflow.run(
+    { requestId: "first-frame", url: "http://localhost:3000", show: false },
+    scope,
+    ports,
+  );
+  await blocked;
+  await frameReady;
+  release();
+  expect((await result).evidence.frame?.data).toBe("frame");
 });

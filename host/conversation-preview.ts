@@ -1,5 +1,18 @@
 import { createHash } from "node:crypto";
 import { sharedBrowserUrl, sharedBrowserViewport } from "./shared-browser";
+import { RetiredRequestFence } from "./storage/request-fence";
+
+const RECEIPT_TTL = 10 * 60 * 1000;
+type PreviewReceipt = {
+  signature: string;
+  principalId: string;
+  scopeKey: string;
+  pending: boolean;
+  revoked: boolean;
+  settledAt?: number;
+  authorize: ConversationPreviewPorts["authorize"];
+  value: Promise<ConversationPreviewResult>;
+};
 
 export type ConversationPreviewInput = {
   requestId: string;
@@ -56,22 +69,24 @@ export type ConversationPreviewResult = {
 
 /** Compose existing authorities; never take over, retry a mutation or close a user's page. */
 export class ConversationPreviewWorkflow {
-  private requests = new Map<
-    string,
-    {
-      signature: string;
-      principalId: string;
-      scopeKey: string;
-      pending: boolean;
-      value: Promise<ConversationPreviewResult>;
-    }
-  >();
+  private requests = new Map<string, PreviewReceipt>();
+  private readonly retired = new RetiredRequestFence();
   private closed = false;
+  constructor(private readonly now: () => number = () => performance.now()) {}
+
+  private expireSettled() {
+    const now = this.now();
+    for (const [key, entry] of this.requests) {
+      if (entry.settledAt === undefined || now - entry.settledAt < RECEIPT_TTL) continue;
+      this.retired.add(key);
+      this.requests.delete(key);
+    }
+  }
 
   /** Call only when this transport authority is retired, never to retry a request. */
   revoke(principalId: string) {
-    for (const [key, entry] of this.requests)
-      if (entry.principalId === principalId) this.requests.delete(key);
+    for (const entry of this.requests.values())
+      if (entry.principalId === principalId) entry.revoked = true;
   }
 
   close() {
@@ -86,6 +101,7 @@ export class ConversationPreviewWorkflow {
   ): Promise<ConversationPreviewResult> {
     if (this.closed) throw new Error("Preview workflow is closed.");
     await ports.authorize();
+    if (this.closed) throw new Error("Preview workflow is closed.");
     if (!scope.projectId || !scope.sessionId || !scope.principalId)
       throw new Error("Preview requires an authenticated project, conversation and principal.");
     if (typeof input.requestId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.requestId))
@@ -104,7 +120,15 @@ export class ConversationPreviewWorkflow {
     const signature = createHash("sha256")
       .update(JSON.stringify([url, viewport, input.show !== false]))
       .digest("hex");
+    this.expireSettled();
     const previous = this.requests.get(key);
+    if (previous?.revoked) throw new Error("Preview authority was revoked.");
+    if (previous) {
+      await previous.authorize();
+      this.expireSettled();
+      if (this.closed || previous.revoked || this.requests.get(key) !== previous)
+        throw new Error("Preview authority was revoked or the receipt expired.");
+    }
     if (previous && previous.signature !== signature)
       throw new Error(
         "Preview requestId was already used with different input. Inspect the original result.",
@@ -122,43 +146,76 @@ export class ConversationPreviewWorkflow {
       throw new Error(
         "Preview verification is busy. Inspect the original request before starting more work.",
       );
+    if (!previous && this.retired.has(key))
+      throw new Error(
+        "Preview receipt expired. Inspect the original outcome before a new request.",
+      );
+    if (!previous && this.retired.saturated)
+      throw new Error("Preview receipt protection is full for this host runtime.");
     if (!previous && (scopeEntries >= 512 || this.requests.size >= 4096))
       throw new Error(
         "Preview receipt limit reached for this authority. Inspect existing outcomes; do not retry unknown requests with new IDs.",
       );
     let request = previous;
     if (!request) {
-      const current = this.execute({ ...input, url }, viewport, {
-        ...ports,
-        authorize: async () => {
-          if (this.closed) throw new Error("Preview workflow is closed.");
-          await ports.authorize();
-        },
-      });
       request = {
         signature,
         principalId: scope.principalId,
         scopeKey,
         pending: true,
-        value: current,
+        revoked: false,
+        authorize: ports.authorize,
+        value: undefined!,
       };
       this.requests.set(key, request);
       const entry = request;
+      const current = this.execute({ ...input, url }, viewport, {
+        ...ports,
+        authorize: async () => {
+          if (this.closed || entry.revoked) throw new Error("Preview authority was revoked.");
+          await entry.authorize();
+          if (this.closed || entry.revoked) throw new Error("Preview authority was revoked.");
+        },
+      });
+      entry.value = current;
       void current
         .then((result) => {
-          entry.pending = false;
           const compact = structuredClone(result);
           if (compact.evidence.browser) delete compact.evidence.browser.data;
           if (compact.evidence.frame) delete compact.evidence.frame.data;
           entry.value = Promise.resolve(compact);
+          if (
+            (result.execution.state === "succeeded" &&
+              (result.presentation.state === "mounted" ||
+                result.presentation.state === "not-requested")) ||
+            (result.execution.state === "blocked" && result.execution.stage === "status")
+          ) {
+            entry.pending = false;
+            entry.settledAt = this.now();
+          }
         })
         .catch(() => {
-          entry.pending = false;
+          // A rejected operation can still have an effect in flight.
         });
     }
-    const result = await request.value;
-    if (this.closed) throw new Error("Preview workflow is closed.");
+    const receiptValue = request.value;
+    if (request.revoked) throw new Error("Preview authority was revoked.");
+    await request.authorize();
+    if (this.closed || request.revoked) throw new Error("Preview authority was revoked.");
+    let result: ConversationPreviewResult;
+    try {
+      result = await receiptValue;
+    } catch (error) {
+      await request.authorize();
+      if (this.closed || request.revoked) throw new Error("Preview authority was revoked.");
+      throw error;
+    }
+    if (this.closed || request.revoked) throw new Error("Preview authority was revoked.");
     await ports.authorize();
+    await request.authorize();
+    this.expireSettled();
+    if (this.closed || request.revoked || this.requests.get(key) !== request)
+      throw new Error("Preview authority was revoked or the receipt expired.");
     // Callers cannot corrupt a cached receipt or later mutate another response.
     return structuredClone(result);
   }

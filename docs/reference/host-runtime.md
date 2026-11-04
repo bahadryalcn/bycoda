@@ -318,6 +318,14 @@ failures after setup begins remain uncertain. Receipt expiry does not tear down
 device resources. Original authorization is retained for replay and checked
 again after delayed authorization before screenshot disclosure.
 
+Conversation browser previews apply the same receipt fence to verified results
+and read-only status failures. Requested panel presentation must also be verified
+before settlement. Unknown claim/navigation/presentation outcomes retain admission
+slots, including after token revocation; revocation cannot erase evidence and
+authorize a retry. Natural token expiry cannot supply a result through a newer
+authorization callback. Ten-minute receipt retirement is lazy on later requests
+and never closes the user's browser page.
+
 Text workspace retirement follows the issuing run, all accepted grant-wide
 preparations and every observed physical child completion. Finishing a run alone
 does not revoke its live child access. Proven retirement revokes the grant;

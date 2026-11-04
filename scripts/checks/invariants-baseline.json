@@ -912,8 +912,7 @@
       "ts-void-promise-without-catch": 5
     },
     "src/features/files/ui/HtmlPreview.tsx": {
-      "jsx-a11y/no-noninteractive-tabindex": 1,
-      "ts-void-promise-without-catch": 2
+      "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/files/ui/PdfViewer.tsx": {
       "jsx-a11y/no-noninteractive-tabindex": 1,
