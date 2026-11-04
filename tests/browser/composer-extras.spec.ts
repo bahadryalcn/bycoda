@@ -133,7 +133,9 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     );
     await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
     await expect(
-      card.getByText("Queued task waiting for the current turn", { exact: true }),
+      card
+        .locator("[data-message-queue-rows]")
+        .getByText("Queued task waiting for the current turn", { exact: true }),
     ).toBeVisible();
     await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     await expect(card.getByRole("button", { name: "Steer", exact: true })).toBeEnabled();

@@ -292,7 +292,7 @@ it("unions every participating project into message, deleted-record, briefing an
     action: "delete",
   });
   await f.request({ op: "messages.delete", id: message.id, expectedVersion: message.version });
-  await f.request({ op: "briefing.daily", day: "2026-11-02" });
+  await f.request({ op: "briefing.daily", day: new Date().toISOString().slice(0, 10) });
   expect((await f.snapshot()).briefing!.projectIds).toEqual(expected);
   await f.request({ op: "activity.clear", jobId: job.id });
   const trash = (await f.snapshot()).trash;

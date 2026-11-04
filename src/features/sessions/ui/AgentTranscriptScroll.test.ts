@@ -423,6 +423,39 @@ it.each(["wheel", "keyboard", "touch"])(
   },
 );
 
+it("keeps following when a slow streamed layout replays an older bottom offset", () => {
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    const { scroller, geometry, observer } = mountScroller();
+    geometry.height = 2000;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1600);
+
+    // The reader stays at the end while a later streamed layout takes time.
+    now = 2600;
+    geometry.height = 2100;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1700);
+    now = 2620;
+    geometry.top = 1600;
+    act(() => scroller.dispatchEvent(new Event("scroll")));
+    geometry.height = 2200;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1800);
+
+    // Once following has settled, a new upward scroll must still be honored.
+    now = 4000;
+    geometry.top = 1790;
+    act(() => scroller.dispatchEvent(new Event("scroll")));
+    geometry.height = 2300;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1790);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 it("does not resume paused history merely because a newer wheel points downward", () => {
   const { scroller, geometry, observer } = mountScroller();
   act(() => {

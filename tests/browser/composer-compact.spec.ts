@@ -272,42 +272,43 @@ test("a click on the compact box focuses the input without sending", async ({ pa
   expect((await fixtureEvents(page)).sends).toBe(0);
 });
 
-test("streaming does not move a reader of history; at the end it keeps following", async ({
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await open(page);
-  // Following the end while a reply streams.
-  await stream(page, 30);
-  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
-  await stream(page, 30);
-  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
-  // Reading history while it continues.
-  await readHistory(page);
-  const reader = (await state(page)).top;
-  for (let index = 0; index < 5; index++) {
-    await stream(page, 20);
-    await page.waitForTimeout(80);
-  }
-  expect(Math.abs((await state(page)).top - reader)).toBeLessThanOrEqual(1);
-  await expect(reading(page)).toHaveCount(1);
-  // The stop control stays reachable while the turn runs.
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-  await finish(page);
-  // Back at the end: the normal layout returns and following resumes.
-  await wheel(page, 20000);
-  await expect(reading(page)).toHaveCount(0);
-  // A dispatched wheel and normal composer alone do not prove its off-thread
-  // scroll reached the end. Verify that precondition with the same strict bound.
-  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
-  await stream(page, 40);
-  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
-  await testInfo.attach("following-geometry", {
-    body: JSON.stringify(await state(page)),
-    contentType: "application/json",
+for (const light of [false, true])
+  test(`streaming does not move a reader of history; at the end it keeps following (${light ? "light" : "dark"})`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(page, {}, light);
+    // Following the end while a reply streams.
+    await stream(page, 30);
+    await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+    await stream(page, 30);
+    await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+    // Reading history while it continues.
+    await readHistory(page);
+    const reader = (await state(page)).top;
+    for (let index = 0; index < 5; index++) {
+      await stream(page, 20);
+      await page.waitForTimeout(80);
+    }
+    expect(Math.abs((await state(page)).top - reader)).toBeLessThanOrEqual(1);
+    await expect(reading(page)).toHaveCount(1);
+    // The stop control stays reachable while the turn runs.
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+    await finish(page);
+    // Back at the end: the normal layout returns and following resumes.
+    await wheel(page, 20000);
+    await expect(reading(page)).toHaveCount(0);
+    // A dispatched wheel and normal composer alone do not prove its off-thread
+    // scroll reached the end. Verify that precondition with the same strict bound.
+    await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+    await stream(page, 40);
+    await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+    await testInfo.attach("following-geometry", {
+      body: JSON.stringify(await state(page)),
+      contentType: "application/json",
+    });
+    await page.screenshot({ path: testInfo.outputPath("streaming-following-end.png") });
   });
-  await page.screenshot({ path: testInfo.outputPath("streaming-following-end.png") });
-});
 
 test("reduced motion swaps the layout without an animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });

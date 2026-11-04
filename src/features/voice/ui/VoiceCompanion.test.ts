@@ -452,7 +452,10 @@ it("waits silently and does not cancel work on an explicit thinking pause", asyn
   expect(onStop).not.toHaveBeenCalled();
 });
 it("keeps capture through mouse idle while conversation is active, then expires it", async () => {
-  vi.useFakeTimers();
+  // Advance the capture clock, not ten minutes of unrelated visual animation frames.
+  vi.useFakeTimers({
+    toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+  });
   mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Buradayım." } as any);
   const { render } = await setup();
   await speech("Orada mısın?");

@@ -187,9 +187,11 @@ for (const light of [false, true]) {
     await expect(input).toHaveValue("Keep this changed draft");
     // The unconfirmed message stays visible in the queue and in the delivery notice that settles it.
     const retained = "Retained follow-up with unknown delivery";
-    await expect(
-      page.locator("[data-message-queue-card]").getByText(retained, { exact: true }),
-    ).toBeVisible();
+    const queueRows = page.locator("[data-message-queue-rows]");
+    const queuedMessage = queueRows.getByText(retained, { exact: true });
+    await expect(queuedMessage).toHaveCount(1);
+    await expect(queuedMessage).toBeVisible();
+    await expect(queueRows.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     await expect(
       page.locator("[data-delivery-progress]").getByText(retained, { exact: true }),
     ).toBeVisible();
