@@ -30,6 +30,20 @@ type PageEvents = {
   close: undefined;
 };
 
+type BrowserCdpSession = {
+  send(
+    method: "DOM.getDocument",
+    params: { depth: number; pierce: boolean },
+  ): Promise<{ root: BrowserDomNode }>;
+  send(method: "DOM.getNodeForLocation", params: { x: number; y: number; includeUserAgentShadowDOM: boolean; ignorePointerEventsNone: boolean }): Promise<{ backendNodeId: number }>;
+  send(method: "DOM.resolveNode", params: { backendNodeId: number; objectGroup: string }): Promise<{ object: { objectId?: string } }>;
+  send(method: "Runtime.callFunctionOn", params: { objectId: string; functionDeclaration: string; arguments: { value: number }[]; objectGroup: string; silent: boolean }): Promise<{ result: { objectId?: string }; exceptionDetails?: unknown }>;
+  send(method: "Runtime.getProperties", params: { objectId: string; ownProperties: boolean; generatePreview: boolean }): Promise<{ result: { name: string; value?: { objectId?: string; value?: unknown } }[] }>;
+  send(method: "DOM.describeNode", params: { objectId: string; depth: number; pierce: boolean }): Promise<{ node: BrowserDomNode & { backendNodeId?: number } }>;
+  send(method: "Runtime.releaseObjectGroup", params: { objectGroup: string }): Promise<unknown>;
+  detach(): Promise<void>;
+};
+
 type Page = {
   goto(url: string, options: { timeout: number }): Promise<unknown>;
   setViewportSize?(viewport: { width: number; height: number }): Promise<void>;
@@ -42,15 +56,7 @@ type Page = {
     maskColor?: string;
     style?: string;
   }): Promise<Buffer>;
-  context?: () => {
-    newCDPSession(page: Page): Promise<{
-      send(
-        method: "DOM.getDocument",
-        params: { depth: number; pierce: boolean },
-      ): Promise<{ root: BrowserDomNode }>;
-      detach(): Promise<void>;
-    }>;
-  };
+  context?: () => { newCDPSession(page: Page): Promise<BrowserCdpSession> };
   evaluate?: <T, A>(callback: (arg: A) => T, arg: A) => Promise<T>;
   locator?: (selector: string) => unknown;
   on?: <K extends keyof PageEvents>(event: K, callback: (value: PageEvents[K]) => void) => unknown;
@@ -109,6 +115,8 @@ export class SharedBrowser {
   private page?: Page;
   private lease?: { owner: string; id: string; expiresAt: number };
   private busy = false;
+  private maskSession?: BrowserCdpSession;
+  private hoverObjects?: { session: BrowserCdpSession; group: string };
   private lastUse = 0;
   private idleTimer?: ReturnType<typeof setInterval>;
   private navigationId = randomUUID();
@@ -249,15 +257,21 @@ export class SharedBrowser {
       }
       if (method === "browser.frame") {
         if (!this.page) throw new Error("Open a shared browser first");
-        const frame = await this.page.screenshot({ type: "jpeg", quality: 65, timeout: 5_000 });
+        const page = this.page, navigationId = this.navigationId;
+        const viewport = { ...this.viewport };
+        const frame = await page.screenshot({ type: "jpeg", quality: 65, timeout: 5_000 });
+        if (page !== this.page || navigationId !== this.navigationId)
+          throw new Error("Browser document changed during capture. Refresh the frame.");
         if (frame.byteLength > 2 * 1024 * 1024)
           throw new Error("Browser frame exceeds transfer budget");
         return {
           ...this.status(owner),
+          // The existing view generation is also this capture's document fence.
+          documentId: navigationId,
           mimeType: "image/jpeg",
           data: frame.toString("base64"),
-          width: this.viewport.width,
-          height: this.viewport.height,
+          width: viewport.width,
+          height: viewport.height,
         };
       }
       if (method === "browser.resize") {
@@ -283,6 +297,10 @@ export class SharedBrowser {
         if (this.annotation)
           throw new Error("Cancel element selection before interacting with the page");
         if (!this.page) throw new Error("Open a shared browser first");
+        if (params.documentId !== undefined && params.documentId !== this.navigationId)
+          throw new Error("Browser document changed. Refresh before interacting.");
+        if (params.navigationId !== undefined && params.navigationId !== this.navigationId)
+          throw new Error("Browser view changed. Refresh before interacting.");
         if (params.kind === "click") {
           const x = Number(params.x),
             y = Number(params.y);
@@ -384,6 +402,67 @@ export class SharedBrowser {
       await session.detach();
     }
   }
+  private async ensureMaskSession(page: Page) {
+    if (!page.context) throw new Error("Safe shadow DOM inspection is unavailable on this host browser");
+    if (!this.maskSession) {
+      const session = await page.context().newCDPSession(page);
+      if (page !== this.page) { await session.detach(); throw new Error("Browser changed during inspection."); }
+      this.maskSession = session;
+    }
+    return this.maskSession;
+  }
+  /** Inspect a bounded hit ancestry only; never enumerate the document for hover. */
+  private async hoverBoundary(page: Page, x: number, y: number): Promise<string | undefined> {
+    const session = await this.ensureMaskSession(page);
+    if (this.hoverObjects) {
+      const held = this.hoverObjects;
+      await held.session.send("Runtime.releaseObjectGroup", { objectGroup: held.group });
+      if (this.hoverObjects === held) this.hoverObjects = undefined;
+    }
+    const held = { session, group: `bycoda-hover-${randomUUID()}` };
+    this.hoverObjects = held;
+    try {
+      const hit = await session.send("DOM.getNodeForLocation", {
+        x: Math.floor(x), y: Math.floor(y), includeUserAgentShadowDOM: false, ignorePointerEventsNone: false,
+      });
+      const object = await session.send("DOM.resolveNode", { backendNodeId: hit.backendNodeId, objectGroup: held.group });
+      if (!object.object.objectId) return;
+      const ancestry = await session.send("Runtime.callFunctionOn", {
+        objectId: object.object.objectId, objectGroup: held.group, silent: true,
+        arguments: [{ value: x }, { value: y }],
+        functionDeclaration: `function(x,y) {
+          if (window !== window.top || this !== document.elementFromPoint(x,y)) return null;
+          const nodes = [];
+          for (let node = this; node; node = node.parentElement) {
+            if (nodes.length >= 64) return null;
+            nodes[nodes.length] = node;
+          }
+          return nodes;
+        }`,
+      });
+      if (ancestry.exceptionDetails || !ancestry.result.objectId) return;
+      const properties = await session.send("Runtime.getProperties", {
+        objectId: ancestry.result.objectId, ownProperties: true, generatePreview: false,
+      });
+      const count = properties.result.find((item) => item.name === "length")?.value?.value;
+      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 64) return;
+      const nodes: number[] = [];
+      for (let index = 0; index < count; index++) {
+        const objectId = properties.result.find((item) => item.name === String(index))?.value?.objectId;
+        if (!objectId) return;
+        const { node } = await session.send("DOM.describeNode", { objectId, depth: 0, pierce: false });
+        if (!Number.isSafeInteger(node.backendNodeId) || node.nodeType !== 1 ||
+            node.shadowRoots?.some((root) => root.shadowRootType !== "user-agent")) return;
+        nodes.push(node.backendNodeId!);
+      }
+      if (page !== this.page || session !== this.maskSession) throw new Error("Browser changed during inspection.");
+      return JSON.stringify(nodes);
+    } finally {
+      // A failed release retains one exact group; retry it before allocating more.
+      await session.send("Runtime.releaseObjectGroup", { objectGroup: held.group });
+      if (this.hoverObjects === held) this.hoverObjects = undefined;
+    }
+  }
   private async annotate(method: string, params: Record<string, unknown>, owner: string) {
     if (method === "browser.annotation.cancel") {
       if (
@@ -456,12 +535,21 @@ export class SharedBrowser {
       throw new Error("Invalid selection position");
     const full = method === "browser.annotation.select";
     if (full) annotation.selection = undefined;
+    const boundary = full ? undefined : await this.hoverBoundary(page, x, y);
+    this.annotationScope(params, owner);
+    if (!full && !boundary) return {
+      ...this.status(owner), hover: undefined,
+      limitation: "Hover target is opaque or cannot be safely verified. Select an accessible main-page element.",
+    };
     const inspection = await page.evaluate(inspectBrowserElement, {
       x,
       y,
       full,
-      opaqueHosts: await this.shadowMasks(page),
+      opaqueHosts: full ? await this.shadowMasks(page) : [],
     });
+    this.annotationScope(params, owner);
+    if (!full && boundary !== await this.hoverBoundary(page, x, y))
+      throw new Error("Hover target changed during inspection. Try again.");
     this.annotationScope(params, owner);
     if (!inspection.element || !full)
       return {
@@ -722,6 +810,8 @@ export class SharedBrowser {
   }
 
   private async disposePage() {
+    const maskSession = this.maskSession;
+    this.maskSession = undefined;
     this.pageGeneration++;
     this.stopCapture("The browser has closed. Retained logs remain available.");
     this.detachPageListeners?.();
@@ -733,7 +823,11 @@ export class SharedBrowser {
     this.browser = undefined;
     this.viewport = { ...DEFAULT_VIEWPORT };
     this.invalidateSelection();
-    await browser?.close();
+    if (browser) {
+      await browser.close();
+      this.hoverObjects = undefined;
+    }
+    await maskSession?.detach();
   }
 
   async close() {
