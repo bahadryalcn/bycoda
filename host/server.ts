@@ -2199,6 +2199,7 @@ export async function createHostServer(
       touchWorkspace: touchSessionWorkspace,
     },
     execution: {
+      commandSignature: (command) => createHash("sha256").update(JSON.stringify(command)).digest("hex"),
       persistenceReady: () => engine.store.db.persistenceHealth().state === "ready",
       validateCommand: (command) => {
         parseCommand(command);

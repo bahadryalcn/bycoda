@@ -49,6 +49,7 @@ function setup() {
       }),
     },
     execution: {
+      commandSignature: (command) => JSON.stringify(command),
       persistenceReady: vi.fn(() => true),
       validateCommand: vi.fn(() => {
         events.push("validate");

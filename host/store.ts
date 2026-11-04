@@ -45,21 +45,14 @@ import type {
 } from "./workspace-contracts";
 import type { WorkspaceActivityPersistence } from "./workspace-activity-store";
 import { replaceControlCharacters } from "../src/shared/lib/controlCharacters";
+import type { DesktopCommandAcceptance } from "./domains/commands/service";
+export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./block-revisions";
 const CACHED_SESSIONS = 32;
 // Retried commands are deduplicated by receipt; a week far outlives any retry.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
 const MAX_DESKTOP_COMMAND_RECEIPTS = 4096;
-export type DesktopCommandAcceptance = {
-  commandId: string;
-  sessionId: string;
-  signature: string;
-  principalId: string;
-  ownerId: string;
-  delivery: string;
-  receipt: CommandReceipt;
-};
 /** Sync replay needs only a recent suffix of a session's events: a client further behind
  * gets the snapshot. Streaming `tool.updated` events carry whole tool blocks, so the row
  * count alone let one busy session keep megabytes (all of host.db: 185 MB of events). */
@@ -1319,9 +1312,7 @@ export class HostStore {
     });
   }
   /** Fresh durable or pending identity for deferred startup binding. */
-  async sessionStartupIdentity(
-    id: string,
-  ): Promise<
+  async sessionStartupIdentity(id: string): Promise<
     | {
         projectId: string;
         revision: number;

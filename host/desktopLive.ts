@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { PreparedDesktop } from "./domains/commands/service";
+export type { PreparedDesktop } from "./domains/commands/service";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
 import { WIRE_IDENTIFIER_PATTERN } from "../src/shared/model/host-contracts/schemas";
 import { parseSessionLayout } from "./session-layout";
@@ -59,15 +61,6 @@ type LiveSession = {
   fingerprint: string;
 };
 
-export type PreparedDesktop = {
-  commandId: string;
-  clientId: string;
-  ownerId: string;
-  sessionId: string;
-  delivery: string;
-  revalidate: () => Promise<void>;
-  current: () => boolean;
-};
 
 function directoryPathKey(path: string): string {
   const key = canonicalHostPath(path);

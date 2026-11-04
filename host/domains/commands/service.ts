@@ -6,9 +6,26 @@ import {
 } from "../../../src/shared/model/host-contracts/session-commands";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 import { isApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
-import { createHash } from "node:crypto";
-import type { DesktopCommandAcceptance } from "../../store";
-import type { PreparedDesktop } from "../../desktopLive";
+
+export type DesktopCommandAcceptance = {
+  commandId: string;
+  sessionId: string;
+  signature: string;
+  principalId: string;
+  ownerId: string;
+  delivery: string;
+  receipt: CommandReceipt;
+};
+
+export type PreparedDesktop = {
+  commandId: string;
+  clientId: string;
+  ownerId: string;
+  sessionId: string;
+  delivery: string;
+  revalidate: () => Promise<void>;
+  current: () => boolean;
+};
 
 type Contextual = Extract<SessionCommand, { type: "contextual" }>;
 type DesktopCommand = Extract<SessionCommand, { type: "cancel" | "approve" | "answer" }>;
@@ -51,6 +68,7 @@ export interface CommandServicePorts<View> {
     touchWorkspace(sessionId: string): Promise<unknown>;
   };
   execution: {
+    commandSignature(command: SessionCommand): string;
     persistenceReady(): boolean;
     /** Existing semantic admission (notes, prompts, accounts, workspace etc.). */
     validateCommand(raw: unknown): void;
@@ -132,7 +150,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           "Approval request identity is missing or invalid. Refresh this request before responding.",
         );
       const sessionId = command.sessionId ?? "";
-      const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
+      const signature = ports.execution.commandSignature(command);
       const desktopReceipt = await ports.repository.desktopCommandStatus(
         command.commandId,
         context.principalId,
