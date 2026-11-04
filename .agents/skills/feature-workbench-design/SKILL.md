@@ -21,6 +21,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Translation presentation preserves immutable streaming lineage for unchanged history; translation toggles/source edits invalidate it. Selection actions keep stable callbacks that read current source without regrouping history for each text frame.
 - Transcript parking budgets include retained tool details, previews, delegated output and inline data. Estimate without serializing large strings; active/approval ownership and durable conversation history stay independent from parked presentation eviction.
 - Keep independent pane/editable-region boundaries readable at rest; use compact tools, spacious reading and less decorative containment without erasing ownership.
 - Title/content/consequence lead metadata. Ordinary completed operations may summarize with detail available; active, failed, approval and recovery states stay discoverable.

@@ -93,7 +93,8 @@ import { playCue } from "../../settings/model/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
 import { useResolvedModelName } from "../model/reactiveReads";
 import { harnessesForTurns } from "../model/secondOpinion";
-import { streamingTextUpdate } from "../model/stableBlocks";
+import { sameBlocksIgnoringStreamingText, streamingTextUpdate } from "../model/stableBlocks";
+import { projectTranslatedBlocks, type TranslationProjection } from "../model/translationProjection";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
@@ -304,15 +305,26 @@ function AgentTranscriptComponent({
   const translationCopy = useCopyFeedback({
     resetKeys: [activeTranslation, translations[activeTranslation ?? ""]?.translatedVisible],
   });
-  const sourceBlocks = useMemo(() => {
-    if (!Object.keys(translations).length) return persistedBlocks;
-    return persistedBlocks.map((block) => {
-      const entry = translations[block.id];
-      return entry && entry.source === block.text
-        ? { ...block, text: entry.translatedVisible ? entry.translated : entry.original }
-        : block;
-    });
-  }, [persistedBlocks, translations]);
+  const translationProjection = useRef<TranslationProjection | null>(null);
+  const sourceBlocks = useMemo(
+    () => projectTranslatedBlocks(persistedBlocks, translations, translationProjection.current),
+    [persistedBlocks, translations],
+  );
+  useLayoutEffect(() => {
+    translationProjection.current = { source: persistedBlocks, translations, blocks: sourceBlocks };
+  }, [persistedBlocks, translations, sourceBlocks]);
+  const translateSelection = useStableCallback(
+    canOfferTranslation(translationContext)
+      ? (selection: TranscriptSelection, target: TextActionTarget) => {
+          const sourceBlock = persistedBlocks.find((block) => block.id === selection.responseId);
+          if (target === "reprompt" && sourceBlock?.role !== "user") return;
+          const source = sourceBlock?.text;
+          const displayed = sourceBlocks.find((block) => block.id === selection.responseId)?.text;
+          if (source !== undefined && displayed !== undefined)
+            setTranslationRequest({ selection, target, source, displayed });
+        }
+      : undefined,
+  );
   const activeVersion = activeTranslation ? translations[activeTranslation] : undefined;
   const activeVersionValid =
     activeTranslation &&
@@ -729,22 +741,7 @@ function AgentTranscriptComponent({
             blocks={persistedBlocks}
             onAddToChat={onAddToChat}
             onAddToNotes={onSaveSelectionNote}
-            onTranslate={
-              canOfferTranslation(translationContext)
-                ? (selection, target) => {
-                    const sourceBlock = persistedBlocks.find(
-                      (block) => block.id === selection?.responseId,
-                    );
-                    if (target === "reprompt" && sourceBlock?.role !== "user") return;
-                    const source = sourceBlock?.text;
-                    const displayed = sourceBlocks.find(
-                      (block) => block.id === selection?.responseId,
-                    )?.text;
-                    if (selection && source !== undefined && displayed !== undefined)
-                      setTranslationRequest({ selection, target, source, displayed });
-                  }
-                : undefined
-            }
+            onTranslate={translateSelection}
           />
         ) : null}
         {imageOpen.preview}
@@ -2678,6 +2675,9 @@ const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
   onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
 }) {
   const { selection, dismissSelection } = useTranscriptSelection(root, enabled);
+  const translate = useStableCallback(
+    onTranslate && selection ? (target: TextActionTarget) => onTranslate(selection, target) : undefined,
+  );
   return (
     <TranscriptSelectionMenu
       selection={selection}
@@ -2688,9 +2688,15 @@ const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
       onDismiss={dismissSelection}
       onAddToChat={onAddToChat}
       onAddToNotes={onAddToNotes}
-      onTranslate={
-        onTranslate && selection ? (target) => onTranslate(selection, target) : undefined
-      }
+      onTranslate={translate}
     />
   );
-});
+}, (previous, next) =>
+  previous.root === next.root &&
+  previous.enabled === next.enabled &&
+  previous.sessionId === next.sessionId &&
+  previous.onAddToChat === next.onAddToChat &&
+  previous.onAddToNotes === next.onAddToNotes &&
+  previous.onTranslate === next.onTranslate &&
+  sameBlocksIgnoringStreamingText(previous.blocks, next.blocks),
+);
