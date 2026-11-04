@@ -16,6 +16,34 @@ import type {
 
 const occurrenceA = "7e1c4dc0-6f53-4a8c-b8d8-000000000001";
 const occurrenceB = "7e1c4dc0-6f53-4a8c-b8d8-000000000002";
+it("binds durable control to original page and turn before tracking an offer", async () => {
+  const live = new DesktopLive();
+  const pageToken = "7e1c4dc0-6f53-4a8c-b8d8-000000000001";
+  const turnReceipt = {
+    version: 1,
+    sessionId: "s",
+    turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000002",
+  };
+  const beat = (turn = turnReceipt) =>
+    live.beat({
+      clientId: "owner",
+      pageToken,
+      sessions: [{ id: "s", busy: true, turnReceipt: turn }],
+    });
+  beat();
+  const original = await live.prepareDesktop({
+    type: "cancel",
+    commandId: "command",
+    sessionId: "s",
+    runId: "desktop",
+  });
+  expect(JSON.parse(original.delivery)).toMatchObject({ pageToken, turnReceipt });
+  live.trackDesktop(original);
+  expect(live.pendingDesktop("owner")).toEqual([original]);
+  await original.revalidate();
+  beat({ ...turnReceipt, turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000003" });
+  await expect(original.revalidate()).rejects.toThrow(/turn changed/);
+});
 const approvalBlock = (occurrenceId = occurrenceA) => ({
   id: "approval",
   role: "approval" as const,

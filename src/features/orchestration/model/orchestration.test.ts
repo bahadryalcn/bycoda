@@ -27,6 +27,8 @@ function setup() {
     load: vi.fn(async (id: string) => saved.get(id) ?? null),
     enable: vi.fn(async () => "/Applications/Bycoda.app/Contents/MacOS/bycoda"),
     disable: vi.fn(async () => {}),
+    captureGrant: vi.fn(async () => "original-grant"),
+    disableCaptured: vi.fn(async () => {}),
     scopes: vi.fn(async (cwd: string, files: string[]) =>
       files.map((file) => (file === "." ? cwd : `${cwd}/${file}`)),
     ),
@@ -70,6 +72,12 @@ function setup() {
     stop: vi.fn(async (id) => {
       const session = sessions.find((entry) => entry.id === id);
       if (session) session.busy = false;
+    }),
+    captureStop: (id) => ({
+      current: () => !!sessions.find((session) => session.id === id),
+      stop: async () => {
+        await host.stop(id);
+      },
     }),
     steer: vi.fn(async () => {}),
     respondApproval: vi.fn(),
@@ -133,6 +141,124 @@ it("preserves the no-commit identity of retained legacy shared workers", () => {
 });
 
 describe("local orchestration", () => {
+  it("observes abandoned and delayed grant capture failures while preserving rejection", async () => {
+    const f = setup();
+    await f.start();
+    f.store.captureGrant.mockRejectedValue(new Error("grant unavailable"));
+    const abandoned = f.manager.captureDesktopControl("lead")!;
+    const delayed = f.manager.captureDesktopControl("lead")!;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(delayed.ready).rejects.toThrow("grant unavailable");
+    await expect(abandoned.ready).rejects.toThrow("grant unavailable");
+  });
+  it("stops only the captured lead and original active workers, using the captured grant", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    const worker = f.tasks()[0].sessionId;
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    await captured.stop();
+    expect(f.host.stop).toHaveBeenCalledTimes(2);
+    expect(f.host.stop).toHaveBeenCalledWith("lead");
+    expect(f.host.stop).toHaveBeenCalledWith(worker);
+    expect(f.store.disableCaptured).toHaveBeenCalledWith("lead", "original-grant");
+    expect(f.manager.run("lead")?.status).toBe("stopped");
+    expect(f.tasks()[0].status).toBe("cancelled");
+  });
+  it("does not stop a replacement worker after the guarded state commit awaits", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.store.save.mockImplementationOnce(async () => {
+      await gate;
+    });
+    const stopping = captured.stop();
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("cancelling"));
+    f.tasks()[0].activeDispatchId = "replacement-dispatch";
+    release();
+    await expect(stopping).rejects.toThrow(/changed/);
+    expect(f.host.stop).not.toHaveBeenCalled();
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+  });
+  it("cancels only the captured worker without disabling its lead", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    const worker = f.tasks()[0].sessionId;
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl(worker)!;
+    await captured.ready;
+    await captured.stop();
+    expect(f.host.stop).toHaveBeenCalledExactlyOnceWith(worker);
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+    expect(f.manager.run("lead")?.status).toBe("active");
+    expect(f.tasks()[0]).toMatchObject({ status: "cancelled", delivered: false });
+  });
+  it("holds a captured lead stop if another worker appears while the commit waits", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.store.save.mockImplementationOnce(async () => {
+      await gate;
+    });
+    const stopping = captured.stop();
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("cancelling"));
+    f.tasks().push({
+      ...f.tasks()[0],
+      id: "new-task",
+      sessionId: "new-worker",
+      activeDispatchId: "new-dispatch",
+    });
+    release();
+    await expect(stopping).rejects.toThrow(/changed/);
+    expect(f.host.stop).not.toHaveBeenCalled();
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a captured stop after the run restarts", async () => {
+    const f = setup();
+    await f.start();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    await f.manager.stopRun("lead");
+    await f.start();
+    vi.mocked(f.host.stop).mockClear();
+    await expect(captured.stop()).rejects.toThrow(/changed/);
+    expect(f.host.stop).not.toHaveBeenCalled();
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+  });
   it("deletes unrelated history while another run's control save is pending", async () => {
     const f = setup();
     await f.start();

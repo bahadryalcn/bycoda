@@ -14,6 +14,7 @@ pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
 mod debug_profile;
+mod desktop_control_page;
 mod desktop_control_window;
 mod desktop_inbox_review;
 mod desktop_shortcut;
@@ -608,6 +609,8 @@ pub fn run() {
             remote::remote_ssh_answer,
             remote::remote_ssh_cancel,
             control::control_enable,
+            control::control_grant_capture,
+            control::control_disable_captured,
             control::control_disable,
             control::control_reply,
             control::control_desktop_authorize_effect,
@@ -657,6 +660,8 @@ pub fn run() {
             html_preview::open_html_in_chrome,
             html_preview::create_html_preview,
             html_preview::close_html_preview,
+            desktop_control_page::desktop_control_page_token,
+            desktop_control_page::desktop_control_page_verify,
             fs::resolve_project_location,
             file_access::authorize_project_path,
             file_access::revoke_file_access,

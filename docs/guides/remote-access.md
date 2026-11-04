@@ -55,6 +55,14 @@ checkpoint retention and a successful remote action are separate outcomes: a
 retained draft does not mean that a message was sent or applied. If an operation's
 outcome is uncertain, bycoda keeps it unresolved rather than sending it again.
 
+Remote Stop, approval and question answers for an active desktop conversation
+require matching Host and desktop protocol support. A saved command receipt
+confirms acceptance, not that the provider finished the action. If the reply is
+lost or the owning app restarts, the original command stays held rather than
+running against a replacement turn. Check the original conversation's state
+before issuing another action. An update-required message means the owning
+desktop cannot supply the required control identity.
+
 Private Native checkpoints can retain unsent question answers, queue edits and
 source/merge editor drafts as recovery data. They do not submit those inputs.
 The regular question draft still clears when discarded; earlier private

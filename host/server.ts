@@ -226,12 +226,14 @@ import { WebControl } from "./web-control";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
 import type { HandoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { DesktopSessions, type DesktopSessionMeta } from "./desktopSessions";
+import { DesktopCommandDelivery } from "./desktop-command-delivery";
 import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
 import {
   HostDomainAuthorizationError,
   HostDomainOutcomeError,
+  assertDomainAuthority,
   type HostDomainContext,
 } from "./domains/context";
 import { RunLeases } from "./run-lease";
@@ -1918,6 +1920,7 @@ export async function createHostServer(
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
         "sessions.approvalOccurrence.v1",
+        "sessions.desktopControlReceipts.v1",
         "transport.ws.queue.v2",
         "transport.ws.files.v2",
         "transport.ws.terminals.v2",
@@ -2181,9 +2184,14 @@ export async function createHostServer(
         throw new Error("Authenticated queue attachment grant is unavailable.");
       return sessionQueueService[action](params, { ...context, exposeAttachments });
     };
+  const desktopCommandDelivery = new DesktopCommandDelivery(desktop.live, engine.store);
   const commandService = createCommandService<HostSession>({
     repository: {
       receiptStatus: (id) => engine.store.receiptStatus(id),
+      desktopCommandStatus: (id, principalId, signature) =>
+        engine.store.desktopCommandStatus(id, principalId, signature),
+      acceptDesktopCommand: (input, revalidate) =>
+        engine.store.acceptDesktopCommand(input, revalidate),
       transaction: (operation) => engine.store.transaction(operation, "critical"),
       readView: readSessionView,
       modelTarget: async (id) => (await featureMetaStable(id)).session,
@@ -2216,29 +2224,41 @@ export async function createHostServer(
     nativeProjection: {
       watch: desktopWatch,
       alive: () => !!desktop.live.alive(),
-      enqueue: (command) => {
+      prepareDesktop: async (command, context) => {
+        let resolved = command;
         if (
-          command.type !== "answer" ||
-          command.reply.kind !== "answered" ||
-          !command.reply.attachments
-        )
-          return desktop.live.enqueue(command);
-        const parsed = parseCommand(command);
-        if (parsed.type !== "answer" || parsed.reply.kind !== "answered")
-          throw new Error("Invalid question answer");
-        const pending = desktop.live.overlay(command.sessionId)?.patch.pendingQuestion;
-        if (pending?.requestId !== command.requestId)
-          throw new Error("Question is already resolved");
-        const attachments = Object.fromEntries(
-          Object.entries(parsed.reply.attachments ?? {}).map(([id, files]) => {
-            const question = pending.questions.find((item) => item.id === id);
-            if (!question?.allowCustom || question.preserveCustomWhitespace)
-              throw new Error("This question cannot accept attachments");
-            return [id, resolveAttachments(engine.store, parseRemoteAttachments(files))];
-          }),
-        );
-        desktop.live.enqueue({ ...parsed, reply: { ...parsed.reply, attachments } });
+          command.type === "answer" &&
+          command.reply.kind === "answered" &&
+          command.reply.attachments
+        ) {
+          const parsed = parseCommand(command);
+          if (parsed.type !== "answer" || parsed.reply.kind !== "answered")
+            throw new Error("Invalid question answer");
+          const pending = desktop.live.overlay(command.sessionId)?.patch.pendingQuestion;
+          if (!pending || pending.requestId !== command.requestId)
+            throw new Error("Question is already resolved");
+          const attachments = Object.fromEntries(
+            Object.entries(parsed.reply.attachments ?? {}).map(([id, files]) => {
+              const question = pending.questions.find((item) => item.id === id);
+              if (!question?.allowCustom || question.preserveCustomWhitespace)
+                throw new Error("This question cannot accept attachments");
+              return [id, resolveAttachments(engine.store, parseRemoteAttachments(files))];
+            }),
+          );
+          resolved = { ...parsed, reply: { ...parsed.reply, attachments } };
+        }
+        const prepared = await desktop.live.prepareDesktop(resolved);
+        return {
+          ...prepared,
+          revalidate: async () => {
+            // Accepted work outlives its transport wait, never its principal.
+            if (!(await context.authorized())) throw new HostDomainAuthorizationError();
+            await prepared.revalidate();
+            if (!(await context.authorized())) throw new HostDomainAuthorizationError();
+          },
+        };
       },
+      trackDesktop: (prepared) => desktop.live.trackDesktop(prepared),
       withRetiredWriters: withRetiredDesktopWriters,
     },
     crews: { ownerDirective: (command) => crews.ownerDirective(command) },
@@ -4875,6 +4895,11 @@ export async function createHostServer(
                   break;
                 case "sessions.desktopLive": {
                   const beat = desktop.live.beat(params);
+                  const durableCommands = await withinBeat(
+                    () =>
+                      desktopCommandDelivery.poll(params, () => assertDomainAuthority(domainContext)),
+                    [],
+                  );
                   // Renew the reported epoch before queued busy bookkeeping can
                   // implicitly reacquire an expired lease with a new epoch.
                   // Otherwise this same heartbeat is falsely answered as lost.
@@ -4882,6 +4907,7 @@ export async function createHostServer(
                   await withinBeat(() => heartbeatEffects, undefined);
                   result = {
                     ...beat,
+                    commands: [...beat.commands, ...durableCommands],
                     deletions: await withinBeat(
                       () =>
                         desktopDelete.beat(
@@ -5854,6 +5880,7 @@ export async function createHostServer(
       "transport.ws.workspaces.cleanup.v1",
       "transport.ws.sessions.v2",
       "sessions.approvalOccurrence.v1",
+      "sessions.desktopControlReceipts.v1",
       "transport.ws.queue.v2",
       "transport.ws.files.v2",
       "transport.ws.terminals.v2",

@@ -88,6 +88,35 @@ async function mount(value: Session) {
     rerender: () => act(async () => root.render(createElement(Fixture))),
   };
 }
+
+it("does not answer a question after the original turn guard changes", async () => {
+  const value = request();
+  value.pendingQuestion = { requestId: 7, questions: [] } as Session["pendingQuestion"];
+  const fixture = await mount(value);
+  native.answer.mockClear();
+  fixture.actions.onQuestionReply(value.id, 7, { kind: "dismissed" } as never, () => false);
+  expect(native.answer).not.toHaveBeenCalled();
+});
+it("does not redirect a guarded answer to a replacement Host owner", async () => {
+  native.answer.mockClear();
+  const value = request();
+  value.pendingQuestion = { requestId: 7, questions: [] } as Session["pendingQuestion"];
+  const fixture = await mount(value);
+  const answer = vi.fn();
+  value.hostBinding = {
+    kind: "local-host",
+    machineId: "machine",
+    environmentId: "home",
+    projectId: "project",
+    sessionId: value.id,
+    authorityGeneration: 1,
+    created: true,
+  };
+  cleanups.push(registerRemoteSessionActions(value.id, { answer } as never));
+  fixture.actions.onQuestionReply(value.id, 7, { kind: "dismissed" } as never, () => true);
+  expect(answer).not.toHaveBeenCalled();
+  expect(native.answer).not.toHaveBeenCalled();
+});
 function remote(value: Session, approve: (...args: unknown[]) => unknown) {
   value.hostBinding = {
     kind: "local-host",

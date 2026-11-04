@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { hostSessionBinding } from "./sessionExecutionBinding";
+import { remoteProjectFor } from "./remoteProjects";
+import { liveTurnHarness } from "../../sessions/model/messageQueue";
+import { sessionWorkCwd } from "../../sessions/model/session";
+import { orchestrator } from "../../orchestration/model/orchestration";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { Session } from "../../sessions/model/session";
 import {
@@ -27,7 +31,10 @@ import { withMobileProjectLogos } from "../../projects/model/mobileProjectLogos"
 import {
   retainedHarnessWriters,
   retireHarnessWriter,
+  captureHarnessControlTurn,
 } from "../../../integrations/harness/core/registry";
+import { captureChildProcess } from "../../../integrations/harness/core/child";
+import { nativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
 
 const MACHINE_RECHECK_MS = 15_000;
 // One identity per WebView, stable across StrictMode remounts and app restarts:
@@ -101,6 +108,50 @@ export function useDesktopLive(
         await runDesktopLiveTick({
           approvalOccurrenceSupported,
           clientId: desktopClientId,
+          controlGuard: {
+            pageToken: () => invoke<string>("desktop_control_page_token"),
+            verify: (token) => invoke<void>("desktop_control_page_verify", { token }),
+            capture: (session) => {
+              try {
+                if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) return undefined;
+                const run = orchestrator.forSession(session.id);
+                const orchestration = run
+                  ? orchestrator.captureDesktopControl(session.id)
+                  : undefined;
+                if (run && !orchestration) return undefined;
+                const process = captureChildProcess(session.id);
+                const turn = captureHarnessControlTurn(session.id, process);
+                if (!process || !turn) return undefined;
+                const receipt = nativeControlTurnReceipt(turn);
+                const harness = liveTurnHarness(session);
+                const cwd = sessionWorkCwd(session);
+                return {
+                  receipt,
+                  question: session.pendingQuestion,
+                  ...(orchestration
+                    ? { ready: orchestration.ready, stopOrchestration: orchestration.stop }
+                    : {}),
+                  current: () => {
+                    const now = sessionsRef.current.find((entry) => entry.id === session.id);
+                    return (
+                      !!now &&
+                      !hostSessionBinding(now) &&
+                      !remoteProjectFor(now.cwd) &&
+                      (orchestration
+                        ? orchestration.current()
+                        : !orchestrator.forSession(now.id)) &&
+                      sessionWorkCwd(now) === cwd &&
+                      liveTurnHarness(now) === harness &&
+                      captureChildProcess(now.id) === process &&
+                      captureHarnessControlTurn(now.id, process) === turn
+                    );
+                  },
+                };
+              } catch {
+                return undefined;
+              }
+            },
+          },
           request: (payload) =>
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
           sessions: () => sessionsRef.current.filter((session) => !hostSessionBinding(session)),
@@ -113,7 +164,7 @@ export function useDesktopLive(
               if (!handler) return Promise.reject(new Error("Desktop deletion is unavailable."));
               return handler(sessionId, cwd);
             },
-            stop: (sessionId) => handlersRef.current.stop(sessionId),
+            stop: (sessionId, current) => handlersRef.current.stop(sessionId, current),
             captureApproval: (...args) => handlersRef.current.captureApproval?.(...args),
             approvalDispatchStarted: (...args) =>
               handlersRef.current.approvalDispatchStarted?.(...args) ?? false,

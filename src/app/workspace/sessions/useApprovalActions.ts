@@ -58,7 +58,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   );
 
   const onQuestionReply = useCallback(
-    (sessionId: string, requestId: number, reply: UserQuestionReply) => {
+    (sessionId: string, requestId: number, reply: UserQuestionReply, current?: () => boolean) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session) return;
       if (session.worktreeRemoved) {
@@ -75,11 +75,13 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       )
         return;
       if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) {
+        if (current) return;
         const actions = remoteSessionActions(sessionId);
         if (!actions) throw new Error("Question connection is unavailable");
         actions.answer(requestId, reply);
         return;
       }
+      if (current && !current()) return;
       if (!respondHarnessQuestion(liveTurnHarness(session), sessionId, requestId, reply))
         failQuestionDelivery(
           sessionId,

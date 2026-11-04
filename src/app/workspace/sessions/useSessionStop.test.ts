@@ -8,11 +8,22 @@ import { appendPreparingHandoff } from "../../../features/sessions/model/handoff
 import { isSessionErrorBlock, sessionIssue } from "../../../features/sessions/model/sessionIssue";
 import { registerRemoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 
-const { cancel, notify, noteStop, cancelAdopted } = vi.hoisted(() => ({
+const {
+  cancel,
+  notify,
+  noteStop,
+  cancelAdopted,
+  remoteProject,
+  orchestrationRun,
+  orchestratorStop,
+} = vi.hoisted(() => ({
   cancel: vi.fn(),
   cancelAdopted: vi.fn(),
   notify: vi.fn(),
   noteStop: vi.fn(),
+  remoteProject: vi.fn(),
+  orchestrationRun: vi.fn(),
+  orchestratorStop: vi.fn(),
 }));
 vi.mock("../../../features/connections/model/adoptedSessionCommands", () => ({
   cancelAdoptedTurn: cancelAdopted,
@@ -25,21 +36,24 @@ vi.mock("../../../integrations/harness", async (original) => ({
   cancelHarnessTurn: cancel,
 }));
 vi.mock("../../../features/orchestration/model/orchestration", () => ({
-  orchestrator: { stopForSession: () => undefined },
+  orchestrator: { stopForSession: orchestratorStop, forSession: orchestrationRun },
 }));
 vi.mock("../../../features/connections/model/remoteProjects", () => ({
-  remoteProjectFor: () => undefined,
+  remoteProjectFor: remoteProject,
 }));
 vi.mock("../helpers/workspaceNotify", () => ({ notifyFinishedWorkspace: notify }));
 
 let root: Root;
 let container: HTMLDivElement;
-let stop: (id: string) => void;
+let stop: (id: string, managed?: boolean, current?: () => boolean) => void;
 let deps: SessionStopDeps;
 const current = () => deps.sessionsRef.current[0];
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   cancel.mockReset();
+  remoteProject.mockReset();
+  orchestrationRun.mockReset();
+  orchestratorStop.mockReset();
   notify.mockReset();
   noteStop.mockReset();
   cancelAdopted.mockReset().mockResolvedValue(undefined);
@@ -75,6 +89,36 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("does not cancel a replacement turn after flushing pending events", () => {
+  let original = true;
+  deps.flushHarnessEvents = () => {
+    original = false;
+  };
+  act(() =>
+    root.render(
+      createElement(function Fixture() {
+        stop = useSessionStop(deps).onStop;
+        return null;
+      }),
+    ),
+  );
+  stop(current().id, false, () => original);
+  expect(cancel).not.toHaveBeenCalled();
+});
+
+it("does not redirect a guarded desktop stop to a new remote or orchestration owner", () => {
+  const guard = () => true;
+  remoteProject.mockReturnValue({ id: "remote" });
+  stop(current().id, false, guard);
+  expect(orchestratorStop).not.toHaveBeenCalled();
+  expect(cancel).not.toHaveBeenCalled();
+  remoteProject.mockReturnValue(undefined);
+  orchestrationRun.mockReturnValue({ leadId: current().id });
+  stop(current().id, false, guard);
+  expect(orchestratorStop).not.toHaveBeenCalled();
+  expect(cancel).not.toHaveBeenCalled();
 });
 
 it("pauses the queue immediately and keeps events and Stop actionable after delivery failure", async () => {

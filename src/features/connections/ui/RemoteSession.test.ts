@@ -43,6 +43,7 @@ import {
 } from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
 import { savePendingRemoteCommand } from "../model/remoteOutbox";
+import { DESKTOP_CONTROL_RECEIPTS_CAPABILITY } from "../model/desktopControlCapability";
 import { resetRemoteQueuesForTests } from "../model/useRemoteQueue";
 import { resetRemoteMachineChannelsForTests } from "../model/remoteMachineChannel";
 import { readRemotePageCache, writeRemotePageCache } from "../model/remotePageCache";
@@ -249,6 +250,7 @@ let steerFailure: string | undefined;
 let sendFailure: string | undefined;
 let commandStatusSupported = false;
 let approvalOccurrenceSupported = true;
+let desktopControlReceiptsSupported = true;
 let statusRequests: string[];
 let answerFailure: string | undefined;
 let receiptRunId: string | undefined;
@@ -271,6 +273,7 @@ const unreachable = "Machine is unreachable. Check the host and SSH tunnel, then
 
 beforeEach(() => {
   approvalOccurrenceSupported = true;
+  desktopControlReceiptsSupported = true;
   commandStatusSupported = false;
   statusRequests = [];
   transportProbe.current = undefined;
@@ -388,6 +391,7 @@ beforeEach(() => {
         name: "home",
         providers,
         capabilities: [
+          ...(desktopControlReceiptsSupported ? [DESKTOP_CONTROL_RECEIPTS_CAPABILITY] : []),
           ...(approvalOccurrenceSupported ? ["sessions.approvalOccurrence.v1"] : []),
           "attachments.upload",
           ...(attachmentOwnershipSupported ? ["attachments.ownership.v1"] : []),
@@ -1007,6 +1011,103 @@ it("holds an uncertain remote answer across remount without issuing a new comman
   await settle();
   expect(commands.filter((command) => command.type === "answer")).toHaveLength(0);
   expect(attemptCount).toBeGreaterThanOrEqual(1);
+});
+
+it.each(["cancel", "approve", "answer"] as const)(
+  "blocks desktop %s on an older Host before dispatch and keeps answer input recoverable",
+  async (kind) => {
+    desktopControlReceiptsSupported = false;
+    if (kind === "answer") seedQuestionHost();
+    else openRunningChat();
+    const occurrenceId = createApprovalOccurrenceId();
+    host = {
+      ...host!,
+      runId: "desktop",
+      session: {
+        ...host!.session,
+        ...(kind === "approve"
+          ? {
+              blocks: [
+                {
+                  id: "approval-old-host",
+                  role: "approval" as const,
+                  text: "Approve",
+                  approval: { requestId: 777, occurrenceId },
+                },
+              ],
+            }
+          : {}),
+      },
+    };
+    await renderRemoteProbe();
+    const token =
+      kind === "approve" ? captureApprovalRequest(remoteOverrides.session!, 777) : undefined;
+    await act(async () => {
+      if (kind === "cancel") remoteOverrides.onStop!("shell");
+      if (kind === "approve") await remoteOverrides.onApproval!("shell", 777, "allow", token);
+      if (kind === "answer")
+        remoteOverrides.onQuestionReply!("shell", 3, {
+          kind: "answered",
+          answers: {},
+          custom: { scope: "Keep draft" },
+          attachments: { scope: [{ id: "draft-file", name: "draft.txt" }] },
+        });
+    });
+    await settle();
+    expect(commands.filter((command) => command.type === kind)).toHaveLength(0);
+    expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toBeUndefined();
+    if (kind === "answer") {
+      expect(remoteOverrides.session?.pendingQuestion).toMatchObject({
+        delivery: "failed",
+        error: expect.stringContaining("Update bycoda Host"),
+      });
+      expect(remoteOverrides.questionDraftScope).toContain("host-session");
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.some(
+            ([name]) => name === "read_file_base64" || name === "read_attachment_chunk",
+          ),
+      ).toBe(false);
+    }
+  },
+);
+
+it("keeps a previously uncertain desktop answer when an old Host cannot confirm it", async () => {
+  desktopControlReceiptsSupported = false;
+  seedQuestionHost();
+  host = { ...host!, runId: "desktop" };
+  const command = {
+    type: "answer" as const,
+    commandId: "unknown-desktop-answer",
+    sessionId: "host-session",
+    runId: "desktop",
+    requestId: 3,
+    reply: { kind: "skipped" as const },
+  };
+  savePendingRemoteCommand(projectKey, "env", command, "shell");
+  await renderRemoteProbe();
+  expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("unknown");
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  );
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  await settle();
+  expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toMatchObject({
+    commandId: command.commandId,
+  });
+  expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("unknown");
+  expect(commands.filter((entry) => entry.type === "answer")).toHaveLength(0);
+});
+
+it("allows Host-owned controls on a Host without desktop receipt capability", async () => {
+  desktopControlReceiptsSupported = false;
+  seedQuestionHost();
+  await renderRemoteProbe();
+  await act(async () => remoteOverrides.onQuestionReply!("shell", 3, { kind: "skipped" }));
+  await settle();
+  expect(commands.filter((command) => command.type === "answer")).toHaveLength(1);
 });
 const remoteDataPhase = () =>
   container.querySelector("[data-remote-data-state]")?.getAttribute("data-remote-data-state");

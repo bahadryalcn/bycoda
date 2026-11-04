@@ -295,6 +295,8 @@ mod tests {
                 session: "explicit-admin".into(),
                 cwd: "/repo".into(),
                 token: "admin-token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         let mut admin = std::process::Command::new("unused");

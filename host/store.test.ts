@@ -16,6 +16,128 @@ import type {
   WorkspaceRewindOperation,
 } from "./workspace-contracts";
 const cleanups: Array<() => void | Promise<void>> = [];
+describe("durable desktop command receipts", () => {
+  const identity = () => ({
+    commandId: "desktop-control",
+    sessionId: "session",
+    signature: "signature",
+    principalId: "principal",
+    ownerId: "physical-owner",
+    delivery: '{"type":"cancel"}',
+    receipt: { commandId: "desktop-control", sessionId: "session", revision: 17 },
+  });
+  it("survives restart and pruning while preserving exact acceptance and one offer", async () => {
+    const path = join(open(), "desktop-command.db");
+    let store = new HostStore(path);
+    const input = identity();
+    expect(await store.acceptDesktopCommand(input, async () => {})).toEqual(input.receipt);
+    expect(
+      await store.acceptDesktopCommand(
+        { ...input, receipt: { ...input.receipt, revision: 99 } },
+        async () => {},
+      ),
+    ).toEqual(input.receipt);
+    await expect(
+      store.acceptDesktopCommand({ ...input, delivery: "other" }, async () => {}),
+    ).rejects.toThrow(/different/);
+    await expect(store.desktopCommandStatus(input.commandId, "foreign")).rejects.toThrow(
+      /principal/,
+    );
+    await expect(store.desktopCommandStatus(input.commandId, undefined)).rejects.toThrow(
+      /principal/,
+    );
+    expect(await store.desktopCommandStatus("non-desktop", undefined)).toBeUndefined();
+    const results = await Promise.all([
+      store.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+      store.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+    ]);
+    expect(results.filter(Boolean)).toEqual([input.delivery]);
+    await store.close();
+    store = new HostStore(path);
+    cleanups.push(() => store.close());
+    expect(await store.desktopCommandStatus(input.commandId, input.principalId)).toEqual(
+      input.receipt,
+    );
+    await store.pruneReceipts(Date.now() + 30 * 24 * 3600000);
+    expect(await store.receiptStatus(input.commandId)).toBeUndefined();
+    await expect(store.receipt(input.commandId, input.signature)).rejects.toThrow(
+      /desktop control/,
+    );
+    await store.ackDesktopCommand(input.commandId, input.ownerId, async () => {});
+    expect(
+      await store.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+    ).toBeUndefined();
+  });
+  it("holds an unoffered acceptance after Host restart", async () => {
+    const path = join(open(), "desktop-unoffered.db");
+    const first = new HostStore(path);
+    const input = identity();
+    await first.acceptDesktopCommand(input, async () => {});
+    await first.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect(await reopened.desktopCommandStatus(input.commandId, input.principalId)).toEqual(
+      input.receipt,
+    );
+    expect(
+      await reopened.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+    ).toBeUndefined();
+  });
+  it("does not publish acceptance or offer when owner revalidation fails", async () => {
+    const store = new HostStore(join(open(), "desktop-revalidation.db"));
+    cleanups.push(() => store.close());
+    const input = identity();
+    await expect(
+      store.acceptDesktopCommand(input, async () => {
+        throw new Error("revoked");
+      }),
+    ).rejects.toThrow("revoked");
+    expect(await store.receiptStatus(input.commandId)).toBeUndefined();
+    await store.acceptDesktopCommand(input, async () => {});
+    await expect(
+      store.offerDesktopCommand(input.commandId, "other", async () => {}),
+    ).rejects.toThrow(/owner/);
+    await expect(
+      store.offerDesktopCommand(input.commandId, input.ownerId, async () => {
+        throw new Error("retired");
+      }),
+    ).rejects.toThrow("retired");
+    expect(await store.offerDesktopCommand(input.commandId, input.ownerId, async () => {})).toBe(
+      input.delivery,
+    );
+  });
+  it("refuses a desktop command ID already accepted by the Host", async () => {
+    const store = new HostStore(join(open(), "desktop-collision.db"));
+    cleanups.push(() => store.close());
+    const input = identity();
+    await store.recordReceipt(input.signature, input.receipt);
+    await expect(store.acceptDesktopCommand(input, async () => {})).rejects.toThrow(
+      /another command/,
+    );
+  });
+  it("captures immutable acceptance before asynchronous authority checks", async () => {
+    const store = new HostStore(join(open(), "desktop-capture.db"));
+    cleanups.push(() => store.close());
+    const input = identity();
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const pending = store.acceptDesktopCommand(input, () => gate);
+    input.ownerId = "other";
+    input.delivery = "other";
+    input.receipt.revision = 99;
+    resume();
+    expect(await pending).toEqual({
+      commandId: "desktop-control",
+      sessionId: "session",
+      revision: 17,
+    });
+    expect(
+      await store.offerDesktopCommand("desktop-control", "physical-owner", async () => {}),
+    ).toBe('{"type":"cancel"}');
+  });
+});
 describe("managed workspace persistence", () => {
   it("keeps provider history in cold summaries after reopen", async () => {
     const path = join(open(), "provider-history.db");

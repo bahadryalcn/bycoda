@@ -50,6 +50,16 @@ const CACHED_SESSIONS = 32;
 // Retried commands are deduplicated by receipt; a week far outlives any retry.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
+const MAX_DESKTOP_COMMAND_RECEIPTS = 4096;
+export type DesktopCommandAcceptance = {
+  commandId: string;
+  sessionId: string;
+  signature: string;
+  principalId: string;
+  ownerId: string;
+  delivery: string;
+  receipt: CommandReceipt;
+};
 /** Sync replay needs only a recent suffix of a session's events: a client further behind
  * gets the snapshot. Streaming `tool.updated` events carry whole tool blocks, so the row
  * count alone let one busy session keep megabytes (all of host.db: 185 MB of events). */
@@ -186,6 +196,7 @@ export type HostAuthorityChange = Readonly<{
 }>;
 
 export class HostStore {
+  private readonly desktopCommandInstance = randomUUID();
   private readonly authorityContexts = new AsyncLocalStorage<ReadonlyMap<string, number>>();
   assertAuthority(sessionId: string, expectedGeneration?: number): Promise<boolean> {
     return this.db.scope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
@@ -471,9 +482,19 @@ export class HostStore {
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, cwd TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), snapshot TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS deleted_sessions (id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS prevent_deleted_session_insert BEFORE INSERT ON sessions
+        WHEN EXISTS (SELECT 1 FROM deleted_sessions WHERE id=NEW.id)
+        BEGIN SELECT RAISE(ABORT, 'Session was deleted; start a new conversation.'); END;
       CREATE TABLE IF NOT EXISTS session_journal (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, revision INTEGER NOT NULL, metadata TEXT NOT NULL, block_ids TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_journal_blocks (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, block_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id,block_id));
       CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, signature TEXT NOT NULL, receipt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS desktop_command_delivery (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, signature TEXT NOT NULL,
+        principal_id TEXT NOT NULL, owner_id TEXT NOT NULL, delivery TEXT NOT NULL,
+        host_instance TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('accepted','offered_unknown','acknowledged'))
+      );
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
@@ -2216,6 +2237,11 @@ export class HostStore {
   ): Promise<void> {
     return this.db.storeScope(async () => {
       const purge = async (projectId: string) => {
+        // Retained provider snapshots and desktop adoption may arrive after this
+        // commit or a restart. Keep deletion authority independently of the row.
+        await this.db
+          .prepare("INSERT OR IGNORE INTO deleted_sessions (id, deleted_at) VALUES (?, ?)")
+          .run(id, Date.now());
         this.take(id);
         await this.db.prepare("DELETE FROM events WHERE session_id=?").run(id);
         await this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
@@ -2250,6 +2276,8 @@ export class HostStore {
     return this.db.storeScope(async () => {
       const row = await this.db.prepare("SELECT * FROM receipts WHERE id=?").get(id);
       if (!row) return undefined;
+      if (await this.db.prepare("SELECT id FROM desktop_command_delivery WHERE id=?").get(id))
+        throw new Error("Command ID belongs to a desktop control.");
       if (row.signature !== signature)
         throw new Error("Command ID was already used with a different payload");
       return JSON.parse(String(row.receipt)) as CommandReceipt;
@@ -2257,7 +2285,11 @@ export class HostStore {
   }
   async receiptStatus(id: string): Promise<CommandReceipt | undefined> {
     return this.db.storeScope(async () => {
-      const row = await this.db.prepare("SELECT receipt FROM receipts WHERE id=?").get(id);
+      const row = await this.db
+        .prepare(
+          "SELECT receipt FROM receipts WHERE id=? AND NOT EXISTS (SELECT 1 FROM desktop_command_delivery WHERE desktop_command_delivery.id=receipts.id)",
+        )
+        .get(id);
       return row ? (JSON.parse(String(row.receipt)) as CommandReceipt) : undefined;
     });
   }
@@ -2269,6 +2301,152 @@ export class HostStore {
           .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
           .run(receipt.commandId, signature, JSON.stringify(receipt), Date.now());
         if (++this.receiptWrites % RECEIPT_PRUNE_EVERY === 0) await this.pruneReceipts();
+      }, "critical"),
+    );
+  }
+
+  /** Atomically preserve the exact accepted command and its global receipt. */
+  async acceptDesktopCommand(
+    input: DesktopCommandAcceptance,
+    revalidate: () => Promise<void>,
+  ): Promise<CommandReceipt> {
+    input = { ...input, receipt: JSON.parse(JSON.stringify(input.receipt)) as CommandReceipt };
+    if (
+      !input.commandId ||
+      !input.sessionId ||
+      !input.signature ||
+      !input.principalId ||
+      !input.ownerId ||
+      !input.delivery ||
+      input.delivery.length > 1024 * 1024 ||
+      input.receipt.commandId !== input.commandId ||
+      input.receipt.sessionId !== input.sessionId
+    )
+      throw new Error("Invalid desktop command identity.");
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        const existing = await this.db
+          .prepare("SELECT * FROM desktop_command_delivery WHERE id=?")
+          .get(input.commandId);
+        const receipt = await this.db
+          .prepare("SELECT signature, receipt FROM receipts WHERE id=?")
+          .get(input.commandId);
+        await revalidate();
+        if (existing) {
+          if (
+            !receipt ||
+            existing.session_id !== input.sessionId ||
+            existing.signature !== input.signature ||
+            existing.principal_id !== input.principalId ||
+            existing.owner_id !== input.ownerId ||
+            existing.delivery !== input.delivery ||
+            receipt.signature !== input.signature
+          )
+            throw new Error("Command ID already belongs to a different desktop control.");
+          return JSON.parse(String(receipt.receipt)) as CommandReceipt;
+        }
+        if (receipt) throw new Error("Command ID already belongs to another command.");
+        const count = await this.db
+          .prepare("SELECT COUNT(*) AS count FROM desktop_command_delivery")
+          .get();
+        if (Number(count?.count) >= MAX_DESKTOP_COMMAND_RECEIPTS)
+          throw new Error("Desktop command receipt storage is full.");
+        await this.db
+          .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
+          .run(input.commandId, input.signature, JSON.stringify(input.receipt), Date.now());
+        await this.db
+          .prepare(
+            "INSERT INTO desktop_command_delivery (id, session_id, signature, principal_id, owner_id, delivery, host_instance, state) VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted')",
+          )
+          .run(
+            input.commandId,
+            input.sessionId,
+            input.signature,
+            input.principalId,
+            input.ownerId,
+            input.delivery,
+            this.desktopCommandInstance,
+          );
+        return input.receipt;
+      }, "critical"),
+    );
+  }
+
+  async desktopCommandStatus(
+    commandId: string,
+    principalId: string | undefined,
+    signature?: string,
+  ): Promise<CommandReceipt | undefined> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare(
+          "SELECT d.principal_id, d.signature, r.receipt FROM desktop_command_delivery d LEFT JOIN receipts r ON r.id=d.id WHERE d.id=?",
+        )
+        .get(commandId);
+      if (!row) return undefined;
+      if (!principalId) throw new Error("Authenticated desktop command principal is required.");
+      if (row.principal_id !== principalId)
+        throw new Error("Desktop command belongs to another principal.");
+      if (signature !== undefined && row.signature !== signature)
+        throw new Error("Command ID already belongs to a different desktop control.");
+      if (typeof row.receipt !== "string")
+        throw new Error("Desktop command receipt is unavailable.");
+      return JSON.parse(row.receipt) as CommandReceipt;
+    });
+  }
+
+  /** The offer marker commits before its payload leaves this method. */
+  async offerDesktopCommand(
+    commandId: string,
+    ownerId: string,
+    revalidate: () => Promise<void>,
+  ): Promise<string | undefined> {
+    if (!ownerId) throw new Error("Original desktop owner is required.");
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        const row = await this.db
+          .prepare(
+            "SELECT owner_id, delivery, state, host_instance FROM desktop_command_delivery WHERE id=?",
+          )
+          .get(commandId);
+        if (!row || row.owner_id !== ownerId)
+          throw new Error("Original desktop command owner is unavailable.");
+        if (row.state !== "accepted") return undefined;
+        if (row.host_instance !== this.desktopCommandInstance) return undefined;
+        await revalidate();
+        await this.db
+          .prepare(
+            "UPDATE desktop_command_delivery SET state='offered_unknown' WHERE id=? AND state='accepted'",
+          )
+          .run(commandId);
+        return String(row.delivery);
+      }, "critical"),
+    );
+  }
+
+  async ackDesktopCommand(
+    commandId: string,
+    ownerId: string,
+    revalidate: () => Promise<void>,
+  ): Promise<void> {
+    if (!ownerId) throw new Error("Original desktop owner is required.");
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        const row = await this.db
+          .prepare("SELECT owner_id, state FROM desktop_command_delivery WHERE id=?")
+          .get(commandId);
+        if (!row || row.owner_id !== ownerId)
+          throw new Error("Original desktop command owner is unavailable.");
+        await revalidate();
+        if (row.state === "offered_unknown")
+          await this.db
+            .prepare(
+              "UPDATE desktop_command_delivery SET state='acknowledged' WHERE id=? AND state='offered_unknown'",
+            )
+            .run(commandId);
       }, "critical"),
     );
   }
@@ -2307,7 +2485,9 @@ export class HostStore {
   async pruneReceipts(now = Date.now()): Promise<void> {
     return this.db.storeScope(async () => {
       await this.db
-        .prepare("DELETE FROM receipts WHERE created_at IS NULL OR created_at < ?")
+        .prepare(
+          "DELETE FROM receipts WHERE (created_at IS NULL OR created_at < ?) AND id NOT IN (SELECT id FROM desktop_command_delivery)",
+        )
         .run(now - RECEIPT_RETENTION_MS);
     });
   }

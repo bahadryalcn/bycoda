@@ -611,6 +611,29 @@ still required; source discovery and TypeScript checks are insufficient.
 
 ## Durability and authority
 
+Desktop-owned Stop, approval and question-answer requests use a durable Host
+receipt plus an immutable delivery row in one FULL transaction. Admission binds
+the original principal, command payload, session, page and turn. An offer is
+marked `offered_unknown` before its payload enters the heartbeat response; a lost
+response is never reoffered. Heartbeat ACK records handling by the original
+client/page, not provider completion. Host restart retains accepted/unknown rows
+for status but cannot automatically offer them from a new process incarnation.
+Generic receipt pruning and generic execution cannot erase or reuse these IDs.
+The finite receipt capacity refuses new admission when full.
+
+The native page token is a routing guard, not an execution grant. Receivers also
+capture original child/control handles before the heartbeat and recheck them
+after page verification and immediately before the existing control dispatch.
+Changing the session route cannot redirect an old command to its replacement.
+Missing original ownership proof holds the action; it cannot authorize a fresh
+target or replay. Matching Host and desktop protocol support is required.
+
+Orchestrated stops capture the run incarnation, active dispatch IDs and original
+lead/worker stop handles before awaiting persistence. Revalidation after each
+asynchronous boundary prevents a replacement run from receiving the old stop.
+Native control grant capture and disable compare the original grant generation
+and exact window issuer atomically; completion cannot revoke a newer grant.
+
 Critical Host transactions select SQLite FULL durability before BEGIN; routine
 stream checkpoints use their own policy. A persistence fault blocks new durable
 admission until explicit validated recovery. Provider effects recheck admission.

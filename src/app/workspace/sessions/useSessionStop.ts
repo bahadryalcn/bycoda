@@ -1,4 +1,5 @@
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import type { DesktopControlGuard } from "../../../features/connections/model/desktopLive";
 import {
   useCallback,
   useEffect,
@@ -58,8 +59,16 @@ export function useSessionStop(deps: SessionStopDeps) {
   } = deps;
 
   const onStop = useCallback(
-    (sessionId: string, managed = false) => {
+    (sessionId: string, managed = false, current?: DesktopControlGuard) => {
+      if (current && !current()) return;
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
+      if (current && remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) return;
+      // A remote desktop command has no original orchestration receipt. Hold it
+      // rather than retargeting an orchestrator that appeared after the heartbeat.
+      if (current && !managed && orchestrator.forSession(sessionId)) {
+        if (current.stopOrchestration) void current.stopOrchestration().catch(console.error);
+        return;
+      }
       if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
         remoteSessionActions(sessionId)?.stop();
         return;
@@ -125,6 +134,7 @@ export function useSessionStop(deps: SessionStopDeps) {
       // queue when it settles; the paused display alone would not stop a late success.
       noteSharedLocalStop(sessionId);
       flushHarnessEvents();
+      if (current && !current()) return;
       const generation = turnGen.current.get(sessionId) ?? 0;
       const failureBlockId = `stop-error:${sessionId}`;
       // A send still starting has no turn yet; the last answered message is not

@@ -43,16 +43,30 @@ export type DesktopCommand = {
   authorityGeneration?: number;
   decision?: "allow" | "deny";
   reply?: unknown;
+  pageToken?: string;
+  turnReceipt?: { version: 1; sessionId: string; turnId: string };
 };
 
 type LiveSession = {
   clientId: string;
+  pageToken?: string;
+  turnReceipt?: { version: 1; sessionId: string; turnId: string };
   busy: boolean;
   pending: Block[];
   patch: Partial<Session>;
   /** When running state or prompts last changed: part of the watchers' revision. */
   changedAt: number;
   fingerprint: string;
+};
+
+export type PreparedDesktop = {
+  commandId: string;
+  clientId: string;
+  ownerId: string;
+  sessionId: string;
+  delivery: string;
+  revalidate: () => Promise<void>;
+  current: () => boolean;
 };
 
 function directoryPathKey(path: string): string {
@@ -152,6 +166,8 @@ export class DesktopLive {
   private clients = new Map<string, number>();
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
+  private readonly durablePending = new Map<string, PreparedDesktop>();
+  private readonly durableOffered = new Map<string, PreparedDesktop>();
   // Bounded acceptance fingerprints, not provider-completion or durable receipts.
   private commandReceipts = new Map<string, { signature: string; acceptedAt: number }>();
   private writerClients = new Map<string, { sessions: Set<string>; at: number }>();
@@ -215,6 +231,10 @@ export class DesktopLive {
     if (!Array.isArray(value.sessions)) throw new Error("Invalid desktop sessions");
     const clientId =
       typeof value.clientId === "string" && value.clientId ? value.clientId : "legacy";
+    const pageToken =
+      typeof value.pageToken === "string" && /^[0-9a-f-]{36}$/i.test(value.pageToken)
+        ? value.pageToken
+        : undefined;
     const revision =
       typeof value.projectDirectoryRevision === "string" &&
       value.projectDirectoryRevision.length > 0 &&
@@ -259,6 +279,16 @@ export class DesktopLive {
       if (!raw || typeof raw !== "object") continue;
       const entry = raw as Record<string, unknown>;
       if (typeof entry.id !== "string" || !entry.id) continue;
+      const turn = entry.turnReceipt as
+        | { version?: unknown; sessionId?: unknown; turnId?: unknown }
+        | undefined;
+      const turnReceipt =
+        turn?.version === 1 &&
+        turn.sessionId === entry.id &&
+        typeof turn.turnId === "string" &&
+        /^[0-9a-f-]{36}$/i.test(turn.turnId)
+          ? { version: 1 as const, sessionId: entry.id, turnId: turn.turnId }
+          : undefined;
       const owner = this.sessions.get(entry.id);
       // Another live window owns this turn. An idle copy of its tab cannot
       // take over command delivery; a crashed owner can be replaced.
@@ -285,6 +315,8 @@ export class DesktopLive {
       else if (previous?.busy && previous.clientId === clientId) this.onIdle?.(entry.id, clientId);
       next.set(entry.id, {
         clientId,
+        pageToken,
+        turnReceipt,
         busy: entry.busy === true,
         pending,
         patch,
@@ -544,6 +576,124 @@ export class DesktopLive {
   }
 
   /** Leaves a watcher's stop, approval or answer for the desktop to run. */
+  async prepareDesktop(
+    command: Extract<HostCommand, { type: "cancel" | "approve" | "answer" }>,
+  ): Promise<PreparedDesktop> {
+    command = JSON.parse(JSON.stringify(command)) as typeof command;
+    if (!WIRE_IDENTIFIER_PATTERN.test(command.commandId)) throw new Error("Invalid command ID");
+    const source = this.sessions.get(command.sessionId);
+    if (!source || !this.clientAlive(source.clientId) || !source.pageToken || !source.turnReceipt)
+      throw new Error(
+        "Desktop control ownership is unavailable. Wait for the original turn or use its owning window.",
+      );
+    const turn = { ...source.turnReceipt };
+    const pageToken = source.pageToken;
+    const fingerprint = source.fingerprint;
+    const clientId = source.clientId;
+    const validate = () => {
+      const current = this.sessions.get(command.sessionId);
+      if (
+        !current ||
+        !this.clientAlive(clientId) ||
+        current.clientId !== clientId ||
+        current.pageToken !== pageToken ||
+        current.turnReceipt?.turnId !== turn.turnId ||
+        current.turnReceipt?.sessionId !== turn.sessionId ||
+        (command.type !== "cancel" && current.fingerprint !== fingerprint)
+      )
+        throw new Error("The original desktop turn changed. Refresh before retrying.");
+      if (command.type === "cancel" && !current.busy)
+        throw new Error("The desktop turn is no longer running.");
+      if (command.type === "approve") {
+        if (!isApprovalOccurrenceId(command.approvalOccurrenceId) || command.runId !== "desktop")
+          throw new Error("Approval request identity is missing or invalid.");
+        const pending = current.pending.filter(
+          (block) => block.approval?.requestId === command.requestId && !block.approval.decided,
+        );
+        if (
+          pending.length !== 1 ||
+          pending[0].approval?.occurrenceId !== command.approvalOccurrenceId
+        )
+          throw new Error(
+            "This approval request changed or is already resolved. Refresh it before responding.",
+          );
+      }
+      if (
+        command.type === "answer" &&
+        String(current.patch.pendingQuestion?.requestId) !== String(command.requestId)
+      )
+        throw new Error("Question is already resolved.");
+    };
+    validate();
+    const delivery: DesktopCommand = {
+      id: command.commandId,
+      sessionId: command.sessionId,
+      type: command.type,
+      runId: command.runId,
+      ...(command.authorityGeneration === undefined
+        ? {}
+        : { authorityGeneration: command.authorityGeneration }),
+      ...(command.type === "approve"
+        ? {
+            requestId: command.requestId,
+            approvalOccurrenceId: command.approvalOccurrenceId,
+            decision: command.decision,
+          }
+        : {}),
+      ...(command.type === "answer" ? { requestId: command.requestId, reply: command.reply } : {}),
+      pageToken,
+      turnReceipt: turn,
+    };
+    return Object.freeze({
+      commandId: command.commandId,
+      sessionId: command.sessionId,
+      clientId,
+      ownerId: pageToken,
+      delivery: JSON.stringify(delivery),
+      revalidate: async () => validate(),
+      current: () => {
+        try {
+          validate();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+  }
+
+  trackDesktop(prepared: PreparedDesktop): void {
+    if (!this.durablePending.has(prepared.commandId))
+      this.durablePending.set(prepared.commandId, prepared);
+  }
+  pendingDesktop(clientId: string): PreparedDesktop[] {
+    const pending: PreparedDesktop[] = [];
+    for (const [id, entry] of this.durablePending) {
+      if (!entry.current()) {
+        this.durablePending.delete(id);
+        continue;
+      }
+      if (entry.clientId === clientId && pending.length < 16) pending.push(entry);
+    }
+    return pending;
+  }
+  finishDesktopOffer(commandId: string, offered: boolean): void {
+    const entry = this.durablePending.get(commandId);
+    if (entry && offered) this.durableOffered.set(commandId, entry);
+    this.durablePending.delete(commandId);
+  }
+  desktopAcknowledgement(
+    clientId: string,
+    pageToken: string | undefined,
+    commandId: string,
+  ): PreparedDesktop | undefined {
+    const entry = this.durableOffered.get(commandId);
+    return entry && entry.clientId === clientId && entry.ownerId === pageToken ? entry : undefined;
+  }
+  finishDesktopAcknowledgement(commandId: string): void {
+    this.durableOffered.delete(commandId);
+  }
+
   enqueue(command: Extract<HostCommand, { type: "cancel" | "approve" | "answer" }>): void {
     this.reclaimCommands();
     if (typeof command.commandId !== "string" || !WIRE_IDENTIFIER_PATTERN.test(command.commandId))

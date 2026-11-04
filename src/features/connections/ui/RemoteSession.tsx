@@ -52,6 +52,10 @@ import type {
 import { uploadRemoteAttachments } from "../model/remoteAttachments";
 import { uploadQuestionAttachments } from "../model/remoteQuestionAttachments";
 import {
+  assertDesktopControlReceipts,
+  requiresDesktopControlReceipts,
+} from "../model/desktopControlCapability";
+import {
   ATTACHMENT_OWNERSHIP_CAPABILITY,
   attachmentOwnerId,
   attachmentOwnershipScope,
@@ -1417,6 +1421,16 @@ function ConnectedRemoteSession({
     recoveredReceipt?: CommandReceipt,
     generation?: number,
   ): Promise<CommandReceipt | undefined> => {
+    if (!recoveredReceipt) {
+      try {
+        assertDesktopControlReceipts(command, descriptor?.capabilities);
+      } catch (reason) {
+        const message = reason instanceof Error ? reason.message : String(reason);
+        lastRunFailure.current = message;
+        setError(message);
+        return undefined;
+      }
+    }
     if (!recoveredReceipt && command.type === "approve") {
       const refusal = approvalOccurrenceError(command.approvalOccurrenceId);
       if (refusal) {
@@ -1434,6 +1448,9 @@ function ConnectedRemoteSession({
     )
       return undefined;
     const version = bindingGen.version;
+    const priorPending =
+      pendingRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id)
+        ?.commandId === command.commandId;
     const owner = Symbol();
     sendingOwner.current = owner;
     sendingRef.current = true;
@@ -1626,7 +1643,14 @@ function ConnectedRemoteSession({
       reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
       const message = String(reason);
       lastRunFailure.current = message;
-      if (message.includes("Host rejected request:")) {
+      const blockedRetry =
+        priorPending &&
+        requiresDesktopControlReceipts(command) &&
+        typeof reason === "object" &&
+        reason !== null &&
+        "code" in reason &&
+        reason.code === "RPC_WS_UNSUPPORTED";
+      if (message.includes("Host rejected request:") && !blockedRetry) {
         if (command.type === "send" || command.type === "compact")
           setUnseenSend((current) =>
             current?.commandId === command.commandId ? undefined : current,
@@ -2975,12 +2999,19 @@ function ConnectedRemoteSession({
     if (!pageCacheOnly && target) {
       // What is queued waits for the user instead of sending as the turn ends.
       // Stop must reach the host even while a follow-up is being acknowledged.
+      const command = {
+        type: "cancel",
+        commandId: crypto.randomUUID(),
+        ...target,
+      } as const;
+      try {
+        assertDesktopControlReceipts(command, descriptor?.capabilities);
+      } catch (reason) {
+        setError(t("Could not stop the turn: {p0}", { p0: String(reason) }));
+        return;
+      }
       void executionClient
-        .dispatchCommand({
-          type: "cancel",
-          commandId: crypto.randomUUID(),
-          ...target,
-        })
+        .dispatchCommand(command)
         .catch((reason) => setError(t("Could not stop the turn: {p0}", { p0: String(reason) })));
     }
   };
@@ -3063,6 +3094,12 @@ function ConnectedRemoteSession({
     }
     if (sendingRef.current || pageCacheOnly || remoteDeleted || !online) {
       updateDelivery("failed", t("The host did not confirm the request."));
+      return;
+    }
+    try {
+      assertDesktopControlReceipts({ type: "answer", runId, commandId }, descriptor?.capabilities);
+    } catch (reason) {
+      updateDelivery("failed", reason instanceof Error ? reason.message : String(reason));
       return;
     }
     updateDelivery("sending");

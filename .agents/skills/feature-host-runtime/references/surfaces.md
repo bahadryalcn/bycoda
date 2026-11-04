@@ -8,12 +8,15 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
 - `src/shared/lib/host-runtime/environmentRuntime.ts` and its tests: bounded control FIFO, original monotonic deadlines, never-sent cancellation and physical slot retention. `src-tauri/src/host_ws/{connection,demand}.rs`, `mod.rs` and tests own reconnect queue and native cursor proof.
 
 - `host/server.ts`, `host/engine.ts`: authenticated dispatch, session operations and provider lifecycle. Search the exact method in current neutral contracts, RPC registry/dispatcher and domain service; avoid adding a second service for WebSocket callers.
+- Title regeneration uses `commands.dispatch` with `type: "regenerateTitle"` in `session-commands.ts`, `host/domains/commands/service.ts` and `host/engine.ts`. Generation waits outside SQL transactions; a completed receipt is recorded with the guarded title write. `src/features/sessions/model/regenerateSessionTitle.ts` retains exact Host/environment/session ownership and reconciles the same command ID before retry. Shared title inputs forward the selected utility model/settings without changing the conversation's model or transcript.
 - `src/features/connections/model/`: shared client policy, protocol/capability handling and Host/native adapters. `mobile/` has its own active and compatibility transports; inspect its nested repository rules and actual producer.
 - `src/integrations/harness/core/`: registry, child backend, JSON-RPC/ACP/Pi operation views, source context and output reduction. `src/integrations/harness/providers/` retains adapter-specific protocol and cleanup ownership.
 - `host/provider-guardian.ts`, `packages/provider-process-guardian/`: private guardian control and process cohort proof. Native counterparts remain under `src-tauri/src/`; do not infer full OS descendant closure from a process handle subset.
 - `host/conversation-tools.ts` and domain tool modules: scoped tool schemas and conversation principal; do not import a renderer-supplied principal or bypass the existing approval gate.
 
 ## Persistence, source admission and recovery
+
+- `host/store.ts`, `host/domains/commands/service.ts`, `host/desktopLive.ts`, `host/desktop-command-delivery.ts` and adjacent tests own durable desktop command admission, original-principal status, one-time offer and page-scoped ACK. `src/features/connections/model/{desktopLive,useDesktopLive}.ts` and `src-tauri/src/desktop_control_page.rs` own original turn/page routing and receiver checks.
 
 - `host/store-db.ts` and workers, `host/storage/persistence-health.ts`, `host/storage/authority-journal.ts`, `host/storage/snapshots.ts`: durable transactions, staged immutable snapshots, permanent generation decisions and recovery. Host-only snapshots are not proof of coherent Native+Host restore.
 - `src-tauri/src/session_store.rs` and submodules: physical Store/window ownership, SQLite writers, source fences and restore. `src-tauri/src/native_provider_output.rs` retains native output lineage.

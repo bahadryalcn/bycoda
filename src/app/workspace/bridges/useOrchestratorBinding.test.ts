@@ -95,6 +95,24 @@ async function mounted(session: ReturnType<typeof newSession>) {
 }
 const occurrenceA = "7e1c4dc0-6f53-4aa8-b8d8-000000000001";
 const occurrenceB = "7e1c4dc0-6f53-4aa8-b8d8-000000000002";
+it("retains the captured orchestration worker and refuses a replacement process", async () => {
+  const session = { ...newSession("claude", "/fixture"), id: "original-worker", busy: true };
+  const first = await controlledProcess(session.id);
+  const replacement = await controlledProcess(session.id);
+  ports.captureProcess.mockReturnValue(first.handle);
+  const fixture = await mounted(session);
+  try {
+    const original = fixture.host.captureStop!(session.id)!;
+    expect(original.current()).toBe(true);
+    ports.captureProcess.mockReturnValue(replacement.handle);
+    expect(original.current()).toBe(false);
+    await expect(original.stop()).rejects.toThrow(/changed/);
+    expect(ports.stop).not.toHaveBeenCalled();
+    expect(ports.killProcess).not.toHaveBeenCalled();
+  } finally {
+    await fixture.close();
+  }
+});
 function approvalWorker(id: string) {
   return {
     ...newSession("claude", "/fixture"),

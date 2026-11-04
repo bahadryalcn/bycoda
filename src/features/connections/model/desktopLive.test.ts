@@ -91,6 +91,33 @@ const question = {
   questions: [],
 } as unknown as Session["pendingQuestion"];
 
+it("holds a returned desktop stop when original turn changes during page verification", async () => {
+  let current = true;
+  const receipt = { version: 1 as const, sessionId: "s", turnId: "turn-a" };
+  const stop = vi.fn();
+  const unacked = new Set<string>();
+  await runDesktopLiveTick({
+    sessions: () => [session({ id: "s", busy: true })],
+    handlers: { stop, approve: vi.fn(), answer: vi.fn() },
+    handled: new Set(),
+    unacked,
+    controlGuard: {
+      pageToken: async () => "page",
+      capture: () => ({ receipt, question: undefined, current: () => current }),
+      verify: async () => {
+        current = false;
+      },
+    },
+    request: async () => ({
+      commands: [
+        { id: "old", sessionId: "s", type: "cancel", pageToken: "page", turnReceipt: receipt },
+      ],
+    }),
+  });
+  expect(stop).not.toHaveBeenCalled();
+  expect(unacked.size).toBe(0);
+});
+
 describe("buildDesktopLiveSessions", () => {
   it("selects busy sessions and ones needing input, skipping idle", () => {
     const out = buildDesktopLiveSessions([

@@ -39,6 +39,8 @@ impl Fixture {
                 session: "lead".into(),
                 cwd: comparison_path(&self.root),
                 token: "fixture-only-control-token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         inner.prepare_app_grant("worker", OWNER, &comparison_path(&self.root));

@@ -56,6 +56,8 @@ struct Grant {
     session: String,
     cwd: String,
     token: String,
+    generation: String,
+    issuer: Option<Arc<WindowIssuer>>,
 }
 struct Pending {
     window: String,
@@ -323,6 +325,8 @@ impl Inner {
                 session: session.to_string(),
                 cwd: cwd.to_string(),
                 token,
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         true
@@ -1106,6 +1110,8 @@ pub fn control_enable(
     session_id: String,
     cwd: String,
 ) -> Result<String, String> {
+    let issuer = receipts::capture(&window)?;
+    issuer.with_live(|| {
     let cwd = std::fs::canonicalize(crate::fs::expand_home(&cwd)).map_err(|e| e.to_string())?;
     if !cwd.is_dir() {
         return Err("Choose a project folder first".into());
@@ -1143,10 +1149,91 @@ pub fn control_enable(
                 uuid::Uuid::new_v4().simple(),
                 uuid::Uuid::new_v4().simple()
             ),
+            generation: uuid::Uuid::new_v4().to_string(),
+            issuer: Some(issuer.clone()),
         },
     );
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     Ok(executable.to_string_lossy().into_owned())
+    })
+}
+
+#[tauri::command]
+pub fn control_grant_capture(
+    window: WebviewWindow,
+    host: State<'_, ControlHost>,
+    session_id: String,
+) -> Result<String, String> {
+    let issuer = receipts::capture(&window)?;
+    issuer.with_live(|| {
+        let inner = host
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
+        let grant = inner
+            .grants
+            .get(&session_id)
+            .ok_or("Original orchestration grant unavailable")?;
+        if grant.window != window.label()
+            || !grant
+                .issuer
+                .as_ref()
+                .is_some_and(|original| Arc::ptr_eq(original, &issuer))
+        {
+            return Err("Original orchestration grant unavailable".into());
+        }
+        Ok(grant.generation.clone())
+    })
+}
+
+#[tauri::command]
+pub fn control_disable_captured(
+    window: WebviewWindow,
+    host: State<'_, ControlHost>,
+    session_id: String,
+    generation: String,
+) -> Result<(), String> {
+    let issuer = receipts::capture(&window)?;
+    issuer.with_live(|| {
+        let mut inner = host
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
+        disable_original_grant(
+            &mut inner,
+            window.label(),
+            &issuer,
+            &session_id,
+            &generation,
+        )
+    })
+}
+
+fn disable_original_grant(
+    inner: &mut Inner,
+    label: &str,
+    issuer: &Arc<WindowIssuer>,
+    session_id: &str,
+    generation: &str,
+) -> Result<(), String> {
+    let grant = inner
+        .grants
+        .get(session_id)
+        .ok_or("Original orchestration grant unavailable")?;
+    if grant.window != label
+        || grant.generation != generation
+        || !grant
+            .issuer
+            .as_ref()
+            .is_some_and(|original| Arc::ptr_eq(original, issuer))
+    {
+        return Err("Original orchestration grant changed".into());
+    }
+    inner.grants.remove(session_id);
+    inner.workers.retain(|_, parent| parent != session_id);
+    let workers = inner.workers.clone();
+    inner.scratch.retain(|id, _| workers.contains_key(id));
+    Ok(())
 }
 
 #[tauri::command]
@@ -1698,6 +1785,38 @@ mod admission_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn captured_grant_cannot_disable_replacement_or_other_page() {
+        use super::*;
+        let mut inner = Inner::default();
+        let original = Arc::new(WindowIssuer::default());
+        let replacement_page = Arc::new(WindowIssuer::default());
+        inner.grants.insert(
+            "lead".into(),
+            Grant {
+                window: "main".into(),
+                session: "lead".into(),
+                cwd: "/repo".into(),
+                token: "secret".into(),
+                generation: "generation-b".into(),
+                issuer: Some(original.clone()),
+            },
+        );
+        assert!(
+            disable_original_grant(&mut inner, "main", &original, "lead", "generation-a").is_err()
+        );
+        assert!(disable_original_grant(
+            &mut inner,
+            "main",
+            &replacement_page,
+            "lead",
+            "generation-b"
+        )
+        .is_err());
+        assert!(inner.grants.contains_key("lead"));
+        disable_original_grant(&mut inner, "main", &original, "lead", "generation-b").unwrap();
+        assert!(!inner.grants.contains_key("lead"));
+    }
     fn effect_fixture() -> std::sync::Mutex<super::Inner> {
         let mut inner = super::Inner::default();
         let (reply, _) = std::sync::mpsc::channel();
@@ -2120,6 +2239,8 @@ mod tests {
                 session: "session".into(),
                 cwd: "/repo".into(),
                 token: "token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         inner.active.insert(
@@ -2161,6 +2282,8 @@ mod tests {
                 session: "session".into(),
                 cwd: "/repo".into(),
                 token: "token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         inner.active.insert(
@@ -2225,6 +2348,8 @@ mod tests {
                 session: "ordinary".into(),
                 cwd: "/repo".into(),
                 token: "app-token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         assert!(matches!(
@@ -2290,6 +2415,8 @@ mod tests {
                 session: "ordinary".into(),
                 cwd: "/repo".into(),
                 token: "control-token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         assert!(!inner.prepare_app_grant("ordinary", "main", "/repo"));
@@ -2392,6 +2519,8 @@ mod tests {
                     session: id.into(),
                     cwd: format!("/{id}"),
                     token: id.into(),
+                    generation: uuid::Uuid::new_v4().to_string(),
+                    issuer: None,
                 },
             );
         }
