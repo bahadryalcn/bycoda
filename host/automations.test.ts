@@ -554,7 +554,11 @@ it("selects only owned recovery candidates without reading full run history", as
     { id: "settled", status: "succeeded" },
     { id: "running", status: "running" },
     { id: "cleanup", status: "failed", cleanupPending: true },
+    { id: "numeric-cleanup", status: "failed", cleanupPending: 1 },
+    { id: "text-cleanup", status: "failed", cleanupPending: "yes" },
     { id: "managed", status: "pending", workspaceId: "workspace-nonnumeric" },
+    { id: "zero-workspace", status: "pending", workspaceId: 0 },
+    { id: "array-workspace", status: "pending", workspaceId: [] },
     { id: "unowned", status: "pending" },
     { id: "clean-failure", status: "failed" },
   ];
@@ -564,10 +568,21 @@ it("selects only owned recovery candidates without reading full run history", as
   }
   const history = vi.spyOn(f.automations, "runs").mockRejectedValue(new Error("Full history must not be read"));
   const queries = f.automations as unknown as { activeRuns(): Promise<Array<{ id: string }>> };
-  expect((await queries.activeRuns()).map((run) => run.id).sort()).toEqual(["cleanup", "managed", "running"]);
+  expect((await queries.activeRuns()).map((run) => run.id).sort()).toEqual(["array-workspace", "cleanup", "managed", "running"]);
   expect(history).not.toHaveBeenCalled();
   history.mockRestore();
   expect(await f.automations.runs("nightly")).toHaveLength(seeds.length);
+});
+
+it("keeps legacy nonempty cleanup metadata as a deletion hold instead of SQLite numeric false", async () => {
+  const f = await setup();
+  await f.automations.save(f.input({ enabled: false }));
+  await f.store.db.prepare("INSERT INTO automation_runs VALUES (?,?,?,?)").run(
+    "cleanup-text", "nightly", f.clock.now,
+    JSON.stringify({ id: "cleanup-text", automationId: "nightly", status: "failed", cleanupPending: "unknown" }),
+  );
+  await expect(f.automations.delete("nightly")).rejects.toThrow(/cleanup/i);
+  expect(await f.automations.runs("nightly")).toHaveLength(1);
 });
 
 it("counts local-day starts without materializing history or counting skipped/self runs", async () => {
