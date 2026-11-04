@@ -2765,8 +2765,11 @@ fn unmerged_kind(x: char, y: char) -> &'static str {
 /// `dir/`). It only changes when a repository is created or removed above
 /// `root`, so it is asked for once; `None` (not cached) outside a repository.
 fn git_prefix_for(root: &Path) -> Option<String> {
-    if let Ok(guard) = GIT_PREFIX_CACHE.lock() {
-        if let Some(prefix) = guard.as_ref().and_then(|cache| cache.get(root)) {
+    if let Ok(mut guard) = GIT_PREFIX_CACHE.lock() {
+        if let Some(prefix) = guard
+            .as_mut()
+            .and_then(|cache| cache.get(root, Instant::now()))
+        {
             return Some(prefix.clone());
         }
     }
@@ -2775,9 +2778,12 @@ fn git_prefix_for(root: &Path) -> Option<String> {
         .trim_end_matches(['\r', '\n'])
         .to_string();
     if let Ok(mut guard) = GIT_PREFIX_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), prefix.clone());
+        guard.get_or_insert_with(GitStatusCache::new).insert(
+            root.to_path_buf(),
+            prefix.clone(),
+            prefix.capacity(),
+            Instant::now(),
+        );
     }
     Some(prefix)
 }
@@ -2790,7 +2796,172 @@ fn forget_git_prefix(root: &Path) {
     }
 }
 
-static GIT_PREFIX_CACHE: Mutex<Option<HashMap<PathBuf, String>>> = Mutex::new(None);
+// Bound both repository count and retained payload, including repositories with
+// unusually large status listings. Eviction only causes a fresh Git query.
+const GIT_STATUS_CACHE_CAPACITY: usize = 64;
+const GIT_STATUS_CACHE_BYTES: usize = 8 * 1024 * 1024;
+const GIT_STATUS_CACHE_TTL: Duration = Duration::from_secs(300);
+const GIT_STATUS_CACHE_MAX_AGE: Duration = Duration::from_secs(1800);
+
+struct GitStatusEntry<T> {
+    value: T,
+    accessed: Instant,
+    created: Instant,
+    weight: usize,
+}
+
+struct GitStatusCache<T> {
+    entries: HashMap<PathBuf, GitStatusEntry<T>>,
+    bytes: usize,
+}
+
+impl<T> GitStatusCache<T> {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            bytes: 0,
+        }
+    }
+
+    fn remove(&mut self, root: &Path) -> Option<T> {
+        let entry = self.entries.remove(root)?;
+        self.bytes -= entry.weight;
+        Some(entry.value)
+    }
+
+    fn expire(&mut self, now: Instant) {
+        self.entries.retain(|_, entry| {
+            let keep = now.saturating_duration_since(entry.accessed) < GIT_STATUS_CACHE_TTL
+                && now.saturating_duration_since(entry.created) < GIT_STATUS_CACHE_MAX_AGE;
+            if !keep {
+                self.bytes -= entry.weight;
+            }
+            keep
+        });
+    }
+
+    fn get(&mut self, root: &Path, now: Instant) -> Option<&T> {
+        self.expire(now);
+        let entry = self.entries.get_mut(root)?;
+        entry.accessed = now;
+        Some(&entry.value)
+    }
+
+    fn insert(&mut self, root: PathBuf, value: T, payload: usize, now: Instant) {
+        self.expire(now);
+        self.remove(&root);
+        let weight = payload
+            .saturating_add(root.capacity().saturating_mul(2))
+            .saturating_add(128);
+        if weight > GIT_STATUS_CACHE_BYTES {
+            return;
+        }
+        while self.entries.len() >= GIT_STATUS_CACHE_CAPACITY
+            || self.bytes.saturating_add(weight) > GIT_STATUS_CACHE_BYTES
+        {
+            let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.accessed)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            self.remove(&oldest);
+        }
+        self.bytes += weight;
+        self.entries.insert(
+            root,
+            GitStatusEntry {
+                value,
+                accessed: now,
+                created: now,
+                weight,
+            },
+        );
+    }
+}
+
+static GIT_PREFIX_CACHE: Mutex<Option<GitStatusCache<String>>> = Mutex::new(None);
+
+#[cfg(test)]
+mod git_status_cache_tests {
+    use super::*;
+
+    #[test]
+    fn expires_idle_entries_and_refreshes_on_access() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        let key = PathBuf::from("repo");
+        cache.insert(key.clone(), "prefix", 6, now);
+        assert_eq!(
+            cache.get(&key, now + Duration::from_secs(299)),
+            Some(&"prefix")
+        );
+        assert_eq!(
+            cache.get(&key, now + Duration::from_secs(598)),
+            Some(&"prefix")
+        );
+        assert_eq!(cache.get(&key, now + Duration::from_secs(898)), None);
+        assert_eq!(cache.bytes, 0);
+    }
+
+    #[test]
+    fn active_entries_still_expire_at_maximum_age() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        let key = PathBuf::from("repo");
+        cache.insert(key.clone(), 7, 1, now);
+        for second in [299, 598, 897, 1196, 1495, 1794] {
+            assert_eq!(cache.get(&key, now + Duration::from_secs(second)), Some(&7));
+        }
+        assert_eq!(cache.get(&key, now + GIT_STATUS_CACHE_MAX_AGE), None);
+    }
+
+    #[test]
+    fn evicts_least_recent_and_rejects_oversized_payloads() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        for i in 0..GIT_STATUS_CACHE_CAPACITY {
+            cache.insert(
+                PathBuf::from(i.to_string()),
+                i,
+                1,
+                now + Duration::from_millis(i as u64),
+            );
+        }
+        let recent = PathBuf::from("0");
+        cache.get(&recent, now + Duration::from_secs(1));
+        cache.insert(PathBuf::from("extra"), 99, 1, now + Duration::from_secs(2));
+        assert!(cache.entries.contains_key(&recent));
+        assert!(!cache.entries.contains_key(Path::new("1")));
+        assert_eq!(cache.entries.len(), GIT_STATUS_CACHE_CAPACITY);
+        cache.insert(
+            recent.clone(),
+            5,
+            GIT_STATUS_CACHE_BYTES,
+            now + Duration::from_secs(3),
+        );
+        assert!(!cache.entries.contains_key(&recent));
+        assert!(cache.bytes <= GIT_STATUS_CACHE_BYTES);
+    }
+
+    #[test]
+    fn enforces_aggregate_weight_and_removal_accounting() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        cache.insert(PathBuf::from("first"), 1, GIT_STATUS_CACHE_BYTES / 2, now);
+        cache.insert(
+            PathBuf::from("second"),
+            2,
+            GIT_STATUS_CACHE_BYTES / 2,
+            now + Duration::from_secs(1),
+        );
+        assert!(!cache.entries.contains_key(Path::new("first")));
+        assert_eq!(cache.remove(Path::new("second")), Some(2));
+        assert_eq!(cache.bytes, 0);
+    }
+}
 
 struct GitChanges {
     status: StatusSnapshot,
@@ -2836,24 +3007,47 @@ fn numstat_stamp(root: &Path, prefix: &str, text: &str, status: &StatusSnapshot)
 
 type NumstatCached = (NumstatStamp, HashMap<String, FileAcc>);
 
-static GIT_NUMSTAT_CACHE: Mutex<Option<HashMap<PathBuf, NumstatCached>>> = Mutex::new(None);
+static GIT_NUMSTAT_CACHE: Mutex<Option<GitStatusCache<NumstatCached>>> = Mutex::new(None);
 
 /// Line counts for the listing `stamp` describes. The poll asks every couple
 /// of seconds and almost always finds the same listing and the same files, so
 /// the counts are kept and `git diff` only runs when something moved.
 fn git_numstat_cached(root: &Path, stamp: NumstatStamp) -> HashMap<String, FileAcc> {
-    if let Ok(guard) = GIT_NUMSTAT_CACHE.lock() {
-        if let Some((cached, counts)) = guard.as_ref().and_then(|cache| cache.get(root)) {
+    if let Ok(mut guard) = GIT_NUMSTAT_CACHE.lock() {
+        if let Some((cached, counts)) = guard
+            .as_mut()
+            .and_then(|cache| cache.get(root, Instant::now()))
+        {
             if *cached == stamp {
                 return counts.clone();
             }
         }
     }
     let counts = git_numstat_for(root);
+    // Include allocated capacities and conservative per-bucket overhead; this
+    // is a retention budget, not a process allocator measurement.
+    let weight = stamp
+        .status
+        .capacity()
+        .saturating_add(
+            stamp
+                .files
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Option<(u64, Option<SystemTime>)>>()),
+        )
+        .saturating_add(counts.capacity().saturating_mul(128))
+        .saturating_add(
+            counts
+                .keys()
+                .fold(0usize, |total, key| total.saturating_add(key.capacity())),
+        );
     if let Ok(mut guard) = GIT_NUMSTAT_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), (stamp, counts.clone()));
+        guard.get_or_insert_with(GitStatusCache::new).insert(
+            root.to_path_buf(),
+            (stamp, counts.clone()),
+            weight,
+            Instant::now(),
+        );
     }
     counts
 }
@@ -3076,14 +3270,18 @@ const MAX_UNTRACKED_BYTES: u64 = 1024 * 1024;
 /// Line count of an untracked file with the size and time it was counted at.
 type UntrackedLines = HashMap<PathBuf, (u64, Option<SystemTime>, i64)>;
 
-static GIT_UNTRACKED_LINES_CACHE: Mutex<Option<HashMap<PathBuf, UntrackedLines>>> =
-    Mutex::new(None);
+static GIT_UNTRACKED_LINES_CACHE: Mutex<Option<GitStatusCache<UntrackedLines>>> = Mutex::new(None);
 
 fn take_untracked_lines(root: &Path) -> UntrackedLines {
     GIT_UNTRACKED_LINES_CACHE
         .lock()
         .ok()
-        .and_then(|mut guard| guard.as_mut().and_then(|cache| cache.remove(root)))
+        .and_then(|mut guard| {
+            guard.as_mut().and_then(|cache| {
+                cache.expire(Instant::now());
+                cache.remove(root)
+            })
+        })
         .unwrap_or_default()
 }
 
@@ -3092,10 +3290,18 @@ fn store_untracked_lines(root: &Path, seen: UntrackedLines) {
     if seen.is_empty() {
         return;
     }
+    let weight = seen
+        .keys()
+        .fold(seen.capacity().saturating_mul(128), |total, path| {
+            total.saturating_add(path.capacity().saturating_mul(2))
+        });
     if let Ok(mut guard) = GIT_UNTRACKED_LINES_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), seen);
+        guard.get_or_insert_with(GitStatusCache::new).insert(
+            root.to_path_buf(),
+            seen,
+            weight,
+            Instant::now(),
+        );
     }
 }
 
@@ -13347,6 +13553,70 @@ mod tests {
         assert!(git_commit_message_for(&dir.0, "--help").is_err());
         let blob = git_stdout(&dir.0, &["rev-parse", "HEAD:new.txt"]).unwrap();
         assert!(git_commit_message_for(&dir.0, &blob).is_err());
+    }
+
+    #[test]
+    fn git_status_recomputes_after_cache_eviction() {
+        let repo = tmp("git-status-cache-eviction");
+        assert!(init_git_commit(&repo.0, &[("tracked.txt", "one\n")]));
+        std::fs::write(repo.0.join("tracked.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(repo.0.join("new.txt"), "first\nsecond\n").unwrap();
+        let read = || {
+            let changes = git_changes_for(&repo.0).unwrap();
+            changes
+                .files
+                .into_iter()
+                .map(|file| (file.relative, file.additions, file.deletions))
+                .collect::<Vec<_>>()
+        };
+        let before = read();
+        {
+            let mut cache = GIT_PREFIX_CACHE.lock().unwrap();
+            cache.get_or_insert_with(GitStatusCache::new).insert(
+                repo.0.clone(),
+                "stale/".into(),
+                6,
+                Instant::now() - GIT_STATUS_CACHE_MAX_AGE,
+            );
+        }
+        assert_eq!(git_prefix_for(&repo.0).as_deref(), Some(""));
+        let oversized = NumstatStamp {
+            status: "x".repeat(GIT_STATUS_CACHE_BYTES),
+            index: None,
+            files: Vec::new(),
+        };
+        let counts = git_numstat_cached(&repo.0, oversized);
+        assert_eq!(counts.get("tracked.txt").unwrap().additions, 1);
+        assert!(!GIT_NUMSTAT_CACHE
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .entries
+            .contains_key(&repo.0));
+        let mut oversized_untracked = UntrackedLines::new();
+        oversized_untracked.insert(
+            PathBuf::from("x".repeat(GIT_STATUS_CACHE_BYTES)),
+            (1, None, 1),
+        );
+        store_untracked_lines(&repo.0, oversized_untracked);
+        assert!(take_untracked_lines(&repo.0).is_empty());
+        forget_git_prefix(&repo.0);
+        if let Ok(mut cache) = GIT_NUMSTAT_CACHE.lock() {
+            if let Some(cache) = cache.as_mut() {
+                cache.remove(&repo.0);
+            }
+        }
+        if let Ok(mut cache) = GIT_UNTRACKED_LINES_CACHE.lock() {
+            if let Some(cache) = cache.as_mut() {
+                cache.remove(&repo.0);
+            }
+        }
+        assert_eq!(read(), before);
+        std::fs::write(repo.0.join("new.txt"), "first\nsecond\nthird\n").unwrap();
+        assert!(read()
+            .iter()
+            .any(|(path, additions, _)| path == "new.txt" && *additions == 3));
     }
 
     #[test]
