@@ -12,7 +12,7 @@ import {
 import type { Attachment } from "../model/session";
 
 const picker = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []), isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => undefined }),
 }));

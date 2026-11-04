@@ -793,7 +793,7 @@ describe("AgentTranscript collapsed work", () => {
       },
     ]);
 
-    expect(markup).toContain("3 steps, 1 failed");
+    expect(markup.replace(/<[^>]*>/g, "")).toContain("3 steps, 1 failed");
   });
 
   it("opens a lone subagent straight into its own transcript", () => {

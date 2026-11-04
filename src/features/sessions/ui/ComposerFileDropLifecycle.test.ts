@@ -15,7 +15,7 @@ const { invoke, listen, platform } = vi.hoisted(() => ({
   platform: { isWin: false },
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
     onDragDropEvent: listen,
