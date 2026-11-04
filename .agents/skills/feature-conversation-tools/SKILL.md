@@ -29,6 +29,7 @@ Code paths below are repository-root relative.
 - Do not merge project identity, execution cwd and selected machine. Tool availability is not a control grant.
 - Browser/device control retains explicit lease ownership and capability checks; annotation must use the exact captured frame and target.
 - Retain listeners with unknown project association, bounded logs/samples, process review/confirmation and truthful partial results.
+- Development-server output redacts split credentials before bounded retention and releases discarded fragments. A port-conflict error clears only when the exact owned process identity is observed listening on that port; unrelated errors and unknown shutdown remain held.
 - Keep pending/error/cancellation at the initiating control, target-generation guards and cleanup after navigation/close.
 - Native/mobile counterparts retain their own transport and platform contracts; desktop fixtures cannot establish device acceptance.
 - Tool metadata is not authority. Preserve legacy grant scopes independently from

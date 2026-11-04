@@ -60,7 +60,7 @@ type ManagedServer = {
   child: DevServerChild;
   guardian?: NativeGuardianChild;
   identities: Map<number, DevProcess>;
-  output: string;
+  output: RedactedOutput;
   expectedPort?: number;
   failedPort?: number;
   exitCode?: number | null;
@@ -96,6 +96,50 @@ const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 const MAX_LOG = 256 * 1024;
 const MAX_MANAGED = 100;
 const MAX_LINE = 8192;
+
+class RedactedOutput {
+  private parts: string[] = [];
+  private head = 0;
+  private length = 0;
+  private tail = "";
+
+  append(chunk: string) {
+    let scrubbed = scrubRuntimeLogText(this.tail + chunk, Number.MAX_SAFE_INTEGER);
+    if (scrubbed.length > MAX_LOG) {
+      // Copy the retained suffix so V8 cannot keep a huge discarded parent string alive.
+      scrubbed = Buffer.from(scrubbed.slice(-MAX_LOG), "utf16le").toString("utf16le");
+    }
+    const boundary = Math.max(0, scrubbed.length - MAX_LINE);
+    const prefix = scrubbed.slice(0, boundary);
+    this.tail = scrubbed.slice(boundary);
+    if (prefix) {
+      this.parts.push(prefix);
+      this.length += prefix.length;
+    }
+    let excess = this.length + this.tail.length - MAX_LOG;
+    while (excess > 0 && this.head < this.parts.length) {
+      const part = this.parts[this.head];
+      if (part.length <= excess) {
+        excess -= part.length;
+        this.length -= part.length;
+        this.parts[this.head] = "";
+        this.head++;
+      } else {
+        this.parts[this.head] = part.slice(excess);
+        this.length -= excess;
+        excess = 0;
+      }
+    }
+    if (this.head > 1024 && this.head * 2 > this.parts.length) {
+      this.parts = this.parts.slice(this.head);
+      this.head = 0;
+    }
+  }
+
+  read() {
+    return this.parts.slice(this.head).join("") + this.tail;
+  }
+}
 
 function serverLogLevel(line: string): RuntimeLogLevel {
   if (
@@ -157,6 +201,7 @@ function legacyChunkRedactor() {
         );
       if (value)
         continuation = value[1] !== undefined ? '"' : value[2] !== undefined ? "'" : "bare";
+      else if (/\b(?:sk-|github_pat_|gh[pousr]_)[A-Za-z0-9_-]*$/.test(raw)) continuation = "bare";
     }
     tail = continuation ? "" : raw.slice(-128);
     return safe;
@@ -393,7 +438,7 @@ export class DevServersService {
           );
         case "devServers.logs": {
           const managed = this.managed.get(this.id(params));
-          return { available: !!managed, output: managed?.output ?? "" };
+          return { available: !!managed, output: managed?.output.read() ?? "" };
         }
         default:
           throw new Error(`Unknown dev server method: ${method}`);
@@ -623,6 +668,20 @@ export class DevServersService {
           }
         }
         if (owned.length) {
+          const conflictPort = record.expectedPort ?? record.failedPort;
+          const conflictError = `Port ${conflictPort} is already in use. Refresh to inspect the current process or choose another port.`;
+          if (
+            conflictPort &&
+            record.server.state === "error" &&
+            record.server.error === conflictError &&
+            !record.shutdownUnverified &&
+            !record.exited &&
+            endpoints.some((endpoint) => endpoint.port === conflictPort)
+          ) {
+            record.server.state = "running";
+            record.server.error = undefined;
+            record.failedPort = undefined;
+          }
           if (record.server.state !== "stopping" && record.server.state !== "error") {
             record.server.state = endpoints.length ? "running" : "starting";
           }
@@ -1116,7 +1175,7 @@ export class DevServersService {
       child,
       guardian,
       identities: new Map(),
-      output: "",
+      output: new RedactedOutput(),
       expectedPort: expectedPort as number | undefined,
       server: {
         id: randomUUID(),
@@ -1136,16 +1195,25 @@ export class DevServersService {
     this.options.runtimeLogs?.setSource(this.logSource(record.server));
     const stdout = new StringDecoder("utf8");
     const stderr = new StringDecoder("utf8");
+    let diagnosticTail = "";
+    let conflictPending = false;
     const append = (chunk: string) => {
-      // Redact before trimming: otherwise a giant credential can lose its key
-      // while leaving its secret suffix in the retained rolling output.
-      record.output = scrubRuntimeLogText(record.output + chunk, Number.MAX_SAFE_INTEGER).slice(
-        -MAX_LOG,
-      );
-      if (/EADDRINUSE|address already in use/i.test(record.output)) {
+      record.output.append(chunk);
+      const diagnostic = diagnosticTail + chunk;
+      const boundary = diagnosticTail.length;
+      diagnosticTail = diagnostic.slice(-1024);
+      const matches = [
+        ...diagnostic.matchAll(
+          /EADDRINUSE|address already in use|port .{0,25}(?:already in use|occupied)/gi,
+        ),
+      ];
+      const newConflict = matches.some((match) => match.index + match[0].length > boundary);
+      if (!newConflict && !conflictPending) return;
+      conflictPending = !/[\r\n]/.test(chunk);
+      if (/EADDRINUSE|address already in use/i.test(diagnostic)) {
         const explicit =
-          /\bport\s*[:=]\s*(\d{1,5})\b/i.exec(record.output) ??
-          /(?:EADDRINUSE|address already in use)[^\r\n]*:(\d{1,5})\b/i.exec(record.output);
+          /\bport\s*[:=]\s*(\d{1,5})\b/i.exec(diagnostic) ??
+          /(?:EADDRINUSE|address already in use)[^\r\n]*:(\d{1,5})\b/i.exec(diagnostic);
         const port = explicit && Number(explicit[1]);
         if (port && port <= 65535) record.failedPort = port;
       }
@@ -1154,12 +1222,12 @@ export class DevServersService {
         port &&
         record.server.error !==
           `Port ${port} is already in use. Refresh to inspect the current process or choose another port.` &&
-        /EADDRINUSE|address already in use|port .{0,25}(?:already in use|occupied)/i.test(
-          record.output,
-        )
+        record.server.state !== "stopping" &&
+        record.server.state !== "error"
       ) {
         record.server.state = "error";
         record.server.error = `Port ${port} is already in use. Refresh to inspect the current process or choose another port.`;
+        conflictPending = false;
         this.invalidate();
       }
     };

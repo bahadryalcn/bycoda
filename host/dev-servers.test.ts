@@ -977,6 +977,106 @@ it("uses only an explicit bind-error port to report a conflict without configure
   });
 });
 
+it("clears only the exact port conflict after an owned listener recovers", async () => {
+  const { service, discovery, children } = fixture();
+  const started = (await service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project", port: 3101 },
+    projects,
+  )) as DevServerStartResult;
+  const id = started.server!.id;
+  discovery.ports.delete(root.pid);
+  children[0].stderr!.emit("data", Buffer.from("EADDRINUSE 127.0.0.1:3101\n"));
+  expect((await service.list(projects, true)).servers.find((s) => s.id === id)?.state).toBe(
+    "error",
+  );
+  discovery.ports.set(root.pid, [endpoint(3102)]);
+  expect((await service.list(projects, true)).servers.find((s) => s.id === id)?.state).toBe(
+    "error",
+  );
+  discovery.live.set(root.pid, { ...root, startedAt: "replacement" });
+  discovery.ports.set(root.pid, [endpoint(3101)]);
+  expect((await service.list(projects, true)).servers.find((s) => s.id === id)?.state).toBe(
+    "error",
+  );
+  discovery.live.set(root.pid, { ...root });
+  discovery.ports.set(root.pid, [endpoint(3101)]);
+  expect((await service.list(projects, true)).servers.find((s) => s.id === id)).toMatchObject({
+    state: "running",
+    error: undefined,
+  });
+  children[0].stdout!.emit("data", Buffer.from("ordinary output\n"));
+  expect((await service.list(projects, true)).servers.find((s) => s.id === id)?.state).toBe(
+    "running",
+  );
+});
+
+it("keeps split long credentials and PEM out of bounded retained output", async () => {
+  const { service, children } = fixture();
+  const started = (await service.handle(
+    "devServers.start",
+    { command: "server", projectId: "project" },
+    projects,
+  )) as DevServerStartResult;
+  const stream = children[0].stdout!;
+  stream.emit("data", Buffer.from("token="));
+  for (let i = 0; i < 100; i++) stream.emit("data", Buffer.from("sensitive-".repeat(100)));
+  stream.emit("data", Buffer.from("\n-----BEGIN PRIVATE "));
+  stream.emit("data", Buffer.from("KEY-----\nPEMSECRET\n-----END PRIVATE KEY-----\n"));
+  stream.emit("data", Buffer.from("sk-"));
+  stream.emit("data", Buffer.from("standalonesecret".repeat(100)));
+  stream.emit("data", Buffer.from("\n"));
+  const logs = (await service.handle("devServers.logs", { id: started.server!.id }, projects)) as {
+    output: string;
+  };
+  expect(logs.output.length).toBeLessThanOrEqual(256 * 1024);
+  expect(logs.output).not.toContain("sensitive-");
+  expect(logs.output).not.toContain("PEMSECRET");
+  expect(logs.output).not.toContain("standalonesecret");
+});
+
+it("releases retired oversized output fragments and keeps the exact output cap", async () => {
+  const { service, children } = fixture();
+  const started = (await service.handle(
+    "devServers.start",
+    {
+      command: "server",
+      projectId: "project",
+    },
+    projects,
+  )) as DevServerStartResult;
+  for (let i = 0; i < 40; i++) {
+    children[0].stdout!.emit("data", Buffer.from("a".repeat(300_000) + String(i).padStart(2, "0")));
+  }
+  const output = (
+    service as unknown as {
+      managed: Map<string, { output: { parts: string[]; head: number; tail: string } }>;
+    }
+  ).managed.get(started.server!.id)!.output;
+  expect(output.parts.slice(0, output.head).every((part) => part === "")).toBe(true);
+  expect(
+    output.parts.reduce((sum, part) => sum + part.length, 0) + output.tail.length,
+  ).toBeLessThanOrEqual(256 * 1024);
+  const logs = (await service.handle("devServers.logs", { id: started.server!.id }, projects)) as {
+    output: string;
+  };
+  expect(logs.output).toBe(("a".repeat(300_000) + "39").slice(-256 * 1024));
+});
+
+it("does not replace an unrelated process error with a port conflict", async () => {
+  const { service, children } = fixture();
+  const started = (await service.handle(
+    "devServers.start",
+    { command: "server", projectId: "project" },
+    projects,
+  )) as DevServerStartResult;
+  children[0].emit("error", new Error("identity check failed"));
+  children[0].stderr!.emit("data", Buffer.from("EADDRINUSE 127.0.0.1:3101\n"));
+  expect(
+    (await service.list(projects, true)).servers.find((s) => s.id === started.server!.id),
+  ).toMatchObject({ state: "error", error: "identity check failed" });
+});
+
 const realChildren: ChildProcess[] = [];
 const realManaged: { service: DevServersService; id: string }[] = [];
 afterEach(async () => {
