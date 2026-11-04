@@ -11,7 +11,8 @@ import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/com
 import type { AgentStep, Block } from "../model/session";
 import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
 import { SubagentReport, SubagentStateLine, runLabel } from "./SubagentAnatomy";
-import { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
+import { ActivityRow } from "./AgentTranscriptActivity";
+import { blockForStep } from "./agentStepBlocks";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
@@ -94,18 +95,6 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
   }, [openId]);
 
   return { block, open, close };
-}
-
-const stepBlocks = new WeakMap<AgentStep, Block>();
-
-/** Stable block per step, so an unchanged step does not re-render as it arrives. */
-function blockForStep(step: AgentStep): Block {
-  let block = stepBlocks.get(step);
-  if (!block) {
-    block = agentStepBlock(step);
-    stepBlocks.set(step, block);
-  }
-  return block;
 }
 
 /** Steps shown at first, and added by each "Show earlier steps". */

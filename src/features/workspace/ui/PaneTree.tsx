@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   memo,
@@ -769,102 +770,114 @@ function PaneTreeComponent({
               >
                 <MediaVisibilityContext.Provider value={visible && !hidden}>
                   {editorPane ? (
-                    <FilePane
-                      pane={editorPane}
-                      focused={focusedId === editorPane.id}
-                      visible={visible && !hidden}
-                      showTabs={inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)}
-                      dirtyFileIds={dirtyFileIds}
-                      fileErrorCounts={fileErrorCounts}
-                      sessions={paneSessions.list}
-                      onFocus={onFocus}
-                      onSelectFile={onSelectFile}
-                      onCloseFile={onCloseFile}
-                      onCloseOtherFiles={onCloseOtherFiles}
-                      onOpenInNewWindow={onOpenInNewWindow}
-                      onPinFile={onPinFile}
-                      onReorderFiles={onReorderFiles}
-                      onMoveFile={onMoveFile}
-                      onDirtyChange={onFileDirtyChange}
-                      onErrorCountChange={onFileErrorCountChange}
-                      onOpenFile={onOpenFile}
-                      onUpdatePlan={onUpdatePlan}
-                      onBuildPlan={onBuildPlan}
-                      editorNavigation={editorNavigation}
-                      onPaneDragStart={onPaneDragStart}
-                      onTerminalMetaChange={onTerminalMetaChange}
-                    />
+                    <RecoveryBoundary
+                      resetKeys={[leaf.id, editorPane.activeFileId]}
+                      onBack={() => onCloseFile(editorPane.id, editorPane.activeFileId)}
+                    >
+                      <FilePane
+                        pane={editorPane}
+                        focused={focusedId === editorPane.id}
+                        visible={visible && !hidden}
+                        showTabs={
+                          inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)
+                        }
+                        dirtyFileIds={dirtyFileIds}
+                        fileErrorCounts={fileErrorCounts}
+                        sessions={paneSessions.list}
+                        onFocus={onFocus}
+                        onSelectFile={onSelectFile}
+                        onCloseFile={onCloseFile}
+                        onCloseOtherFiles={onCloseOtherFiles}
+                        onOpenInNewWindow={onOpenInNewWindow}
+                        onPinFile={onPinFile}
+                        onReorderFiles={onReorderFiles}
+                        onMoveFile={onMoveFile}
+                        onDirtyChange={onFileDirtyChange}
+                        onErrorCountChange={onFileErrorCountChange}
+                        onOpenFile={onOpenFile}
+                        onUpdatePlan={onUpdatePlan}
+                        onBuildPlan={onBuildPlan}
+                        editorNavigation={editorNavigation}
+                        onPaneDragStart={onPaneDragStart}
+                        onTerminalMetaChange={onTerminalMetaChange}
+                      />
+                    </RecoveryBoundary>
                   ) : session ? (
-                    <SessionPane
-                      session={session}
-                      workspaceSwitchingSessionId={workspaceSwitchingSessionId}
-                      reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
-                      visible={visible && !hidden}
-                      focused={focusedId === session.id}
-                      addToChatTarget={addToChatSessionId === session.id}
-                      inSplit={inSplit}
-                      composerFocused={composerFocused}
-                      composerFocusToken={composerFocusToken}
-                      recents={recents}
-                      hideProjectPicker={hideProjectPicker}
-                      onFocus={onFocus}
-                      onClose={onClose}
-                      onRemoteSnapshot={onRemoteSnapshot}
-                      onRefreshAdoptedSession={onRefreshAdoptedSession}
-                      onCwdChange={onCwdChange}
-                      onBranchChange={onBranchChange}
-                      onWorktreeChange={onWorktreeChange}
-                      onWorkspaceModeChange={onWorkspaceModeChange}
-                      onWorktreeBaseChange={onWorktreeBaseChange}
-                      onManageWorktrees={onManageWorktrees}
-                      onModelChange={onModelChange}
-                      onModelSettingsChange={onModelSettingsChange}
-                      onRuntimeModeChange={onRuntimeModeChange}
-                      onSaveDraft={onSaveDraft}
-                      onRemoveDraft={onRemoveDraft}
-                      onSubmit={onSubmit}
-                      onStop={onStop}
-                      onCompactContext={onCompactContext}
-                      onRewindMessage={onRewindMessage}
-                      onNewSession={onNewSession}
-                      onPlaceSessionInFolder={onPlaceSessionInFolder}
-                      onResumeProviderSession={onResumeProviderSession}
-                      onDeleteQueuedMessage={onDeleteQueuedMessage}
-                      onEditQueuedMessage={onEditQueuedMessage}
-                      onQueuedMessageEditingChange={onQueuedMessageEditingChange}
-                      onReorderQueuedMessages={onReorderQueuedMessages}
-                      onSteerQueuedMessage={onSteerQueuedMessage}
-                      onResumeQueue={onResumeQueue}
-                      onUsageLimitResume={onUsageLimitResume}
-                      onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
-                      onUsageLimitDismiss={onUsageLimitDismiss}
-                      onSelectProviderAccount={onSelectProviderAccount}
-                      onInboxCardDismiss={onInboxCardDismiss}
-                      onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
-                      onNoteCardDismiss={onNoteCardDismiss}
-                      onHandoffCardDismiss={onHandoffCardDismiss}
-                      onOpenLinkedWorkItem={onOpenLinkedWorkItem}
-                      onArchiveSession={onArchiveSession}
-                      onDeleteSession={onDeleteSession}
-                      onApproval={onApproval}
-                      onQuestionReply={onQuestionReply}
-                      onQuestionInteraction={onQuestionInteraction}
-                      onOpenFile={onOpenFile}
-                      onOpenDiff={onOpenDiff}
-                      onOpenPlan={onOpenPlan}
-                      onBuildPlan={onBuildPlan}
-                      onSecondOpinion={onSecondOpinion}
-                      onHandoff={onHandoff}
-                      onBtwSubmit={onBtwSubmit}
-                      onBtwRetry={onBtwRetry}
-                      onBtwDelete={onBtwDelete}
-                      onBtwStop={onBtwStop}
-                      onBtwModelChange={onBtwModelChange}
-                      onNewTerminal={onNewTerminal}
-                      onRunProjectAction={onRunProjectAction}
-                      onPaneDragStart={onPaneDragStart}
-                      transcriptPool={transcriptPool}
-                    />
+                    <RecoveryBoundary
+                      resetKeys={[leaf.id, session.id]}
+                      onBack={() => onClose(session.id)}
+                    >
+                      <SessionPane
+                        session={session}
+                        workspaceSwitchingSessionId={workspaceSwitchingSessionId}
+                        reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
+                        visible={visible && !hidden}
+                        focused={focusedId === session.id}
+                        addToChatTarget={addToChatSessionId === session.id}
+                        inSplit={inSplit}
+                        composerFocused={composerFocused}
+                        composerFocusToken={composerFocusToken}
+                        recents={recents}
+                        hideProjectPicker={hideProjectPicker}
+                        onFocus={onFocus}
+                        onClose={onClose}
+                        onRemoteSnapshot={onRemoteSnapshot}
+                        onRefreshAdoptedSession={onRefreshAdoptedSession}
+                        onCwdChange={onCwdChange}
+                        onBranchChange={onBranchChange}
+                        onWorktreeChange={onWorktreeChange}
+                        onWorkspaceModeChange={onWorkspaceModeChange}
+                        onWorktreeBaseChange={onWorktreeBaseChange}
+                        onManageWorktrees={onManageWorktrees}
+                        onModelChange={onModelChange}
+                        onModelSettingsChange={onModelSettingsChange}
+                        onRuntimeModeChange={onRuntimeModeChange}
+                        onSaveDraft={onSaveDraft}
+                        onRemoveDraft={onRemoveDraft}
+                        onSubmit={onSubmit}
+                        onStop={onStop}
+                        onCompactContext={onCompactContext}
+                        onRewindMessage={onRewindMessage}
+                        onNewSession={onNewSession}
+                        onPlaceSessionInFolder={onPlaceSessionInFolder}
+                        onResumeProviderSession={onResumeProviderSession}
+                        onDeleteQueuedMessage={onDeleteQueuedMessage}
+                        onEditQueuedMessage={onEditQueuedMessage}
+                        onQueuedMessageEditingChange={onQueuedMessageEditingChange}
+                        onReorderQueuedMessages={onReorderQueuedMessages}
+                        onSteerQueuedMessage={onSteerQueuedMessage}
+                        onResumeQueue={onResumeQueue}
+                        onUsageLimitResume={onUsageLimitResume}
+                        onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
+                        onUsageLimitDismiss={onUsageLimitDismiss}
+                        onSelectProviderAccount={onSelectProviderAccount}
+                        onInboxCardDismiss={onInboxCardDismiss}
+                        onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
+                        onNoteCardDismiss={onNoteCardDismiss}
+                        onHandoffCardDismiss={onHandoffCardDismiss}
+                        onOpenLinkedWorkItem={onOpenLinkedWorkItem}
+                        onArchiveSession={onArchiveSession}
+                        onDeleteSession={onDeleteSession}
+                        onApproval={onApproval}
+                        onQuestionReply={onQuestionReply}
+                        onQuestionInteraction={onQuestionInteraction}
+                        onOpenFile={onOpenFile}
+                        onOpenDiff={onOpenDiff}
+                        onOpenPlan={onOpenPlan}
+                        onBuildPlan={onBuildPlan}
+                        onSecondOpinion={onSecondOpinion}
+                        onHandoff={onHandoff}
+                        onBtwSubmit={onBtwSubmit}
+                        onBtwRetry={onBtwRetry}
+                        onBtwDelete={onBtwDelete}
+                        onBtwStop={onBtwStop}
+                        onBtwModelChange={onBtwModelChange}
+                        onNewTerminal={onNewTerminal}
+                        onRunProjectAction={onRunProjectAction}
+                        onPaneDragStart={onPaneDragStart}
+                        transcriptPool={transcriptPool}
+                      />
+                    </RecoveryBoundary>
                   ) : null}
                 </MediaVisibilityContext.Provider>
               </div>

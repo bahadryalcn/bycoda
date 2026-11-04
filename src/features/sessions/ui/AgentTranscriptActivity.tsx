@@ -1,3 +1,4 @@
+import { blockForStep } from "./agentStepBlocks";
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import {
   handoffPhaseOf,
@@ -51,7 +52,6 @@ import { useSubagentModelName, useToolCallDisplay } from "../model/reactiveReads
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
   HARNESS_TITLE,
-  type AgentStep,
   type Block,
   type InterjectionMeta,
   type ToolPreview,
@@ -608,7 +608,7 @@ function SubagentPanel({
   // The run's trail as transcript blocks, so the panel groups it the way the
   // main transcript groups the agent's own work: what it said, then the calls
   // that line introduced, folding behind it once it moves on.
-  const stepBlocks = useMemo(() => steps.map(agentStepBlock), [steps]);
+  const stepBlocks = useMemo(() => steps.map(blockForStep), [steps]);
   const report = subagentReport(block);
 
   // Identity row: the name takes the room it needs and gives the rest back, so
@@ -765,34 +765,7 @@ function SubagentMascot({
   );
 }
 
-/**
- * A mirrored step as the transcript block it stands for, so a subagent's trail
- * goes through the same rows — labels, file chips, diffs — as the main agent's.
- */
-export function agentStepBlock(step: AgentStep): Block {
-  if (step.kind !== "tool") {
-    return {
-      id: step.id,
-      role: step.kind === "reasoning" ? "reasoning" : "assistant",
-      text: step.text,
-    };
-  }
-  return {
-    id: step.id,
-    role: "tool",
-    text: step.text,
-    tool: {
-      callId: step.id,
-      title: step.text,
-      ...(step.toolKind ? { kind: step.toolKind } : {}),
-      ...(step.status ? { status: step.status } : {}),
-      ...(step.detail ? { detail: step.detail } : {}),
-      ...(step.preview ? { preview: step.preview } : {}),
-      ...(step.output ? { output: step.output } : {}),
-      ...(step.outputTruncated ? { outputTruncated: true } : {}),
-    },
-  };
-}
+export { agentStepBlock } from "./agentStepBlocks";
 
 /** Whether the line that titled a group has more in it than the header shows. */
 function headlineHasMore(block?: Block): boolean {

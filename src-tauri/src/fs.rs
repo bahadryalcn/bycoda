@@ -1675,6 +1675,10 @@ pub struct GitHubWorkItem {
     pub assignees: Vec<GitHubAssignee>,
     pub draft: bool,
     pub repo: String,
+    /// Set when the action succeeded but the follow-up view failed; the fields above are then a
+    /// minimal placeholder and the caller keeps its earlier data and refreshes later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_error: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -1719,8 +1723,7 @@ fn git_github_status_for() -> GitHubStatus {
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
     crate::hide_window_console(&mut cmd);
-    let authenticated = cmd
-        .output()
+    let authenticated = output_with_timeout(&mut cmd, GIT_LOCAL_TIMEOUT)
         .map(|output| output.status.success())
         .unwrap_or(false);
     GitHubStatus {
@@ -3141,6 +3144,102 @@ fn text_line_count(path: &Path) -> i64 {
     lines
 }
 
+/// How much of an oversized side is read to tell text from binary.
+const DIFF_BINARY_PROBE_BYTES: usize = 8 * 1024;
+
+/// One side of a file diff. A side over `MAX_TEXT_FILE_BYTES` is never read whole:
+/// `large` is set, `bytes` stays empty and `binary` comes from the first 8 KiB.
+struct DiffSide {
+    exists: bool,
+    large: bool,
+    binary: bool,
+    bytes: Vec<u8>,
+}
+
+impl DiffSide {
+    fn missing() -> Self {
+        Self {
+            exists: false,
+            large: false,
+            binary: false,
+            bytes: Vec::new(),
+        }
+    }
+
+    fn large(probe: &[u8]) -> Self {
+        Self {
+            exists: true,
+            large: true,
+            binary: probe.contains(&0),
+            bytes: Vec::new(),
+        }
+    }
+
+    fn small(bytes: Vec<u8>) -> Self {
+        Self {
+            exists: true,
+            large: false,
+            binary: bytes.contains(&0),
+            bytes,
+        }
+    }
+
+    /// Without content: no bytes and not oversized.
+    fn is_empty(&self) -> bool {
+        !self.large && self.bytes.is_empty()
+    }
+
+    fn from_file(path: &Path) -> Self {
+        let size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+        if size > MAX_TEXT_FILE_BYTES {
+            let mut probe = Vec::new();
+            if let Ok(file) = std::fs::File::open(path) {
+                let _ = file
+                    .take(DIFF_BINARY_PROBE_BYTES as u64)
+                    .read_to_end(&mut probe);
+            }
+            return Self::large(&probe);
+        }
+        Self::small(std::fs::read(path).unwrap_or_default())
+    }
+
+    fn from_blob(root: &Path, spec: &str) -> Self {
+        let Some(size) =
+            git_stdout(root, &["cat-file", "-s", spec]).and_then(|text| text.parse::<u64>().ok())
+        else {
+            return Self::missing();
+        };
+        if size > MAX_TEXT_FILE_BYTES {
+            return Self::large(&git_blob_prefix(root, spec, DIFF_BINARY_PROBE_BYTES));
+        }
+        git_blob(root, spec).map_or_else(Self::missing, Self::small)
+    }
+}
+
+/// The first `limit` bytes of a blob; the git process is stopped once they are read.
+fn git_blob_prefix(root: &Path, spec: &str, limit: usize) -> Vec<u8> {
+    let mut probe = Vec::new();
+    let spawned = git_cmd()
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(root)
+        .args(["cat-file", "-p", spec])
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    if let Ok(mut child) = spawned {
+        if let Some(stdout) = child.stdout.take() {
+            let _ = stdout.take(limit as u64).read_to_end(&mut probe);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    probe
+}
+
 fn git_file_diff_for(root: &Path, relative: &str, staged: bool) -> Result<GitFileDiff, String> {
     let relative = resolve_repo_path(root, relative)?;
     let abs = root.join(&relative);
@@ -3151,22 +3250,22 @@ fn git_file_diff_for(root: &Path, relative: &str, staged: bool) -> Result<GitFil
     let index_spec = format!(":{prefix}{relative}");
     let (original, current) = if staged {
         let head_spec = format!("HEAD:{prefix}{relative}");
-        (git_blob(root, &head_spec), git_blob(root, &index_spec))
+        (
+            DiffSide::from_blob(root, &head_spec),
+            DiffSide::from_blob(root, &index_spec),
+        )
     } else {
         let current = if abs.is_file() {
-            Some(std::fs::read(&abs).unwrap_or_default())
+            DiffSide::from_file(&abs)
         } else {
-            None
+            DiffSide::missing()
         };
-        (git_blob(root, &index_spec), current)
+        (DiffSide::from_blob(root, &index_spec), current)
     };
-    let had_original = original.is_some();
-    let had_current = current.is_some();
-    let orig = original.unwrap_or_default();
-    let current = current.unwrap_or_default();
-    let binary = orig.contains(&0) || current.contains(&0);
-    let too_large =
-        orig.len() as u64 > MAX_TEXT_FILE_BYTES || current.len() as u64 > MAX_TEXT_FILE_BYTES;
+    let had_original = original.exists;
+    let had_current = current.exists;
+    let binary = original.binary || current.binary;
+    let too_large = original.large || current.large;
     let status = if !had_original && had_current {
         if staged {
             "added"
@@ -3182,8 +3281,8 @@ fn git_file_diff_for(root: &Path, relative: &str, staged: bool) -> Result<GitFil
         (String::new(), String::new())
     } else {
         (
-            String::from_utf8_lossy(&orig).into_owned(),
-            String::from_utf8_lossy(&current).into_owned(),
+            String::from_utf8_lossy(&original.bytes).into_owned(),
+            String::from_utf8_lossy(&current.bytes).into_owned(),
         )
     };
     Ok(GitFileDiff {
@@ -3466,17 +3565,16 @@ fn git_commit_file_diff_for(root: &Path, sha: &str, relative: &str) -> Result<Gi
     }
     let sha = git_peel_commit(root, sha)?;
     let parent = git_stdout(root, &["rev-parse", "--verify", &format!("{sha}^")]);
-    let original_bytes = match &parent {
-        Some(parent) => git_blob(root, &format!("{parent}:{relative}")).unwrap_or_default(),
-        None => Vec::new(),
+    let original_side = match &parent {
+        Some(parent) => DiffSide::from_blob(root, &format!("{parent}:{relative}")),
+        None => DiffSide::missing(),
     };
-    let current_bytes = git_blob(root, &format!("{sha}:{relative}")).unwrap_or_default();
-    let binary = original_bytes.contains(&0) || current_bytes.contains(&0);
-    let too_large = original_bytes.len() as u64 > MAX_TEXT_FILE_BYTES
-        || current_bytes.len() as u64 > MAX_TEXT_FILE_BYTES;
-    let status = if original_bytes.is_empty() && !current_bytes.is_empty() {
+    let current_side = DiffSide::from_blob(root, &format!("{sha}:{relative}"));
+    let binary = original_side.binary || current_side.binary;
+    let too_large = original_side.large || current_side.large;
+    let status = if original_side.is_empty() && !current_side.is_empty() {
         "added"
-    } else if !original_bytes.is_empty() && current_bytes.is_empty() {
+    } else if !original_side.is_empty() && current_side.is_empty() {
         "deleted"
     } else {
         "modified"
@@ -3485,8 +3583,8 @@ fn git_commit_file_diff_for(root: &Path, sha: &str, relative: &str) -> Result<Gi
         (String::new(), String::new())
     } else {
         (
-            String::from_utf8_lossy(&original_bytes).into_owned(),
-            String::from_utf8_lossy(&current_bytes).into_owned(),
+            String::from_utf8_lossy(&original_side.bytes).into_owned(),
+            String::from_utf8_lossy(&current_side.bytes).into_owned(),
         )
     };
     Ok(GitFileDiff {
@@ -4249,7 +4347,41 @@ fn git_github_pr_action_for(
     // Successful mutation commands do not always write to stdout. Their exit
     // status confirms the action ran; the follow-up view fetches the new state.
     gh_run(root, &refs, true)?;
-    git_github_work_item_for(root, repo, "pr", number)
+    // The mutation already happened: a failed refresh must not be reported as a failed action.
+    Ok(git_github_work_item_for(root, repo, "pr", number)
+        .unwrap_or_else(|error| github_pr_action_refresh_failed(repo, number, action, &error)))
+}
+
+/// Placeholder result for an action that succeeded when re-reading the pull request failed.
+fn github_pr_action_refresh_failed(
+    repo: &str,
+    number: i64,
+    action: &str,
+    error: &str,
+) -> GitHubWorkItem {
+    let action = action.trim();
+    let state = match action {
+        "merge" | "squash" | "rebase" => "merged",
+        "close" => "closed",
+        _ => "open",
+    };
+    GitHubWorkItem {
+        kind: "pr".to_string(),
+        number,
+        title: String::new(),
+        url: String::new(),
+        state: state.to_string(),
+        state_reason: String::new(),
+        created_at: String::new(),
+        updated_at: String::new(),
+        labels: Vec::new(),
+        assignees: Vec::new(),
+        draft: action == "draft",
+        repo: repo.to_string(),
+        refresh_error: Some(format!(
+            "The {action} succeeded, but refreshing the pull request failed: {error}"
+        )),
+    }
 }
 
 fn git_github_work_item_details_for(
@@ -5530,6 +5662,7 @@ fn parse_github_work_items(
                 .collect(),
             draft: row.is_draft,
             repo: repo.to_string(),
+            refresh_error: None,
         })
         .collect())
 }
@@ -5632,9 +5765,11 @@ fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, Strin
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
     crate::hide_window_console(&mut cmd);
-    let output = cmd.output().map_err(|error| {
+    let output = output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT).map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             "GitHub CLI (`gh`) is not installed.".to_string()
+        } else if error.kind() == ErrorKind::TimedOut {
+            "GitHub CLI (`gh`) did not finish in time and was stopped.".to_string()
         } else {
             error.to_string()
         }
@@ -10185,6 +10320,23 @@ mod tests {
     }
 
     #[test]
+    fn git_file_diff_oversized_working_file_is_not_read_whole() {
+        let dir = tmp("git-file-diff-large");
+        if !init_git_commit(&dir.0, &[("big.txt", "small\n")]) {
+            return;
+        }
+        let mut big = vec![b'a'; MAX_TEXT_FILE_BYTES as usize + 1];
+        big[10] = 0;
+        std::fs::write(dir.0.join("big.txt"), &big).unwrap();
+
+        let diff = git_file_diff_for(&dir.0, "big.txt", false).unwrap();
+        assert!(diff.too_large);
+        assert!(diff.binary);
+        assert!(diff.original.is_empty() && diff.current.is_empty());
+        assert_eq!(diff.status, "modified");
+    }
+
+    #[test]
     fn git_file_diff_staged_reads_head_and_index() {
         let dir = tmp("git-file-diff-staged");
         if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
@@ -11565,6 +11717,16 @@ mod tests {
         assert!(github_pr_action_args("acme/web", 42, "delete", "").is_err());
         assert!(github_pr_action_args("acme/web", 0, "merge", "").is_err());
         assert!(github_pr_action_args("invalid", 42, "merge", "").is_err());
+    }
+
+    #[test]
+    fn pr_action_refresh_failure_still_reports_the_action_as_done() {
+        let item = github_pr_action_refresh_failed("acme/web", 42, "squash", "timeout");
+        assert_eq!(item.state, "merged");
+        assert_eq!(item.number, 42);
+        assert!(item.refresh_error.unwrap().contains("succeeded"));
+        let closed = github_pr_action_refresh_failed("acme/web", 42, "close", "x");
+        assert_eq!(closed.state, "closed");
     }
 
     #[test]
