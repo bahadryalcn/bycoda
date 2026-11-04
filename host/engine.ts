@@ -616,6 +616,20 @@ type ActiveHostTurn = {
   operationContext?: HarnessOperationContext;
 };
 
+function retainWarmActivity(activity: ProviderActivityRetirement | undefined): void {
+  if (!activity) return;
+  void activity.retainWarm().catch((reason) => {
+    activity.recordFailure(reason);
+    console.error("Original warm provider activity release failed:", reason);
+  });
+}
+
+/** Only original writer authority survives a successfully settled warm turn. */
+type RetainedWriterTurn = Pick<
+  ActiveHostTurn,
+  "provider" | "activity" | "operationContext" | "authorityGeneration" | "cleanup"
+>;
+
 export type EngineCommandAdmission = {
   check: (stage: {
     phase: "command" | "provider";
@@ -703,7 +717,7 @@ export class HostEngine {
   /** Warm lightweight providers still belong to this engine and drain at shutdown. */
   private retainedProviders = new Map<string, Set<HostProvider>>();
   /** Original turn receipts retained for an explicit Host-to-desktop transfer. */
-  private retainedWriterTurns = new Map<string, ActiveHostTurn>();
+  private retainedWriterTurns = new Map<string, RetainedWriterTurn>();
 
   hasRetainedProviderWriter(id: string): boolean {
     return this.retainedWriterTurns.has(id);
@@ -4321,11 +4335,7 @@ export class HostEngine {
         await soft("delivery", () => active.steers);
         await soft("delivery", () => active.controls);
         if (active.hostRun) await soft("retirement", () => this.runWriters.finish(active.hostRun!));
-        if (!cold)
-          void active.activity?.retainWarm().catch((reason) => {
-            active.activity?.recordFailure(reason);
-            console.error("Original warm provider activity release failed:", reason);
-          });
+        if (!cold) retainWarmActivity(active.activity);
         active.failureStage = "persistence";
         if (active.managed) {
           // Keep each accepted boundary independently; compaction never prunes this map.
@@ -4392,6 +4402,7 @@ export class HostEngine {
               await finishRunDuration(this.store, session.id, runId!);
             }
             // The settled state is saved: whatever happens next, drop the running entry.
+            let bookkeepingComplete = false;
             try {
               if (cold) await soft("retirement", () => active.activity?.release());
               active.failureStage = "callback";
@@ -4417,13 +4428,29 @@ export class HostEngine {
                   persisted.cwd,
                   persisted.providerAccountId,
                 );
-              if (!cleanupFailed) active.activity?.bookkeepingFinished();
+              if (!cleanupFailed) {
+                active.activity?.bookkeepingFinished();
+                bookkeepingComplete = true;
+              }
             } finally {
               if (this.running.get(session.id) === active) {
                 if (cold && active.activity && !cleanupFailed)
                   this.retainedProviders.get(session.id)?.delete(provider);
                 if (cold && !cleanupFailed && this.retainedWriterTurns.get(session.id) === active)
                   this.retainedWriterTurns.delete(session.id);
+                if (
+                  !cold &&
+                  bookkeepingComplete &&
+                  this.retainedWriterTurns.get(session.id) === active
+                ) {
+                  this.retainedWriterTurns.set(session.id, {
+                    provider: active.provider,
+                    activity: active.activity,
+                    operationContext: active.operationContext,
+                    authorityGeneration: active.authorityGeneration,
+                    cleanup: active.cleanup,
+                  });
+                }
                 this.running.delete(session.id);
               }
             }

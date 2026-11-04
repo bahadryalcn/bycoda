@@ -1780,6 +1780,24 @@ describe("Host writer transfer after settled task review", () => {
       turns[index].finish();
       await engine.waitForRun(id, receipt.runId);
     }
+    const internals = engine as unknown as {
+      retainedWriterTurns: Map<string, Record<string, unknown>>;
+    };
+    const retained = internals.retainedWriterTurns.get(id);
+    expect(Object.keys(retained!).sort()).toEqual([
+      "activity",
+      "authorityGeneration",
+      "cleanup",
+      "operationContext",
+      "provider",
+    ]);
+    expect(retained?.operationContext).toBe(turns[1].input.operationContext);
+    const writers = (
+      engine as unknown as { runWriters: { runs: WeakMap<object, { source?: unknown }> } }
+    ).runWriters;
+    const operationContext = retained!.operationContext as { hostRun: object };
+    expect(writers.runs.get(operationContext.hostRun)?.source).toBeUndefined();
+    expect((retained!.activity as { bookkeepingWork?: unknown }).bookkeepingWork).toBeUndefined();
     const hook = provider.retireOriginal;
     delete provider.retireOriginal;
     const grant = vi.fn(async () => "lease");
@@ -1791,6 +1809,7 @@ describe("Host writer transfer after settled task review", () => {
     provider.retireOriginal = hook;
     await engine.withRetiredProviderWriter(id, grant);
     expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id, turns[1].input.operationContext);
+    expect(internals.retainedWriterTurns.has(id)).toBe(false);
   });
 });
 
