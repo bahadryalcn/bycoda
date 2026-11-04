@@ -997,6 +997,7 @@ export function createJsonRecordAccumulator() {
     char === " " || char === "\t" || char === "\r" || char === "\n";
   return {
     append(chunk: string): Record<string, unknown> | undefined {
+      if (!chunk.length) return parsed;
       if (terminal) {
         if (!parsed) return undefined;
         for (let index = 0; index < chunk.length; index++) {
@@ -1015,6 +1016,7 @@ export function createJsonRecordAccumulator() {
           if (char !== "{") {
             terminal = true;
             chunks.length = 0;
+            closing.length = 0;
             return undefined;
           }
           started = true;
@@ -1033,6 +1035,7 @@ export function createJsonRecordAccumulator() {
           if (closing.pop() !== char) {
             terminal = true;
             chunks.length = 0;
+            closing.length = 0;
             return undefined;
           }
           if (closing.length) continue;
