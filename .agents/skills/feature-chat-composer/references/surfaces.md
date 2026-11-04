@@ -16,6 +16,8 @@ Paths below are repository-root relative. Use this map for cross-producer, persi
 
 ## State and effects
 
+- `src/features/sessions/model/questionDrafts.ts` retains answer text and durable per-question file metadata; `questionAttachments.ts` saves blob inputs before dispatch. `userQuestion.ts` builds replies and provider-readable references. `src/features/connections/model/remoteQuestionAttachments.ts`, `src/features/connections/ui/RemoteSession.tsx` and `host/engine.ts` upload, validate and resolve files on the executing Host. Remote question files require the explicit `sessions.questionAttachments` capability.
+
 - `src/app/workspace/sessions/submit/`, `src/app/workspace/sessions/useQueuedMessageActions.ts`: preparation and dispatch.
 - `src/features/sessions/data/composerDraftStore.ts`; session model basenames `composerQueue.ts`, `messageQueue.ts`, `queuePersistence.ts`, `queuedMessageEdit.ts`, `attachments.ts`, `attachmentTokens.ts`, `releaseAttachments.ts`, `translation.ts`, `translationHistory.ts`, `deliveryProgress.ts`, `deliveryReview.ts` under `src/features/sessions/model/`.
 - `src/features/connections/model/queueState.ts`, `src/features/connections/model/useSharedLocalQueues.ts`: shared queue projection and leases.

@@ -87,7 +87,7 @@ function useMachineReads<T>(
 
 /** Independent machine/list keys let a fast host publish before a slow peer.
  * Reads retain taskClient's etags, last-good data and machine identity guards. */
-export function useTaskBoardQueries(projectScope = "all") {
+export function useTaskBoardQueries(projectScope = "all", { planningCatalog = false } = {}) {
   const client = useQueryClient();
   const visible = useQueryVisible();
   const forceCapabilities = useRef(new Set<string>());
@@ -120,8 +120,11 @@ export function useTaskBoardQueries(projectScope = "all") {
       return EMPTY_MACHINES;
     }
   }, [inventory.data, projectScope]);
-  const descriptions = useQueries({
-    queries: machines.map((machine) => ({
+  // Planning authority and project permissions are independent of visible task scope.
+  // Only cheap descriptions/project catalogs use this inventory; collections stay scoped.
+  const catalogMachines = planningCatalog ? (inventory.data ?? EMPTY_MACHINES) : machines;
+  const catalogDescriptions = useQueries({
+    queries: catalogMachines.map((machine) => ({
       queryKey: ["task-board", ...identity(machine), "capabilities"],
       queryFn: async (): Promise<Description> => {
         try {
@@ -147,6 +150,14 @@ export function useTaskBoardQueries(projectScope = "all") {
     })),
     combine: combine<Description>,
   });
+  const descriptions = useMemo(
+    () =>
+      machines.map(
+        (machine) =>
+          catalogDescriptions[catalogMachines.findIndex((entry) => entry.id === machine.id)],
+      ),
+    [machines, catalogMachines, catalogDescriptions],
+  );
   const tasks = useMachineReads(
     machines,
     descriptions,
@@ -186,8 +197,8 @@ export function useTaskBoardQueries(projectScope = "all") {
       reachable ? listMachineLimits([machine]) : Promise.reject(new Error("Machine unavailable")),
   );
   const projects = useMachineReads(
-    machines,
-    descriptions,
+    catalogMachines,
+    catalogDescriptions,
     HOST_TASKS,
     "projects",
     visible,
@@ -215,24 +226,29 @@ export function useTaskBoardQueries(projectScope = "all") {
   const refresh = useCallback(
     async (force = false, machineId?: string) => {
       const selected = machines.filter((machine) => !machineId || machine.id === machineId);
+      const selectedCatalog = catalogMachines.filter(
+        (machine) => !machineId || machine.id === machineId,
+      );
       if (force) {
-        selected.forEach((machine) => {
+        selectedCatalog.forEach((machine) => {
           invalidateMachineSnapshot(machine.id);
-          forceTasks.current.add(machine.id);
           forceCapabilities.current.add(machine.id);
         });
+        selected.forEach((machine) => forceTasks.current.add(machine.id));
       }
       await client.invalidateQueries(
         {
           predicate: (query) =>
             query.queryKey[0] === "task-board" &&
             (query.queryKey[1] === "inventory" ||
-              selected.some((machine) => query.queryKey[1] === machine.id)),
+              selected.some((machine) => query.queryKey[1] === machine.id) ||
+              ((query.queryKey[5] === "capabilities" || query.queryKey[5] === "projects") &&
+                selectedCatalog.some((machine) => query.queryKey[1] === machine.id))),
         },
         { cancelRefetch: false },
       );
     },
-    [client, machines],
+    [client, machines, catalogMachines],
   );
   const taskResults = useMemo(() => tasks.flatMap((result) => result.data ?? []), [tasks]);
   const goalResults = useMemo(() => goals.flatMap((result) => result.data ?? []), [goals]);
@@ -260,12 +276,15 @@ export function useTaskBoardQueries(projectScope = "all") {
       machines.filter((_, index) => descriptions[index]?.data?.capabilities.includes(capability));
     return {
       machines: capable(HOST_TASKS),
+      planningMachines: catalogMachines.filter((_, index) =>
+        catalogDescriptions[index]?.data?.capabilities.includes(HOST_TASKS),
+      ),
       todoCapable: capable(HOST_TASKS_TODO),
       goalCapable: capable(HOST_GOALS),
       stewardCapable: capable(HOST_STEWARDS),
       limitCapable: capable(HOST_SETTINGS),
     };
-  }, [machines, descriptions]);
+  }, [machines, descriptions, catalogMachines, catalogDescriptions]);
   const board = useMemo(() => {
     const results: MachineResult<unknown>[] = [...taskResults, ...goalResults, ...stewardResults];
     const pending =
@@ -279,7 +298,12 @@ export function useTaskBoardQueries(projectScope = "all") {
           [HOST_GOALS, goals],
           [HOST_STEWARDS, stewards],
           [HOST_SETTINGS, limits],
-          [HOST_TASKS, projects],
+          [
+            HOST_TASKS,
+            machines.map(
+              (machine) => projects[catalogMachines.findIndex((entry) => entry.id === machine.id)],
+            ),
+          ],
         ].some(
           ([cap, reads]) =>
             !descriptions[index]?.data?.error &&
@@ -318,7 +342,7 @@ export function useTaskBoardQueries(projectScope = "all") {
     });
     problems.push(...limitErrors.map((entry) => `${entry.machineName}: ${entry.error}`));
     projects.forEach((result, index) => {
-      if (result.error) problems.push(`${machines[index].name}: ${result.error.message}`);
+      if (result.error) problems.push(`${catalogMachines[index].name}: ${result.error.message}`);
     });
     const taskError =
       inventory.error?.message ||
@@ -352,6 +376,7 @@ export function useTaskBoardQueries(projectScope = "all") {
     };
   }, [
     machines,
+    catalogMachines,
     descriptions,
     capableMachines,
     tasks,

@@ -372,6 +372,7 @@ function OwnerQuestionCard({
         </>
       ) : ready ? (
         <QuestionForm
+          attachmentsSupported={false}
           prompt={{
             ...prompt,
             ...(pending

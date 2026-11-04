@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Open inline visuals in a resizable side panel or expanded view, with shared preview, source and reload controls.
 - Choose the project when starting a new conversation and summarize work already listed in the current project without duplicating its running sessions.
 - Preserve interrupted status and last activity when reading stored conversations.
+- Attach, paste or drop files into free-text question answers, retain them with the question draft and upload them to the executing Host before remote delivery.
 
 ### Connected servers
 
@@ -39,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Consolidate remote connection notices and fall back to HTTP when a WebSocket connection is slow to become ready.
 - Preserve independent Git subscriptions across windows and validate authenticated subscription requests consistently.
+- Keep cross-machine sprint planning available while filtering tasks by project.
 - Make task starts and queue ordering atomic, preserve board state during pending or failed changes, and improve review recovery.
+- Keep queued messages in a recoverable waiting state when delivery is deferred, with clear progress instead of reporting an unconfirmed send as complete.
 
 ## [0.7.2]
 

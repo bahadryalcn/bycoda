@@ -340,6 +340,7 @@ export function applyHarnessEvent(
       answered.blocks[answered.blocks.length - 1] = {
         ...answered.blocks[answered.blocks.length - 1],
         questionAnswers,
+        ...(reply?.attachments ? { attachments: Object.values(reply.attachments).flat() } : {}),
       };
       return { ...answered, busy: session.busy };
     }

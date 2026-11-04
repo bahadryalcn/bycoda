@@ -97,9 +97,7 @@ describe("retained queue-row actions", () => {
         },
         vi.fn(),
       );
-      const steer = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "Steer",
-      )!;
+      const steer = container.querySelector<HTMLButtonElement>('button[aria-label="Steer"]')!;
       expect(steer.disabled).toBe(true);
       await act(async () => {
         steer.click();

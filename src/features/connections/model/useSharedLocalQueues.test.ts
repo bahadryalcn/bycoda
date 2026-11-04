@@ -7,6 +7,7 @@ import {
   mergeQueueChange,
   QUEUE_LEASE_TTL_MS,
   QueueNotReadyError,
+  QueueDeferredError,
   type SharedQueue,
 } from "./sharedQueue";
 import { desktopQueueClientId } from "./sharedQueueClient";
@@ -410,6 +411,80 @@ it("still pauses the queue when the running turn itself refuses a Send now", asy
   expect(await submitSharedLocalQueue("chat", "a", true, () => false)).toBe(false);
   await tick();
   expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "paused" });
+});
+
+it.each(["active", "paused", "restored"] as const)(
+  "releases a deferred steer claim while retaining the %s queue and its exact rows",
+  async (status) => {
+    const attachment = {
+      id: "file",
+      name: "context.txt",
+      kind: "file" as const,
+      mimeType: "text/plain",
+      size: 7,
+      path: "/repo/context.txt",
+    };
+    const first = { ...row("a"), attachments: [attachment] };
+    sessionsRef.current[0] = {
+      ...sessionsRef.current[0],
+      busy: true,
+      queueStatus: status,
+      queuedMessages: [first, row("b")],
+    };
+    const host = useRealHostQueue();
+    await mount();
+    const before = await host.queues.get("chat");
+    const attempt = vi.fn(() => {
+      throw new QueueDeferredError("Waiting for the current turn");
+    });
+
+    await expect(submitSharedLocalQueue("chat", "a", true, attempt)).rejects.toBeInstanceOf(
+      QueueDeferredError,
+    );
+    await tick();
+
+    const retained = await host.queues.get("chat");
+    expect(retained.status).toBe(before.status);
+    expect(retained.messages).toEqual(before.messages);
+    expect(retained.messages.map((message) => message.id)).toEqual(["a", "b"]);
+    expect(retained.claim).toBeUndefined();
+    expect(sessionsRef.current[0].queueStatus).toBe(before.status);
+    expect(readDeliveryProgress("chat")).toBeUndefined();
+    expect(attempt).toHaveBeenCalledOnce();
+
+    if (status === "active") {
+      sessionsRef.current = [{ ...sessionsRef.current[0], busy: false }];
+      await tick();
+      const retry = vi.fn(() => true);
+      expect(await submitSharedLocalQueue("chat", "a", false, retry)).toBe(true);
+      await tick();
+      expect(retry).toHaveBeenCalledOnce();
+      expect((await host.queues.get("chat")).messages).toEqual([row("b")]);
+      expect((await host.queues.get("chat")).claim).toBeUndefined();
+    }
+  },
+);
+
+it("does not undo a Stop that pauses the host queue while a steer is being deferred", async () => {
+  const host = useRealHostQueue();
+  sessionsRef.current[0].busy = true;
+  await mount();
+  const attempt = vi.fn(async () => {
+    const current = await host.queues.get("chat");
+    await host.queues.change("chat", current, { ...current, status: "paused" });
+    sessionsRef.current = [{ ...sessionsRef.current[0], busy: false, queueStatus: "paused" }];
+    throw new QueueDeferredError("Waiting for the current turn");
+  });
+
+  await expect(submitSharedLocalQueue("chat", "a", true, attempt)).rejects.toBeInstanceOf(
+    QueueDeferredError,
+  );
+  await tick();
+
+  expect(await host.queues.get("chat")).toMatchObject({ status: "paused", messages: [row("a")] });
+  expect((await host.queues.get("chat")).claim).toBeUndefined();
+  expect(sessionsRef.current[0].queueStatus).toBe("paused");
+  expect(attempt).toHaveBeenCalledOnce();
 });
 
 it("stops renewing the lease of a conversation that left this window", async () => {

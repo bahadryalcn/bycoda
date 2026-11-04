@@ -69,6 +69,8 @@ export class QueueNotReadyError extends Error {
     this.name = "QueueNotReadyError";
   }
 }
+/** A follow-up was safely returned to the queue before any provider write. */
+export class QueueDeferredError extends QueueNotReadyError {}
 export const sameQueueValue = (a: unknown, b: unknown): boolean =>
   a === undefined || b === undefined ? a === b : canonicalJson(a) === canonicalJson(b);
 

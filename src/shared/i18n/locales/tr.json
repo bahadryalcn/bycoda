@@ -10961,5 +10961,9 @@
   "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.": "Rutin yanıtlar yalnızca atanmış görev kapsamındaki soruları yanıtlar. İzinleri, yayımlamayı, kimlik bilgilerini veya yıkıcı işlemleri onaylamaz.",
   "Saved computer use setting": "Kaydedilen bilgisayar kullanımı ayarı",
   "The stall timeout controls when inactive work needs attention.": "Duraklama süresi, hareketsiz çalışmanın ne zaman dikkat gerektireceğini belirler.",
-  "This local daily scheduling budget is an estimate, not a provider billing cap.": "Bu yerel günlük zamanlama bütçesi bir tahmindir; sağlayıcı faturalandırma sınırı değildir."
+  "This local daily scheduling budget is an estimate, not a provider billing cap.": "Bu yerel günlük zamanlama bütçesi bir tahmindir; sağlayıcı faturalandırma sınırı değildir.",
+  "A message carries up to {p0} attachments.": "Bir mesaja en fazla {p0} ek eklenebilir.",
+  "Some files could not be attached. Try attaching them again.": "Bazı dosyalar eklenemedi. Yeniden eklemeyi deneyin.",
+  "This host cannot upload attachments.": "Bu Host'a ek yüklenemiyor.",
+  "The original question changed before the attachments were ready.": "Ekler hazır olmadan önce asıl soru değişti."
 }

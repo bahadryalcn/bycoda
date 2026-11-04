@@ -10961,5 +10961,9 @@
   "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.": "常规答案仅解决指定任务中的问题。他们从不批准权限、发布、凭证或破坏性行为。",
   "Saved computer use setting": "保存的计算机使用设置",
   "The stall timeout controls when inactive work needs attention.": "停顿超时控制何时需要关注非活动工作。",
-  "This local daily scheduling budget is an estimate, not a provider billing cap.": "此本地每日调度预算是估计值，而不是提供商计费上限。"
+  "This local daily scheduling budget is an estimate, not a provider billing cap.": "此本地每日调度预算是估计值，而不是提供商计费上限。",
+  "A message carries up to {p0} attachments.": "每条消息最多可添加 {p0} 个附件。",
+  "Some files could not be attached. Try attaching them again.": "部分文件无法添加为附件。请尝试重新添加。",
+  "This host cannot upload attachments.": "此主机无法上传附件。",
+  "The original question changed before the attachments were ready.": "附件准备就绪之前，原始问题已更改。"
 }

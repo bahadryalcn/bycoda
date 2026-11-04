@@ -158,37 +158,39 @@ export function useComposerFileDrop({
 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (cancelled) return;
-        if (event.payload.type === "leave") {
+    void Promise.resolve()
+      .then(() =>
+        getCurrentWebview().onDragDropEvent((event) => {
+          if (cancelled) return;
+          if (event.payload.type === "leave") {
+            nativeCount = 0;
+            hide();
+            return;
+          }
+          const { x, y } = event.payload.position;
+          const point = dragPointToClient(x, y);
+          const over = overTarget(point.x, point.y);
+          if (event.payload.type === "enter" || event.payload.type === "over") {
+            if (event.payload.type === "enter") nativeCount = event.payload.paths.length;
+            if (!over) hide();
+            else show(nativeCount, false, nativeDropPointer({ x, y }, pointerInside(dropRoot())));
+            return;
+          }
+          if (event.payload.type !== "drop") return;
           nativeCount = 0;
           hide();
-          return;
-        }
-        const { x, y } = event.payload.position;
-        const point = dragPointToClient(x, y);
-        const over = overTarget(point.x, point.y);
-        if (event.payload.type === "enter" || event.payload.type === "over") {
-          if (event.payload.type === "enter") nativeCount = event.payload.paths.length;
-          if (!over) hide();
-          else show(nativeCount, false, nativeDropPointer({ x, y }, pointerInside(dropRoot())));
-          return;
-        }
-        if (event.payload.type !== "drop") return;
-        nativeCount = 0;
-        hide();
-        if (!over || blockedBy(false)) return;
-        if (event.payload.paths.length === 0) {
-          setPasteError(
-            "This drag did not provide a file. Save the image, then drag the saved file here.",
-          );
-          return;
-        }
-        nativeDropAt = Date.now();
-        const paths = event.payload.paths;
-        readDroppedAttachments(() => attachmentsFromPaths(paths));
-      })
+          if (!over || blockedBy(false)) return;
+          if (event.payload.paths.length === 0) {
+            setPasteError(
+              "This drag did not provide a file. Save the image, then drag the saved file here.",
+            );
+            return;
+          }
+          nativeDropAt = Date.now();
+          const paths = event.payload.paths;
+          readDroppedAttachments(() => attachmentsFromPaths(paths));
+        }),
+      )
       .then((fn) => {
         if (cancelled) fn();
         else unlisten = fn;

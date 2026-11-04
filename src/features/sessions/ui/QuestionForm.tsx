@@ -4,6 +4,18 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import styles from "./QuestionForm.module.css";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { AttachmentChip } from "./AttachmentChip";
+import { useComposerFileDrop } from "./useComposerFileDrop";
+import { useAttachmentSink } from "./useComposerAttachments";
+import {
+  attachmentsFromFiles,
+  filesFromClipboard,
+  pickAttachments,
+  MAX_ATTACHMENTS,
+  revokeAttachment,
+} from "../model/attachments";
+import { prepareQuestionAttachments } from "../model/questionAttachments";
+import type { Attachment } from "../model/session";
 import { t, useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
 import {
@@ -26,6 +38,7 @@ import {
   CornerDownRight,
   MessageSquare,
   Play,
+  FilePlus,
   RefreshCw,
   X,
 } from "../../../shared/ui/icons";
@@ -60,6 +73,8 @@ type Props = {
   dismissLabel?: string;
   /** A retained owner card can postpone the whole prompt without answering earlier fields. */
   dismissEntirePrompt?: boolean;
+  attachmentsSupported?: boolean;
+  remote?: boolean;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
   onInteraction?: (requestId: number) => void;
 };
@@ -74,6 +89,8 @@ function QuestionFormContent({
   parentSessionId,
   dismissLabel,
   dismissEntirePrompt,
+  attachmentsSupported = true,
+  remote = false,
   onReply,
   onInteraction,
 }: Props) {
@@ -111,6 +128,9 @@ function QuestionFormContent({
   const [now, setNow] = useState(Date.now);
   const visible = usePresentationVisible();
   const form = useRef<HTMLFormElement>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [readingAttachments, setReadingAttachments] = useState(false);
+  const attachmentFlight = useRef(false);
   const parentChanged = useParentInputClosure(
     {
       kind: "question-draft",
@@ -195,7 +215,7 @@ function QuestionFormContent({
     localUnknown ||
     prompt.delivery === "unknown" ||
     prompt.delivery === "queued";
-  const held = transportHeld || !reserved;
+  const held = transportHeld || !reserved || readingAttachments;
 
   const persistDraft = (next: QuestionDraft, external = false) => {
     const result = reservation.current?.write(next, external);
@@ -249,10 +269,74 @@ function QuestionFormContent({
   const total = questions.length;
   const index = Math.min(step, Math.max(total - 1, 0));
   const question = questions[index];
+  const canAttach =
+    attachmentsSupported && !!question?.allowCustom && !question.preserveCustomWhitespace;
+  const files = draft.attachments?.[question?.id ?? ""] ?? [];
+  const filesRef = useRef(files);
+  useLayoutEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+  const readAttachments = (read: () => Promise<Attachment[]>) => {
+    if (!canAttach || held || attachmentFlight.current || !parentChanged.canMutate()) return;
+    const admission = parentChanged.admit();
+    if (!admission) return;
+    interact();
+    attachmentFlight.current = true;
+    setReadingAttachments(true);
+    setAttachmentError(null);
+    void (async () => {
+      let incoming: Attachment[] = [];
+      try {
+        incoming = await read();
+        if (
+          Object.values(draftRef.current.attachments ?? {}).flat().length + incoming.length >
+          MAX_ATTACHMENTS
+        )
+          throw new Error(t("A message carries up to {p0} attachments.", { p0: MAX_ATTACHMENTS }));
+        const prepared = await prepareQuestionAttachments(incoming);
+        admission.apply(() => {
+          if (!mounted.current || !reservation.current?.current()) return;
+          updateDraft((current) => ({
+            ...current,
+            attachments: {
+              ...current.attachments,
+              [question.id]: [...(current.attachments?.[question.id] ?? []), ...prepared],
+            },
+          }));
+        });
+      } catch (error) {
+        if (mounted.current)
+          setAttachmentError(String(error instanceof Error ? error.message : error));
+      } finally {
+        incoming.forEach(revokeAttachment);
+        attachmentFlight.current = false;
+        if (mounted.current) setReadingAttachments(false);
+        admission.finish();
+      }
+    })();
+  };
+  const sink = useAttachmentSink({
+    attachmentsSupported: canAttach,
+    remote,
+    addAttachments: () => {},
+  });
+  useComposerFileDrop({
+    enabled: canAttach,
+    disabled: held,
+    attachmentsSupported: canAttach,
+    boxRef: form,
+    sinkRef: sink,
+    attachmentsRef: filesRef,
+    readDroppedAttachments: readAttachments,
+    setPasteError: setAttachmentError,
+  });
   const last = index >= total - 1;
   const ready = useMemo(
-    () => (question ? questionIsComplete(question, answers, custom) : false),
-    [answers, custom, question],
+    () =>
+      question
+        ? questionIsComplete(question, answers, custom) || (canAttach && files.length > 0)
+        : false,
+    [answers, custom, question, canAttach, files.length],
   );
 
   const send = (
@@ -299,7 +383,11 @@ function QuestionFormContent({
     nextAnswers = answers,
     nextCustom = custom,
     pendingAction: QuestionDraft["pendingAction"] = "answer",
-  ) => send(buildQuestionReply(questions, nextAnswers, nextCustom), pendingAction);
+  ) =>
+    send(
+      buildQuestionReply(questions, nextAnswers, nextCustom, draftRef.current.attachments),
+      pendingAction,
+    );
 
   const skipCurrent = () => {
     if (held || submitted.current) return;
@@ -317,6 +405,8 @@ function QuestionFormContent({
     }
     const nextAnswers = { ...answers };
     const nextCustom = { ...custom };
+    const nextAttachments = { ...draftRef.current.attachments };
+    delete nextAttachments[question.id];
     delete nextAnswers[question.id];
     delete nextCustom[question.id];
     if (last) {
@@ -325,6 +415,7 @@ function QuestionFormContent({
           ...current,
           answers: nextAnswers,
           custom: nextCustom,
+          attachments: nextAttachments,
         }))
       )
         return;
@@ -334,6 +425,7 @@ function QuestionFormContent({
     updateDraft(() => ({
       answers: nextAnswers,
       custom: nextCustom,
+      attachments: nextAttachments,
       step: index + 1,
     }));
   };
@@ -442,6 +534,18 @@ function QuestionFormContent({
         className={`bycoda-arc ${styles.form}`}
         aria-label={t("Question")}
         aria-busy={sending}
+        onPaste={(event) => {
+          const pasted = filesFromClipboard(event.clipboardData);
+          if (!canAttach || !pasted.length) return;
+          event.preventDefault();
+          event.stopPropagation();
+          readAttachments(async () => {
+            const attached = await attachmentsFromFiles(pasted);
+            if (attached.length !== pasted.length)
+              throw new Error(t("Some files could not be attached. Try attaching them again."));
+            return attached;
+          });
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           continueCurrent();
@@ -512,6 +616,47 @@ function QuestionFormContent({
               if (mounted.current) parentChanged();
             }}
           />
+          {canAttach ? (
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                startIcon={<FilePlus />}
+                className="self-start"
+                disabled={held || files.length >= MAX_ATTACHMENTS}
+                loading={readingAttachments}
+                onClick={() => readAttachments(() => pickAttachments())}
+              >
+                {t("Attach files")}
+              </Button>
+              {files.length ? (
+                <div className="flex flex-wrap gap-2" aria-label={t("Attachments")}>
+                  {files.map((file) => (
+                    <AttachmentChip
+                      key={file.id}
+                      attachment={file}
+                      onRemove={
+                        held
+                          ? undefined
+                          : () =>
+                              updateDraft((current) => ({
+                                ...current,
+                                attachments: {
+                                  ...current.attachments,
+                                  [question.id]: (current.attachments?.[question.id] ?? []).filter(
+                                    (item) => item.id !== file.id,
+                                  ),
+                                },
+                              }))
+                      }
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {attachmentError ? <InlineError>{attachmentError}</InlineError> : null}
         </fieldset>
         <div className={styles.footer}>
           <div className={styles.feedback}>

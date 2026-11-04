@@ -43,7 +43,10 @@ import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
 import { normalizeProjectPath } from "../../../../features/projects/model/recents";
-import type { UserQuestionReply } from "../../../../features/sessions/model/userQuestion";
+import {
+  selectedAnswerLabels,
+  type UserQuestionReply,
+} from "../../../../features/sessions/model/userQuestion";
 import type {
   CommandContext,
   NativeCommand,
@@ -1495,7 +1498,7 @@ async function handleExtensionUi(
                   const selected = reply.answers[request.id]?.[0];
                   if (selected !== undefined && /^\d+$/.test(selected))
                     value = request.options[Number(selected)];
-                } else value = reply.custom?.[request.id];
+                } else value = selectedAnswerLabels(event.questions[0], reply)[0];
               }
               await nativeOutputSink(outputWork, writeChild)(
                 live.handle,
@@ -1547,7 +1550,7 @@ async function handleExtensionUi(
             if (selected !== undefined && /^\d+$/.test(selected))
               value = request.options[Number(selected)];
           } else {
-            value = reply.custom?.[request.id];
+            value = selectedAnswerLabels(event.questions[0], reply)[0];
           }
         }
         emitNative({

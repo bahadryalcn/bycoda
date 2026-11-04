@@ -223,7 +223,7 @@ function TasksContent({
     putSteward,
     removeSteward,
     putLimits,
-  } = useTaskBoardQueries(projectFilter);
+  } = useTaskBoardQueries(projectFilter, { planningCatalog: true });
   const ops = useTaskBoardOperations(refreshQueries);
   const { error, setError, saving, setSaving, acting, act, refresh, confirm, confirmDialog } = ops;
   const retryBoard = () => {
@@ -335,7 +335,7 @@ function TasksContent({
       })),
     [projectScopes],
   );
-  const sprintBoard = useSprintBoard(machines, visibleTasks, sprintProjects);
+  const sprintBoard = useSprintBoard(board.planningMachines, visibleTasks, sprintProjects);
   const accessibleSprints = useMemo(
     () =>
       sprintBoard.sprints.filter((sprint) =>

@@ -10961,5 +10961,9 @@
   "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.": "定期的な回答は、割り当てられたタスク内の質問のみに対応します。権限、公開、資格情報、または破壊的なアクションは決して承認されません。",
   "Saved computer use setting": "保存されたコンピュータ使用設定",
   "The stall timeout controls when inactive work needs attention.": "ストール タイムアウトは、非アクティブな作業に注意が必要なタイミングを制御します。",
-  "This local daily scheduling budget is an estimate, not a provider billing cap.": "このローカルの 1 日のスケジュール予算は推定値であり、プロバイダーの請求上限ではありません。"
+  "This local daily scheduling budget is an estimate, not a provider billing cap.": "このローカルの 1 日のスケジュール予算は推定値であり、プロバイダーの請求上限ではありません。",
+  "A message carries up to {p0} attachments.": "1つのメッセージに添付できるファイルは最大{p0}個です。",
+  "Some files could not be attached. Try attaching them again.": "一部のファイルを添付できませんでした。もう一度添付してください。",
+  "This host cannot upload attachments.": "このホストは添付ファイルをアップロードできません。",
+  "The original question changed before the attachments were ready.": "添付ファイルの準備ができる前に、元の質問が変更されました。"
 }

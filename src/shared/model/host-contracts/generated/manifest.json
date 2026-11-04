@@ -5986,6 +5986,131 @@
                         "propertyNames": { "type": "string" },
                         "type": "object"
                       },
+                      "attachments": {
+                        "additionalProperties": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "browserAnnotation": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "capturedAt": { "type": "string" },
+                                  "comment": { "type": "string" },
+                                  "devicePixelRatio": { "type": "number" },
+                                  "element": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "ancestry": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "selectorPart": { "type": "string" },
+                                            "tag": { "type": "string" }
+                                          },
+                                          "required": ["tag", "selectorPart"],
+                                          "type": "object"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "bounds": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "height": { "type": "number" },
+                                          "width": { "type": "number" },
+                                          "x": { "type": "number" },
+                                          "y": { "type": "number" }
+                                        },
+                                        "required": ["x", "y", "width", "height"],
+                                        "type": "object"
+                                      },
+                                      "center": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "x": { "type": "number" },
+                                          "y": { "type": "number" }
+                                        },
+                                        "required": ["x", "y"],
+                                        "type": "object"
+                                      },
+                                      "computedStyle": {
+                                        "additionalProperties": { "type": "string" },
+                                        "propertyNames": { "type": "string" },
+                                        "type": "object"
+                                      },
+                                      "path": { "type": "string" },
+                                      "selector": { "type": "string" },
+                                      "tag": { "type": "string" },
+                                      "text": { "type": "string" }
+                                    },
+                                    "required": [
+                                      "tag",
+                                      "text",
+                                      "selector",
+                                      "path",
+                                      "bounds",
+                                      "center",
+                                      "ancestry",
+                                      "computedStyle"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "id": { "type": "string" },
+                                  "limitations": { "items": { "type": "string" }, "type": "array" },
+                                  "navigationId": { "type": "string" },
+                                  "pageUrl": { "type": "string" },
+                                  "projectId": { "type": "string" },
+                                  "sessionId": { "type": "string" },
+                                  "trust": { "const": "untrusted-page-data", "type": "string" },
+                                  "viewport": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "height": { "type": "number" },
+                                      "scrollX": { "type": "number" },
+                                      "scrollY": { "type": "number" },
+                                      "width": { "type": "number" }
+                                    },
+                                    "required": ["width", "height", "scrollX", "scrollY"],
+                                    "type": "object"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "projectId",
+                                  "sessionId",
+                                  "navigationId",
+                                  "capturedAt",
+                                  "pageUrl",
+                                  "viewport",
+                                  "devicePixelRatio",
+                                  "element",
+                                  "trust",
+                                  "limitations",
+                                  "comment"
+                                ],
+                                "type": "object"
+                              },
+                              "id": {
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                "type": "string"
+                              },
+                              "kind": { "enum": ["image", "audio", "file"], "type": "string" },
+                              "mimeType": { "type": "string" },
+                              "name": { "type": "string" },
+                              "size": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": ["id", "name", "mimeType", "kind", "size"],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
                       "custom": {
                         "additionalProperties": { "type": "string" },
                         "propertyNames": { "type": "string" },
@@ -44559,6 +44684,127 @@
                       "propertyNames": { "type": "string" },
                       "type": "object"
                     },
+                    "attachments": {
+                      "additionalProperties": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "browserAnnotation": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "capturedAt": { "type": "string" },
+                                "comment": { "type": "string" },
+                                "devicePixelRatio": { "type": "number" },
+                                "element": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "ancestry": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "selectorPart": { "type": "string" },
+                                          "tag": { "type": "string" }
+                                        },
+                                        "required": ["tag", "selectorPart"],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "bounds": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "height": { "type": "number" },
+                                        "width": { "type": "number" },
+                                        "x": { "type": "number" },
+                                        "y": { "type": "number" }
+                                      },
+                                      "required": ["x", "y", "width", "height"],
+                                      "type": "object"
+                                    },
+                                    "center": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "x": { "type": "number" },
+                                        "y": { "type": "number" }
+                                      },
+                                      "required": ["x", "y"],
+                                      "type": "object"
+                                    },
+                                    "computedStyle": {
+                                      "additionalProperties": { "type": "string" },
+                                      "propertyNames": { "type": "string" },
+                                      "type": "object"
+                                    },
+                                    "path": { "type": "string" },
+                                    "selector": { "type": "string" },
+                                    "tag": { "type": "string" },
+                                    "text": { "type": "string" }
+                                  },
+                                  "required": [
+                                    "tag",
+                                    "text",
+                                    "selector",
+                                    "path",
+                                    "bounds",
+                                    "center",
+                                    "ancestry",
+                                    "computedStyle"
+                                  ],
+                                  "type": "object"
+                                },
+                                "id": { "type": "string" },
+                                "limitations": { "items": { "type": "string" }, "type": "array" },
+                                "navigationId": { "type": "string" },
+                                "pageUrl": { "type": "string" },
+                                "projectId": { "type": "string" },
+                                "sessionId": { "type": "string" },
+                                "trust": { "const": "untrusted-page-data", "type": "string" },
+                                "viewport": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "height": { "type": "number" },
+                                    "scrollX": { "type": "number" },
+                                    "scrollY": { "type": "number" },
+                                    "width": { "type": "number" }
+                                  },
+                                  "required": ["width", "height", "scrollX", "scrollY"],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "projectId",
+                                "sessionId",
+                                "navigationId",
+                                "capturedAt",
+                                "pageUrl",
+                                "viewport",
+                                "devicePixelRatio",
+                                "element",
+                                "trust",
+                                "limitations",
+                                "comment"
+                              ],
+                              "type": "object"
+                            },
+                            "id": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            "kind": { "enum": ["image", "audio", "file"], "type": "string" },
+                            "mimeType": { "type": "string" },
+                            "name": { "type": "string" },
+                            "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                          },
+                          "required": ["id", "name", "mimeType", "kind", "size"],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    },
                     "custom": {
                       "additionalProperties": { "type": "string" },
                       "propertyNames": { "type": "string" },
@@ -58290,6 +58536,140 @@
                               "propertyNames": { "type": "string" },
                               "type": "object"
                             },
+                            "attachments": {
+                              "additionalProperties": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "browserAnnotation": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "capturedAt": { "type": "string" },
+                                        "comment": { "type": "string" },
+                                        "devicePixelRatio": { "type": "number" },
+                                        "element": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "ancestry": {
+                                              "items": {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "selectorPart": { "type": "string" },
+                                                  "tag": { "type": "string" }
+                                                },
+                                                "required": ["tag", "selectorPart"],
+                                                "type": "object"
+                                              },
+                                              "type": "array"
+                                            },
+                                            "bounds": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "height": { "type": "number" },
+                                                "width": { "type": "number" },
+                                                "x": { "type": "number" },
+                                                "y": { "type": "number" }
+                                              },
+                                              "required": ["x", "y", "width", "height"],
+                                              "type": "object"
+                                            },
+                                            "center": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "x": { "type": "number" },
+                                                "y": { "type": "number" }
+                                              },
+                                              "required": ["x", "y"],
+                                              "type": "object"
+                                            },
+                                            "computedStyle": {
+                                              "additionalProperties": { "type": "string" },
+                                              "propertyNames": { "type": "string" },
+                                              "type": "object"
+                                            },
+                                            "path": { "type": "string" },
+                                            "selector": { "type": "string" },
+                                            "tag": { "type": "string" },
+                                            "text": { "type": "string" }
+                                          },
+                                          "required": [
+                                            "tag",
+                                            "text",
+                                            "selector",
+                                            "path",
+                                            "bounds",
+                                            "center",
+                                            "ancestry",
+                                            "computedStyle"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "id": { "type": "string" },
+                                        "limitations": {
+                                          "items": { "type": "string" },
+                                          "type": "array"
+                                        },
+                                        "navigationId": { "type": "string" },
+                                        "pageUrl": { "type": "string" },
+                                        "projectId": { "type": "string" },
+                                        "sessionId": { "type": "string" },
+                                        "trust": {
+                                          "const": "untrusted-page-data",
+                                          "type": "string"
+                                        },
+                                        "viewport": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "height": { "type": "number" },
+                                            "scrollX": { "type": "number" },
+                                            "scrollY": { "type": "number" },
+                                            "width": { "type": "number" }
+                                          },
+                                          "required": ["width", "height", "scrollX", "scrollY"],
+                                          "type": "object"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "projectId",
+                                        "sessionId",
+                                        "navigationId",
+                                        "capturedAt",
+                                        "pageUrl",
+                                        "viewport",
+                                        "devicePixelRatio",
+                                        "element",
+                                        "trust",
+                                        "limitations",
+                                        "comment"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "id": {
+                                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": ["image", "audio", "file"],
+                                      "type": "string"
+                                    },
+                                    "mimeType": { "type": "string" },
+                                    "name": { "type": "string" },
+                                    "size": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": ["id", "name", "mimeType", "kind", "size"],
+                                  "type": "object"
+                                },
+                                "maxItems": 20,
+                                "type": "array"
+                              },
+                              "propertyNames": { "type": "string" },
+                              "type": "object"
+                            },
                             "custom": {
                               "additionalProperties": { "type": "string" },
                               "propertyNames": { "type": "string" },
@@ -59068,5 +59448,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "f014759dc9f9bfa6be0d9c26dfcf9701ee8c6c2b991e580bf1c6f26b75c53e6d"
+  "schemaHash": "debe932971ce8435375275f23275c1ca72bc1d7ca14967981365310463402a77"
 }

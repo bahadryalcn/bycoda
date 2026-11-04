@@ -28,9 +28,11 @@ Code paths below are repository-root relative.
 
 - Drafts survive hibernation/remount and provider/model/account changes; preserve caret, selection, IME and configured shortcuts.
 - Preserve queue order, edit/reorder/cancel, held messages and lease ownership. Unknown delivery is held, never automatically resent.
+- A follow-up refused before any provider write because its original turn ended returns to the queue as a typed wait, not a rejection. Release its claim without pausing an active queue; retain explicit Stop/paused/restored state and let the existing dispatcher continue when free.
 - Keep provider, model, reasoning, account and workspace choices independent, including custom IDs and first-send preparation errors.
 - Handoff budgets may trim earlier history/recap and retain an archive reference; preserve the current request and do not reject send solely because optional handoff context does not fit.
 - Retain attachment owning-Host identity, saved/recovered context, permission gates and resource cleanup. Failed/cancelled handoffs must settle visible preparation state without bypassing original-source cleanup.
+- Ordinary custom question answers accept files through the shared picker, paste and drop paths. Retain per-question attachment metadata with the question draft, persist blob bytes before dispatch and resolve remote uploads on the owning Host. Typed elicitation values retain their exact schema and whitespace; never append file references to those fields.
 - Stop/cancel remains usable during preparation. Question drafts retain exact input and separate semantic lineages; bounded admission must not evict pending/unknown data.
 - Citation snapshots/comments persist with the owning text draft but stay outside the editable textarea. Preserve them through remount, queue/send rejection and retained-input snapshots; removing a reference must not remove typed text. Provider preparation expands only the user's input, then appends literal citation data so quoted mentions cannot trigger file or skill expansion.
 

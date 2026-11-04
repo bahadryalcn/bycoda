@@ -471,7 +471,9 @@ function parseCommandBody(input: unknown): HostCommand {
     };
   }
   if (v.type === "answer") {
-    const reply = v.reply as { kind?: string; answers?: unknown; custom?: unknown } | undefined;
+    const reply = v.reply as
+      | { kind?: string; answers?: unknown; custom?: unknown; attachments?: unknown }
+      | undefined;
     if (reply?.kind === "skipped")
       return {
         type: "answer",
@@ -506,6 +508,22 @@ function parseCommandBody(input: unknown): HostCommand {
           Object.values(reply.custom).some((x) => typeof x !== "string" || x.length > 10_000))
       )
         throw new Error("Invalid custom answers");
+      let attachments: Record<string, ReturnType<typeof parseRemoteAttachments>> | undefined;
+      if (reply.attachments !== undefined) {
+        if (
+          !reply.attachments ||
+          typeof reply.attachments !== "object" ||
+          Array.isArray(reply.attachments)
+        )
+          throw new Error("Invalid question attachments");
+        const files = Object.entries(reply.attachments);
+        if (files.length > 50 || files.some(([key]) => key.length > 200))
+          throw new Error("Invalid question attachments");
+        attachments = Object.fromEntries(
+          files.map(([key, value]) => [key, parseRemoteAttachments(value)]),
+        );
+        if (Object.values(attachments).flat().length > 20) throw new Error("Too many attachments");
+      }
       return {
         type: "answer",
         commandId,
@@ -516,6 +534,7 @@ function parseCommandBody(input: unknown): HostCommand {
           kind: "answered",
           answers: Object.fromEntries(entries),
           ...(reply.custom ? { custom: reply.custom as Record<string, string> } : {}),
+          ...(attachments ? { attachments } : {}),
         },
       };
     }
@@ -3060,6 +3079,19 @@ export class HostEngine {
               } else {
                 if (value.session.pendingQuestion?.requestId !== command.requestId)
                   throw new Error("Question is already resolved");
+                let answerReply = command.reply;
+                if (command.reply.kind === "answered" && command.reply.attachments) {
+                  const questions = value.session.pendingQuestion.questions;
+                  const attachments = Object.fromEntries(
+                    Object.entries(command.reply.attachments).map(([id, files]) => {
+                      const question = questions.find((item) => item.id === id);
+                      if (!question?.allowCustom || question.preserveCustomWhitespace)
+                        throw new Error("This question cannot accept attachments");
+                      return [id, resolveAttachments(this.store, parseRemoteAttachments(files))];
+                    }),
+                  );
+                  answerReply = { ...command.reply, attachments };
+                }
                 if (
                   ["sending", "queued", "unknown"].includes(
                     value.session.pendingQuestion.delivery ?? "",
@@ -3103,15 +3135,15 @@ export class HostEngine {
                     throw new Error(
                       "The original question source changed before provider dispatch",
                     );
-                  if (author && questionToken && command.reply.kind === "answered")
+                  if (author && questionToken && answerReply.kind === "answered")
                     this.questionReplyAuthors.set(command.sessionId, {
                       runId: command.runId,
                       token: questionToken,
-                      reply: structuredClone(command.reply),
+                      reply: structuredClone(answerReply),
                       author: structuredClone(author),
                     });
                   try {
-                    provider.answer(command.sessionId, command.requestId, command.reply);
+                    provider.answer(command.sessionId, command.requestId, answerReply);
                   } catch {
                     this.event(command.sessionId, command.runId, {
                       type: "question.updated",

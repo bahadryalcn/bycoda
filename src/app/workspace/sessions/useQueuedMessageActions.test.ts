@@ -2,7 +2,10 @@
 import { act, createElement, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { QueueNotReadyError } from "../../../features/connections/model/sharedQueue";
+import {
+  QueueDeferredError,
+  QueueNotReadyError,
+} from "../../../features/connections/model/sharedQueue";
 import { trackLateSettlement } from "../../../features/sessions/model/deliveryReview";
 import type { DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
 import { useQueuedMessageActions } from "./useQueuedMessageActions";
@@ -342,67 +345,132 @@ it("holds a budget-rejected head exactly once until an explicit queue resume", a
   }
 });
 
-it("keeps an active queue running and offers its head again when the shared queue could not be coordinated", async () => {
-  // Another computer changed the queue, or the host was busy, while the head was
-  // being claimed. Nothing was sent: that is a wait, not "you interrupted".
-  const submit = vi
-    .fn<Submit>()
-    .mockRejectedValueOnce(new QueueNotReadyError("The shared queue changed."))
-    .mockResolvedValue(true);
-  const enqueue = vi.fn();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  resetSessionsStore([
-    {
-      ...newSession("codex", "/fake"),
-      busy: false,
-      queueStatus: "active",
-      queuedMessages: [{ id: "head", text: "Saved task", attachments: [] }],
-    },
-  ]);
-  function Harness() {
-    const sessions = useLiveSessions();
-    const moves = useRef(new Set<string>());
-    const retiring = useRef(new Map<string, number>());
-    const pending = useRef(false);
-    useQueuedMessageActions({
-      sessions,
-      sessionsRef,
-      setSessions,
-      movingWindows: moves.current,
-      movingSessionIds: moves,
-      retiringTurns: retiring,
-      windowTransferPending: false,
-      windowTransferPendingRef: pending,
-      onSubmit: submit,
-      enqueueHarnessEvent: enqueue,
-      flushHarnessEvents: vi.fn(),
-      onStopRef: { current: () => undefined },
-    });
-    return null;
-  }
-  const root = createRoot(document.createElement("div"));
+it.each([QueueNotReadyError, QueueDeferredError])(
+  "keeps an active queue running and offers its head again after %s",
+  async (WaitError) => {
+    // Another computer changed the queue, or the host was busy, while the head was
+    // being claimed. Nothing was sent: that is a wait, not "you interrupted".
+    const submit = vi
+      .fn<Submit>()
+      .mockRejectedValueOnce(new WaitError("The shared queue changed."))
+      .mockResolvedValue(true);
+    const enqueue = vi.fn();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    resetSessionsStore([
+      {
+        ...newSession("codex", "/fake"),
+        busy: false,
+        queueStatus: "active",
+        queuedMessages: [{ id: "head", text: "Saved task", attachments: [] }],
+      },
+    ]);
+    function Harness() {
+      const sessions = useLiveSessions();
+      const moves = useRef(new Set<string>());
+      const retiring = useRef(new Map<string, number>());
+      const pending = useRef(false);
+      useQueuedMessageActions({
+        sessions,
+        sessionsRef,
+        setSessions,
+        movingWindows: moves.current,
+        movingSessionIds: moves,
+        retiringTurns: retiring,
+        windowTransferPending: false,
+        windowTransferPendingRef: pending,
+        onSubmit: submit,
+        enqueueHarnessEvent: enqueue,
+        flushHarnessEvents: vi.fn(),
+        onStopRef: { current: () => undefined },
+      });
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Harness)));
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 20));
+      });
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(getSessions()[0].queueStatus).toBe("active");
+      expect(enqueue).not.toHaveBeenCalled();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_300));
+      });
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 20));
+      });
+      expect(submit).toHaveBeenCalledTimes(2);
+      expect(getSessions()[0].queueStatus).toBe("active");
+    } finally {
+      await act(async () => root.unmount());
+      resetSessionsStore([]);
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it("keeps retrying safely deferred heads past the refusal limit without pausing or duplicating them", async () => {
+  vi.useFakeTimers();
+  let attempts = 0;
+  const submit = vi.fn<Submit>((sessionId, _text, _attachments, options) => {
+    attempts++;
+    if (attempts <= 5) return Promise.reject(new QueueDeferredError("Turn not ready"));
+    setSessions((all) =>
+      all.map((session) =>
+        session.id === sessionId ? sentQueuedMessage(session, options!.queuedMessageId!) : session,
+      ),
+    );
+    return true;
+  });
+  const harness = await queueHarness("active", false, submit);
   try {
-    await act(async () => root.render(createElement(Harness)));
+    for (const delay of [1, 2_001, 4_001, 8_001, 16_001]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay);
+      });
+      // The retry timer rerenders first; its effect schedules the dispatch next.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(getSessions()[0].queueStatus).toBe("active");
+      expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+    }
+    expect(submit).toHaveBeenCalledTimes(5);
     await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 20));
-    });
-    expect(submit).toHaveBeenCalledTimes(1);
-    expect(getSessions()[0].queueStatus).toBe("active");
-    expect(enqueue).not.toHaveBeenCalled();
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 2_300));
+      await vi.advanceTimersByTimeAsync(32_001);
     });
     await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(10);
     });
-    expect(submit).toHaveBeenCalledTimes(2);
-    expect(getSessions()[0].queueStatus).toBe("active");
+    expect(submit).toHaveBeenCalledTimes(6);
+    expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
   } finally {
-    await act(async () => root.unmount());
-    resetSessionsStore([]);
-    vi.unstubAllGlobals();
+    await harness.cleanup();
+    vi.useRealTimers();
   }
 });
+
+it.each(["paused", "restored"] as const)(
+  "returns waiting when a manual steer is deferred from a %s queue",
+  async (status) => {
+    const submit = vi.fn<Submit>(() => Promise.reject(new QueueDeferredError("Turn not ready")));
+    const harness = await queueHarness(status, true, submit);
+    try {
+      await act(async () => {
+        expect(await harness.actions.onSteerQueuedMessage(harness.id, "head")).toEqual({
+          kind: "waiting",
+          message: "Turn not ready",
+        });
+      });
+      expect(getSessions()[0].queueStatus).toBe(status);
+      expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+      expect(submit).toHaveBeenCalledOnce();
+    } finally {
+      await harness.cleanup();
+    }
+  },
+);
 
 it("does not resume a queue while a given-up send may still be answered, and does after it was", async () => {
   const submit = vi.fn<Submit>(() => true);

@@ -15,10 +15,16 @@ import { isLocalSyncMachine } from "./localSync";
 import type { RemoteMachine } from "./protocol";
 import { queueSessionFields, type RemoteQueue } from "./remoteQueue";
 import { nextQueueStatus } from "./queueState";
-import { QueueNotReadyError, sameQueueValue, SHARED_QUEUE_CAPABILITY } from "./sharedQueue";
+import {
+  QueueDeferredError,
+  QueueNotReadyError,
+  sameQueueValue,
+  SHARED_QUEUE_CAPABILITY,
+} from "./sharedQueue";
 import { desktopQueueClientId, SharedQueueClient } from "./sharedQueueClient";
 import {
   beginDeliveryProgress,
+  clearDeliveryProgress,
   updateDeliveryProgress,
 } from "../../sessions/model/deliveryProgress";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
@@ -236,6 +242,7 @@ export async function submitSharedLocalQueue(
   let uncertain = false;
   let transientHold = false;
   let handedOver = false;
+  let caughtDeferred = false;
   try {
     entry.publish();
     if (steer) {
@@ -306,6 +313,13 @@ export async function submitSharedLocalQueue(
   } catch (caught) {
     let error: unknown = caught;
     failure = String(error).replace(/^Error: /, "");
+    if (error instanceof QueueNotReadyError) {
+      // A typed pre-write wait can occur after claiming too (the old turn ended).
+      // Release the claim, retain the row and preserve active/user-paused status.
+      uncertain = false;
+      transientHold = true;
+      caughtDeferred = error instanceof QueueDeferredError;
+    }
     // Nothing reached the provider: a host that could not be asked or a queue
     // another computer changed is a coordination wait, not a failed delivery.
     if (
@@ -372,7 +386,7 @@ export async function submitSharedLocalQueue(
         }
       });
     }
-    console.warn("Shared queued send is held", error);
+    if (!(error instanceof QueueNotReadyError)) console.warn("Shared queued send is held", error);
     throw error;
   } finally {
     if (token && !uncertain) {
@@ -401,12 +415,14 @@ export async function submitSharedLocalQueue(
     // meanwhile, the lease expiry timer.
     entry.nextIdleSyncAt = 0;
     runTick?.();
-    updateDeliveryProgress(
-      sessionId,
-      progress,
-      accepted ? "accepted" : uncertain ? "unknown" : "rejected",
-      failure,
-    );
+    if (transientHold && caughtDeferred) clearDeliveryProgress(sessionId, progress);
+    else
+      updateDeliveryProgress(
+        sessionId,
+        progress,
+        accepted ? "accepted" : uncertain ? "unknown" : "rejected",
+        failure,
+      );
   }
 }
 

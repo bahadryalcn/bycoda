@@ -2026,6 +2026,7 @@ export async function createHostServer(
         "git.management.snapshot.v1",
         "git.conflicts",
         "attachments.upload",
+        "sessions.questionAttachments",
         "attachments.resume",
         "attachments.ownership.v1",
         "attachments.read",
@@ -2215,7 +2216,29 @@ export async function createHostServer(
     nativeProjection: {
       watch: desktopWatch,
       alive: () => !!desktop.live.alive(),
-      enqueue: (command) => desktop.live.enqueue(command),
+      enqueue: (command) => {
+        if (
+          command.type !== "answer" ||
+          command.reply.kind !== "answered" ||
+          !command.reply.attachments
+        )
+          return desktop.live.enqueue(command);
+        const parsed = parseCommand(command);
+        if (parsed.type !== "answer" || parsed.reply.kind !== "answered")
+          throw new Error("Invalid question answer");
+        const pending = desktop.live.overlay(command.sessionId)?.patch.pendingQuestion;
+        if (pending?.requestId !== command.requestId)
+          throw new Error("Question is already resolved");
+        const attachments = Object.fromEntries(
+          Object.entries(parsed.reply.attachments ?? {}).map(([id, files]) => {
+            const question = pending.questions.find((item) => item.id === id);
+            if (!question?.allowCustom || question.preserveCustomWhitespace)
+              throw new Error("This question cannot accept attachments");
+            return [id, resolveAttachments(engine.store, parseRemoteAttachments(files))];
+          }),
+        );
+        desktop.live.enqueue({ ...parsed, reply: { ...parsed.reply, attachments } });
+      },
       withRetiredWriters: withRetiredDesktopWriters,
     },
     crews: { ownerDirective: (command) => crews.ownerDirective(command) },

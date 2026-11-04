@@ -2,6 +2,17 @@
 
 export const CUSTOM_OPTION_ID = "__custom__";
 
+/** Durable file metadata; paths are resolved on the executing Host. */
+export type UserQuestionAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  kind: "image" | "audio" | "file";
+  size: number;
+  path?: string;
+  hostEnvironmentId?: string;
+};
+
 export type UserQuestionOption = {
   id: string;
   label: string;
@@ -48,5 +59,6 @@ export type UserQuestionReply =
       kind: "answered";
       answers: Record<string, string[]>;
       custom?: Record<string, string>;
+      attachments?: Record<string, UserQuestionAttachment[]>;
     }
   | { kind: "skipped" };

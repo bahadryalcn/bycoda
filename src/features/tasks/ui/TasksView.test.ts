@@ -744,7 +744,12 @@ it.each(["environment.describe", "goals.list"])(
     expect(card("Fast local task")).toBeTruthy();
     expect(
       invoke.mock.calls.some(
-        ([command, args]) => command === "remote_request" && (args as any)?.machineId === remote.id,
+        ([command, args]) =>
+          command === "remote_request" &&
+          (args as any)?.machineId === remote.id &&
+          ["tasks.list", "goals.list", "stewards.list", "settings.get"].includes(
+            (args as any)?.method,
+          ),
       ),
     ).toBe(false);
     await allProjects();

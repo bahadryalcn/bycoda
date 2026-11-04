@@ -749,6 +749,51 @@ describe("OMP live command inventories", () => {
 });
 
 describe("OMP workflow dialogs", () => {
+  it("delivers file-only workflow answers through the provider text protocol", async () => {
+    const running = await started();
+    frame("omp-test", {
+      type: "extension_ui_request",
+      id: "files",
+      method: "input",
+      title: "Instructions",
+    });
+    const question = events.find((event) => event.type === "question.asked")!;
+    respondQuestion(OMP_FLAVOR, "omp-test", question.requestId, {
+      kind: "answered",
+      answers: {},
+      attachments: {
+        files: [
+          {
+            id: "file",
+            name: "report.txt",
+            mimeType: "text/plain",
+            kind: "file",
+            size: 3,
+            path: "/saved/report.txt",
+          },
+        ],
+      },
+    });
+    await vi.waitFor(() =>
+      expect(
+        transport.requests.some(
+          ({ command }) =>
+            command.type === "extension_ui_response" &&
+            command.value === 'Attached file (read from disk): "/saved/report.txt"',
+        ),
+      ).toBe(true),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "question.resolved",
+        requestId: question.requestId,
+        decision: "answered",
+      }),
+    );
+    frame("omp-test", { type: "prompt_result", id: running.request.id, agentInvoked: false });
+    await running.turn;
+  });
+
   it("honors provider cancellation without sending a late response", async () => {
     const running = await started();
     frame("omp-test", {

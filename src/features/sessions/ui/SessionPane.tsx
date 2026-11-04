@@ -283,6 +283,7 @@ type Props = SessionPaneProps & {
   remoteSession?: boolean;
   remoteFeatures?: {
     attachments: boolean;
+    questionAttachments?: boolean;
     plan: boolean;
     draft: boolean;
     steer?: boolean;

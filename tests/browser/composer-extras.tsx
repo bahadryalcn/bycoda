@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ModelControlPills } from "../../src/features/sessions/ui/ModelPicker";
 import { createRoot } from "react-dom/client";
 import { Composer } from "../../src/features/sessions/ui/Composer";
@@ -129,12 +129,31 @@ if (accountPicker) {
 import {
   beginDeliveryProgress,
   updateDeliveryProgress,
+  clearDeliveryProgress,
 } from "../../src/features/sessions/model/deliveryProgress";
 
 function Fixture() {
+  const queueVisual = new URLSearchParams(location.search).get("queue-state");
+  useEffect(() => {
+    const theme = new URLSearchParams(location.search).get("theme");
+    if (theme) document.documentElement.classList.toggle("theme-light", theme === "light");
+  }, []);
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
-  const [queueStatus, setQueueStatus] = useState<"paused" | "active">("paused");
+  const [queueStatus, setQueueStatus] = useState<"paused" | "active">(
+    queueVisual === "active" ? "active" : "paused",
+  );
+  useEffect(() => {
+    if (queueVisual !== "rejected") return;
+    const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+    updateDeliveryProgress(
+      "composer-layout-fixture",
+      progress,
+      "rejected",
+      "The provider rejected the message. It remains queued and paused.",
+    );
+    return () => clearDeliveryProgress("composer-layout-fixture", progress);
+  }, [queueVisual]);
   const [harness, setHarness] = useState<HarnessId>(
     antigravitySelection ? "antigravity" : "claude",
   );
@@ -143,7 +162,7 @@ function Fixture() {
   );
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("supervised");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(queueVisual === "active");
   const [disabled, setDisabled] = useState(false);
   const [accountId, setAccountId] = useState("default");
   const [terminalOpened, setTerminalOpened] = useState(false);
@@ -165,13 +184,33 @@ function Fixture() {
       </div>
       <Composer
         queuedMessages={
-          queueFeedback || deliveryProgress
-            ? [{ id: "queued", text: "Queued task waiting for the current turn", attachments: [] }]
-            : undefined
+          queueVisual
+            ? [
+                {
+                  id: "queued",
+                  text: "Connect GitHub and manage deployments from the repository",
+                  attachments: [],
+                  deliveryUnknown: queueVisual === "unknown" ? true : undefined,
+                },
+                {
+                  id: "queued-next",
+                  text: "Configure the Cloudflare DNS records",
+                  attachments: [],
+                },
+              ]
+            : queueFeedback || deliveryProgress
+              ? [
+                  {
+                    id: "queued",
+                    text: "Queued task waiting for the current turn",
+                    attachments: [],
+                  },
+                ]
+              : undefined
         }
-        queueStatus={queueFeedback || deliveryProgress ? queueStatus : undefined}
+        queueStatus={queueVisual || queueFeedback || deliveryProgress ? queueStatus : undefined}
         onResumeQueue={
-          queueFeedback || deliveryProgress
+          queueVisual || queueFeedback || deliveryProgress
             ? async () => {
                 await new Promise((resolve) => setTimeout(resolve, 800));
                 setQueueStatus("active");
@@ -183,7 +222,7 @@ function Fixture() {
             : undefined
         }
         onSteerQueuedMessage={
-          queueFeedback || deliveryProgress
+          queueVisual || queueFeedback || deliveryProgress
             ? async () => {
                 if (deliveryProgress) {
                   const progress = beginDeliveryProgress(

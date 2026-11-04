@@ -13,6 +13,8 @@ import { HOST_GOALS } from "./hostGoals";
 import { HOST_SETTINGS } from "./hostSettings";
 import { HOST_STEWARDS } from "./hostStewards";
 import { HOST_TASKS, HOST_TASKS_TODO } from "./hostTasks";
+import { HOST_SPRINTS } from "./hostSprints";
+import { planningCoordinator } from "./sprintClient";
 import { useTaskBoardQueries } from "./useTaskBoardQueries";
 
 const mocks = vi.hoisted(() => ({
@@ -65,6 +67,14 @@ function Probe({ scope = "all" }: { scope?: string }) {
   return null;
 }
 const Harness = withQueryClient(Probe);
+function PlanningProbe({ scope }: { scope: string }) {
+  const scoped = useTaskBoardQueries(scope, { planningCatalog: true });
+  useLayoutEffect(() => {
+    latest = scoped;
+  });
+  return null;
+}
+const PlanningHarness = withQueryClient(PlanningProbe);
 
 let container: HTMLDivElement;
 let root: Root;
@@ -308,6 +318,62 @@ it("does not probe an unrelated machine until All projects is requested", async 
   expect(mocks.capabilities.mock.calls.every(([entry]) => entry.id === "a")).toBe(true);
   await act(async () => root.render(createElement(Harness, { scope: "all" })));
   await until(() => mocks.capabilities.mock.calls.some(([entry]) => entry.id === "b"));
+});
+
+it("keeps a saved local planning authority for an initially selected legacy remote source without reading unrelated collections", async () => {
+  world.machines.push(machine("b"));
+  mocks.capabilities.mockImplementation(async (entry: RemoteMachine) => [
+    HOST_TASKS,
+    HOST_TASKS_TODO,
+    HOST_GOALS,
+    HOST_STEWARDS,
+    HOST_SETTINGS,
+    ...(entry.id === "a" ? [HOST_SPRINTS] : []),
+  ]);
+  mocks.projects.mockImplementation(async (entry: RemoteMachine) => [
+    { id: "project", cwd: `/${entry.id}`, name: `Project ${entry.id}` },
+  ]);
+  await act(async () =>
+    root.render(createElement(PlanningHarness, { scope: JSON.stringify(["env-b", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && latest.board.projects.length === 2);
+  expect(latest.board.planningMachines.map((entry) => entry.id)).toEqual(["a", "b"]);
+  expect(planningCoordinator(latest.board.planningMachines, "env-a")?.id).toBe("a");
+  for (const mock of [mocks.listTasks, mocks.listGoals, mocks.listStewards, mocks.listLimits])
+    expect(
+      mock.mock.calls.every(([entries]) =>
+        entries.every((entry: RemoteMachine) => entry.id === "b"),
+      ),
+    ).toBe(true);
+  const collectionCalls = [
+    mocks.listTasks,
+    mocks.listGoals,
+    mocks.listStewards,
+    mocks.listLimits,
+  ].map((mock) => mock.mock.calls.length);
+  mocks.projects.mockImplementation(async (entry: RemoteMachine) => [
+    { id: "project", cwd: `/${entry.id}`, name: `Refreshed ${entry.id}` },
+  ]);
+  await act(async () => latest.refresh(true, "a"));
+  expect(latest.board.projects.find((entry) => entry.environmentId === "env-a")?.name).toBe(
+    "Refreshed a",
+  );
+  expect(
+    mocks.capabilities.mock.calls.some(([entry, fresh]) => entry.id === "a" && fresh === true),
+  ).toBe(true);
+  expect(
+    [mocks.listTasks, mocks.listGoals, mocks.listStewards, mocks.listLimits].map(
+      (mock) => mock.mock.calls.length,
+    ),
+  ).toEqual(collectionCalls);
+  await act(async () =>
+    root.render(createElement(PlanningHarness, { scope: JSON.stringify(["env-a", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && latest.board.machines[0]?.id === "a");
+  expect(latest.board.planningMachines.find((entry) => entry.environmentId === "env-a")?.id).toBe(
+    "a",
+  );
+  expect(latest.board.projects.map((entry) => entry.environmentId)).toEqual(["env-a", "env-b"]);
 });
 
 it("does not use another host's answer to finish a newly selected host's loading state", async () => {

@@ -30,6 +30,10 @@ These details describe the tool call at that point in the conversation. They do 
 
 ## Working and follow-up messages
 
+When the AI asks a question with a free-text answer, use **Attach files**, paste copied files or images, or drop files onto the question card. Attached items appear below the answer; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
+
+Question attachments are saved as files on the computer running the conversation. The AI receives file references and reads them with its tools. Structured forms that require exact typed values do not accept attachments in those fields.
+
 Sending a follow-up while the agent is working keeps the current execution's
 subagents and background commands in **Working**, including their progress and
 original elapsed time. It does not start a separate activity list. Their rows

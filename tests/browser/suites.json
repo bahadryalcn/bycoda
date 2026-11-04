@@ -773,7 +773,7 @@
     {
       "id": "question-flow",
       "config": "tests/browser/playwright.question-flow.config.ts",
-      "files": ["question-flow.spec.ts"],
+      "files": ["question-flow.spec.ts", "question-attachments.spec.ts"],
       "fixture": {
         "config": "tests/browser/vite.question-flow.config.ts",
         "mode": "preview",
@@ -783,12 +783,12 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["question-flow.spec.ts"]
+          "files": ["question-flow.spec.ts", "question-attachments.spec.ts"]
         },
         {
           "name": "webkit",
           "browser": "webkit",
-          "files": ["question-flow.spec.ts"]
+          "files": ["question-flow.spec.ts", "question-attachments.spec.ts"]
         }
       ]
     },
@@ -1684,7 +1684,7 @@
     },
     {
       "config": "tests/browser/playwright.question-flow.config.ts",
-      "files": ["question-flow.spec.ts"],
+      "files": ["question-flow.spec.ts", "question-attachments.spec.ts"],
       "browsers": ["chromium"]
     },
     {

@@ -8,6 +8,8 @@ import {
   setSessions,
 } from "../../../../features/sessions/model/sessionsStore";
 import { newSession } from "../../../../features/sessions/model/session";
+import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
+import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
 import {
   clearDeliveryProgress,
   readDeliveryProgress,
@@ -53,6 +55,112 @@ beforeEach(() => {
     progress = readDeliveryProgress("steer-test")
   )
     clearDeliveryProgress("steer-test", progress);
+});
+
+it.each(["active", "paused", "restored"] as const)(
+  "returns a queued steer to the head without rejecting a %s queue when its turn ended",
+  async (queueStatus) => {
+    const attachment = {
+      id: "file",
+      name: "context.txt",
+      kind: "file" as const,
+      mimeType: "text/plain",
+      size: 7,
+      path: "/fake/context.txt",
+    };
+    const selected = { id: "selected", text: "follow-up", attachments: [attachment] };
+    const later = { id: "later", text: "next", attachments: [] };
+    const session = {
+      ...newSession("codex", "/fake"),
+      id: "steer-test",
+      busy: true,
+      queueStatus,
+      queuedMessages: [selected, later],
+    };
+    resetSessionsStore([session]);
+    transport.steer.mockRejectedValue(new TurnNotReadyError("The original turn ended"));
+    const ctx = {
+      dismissNoticesForContinuedSession: vi.fn(),
+      enqueueHarnessEvent: vi.fn(),
+      flushHarnessEvents: vi.fn(),
+      refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+    } as unknown as SubmitDeps;
+    const input = {
+      sessionId: session.id,
+      text: selected.text,
+      attachments: selected.attachments,
+      options: {
+        queuedMessageId: selected.id,
+        followUpBehavior: "steer",
+        sharedQueueClaimed: true,
+      },
+    } as SubmitInput;
+    const pre = {
+      storedCurrent: session,
+      current: session,
+      intent: "default",
+      submittedText: input.text,
+      harnessText: input.text,
+      operatorCommand: { matched: false },
+      initialWorkCwd: session.cwd,
+    } as unknown as SubmitPreflight;
+
+    await expect(steerBusySubmit(ctx, input, pre)).rejects.toBeInstanceOf(QueueDeferredError);
+
+    const retained = getSessions()[0];
+    expect(retained.queueStatus).toBe(queueStatus);
+    expect(retained.queuedMessages).toEqual([expect.objectContaining(selected), later]);
+    expect(retained.blocks.some((block) => block.id === "steer-user")).toBe(false);
+    expect(readDeliveryProgress(session.id)).toBeUndefined();
+    expect(ctx.enqueueHarnessEvent).not.toHaveBeenCalled();
+    expect(transport.steer).toHaveBeenCalledOnce();
+  },
+);
+
+it("keeps Stop authoritative when a queued steer loses its turn during delivery", async () => {
+  const selected = { id: "selected", text: "keep queued", attachments: [] };
+  const session = {
+    ...newSession("codex", "/fake"),
+    id: "steer-test",
+    busy: true,
+    queueStatus: "active" as const,
+    queuedMessages: [selected],
+  };
+  resetSessionsStore([session]);
+  const turnGen = new Map([[session.id, 1]]);
+  transport.steer.mockImplementation(async () => {
+    turnGen.set(session.id, 2);
+    setSessions((entries) =>
+      entries.map((entry) => ({ ...entry, busy: false, queueStatus: "paused" })),
+    );
+    throw new TurnNotReadyError("The original turn ended");
+  });
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    enqueueHarnessEvent: vi.fn(),
+    flushHarnessEvents: vi.fn(),
+    refs: { turnGen: { current: turnGen } },
+  } as unknown as SubmitDeps;
+  const input = {
+    sessionId: session.id,
+    text: selected.text,
+    attachments: selected.attachments,
+    options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
+  } as SubmitInput;
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    submittedText: input.text,
+    harnessText: input.text,
+    operatorCommand: { matched: false },
+    initialWorkCwd: session.cwd,
+  } as unknown as SubmitPreflight;
+
+  expect(await steerBusySubmit(ctx, input, pre)).toBe(false);
+  expect(getSessions()[0].queueStatus).toBe("paused");
+  expect(getSessions()[0].queuedMessages).toEqual([expect.objectContaining(selected)]);
+  expect(readDeliveryProgress(session.id)?.stage).toBe("rejected");
 });
 
 it.each(["unreviewed", "kept", "kept-with-new-send", "edited"])(

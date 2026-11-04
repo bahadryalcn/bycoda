@@ -58,6 +58,71 @@ configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
 
+it("resolves uploaded question files before forwarding answers to the owning desktop", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "desktop-file-create",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "gpt",
+    runtimeMode: "supervised",
+  });
+  const sessionId = created.sessionId;
+  const saved = await s.store.session(sessionId);
+  await s.store.save(
+    { ...saved, desktop: { updatedAt: 1 }, revision: saved.revision + 1 },
+    { type: "desktop-fixture" },
+  );
+  const stamp = vi
+    .spyOn(DesktopSessions.prototype, "stampAsync")
+    .mockResolvedValue({ updatedAt: 1, running: true });
+  cleanups.push(async () => {
+    stamp.mockRestore();
+  });
+  const question = {
+    requestId: 7,
+    questions: [
+      { id: "q", prompt: "Attach report", allowCustom: true, multiSelect: false, options: [] },
+    ],
+  };
+  const beat = () =>
+    s.call("sessions.desktopLive", {
+      clientId: "desktop-file-owner",
+      sessions: [{ id: sessionId, busy: true, patch: { pendingQuestion: question } }],
+    });
+  await beat();
+  const file = {
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    name: "report.txt",
+    mimeType: "text/plain",
+    kind: "file",
+    size: 3,
+  };
+  await s.call("attachments.upload", { id: file.id, size: 3, offset: 0, data: "YWJj" });
+  const dispatched = await s.call("commands.dispatch", {
+    type: "answer",
+    commandId: "desktop-file-answer",
+    sessionId,
+    runId: "desktop",
+    requestId: 7,
+    reply: {
+      kind: "answered",
+      answers: {},
+      attachments: { q: [file] },
+    },
+  });
+  expect(dispatched.value.error).toBeUndefined();
+  const response = (await beat()).value.result;
+  const command = response.commands.find(
+    (item: { id: string }) => item.id === "desktop-file-answer",
+  );
+  expect(command.reply.attachments.q[0]).toMatchObject(file);
+  expect(command.reply.attachments.q[0].path).toContain(file.id);
+  expect(command.reply.attachments.q[0].path).not.toContain("wrong-machine");
+});
+
 it("exposes safe Host account catalog only to owner model discovery, preserving scoped tool inventory", async () => {
   const actual = accountCatalog.hostProviderAccounts;
   let roots: string[] = [];
@@ -85,6 +150,7 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
     );
     const capabilities = (await s.call("environment.describe")).value.result.capabilities;
     expect(capabilities).toContain("sessions.configure.providerAccount.v1");
+    expect(capabilities).toContain("sessions.questionAttachments");
     expect(capabilities).toContain("models.providerAccounts.v1");
     const created = await s.engine.command({
       type: "create",

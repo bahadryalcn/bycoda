@@ -30,7 +30,10 @@ import {
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
 } from "../../../features/connections/model/useSharedLocalQueues";
-import { QueueNotReadyError } from "../../../features/connections/model/sharedQueue";
+import {
+  QueueDeferredError,
+  QueueNotReadyError,
+} from "../../../features/connections/model/sharedQueue";
 import {
   nextQueueStatus,
   planResume,
@@ -462,6 +465,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
             ),
           );
         return accepted;
+      } catch (error) {
+        if (error instanceof QueueDeferredError) return { kind: "waiting", message: error.message };
+        throw error;
       } finally {
         manualActions.current.delete(sessionId);
       }
@@ -573,6 +579,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         }
         return false;
       } catch (error) {
+        if (error instanceof QueueDeferredError) return { kind: "waiting", message: error.message };
         settleResuming(sessionId, nextQueueStatus("resuming", "resume-failed"));
         throw error;
       } finally {

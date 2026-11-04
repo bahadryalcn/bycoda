@@ -15,6 +15,12 @@ Conversation deletion keeps its confirmation and shows progress while work is
 pending. Successful deletion clears the progress without an extra success banner.
 Failures, skipped conversations and incomplete cleanup remain visible for review.
 
+Queued messages keep their order when the running provider turn ends before a
+follow-up can enter it. The message returns to the queue and an active queue
+continues automatically when the conversation is free; no second Resume is needed.
+Stop and an explicitly paused queue still require Resume. Rejected sends and
+unconfirmed delivery remain held for review instead of being resent automatically.
+
 Question answers are retained locally while you switch conversations or hide a
 form. The local question store has a shared limit of 64 question drafts and 4 MiB,
 with at most 1 MiB per question. When full, a new question stays read-only and

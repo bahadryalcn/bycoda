@@ -1,4 +1,4 @@
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 import { Alert } from "../../../shared/ui/Alert";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
@@ -343,6 +343,7 @@ type Props = {
   remoteSession?: boolean;
   remoteFeatures?: {
     attachments: boolean;
+    questionAttachments?: boolean;
     plan: boolean;
     draft: boolean;
     steer?: boolean;
@@ -736,14 +737,15 @@ function MessageQueue({
           <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
             <Pause className="icon-sm" />
             <span className="min-w-0 flex-1 truncate" title={holdDetail}>
-              {hold.kind === "held" && hold.reason === "unknown"
-                ? t("Queue held: delivery is not confirmed")
-                : hold.kind === "held" && hold.reason === "rejected"
-                  ? t("Queue paused: the last message was not accepted")
-                  : t("Queue paused because you interrupted")}
-              {holdDetail && !(hold.kind === "held" && hold.reason === "unknown") ? (
-                <span className="text-(--ui-text-muted)"> {holdDetail}</span>
-              ) : null}
+              {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
+              messages.some((message) => message.deliveryUnknown)
+                ? `${t("Queue")} · ${messages.length}`
+                : hold.kind === "held" && hold.reason === "unknown"
+                  ? t("Queue held: delivery is not confirmed")
+                  : hold.kind === "held" && hold.reason === "rejected"
+                    ? holdDetail?.split(/\r?\n/, 1)[0] ||
+                      t("Queue paused: the last message was not accepted")
+                    : t("Queue paused because you interrupted")}
             </span>
             <Button
               variant="ghost"
@@ -821,6 +823,26 @@ function MessageQueue({
               {pendingAction === "resume" ? t("Sending…") : t("Send next")}
             </Button>
           </div>
+        ) : null}
+        {!paused && !restored && !leaseHeld ? (
+          <div className="flex min-h-7 items-center gap-2 px-1 text-ui-caption" data-queue-summary>
+            <ListEnd className="icon-sm shrink-0" />
+            <span className="shrink-0">
+              {t("Queue")} · {messages.length}
+            </span>
+            {!delivery && busy && !activeFeedback ? (
+              <span className="min-w-0 truncate text-(--ui-text-muted)">
+                {t("Waiting for the running response to finish")}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
+        {holdDetail && !delivery && (holdDetail.length > 180 || holdDetail.includes("\n")) ? (
+          <details className="px-1 pb-1 text-ui-caption text-(--ui-text-muted)">
+            <summary className="w-fit cursor-pointer">{t("Details")}</summary>
+            <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{holdDetail}</p>
+          </details>
         ) : null}
         <div
           className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
@@ -924,6 +946,14 @@ function MessageQueue({
                 <div className="flex shrink-0 items-center gap-1">
                   {remote ? null : (
                     <Button
+                      iconOnly
+                      size="sm"
+                      label={
+                        pendingAction === message.id ||
+                        (pendingDelivery && delivery?.messageId === message.id)
+                          ? t("Sending…")
+                          : t("Steer")
+                      }
                       variant="ghost"
                       type="button"
                       disabled={!canSend(message)}
@@ -951,10 +981,6 @@ function MessageQueue({
                       className="shrink-0"
                     >
                       <CornerDownRight className="icon-sm" />
-                      {pendingAction === message.id ||
-                      (pendingDelivery && delivery?.messageId === message.id)
-                        ? t("Sending…")
-                        : t("Steer")}
                     </Button>
                   )}
                   <Button
@@ -970,24 +996,23 @@ function MessageQueue({
                   >
                     <Pencil className="icon-sm" />
                   </Button>
-                  <ConfirmMorph
-                    label={t("Remove")}
-                    icon={<Trash2 className="icon-sm" />}
-                    prompt={t("Remove queued message")}
-                    disabled={queueClosed || !!pendingAction || pendingDelivery}
-                    onConfirm={() => {
-                      mutateParentInput(queueOwner, () => onDelete?.(message.id));
-                    }}
-                  />
+                  <Tooltip label={t("Remove queued message")}>
+                    <ConfirmMorph
+                      label={<span className="sr-only">{t("Remove")}</span>}
+                      icon={<Trash2 className="icon-sm" />}
+                      prompt={t("Remove queued message")}
+                      disabled={queueClosed || !!pendingAction || pendingDelivery}
+                      onConfirm={() => {
+                        mutateParentInput(queueOwner, () => onDelete?.(message.id));
+                      }}
+                    />
+                  </Tooltip>
                 </div>
               </div>
             );
           })}
         </div>
-        {!delivery &&
-        (pendingAction ||
-          activeFeedback ||
-          (busy && status === "active" && messages.length > 0)) ? (
+        {!delivery && (pendingAction || activeFeedback) ? (
           <div
             role={activeFeedback?.error ? "alert" : "status"}
             aria-live="polite"
@@ -3400,6 +3425,10 @@ export const Composer = memo(function Composer({
           draftScope={questionDraftScope ?? sessionId}
           onReply={onQuestionReply}
           onInteraction={onQuestionInteraction}
+          attachmentsSupported={
+            attachmentsSupported && (!remote || !!remoteFeatures?.questionAttachments)
+          }
+          remote={remote}
         />
       ) : null}
       {parentClosed ? (
@@ -3507,7 +3536,9 @@ export const Composer = memo(function Composer({
           }
         />
       ) : null}
-      <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
+      {queuedMessages.length === 0 ? (
+        <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
+      ) : null}
       <MessageQueue
         parentSessionId={logicalParentSessionId}
         key={sessionId}

@@ -3,7 +3,9 @@ import {
   type UserQuestionOption,
   type UserQuestion,
   type UserQuestionReply,
+  type UserQuestionAttachment,
 } from "../../../shared/model/userQuestion";
+import { attachmentPathText } from "./attachmentPrompt";
 export {
   CUSTOM_OPTION_ID,
   type UserQuestionOption,
@@ -13,6 +15,7 @@ export {
   type UserQuestionDismissAction,
   type UserQuestionPrompt,
   type UserQuestionReply,
+  type UserQuestionAttachment,
 } from "../../../shared/model/userQuestion";
 
 export function questionsFromUnknown(value: unknown): UserQuestion[] {
@@ -70,11 +73,19 @@ export function buildQuestionReply(
   questions: UserQuestion[],
   answers: Record<string, string[]>,
   custom: Record<string, string> = {},
+  attachments: Record<string, UserQuestionAttachment[]> = {},
 ): UserQuestionReply {
-  const answered = questions.filter((question) => questionIsComplete(question, answers, custom));
+  const answered = questions.filter(
+    (question) =>
+      questionIsComplete(question, answers, custom) ||
+      (question.allowCustom &&
+        !question.preserveCustomWhitespace &&
+        attachments[question.id]?.length),
+  );
   if (answered.length === 0) return { kind: "skipped" };
   const nextAnswers: Record<string, string[]> = {};
   const nextCustom: Record<string, string> = {};
+  const nextAttachments: Record<string, UserQuestionAttachment[]> = {};
   for (const question of answered) {
     const selected = answers[question.id];
     if (selected?.length) nextAnswers[question.id] = selected;
@@ -82,11 +93,18 @@ export function buildQuestionReply(
       ? custom[question.id]
       : custom[question.id]?.trim();
     if (text) nextCustom[question.id] = text;
+    if (
+      question.allowCustom &&
+      !question.preserveCustomWhitespace &&
+      attachments[question.id]?.length
+    )
+      nextAttachments[question.id] = attachments[question.id];
   }
   return {
     kind: "answered",
     answers: nextAnswers,
     ...(Object.keys(nextCustom).length > 0 ? { custom: nextCustom } : {}),
+    ...(Object.keys(nextAttachments).length > 0 ? { attachments: nextAttachments } : {}),
   };
 }
 
@@ -98,13 +116,20 @@ export function selectedAnswerLabels(
     ? reply.custom?.[question.id]
     : reply.custom?.[question.id]?.trim();
   const selected = reply.answers[question.id] ?? [];
-  if (selected.length === 0 && custom && question.allowCustom) return [custom];
-  return selected.flatMap((id) => {
-    if (isCustomSelection(question, id)) return custom ? [custom] : [];
-    const option = question.options.find((item) => item.id === id);
-    const label = option?.label.trim() || id.trim();
-    return label ? [label] : [];
-  });
+  const labels =
+    selected.length === 0 && custom && question.allowCustom
+      ? [custom]
+      : selected.flatMap((id) => {
+          if (isCustomSelection(question, id)) return custom ? [custom] : [];
+          const option = question.options.find((item) => item.id === id);
+          const label = option?.label.trim() || id.trim();
+          return label ? [label] : [];
+        });
+  const files =
+    question.allowCustom && !question.preserveCustomWhitespace
+      ? reply.attachments?.[question.id]
+      : undefined;
+  return files?.length ? [[...labels, ...files.map(attachmentPathText)].join("\n\n")] : labels;
 }
 
 export function isCustomSelection(question: UserQuestion, optionId: string): boolean {

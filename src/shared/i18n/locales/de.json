@@ -10961,5 +10961,9 @@
   "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.": "Routineantworten beziehen sich nur auf Fragen innerhalb der zugewiesenen Aufgabe. Sie genehmigen niemals Berechtigungen, Veröffentlichungen, Anmeldeinformationen oder destruktive Aktionen.",
   "Saved computer use setting": "Gespeicherte Computernutzungseinstellung",
   "The stall timeout controls when inactive work needs attention.": "Das Blockier-Timeout steuert, wann inaktive Arbeit Aufmerksamkeit erfordert.",
-  "This local daily scheduling budget is an estimate, not a provider billing cap.": "Bei diesem lokalen täglichen Planungsbudget handelt es sich um eine Schätzung und nicht um eine Abrechnungsobergrenze des Anbieters."
+  "This local daily scheduling budget is an estimate, not a provider billing cap.": "Bei diesem lokalen täglichen Planungsbudget handelt es sich um eine Schätzung und nicht um eine Abrechnungsobergrenze des Anbieters.",
+  "A message carries up to {p0} attachments.": "Eine Nachricht kann bis zu {p0} Anhänge enthalten.",
+  "Some files could not be attached. Try attaching them again.": "Einige Dateien konnten nicht angehängt werden. Versuchen Sie, sie erneut anzuhängen.",
+  "This host cannot upload attachments.": "Dieser Host kann keine Anhänge hochladen.",
+  "The original question changed before the attachments were ready.": "Die ursprüngliche Frage wurde geändert, bevor die Anhänge bereit waren."
 }

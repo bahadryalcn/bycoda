@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "question-flow.spec.ts",
+  testMatch: ["question-flow.spec.ts", "question-attachments.spec.ts"],
   outputDir: "../../temp/test-results/browser-question-flow",
   workers: 1,
   timeout: 30_000,

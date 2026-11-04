@@ -1,4 +1,5 @@
 import type { UserQuestionPrompt } from "./userQuestion";
+import type { Attachment } from "./session";
 import { registerParentInput, canPublishParentInput } from "../data/parentInputClosure";
 import { copyNativeCaptureData } from "../../../shared/lib/native-capture-json";
 
@@ -6,6 +7,7 @@ export type QuestionDraft = {
   step: number;
   answers: Record<string, string[]>;
   custom: Record<string, string>;
+  attachments?: Record<string, Attachment[]>;
   /** A void decision callback is not proof that the provider consumed it. */
   delivery?: "sending" | "unknown";
   pendingAction?: "answer" | "dismiss";
@@ -131,6 +133,7 @@ function pending(entry: Entry) {
 function nonempty(entry: Entry) {
   return (
     pending(entry) ||
+    Object.values(entry.draft.attachments ?? {}).some((files) => files.length > 0) ||
     entry.draft.step > 0 ||
     Object.values(entry.draft.answers).some((value) => value.length > 0) ||
     Object.values(entry.draft.custom).some((value) => value.length > 0)

@@ -5183,6 +5183,116 @@ describe("headless session ownership", () => {
     expect(await store.receiptStatus("guard-A")).toEqual(receipt);
   });
 
+  it.each(["unknown", "typed"])(
+    "rejects %s question file targets before provider dispatch",
+    async (target) => {
+      const { engine, turns, provider, id, waitForTurnStart } = await setup();
+      const receipt = await engine.command({
+        type: "send",
+        commandId: "question-invalid-file-start",
+        sessionId: id,
+        text: "Work",
+      });
+      await waitForTurnStart();
+      turns[0].input.onEvent({
+        type: "question.asked",
+        requestId: 9,
+        questions: [
+          {
+            id: "q1",
+            prompt: "Exact input",
+            allowCustom: true,
+            preserveCustomWhitespace: target === "typed",
+            multiSelect: false,
+            options: [],
+          },
+        ],
+      });
+      await expect(
+        engine.command({
+          type: "answer",
+          commandId: "question-invalid-file-answer",
+          sessionId: id,
+          runId: receipt.runId,
+          requestId: 9,
+          reply: {
+            kind: "answered",
+            answers: {},
+            attachments: {
+              [target === "unknown" ? "missing" : "q1"]: [
+                {
+                  id: "fd546e23-7950-4213-97c5-385b9ce041fe",
+                  name: "report.txt",
+                  mimeType: "text/plain",
+                  kind: "file",
+                  size: 3,
+                },
+              ],
+            },
+          },
+        }),
+      ).rejects.toThrow("This question cannot accept attachments");
+      expect(provider.answer).not.toHaveBeenCalled();
+    },
+  );
+
+  it("resolves question files on the executing Host and retains them in the answer transcript", async () => {
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "question-file-start",
+      sessionId: id,
+      text: "Work",
+    });
+    await waitForTurnStart();
+    const file = {
+      id: "fd546e23-7950-4213-97c5-385b9ce041fe",
+      name: "report.txt",
+      mimeType: "text/plain",
+      kind: "file" as const,
+      size: 3,
+    };
+    await writeAttachmentChunk(store, { id: file.id, size: 3, offset: 0, data: "YWJj" });
+    turns[0].input.onEvent({
+      type: "question.asked",
+      requestId: 9,
+      questions: [
+        { id: "q1", prompt: "Attach report", allowCustom: true, multiSelect: false, options: [] },
+      ],
+    });
+    await engine.command({
+      type: "answer",
+      commandId: "question-file-answer",
+      sessionId: id,
+      runId: receipt.runId,
+      requestId: 9,
+      reply: {
+        kind: "answered",
+        answers: {},
+        attachments: { q1: [{ ...file, path: "C:\\wrong-machine\\report.txt" }] },
+      },
+    });
+    await vi.waitFor(() => expect(provider.answer).toHaveBeenCalledTimes(1));
+    const sent = vi.mocked(provider.answer).mock.calls.at(-1)![2];
+    expect(sent.kind).toBe("answered");
+    if (sent.kind !== "answered") throw new Error("Expected file answer");
+    const path = sent.attachments?.q1[0].path;
+    expect(path).toBeTruthy();
+    expect(path).not.toContain("wrong-machine");
+    expect(readFileSync(path!, "utf8")).toBe("abc");
+    turns[0].input.onEvent({
+      type: "question.resolved",
+      requestId: 9,
+      decision: "answered",
+      reply: sent,
+    });
+    await vi.waitFor(async () => {
+      const block = (await store.session(id)).session.blocks.at(-1);
+      expect(block?.attachments).toEqual([{ ...file, path }]);
+      expect(block?.text).toContain("Attached file (read from disk):");
+    });
+  });
+
   it("stores pending questions and rejects a second device's stale answer", async () => {
     const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
     await engine.command({

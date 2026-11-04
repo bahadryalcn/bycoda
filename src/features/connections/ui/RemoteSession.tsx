@@ -50,6 +50,7 @@ import type {
   PlanBuildTarget,
 } from "../../sessions/model/session";
 import { uploadRemoteAttachments } from "../model/remoteAttachments";
+import { uploadQuestionAttachments } from "../model/remoteQuestionAttachments";
 import {
   ATTACHMENT_OWNERSHIP_CAPABILITY,
   attachmentOwnerId,
@@ -183,7 +184,13 @@ import {
 
 export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSession: boolean;
-  remoteFeatures: { attachments: boolean; plan: boolean; draft: boolean; steer?: boolean };
+  remoteFeatures: {
+    attachments: boolean;
+    questionAttachments?: boolean;
+    plan: boolean;
+    draft: boolean;
+    steer?: boolean;
+  };
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
   managedWorkspaceCreationReady: boolean;
@@ -3059,26 +3066,70 @@ function ConnectedRemoteSession({
       return;
     }
     updateDelivery("sending");
-    void run({
-      type: "answer",
-      ...remoteIntentAuthority(snapshot),
-      commandId,
-      sessionId,
-      runId,
-      requestId,
-      reply,
-    }).then((receipt) => {
-      if (receipt) return; // Host acceptance is followed by the provider's authoritative snapshot.
-      // Only an explicit host refusal proves the answer was not accepted.
-      // A receipt or snapshot failure must never turn into an automatic resend.
-      const uncertain = !lastRunFailure.current?.includes("Host rejected request:");
-      updateDelivery(
-        uncertain ? "unknown" : "failed",
-        uncertain
-          ? t("Answer delivery could not be confirmed. Check the connection before continuing.")
-          : t("The host did not confirm the request."),
-      );
-    });
+    const targetVersion = bindingGen.version;
+    const targetMachine = machine.id;
+    const authority = remoteIntentAuthority(snapshot);
+    const originalQuestion = snapshotRef.current?.session.pendingQuestion;
+    const questionIdentity = JSON.stringify([
+      originalQuestion?.occurrenceId,
+      originalQuestion?.questions,
+    ]);
+    let dispatched = false;
+    const prepareReply = async () => {
+      if (reply.kind !== "answered" || !reply.attachments) return reply;
+      if (!descriptor?.capabilities.includes("sessions.questionAttachments"))
+        throw new Error(t("This host cannot upload attachments."));
+      return uploadQuestionAttachments(targetMachine, reply, {
+        ownership,
+        ownershipSource: `question:${commandId}`,
+        environmentId: machine.environmentId,
+        resumable: descriptor?.capabilities.includes("attachments.resume"),
+      });
+    };
+    void prepareReply()
+      .then((preparedReply) => {
+        if (
+          !alive.current ||
+          bindingGen.version !== targetVersion ||
+          snapshotRef.current?.session.id !== sessionId ||
+          snapshotRef.current.runId !== runId ||
+          snapshotRef.current.session.pendingQuestion?.requestId !== requestId ||
+          JSON.stringify([
+            snapshotRef.current.session.pendingQuestion.occurrenceId,
+            snapshotRef.current.session.pendingQuestion.questions,
+          ]) !== questionIdentity
+        )
+          throw new Error(t("The original question changed before the attachments were ready."));
+        dispatched = true;
+        return run({
+          type: "answer",
+          ...authority,
+          commandId,
+          sessionId,
+          runId,
+          requestId,
+          reply: preparedReply,
+        });
+      })
+      .then((receipt) => {
+        if (receipt) return; // Host acceptance is followed by the provider's authoritative snapshot.
+        // Only an explicit host refusal proves the answer was not accepted.
+        // A receipt or snapshot failure must never turn into an automatic resend.
+        const uncertain = !lastRunFailure.current?.includes("Host rejected request:");
+        updateDelivery(
+          uncertain ? "unknown" : "failed",
+          uncertain
+            ? t("Answer delivery could not be confirmed. Check the connection before continuing.")
+            : t("The host did not confirm the request."),
+        );
+      })
+      .catch((error: unknown) => {
+        updateDelivery(
+          dispatched ? "unknown" : "failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      })
+      .finally(() => ownership?.finishJob(`question:${commandId}`));
   };
   const compact = () => {
     if (!hostSession || busy || pending || changes || !online) return false;
@@ -3535,6 +3586,7 @@ function ConnectedRemoteSession({
     remoteSession: true,
     remoteFeatures: {
       attachments: !!descriptor?.capabilities.includes("attachments.upload"),
+      questionAttachments: !!descriptor?.capabilities.includes("sessions.questionAttachments"),
       plan: !!descriptor?.capabilities.includes("sessions.plan"),
       draft: !!descriptor?.capabilities.includes("sessions.draft"),
       steer: remoteCanSteer && !changes,

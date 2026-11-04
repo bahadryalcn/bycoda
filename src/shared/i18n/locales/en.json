@@ -10961,5 +10961,9 @@
   "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.": "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.",
   "Saved computer use setting": "Saved computer use setting",
   "The stall timeout controls when inactive work needs attention.": "The stall timeout controls when inactive work needs attention.",
-  "This local daily scheduling budget is an estimate, not a provider billing cap.": "This local daily scheduling budget is an estimate, not a provider billing cap."
+  "This local daily scheduling budget is an estimate, not a provider billing cap.": "This local daily scheduling budget is an estimate, not a provider billing cap.",
+  "A message carries up to {p0} attachments.": "A message carries up to {p0} attachments.",
+  "Some files could not be attached. Try attaching them again.": "Some files could not be attached. Try attaching them again.",
+  "This host cannot upload attachments.": "This host cannot upload attachments.",
+  "The original question changed before the attachments were ready.": "The original question changed before the attachments were ready."
 }
