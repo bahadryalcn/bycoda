@@ -1,3 +1,10 @@
+import { flushSync } from "react-dom";
+import { TranscriptVirtualRows, type TranscriptVirtualRow } from "./TranscriptVirtualRows";
+import {
+  TranscriptVirtualization,
+  TranscriptVirtualizationContext,
+  useTranscriptActiveBlocksVersion,
+} from "./transcriptVirtualization";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -366,6 +373,8 @@ function AgentTranscriptComponent({
   const editableUserBlockId = useMemo(() => lastUserTurnBlock(blocks)?.id, [blocks]);
   const retention = useContext(TranscriptRetentionContext);
   const retained = retention?.read();
+  const virtualization = useContext(TranscriptVirtualizationContext)!;
+  useTranscriptActiveBlocksVersion();
   const seenOutput = useRef<Set<string> | null>(null);
   const seenBlocks = useRef<Block[] | null>(null);
   if (!seenOutput.current)
@@ -447,6 +456,7 @@ function AgentTranscriptComponent({
     onJumpToBottomReady: registerBottomJump,
     onReadingChange,
     onScrollerChange,
+    virtualization,
   });
   const { scroller, scrollerEl, setScroller, wasVisible } = follow;
   const {
@@ -457,7 +467,7 @@ function AgentTranscriptComponent({
     loadEarlier,
     loadNewer,
     jumpLatest,
-    revealBlock,
+    revealBlock: pagingRevealBlock,
     findTurn,
     pagingLoading,
     pagingError,
@@ -471,23 +481,59 @@ function AgentTranscriptComponent({
     prependHeight: follow.prependHeight,
     remoteHistoryHasMore,
     onLoadRemoteHistory,
-    onRevealReady,
   });
+  virtualization.adjusted = (element) => {
+    if (element === scroller.current) follow.rememberScroll(element);
+  };
+  const revealBlock = useCallback(
+    (blockId: string) => {
+      if (!findTurn(blockId)) return false;
+      flushSync(() => virtualization.reveal(blockId));
+      return pagingRevealBlock(blockId);
+    },
+    [findTurn, pagingRevealBlock, virtualization],
+  );
+  useEffect(() => {
+    onRevealReady?.(revealBlock);
+    return () => onRevealReady?.(null);
+  }, [onRevealReady, revealBlock]);
+  const registerNavigate = useCallback(
+    (navigate: ((blockId: string | null, query?: string) => boolean) | null) => {
+      onNavigateReady?.(
+        navigate
+          ? (blockId, query) => {
+              if (blockId === null) virtualization.reveal(null);
+              return navigate(blockId, query);
+            }
+          : null,
+      );
+    },
+    [onNavigateReady, virtualization],
+  );
   pagingJumpRef.current = jumpLatest;
   const renderedTurns = visibleTurns.map((turn, index) => ({
     turn,
     index: firstVisibleTurn + index,
   }));
   // Active execution and unresolved approval controls are never evicted with settled history.
-  if (waitingForApproval)
+  if (waitingForApproval || virtualization.activeBlocks.size)
     turns.forEach((turn, index) => {
-      if ((index < firstVisibleTurn || index >= lastVisibleTurn) && hasPendingApproval(turn))
+      if (
+        (index < firstVisibleTurn || index >= lastVisibleTurn) &&
+        (hasPendingApproval(turn) ||
+          turn.some((block) => virtualization.activeBlocks.has(block.id)))
+      )
         renderedTurns.push({ turn, index });
     });
   const latestIndex = turns.length - 1;
   if (
     latestIndex >= lastVisibleTurn &&
-    (busy || blockingQuestion || latestTurnAccessory) &&
+    (busy ||
+      pendingQuestion ||
+      editingLastTurn ||
+      latestTurnAccessory ||
+      !!backgroundTasks?.length ||
+      !!backgroundAgents) &&
     !renderedTurns.some((entry) => entry.index === latestIndex)
   )
     renderedTurns.push({ turn: turns[latestIndex], index: latestIndex });
@@ -505,7 +551,7 @@ function AgentTranscriptComponent({
     setOpenWork,
     revealBlock,
     findTurn,
-    onNavigateReady,
+    onNavigateReady: registerNavigate,
   });
   const turnHarnesses = harness ? harnessesForTurns(blocks, renderTurns, harness) : undefined;
   const stableLoadRemoteBlock = useStableCallback(onLoadRemoteBlock);
@@ -855,15 +901,30 @@ function AgentTranscriptComponent({
   );
 }
 
+function VirtualizedTranscriptComponent(props: Props) {
+  const retained = useContext(TranscriptRetentionContext)?.read();
+  const [virtualization] = useState(
+    () =>
+      new TranscriptVirtualization(
+        retained?.bottomFollow === false ? (retained.virtualAnchorBlockId ?? null) : null,
+      ),
+  );
+  return (
+    <TranscriptVirtualizationContext.Provider value={virtualization}>
+      <AgentTranscriptComponent {...props} />
+    </TranscriptVirtualizationContext.Provider>
+  );
+}
+
 // Activity preserves local state while suspending hidden work and effects.
 export const AgentTranscript = memo(function AgentTranscript(props: Props) {
   const transcript =
     props.cwd && props.harness ? (
       <TranscriptSkills cwd={props.cwd} harness={props.harness} sessionId={props.sessionId}>
-        <AgentTranscriptComponent {...props} />
+        <VirtualizedTranscriptComponent {...props} />
       </TranscriptSkills>
     ) : (
-      <AgentTranscriptComponent {...props} />
+      <VirtualizedTranscriptComponent {...props} />
     );
   return (
     <Activity mode={props.visible === false ? "hidden" : "visible"}>
@@ -1169,6 +1230,73 @@ const Turn = memo(function Turn({
       />
     </TurnRow>
   );
+  const itemBlocks = (item: TurnItem) => (item.type === "block" ? [item.block] : item.blocks);
+  const pinnedItem = (item: TurnItem, index: number) =>
+    (live && index === items.length - 1) ||
+    itemBlocks(item).some(
+      (block) =>
+        !!block.streaming ||
+        !!block.inlineVisual ||
+        (!!block.approval && !block.approval.decided) ||
+        (block.role === "user" &&
+          (anchorPrompt || (editingLastTurn && block.id === editableUserBlockId))),
+    );
+  const itemRow = (
+    item: TurnItem,
+    index: number,
+    rail = false,
+    tail = false,
+  ): TranscriptVirtualRow => ({
+    id: turnItemKey(item),
+    blockIds: itemBlocks(item).map((block) => block.id),
+    pinned: pinnedItem(item, index),
+    render: () => (
+      <div
+        data-transcript-search-item
+        data-transcript-search-current={isCurrentItem(item) || undefined}
+        className={
+          rail
+            ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} pl-5 zen-fold-rail`
+            : "flow-root pb-1"
+        }
+      >
+        {renderItem(item, index)}
+      </div>
+    ),
+  });
+  const lineRow: TranscriptVirtualRow = {
+    id: "work-fold",
+    blockIds: [],
+    estimate: showFoldLine ? undefined : 0,
+    render: () => foldLineRow,
+  };
+  const workRows = foldWork.map(({ entry, index }, offset) =>
+    itemRow(entry, index, true, offset === foldWork.length - 1),
+  );
+  const virtualRows = items.flatMap((item, itemIndex): TranscriptVirtualRow[] => {
+    const inFold = !!fold && itemIndex >= fold.start && itemIndex <= fold.end;
+    if (inFold) {
+      if (itemIndex !== fold.start) return [];
+      return [
+        lineRow,
+        {
+          id: "work-details",
+          blockIds: workRows.flatMap((row) => row.blockIds),
+          pinned: workRows.some((row) => row.pinned),
+          estimate: workOpen ? undefined : 0,
+          render: () => (
+            <TurnRow folded={!workOpen}>
+              {() => <TranscriptVirtualRows rows={workRows} listId={`turn:${turnId}:work`} />}
+            </TurnRow>
+          ),
+        },
+        ...foldVisible.map(({ entry, index }) => itemRow(entry, index)),
+      ];
+    }
+    const row = itemIndex === initialThinkingInLine ? [] : [itemRow(item, itemIndex)];
+    return itemIndex === foldLineAt ? [lineRow, ...row] : row;
+  });
+  if (foldLineAt >= items.length) virtualRows.push(lineRow);
   return (
     <div
       key={turn[0].id}
@@ -1177,55 +1305,7 @@ const Turn = memo(function Turn({
         isLastTurn ? " transcript-turn-live" : ""
       }${anchorPrompt && userBlock ? " transcript-turn-anchor" : ""}`}
     >
-      {items.flatMap((item, itemIndex) => {
-        const inFold = !!fold && itemIndex >= fold.start && itemIndex <= fold.end;
-        if (inFold) {
-          if (itemIndex !== fold.start) return [];
-          return [
-            foldLineRow,
-            <TurnRow key="work-details" folded={!workOpen}>
-              {() =>
-                foldWork.map(({ entry, index }, offset) => (
-                  <div
-                    key={turnItemKey(entry)}
-                    data-transcript-search-item
-                    data-transcript-search-current={isCurrentItem(entry) || undefined}
-                    className={`flow-root pb-1 last:pb-0 pl-5 zen-fold-rail ${
-                      offset === foldWork.length - 1 ? "zen-fold-tail" : ""
-                    }`}
-                  >
-                    {renderItem(entry, index)}
-                  </div>
-                ))
-              }
-            </TurnRow>,
-            ...foldVisible.map(({ entry, index }) => (
-              <div
-                key={turnItemKey(entry)}
-                data-transcript-search-item
-                data-transcript-search-current={isCurrentItem(entry) || undefined}
-                className="flow-root pb-1"
-              >
-                {renderItem(entry, index)}
-              </div>
-            )),
-          ];
-        }
-        const row =
-          itemIndex === initialThinkingInLine ? null : (
-            <div
-              key={turnItemKey(item)}
-              data-transcript-search-item
-              data-transcript-search-current={isCurrentItem(item) || undefined}
-              className="flow-root pb-1"
-            >
-              {renderItem(item, itemIndex)}
-            </div>
-          );
-        if (itemIndex !== foldLineAt) return row ?? [];
-        return row ? [foldLineRow, row] : [foldLineRow];
-      })}
-      {foldLineAt >= items.length ? foldLineRow : null}
+      <TranscriptVirtualRows rows={virtualRows} listId={`turn:${turnId}:items`} />
       {activityPhase && activityLabel ? (
         <TurnActivityLine
           phase={activityPhase}
@@ -1237,14 +1317,22 @@ const Turn = memo(function Turn({
           sessionId={activitySessionId}
         />
       ) : null}
-      {settled &&
-        proposals
-          .filter((block) => block.orchestration?.status !== "planning")
-          .map((block) => (
-            <div key={block.id} className="px-4 pt-1 pb-2" data-orchestration-result>
-              <OrchestrationPreview block={block} busy={busy} />
-            </div>
-          ))}
+      {settled ? (
+        <TranscriptVirtualRows
+          listId={`turn:${turnId}:proposals`}
+          rows={proposals
+            .filter((block) => block.orchestration?.status !== "planning")
+            .map((block) => ({
+              id: block.id,
+              blockIds: [block.id],
+              render: () => (
+                <div className="px-4 pt-1 pb-2" data-orchestration-result>
+                  <OrchestrationPreview block={block} busy={busy} />
+                </div>
+              ),
+            }))}
+        />
+      ) : null}
       {/* The accessory keeps the pane's props, which go stale once parked. */}
       {latestTurnAccessory ? latestTurnAccessory : null}
       {durationMs != null && settled ? (
@@ -1382,22 +1470,33 @@ function RemoteBlockLoad({
   onLoad: (blockId: string, revision: number) => Promise<void> | void;
 }) {
   const t = useT();
-  const [state, setState] = useState<"idle" | "pending" | "failed">("idle");
+  const owner = useContext(TranscriptVirtualizationContext);
+  const key = JSON.stringify([blockId, revision]);
+  const [state, setState] = useState<"idle" | "pending" | "failed">(
+    () => owner?.remoteLoads.get(key) ?? "idle",
+  );
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
+    setState(owner?.remoteLoads.get(key) ?? "idle");
     return () => {
       mounted.current = false;
     };
-  }, []);
+  }, [owner, key]);
   const load = async () => {
     if (state === "pending") return;
     setState("pending");
+    owner?.remoteLoads.set(key, "pending");
+    const release = owner?.holdBlock(blockId);
     try {
       await onLoad(blockId, revision);
+      owner?.remoteLoads.set(key, "idle");
       if (mounted.current) setState("idle");
     } catch {
+      owner?.remoteLoads.set(key, "failed");
       if (mounted.current) setState("failed");
+    } finally {
+      release?.();
     }
   };
   return (

@@ -1,3 +1,4 @@
+import type { TranscriptVirtualization } from "./transcriptVirtualization";
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { innerScrollerTakes, useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
@@ -31,6 +32,7 @@ type Options = {
    */
   onReadingChange?: (reading: boolean) => void;
   onScrollerChange?: (el: HTMLDivElement | null) => void;
+  virtualization?: TranscriptVirtualization;
 };
 
 export type TranscriptFollow = ReturnType<typeof useTranscriptFollow>;
@@ -51,6 +53,7 @@ export function useTranscriptFollow({
   onJumpToBottomReady,
   onReadingChange,
   onScrollerChange,
+  virtualization,
 }: Options) {
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const scroller = useRef<HTMLDivElement>(null);
@@ -138,14 +141,20 @@ export function useTranscriptFollow({
       const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
         (node) => node.getBoundingClientRect().bottom > top,
       );
+      const candidate = virtualization?.firstVisibleRow(el);
+      const row = candidate?.closest('[data-transcript-virtualized-turn="true"]')
+        ? candidate
+        : undefined;
       retention.update({
+        virtualAnchorBlockId: row?.dataset.transcriptVirtualBlockId,
+        virtualAnchorOffset: row ? row.getBoundingClientRect().top - top : undefined,
         anchorId: anchor?.dataset.transcriptTurn,
         anchorOffset: anchor ? anchor.getBoundingClientRect().top - top : 0,
         scrollTop: el.scrollTop,
         bottomFollow: stickToBottom.current,
       });
     },
-    [publishReading, retention],
+    [publishReading, retention, virtualization],
   );
 
   const syncPinned = useCallback(
@@ -462,14 +471,21 @@ export function useTranscriptCheckpointRestore(
       stickToBottom.current = checkpoint.bottomFollow ?? true;
       if (stickToBottom.current) pinToBottom(el);
       else {
-        const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
-          (node) => node.dataset.transcriptTurn === checkpoint.anchorId,
-        );
+        const row = checkpoint.virtualAnchorBlockId
+          ? [...el.querySelectorAll<HTMLElement>("[data-transcript-virtual-block-id]")].find(
+              (node) => node.dataset.transcriptVirtualBlockId === checkpoint.virtualAnchorBlockId,
+            )
+          : undefined;
+        const anchor =
+          row ??
+          [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
+            (node) => node.dataset.transcriptTurn === checkpoint.anchorId,
+          );
         el.scrollTop = anchor
           ? el.scrollTop +
             anchor.getBoundingClientRect().top -
             el.getBoundingClientRect().top -
-            (checkpoint.anchorOffset ?? 0)
+            (row ? (checkpoint.virtualAnchorOffset ?? 0) : (checkpoint.anchorOffset ?? 0))
           : (checkpoint.scrollTop ?? 0);
       }
       distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;

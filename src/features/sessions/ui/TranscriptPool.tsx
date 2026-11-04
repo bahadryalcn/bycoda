@@ -20,6 +20,8 @@ export const TRANSCRIPT_WARM_COUNT = 2;
 export type TranscriptUiState = {
   anchorId?: string;
   anchorOffset?: number;
+  virtualAnchorBlockId?: string;
+  virtualAnchorOffset?: number;
   scrollTop?: number;
   bottomFollow?: boolean;
   visibleTurnCount?: number;
