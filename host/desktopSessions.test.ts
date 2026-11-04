@@ -672,6 +672,56 @@ describe("desktop sessions on the host", () => {
     expect((await s.call("sessions.list", { projectId: s.project.id })).result).toEqual([]);
   });
 
+  it("keeps desktop and Host-only sessions intact when writer retirement is unknown", async () => {
+    const s = await setup();
+    for (const id of ["desktop-held", "host-held"]) {
+      s.seed({ id, cwd: s.project.cwd });
+      await s.engine.adoptSession((await s.call("sessions.sync", { sessionId: id })).result.value);
+    }
+    s.desktopDb.prepare("DELETE FROM sessions WHERE id='host-held'").run();
+    const retire = vi
+      .spyOn(s.engine, "withRetiredProviderWriterForDeletion")
+      .mockImplementation(async () => {
+        throw new Error("HOST_WRITER_RETIREMENT_FAILED: unknown physical exit");
+      });
+    for (const id of ["desktop-held", "host-held"]) {
+      const deleted = await s.call("sessions.delete", { projectId: s.project.id, sessionId: id });
+      expect(deleted.error).toMatch(/HOST_WRITER_RETIREMENT_FAILED/);
+      expect(await s.store.session(id)).toBeDefined();
+    }
+    expect(retire).toHaveBeenCalledTimes(2);
+    expect(
+      s.desktopDb.prepare("SELECT id FROM sessions WHERE id='desktop-held'").get(),
+    ).toBeDefined();
+    const beat = await s.call("sessions.desktopLive", {
+      clientId: "desktop",
+      sessions: [],
+      deletions: { version: 1, replies: [] },
+    });
+    expect(beat.result.deletions.jobs).toEqual([]);
+    retire.mockRestore();
+  });
+
+  it("refuses deletion when omitted authority generation changes while retirement waits", async () => {
+    const s = await setup();
+    s.seed({ id: "generation-held", cwd: s.project.cwd });
+    await s.engine.adoptSession(
+      (await s.call("sessions.sync", { sessionId: "generation-held" })).result.value,
+    );
+    s.desktopDb.prepare("DELETE FROM sessions WHERE id='generation-held'").run();
+    const generation = vi
+      .spyOn(s.store, "currentAuthorityGeneration")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(2);
+    const deleted = await s.call("sessions.delete", {
+      projectId: s.project.id,
+      sessionId: "generation-held",
+    });
+    expect(deleted.error).toMatch(/Session authority changed/);
+    expect(await s.store.session("generation-held")).toBeDefined();
+    generation.mockRestore();
+  });
+
   it("rejects desktop deletion for the wrong project or a running session", async () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd });

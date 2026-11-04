@@ -226,6 +226,37 @@ function secondOpinionMeta(value: unknown): SecondOpinionMeta | undefined {
   };
 }
 
+/** Evidence belongs to each actual utility invocation under the original context. */
+function utilityCompletionProof() {
+  const pending = new Set<object>();
+  const seen = new Set<object>();
+  let completed = 0;
+  let failed = false;
+  return {
+    get completed() {
+      return completed > 0 && pending.size === 0 && !failed;
+    },
+    observe(isOwned: () => boolean) {
+      return {
+        onUtilityStarted(utility: object) {
+          if (!isOwned()) return;
+          if (seen.has(utility)) failed = true;
+          seen.add(utility);
+          pending.add(utility);
+        },
+        onUtilityCompleted(utility: object) {
+          if (!isOwned()) return;
+          if (!pending.delete(utility)) failed = true;
+          else completed++;
+        },
+        onUtilityFailed(_utility: object) {
+          if (isOwned()) failed = true;
+        },
+      };
+    },
+  };
+}
+
 export function parseCommand(input: unknown): HostCommand {
   const command = parseCommandBody(input);
   const value = (input as Record<string, unknown>).authorityGeneration;
@@ -698,6 +729,7 @@ export class HostEngine {
   /** Accepted turns whose provider dispatch has not yet installed their active run. */
   private dispatching = new Map<string, { runId: string | undefined; settled: Promise<void> }>();
   private readonly providerActivities = new ProviderActivityRetirements();
+  private readonly deletingSessions = new Set<string>();
   private readonly activityProviders = new Map<
     ProviderActivityRetirement,
     { id: string; provider: HostProvider }
@@ -729,6 +761,7 @@ export class HostEngine {
     id: string,
     grant: () => Promise<T>,
     admitted?: () => Promise<void>,
+    options?: { rebind?: boolean },
   ): Promise<T> {
     await this.ready;
     return this.operations.run(id, async () => {
@@ -741,7 +774,9 @@ export class HostEngine {
           const context = original.operationContext;
           if (!retire || !context || !original.activity)
             throw new Error(
-              "HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.",
+              options?.rebind === false
+                ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer cannot be safely retired; the session was not deleted."
+                : "HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.",
             );
           original.cleanup = this.store.db.outsideScope(() =>
             original.activity!.retire(async () => {
@@ -760,7 +795,9 @@ export class HostEngine {
                 () =>
                   reject(
                     new Error(
-                      "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
+                      options?.rebind === false
+                        ? "HOST_WRITER_RETIREMENT_PENDING: The original Host writer is still stopping; the session was not deleted. Retry after retirement completes."
+                        : "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
                     ),
                   ),
                 20_000,
@@ -771,17 +808,20 @@ export class HostEngine {
           if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:"))
             throw error;
           throw new Error(
-            "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.",
+            options?.rebind === false
+              ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer could not be retired; the session was not deleted."
+              : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.",
             { cause: error },
           );
         } finally {
           clearTimeout(timer);
         }
         this.retainedWriterTurns.delete(id);
-        this.retainedProviders.get(id)?.delete(original.provider);
+        this.forgetRetiredProvider(id, original.provider);
         // Keep only the persisted resume identity; never create a new history.
-        const current = (await this.store.session(id)).session;
-        if (current.providerSessionId)
+        const current =
+          options?.rebind === false ? undefined : (await this.store.session(id)).session;
+        if (current?.providerSessionId)
           original.provider.bind(
             id,
             current.providerSessionId,
@@ -793,6 +833,41 @@ export class HostEngine {
       await admitted?.();
       return grant();
     });
+  }
+  /** Deletion may not discard another retained provider cohort or rebind a retired writer. */
+  async withRetiredProviderWriterForDeletion<T>(
+    id: string,
+    remove: () => Promise<T>,
+    admitted: () => Promise<void>,
+  ): Promise<T> {
+    let held = false;
+    try {
+      return await this.withRetiredProviderWriter(
+        id,
+        remove,
+        async () => {
+          if (!held) {
+            this.deletingSessions.add(id);
+            held = true;
+          }
+          await admitted();
+          const writer = this.retainedWriterTurns.get(id);
+          const otherActivity = [...this.activityProviders].some(
+            ([activity, owner]) => owner.id === id && activity !== writer?.activity,
+          );
+          const otherProvider = [...(this.retainedProviders.get(id) ?? [])].some(
+            (provider) => provider !== writer?.provider,
+          );
+          if (otherActivity || otherProvider)
+            throw new Error(
+              "HOST_WRITER_RETIREMENT_FAILED: Other original provider work remains; the session was not deleted.",
+            );
+        },
+        { rebind: false },
+      );
+    } finally {
+      if (held) this.deletingSessions.delete(id);
+    }
   }
   private closing = false;
   private closePromise?: Promise<void>;
@@ -875,6 +950,7 @@ export class HostEngine {
     return this.managedTurns?.startActivity?.(value, kind);
   }
   private reserveProviderActivity(id: string, provider: HostProvider): ProviderActivityRetirement {
+    if (this.deletingSessions.has(id)) throw new Error("Session deletion is in progress");
     const original = this.providerActivities.reserve(id, () =>
       this.activityProviders.delete(original),
     );
@@ -886,6 +962,13 @@ export class HostEngine {
     const retained = this.retainedProviders.get(id) ?? new Set<HostProvider>();
     retained.add(provider);
     this.retainedProviders.set(id, retained);
+  }
+
+  private forgetRetiredProvider(id: string, provider: HostProvider): void {
+    const retained = this.retainedProviders.get(id);
+    if (!retained) return;
+    retained.delete(provider);
+    if (retained.size === 0) this.retainedProviders.delete(id);
   }
 
   private stopOriginalTurn(id: string, original: ActiveHostTurn): Promise<void> {
@@ -2119,7 +2202,7 @@ export class HostEngine {
                 original.activity?.bookkeepingFinished();
                 if (this.running.get(id) === original) {
                   this.live.delete(id);
-                  this.retainedProviders.get(id)?.delete(original.provider);
+                  this.forgetRetiredProvider(id, original.provider);
                   this.running.delete(id);
                 }
               }),
@@ -3820,15 +3903,17 @@ export class HostEngine {
       console.debug("[bycoda] provider hint admission refused", error);
       return;
     }
+    const utilityProof = utilityCompletionProof();
     const context: HarnessOperationContext = Object.freeze({
       operation: owner,
       hostRun,
       hostControlRun: this.runWriters.controlRun(hostRun),
+      ...utilityProof.observe(() => owned),
     });
+    let executed = false;
     const work = (async () => {
       let failed = false;
       let failure: unknown;
-      let executed = false;
       let result: T | undefined;
       try {
         await activity.start(
@@ -3836,7 +3921,6 @@ export class HostEngine {
           value.session.harness,
         );
         if (!this.closing) {
-          this.retainProvider(value.session.id, provider);
           executed = true;
           result = await effect(context);
         }
@@ -3848,6 +3932,7 @@ export class HostEngine {
         await this.runWriters.finish(hostRun!);
       } catch (error) {
         owned = false;
+        if (executed) this.retainProvider(parentId, provider);
         activity.recordFailure(error);
         throw failed
           ? new AggregateError([failure, error], "Original hint work and writer retirement failed")
@@ -3856,6 +3941,7 @@ export class HostEngine {
       owned = false;
       void activity.retainWarm().catch((error) => activity.recordFailure(error));
       if (failed) throw failure;
+      if (executed && !utilityProof.completed) this.retainProvider(parentId, provider);
       if (executed) {
         try {
           await apply(result as T);
@@ -3875,6 +3961,7 @@ export class HostEngine {
     })()
       .then(() => activity.bookkeepingFinished())
       .catch((error) => {
+        if (executed) this.retainProvider(parentId, provider);
         activity.recordFailure(error);
         throw error;
       });
@@ -4435,7 +4522,7 @@ export class HostEngine {
             } finally {
               if (this.running.get(session.id) === active) {
                 if (cold && active.activity && !cleanupFailed)
-                  this.retainedProviders.get(session.id)?.delete(provider);
+                  this.forgetRetiredProvider(session.id, provider);
                 if (cold && !cleanupFailed && this.retainedWriterTurns.get(session.id) === active)
                   this.retainedWriterTurns.delete(session.id);
                 if (
@@ -4805,7 +4892,7 @@ export class HostEngine {
       [...stops].flatMap(([provider, owned]) =>
         [...owned].map(async ([id, work]) => {
           await work;
-          this.retainedProviders.get(id)?.delete(provider);
+          this.forgetRetiredProvider(id, provider);
         }),
       ),
     );

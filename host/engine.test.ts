@@ -1,3 +1,4 @@
+import { runTextOperation } from "../src/integrations/harness/core/textSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +8,50 @@ import { withMachineSkillPolicy, type HostProvider } from "./providers";
 import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
 import type { TurnGitRecord, TurnGitSnapshot } from "./workspace-contracts";
 import { HostStore } from "./store";
+
+it.each(["success", "known-empty", "missing", "pending", "failed", "wrong-token", "reused-token", "late"] as const)(
+  "keeps automatic utility ownership truthful for %s without manual Title commands",
+  async (outcome) => {
+    const { engine, store, id, provider } = await setup();
+    const value = await store.session(id);
+    type Context = NonNullable<SendTurnInput["operationContext"]>;
+    const internal = engine as unknown as {
+      backgroundProviderWork(input: typeof value, provider: HostProvider, effect: (context: Context) => Promise<null>, apply: (result: null) => Promise<void>): void;
+      activityProviders: Map<{ bookkeepingWork: Promise<unknown> }, unknown>;
+      retainedProviders: Map<string, Set<HostProvider>>;
+    };
+    let late: (() => void) | undefined;
+    internal.backgroundProviderWork(value, provider, async (context) => {
+      if (outcome === "success" || outcome === "known-empty")
+        await runTextOperation(context, async () => null);
+      else if (outcome !== "missing") {
+        const token = {};
+        context.onUtilityStarted?.(token);
+        if (outcome === "failed") context.onUtilityFailed?.(token);
+        else if (outcome === "wrong-token") context.onUtilityCompleted?.({});
+        else if (outcome === "reused-token") {
+          context.onUtilityCompleted?.(token);
+          context.onUtilityStarted?.(token);
+          context.onUtilityCompleted?.(token);
+        } else if (outcome === "late") late = () => context.onUtilityCompleted?.(token);
+      }
+      return null;
+    }, async () => {});
+    const activity = [...internal.activityProviders.keys()][0];
+    await activity.bookkeepingWork;
+    late?.();
+    const remove = vi.fn(async () => store.deleteSession(id));
+    if (outcome === "success" || outcome === "known-empty") {
+      expect(internal.retainedProviders.has(id)).toBe(false);
+      await engine.withRetiredProviderWriterForDeletion(id, remove, async () => {});
+      expect(remove).toHaveBeenCalledOnce();
+    } else {
+      expect(internal.retainedProviders.get(id)?.has(provider)).toBe(true);
+      await expect(engine.withRetiredProviderWriterForDeletion(id, remove, async () => {})).rejects.toThrow("Other original provider work remains");
+      expect(remove).not.toHaveBeenCalled();
+    }
+  },
+);
 import { launchSessionRun } from "./sessionRuns";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments";
 import {
@@ -1767,6 +1812,144 @@ describe("Host writer transfer after settled task review", () => {
     }
   });
 
+  it("holds deletion until the exact writer retires and never rebinds it", async () => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "delete-writer",
+      sessionId: id,
+      text: "Review",
+    });
+    await waitForTurnStart();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    const priorBindCount = vi.mocked(provider.bind).mock.calls.length;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    vi.mocked(provider.stop).mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const admitted = vi.fn(async () => {});
+    const remove = vi.fn(async () => {
+      await store.deleteSession(id);
+      return "removed";
+    });
+    const pending = engine.withRetiredProviderWriterForDeletion(id, remove, admitted);
+    await entered.promise;
+    expect(remove).not.toHaveBeenCalled();
+    expect(await store.session(id)).toBeDefined();
+    release.resolve();
+    expect(await pending).toBe("removed");
+    expect(admitted).toHaveBeenCalledTimes(2);
+    expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id, turns[0].input.operationContext);
+    expect(vi.mocked(provider.bind)).toHaveBeenCalledTimes(priorBindCount);
+    await expect(store.session(id)).rejects.toThrow();
+  });
+
+  it("blocks auxiliary provider admission throughout deletion and reopens it after failure", async () => {
+    const { engine, id, provider } = await setup();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const internals = engine as unknown as {
+      reserveProviderActivity(id: string, provider: HostProvider): unknown;
+    };
+    const pending = engine.withRetiredProviderWriterForDeletion(
+      id,
+      async () => {
+        entered.resolve();
+        await release.promise;
+        throw new Error("fixture deletion failed");
+      },
+      async () => {},
+    );
+    await entered.promise;
+    expect(() => internals.reserveProviderActivity(id, provider)).toThrow(
+      "Session deletion is in progress",
+    );
+    release.resolve();
+    await expect(pending).rejects.toThrow("fixture deletion failed");
+    const activity = internals.reserveProviderActivity(id, provider) as {
+      start(acquire: () => Promise<undefined>): Promise<void>;
+      bookkeepingFinished(): void;
+    };
+    await activity.start(async () => undefined);
+    activity.bookkeepingFinished();
+  });
+
+  it("refuses deletion while a different retained provider activity remains", async () => {
+    const { engine, store, id, provider } = await setup();
+    const internals = engine as unknown as {
+      activityProviders: Map<object, { id: string; provider: HostProvider }>;
+    };
+    const other = {};
+    internals.activityProviders.set(other, { id, provider });
+    const remove = vi.fn(async () => store.deleteSession(id));
+    try {
+      await expect(
+        engine.withRetiredProviderWriterForDeletion(id, remove, async () => {}),
+      ).rejects.toThrow("Other original provider work remains");
+      expect(remove).not.toHaveBeenCalled();
+      expect(await store.session(id)).toBeDefined();
+    } finally {
+      internals.activityProviders.delete(other);
+    }
+  });
+
+  it("rechecks deletion authority after waiting for writer retirement", async () => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "delete-recheck",
+      sessionId: id,
+      text: "Review",
+    });
+    await waitForTurnStart();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    vi.mocked(provider.stop).mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    let authorized = true;
+    const admitted = async () => {
+      if (!authorized) throw new Error("Authority changed");
+    };
+    const remove = vi.fn(async () => store.deleteSession(id));
+    const pending = engine.withRetiredProviderWriterForDeletion(id, remove, admitted);
+    await entered.promise;
+    authorized = false;
+    release.resolve();
+    await expect(pending).rejects.toThrow("Authority changed");
+    expect(remove).not.toHaveBeenCalled();
+    expect(await store.session(id)).toBeDefined();
+  });
+
+  it("keeps session and original writer when deletion retirement is unknown", async () => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "delete-unknown",
+      sessionId: id,
+      text: "Review",
+    });
+    await waitForTurnStart();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    vi.mocked(provider.stop).mockRejectedValueOnce(new Error("unknown physical exit"));
+    const remove = vi.fn(async () => {
+      await store.deleteSession(id);
+    });
+    await expect(
+      engine.withRetiredProviderWriterForDeletion(id, remove, async () => {}),
+    ).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
+    expect(remove).not.toHaveBeenCalled();
+    expect(await store.session(id)).toBeDefined();
+    expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+  });
+
   it("uses the latest settled Host turn receipt and refuses unsupported transfer", async () => {
     const { engine, id, provider, turns, waitForTurnStart } = await setup();
     for (let index = 0; index < 2; index++) {
@@ -1782,6 +1965,7 @@ describe("Host writer transfer after settled task review", () => {
     }
     const internals = engine as unknown as {
       retainedWriterTurns: Map<string, Record<string, unknown>>;
+      retainedProviders: Map<string, Set<HostProvider>>;
     };
     const retained = internals.retainedWriterTurns.get(id);
     expect(Object.keys(retained!).sort()).toEqual([
@@ -1810,6 +1994,7 @@ describe("Host writer transfer after settled task review", () => {
     await engine.withRetiredProviderWriter(id, grant);
     expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id, turns[1].input.operationContext);
     expect(internals.retainedWriterTurns.has(id)).toBe(false);
+    expect(internals.retainedProviders.has(id)).toBe(false);
   });
 });
 

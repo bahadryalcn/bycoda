@@ -4837,55 +4837,128 @@ export async function createHostServer(
                       console.warn("Session delete proceeds without a workspace activity:", error);
                     }
                   }
-                  try {
-                    const cwd = await desktop.projectCwdAsync(sessionId);
-                    if (cwd) {
+                  let admittedHost: boolean | undefined;
+                  let admittedDesktopCwd: string | undefined;
+                  let admittedWorkspaceId: string | undefined;
+                  let admittedGeneration: number | undefined;
+                  let deletionIdentityCaptured = false;
+                  const admittedDelete = async () => {
+                    if (!(await engine.store.authenticated(token)))
+                      throw new Error("Authentication expired");
+                    const hostPresent = await inHost(sessionId);
+                    const currentGeneration =
+                      await engine.store.currentAuthorityGeneration(sessionId);
+                    if (deletionIdentityCaptured && currentGeneration !== admittedGeneration)
+                      throw new Error("Session authority changed; refresh before deleting");
+                    if (!deletionIdentityCaptured) {
+                      admittedGeneration = currentGeneration;
+                      if (authorityGeneration === undefined)
+                        authorityGeneration = currentGeneration;
+                    }
+                    if (hostPresent) {
+                      await engine.store.assertAuthority(sessionId, authorityGeneration);
+                      const current = await engine.store.session(sessionId);
+                      if (current.projectId !== params.projectId)
+                        throw new Error("Session does not belong to this project");
+                      if (
+                        deletionIdentityCaptured &&
+                        current.session.workspaceId !== admittedWorkspaceId
+                      )
+                        throw new Error("Session workspace changed; refresh before deleting");
+                      admittedWorkspaceId = current.session.workspaceId;
+                    }
+                    const currentCwd = (await desktop.projectCwdAsync(sessionId)) ?? undefined;
+                    if (
+                      deletionIdentityCaptured &&
+                      (admittedHost !== hostPresent ||
+                        !!admittedDesktopCwd !== !!currentCwd ||
+                        (admittedDesktopCwd &&
+                          currentCwd &&
+                          !desktop.samePath(admittedDesktopCwd, currentCwd)))
+                    )
+                      throw new Error("Session identity changed; refresh before deleting");
+                    admittedHost = hostPresent;
+                    admittedDesktopCwd = currentCwd;
+                    deletionIdentityCaptured = true;
+                    if (currentCwd) {
                       const project = (await engine.store.projects()).find((p) =>
-                        desktop.samePath(p.cwd, cwd),
+                        desktop.samePath(p.cwd, currentCwd),
                       );
                       if (!project || project.id !== params.projectId)
                         throw new Error("Session does not belong to this project");
-                      if (
-                        (await inHost(sessionId)) &&
-                        (await engine.store.session(sessionId)).projectId !== project.id
-                      )
-                        throw new Error("Session does not belong to this project");
-                      if (
-                        (await desktop.stampAsync(sessionId))?.running ||
-                        // A stored "running" with no live Host run is stale, not a blocker.
-                        (engine.hasActiveRun(sessionId) &&
-                          (await engine.store.sessionStateMetadata(sessionId))?.status ===
-                            "running")
-                      )
+                      if ((await desktop.stampAsync(sessionId))?.running)
                         throw new Error("Stop this session before deleting it");
-                      await desktopDelete.request(
-                        sessionId,
-                        cwd,
-                        async () => await engine.store.authenticated(token),
-                      );
-                      if (await desktop.projectCwdAsync(sessionId))
-                        throw new Error(
-                          "The desktop did not remove this conversation. Refresh the list before retrying.",
-                        );
-                      // An adopted transcript must go too, or it would reappear in the list.
-                      if (await inHost(sessionId))
+                    } else if (!hostPresent) throw new Error("Session not found on this machine");
+                    if (managedSession) await managed.assertWritable(managedSession.id);
+                  };
+                  try {
+                    result = await engine.withRetiredProviderWriterForDeletion(
+                      sessionId,
+                      async () => {
+                        const cwd = await desktop.projectCwdAsync(sessionId);
+                        if (cwd) {
+                          const project = (await engine.store.projects()).find((p) =>
+                            desktop.samePath(p.cwd, cwd),
+                          );
+                          if (!project || project.id !== params.projectId)
+                            throw new Error("Session does not belong to this project");
+                          if (
+                            (await inHost(sessionId)) &&
+                            (await engine.store.session(sessionId)).projectId !== project.id
+                          )
+                            throw new Error("Session does not belong to this project");
+                          if (
+                            (await desktop.stampAsync(sessionId))?.running ||
+                            // A stored "running" with no live Host run is stale, not a blocker.
+                            (engine.hasActiveRun(sessionId) &&
+                              (await engine.store.sessionStateMetadata(sessionId))?.status ===
+                                "running")
+                          )
+                            throw new Error("Stop this session before deleting it");
+                          await admittedDelete();
+                          await desktopDelete.request(
+                            sessionId,
+                            cwd,
+                            async () => await engine.store.authenticated(token),
+                          );
+                          if (await desktop.projectCwdAsync(sessionId))
+                            throw new Error(
+                              "The desktop did not remove this conversation. Refresh the list before retrying.",
+                            );
+                          // An adopted transcript must go too, or it would reappear in the list.
+                          if (!(await engine.store.authenticated(token)))
+                            throw new Error("Authentication expired");
+                          if (
+                            (await engine.store.currentAuthorityGeneration(sessionId)) !==
+                            admittedGeneration
+                          )
+                            throw new Error("Session authority changed; refresh before deleting");
+                          if (await inHost(sessionId)) {
+                            await engine.store.assertAuthority(sessionId, authorityGeneration);
+                            const current = await engine.store.session(sessionId);
+                            if (current.projectId !== project.id)
+                              throw new Error("Session does not belong to this project");
+                            await engine.store.deleteSession(sessionId, authorityGeneration, {
+                              staleRunning: !engine.hasActiveRun(sessionId),
+                            });
+                          }
+                          invalidateSessionCopies(sessionId, project.id);
+                          await sessionQueues.delete(sessionId);
+                          return { deleted: true };
+                        }
+                        const current = await engine.store.session(sessionId);
+                        if (current.projectId !== params.projectId)
+                          throw new Error("Session does not belong to this project");
+                        await admittedDelete();
                         await engine.store.deleteSession(sessionId, authorityGeneration, {
                           staleRunning: !engine.hasActiveRun(sessionId),
                         });
-                      invalidateSessionCopies(sessionId, project.id);
-                      await sessionQueues.delete(sessionId);
-                      result = { deleted: true };
-                      break;
-                    }
-                    const current = await engine.store.session(sessionId);
-                    if (current.projectId !== params.projectId)
-                      throw new Error("Session does not belong to this project");
-                    await engine.store.deleteSession(sessionId, authorityGeneration, {
-                      staleRunning: !engine.hasActiveRun(sessionId),
-                    });
-                    invalidateSessionCopies(sessionId, current.projectId);
-                    await sessionQueues.delete(sessionId);
-                    result = { deleted: true };
+                        invalidateSessionCopies(sessionId, current.projectId);
+                        await sessionQueues.delete(sessionId);
+                        return { deleted: true };
+                      },
+                      admittedDelete,
+                    );
                     break;
                   } finally {
                     await release?.();
