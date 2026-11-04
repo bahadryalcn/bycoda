@@ -15,9 +15,6 @@ it("elects only workspace windows and transfers after original leader leaves", a
   expect(await isLeadWindow()).toBe(true);
   api.own = "window-b";
   expect(await isLeadWindow()).toBe(false);
-  api.failed = false;
-  api.labels = [];
-  expect(await isLeadWindow()).toBe(false);
   api.labels = api.labels.filter((label) => label !== "main");
   expect(await isLeadWindow()).toBe(true);
   api.own = "desktop-control-indicator";
@@ -28,5 +25,8 @@ it("retains one canonical fallback without granting an unidentified window owner
   api.failed = true;
   expect(await isLeadWindow()).toBe(true);
   api.own = "window-b";
+  expect(await isLeadWindow()).toBe(false);
+  api.failed = false;
+  api.labels = [];
   expect(await isLeadWindow()).toBe(false);
 });
