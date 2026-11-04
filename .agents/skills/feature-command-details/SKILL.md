@@ -24,6 +24,7 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Parse each complete saved JSON section once per source update and reuse its value for eligibility and rendering. Clipboard/wrap feedback must not repeatedly parse retained output; commands, diffs, truncated and invalid JSON keep exact text.
 - Retain exact command/output bytes, selection, horizontal reading and legacy/summary/full distinctions; never globally append snapshot updates.
 - Stop is gated by capability and call identity; acknowledgement does not prove process termination. Never rerun or kill work to populate an inspector.
 - Do not fabricate per-command cwd, exit status or timing from turn metadata. Label session working directory truthfully when that is the available provenance.
