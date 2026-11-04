@@ -14,17 +14,13 @@ import { pinToBottom, syncTranscriptViewport } from "./transcriptScroll";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 
 const INITIAL_TURNS = 20;
-/**
- * Turns built before a transcript first paints. Every turn in the initial
- * window costs markdown work on open, so paint the latest few (more if they
- * leave the viewport short) and build the rest of the window after.
- */
 const FIRST_PAINT_TURNS = 3;
 const TURN_PAGE_SIZE = 20;
-
+export const MAX_TRANSCRIPT_WINDOW_TURNS = 60;
+type Window = { firstId?: string; offset: number; count: number; tail: boolean };
+type Anchor = { id?: string; offset: number; edge: "start" | "end" };
 type Options = {
   turns: Block[][];
-  /** Length of the whole block list; a change re-settles the scroll offset. */
   blockCount: number;
   openWork: Record<string, boolean>;
   scroller: RefObject<HTMLDivElement | null>;
@@ -36,11 +32,7 @@ type Options = {
   onRevealReady?: (reveal: ((blockId: string) => boolean) | null) => void;
 };
 
-/**
- * The window of turns that is rendered: the latest few at first paint, the
- * rest of the opening window right after, and earlier pages on request. Keeps
- * the reader's place when turns arrive above the viewport.
- */
+/** Bounded settled-history window. Model history remains reachable in both directions. */
 export function useTranscriptPaging({
   turns,
   blockCount,
@@ -55,28 +47,60 @@ export function useTranscriptPaging({
 }: Options) {
   const retention = useContext(TranscriptRetentionContext);
   const retained = retention?.read();
-  const [visibleTurnCount, setVisibleTurnCount] = useState(() => {
-    const firstIndex = retained?.firstLoadedTurnId
-      ? turns.findIndex((turn) => turn[0]?.id === retained.firstLoadedTurnId)
-      : -1;
-    return Math.max(
-      retained?.visibleTurnCount ?? FIRST_PAINT_TURNS,
-      firstIndex >= 0 ? turns.length - firstIndex : 0,
+  const [window, setWindow] = useState<Window>(() => {
+    const count = Math.min(
+      MAX_TRANSCRIPT_WINDOW_TURNS,
+      Math.max(FIRST_PAINT_TURNS, retained?.visibleTurnCount ?? FIRST_PAINT_TURNS),
     );
+    let first = turns.findIndex((turn) => turn[0]?.id === retained?.firstLoadedTurnId);
+    const anchor = turns.findIndex((turn) => turn[0]?.id === retained?.anchorId);
+    if (anchor >= 0 && (first < 0 || anchor < first || anchor >= first + count))
+      first = Math.max(0, Math.min(anchor - TURN_PAGE_SIZE, turns.length - count));
+    return {
+      firstId: turns[Math.max(0, first)]?.[0]?.id,
+      offset: 0,
+      count,
+      tail: retained?.bottomFollow !== false,
+    };
   });
-  const firstVisibleTurn = Math.max(0, turns.length - visibleTurnCount);
-  const visibleTurns = turns.slice(firstVisibleTurn);
-
-  // Callers run after a commit, so the layout phase has already published the
-  // latest turns and window size to the stable callbacks below.
+  const previous = useRef<{ firstId?: string; lastId?: string; count: number } | null>(null);
+  let selected = window;
+  const lastId = turns[turns.length - 1]?.[0]?.id;
+  if (
+    window.tail &&
+    !stickToBottom.current &&
+    previous.current?.lastId &&
+    previous.current.lastId !== lastId
+  ) {
+    selected = {
+      firstId: previous.current.firstId,
+      offset: 0,
+      count: previous.current.count,
+      tail: false,
+    };
+    setWindow(selected);
+  }
+  const count = Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, selected.count);
+  const located = selected.firstId
+    ? turns.findIndex((turn) => turn[0]?.id === selected.firstId)
+    : 0;
+  const firstVisibleTurn = selected.tail
+    ? Math.max(0, turns.length - count)
+    : Math.max(0, Math.min(turns.length, Math.max(0, located) + selected.offset));
+  const lastVisibleTurn = Math.min(turns.length, firstVisibleTurn + count);
+  const visibleTurns = turns.slice(firstVisibleTurn, lastVisibleTurn);
+  const visibleTurnCount = visibleTurns.length;
   const turnsRef = useRef(turns);
-  const visibleTurnCountRef = useRef(visibleTurnCount);
+  const rangeRef = useRef({ first: firstVisibleTurn, last: lastVisibleTurn, count });
+  const anchorRef = useRef<Anchor | null>(null);
+  const loadingRef = useRef(false);
+  const navigationRef = useRef(0);
+  const [pagingLoading, setPagingLoading] = useState(false);
+  const [pagingError, setPagingError] = useState<string | null>(null);
   useLayoutEffect(() => {
     turnsRef.current = turns;
-    visibleTurnCountRef.current = visibleTurnCount;
-  });
-
-  useLayoutEffect(() => {
+    rangeRef.current = { first: firstVisibleTurn, last: lastVisibleTurn, count };
+    previous.current = { firstId: visibleTurns[0]?.[0]?.id, lastId, count };
     retention?.update({
       visibleTurnCount,
       firstLoadedTurnId: visibleTurns[0]?.[0]?.id,
@@ -85,87 +109,187 @@ export function useTranscriptPaging({
     });
   });
 
+  const captureAnchor = useCallback(
+    (edge: Anchor["edge"]) => {
+      const el = scroller.current;
+      const top = el?.getBoundingClientRect().top ?? 0;
+      const node =
+        el &&
+        [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
+          (turn) => turn.getBoundingClientRect().bottom > top,
+        );
+      anchorRef.current = {
+        id: node?.dataset.transcriptTurn,
+        offset: node ? node.getBoundingClientRect().top - top : 0,
+        edge,
+      };
+      prependHeight.current = null;
+      stickToBottom.current = false;
+    },
+    [scroller, prependHeight, stickToBottom],
+  );
+
   useLayoutEffect(() => {
-    const previousHeight = prependHeight.current;
     const el = scroller.current;
     if (!el) return;
-    if (previousHeight == null) {
-      // The opening window grows above the screen. Settle the offset in this
-      // commit: a scroll event queued by an earlier pin would otherwise read
-      // the taller transcript first and unpin it partway up.
-      if (stickToBottom.current) {
-        syncTranscriptViewport(el);
-        pinToBottom(el);
-      } else {
-        el.scrollTop = el.scrollHeight - el.clientHeight - distanceFromBottom.current;
-      }
+    const anchor = anchorRef.current;
+    if (anchor) {
+      anchorRef.current = null;
+      const node = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
+        (turn) => turn.dataset.transcriptTurn === anchor.id,
+      );
+      if (node)
+        el.scrollTop +=
+          node.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
+      else el.scrollTop = anchor.edge === "end" ? el.scrollHeight - el.clientHeight : 0;
+      distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       return;
     }
-    prependHeight.current = null;
-    el.scrollTop += el.scrollHeight - previousHeight;
-    distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
-  }, [visibleTurnCount, blockCount, scroller, stickToBottom, distanceFromBottom, prependHeight]);
+    const previousHeight = prependHeight.current;
+    if (previousHeight != null) {
+      prependHeight.current = null;
+      el.scrollTop += el.scrollHeight - previousHeight;
+      distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
+    } else if (stickToBottom.current) {
+      syncTranscriptViewport(el);
+      pinToBottom(el);
+    } else el.scrollTop = el.scrollHeight - el.clientHeight - distanceFromBottom.current;
+  }, [
+    firstVisibleTurn,
+    lastVisibleTurn,
+    blockCount,
+    scroller,
+    stickToBottom,
+    distanceFromBottom,
+    prependHeight,
+  ]);
 
-  // Short turns can leave the first paint with empty space above them, and
-  // the rest of the window arriving later would then push everything down.
-  // Top up before painting until the viewport is covered.
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el || el.clientHeight === 0) return;
-    if (visibleTurnCount >= Math.min(INITIAL_TURNS, turns.length)) return;
-    if (el.scrollHeight > el.clientHeight) return;
-    setVisibleTurnCount((count) => Math.min(INITIAL_TURNS, count + FIRST_PAINT_TURNS));
-  }, [visibleTurnCount, turns.length, scroller]);
-
+    if (
+      !selected.tail ||
+      !el ||
+      !el.clientHeight ||
+      count >= Math.min(INITIAL_TURNS, turns.length) ||
+      el.scrollHeight > el.clientHeight
+    )
+      return;
+    setWindow((current) => ({
+      ...current,
+      count: Math.min(INITIAL_TURNS, current.count + FIRST_PAINT_TURNS),
+    }));
+  }, [count, selected.tail, turns.length, scroller]);
   useEffect(() => {
-    // Interruptible, so switching away before it finishes costs nothing.
-    startTransition(() => setVisibleTurnCount((count) => Math.max(count, INITIAL_TURNS)));
+    startTransition(() =>
+      setWindow((current) => ({ ...current, count: Math.max(current.count, INITIAL_TURNS) })),
+    );
   }, []);
 
-  const prepareToPrepend = useCallback(() => {
-    const el = scroller.current;
-    if (el) prependHeight.current = el.scrollHeight;
-    stickToBottom.current = false;
-  }, [scroller, prependHeight, stickToBottom]);
-
-  const loadEarlier = async () => {
-    prepareToPrepend();
-    if (firstVisibleTurn > 0) {
-      setVisibleTurnCount((count) => Math.min(turns.length, count + TURN_PAGE_SIZE));
+  const moveWindow = useCallback(
+    (first: number, nextCount: number, edge: Anchor["edge"]) => {
+      const all = turnsRef.current;
+      navigationRef.current++;
+      captureAnchor(edge);
+      setWindow({
+        firstId: all[first]?.[0]?.id,
+        offset: 0,
+        count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, nextCount),
+        tail: false,
+      });
+    },
+    [captureAnchor],
+  );
+  const loadEarlier = useCallback(async () => {
+    if (loadingRef.current) return;
+    const range = rangeRef.current;
+    if (range.first > 0) {
+      moveWindow(Math.max(0, range.first - TURN_PAGE_SIZE), range.count + TURN_PAGE_SIZE, "start");
       return;
     }
-    if (remoteHistoryHasMore && onLoadRemoteHistory) {
-      const count = await onLoadRemoteHistory();
-      setVisibleTurnCount((current) => current + Math.max(1, Number(count) || TURN_PAGE_SIZE));
+    if (!remoteHistoryHasMore || !onLoadRemoteHistory) return;
+    loadingRef.current = true;
+    setPagingLoading(true);
+    setPagingError(null);
+    const firstId = turnsRef.current[0]?.[0]?.id;
+    const requestedNavigation = navigationRef.current;
+    try {
+      await onLoadRemoteHistory();
+      if (navigationRef.current !== requestedNavigation) return;
+      navigationRef.current++;
+      captureAnchor("start");
+      setWindow({
+        firstId,
+        offset: -TURN_PAGE_SIZE,
+        count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, range.count + TURN_PAGE_SIZE),
+        tail: false,
+      });
+    } catch (error) {
+      setPagingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      loadingRef.current = false;
+      setPagingLoading(false);
     }
-  };
-
-  /** Renders the turn that holds a block. The render completes before it returns. */
+  }, [captureAnchor, moveWindow, remoteHistoryHasMore, onLoadRemoteHistory]);
+  const loadNewer = useCallback(() => {
+    const range = rangeRef.current;
+    const first = Math.min(
+      Math.max(0, turnsRef.current.length - range.count),
+      range.first + TURN_PAGE_SIZE,
+    );
+    moveWindow(first, range.count, "end");
+  }, [moveWindow]);
+  const jumpLatest = useCallback(() => {
+    navigationRef.current++;
+    anchorRef.current = null;
+    prependHeight.current = null;
+    stickToBottom.current = true;
+    flushSync(() => setWindow({ offset: 0, count: INITIAL_TURNS, tail: true }));
+  }, [prependHeight, stickToBottom]);
   const revealBlock = useCallback(
     (blockId: string): boolean => {
       const all = turnsRef.current;
       const index = all.findIndex((turn) => turn.some((block) => block.id === blockId));
       if (index < 0) return false;
-      const needed = all.length - index;
-      if (needed <= visibleTurnCountRef.current) return true;
-      prepareToPrepend();
-      // Synchronous. The caller finds the turn in the DOM after this call.
-      flushSync(() => setVisibleTurnCount(needed));
+      navigationRef.current++;
+      const range = rangeRef.current;
+      if (index >= range.first && index < range.last) return true;
+      const first = Math.max(
+        0,
+        Math.min(index - TURN_PAGE_SIZE, all.length - MAX_TRANSCRIPT_WINDOW_TURNS),
+      );
+      captureAnchor("start");
+      flushSync(() =>
+        setWindow({
+          firstId: all[first]?.[0]?.id,
+          offset: 0,
+          count: MAX_TRANSCRIPT_WINDOW_TURNS,
+          tail: false,
+        }),
+      );
       return true;
     },
-    [prepareToPrepend],
+    [captureAnchor],
   );
-
   const findTurn = useCallback(
-    (blockId: string): Block[] | undefined =>
+    (blockId: string) =>
       turnsRef.current.find((turn) => turn.some((block) => block.id === blockId)),
     [],
   );
-
   useEffect(() => {
     onRevealReady?.(revealBlock);
     return () => onRevealReady?.(null);
   }, [revealBlock, onRevealReady]);
-
-  return { visibleTurnCount, firstVisibleTurn, visibleTurns, loadEarlier, revealBlock, findTurn };
+  return {
+    visibleTurnCount,
+    firstVisibleTurn,
+    lastVisibleTurn,
+    visibleTurns,
+    loadEarlier,
+    loadNewer,
+    jumpLatest,
+    revealBlock,
+    findTurn,
+    pagingLoading,
+    pagingError,
+  };
 }

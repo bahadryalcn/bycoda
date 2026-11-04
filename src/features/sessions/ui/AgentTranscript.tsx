@@ -425,30 +425,74 @@ function AgentTranscriptComponent({
     if (mounting && !(busy && userTurnCount(blocks, managed) === 1)) return;
     return riseIntoAnchor(el, lastUserId);
   });
+  const pagingJumpRef = useRef<(() => void) | null>(null);
+  const followJumpRef = useRef<(() => void) | null>(null);
+  const jumpToLatest = useCallback(() => {
+    pagingJumpRef.current?.();
+    followJumpRef.current?.();
+  }, []);
+  const registerBottomJump = useCallback(
+    (jump: (() => void) | null) => {
+      followJumpRef.current = jump;
+      onJumpToBottomReady?.(jump ? jumpToLatest : null);
+    },
+    [onJumpToBottomReady, jumpToLatest],
+  );
   const follow = useTranscriptFollow({
     visible,
     parked,
     lastUserId,
     onPromptChange: introducePrompt,
     onJumpToBottomChange,
-    onJumpToBottomReady,
+    onJumpToBottomReady: registerBottomJump,
     onReadingChange,
     onScrollerChange,
   });
   const { scroller, scrollerEl, setScroller, wasVisible } = follow;
-  const { visibleTurnCount, firstVisibleTurn, visibleTurns, loadEarlier, revealBlock, findTurn } =
-    useTranscriptPaging({
-      turns,
-      blockCount: blocks.length,
-      openWork,
-      scroller,
-      stickToBottom: follow.stickToBottom,
-      distanceFromBottom: follow.distanceFromBottom,
-      prependHeight: follow.prependHeight,
-      remoteHistoryHasMore,
-      onLoadRemoteHistory,
-      onRevealReady,
+  const {
+    visibleTurnCount,
+    firstVisibleTurn,
+    lastVisibleTurn,
+    visibleTurns,
+    loadEarlier,
+    loadNewer,
+    jumpLatest,
+    revealBlock,
+    findTurn,
+    pagingLoading,
+    pagingError,
+  } = useTranscriptPaging({
+    turns,
+    blockCount: blocks.length,
+    openWork,
+    scroller,
+    stickToBottom: follow.stickToBottom,
+    distanceFromBottom: follow.distanceFromBottom,
+    prependHeight: follow.prependHeight,
+    remoteHistoryHasMore,
+    onLoadRemoteHistory,
+    onRevealReady,
+  });
+  pagingJumpRef.current = jumpLatest;
+  const renderedTurns = visibleTurns.map((turn, index) => ({
+    turn,
+    index: firstVisibleTurn + index,
+  }));
+  // Active execution and unresolved approval controls are never evicted with settled history.
+  if (waitingForApproval)
+    turns.forEach((turn, index) => {
+      if ((index < firstVisibleTurn || index >= lastVisibleTurn) && hasPendingApproval(turn))
+        renderedTurns.push({ turn, index });
     });
+  const latestIndex = turns.length - 1;
+  if (
+    latestIndex >= lastVisibleTurn &&
+    (busy || blockingQuestion || latestTurnAccessory) &&
+    !renderedTurns.some((entry) => entry.index === latestIndex)
+  )
+    renderedTurns.push({ turn: turns[latestIndex], index: latestIndex });
+  renderedTurns.sort((a, b) => a.index - b.index);
+  const renderTurns = renderedTurns.map((entry) => entry.turn);
   const { searchCurrent } = useTranscriptSearch({
     scroller,
     visible,
@@ -463,7 +507,7 @@ function AgentTranscriptComponent({
     findTurn,
     onNavigateReady,
   });
-  const turnHarnesses = harness ? harnessesForTurns(blocks, visibleTurns, harness) : undefined;
+  const turnHarnesses = harness ? harnessesForTurns(blocks, renderTurns, harness) : undefined;
   const stableLoadRemoteBlock = useStableCallback(onLoadRemoteBlock);
   const stableApproval = useStableCallback(onApproval);
   const stableSaveNote = useStableCallback(onSaveNote);
@@ -636,13 +680,14 @@ function AgentTranscriptComponent({
               {remoteHistoryError}
             </Alert>
           ) : null}
+          {pagingError ? <Alert tone="danger">{pagingError}</Alert> : null}
           {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
             <div className="flex justify-center px-4 py-3">
               <Button
                 motion="none"
                 variant="ghost"
                 type="button"
-                disabled={remoteHistoryLoading}
+                disabled={remoteHistoryLoading || pagingLoading}
 
                 onClick={() => void loadEarlier()}
               >
@@ -650,8 +695,8 @@ function AgentTranscriptComponent({
               </Button>
             </div>
           ) : null}
-          {visibleTurns.map((turn, turnIndex) => {
-            const turnNumber = firstVisibleTurn + turnIndex + 1;
+          {renderedTurns.map(({ turn, index }, turnIndex) => {
+            const turnNumber = index + 1;
             const isLastTurn = turnNumber === turns.length;
             const settled = !(busy && isLastTurn);
             const live = visible && !settled && !preparingHandoff;
@@ -699,7 +744,9 @@ function AgentTranscriptComponent({
                 activitySessionId={activityOwnsClock ? sessionId : undefined}
                 anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
                 latestTurnAccessory={isLastTurn && !parked ? latestTurnAccessory : undefined}
-                workOpen={openWork[turnId] ?? false}
+                workOpen={
+                  (openWork[turnId] ?? false) || (waitingForApproval && hasPendingApproval(turn))
+                }
                 searchCurrent={
                   searchCurrent && turn.some((block) => block.id === searchCurrent)
                     ? searchCurrent
@@ -733,6 +780,16 @@ function AgentTranscriptComponent({
             );
           })}
         </div>
+        {lastVisibleTurn < turns.length ? (
+          <div className="flex justify-center gap-2 px-4 py-3">
+            <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
+              {t("Load newer messages")}
+            </Button>
+            <Button motion="none" variant="ghost" type="button" onClick={jumpToLatest}>
+              {t("Jump to latest")}
+            </Button>
+          </div>
+        ) : null}
         {onAddToChat || onSaveSelectionNote || canOfferTranslation(translationContext) ? (
           <TranscriptSelectionActions
             root={scrollerEl}

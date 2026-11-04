@@ -10983,5 +10983,6 @@
   "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "リクエストをローカルに保存できませんでした。下書きはこのウィンドウ内に保持されています。続行する前に保存を再試行してください。",
   "Recent sessions changed while loading. Retry shortly.": "読み込み中に最近のセッションが変更されました。しばらくしてから再試行してください。",
   "Rendering Markdown…": "Markdown を描画中…",
-  "Formatted preview unavailable. Showing source.": "書式付きプレビューを表示できません。ソースを表示しています。"
+  "Formatted preview unavailable. Showing source.": "書式付きプレビューを表示できません。ソースを表示しています。",
+  "Load newer messages": "新しいメッセージを読み込む"
 }

@@ -10983,5 +10983,6 @@
   "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "No se pudo guardar esta solicitud localmente. El borrador se conserva en esta ventana; vuelve a guardarlo antes de continuar.",
   "Recent sessions changed while loading. Retry shortly.": "Las sesiones recientes cambiaron durante la carga. Vuelve a intentarlo en breve.",
   "Rendering Markdown…": "Renderizando Markdown…",
-  "Formatted preview unavailable. Showing source.": "Vista previa con formato no disponible. Se muestra el código fuente."
+  "Formatted preview unavailable. Showing source.": "Vista previa con formato no disponible. Se muestra el código fuente.",
+  "Load newer messages": "Cargar mensajes más recientes"
 }
