@@ -1,8 +1,52 @@
 use super::*;
 
+#[cfg(test)]
+thread_local! { pub(super) static STORED_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
+pub(super) fn valid_cached(raw: &str) -> Option<Value> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    let object = value.as_object()?;
+    if !object
+        .get("providers")?
+        .as_array()?
+        .iter()
+        .all(Value::is_string)
+        || !object.get("activeHarness")?.is_string()
+        || ["handedOffFrom", "activeModel"]
+            .iter()
+            .any(|key| object.get(*key).is_some_and(|v| !v.is_string()))
+    {
+        return None;
+    }
+    Some(value)
+}
+
+pub(super) fn cached_or_stored(
+    conn: &Connection,
+    id: &str,
+    harness: &str,
+) -> rusqlite::Result<Value> {
+    let cached: Option<String> = conn
+        .query_row(
+        "SELECT summary.provider_history FROM session_list_summaries summary
+         JOIN session_provider_projection_state projection ON projection.session_id=summary.session_id
+         JOIN session_block_state blocks ON blocks.session_id=summary.session_id AND blocks.length>=0
+         WHERE summary.session_id=?1 AND projection.revision=blocks.revision AND projection.harness=?2",
+        params![id, harness],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(value) = cached.and_then(|raw| valid_cached(&raw)) {
+        return Ok(value);
+    }
+    stored(conn, id, harness)
+}
+
 /// Read provenance only. Normalized transcripts use the role index and never
 /// reconstruct tool output or the full transcript for a sidebar list.
 pub(super) fn stored(conn: &Connection, id: &str, harness: &str) -> rusqlite::Result<Value> {
+    #[cfg(test)]
+    STORED_SCANS.with(|count| count.set(count.get() + 1));
     let normalized: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)",
         [id],
