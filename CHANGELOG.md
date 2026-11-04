@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Edit, remove or send local saved drafts from their cards, restoring text and attachments to the unsent composer when editing. Host-bound drafts retain Send and Remove.
 - Allow the Host's retirement window to finish before desktop run-lease acquisition times out, and retain uncertain ownership guards until an unrenewed lease expires.
 - Make attachment cards more compact while retaining filenames, reference tokens, metadata and full-screen access.
-- Add direct assistant-room navigation and keep Settings at the bottom of the project rail and sidebar.
+- Add direct assistant-room navigation and keep Settings pinned at the bottom of the project rail and sidebar, including short windows.
 
 ### Task board reliability
 

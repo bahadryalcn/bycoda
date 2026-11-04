@@ -4253,7 +4253,7 @@ function CompactProjectRail({
         ) : null}
       </div>
       <div className="min-h-2 flex-1" />
-      <div className="flex w-full flex-col items-center gap-1 py-1.5">
+      <div className="flex w-full shrink-0 flex-col items-center gap-1 py-1.5">
         <CompactRailAction
           label={t("Settings")}
           command="App: Settings"

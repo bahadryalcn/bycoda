@@ -24,6 +24,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Keep independent pane/editable-region boundaries readable at rest; use compact tools, spacious reading and less decorative containment without erasing ownership.
 - Title/content/consequence lead metadata. Ordinary completed operations may summarize with detail available; active, failed, approval and recovery states stay discoverable.
 - Preserve navigation identity, mounted drafts, selections, widths/density, shortcuts/context menus, drag/drop and native window behavior.
+- Keep Settings outside the rail's scrolling content so its action stays visible in short windows, in both expanded and compact rails.
 - Use one clear activity state signal; optional figures do not replace operational state. Failed reads are unknown, not empty/idle/success.
 - Last Sessions is a collection view, separate from actual project and execution
   checkout. Keep it open on session selection; Explorer/Changes follow the selected

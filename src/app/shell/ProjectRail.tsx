@@ -1020,10 +1020,9 @@ export function ProjectRail({
         </div>
       ) : null}
 
-      {/* The fixed sections (tools, live summary, update and Development footers) can exceed a short window. Above
-          the short-height query the ledger is the only scroll owner and the footers stay pinned. At or below it the
-          ledger grows to its content and this column becomes the only scroll owner, so every bottom item stays
-          reachable without nested scrollbars. The popup keeps the ledger as its one scroll owner. */}
+      {/* Tools, live summary and update notices can exceed a short window. Above the short-height query the
+          ledger is the only scroll owner; below it this column scrolls without nested scrollbars. Settings
+          stays outside this column so it remains visible at every height. The popup scrolls only its ledger. */}
       <div
         className={`flex min-h-0 flex-1 flex-col ${
           navigator
@@ -1327,26 +1326,27 @@ export function ProjectRail({
                   </div>
                 </div>
                 <DevModeIndicator />
-                {/* Settings closes the rail: always the last, lowest item. */}
-                <nav
-                  aria-label={t("Settings")}
-                  className="bycoda-rail-tools bycoda-rail-tools--footer shrink-0"
-                >
-                  <RailAction
-                    label={t("Settings")}
-                    icon={Settings}
-                    onClick={onOpenSettings}
-                    // Only a real open page or dialog is selected; opening the label never paints selection.
-                    active={settingsOpen || settingsDialogOpen}
-                    command="App: Settings"
-                    guide="rail-settings"
-                  />
-                </nav>
               </>
             ) : null}
           </>
         )}
       </div>
+      {!navigator && !settingsOpen ? (
+        <nav
+          aria-label={t("Settings")}
+          className="bycoda-rail-tools bycoda-rail-tools--footer @container/rail shrink-0"
+        >
+          <RailAction
+            label={t("Settings")}
+            icon={Settings}
+            onClick={onOpenSettings}
+            // Only a real open page or dialog is selected; opening the label never paints selection.
+            active={settingsOpen || settingsDialogOpen}
+            command="App: Settings"
+            guide="rail-settings"
+          />
+        </nav>
+      ) : null}
       {visible ? projectMenu.element : null}
       {visible ? rail.element : null}
       {visible && inboxMenu ? (
