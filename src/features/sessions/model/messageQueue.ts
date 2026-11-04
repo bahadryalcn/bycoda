@@ -1,5 +1,6 @@
 import { isPreparingHandoff } from "./handoff";
 import type { FollowUpBehavior } from "../../settings/model/settings";
+import { t } from "../../../shared/i18n";
 import { moveItem, orderByIds } from "../../../shared/lib/reorder";
 import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";
@@ -130,6 +131,32 @@ export function holdUndeliveredFollowUp(
       : [...(session.queuedMessages ?? []), message],
     queueStatus: "paused",
   };
+}
+
+/**
+ * A turn ended in a provider failure (an error, an exit, a usage limit) while
+ * follow-ups wait. The queue holds for the owner instead of sending the next
+ * row into the same failure, as the Host drainer does after a failed host turn.
+ * A queue the owner already paused, one restored from disk and a Resume in
+ * flight keep their status; a queue with no rows has nothing to hold.
+ */
+export function holdQueueAfterFailedTurn(session: Session): Session {
+  if (!session.queuedMessages?.length) return session;
+  if (session.queueStatus && session.queueStatus !== "active") return session;
+  return { ...session, queueStatus: "paused" };
+}
+
+/** The status row explaining a hold after a failed turn, with the failure when known. */
+export function failedTurnQueueNotice(reason?: string): string {
+  const detail = reason?.trim();
+  return detail
+    ? t(
+        "The queue is paused because this turn failed: {p0}. Resume it to send the next queued message.",
+        {
+          p0: detail,
+        },
+      )
+    : t("The queue is paused because this turn failed. Resume it to send the next queued message.");
 }
 
 /** Hold auto-dispatch only while the item about to send is being edited. */

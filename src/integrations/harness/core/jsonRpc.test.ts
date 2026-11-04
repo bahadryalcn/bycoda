@@ -314,6 +314,43 @@ it("asenkron server request hatasını sır içermeden yakalar", async () => {
   warning.mockRestore();
 });
 
+it("forgets a server request once its handler throws, rejects or settles without replying", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const written: string[] = [];
+  transport.onWrite = async (_sessionId, line) => {
+    written.push(line);
+  };
+  const tracked = (client: JsonRpcClient) =>
+    (client as unknown as { serverRequests: Map<string, string> }).serverRequests;
+  let replyLater: (() => Promise<void>) | undefined;
+  const client: JsonRpcClient = new JsonRpcClient(createChildProcessHandle("forget"), {
+    onRequest: (id, method) => {
+      if (method === "throws-sync") throw new Error("sync failure");
+      if (method === "rejects") return Promise.reject(new Error("async failure"));
+      if (method === "replies") return client.respond(id, { ok: true });
+      if (method === "replies-later") replyLater = () => client.respond(id, { late: true });
+      return undefined;
+    },
+  });
+  for (const [id, method] of [
+    [1, "throws-sync"],
+    [2, "rejects"],
+    [3, "silent"],
+    [4, "replies"],
+    [5, "replies-later"],
+  ] as const)
+    client.pushLine(JSON.stringify({ id, method }));
+  // Before the fix every entry but the replied one stayed for the life of the client.
+  await vi.waitFor(() => expect(tracked(client).size).toBe(0));
+  expect(JSON.parse(written[0])).toMatchObject({ id: 4, result: { ok: true } });
+  // A handler that replies after it returned still can; only the label is gone.
+  await replyLater!();
+  expect(JSON.parse(written[1])).toMatchObject({ id: 5, result: { late: true } });
+  expect(warning).toHaveBeenCalledWith("[bycoda] rpc server request handler failed");
+  expect(JSON.stringify(warning.mock.calls)).not.toContain("async failure");
+  warning.mockRestore();
+});
+
 describe("Native response and callback causality", () => {
   it("keeps the actual async response consumer owned across client close and waiter detachment", async () => {
     const api = await import("./nativeOutputDelivery");

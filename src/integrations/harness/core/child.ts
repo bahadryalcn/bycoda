@@ -582,13 +582,27 @@ function receiveProcessLines(
     if (nativeItems) discardNativeOutputItems(nativeItems, "child-construction-missing");
     return;
   }
-  for (const [index, line] of lines.entries())
-    routeProcessFrame(sessionId, {
-      constructionId,
-      body: { kind: channel, line, nativeItem: nativeItems?.[index] },
-      references: 0,
-      consumed: false,
-    });
+  // Each line is delivered on its own: a handler that throws on one line
+  // (a parser bug, a malformed frame) must not drop the rest of the batch,
+  // which may carry the turn's result and would otherwise leave it busy forever.
+  for (const [index, line] of lines.entries()) {
+    const nativeItem = nativeItems?.[index];
+    try {
+      routeProcessFrame(sessionId, {
+        constructionId,
+        body: { kind: channel, line, nativeItem },
+        references: 0,
+        consumed: false,
+      });
+    } catch (error) {
+      console.warn(`[bycoda] harness ${channel} line handler failed`, {
+        sessionId,
+        rule: "one failed line never drops the rest of its batch",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (nativeItem) discardNativeOutputItems([nativeItem], "line-handler-failed");
+    }
+  }
 }
 
 /** True when this exit belongs to the child we currently have spawned. */
@@ -1119,22 +1133,27 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
             // to stop the original session instead of treating validation as exit.
             // Without a valid construction id native answers CONSTRUCTION_REQUIRED
             // (there is nothing addressable to stop); that is not a kill failure.
-            return state.invoke<void>("harness_kill", { sessionId: handle.sessionId }).catch(
-              (killError: unknown) => {
+            return state
+              .invoke<void>("harness_kill", { sessionId: handle.sessionId })
+              .catch((killError: unknown) => {
                 if (/NATIVE_PROCESS_CONSTRUCTION_REQUIRED/.test(String(killError))) {
                   console.warn("[child] kill skipped, spawn receipt was invalid", killError);
                   return;
                 }
                 throw killError;
-              },
-            );
+              });
           }
           console.warn("[child] kill skipped, spawn invoke rejected", error);
         })
   ).catch((error: unknown) => {
     // Do not cache a rejection; unknown/exited constructions are already gone.
     if (state.kill === run) state.kill = undefined;
-    if (state.exited || /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(error instanceof Error ? error.message : String(error))) {
+    if (
+      state.exited ||
+      /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(
+        error instanceof Error ? error.message : String(error),
+      )
+    ) {
       console.warn("[child] kill target already gone", error);
       return;
     }

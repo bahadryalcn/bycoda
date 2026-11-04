@@ -41,6 +41,8 @@ import {
 import type { HarnessId } from "../../../features/sessions/model/session";
 import {
   HARNESS_IDLE_PARK_MS,
+  TURN_INACTIVITY_STATUS_KEY,
+  TURN_INACTIVITY_WARNING_MS,
   harnessCapabilities,
   harnessCapabilityTable,
   bindHarnessSession,
@@ -66,7 +68,7 @@ import {
   retireHarnessWriter,
   type HarnessAdapter,
 } from "./registry";
-import type { HarnessOperationContext, SendTurnInput, SteerTurnInput } from "./types";
+import type { HarnessEvent, HarnessOperationContext, SendTurnInput, SteerTurnInput } from "./types";
 import { createChildProcessHandle, spawnChild, killChild, type ChildProcessHandle } from "./child";
 import { nativeControlTurnReceipt } from "./controlTurn";
 import { claudeAdapter } from "../providers/claude/claudeAdapter";
@@ -746,6 +748,142 @@ describe("harness registry", () => {
     await replacement;
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("escalates a repeated Stop to a session stop once the first was never confirmed", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let finish!: () => void;
+    const sendTurn = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    // The provider swallows the cancel: the promise never settles.
+    const cancelTurn = vi.fn(() => new Promise<void>(() => {}));
+    const stopSession = vi.fn(async () => {
+      finish();
+    });
+    registerHarness(stub("claude", { sendTurn, cancelTurn, stopSession }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "escalate-stop",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: vi.fn(),
+    };
+    const turn = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    const first = cancelHarnessTurn("claude", input.sessionId);
+    const firstReported = expect(first).rejects.toThrow("did not confirm Stop");
+    await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(10_000);
+    await firstReported;
+    expect(stopSession).not.toHaveBeenCalled();
+    // The second Stop does not wait on the same hung promise: it stops the session.
+    await cancelHarnessTurn("claude", input.sessionId);
+    expect(stopSession).toHaveBeenCalledOnce();
+    expect(cancelTurn).toHaveBeenCalledOnce();
+    await turn;
+    expect(warn).toHaveBeenCalledWith(
+      "[harness] turn cancellation failed",
+      expect.objectContaining({ message: expect.stringContaining("stopping the session") }),
+    );
+    warn.mockRestore();
+  });
+
+  it("warns once when a running turn goes silent and clears the notice when the provider speaks", async () => {
+    vi.useFakeTimers();
+    let emit!: (event: HarnessEvent) => void;
+    let finish!: () => void;
+    const sendTurn = vi.fn((input: SendTurnInput) => {
+      emit = input.onEvent;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    registerHarness(stub("claude", { sendTurn }));
+    const onEvent = vi.fn();
+    const input = {
+      harness: "claude" as const,
+      sessionId: "silent-turn",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent,
+    };
+    const notices = () =>
+      onEvent.mock.calls
+        .map(([event]) => event as HarnessEvent)
+        .filter((event) => event.type === "status" && event.key === TURN_INACTIVITY_STATUS_KEY);
+    const turn = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    emit({ type: "turn.started", providerTurnId: "t1" });
+    await vi.advanceTimersByTimeAsync(TURN_INACTIVITY_WARNING_MS - 1);
+    expect(notices()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(notices()).toEqual([
+      { type: "status", key: TURN_INACTIVITY_STATUS_KEY, text: expect.stringContaining("claude") },
+    ]);
+    // Silence is reported once; the turn keeps running.
+    await vi.advanceTimersByTimeAsync(TURN_INACTIVITY_WARNING_MS * 3);
+    expect(notices()).toHaveLength(1);
+    expect(sendTurn).toHaveBeenCalledOnce();
+    // The provider speaks again: the notice row is cleared and the clock restarts.
+    emit({ type: "message.delta", text: "back" });
+    expect(notices()).toHaveLength(2);
+    expect(notices()[1]).toEqual({ type: "status", key: TURN_INACTIVITY_STATUS_KEY, text: "" });
+    await vi.advanceTimersByTimeAsync(TURN_INACTIVITY_WARNING_MS);
+    expect(notices()).toHaveLength(3);
+    finish();
+    await turn;
+    // The turn ended while the notice was up: it does not outlive the turn.
+    expect(notices()).toHaveLength(4);
+    expect(notices()[3].text).toBe("");
+    expect(onEvent.mock.calls.map(([event]) => (event as HarnessEvent).type)).toContain(
+      "message.delta",
+    );
+  });
+
+  it("does not count silence while the turn waits on the user", async () => {
+    vi.useFakeTimers();
+    let emit!: (event: HarnessEvent) => void;
+    let finish!: () => void;
+    const sendTurn = vi.fn((input: SendTurnInput) => {
+      emit = input.onEvent;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    registerHarness(stub("claude", { sendTurn }));
+    const onEvent = vi.fn();
+    const input = {
+      harness: "claude" as const,
+      sessionId: "waiting-turn",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent,
+    };
+    const notices = () =>
+      onEvent.mock.calls
+        .map(([event]) => event as HarnessEvent)
+        .filter((event) => event.type === "status" && event.key === TURN_INACTIVITY_STATUS_KEY);
+    const turn = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    emit({ type: "approval.requested", requestId: 1, title: "Run command" });
+    await vi.advanceTimersByTimeAsync(TURN_INACTIVITY_WARNING_MS * 2);
+    expect(notices()).toEqual([]);
+    emit({ type: "approval.resolved", requestId: 1, decision: "allow" });
+    await vi.advanceTimersByTimeAsync(TURN_INACTIVITY_WARNING_MS);
+    expect(notices()).toHaveLength(1);
+    finish();
+    await turn;
   });
 
   it("does not admit a late Stop between original completion and route removal", async () => {

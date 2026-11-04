@@ -387,6 +387,45 @@ describe("child bridge", () => {
     release();
   });
 
+  it("keeps delivering a batch after one line's handler throws", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    const release = await child.acquireHarnessBridge();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const lines: string[] = [];
+    const errors: string[] = [];
+    child.watchChild(
+      processHandle(child, "throwing"),
+      (line) => {
+        if (line === "b") throw new Error("parser bug");
+        lines.push(line);
+      },
+      vi.fn(),
+      (line) => {
+        if (line === "e2") throw new Error("stderr parser bug");
+        errors.push(line);
+      },
+    );
+    await child.spawnChild(processHandle(child, "throwing"), "agent", [], "/tmp");
+
+    emit("harness-stdout-lines", { sessionId: "throwing", lines: ["a", "b", "c"] });
+    emit("harness-stdout", { sessionId: "throwing", line: "d" });
+    emit("harness-stderr-lines", { sessionId: "throwing", lines: ["e1", "e2", "e3"] });
+    // The failing line is skipped; everything behind it in the batch still arrives.
+    expect(lines).toEqual(["a", "c", "d"]);
+    expect(errors).toEqual(["e1", "e3"]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("stdout line handler failed"),
+      expect.objectContaining({ sessionId: "throwing", error: "parser bug" }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("stderr line handler failed"),
+      expect.objectContaining({ sessionId: "throwing", error: "stderr parser bug" }),
+    );
+    warn.mockRestore();
+    release();
+  });
+
   it("caps an unwatched child's buffer by lines, not by batches", async () => {
     installResolvedListeners();
     const child = await loadChild();

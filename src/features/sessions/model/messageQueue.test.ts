@@ -14,6 +14,8 @@ import {
   reorderQueuedMessages,
   reorderSessionQueue,
   resolveFollowUpRoute,
+  failedTurnQueueNotice,
+  holdQueueAfterFailedTurn,
   holdUndeliveredFollowUp,
   sentQueuedMessage,
 } from "./messageQueue";
@@ -246,6 +248,38 @@ describe("canDispatchQueuedHead", () => {
 
   it("does not dispatch an empty queue", () => {
     expect(canDispatchQueuedHead(chat({ queuedMessages: undefined }))).toBe(false);
+  });
+});
+
+describe("holdQueueAfterFailedTurn", () => {
+  it("pauses an active queue so the next row does not run into the same failure", () => {
+    const held = holdQueueAfterFailedTurn(chat({ queueStatus: "active" }));
+    expect(held.queueStatus).toBe("paused");
+    expect(held.queuedMessages).toEqual(chat().queuedMessages);
+    expect(canDispatchQueuedHead(held)).toBe(false);
+    // A queue that was never given a status is active too.
+    expect(holdQueueAfterFailedTurn(chat({ queueStatus: undefined })).queueStatus).toBe("paused");
+  });
+
+  it("keeps a paused, restored or resuming queue and an empty queue as they are", () => {
+    for (const queueStatus of ["paused", "restored", "resuming"] as const) {
+      const session = chat({ queueStatus });
+      expect(holdQueueAfterFailedTurn(session)).toBe(session);
+    }
+    const empty = chat({ queuedMessages: undefined });
+    expect(holdQueueAfterFailedTurn(empty)).toBe(empty);
+    const none = chat({ queuedMessages: [] });
+    expect(holdQueueAfterFailedTurn(none)).toBe(none);
+  });
+
+  it("explains the hold with the failure when it is known", () => {
+    expect(failedTurnQueueNotice(" provider exited with code 1 ")).toBe(
+      "The queue is paused because this turn failed: provider exited with code 1. Resume it to send the next queued message.",
+    );
+    expect(failedTurnQueueNotice("")).toBe(
+      "The queue is paused because this turn failed. Resume it to send the next queued message.",
+    );
+    expect(failedTurnQueueNotice(undefined)).toBe(failedTurnQueueNotice("   "));
   });
 });
 

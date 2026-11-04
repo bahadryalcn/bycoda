@@ -4098,18 +4098,43 @@ impl Drop for LineBatcher {
 }
 
 /// Reads `reader` to EOF and emits its lines in batches; returns once the
-/// last batch is out.
+/// last batch is out. Each line is decoded lossily (K-UTF8): an invalid byte
+/// replaces one character and the reader keeps draining, so Windows
+/// code-page output or a chunk split inside a multibyte character never
+/// drops the rest of the provider stream. Only EOF or a real I/O error ends
+/// the read.
 fn read_lines_batched<R: Read, F: FnMut(Vec<String>) + Send + 'static>(reader: R, emit: F) -> bool {
     let batcher = LineBatcher::new(emit);
+    let mut reader = BufReader::new(reader);
     let mut success = true;
-    for line in BufReader::new(reader).lines() {
-        let Ok(line) = line else {
-            success = false;
-            break;
-        };
-        success &= batcher.push(line);
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        match reader.read_until(b'\n', &mut raw) {
+            Ok(0) => break,
+            Ok(_) => success &= batcher.push(decode_output_line(&raw)),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                success = false;
+                break;
+            }
+        }
     }
     batcher.finish() && success
+}
+
+/// Decodes one raw provider line: replaces invalid UTF-8 with U+FFFD instead
+/// of failing and strips the trailing `\n` or `\r\n`, matching what
+/// `BufRead::lines` used to hand out for valid input.
+fn decode_output_line(raw: &[u8]) -> String {
+    let mut end = raw.len();
+    if raw[..end].ends_with(b"\n") {
+        end -= 1;
+    }
+    if raw[..end].ends_with(b"\r") {
+        end -= 1;
+    }
+    String::from_utf8_lossy(&raw[..end]).into_owned()
 }
 
 fn read_provider_lines<R: Read, F: FnMut(Vec<String>) + Send + 'static>(
@@ -8803,5 +8828,43 @@ mod line_batch_tests {
         });
         let all: Vec<String> = out_rx.try_iter().flatten().collect();
         assert_eq!(all, lines(0..300));
+    }
+
+    #[test]
+    fn read_lines_batched_keeps_draining_after_invalid_utf8() {
+        // A Windows code-page byte (0xFE) in the middle of the stream, followed
+        // by more valid lines; before K-UTF8 the reader stopped at that line.
+        let mut input = b"first\r\n".to_vec();
+        input.extend_from_slice(b"bad \xFE byte\n");
+        input.extend_from_slice("sonra \u{15F}".as_bytes());
+        input.push(b'\n');
+        input.extend_from_slice(b"last without newline");
+        let (out_tx, out_rx) = channel();
+        let ok = read_lines_batched(std::io::Cursor::new(input), move |batch| {
+            out_tx.send(batch).unwrap()
+        });
+        assert!(ok);
+        let all: Vec<String> = out_rx.try_iter().flatten().collect();
+        assert_eq!(
+            all,
+            vec![
+                "first".to_string(),
+                "bad \u{FFFD} byte".to_string(),
+                "sonra \u{15F}".to_string(),
+                "last without newline".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn decode_output_line_strips_line_endings_and_replaces_invalid_bytes() {
+        assert_eq!(decode_output_line(b"plain\n"), "plain");
+        assert_eq!(decode_output_line(b"crlf\r\n"), "crlf");
+        assert_eq!(decode_output_line(b"no newline"), "no newline");
+        assert_eq!(decode_output_line(b"\n"), "");
+        assert_eq!(decode_output_line(b""), "");
+        // A lone carriage return inside the line is content, not a terminator.
+        assert_eq!(decode_output_line(b"a\rb\n"), "a\rb");
+        assert_eq!(decode_output_line(b"\xFF\xFE\n"), "\u{FFFD}\u{FFFD}");
     }
 }
