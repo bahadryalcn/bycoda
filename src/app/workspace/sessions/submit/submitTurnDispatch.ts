@@ -29,6 +29,10 @@ import {
 } from "../../../../features/sessions/model/handoff";
 import { CONTINUE_PROMPT } from "../../../../features/sessions/model/inFlight";
 import {
+  failedTurnQueueNotice,
+  holdQueueAfterFailedTurn,
+} from "../../../../features/sessions/model/messageQueue";
+import {
   buildPlanPrompt,
   isProviderFailureText,
   planTurnPrompt,
@@ -400,6 +404,7 @@ export async function runSubmitDispatch(
     // Managed capture needs a settled writer even after a successful turn.
     // Stop through the adapter first so intentional exit events are muted;
     // native retirement then waits for process exit and Host acknowledgement.
+    let queueHeld = false;
     const finalizedCurrentTurn = await finalizeLocalTurn({
       isCurrent: () => turnGen.current.get(sessionId) === gen,
       retire: () =>
@@ -458,10 +463,14 @@ export async function runSubmitDispatch(
             );
             const providerFailed =
               turn.providerFailureSeen || isProviderFailureText(lastAssistantTextInTurn(stopped));
+            // A failed turn holds the queue for the owner; the next row would
+            // only run into the same failure (host/queue-drainer does the same).
+            const held = providerFailed ? holdQueueAfterFailedTurn(stopped) : stopped;
+            if (held !== stopped) queueHeld = true;
             const finalized =
               turn.proposalDraft && proposalId
                 ? withOrchestrationProposal(
-                    stopped,
+                    held,
                     proposalId,
                     turn.completedProposal && !providerFailed && turn.buildSucceeded
                       ? turn.completedProposal
@@ -474,8 +483,8 @@ export async function runSubmitDispatch(
                         ),
                   )
                 : intent === "plan" && !turn.nativePlanSeen && !providerFailed
-                  ? promoteLastAssistantToPlan(stopped, planEventKey)
-                  : stopped;
+                  ? promoteLastAssistantToPlan(held, planEventKey)
+                  : held;
             const recovered =
               !providerFailed && turn.buildSucceeded
                 ? recoverTaggedOrchestrationProposals(finalized)
@@ -490,6 +499,13 @@ export async function runSubmitDispatch(
           }),
         ),
     });
+    if (queueHeld) {
+      enqueueHarnessEvent(sessionId, {
+        type: "status",
+        text: failedTurnQueueNotice(turn.controlOutcome.error),
+      });
+      flushHarnessEvents();
+    }
     // Idle is already visible; keep the transcript/checkpoint ordering guarantees
     // for everything that follows (notifications read the settled review state).
     await checkpointSettled;

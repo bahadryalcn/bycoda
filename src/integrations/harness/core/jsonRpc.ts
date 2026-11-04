@@ -490,8 +490,15 @@ export class JsonRpcClient {
     }
 
     if (msg.method && msg.id != null) {
-      this.serverRequests.set(String(msg.id), msg.method);
+      const key = String(msg.id);
+      this.serverRequests.set(key, msg.method);
       const work = captureNativeOutputWork();
+      // The entry only labels the reply. A handler that throws, rejects or
+      // settles without replying leaves nothing to label, so the entry goes
+      // with it instead of staying for the life of the client.
+      const forget = () => {
+        this.serverRequests.delete(key);
+      };
       try {
         const actual = this.handlers.onRequest?.(
           msg.id,
@@ -499,10 +506,12 @@ export class JsonRpcClient {
           msg.params,
           ...(work ? ([work] as const) : []),
         );
-        void trackNativeOutputWork(Promise.resolve(actual), work).catch(() =>
-          console.warn(`[bycoda] ${this.label} server request handler failed`),
-        );
+        void trackNativeOutputWork(Promise.resolve(actual), work).then(forget, () => {
+          forget();
+          console.warn(`[bycoda] ${this.label} server request handler failed`);
+        });
       } catch {
+        forget();
         work?.fail("rpc-request-handler-failed");
         console.warn(`[bycoda] ${this.label} server request handler failed`);
       }

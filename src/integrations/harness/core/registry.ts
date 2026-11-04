@@ -33,6 +33,7 @@ import {
 } from "./controlTurn";
 import { drainRetirementsForWriter, retireProviderOwner } from "./providerRetirement";
 import { beginHandoffPhase } from "./handoffPhase";
+import { formatDuration } from "../../../shared/i18n/format";
 import { TurnNotReadyError } from "./types";
 import type {
   ApprovalDecision,
@@ -268,6 +269,8 @@ const cancellationEpoch = new Map<string, number>();
 type AdapterOperation = {
   adapter: HarnessAdapter;
   cancellation?: Promise<void>;
+  /** The cached cancellation ran past STOP_CONFIRM_MS without the provider confirming. */
+  cancellationUnconfirmed?: boolean;
   entered: boolean;
   operation: object;
   control?: ControlTurnHandle;
@@ -647,22 +650,29 @@ export function sendHarnessTurn(
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
             throw new Error("Turn cancelled before it started");
           owner.entered = true;
-          await adapter.sendTurn(
-            operationInput(
-              {
-                ...preparedInput,
-                onAccepted: () => {
-                  accepted();
-                  input.onAccepted?.();
+          const watchdog = createTurnWatchdog(input.harness, input.onEvent);
+          watchdog.arm();
+          try {
+            await adapter.sendTurn(
+              operationInput(
+                {
+                  ...preparedInput,
+                  onAccepted: () => {
+                    accepted();
+                    input.onAccepted?.();
+                  },
+                  onEvent: (event) => {
+                    if (event.type === "turn.started") accepted();
+                    watchdog.observe(event);
+                    input.onEvent(event);
+                  },
                 },
-                onEvent: (event) => {
-                  if (event.type === "turn.started") accepted();
-                  input.onEvent(event);
-                },
-              },
-              owner,
-            ),
-          );
+                owner,
+              ),
+            );
+          } finally {
+            watchdog.stop();
+          }
           try {
             onReplyEnded?.(Date.now());
           } catch (error) {
@@ -872,6 +882,79 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
   });
 }
 
+/**
+ * A running turn with no provider event for this long gets a visible notice.
+ * The notice never ends the turn: a lost result line or a hung provider is the
+ * user's call to Stop, and a long tool run is still a running turn.
+ */
+export const TURN_INACTIVITY_WARNING_MS = 10 * 60_000;
+export const TURN_INACTIVITY_STATUS_KEY = "turn-inactivity";
+
+/** Events after which the silence is the user's (or background work's), not the provider's. */
+function turnWaitsOutsideProvider(event: HarnessEvent): boolean {
+  return (
+    event.type === "approval.requested" ||
+    event.type === "question.asked" ||
+    event.type === "question.updated" ||
+    (event.type === "background.updated" && event.tasks.length > 0)
+  );
+}
+
+/**
+ * Per-turn inactivity watchdog: armed when the provider is entered, reset by
+ * every provider event, disarmed while the turn waits on the user. On expiry
+ * it posts one keyed status row and stays quiet until the provider speaks
+ * again, which clears the row. It is the UI's existing status row, not a new
+ * surface, and it leaves the turn running.
+ */
+function createTurnWatchdog(
+  harness: HarnessId,
+  emit: (event: HarnessEvent) => void,
+  warnAfterMs = TURN_INACTIVITY_WARNING_MS,
+): { arm(): void; observe(event: HarnessEvent): void; stop(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let warned = false;
+  const clear = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const notify = (text: string) => {
+    try {
+      emit({ type: "status", key: TURN_INACTIVITY_STATUS_KEY, text });
+    } catch (error) {
+      warnCleanup("turn inactivity notice", error);
+    }
+  };
+  const arm = () => {
+    clear();
+    timer = setTimeout(() => {
+      timer = undefined;
+      warned = true;
+      notify(
+        `${harness} has not sent anything for ${formatDuration(warnAfterMs)}. It may still be working; Stop ends the turn.`,
+      );
+    }, warnAfterMs);
+  };
+  return {
+    arm,
+    observe(event) {
+      if (warned) {
+        warned = false;
+        notify("");
+      }
+      if (turnWaitsOutsideProvider(event)) clear();
+      else arm();
+    },
+    stop() {
+      clear();
+      if (warned) {
+        warned = false;
+        notify("");
+      }
+    },
+  };
+}
+
 /** How long Stop waits for the provider to confirm before it reports instead of hanging. */
 const STOP_CONFIRM_MS = 10_000;
 const stoppingTurns = new Map<string, number>();
@@ -904,9 +987,31 @@ export async function cancelHarnessTurn(harness: HarnessId, sessionId: string): 
   cancelIdlePark(sessionId);
   if (!owner.entered) return;
   const originalContext = operationContext(owner);
+  if (owner.cancellation && owner.cancellationUnconfirmed) {
+    // The provider never confirmed the earlier Stop. Waiting on that same hung
+    // promise again could never escalate, so this Stop drops it and stops the
+    // session the hard way, as Codex does when its interrupt is not answered.
+    owner.cancellation = undefined;
+    owner.cancellationUnconfirmed = false;
+    warnCleanup(
+      "turn cancellation",
+      new Error(`${harness} did not confirm the previous Stop; stopping the session instead`),
+    );
+    setStopping(sessionId, 1);
+    try {
+      await stopHarnessSession(harness, sessionId);
+    } finally {
+      setStopping(sessionId, -1);
+    }
+    return;
+  }
   // A failed cancellation is not cached, so Stop can retry. It is rethrown below.
   const cancellation: Promise<void> = (owner.cancellation ??= Promise.resolve()
     .then(() => owner.adapter.cancelTurn(sessionId, originalContext))
+    .then(() => {
+      // A late confirmation is still a confirmation: no escalation is needed.
+      if (owner.cancellation === cancellation) owner.cancellationUnconfirmed = false;
+    })
     .catch((error: unknown) => {
       warnCleanup("turn cancellation", error);
       if (owner.cancellation === cancellation) owner.cancellation = undefined;
@@ -918,15 +1023,15 @@ export async function cancelHarnessTurn(harness: HarnessId, sessionId: string): 
     await Promise.race([
       cancellation,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `${harness} did not confirm Stop within ${STOP_CONFIRM_MS / 1000} s; it may still be running`,
-              ),
+        timer = setTimeout(() => {
+          // The next Stop on this still-pending cancellation escalates.
+          if (owner.cancellation === cancellation) owner.cancellationUnconfirmed = true;
+          reject(
+            new Error(
+              `${harness} did not confirm Stop within ${STOP_CONFIRM_MS / 1000} s; it may still be running`,
             ),
-          STOP_CONFIRM_MS,
-        );
+          );
+        }, STOP_CONFIRM_MS);
       }),
     ]);
   } finally {

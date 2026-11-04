@@ -22,6 +22,10 @@ import {
 } from "../../../../features/sessions/model/handoff";
 import { requestOutgoingHandoff } from "../../../../features/sessions/model/handoffTurn";
 import { handoffContextSession } from "../../../../features/sessions/model/handoffBudget";
+import {
+  failedTurnQueueNotice,
+  holdQueueAfterFailedTurn,
+} from "../../../../features/sessions/model/messageQueue";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { prepareSessionWorkspaceDetailed } from "../../../../features/workspaces/model/sessionWorkspace";
 import {
@@ -199,11 +203,17 @@ export function startSubmittedTurn(
           message: turn.controlOutcome.error!,
         });
         flushHarnessEvents();
+        let queueHeld = false;
         setSessions((prev) =>
           prev.map((session) => {
             if (session.id !== sessionId || turnGen.current.get(sessionId) !== gen) return session;
+            // The turn failed before or while it ran: queued follow-ups hold
+            // for the owner instead of draining into the same failure.
+            const streamingStopped = stopStreaming(session, Date.now(), true);
+            const held = holdQueueAfterFailedTurn(streamingStopped);
+            if (held !== streamingStopped) queueHeld = true;
             const stoppedTurn = {
-              ...stopStreaming(session, Date.now(), true),
+              ...held,
               worktreePreparing: undefined,
             };
             const stopped = pendingSwitch
@@ -223,6 +233,13 @@ export function startSubmittedTurn(
               : stopped;
           }),
         );
+        if (queueHeld) {
+          enqueueHarnessEvent(sessionId, {
+            type: "status",
+            text: failedTurnQueueNotice(turn.controlOutcome.error),
+          });
+          flushHarnessEvents();
+        }
       }
     })
     .finally(() => {
