@@ -18,6 +18,7 @@ import type {
   SocialOccurrence,
   SocialProgram,
   ProgramFeatures,
+  ImageCapability,
 } from "../src/features/social/model/socialProgram";
 import {
   PROGRAM_STEPS,
@@ -122,6 +123,16 @@ export class SocialPrograms {
   };
   private closed = false;
   private lifecycleEpoch = 0;
+  private featureProbe?: {
+    adapter: NonNullable<SocialImageAdapters["codex"]>;
+    promise: Promise<ImageCapability>;
+  };
+  private featureSnapshot?: {
+    adapter: NonNullable<SocialImageAdapters["codex"]>;
+    epoch: number;
+    expires: number;
+    value: ImageCapability;
+  };
   readonly ready: Promise<void>;
   constructor(
     private store: HostStore,
@@ -461,13 +472,38 @@ export class SocialPrograms {
       ...(all.length > 50 ? { nextBefore: page[0].sequence } : {}),
     };
   }
-  async features(accounts: SocialAccount[]): Promise<ProgramFeatures> {
+  private async codexFeatureCapability(refresh: boolean): Promise<ImageCapability | undefined> {
+    const adapter = this.images.codex;
+    if (!adapter) return undefined;
+    const known = this.featureSnapshot;
+    if (!refresh && known?.adapter === adapter && known.epoch === this.lifecycleEpoch && performance.now() < known.expires)
+      return structuredClone(known.value);
+    if (this.featureProbe?.adapter === adapter)
+      return structuredClone(await this.featureProbe.promise);
+    this.featureSnapshot = undefined;
+    const epoch = this.lifecycleEpoch;
+    const pending = { adapter, promise: Promise.resolve().then(() => adapter.capability()) };
+    this.featureProbe = pending;
+    try {
+      const value = await pending.promise;
+      if (this.featureProbe === pending && epoch === this.lifecycleEpoch)
+        this.featureSnapshot = {
+          adapter, epoch, expires: performance.now() + (value.available ? 30_000 : 5_000),
+          value: structuredClone(value),
+        };
+      return structuredClone(value);
+    } finally {
+      // An observer or Stop never releases the original unresolved probe early.
+      if (this.featureProbe === pending) this.featureProbe = undefined;
+    }
+  }
+  async features(accounts: SocialAccount[], refresh = false): Promise<ProgramFeatures> {
     await this.ready;
     const images = await Promise.all(
       await mapAsync(
         ["codex", "gemini", "comfyui", "openai-api"] as const,
         async (provider) =>
-          (await this.images[provider]?.capability()) ?? {
+          (provider === "codex" ? await this.codexFeatureCapability(refresh) : await this.images[provider]?.capability()) ?? {
             provider,
             available: false,
             reason: "Not configured on this executor.",

@@ -1277,8 +1277,9 @@ export class SocialService {
       };
     }
     if (action === "programs.features") {
-      exact(input, []);
-      return await this.programs.features(await this.accounts(p));
+      exact(input, ["refresh"]);
+      if (input.refresh !== undefined && typeof input.refresh !== "boolean") throw new Error("Invalid feature refresh.");
+      return await this.programs.features(await this.accounts(p), input.refresh === true);
     }
     if (action.startsWith("programs.")) {
       if (!this.isTool(action)) this.owner(p);
