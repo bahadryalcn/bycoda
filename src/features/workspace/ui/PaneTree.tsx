@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   memo,
@@ -612,277 +613,296 @@ function PaneTreeComponent({
 
   return (
     <div className="h-full min-h-0 min-w-0 overflow-hidden">
-    <div
-      ref={treeRef}
-      className="relative h-full min-h-0 min-w-0"
-      data-pane-maximized={maximum?.id}
-    >
-      {renderLeaves.map((leaf) => {
-        const editorPane = editorPanes.find((pane) => pane.id === leaf.id);
-        const session = sessionById.get(leaf.id);
-        const dragging = drop?.fromId === leaf.id;
-        const groupSelected = leaves.find(
-          (pane) => pane.id === leaf.id || pane.tabIds?.includes(leaf.id),
-        );
-        const hidden = leaf.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
-        const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
-        const onPaneDragStart = paneDragStartFor(leaf.id);
-        const backgroundStyle = {
-          "--chat-background-left": `${(-rect.x / rect.w) * 100}%`,
-          "--chat-background-top": `${(-rect.y / rect.h) * 100}%`,
-          "--chat-background-width": `${100 / rect.w}%`,
-          "--chat-background-height": `${100 / rect.h}%`,
-        } as CSSProperties;
-        return (
-          <div
-            key={leaf.id}
-            data-pane-id={hidden ? undefined : leaf.id}
-            data-pane-active={focusedId === leaf.id ? "true" : undefined}
-            // User interaction keeps a browsing tab; automatic composer focus does not.
-            onPointerDownCapture={() => {
-              if (!session) return;
-              if (focusedId !== session.id) onFocus(session.id);
-              onSessionInteraction?.(session.id);
-            }}
-            onKeyDownCapture={() => {
-              if (!session) return;
-              if (focusedId !== session.id) onFocus(session.id);
-              onSessionInteraction?.(session.id);
-            }}
-            onKeyUpCapture={(event) => {
-              if (event.key === "Tab" && session) onSessionInteraction?.(session.id);
-            }}
-            onInputCapture={() => session && onSessionInteraction?.(session.id)}
-            data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
-            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
-            // The new pane focuses its composer or editor while it is still
-            // offscreen, and focus scrolls this clip box to reveal it, which
-            // fights the slide. Scroll events land before paint, so undoing
-            // it here never shows.
-            onScroll={(event) => {
-              if (!enteringPanes.current.has(leaf.id)) return;
-              event.currentTarget.scrollLeft = 0;
-              event.currentTarget.scrollTop = 0;
-            }}
-            style={{
-              display: hidden ? "none" : undefined,
-              left: `${rect.x * 100}%`,
-              top: `${rect.y * 100}%`,
-              width: `${rect.w * 100}%`,
-              height: `${rect.h * 100}%`,
-              ...backgroundStyle,
-            }}
-          >
-            {leaf.tabIds && leaf.tabIds.length > 1 ? (
-              <div
-                role="tablist"
-                aria-label={t("Pane sessions")}
-                className="flex shrink-0 overflow-x-auto border-b border-stroke bg-surface"
-              >
-                {leaf.tabIds.map((id) => (
-                  <Button
-                    variant="tab"
-                    motion="none"
-                    key={id}
-                    type="button"
-                    role="tab"
-                    aria-selected={id === leaf.id}
-                    tabIndex={id === leaf.id ? 0 : -1}
-                    data-pane-tab-id={id}
-                    className={`relative max-w-48 shrink-0 truncate `}
-                    onClick={() => onFocus(id)}
-                    onKeyDown={(event) => {
-                      const ids = leaf.tabIds!;
-                      const index = ids.indexOf(id);
-                      const delta =
-                        event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
-                      const nextIndex =
-                        event.key === "Home"
-                          ? 0
-                          : event.key === "End"
-                            ? ids.length - 1
-                            : (index + delta + ids.length) % ids.length;
-                      if (!delta && event.key !== "Home" && event.key !== "End") return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      if (event.altKey && event.shiftKey && delta) {
-                        onMovePane(id, ids[nextIndex], "center", delta < 0 ? "before" : "after");
-                        return;
-                      }
-                      onFocus(ids[nextIndex]);
-                      const buttons =
-                        event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                          "[data-pane-tab-id]",
-                        );
-                      buttons?.[nextIndex]?.focus();
-                    }}
-                    onPointerDown={paneDragStartFor(id)}
-                    tooltip={sessionById.get(id)?.title || editorPanes.find((pane) => pane.id === id)?.files[0]?.path.split(/[\\/]/).pop() || t("Session")}
-                    tooltipWhen="overflow"
-                  >
-                    {sessionById.get(id)?.title ||
-                      editorPanes
-                        .find((pane) => pane.id === id)
-                        ?.files[0]?.path.split(/[\\/]/)
-                        .pop() ||
-                      t("Session")}
-                    {drop?.overId === id && drop.tabPosition ? (
-                      <span
-                        data-pane-tab-drop={drop.tabPosition}
-                        className={`pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) rounded-full ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
-                      />
-                    ) : null}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-            {(inSplit || maximum) && !hidden ? (
-              <Button
-                iconOnly
-                label={t(maximum ? "Restore panel layout" : "Maximize panel")}
-                variant="ghost"
-                motion="none"
-                type="button"
-                aria-label={t(maximum ? "Restore panel layout" : "Maximize panel")}
-                aria-pressed={Boolean(maximum)}
-                data-pane-maximize={leaf.id}
-                onClick={() => toggleMaximum(leaf.id)}
-                className="absolute [inset-block-start:0.25rem] end-2 z-1 grid place-items-center"
-              >
-                <Maximize2 className="icon-sm" />
-              </Button>
-            ) : null}
+      <div
+        ref={treeRef}
+        className="relative h-full min-h-0 min-w-0"
+        data-pane-maximized={maximum?.id}
+      >
+        {renderLeaves.map((leaf) => {
+          const editorPane = editorPanes.find((pane) => pane.id === leaf.id);
+          const session = sessionById.get(leaf.id);
+          const dragging = drop?.fromId === leaf.id;
+          const groupSelected = leaves.find(
+            (pane) => pane.id === leaf.id || pane.tabIds?.includes(leaf.id),
+          );
+          const hidden = leaf.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
+          const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
+          const onPaneDragStart = paneDragStartFor(leaf.id);
+          const backgroundStyle = {
+            "--chat-background-left": `${(-rect.x / rect.w) * 100}%`,
+            "--chat-background-top": `${(-rect.y / rect.h) * 100}%`,
+            "--chat-background-width": `${100 / rect.w}%`,
+            "--chat-background-height": `${100 / rect.h}%`,
+          } as CSSProperties;
+          return (
             <div
-              className="flex min-h-0 min-w-0 flex-1 flex-col"
-              data-pane-enter={enteringPanes.current.get(leaf.id)}
-              onAnimationEnd={(event) => {
-                if (event.target !== event.currentTarget) return;
-                if (enteringPanes.current.delete(leaf.id)) rerender();
+              key={leaf.id}
+              data-pane-id={hidden ? undefined : leaf.id}
+              data-pane-active={focusedId === leaf.id ? "true" : undefined}
+              // User interaction keeps a browsing tab; automatic composer focus does not.
+              onPointerDownCapture={() => {
+                if (!session) return;
+                if (focusedId !== session.id) onFocus(session.id);
+                onSessionInteraction?.(session.id);
+              }}
+              onKeyDownCapture={() => {
+                if (!session) return;
+                if (focusedId !== session.id) onFocus(session.id);
+                onSessionInteraction?.(session.id);
+              }}
+              onKeyUpCapture={(event) => {
+                if (event.key === "Tab" && session) onSessionInteraction?.(session.id);
+              }}
+              onInputCapture={() => session && onSessionInteraction?.(session.id)}
+              data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
+              className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
+              // The new pane focuses its composer or editor while it is still
+              // offscreen, and focus scrolls this clip box to reveal it, which
+              // fights the slide. Scroll events land before paint, so undoing
+              // it here never shows.
+              onScroll={(event) => {
+                if (!enteringPanes.current.has(leaf.id)) return;
+                event.currentTarget.scrollLeft = 0;
+                event.currentTarget.scrollTop = 0;
+              }}
+              style={{
+                display: hidden ? "none" : undefined,
+                left: `${rect.x * 100}%`,
+                top: `${rect.y * 100}%`,
+                width: `${rect.w * 100}%`,
+                height: `${rect.h * 100}%`,
+                ...backgroundStyle,
               }}
             >
-              <MediaVisibilityContext.Provider value={visible && !hidden}>
-                {editorPane ? (
-                  <FilePane
-                    pane={editorPane}
-                    focused={focusedId === editorPane.id}
-                    visible={visible && !hidden}
-                    showTabs={inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)}
-                    dirtyFileIds={dirtyFileIds}
-                    fileErrorCounts={fileErrorCounts}
-                    sessions={paneSessions.list}
-                    onFocus={onFocus}
-                    onSelectFile={onSelectFile}
-                    onCloseFile={onCloseFile}
-                    onCloseOtherFiles={onCloseOtherFiles}
-                    onOpenInNewWindow={onOpenInNewWindow}
-                    onPinFile={onPinFile}
-                    onReorderFiles={onReorderFiles}
-                    onMoveFile={onMoveFile}
-                    onDirtyChange={onFileDirtyChange}
-                    onErrorCountChange={onFileErrorCountChange}
-                    onOpenFile={onOpenFile}
-                    onUpdatePlan={onUpdatePlan}
-                    onBuildPlan={onBuildPlan}
-                    editorNavigation={editorNavigation}
-                    onPaneDragStart={onPaneDragStart}
-                    onTerminalMetaChange={onTerminalMetaChange}
-                  />
-                ) : session ? (
-                  <SessionPane
-                    session={session}
-                    workspaceSwitchingSessionId={workspaceSwitchingSessionId}
-                    reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
-                    visible={visible && !hidden}
-                    focused={focusedId === session.id}
-                    addToChatTarget={addToChatSessionId === session.id}
-                    inSplit={inSplit}
-                    composerFocused={composerFocused}
-                    composerFocusToken={composerFocusToken}
-                    recents={recents}
-                    hideProjectPicker={hideProjectPicker}
-                    onFocus={onFocus}
-                    onClose={onClose}
-                    onRemoteSnapshot={onRemoteSnapshot}
-                    onRefreshAdoptedSession={onRefreshAdoptedSession}
-                    onCwdChange={onCwdChange}
-                    onBranchChange={onBranchChange}
-                    onWorktreeChange={onWorktreeChange}
-                    onWorkspaceModeChange={onWorkspaceModeChange}
-                    onWorktreeBaseChange={onWorktreeBaseChange}
-                    onManageWorktrees={onManageWorktrees}
-                    onModelChange={onModelChange}
-                    onModelSettingsChange={onModelSettingsChange}
-                    onRuntimeModeChange={onRuntimeModeChange}
-                    onSaveDraft={onSaveDraft}
-                    onRemoveDraft={onRemoveDraft}
-                    onSubmit={onSubmit}
-                    onStop={onStop}
-                    onCompactContext={onCompactContext}
-                    onRewindMessage={onRewindMessage}
-                    onNewSession={onNewSession}
-                    onPlaceSessionInFolder={onPlaceSessionInFolder}
-                    onResumeProviderSession={onResumeProviderSession}
-                    onDeleteQueuedMessage={onDeleteQueuedMessage}
-                    onEditQueuedMessage={onEditQueuedMessage}
-                    onQueuedMessageEditingChange={onQueuedMessageEditingChange}
-                    onReorderQueuedMessages={onReorderQueuedMessages}
-                    onSteerQueuedMessage={onSteerQueuedMessage}
-                    onResumeQueue={onResumeQueue}
-                    onUsageLimitResume={onUsageLimitResume}
-                    onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
-                    onUsageLimitDismiss={onUsageLimitDismiss}
-                    onSelectProviderAccount={onSelectProviderAccount}
-                    onInboxCardDismiss={onInboxCardDismiss}
-                    onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
-                    onNoteCardDismiss={onNoteCardDismiss}
-                    onHandoffCardDismiss={onHandoffCardDismiss}
-                    onOpenLinkedWorkItem={onOpenLinkedWorkItem}
-                    onArchiveSession={onArchiveSession}
-                    onDeleteSession={onDeleteSession}
-                    onApproval={onApproval}
-                    onQuestionReply={onQuestionReply}
-                    onQuestionInteraction={onQuestionInteraction}
-                    onOpenFile={onOpenFile}
-                    onOpenDiff={onOpenDiff}
-                    onOpenPlan={onOpenPlan}
-                    onBuildPlan={onBuildPlan}
-                    onSecondOpinion={onSecondOpinion}
-                    onHandoff={onHandoff}
-                    onBtwSubmit={onBtwSubmit}
-                    onBtwRetry={onBtwRetry}
-                    onBtwDelete={onBtwDelete}
-                    onBtwStop={onBtwStop}
-                    onBtwModelChange={onBtwModelChange}
-                    onNewTerminal={onNewTerminal}
-                    onRunProjectAction={onRunProjectAction}
-                    onPaneDragStart={onPaneDragStart}
-                    transcriptPool={transcriptPool}
-                  />
-                ) : null}
-              </MediaVisibilityContext.Provider>
+              {leaf.tabIds && leaf.tabIds.length > 1 ? (
+                <div
+                  role="tablist"
+                  aria-label={t("Pane sessions")}
+                  className="flex shrink-0 overflow-x-auto border-b border-stroke bg-surface"
+                >
+                  {leaf.tabIds.map((id) => (
+                    <Button
+                      variant="tab"
+                      motion="none"
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={id === leaf.id}
+                      tabIndex={id === leaf.id ? 0 : -1}
+                      data-pane-tab-id={id}
+                      className={`relative max-w-48 shrink-0 truncate `}
+                      onClick={() => onFocus(id)}
+                      onKeyDown={(event) => {
+                        const ids = leaf.tabIds!;
+                        const index = ids.indexOf(id);
+                        const delta =
+                          event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+                        const nextIndex =
+                          event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? ids.length - 1
+                              : (index + delta + ids.length) % ids.length;
+                        if (!delta && event.key !== "Home" && event.key !== "End") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (event.altKey && event.shiftKey && delta) {
+                          onMovePane(id, ids[nextIndex], "center", delta < 0 ? "before" : "after");
+                          return;
+                        }
+                        onFocus(ids[nextIndex]);
+                        const buttons =
+                          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                            "[data-pane-tab-id]",
+                          );
+                        buttons?.[nextIndex]?.focus();
+                      }}
+                      onPointerDown={paneDragStartFor(id)}
+                      tooltip={
+                        sessionById.get(id)?.title ||
+                        editorPanes
+                          .find((pane) => pane.id === id)
+                          ?.files[0]?.path.split(/[\\/]/)
+                          .pop() ||
+                        t("Session")
+                      }
+                      tooltipWhen="overflow"
+                    >
+                      {sessionById.get(id)?.title ||
+                        editorPanes
+                          .find((pane) => pane.id === id)
+                          ?.files[0]?.path.split(/[\\/]/)
+                          .pop() ||
+                        t("Session")}
+                      {drop?.overId === id && drop.tabPosition ? (
+                        <span
+                          data-pane-tab-drop={drop.tabPosition}
+                          className={`pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) rounded-full ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
+                        />
+                      ) : null}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+              {(inSplit || maximum) && !hidden ? (
+                <Button
+                  iconOnly
+                  label={t(maximum ? "Restore panel layout" : "Maximize panel")}
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  aria-label={t(maximum ? "Restore panel layout" : "Maximize panel")}
+                  aria-pressed={Boolean(maximum)}
+                  data-pane-maximize={leaf.id}
+                  onClick={() => toggleMaximum(leaf.id)}
+                  className="absolute [inset-block-start:0.25rem] end-2 z-1 grid place-items-center"
+                >
+                  <Maximize2 className="icon-sm" />
+                </Button>
+              ) : null}
+              <div
+                className="flex min-h-0 min-w-0 flex-1 flex-col"
+                data-pane-enter={enteringPanes.current.get(leaf.id)}
+                onAnimationEnd={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (enteringPanes.current.delete(leaf.id)) rerender();
+                }}
+              >
+                <MediaVisibilityContext.Provider value={visible && !hidden}>
+                  {editorPane ? (
+                    <RecoveryBoundary
+                      resetKeys={[leaf.id, editorPane.activeFileId]}
+                      onBack={() => onCloseFile(editorPane.id, editorPane.activeFileId)}
+                    >
+                      <FilePane
+                        pane={editorPane}
+                        focused={focusedId === editorPane.id}
+                        visible={visible && !hidden}
+                        showTabs={
+                          inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)
+                        }
+                        dirtyFileIds={dirtyFileIds}
+                        fileErrorCounts={fileErrorCounts}
+                        sessions={paneSessions.list}
+                        onFocus={onFocus}
+                        onSelectFile={onSelectFile}
+                        onCloseFile={onCloseFile}
+                        onCloseOtherFiles={onCloseOtherFiles}
+                        onOpenInNewWindow={onOpenInNewWindow}
+                        onPinFile={onPinFile}
+                        onReorderFiles={onReorderFiles}
+                        onMoveFile={onMoveFile}
+                        onDirtyChange={onFileDirtyChange}
+                        onErrorCountChange={onFileErrorCountChange}
+                        onOpenFile={onOpenFile}
+                        onUpdatePlan={onUpdatePlan}
+                        onBuildPlan={onBuildPlan}
+                        editorNavigation={editorNavigation}
+                        onPaneDragStart={onPaneDragStart}
+                        onTerminalMetaChange={onTerminalMetaChange}
+                      />
+                    </RecoveryBoundary>
+                  ) : session ? (
+                    <RecoveryBoundary
+                      resetKeys={[leaf.id, session.id]}
+                      onBack={() => onClose(session.id)}
+                    >
+                      <SessionPane
+                        session={session}
+                        workspaceSwitchingSessionId={workspaceSwitchingSessionId}
+                        reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
+                        visible={visible && !hidden}
+                        focused={focusedId === session.id}
+                        addToChatTarget={addToChatSessionId === session.id}
+                        inSplit={inSplit}
+                        composerFocused={composerFocused}
+                        composerFocusToken={composerFocusToken}
+                        recents={recents}
+                        hideProjectPicker={hideProjectPicker}
+                        onFocus={onFocus}
+                        onClose={onClose}
+                        onRemoteSnapshot={onRemoteSnapshot}
+                        onRefreshAdoptedSession={onRefreshAdoptedSession}
+                        onCwdChange={onCwdChange}
+                        onBranchChange={onBranchChange}
+                        onWorktreeChange={onWorktreeChange}
+                        onWorkspaceModeChange={onWorkspaceModeChange}
+                        onWorktreeBaseChange={onWorktreeBaseChange}
+                        onManageWorktrees={onManageWorktrees}
+                        onModelChange={onModelChange}
+                        onModelSettingsChange={onModelSettingsChange}
+                        onRuntimeModeChange={onRuntimeModeChange}
+                        onSaveDraft={onSaveDraft}
+                        onRemoveDraft={onRemoveDraft}
+                        onSubmit={onSubmit}
+                        onStop={onStop}
+                        onCompactContext={onCompactContext}
+                        onRewindMessage={onRewindMessage}
+                        onNewSession={onNewSession}
+                        onPlaceSessionInFolder={onPlaceSessionInFolder}
+                        onResumeProviderSession={onResumeProviderSession}
+                        onDeleteQueuedMessage={onDeleteQueuedMessage}
+                        onEditQueuedMessage={onEditQueuedMessage}
+                        onQueuedMessageEditingChange={onQueuedMessageEditingChange}
+                        onReorderQueuedMessages={onReorderQueuedMessages}
+                        onSteerQueuedMessage={onSteerQueuedMessage}
+                        onResumeQueue={onResumeQueue}
+                        onUsageLimitResume={onUsageLimitResume}
+                        onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
+                        onUsageLimitDismiss={onUsageLimitDismiss}
+                        onSelectProviderAccount={onSelectProviderAccount}
+                        onInboxCardDismiss={onInboxCardDismiss}
+                        onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
+                        onNoteCardDismiss={onNoteCardDismiss}
+                        onHandoffCardDismiss={onHandoffCardDismiss}
+                        onOpenLinkedWorkItem={onOpenLinkedWorkItem}
+                        onArchiveSession={onArchiveSession}
+                        onDeleteSession={onDeleteSession}
+                        onApproval={onApproval}
+                        onQuestionReply={onQuestionReply}
+                        onQuestionInteraction={onQuestionInteraction}
+                        onOpenFile={onOpenFile}
+                        onOpenDiff={onOpenDiff}
+                        onOpenPlan={onOpenPlan}
+                        onBuildPlan={onBuildPlan}
+                        onSecondOpinion={onSecondOpinion}
+                        onHandoff={onHandoff}
+                        onBtwSubmit={onBtwSubmit}
+                        onBtwRetry={onBtwRetry}
+                        onBtwDelete={onBtwDelete}
+                        onBtwStop={onBtwStop}
+                        onBtwModelChange={onBtwModelChange}
+                        onNewTerminal={onNewTerminal}
+                        onRunProjectAction={onRunProjectAction}
+                        onPaneDragStart={onPaneDragStart}
+                        transcriptPool={transcriptPool}
+                      />
+                    </RecoveryBoundary>
+                  ) : null}
+                </MediaVisibilityContext.Provider>
+              </div>
             </div>
-          </div>
-        );
-      })}
-      {sashes.map((sash) => (
-        <PaneSash
-          key={`${sash.splitId}:${sash.index}`}
-          sash={sash}
-          containerRef={treeRef}
-          onPreview={(ratio) =>
-            setDraft({
-              base: layoutRef.current,
-              node: setSplitRatio(layoutRef.current, sash.splitId, sash.index, ratio),
-            })
-          }
-          onCommit={(ratio) => {
-            setDraft(null);
-            onRatio(sash.splitId, sash.index, ratio);
-          }}
-          onCancel={() => setDraft(null)}
-        />
-      ))}
-    </div>
+          );
+        })}
+        {sashes.map((sash) => (
+          <PaneSash
+            key={`${sash.splitId}:${sash.index}`}
+            sash={sash}
+            containerRef={treeRef}
+            onPreview={(ratio) =>
+              setDraft({
+                base: layoutRef.current,
+                node: setSplitRatio(layoutRef.current, sash.splitId, sash.index, ratio),
+              })
+            }
+            onCommit={(ratio) => {
+              setDraft(null);
+              onRatio(sash.splitId, sash.index, ratio);
+            }}
+            onCancel={() => setDraft(null)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -987,7 +1007,9 @@ function paneDropMark(
     return (
       !hidden &&
       (drop.overId === candidate.id || candidate.tabIds?.includes(drop.overId ?? "")) &&
-      (drop.fromId !== candidate.id || drop.edge !== "center" || (candidate.tabIds?.length ?? 0) > 1)
+      (drop.fromId !== candidate.id ||
+        drop.edge !== "center" ||
+        (candidate.tabIds?.length ?? 0) > 1)
     );
   });
   if (!leaf) return null;

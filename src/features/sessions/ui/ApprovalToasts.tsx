@@ -1,3 +1,4 @@
+import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { ActionHost } from "../../../shared/ui/ActionHost";
@@ -565,7 +566,7 @@ function TimedPopup(props: {
 /** Same date-and-time wording in Pending rows and History rows. */
 function NotificationTime({ at }: { at: number }) {
   return (
-    <time title={new Date(at).toLocaleString()} dateTime={new Date(at).toISOString()}>
+    <time title={new Date(at).toLocaleString()} dateTime={isoTimestamp(at)}>
       {new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
       {" · "}
       {new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
@@ -745,9 +746,7 @@ function ApprovalToastCard({
           className="notification-request-actions flex shrink-0 items-center gap-1"
           data-no-drag=""
         >
-          <Badge tone="warning">
-            {notice.kind === "question" ? t("Question") : t("Approval")}
-          </Badge>
+          <Badge tone="warning">{notice.kind === "question" ? t("Question") : t("Approval")}</Badge>
           {notice.kind === "approval" ? (
             <>
               <Button
