@@ -105,7 +105,7 @@ export async function materializeManagedWorkspace(
         });
         let error = "";
         child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-          error += chunk;
+          if (error.length < 2000) error += chunk.slice(0, 2000 - error.length);
         });
         child.on("error", reject);
         child.on("close", (code) =>
