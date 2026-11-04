@@ -73,10 +73,24 @@ impl Failure {
         io::Error::new(self.kind, self.message.clone())
     }
 }
+#[cfg(any(windows, test))]
+fn retirement_result(drain: impl FnOnce() -> Result<(), String>) -> Result<(), Failure> {
+    drain().map_err(|message| Failure::from(io::Error::other(message)))
+}
+
 /// Exit-poll interval bounds: start tight so short-lived children are seen quickly,
 /// then relax so a long-running provider is not woken 200 times a second.
 const POLL_MIN: Duration = Duration::from_millis(5);
 const POLL_MAX: Duration = Duration::from_millis(250);
+fn record_completion(
+    state: &mut State,
+    result: io::Result<ExitStatus>,
+    retirement: Result<(), Failure>,
+) {
+    state.result = Some(result.map_err(Failure::from));
+    state.retirement = Some(retirement);
+    state.finalizing = false;
+}
 struct Stop {
     #[cfg(unix)]
     deadline: Instant,
@@ -318,24 +332,25 @@ impl ProcessOwner {
                     let job = state.child.job.clone();
                     let signal_error = state.signal_error.clone();
                     drop(state);
-                    // Retirement is best-effort: unproven job drain is logged, never a failed wait.
-                    let retirement = Ok(());
+                    // A failed tree drain does not change the direct child wait result,
+                    // but cannot serve as proof of physical retirement.
                     #[cfg(windows)]
-                    let result = result.inspect(|_| {
-                        if let Some(job) = job {
-                            job.terminate();
-                            match job.drain() {
-                                Ok(drained) => {
-                                    if let Err(error) = drained.require_verified() {
-                                        eprintln!("[harness] owned process job retirement unverified: {error}");
-                                    }
-                                }
-                                Err(error) => {
-                                    eprintln!("[harness] owned process job drain unavailable: {error}");
-                                }
+                    let retirement = if result.is_ok() {
+                        retirement_result(|| {
+                            if let Some(job) = job {
+                                job.terminate();
+                                job.drain()
+                                    .map_err(|error| error.to_string())?
+                                    .require_verified()
+                                    .map_err(|error| error.to_string())?;
                             }
-                        }
-                    });
+                            Ok(())
+                        })
+                    } else {
+                        Ok(())
+                    };
+                    #[cfg(not(windows))]
+                    let retirement = Ok(());
                     #[cfg(windows)]
                     if let Some(error) = &signal_error {
                         eprintln!("[harness] ignored process signal error: {}", error.message);
@@ -344,9 +359,7 @@ impl ProcessOwner {
                     let result = result
                         .and_then(|status| signal_error.map_or(Ok(status), |e| Err(e.error())));
                     let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-                    state.result = Some(result.map_err(Failure::from));
-                    state.retirement = Some(retirement);
-                    state.finalizing = false;
+                    record_completion(&mut state, result, retirement);
                     self.changed.notify_all();
                     continue;
                 }
@@ -606,5 +619,44 @@ mod tests {
         waiter.join().unwrap();
         owner.request_stop().unwrap();
         assert!(owner.pin().is_err());
+    }
+}
+
+#[cfg(test)]
+mod retirement_tests {
+    use super::*;
+
+    #[test]
+    fn successful_child_wait_does_not_hide_failed_tree_retirement() {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("cmd.exe");
+            command.args(["/C", "exit", "0"]);
+            crate::hide_window_console(&mut command);
+            command
+        };
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "exit 0"]);
+            command
+        };
+        let child = OwnedChild::spawn(&mut command).unwrap();
+        let owner = Arc::new(ProcessOwner::new(child));
+        owner.activate();
+        let status = owner.wait().unwrap();
+        assert!(status.success());
+        assert!(owner.retirement().require_verified().is_ok());
+        record_completion(
+            &mut owner.state.lock().unwrap(),
+            Ok(status),
+            retirement_result(|| Err("injected drain failure".into())),
+        );
+        assert!(owner.wait().unwrap().success());
+        assert_eq!(
+            owner.retirement().require_verified().unwrap_err(),
+            "injected drain failure"
+        );
+        assert!(retirement_result(|| Ok(())).is_ok());
     }
 }

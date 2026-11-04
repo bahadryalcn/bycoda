@@ -1,9 +1,44 @@
 use std::io::Read;
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::dirs_home;
 use crate::fs::MAX_PREVIEW_BYTES;
+
+const MAX_MEDIA_REQUESTS: usize = 8;
+const TOKEN_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_TOKEN_BYTES: u64 = 8192;
+static MEDIA_REQUESTS: AtomicUsize = AtomicUsize::new(0);
+
+struct MediaPermit;
+impl MediaPermit {
+    fn acquire() -> Result<Self, String> {
+        let mut count = MEDIA_REQUESTS.load(Ordering::Acquire);
+        loop {
+            if count >= MAX_MEDIA_REQUESTS {
+                return Err("Too many media requests; try again".into());
+            }
+            match MEDIA_REQUESTS.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => count = actual,
+            }
+        }
+        Ok(Self)
+    }
+}
+impl Drop for MediaPermit {
+    fn drop(&mut self) {
+        MEDIA_REQUESTS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_REDIRECTS: usize = 5;
@@ -21,16 +56,20 @@ struct MediaUrl {
 /// can render without opening `img-src` / `media-src` to GitHub's CDNs.
 #[tauri::command]
 pub async fn fetch_inbox_media(url: String) -> Result<tauri::ipc::Response, String> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || fetch_inbox_media_sync(&url))
-        .await
-        .map_err(|error| error.to_string())??;
+    let permit = MediaPermit::acquire()?;
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        fetch_inbox_media_sync(&url)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
 fn fetch_inbox_media_sync(url: &str) -> Result<Vec<u8>, String> {
     let mut current = parse_allowed_media_url(url)?;
     let token = if github_auth_host(&current.host) {
-        github_auth_token()
+        github_auth_token()?
     } else {
         None
     };
@@ -261,31 +300,502 @@ fn path_has_dotdot(path: &str) -> bool {
     })
 }
 
-fn github_auth_token() -> Option<String> {
-    let program = crate::harness::resolve_gui_binary("gh")?;
-    let home = dirs_home()?;
+type TokenResult = Result<Option<String>, String>;
+struct TokenFlight {
+    result: Mutex<Option<TokenResult>>,
+    ready: Condvar,
+}
+type TokenRegistry = Arc<Mutex<Option<Arc<TokenFlight>>>>;
+static TOKEN_FLIGHT: OnceLock<TokenRegistry> = OnceLock::new();
+
+fn github_auth_token() -> TokenResult {
+    let deadline = Instant::now() + TOKEN_TIMEOUT;
+    let registry = TOKEN_FLIGHT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let worker_registry = registry.clone();
+    let flight = acquire_token_flight(&registry, |worker| {
+        thread::Builder::new()
+            .name("inbox-media-auth".into())
+            .spawn(move || {
+                let failed = worker.clone();
+                if std::panic::catch_unwind(|| token_worker(worker_registry, worker)).is_err() {
+                    publish_token(
+                        &failed,
+                        Err("Media authentication process status unknown".into()),
+                    );
+                }
+            })
+            .map(|_| ())
+    })?;
+    wait_for_token(&flight, deadline)
+}
+
+fn acquire_token_flight(
+    registry: &Mutex<Option<Arc<TokenFlight>>>,
+    start: impl FnOnce(Arc<TokenFlight>) -> std::io::Result<()>,
+) -> Result<Arc<TokenFlight>, String> {
+    let mut current = registry
+        .lock()
+        .map_err(|_| "Media authentication unavailable".to_string())?;
+    if let Some(flight) = current.as_ref() {
+        return Ok(flight.clone());
+    }
+    let flight = Arc::new(TokenFlight {
+        result: Mutex::new(None),
+        ready: Condvar::new(),
+    });
+    *current = Some(flight.clone());
+    if start(flight.clone()).is_err() {
+        *current = None;
+        publish_token(&flight, Err("Media authentication unavailable".into()));
+    }
+    Ok(flight)
+}
+
+fn wait_for_token(flight: &TokenFlight, deadline: Instant) -> TokenResult {
+    let mut result = flight
+        .result
+        .lock()
+        .map_err(|_| "Media authentication unavailable".to_string())?;
+    while result.is_none() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("Media authentication timed out".into());
+        }
+        let (next, timed) = flight
+            .ready
+            .wait_timeout(result, remaining)
+            .map_err(|_| "Media authentication unavailable".to_string())?;
+        result = next;
+        if timed.timed_out() && result.is_none() {
+            return Err("Media authentication timed out".into());
+        }
+    }
+    result.as_ref().unwrap().clone()
+}
+
+fn publish_token(flight: &TokenFlight, value: TokenResult) {
+    let mut result = flight.result.lock().unwrap_or_else(|e| e.into_inner());
+    if result.is_none() {
+        *result = Some(value);
+        flight.ready.notify_all();
+    }
+}
+
+fn token_worker(registry: TokenRegistry, flight: Arc<TokenFlight>) {
+    let Some(program) = crate::harness::resolve_gui_binary("gh") else {
+        finish_token_flight(&registry, &flight, Ok(None));
+        return;
+    };
+    let Some(home) = dirs_home() else {
+        finish_token_flight(&registry, &flight, Ok(None));
+        return;
+    };
     let mut cmd = Command::new(program);
     cmd.current_dir(&home)
         .args(["auth", "token"])
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GH_PAGER", "cat");
+        .env("GH_PAGER", "cat")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     crate::harness::apply_gui_env(&mut cmd);
     crate::hide_window_console(&mut cmd);
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
+    run_token_command(registry, flight, cmd, TOKEN_TIMEOUT);
+}
+
+fn run_token_command(
+    registry: TokenRegistry,
+    flight: Arc<TokenFlight>,
+    mut cmd: Command,
+    timeout: Duration,
+) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
     }
-    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if token.is_empty() {
-        None
+    let Ok(mut child) = crate::harness::process_lifecycle::OwnedChild::spawn(&mut cmd) else {
+        finish_token_flight(&registry, &flight, Ok(None));
+        return;
+    };
+    let stdout = child.stdout.take();
+    let owner = Arc::new(crate::harness::process_lifecycle::ProcessOwner::new(child));
+    let Some(stdout) = stdout else {
+        retire_failed_setup(&registry, &flight, &owner);
+        return;
+    };
+    let pin = match owner.pin() {
+        Ok(pin) => pin,
+        Err(_) => {
+            retire_failed_setup(&registry, &flight, &owner);
+            return;
+        }
+    };
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    if thread::Builder::new()
+        .name("inbox-media-auth-output".into())
+        .spawn(move || {
+            let _pin = pin;
+            let mut bytes = Vec::new();
+            let result = stdout
+                .take(MAX_TOKEN_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            let _ = send.send(result);
+        })
+        .is_err()
+    {
+        retire_failed_setup(&registry, &flight, &owner);
+        return;
+    }
+    owner.activate();
+    let outcome = owner.wait_timeout(timeout);
+    if outcome.is_none() {
+        publish_token(&flight, Err("Media authentication timed out".into()));
+        let _ = owner.request_stop();
+    }
+    let result = match outcome {
+        Some(result) => result,
+        None => owner.wait(),
+    };
+    // Unknown retirement retains the flight and prevents further processes.
+    let Ok(status) = result else {
+        publish_token(
+            &flight,
+            Err("Media authentication process status unknown".into()),
+        );
+        return;
+    };
+    let retirement = owner.retirement().require_verified();
+    let bytes = receive.recv().ok().and_then(Result::ok);
+    let result = if !status.success() {
+        Ok(None)
+    } else if let Some(bytes) = bytes {
+        if bytes.len() > MAX_TOKEN_BYTES as usize {
+            Err("Media authentication output too large".into())
+        } else {
+            match String::from_utf8(bytes) {
+                Ok(token) if !token.trim().is_empty() => Ok(Some(token.trim().to_string())),
+                _ => Ok(None),
+            }
+        }
     } else {
-        Some(token)
+        Err("Media authentication output unavailable".into())
+    };
+    complete_token_after_retirement(&registry, &flight, result, retirement);
+}
+
+fn complete_token_after_retirement(
+    registry: &TokenRegistry,
+    flight: &Arc<TokenFlight>,
+    result: TokenResult,
+    retirement: Result<(), String>,
+) {
+    if retirement.is_err() {
+        publish_token(
+            flight,
+            Err("Media authentication process retirement unknown".into()),
+        );
+    } else {
+        finish_token_flight(registry, flight, result);
     }
+}
+
+fn retire_failed_setup(
+    registry: &TokenRegistry,
+    flight: &Arc<TokenFlight>,
+    owner: &Arc<crate::harness::process_lifecycle::ProcessOwner>,
+) {
+    publish_token(flight, Err("Media authentication unavailable".into()));
+    owner.activate();
+    let _ = owner.request_stop();
+    if owner.wait().is_ok() && owner.retirement().require_verified().is_ok() {
+        finish_token_flight(
+            registry,
+            flight,
+            Err("Media authentication unavailable".into()),
+        );
+    }
+}
+
+fn finish_token_flight(registry: &TokenRegistry, flight: &Arc<TokenFlight>, result: TokenResult) {
+    let mut current = registry.lock().unwrap_or_else(|e| e.into_inner());
+    if current
+        .as_ref()
+        .is_some_and(|entry| Arc::ptr_eq(entry, flight))
+    {
+        *current = None;
+    }
+    publish_token(flight, result);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn media_admission_is_bounded_and_released() {
+        let permits: Vec<_> = (0..MAX_MEDIA_REQUESTS)
+            .map(|_| MediaPermit::acquire().unwrap())
+            .collect();
+        assert!(MediaPermit::acquire().is_err());
+        drop(permits);
+        assert!(MediaPermit::acquire().is_ok());
+    }
+
+    #[test]
+    fn concurrent_callers_share_one_lookup_then_refresh_credentials() {
+        let registry = Arc::new(Mutex::new(None));
+        let starts = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(std::sync::Barrier::new(9));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let registry = registry.clone();
+                let starts = starts.clone();
+                let gate = gate.clone();
+                thread::spawn(move || {
+                    gate.wait();
+                    acquire_token_flight(&registry, |_| {
+                        starts.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    })
+                    .unwrap()
+                })
+            })
+            .collect();
+        gate.wait();
+        let flights: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        assert!(flights
+            .iter()
+            .all(|flight| Arc::ptr_eq(flight, &flights[0])));
+        publish_token(&flights[0], Ok(Some("old".into())));
+        *registry.lock().unwrap() = None;
+        let refreshed = acquire_token_flight(&registry, |_| {
+            starts.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        publish_token(&refreshed, Ok(Some("new".into())));
+        assert_eq!(starts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            wait_for_token(&refreshed, Instant::now() + Duration::from_secs(1))
+                .unwrap()
+                .as_deref(),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn unknown_flight_refuses_new_lookup_until_verified_release() {
+        let registry: TokenRegistry = Arc::new(Mutex::new(None));
+        let starts = AtomicUsize::new(0);
+        let original = acquire_token_flight(&registry, |_| {
+            starts.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        publish_token(&original, Err("Media authentication timed out".into()));
+        complete_token_after_retirement(
+            &registry,
+            &original,
+            Ok(None),
+            Err("injected unknown".into()),
+        );
+        let retained = acquire_token_flight(&registry, |_| {
+            starts.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        assert!(Arc::ptr_eq(&original, &retained));
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        complete_token_after_retirement(&registry, &original, Ok(None), Ok(()));
+        let next = acquire_token_flight(&registry, |_| {
+            starts.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        assert!(!Arc::ptr_eq(&original, &next));
+        assert_eq!(starts.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn stalled_token_flight_returns_deadline_error() {
+        let flight = TokenFlight {
+            result: Mutex::new(None),
+            ready: Condvar::new(),
+        };
+        let start = Instant::now();
+        assert_eq!(
+            wait_for_token(&flight, start + Duration::from_millis(20)).unwrap_err(),
+            "Media authentication timed out"
+        );
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(flight.result.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn token_flight_delivers_one_result_to_all_waiters() {
+        let flight = Arc::new(TokenFlight {
+            result: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        let waiters: Vec<_> = (0..8)
+            .map(|_| {
+                let flight = flight.clone();
+                thread::spawn(move || {
+                    let mut result = flight.result.lock().unwrap();
+                    while result.is_none() {
+                        result = flight.ready.wait(result).unwrap();
+                    }
+                    result.clone().unwrap()
+                })
+            })
+            .collect();
+        publish_token(&flight, Ok(Some("fixture".into())));
+        for waiter in waiters {
+            assert_eq!(waiter.join().unwrap().unwrap().as_deref(), Some("fixture"));
+        }
+        publish_token(&flight, Err("late".into()));
+        assert_eq!(
+            flight
+                .result
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .as_deref(),
+            Some("fixture")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_timeout_retires_descendant_holding_stdout() {
+        let registry: TokenRegistry = Arc::new(Mutex::new(None));
+        let flight = Arc::new(TokenFlight {
+            result: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        *registry.lock().unwrap() = Some(flight.clone());
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 30 & wait"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let worker = flight.clone();
+        let worker_registry = registry.clone();
+        let (done, finished) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            run_token_command(worker_registry, worker, cmd, Duration::from_millis(50));
+            let _ = done.send(());
+        });
+        finished.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            flight
+                .result
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap_err(),
+            "Media authentication timed out"
+        );
+        assert!(registry.lock().unwrap().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn token_process_accepts_bounded_output_and_rejects_overflow() {
+        let registry: TokenRegistry = Arc::new(Mutex::new(None));
+        for (script, expected) in [
+            ("Write-Output 'fixture-token'", true),
+            ("Write-Output ('x' * 9000)", false),
+        ] {
+            let flight = Arc::new(TokenFlight {
+                result: Mutex::new(None),
+                ready: Condvar::new(),
+            });
+            *registry.lock().unwrap() = Some(flight.clone());
+            let mut cmd = Command::new("powershell.exe");
+            cmd.args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            crate::hide_window_console(&mut cmd);
+            run_token_command(
+                registry.clone(),
+                flight.clone(),
+                cmd,
+                Duration::from_secs(5),
+            );
+            let result = flight.result.lock().unwrap();
+            if expected {
+                assert_eq!(
+                    result.as_ref().unwrap().as_ref().unwrap().as_deref(),
+                    Some("fixture-token")
+                );
+            } else {
+                assert_eq!(
+                    result.as_ref().unwrap().as_ref().unwrap_err(),
+                    "Media authentication output too large"
+                );
+            }
+            assert!(registry.lock().unwrap().is_none());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn timed_out_token_process_keeps_flight_until_retired() {
+        let registry: TokenRegistry = Arc::new(Mutex::new(None));
+        let flight = Arc::new(TokenFlight {
+            result: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        *registry.lock().unwrap() = Some(flight.clone());
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 10",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+        crate::hide_window_console(&mut cmd);
+        let worker = flight.clone();
+        let worker_registry = registry.clone();
+        let handle = thread::spawn(move || {
+            run_token_command(worker_registry, worker, cmd, Duration::from_millis(20))
+        });
+        let mut result = flight.result.lock().unwrap();
+        while result.is_none() {
+            result = flight.ready.wait(result).unwrap();
+        }
+        assert_eq!(
+            result.as_ref().unwrap().as_ref().unwrap_err(),
+            "Media authentication timed out"
+        );
+        drop(result);
+        handle.join().unwrap();
+        let current = registry.lock().unwrap();
+        if let Some(retained) = current.as_ref() {
+            assert!(
+                Arc::ptr_eq(retained, &flight),
+                "unknown retirement must retain the original fence"
+            );
+        }
+    }
 
     #[test]
     fn github_and_linear_attachments_are_allowed() {
