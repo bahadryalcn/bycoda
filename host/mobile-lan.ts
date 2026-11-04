@@ -12,7 +12,7 @@ import {
 import type { MobileAccessStatus } from "../src/integrations/mobile-access";
 import { createLanIdentity, openLanRequest } from "./mobile-lan-crypto";
 import { createMobileWssGateway } from "./security/mobile-wss";
-import type { MobileTlsAuthority } from "./security/mobile-tls";
+import type { MobileTlsAuthority, MobileTlsMaterial } from "./security/mobile-tls";
 
 export function localMobileAddresses(): string[] {
   return [
@@ -182,7 +182,9 @@ export class MobileLanAccess {
   private gateway?: ReturnType<typeof createLanGateway>;
   private wssGateway?: ReturnType<typeof createMobileWssGateway>;
   private tlsBootstrap?: MobileAccessStatus["tls"];
-  private renewal?: ReturnType<typeof setInterval>;
+  private tlsExpiresAt?: number;
+  private renewal?: ReturnType<typeof setTimeout>;
+  private renewalOwner?: object;
   private loading?: Promise<void>;
   private operation?: Promise<MobileAccessStatus>;
   private disposed = false;
@@ -240,7 +242,13 @@ export class MobileLanAccess {
     const ready = active && typeof active !== "string" && addresses.includes(active.address);
     const tlsActive = this.wssGateway?.address();
     const tls =
-      ready && tlsActive && typeof tlsActive !== "string" && tlsActive.address === active.address
+      ready &&
+      tlsActive &&
+      typeof tlsActive !== "string" &&
+      tlsActive.address === active.address &&
+      tlsActive.port === this.saved?.tlsPort &&
+      this.tlsExpiresAt !== undefined &&
+      this.tlsExpiresAt > Date.now()
         ? this.tlsBootstrap
         : undefined;
     return {
@@ -347,30 +355,10 @@ export class MobileLanAccess {
         this.gateway = gateway;
         this.wssGateway = wss;
         this.tlsBootstrap = tls;
-        if (wss && this.tlsOptions) {
+        this.tlsExpiresAt = material?.expiresAt;
+        if (wss && this.tlsOptions && material && tlsPort) {
           const secure = wss;
-          const authority = this.tlsOptions.tlsAuthority;
-          this.renewal = setInterval(() => {
-            void authority
-              .issue([selected])
-              .then((renewed) => {
-                if (this.wssGateway === secure)
-                  secure.setSecureContext({
-                    key: renewed.privateKeyPem,
-                    cert: renewed.certificatePem + renewed.caCertificatePem,
-                  });
-              })
-              .catch(() => {
-                if (this.wssGateway !== secure) return;
-                this.wssGateway = undefined;
-                this.tlsBootstrap = undefined;
-                clearInterval(this.renewal);
-                this.renewal = undefined;
-                secure.closeAllConnections();
-                secure.close();
-              });
-          }, 3_600_000);
-          this.renewal.unref();
+          this.startTlsRenewal(secure, selected, tlsPort, material);
           wss.on("error", () => {
             if (this.wssGateway === secure) void this.closeGateway();
           });
@@ -380,10 +368,14 @@ export class MobileLanAccess {
         });
         return await this.status();
       } catch {
-        gateway.closeAllConnections();
-        gateway.close();
-        wss?.closeAllConnections();
-        wss?.close();
+        if (this.gateway === gateway || (wss && this.wssGateway === wss)) {
+          await this.closeGateway();
+        } else {
+          gateway.closeAllConnections();
+          gateway.close();
+          wss?.closeAllConnections();
+          wss?.close();
+        }
         return { mode: "lan", state: "unavailable", addresses } as MobileAccessStatus;
       }
     })();
@@ -394,6 +386,72 @@ export class MobileLanAccess {
       })
       .catch(() => {});
     return operation;
+  }
+  private startTlsRenewal(
+    secure: ReturnType<typeof createMobileWssGateway>,
+    address: string,
+    port: number,
+    material: MobileTlsMaterial,
+  ): void {
+    const authority = this.tlsOptions!.tlsAuthority;
+    const owner = Object.freeze({
+      caSpkiPin: material.caSpkiPin,
+      caGeneration: material.caGeneration,
+      caCertificatePem: material.caCertificatePem,
+    });
+    this.renewalOwner = owner;
+    const current = () =>
+      !this.disposed &&
+      this.renewalOwner === owner &&
+      this.wssGateway === secure &&
+      this.saved?.enabled === true &&
+      this.saved.address === address &&
+      this.saved.tlsPort === port;
+    let retryDelay = 60_000;
+    const schedule = (delay: number) => {
+      if (!current()) return;
+      const timer = setTimeout(() => {
+        if (!current() || this.renewal !== timer) return;
+        this.renewal = undefined;
+        void renew().catch(() => {});
+      }, delay);
+      this.renewal = timer;
+      timer.unref?.();
+    };
+    const renew = async () => {
+      let nextDelay = 3_600_000;
+      try {
+        const renewed = await authority.issue([address]);
+        if (!current()) return;
+        if (
+          renewed.caSpkiPin !== owner.caSpkiPin ||
+          renewed.caGeneration !== owner.caGeneration ||
+          renewed.caCertificatePem !== owner.caCertificatePem ||
+          !Number.isFinite(renewed.expiresAt) ||
+          renewed.expiresAt <= Date.now()
+        )
+          throw new Error("Mobile TLS renewal changed its original trust or validity.");
+        const bound = secure.address();
+        if (!bound || typeof bound === "string" || bound.address !== address || bound.port !== port)
+          throw new Error("The original mobile TLS listener binding could not be confirmed.");
+        secure.setSecureContext({
+          key: renewed.privateKeyPem,
+          cert: renewed.certificatePem + renewed.caCertificatePem,
+        });
+        this.tlsExpiresAt = renewed.expiresAt;
+        retryDelay = 60_000;
+      } catch {
+        // Keep the original listener and context. Failed issuance is not proof
+        // that it stopped; an expired leaf is omitted from bootstrap disclosure.
+        nextDelay = retryDelay;
+        retryDelay = Math.min(retryDelay * 2, 3_600_000);
+      } finally {
+        // Schedule only after actual settlement: a hung issue never overlaps a
+        // second one, and a closed/replaced owner cannot install or restart it.
+        schedule(nextDelay);
+      }
+    };
+    schedule(3_600_000);
   }
   async disable(): Promise<MobileAccessStatus> {
     await this.operation?.catch(() => {});
@@ -408,7 +466,9 @@ export class MobileLanAccess {
     this.gateway = undefined;
     this.wssGateway = undefined;
     this.tlsBootstrap = undefined;
-    clearInterval(this.renewal);
+    this.tlsExpiresAt = undefined;
+    this.renewalOwner = undefined;
+    clearTimeout(this.renewal);
     this.renewal = undefined;
     await Promise.all(
       [gateway, wss]
