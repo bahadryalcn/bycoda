@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, watch } from "node:fs";
+import { waitForProfileUnlock } from "./profile-unlock";
 import { lstat, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -249,6 +250,19 @@ async function profileInUse(profile: string): Promise<boolean> {
   );
 }
 
+function profileUnlock(profile: string, exited: Promise<void>) {
+  return waitForProfileUnlock({
+    inUse: () => profileInUse(profile),
+    observe: (changed, failed) => {
+      const original = watch(profile, { persistent: false }, (_type, name) => {
+        if (!name || ["SingletonLock", "lockfile"].includes(name.toString())) changed();
+      });
+      original.on("error", failed);
+      return () => original.close();
+    },
+  }, exited);
+}
+
 export function systemPlainLauncher(executable = findBrowser()): PlainBrowserLauncher | undefined {
   if (!executable) return undefined;
   return async (profile, url) => {
@@ -266,15 +280,23 @@ export function systemPlainLauncher(executable = findBrowser()): PlainBrowserLau
       { stdio: "ignore", windowsHide: false, shell: false },
     );
     let exited = false;
+    let started = false;
+    child.once("spawn", () => { started = true; });
+    let finishExit!: () => void;
+    const exit = new Promise<void>((resolve) => { finishExit = resolve; });
     child.once("exit", () => {
       exited = true;
+      finishExit();
     });
     child.once("error", () => {
-      exited = true;
+      if (!started && child.pid === undefined) {
+        exited = true;
+        finishExit();
+      }
     });
     const closed = (async () => {
       await sleep(2000);
-      while (!exited || (await profileInUse(profile))) await sleep(1000);
+      await profileUnlock(profile, exit);
     })();
     return {
       closed,
@@ -358,6 +380,7 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
       cdp.close();
       if (!exited) child.kill();
     };
+    let released: Promise<void> | undefined;
     try {
       const { targetInfos } = await cdp.send<{
         targetInfos: { targetId: string; type: string }[];
@@ -394,8 +417,8 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
         page: cdpPage(cdp, sessionId, send),
         closed,
         close,
-        async profileReleased() {
-          while (await profileInUse(profile)) await sleep(1000);
+        profileReleased() {
+          return released ??= profileUnlock(profile, exit);
         },
       };
     } catch (error) {
