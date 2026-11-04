@@ -98,6 +98,11 @@ import {
   type SessionRunEngine,
 } from "./sessionRuns";
 import { runHostShell } from "./shell";
+import {
+  assertShellOwnershipAvailable,
+  hasShellPhysicalOwner,
+  reserveShellOwnership,
+} from "./shell-ownership";
 import type { HostStore } from "./store";
 import {
   previewTaskFinalization,
@@ -2194,6 +2199,13 @@ export class HostTasks {
     const now = this.now();
     if ((to === "queued" || to === "todo") && this.jobs.has(id))
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
+    if (
+      ["todo", "queued", "done"].includes(to) &&
+      (await hasShellPhysicalOwner(this.store, "task", id))
+    )
+      throw new Error(
+        "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
+      );
     if (to === "queued" && !task.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
     if (to === "queued") await this.resolveAssistantRecoveryForOwner(task);
     if (to === "queued" && canTakeOverBlockedTask(task)) return await this.queueTakeover(task, now);
@@ -2332,6 +2344,10 @@ export class HostTasks {
 
     let task = await this.get(id);
     if (!task) throw new Error("Task not found.");
+    if (await hasShellPhysicalOwner(this.store, "task", id))
+      throw new Error(
+        "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
+      );
     if (task.status === "queued") await this.resolveAssistantRecoveryForOwner(task);
     if (task.goalId && this.pausedGoals.has(task.goalId))
       throw new Error("This goal is paused. Resume it before starting its tasks.");
@@ -2529,6 +2545,10 @@ export class HostTasks {
       throw new Error("Other unfinished tasks depend on this task. Remove those tasks first.");
     if (this.jobs.has(id))
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
+    if (await hasShellPhysicalOwner(this.store, "task", id))
+      throw new Error(
+        "The original verification command tree is not proven stopped. Inspect Host diagnostics before deleting.",
+      );
     if (task?.status === "running" || task?.status === "verifying")
       throw new Error("Stop this task before deleting it.");
     if (task && hasUnmergedBranch(task)) {
@@ -3290,7 +3310,12 @@ export class HostTasks {
     now: number,
     retainReviewer = false,
   ): Promise<HostTask> {
-    if (task.workspaceActivityId && this.managed && !this.jobs.has(task.id)) {
+    if (
+      task.workspaceActivityId &&
+      this.managed &&
+      !this.jobs.has(task.id) &&
+      !(await hasShellPhysicalOwner(this.store, "task", task.id))
+    ) {
       const run = task.reviewer ?? task;
       if (
         (
@@ -3649,6 +3674,7 @@ export class HostTasks {
       );
   }
   private async stopWorkspaceActivity(task: HostTask): Promise<void> {
+    if (await hasShellPhysicalOwner(this.store, "task", task.id)) return;
     if (this.managed && task.workspaceActivityId) {
       await this.store.db.checkAuthorization();
       await this.managed.activity.stop(task.workspaceActivityId);
@@ -3659,6 +3685,14 @@ export class HostTasks {
     now: number,
     active: readonly HostTask[],
   ): Promise<HostTask> {
+    if (await hasShellPhysicalOwner(this.store, "task", task.id))
+      throw new Error(
+        "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
+      );
+    await assertShellOwnershipAvailable(
+      this.store,
+      task.worktreeCwd ?? (await this.store.project(task.projectId)).cwd,
+    );
     if (!(await this.goalExecutionAllowed(task.goalId))) return task;
     if (assistantRecoveryHoldsTask(await readAssistantRecovery(this.store, task.id), task))
       return task;
@@ -4520,6 +4554,14 @@ export class HostTasks {
         return;
       const verification: TaskVerification = {};
       if (task.verifyCommand) {
+        const physicalOwner = await reserveShellOwnership(
+          this.store,
+          cwd,
+          "task",
+          id,
+          task.verifyCommand,
+          task.workspaceActivityId,
+        );
         const result = await runHostShell(
           cwd,
           task.verifyCommand,
@@ -4535,7 +4577,28 @@ export class HostTasks {
                 updatedAt: this.now(),
               });
           },
+          (identity) => physicalOwner.observe(identity),
         );
+        if (result.terminationFailed) {
+          await physicalOwner.unknown(result.terminationFailed);
+          const latest = await this.find(id);
+          if (latest)
+            await this.write({
+              ...latest,
+              status: "blocked",
+              error: result.terminationFailed,
+              verification: {
+                command: {
+                  exitCode: null,
+                  output: result.output.slice(-VERIFY_OUTPUT_LIMIT),
+                  timedOut: result.timedOut,
+                },
+              },
+              updatedAt: this.now(),
+            });
+          return;
+        }
+        await physicalOwner.complete();
         if (controller.signal.aborted) return;
         verification.command = {
           exitCode: result.exitCode,
@@ -4683,7 +4746,11 @@ export class HostTasks {
         .catch((error) => console.error("Could not verify a task:", errorMessage(error)))
         .finally(async () => {
           const latest = await this.find(id);
-          if (latest?.workspaceActivityId && latest.status === "blocked") {
+          if (
+            latest?.workspaceActivityId &&
+            latest.status === "blocked" &&
+            !(await hasShellPhysicalOwner(this.store, "task", id))
+          ) {
             const run = latest.reviewer ?? latest;
             if (
               (

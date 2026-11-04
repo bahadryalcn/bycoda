@@ -102,6 +102,7 @@ import { HostStore } from "./store";
 import { isSessionRunActivity } from "./session-run-activity";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { runHostShell } from "./shell";
+import { assertShellOwnershipAvailable, reserveShellOwnership } from "./shell-ownership";
 import { isTaskWorktreeRemoving } from "./task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./prompt-skills";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
@@ -847,13 +848,18 @@ export class HostEngine {
   }
 
   private async executionActivity(value: HostSession, kind: "provider" | "shell") {
+    await assertShellOwnershipAvailable(this.store, value.session.worktreeCwd ?? value.session.cwd);
     if (isTaskWorktreeRemoving(value.session.worktreeCwd ?? value.session.cwd))
       throw new Error("The task checkout is being removed; wait before starting work");
-    await this.managedWorkspace(value);
-    if (!(await this.exactGitRewindEnabled())) return undefined;
+    const workspace = await this.managedWorkspace(value);
+    const exactGitRewind = await this.exactGitRewindEnabled();
+    const executionCwd = workspace?.path ?? value.session.worktreeCwd ?? value.session.cwd;
+    await assertShellOwnershipAvailable(this.store, executionCwd);
+    if (isTaskWorktreeRemoving(executionCwd))
+      throw new Error("The task checkout is being removed; wait before starting work");
+    if (!exactGitRewind) return undefined;
     return this.managedTurns?.startActivity?.(value, kind);
   }
-
   private reserveProviderActivity(id: string, provider: HostProvider): ProviderActivityRetirement {
     const original = this.providerActivities.reserve(id, () =>
       this.activityProviders.delete(original),
@@ -1071,7 +1077,9 @@ export class HostEngine {
         if (
           this.running.has(sessionId) ||
           latest.status === "running" ||
-          latest.session.blocks.some((block) => block.shell?.running) ||
+          latest.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          ) ||
           (latest.session.backgroundTasks?.length ?? 0) > 0 ||
           (latest.session.backgroundAgents ?? 0) > 0 ||
           (latest.session.queuedMessages?.length ?? 0) > 0
@@ -1916,7 +1924,8 @@ export class HostEngine {
               (block.tool?.status !== undefined &&
                 ["running", "in_progress", "pending"].includes(block.tool.status)) ||
               (block.agentRun !== undefined && block.agentRun.endedAt === undefined) ||
-              block.shell?.running,
+              block.shell?.running ||
+              block.shell?.terminationFailed,
           )
         )
           throw new Error("Resolve the worker's pending input before continuing its history.");
@@ -3632,21 +3641,54 @@ export class HostEngine {
   ): void {
     void (async (): Promise<ShellResult> => {
       let release: (() => Promise<void>) | undefined;
+      let ownership: Awaited<ReturnType<typeof reserveShellOwnership>> | undefined;
+      let physicalUnknown = false;
       try {
         await this.store.assertAuthority(id, authorityGeneration);
         const value = await this.store.session(id);
         release = await this.executionActivity(value, "shell");
         await this.store.assertAuthority(id, authorityGeneration);
         // Resolve once more at admission; never execute a renderer-supplied cwd.
-        return await this.shell(value.session.worktreeCwd ?? value.session.cwd ?? cwd, command);
+        const originalCwd = value.session.worktreeCwd ?? value.session.cwd ?? cwd;
+        ownership = await reserveShellOwnership(this.store, originalCwd, "session", id, command);
+        physicalUnknown = true;
+        const result =
+          this.shell === runHostShell
+            ? await runHostShell(
+                originalCwd,
+                command,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                (identity) => ownership!.observe(identity),
+              )
+            : await this.shell(originalCwd, command);
+        if (result.terminationFailed) {
+          physicalUnknown = true;
+          await ownership.unknown(result.terminationFailed);
+        } else {
+          await ownership.complete();
+          physicalUnknown = false;
+        }
+        return result;
       } catch (error) {
+        if (ownership && physicalUnknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          await ownership
+            .unknown(message)
+            .catch((failure) =>
+              console.error("Could not persist shell retirement failure:", failure),
+            );
+          return { output: message, exitCode: null, timedOut: false, terminationFailed: message };
+        }
         return {
           output: error instanceof Error ? error.message : String(error),
           exitCode: null,
           timedOut: false,
         };
       } finally {
-        await release?.();
+        if (!physicalUnknown) await release?.();
       }
     })()
       .then((result) => {

@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
-import { SHELL_TIMEOUT_MS, type ShellResult } from "../src/features/sessions/model/shellRun";
+import {
+  SHELL_TIMEOUT_MS,
+  type ShellResult,
+  type ShellPhysicalIdentity,
+} from "../src/features/sessions/model/shellRun";
 import { resolveShellProfile, shellInvocation, type ShellProfile } from "./shellProfiles";
 
 /** Far above what a transcript keeps; bounds what one command can hold in memory. */
 const MAX_CAPTURED = 512 * 1024;
+const IDENTITY_PUBLICATION_WAIT_MS = 5_000;
 
 /**
  * Runs a `!command` a user typed in a session of this machine, in that user's
@@ -18,6 +23,7 @@ export function runHostShell(
   profile: ShellProfile | undefined = resolveShellProfile(),
   signal?: AbortSignal,
   onTerminationFailure?: (message: string) => void,
+  onPhysicalIdentity?: (identity: ShellPhysicalIdentity) => Promise<void>,
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -56,41 +62,96 @@ export function runHostShell(
       return;
     }
     let stdout = "";
+    let physicalIdentity: ShellPhysicalIdentity | undefined = child.pid
+      ? { pid: child.pid, hostPid: process.pid, spawnObservedAt: Date.now() }
+      : undefined;
+    let identityPublication = Promise.resolve();
+    const publishIdentity = () => {
+      if (physicalIdentity && onPhysicalIdentity) {
+        const original = Object.freeze({ ...physicalIdentity });
+        identityPublication = identityPublication.then(() => onPhysicalIdentity(original));
+        void identityPublication.catch(() => {});
+      }
+    };
+    publishIdentity();
     let stderr = "";
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
     let timedOut = false;
     let settled = false;
+    let terminationFailed: string | undefined;
     const keep = (current: string, chunk: string) => {
       const next = current + chunk;
       // Keep the end, where a failing command says why.
       return next.length > MAX_CAPTURED ? next.slice(-MAX_CAPTURED) : next;
     };
-    child.stdout.on("data", (chunk: Buffer) => (stdout = keep(stdout, stdoutDecoder.write(chunk))));
-    child.stderr.on("data", (chunk: Buffer) => (stderr = keep(stderr, stderrDecoder.write(chunk))));
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (!settled) stdout = keep(stdout, stdoutDecoder.write(chunk));
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (!settled) stderr = keep(stderr, stderrDecoder.write(chunk));
+    });
     let terminating: Promise<void> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const kill = () => {
       if (terminating) return;
       if (windows) {
         terminating = new Promise<void>((done) => {
-          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
-            stdio: "ignore",
-            windowsHide: true,
-          })
-            .on("error", (error) => {
-              // Killing only the parent cannot prove its descendants stopped.
-              // Keep ownership locked rather than permit overlapping checks.
-              console.error("Could not terminate the command tree:", error.message);
-              onTerminationFailure?.(error.message);
-            })
-            .on("close", (code) => {
-              if (code === 0) done();
-              else {
-                const message = `Command tree termination failed (exit ${code}); verification remains locked.`;
-                console.error(message);
-                onTerminationFailure?.(message);
+          let completed = false;
+          let helper: ReturnType<typeof spawn> | undefined;
+          const complete = (failure?: string) => {
+            if (completed) return;
+            completed = true;
+            clearTimeout(deadline);
+            if (failure) {
+              terminationFailed = failure;
+              console.error(failure);
+              try {
+                void Promise.resolve(onTerminationFailure?.(failure)).catch((error) =>
+                  console.error("Could not report command termination failure:", error),
+                );
+              } catch (error) {
+                console.error("Could not report command termination failure:", error);
               }
-            });
+            }
+            done();
+            if (failure) finish(null, failure);
+          };
+          const deadline = setTimeout(() => {
+            try {
+              helper?.kill("SIGKILL");
+            } catch {
+              /* Unknown helper retirement remains part of the held owner. */
+            }
+            complete("Command tree termination timed out; verification remains locked.");
+          }, 5_000);
+          deadline.unref?.();
+          try {
+            helper = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+              stdio: "ignore",
+              windowsHide: true,
+            })
+              .on("error", (error) => {
+                // Killing only the parent cannot prove its descendants stopped.
+                // Keep ownership locked rather than permit overlapping checks.
+                complete(`Could not terminate the command tree: ${error.message}`);
+              })
+              .on("close", (code) => {
+                if (code === 0) complete();
+                else {
+                  const message = `Command tree termination failed (exit ${code}); verification remains locked.`;
+                  complete(message);
+                }
+              });
+            if (helper.pid && physicalIdentity) {
+              physicalIdentity = { ...physicalIdentity, helperPid: helper.pid };
+              publishIdentity();
+            }
+          } catch (error) {
+            complete(
+              `Could not terminate the command tree: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         });
         return;
       }
@@ -103,26 +164,70 @@ export function runHostShell(
     const abort = () => kill();
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       timedOut = true;
       kill();
     }, timeoutMs);
     timer.unref?.();
-    const finish = (exitCode: number | null, failure?: string) => {
+    function finish(exitCode: number | null, failure?: string) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
-      stdout = keep(stdout, stdoutDecoder.end());
-      stderr = keep(stderr, stderrDecoder.end());
-      const tail = failure ?? stderr;
-      const output =
-        tail.trim() && stdout && !stdout.endsWith("\n")
-          ? `${stdout}\n${tail}`
-          : stdout + (tail.trim() ? tail : "");
-      const result = { output, exitCode: timedOut || signal?.aborted ? null : exitCode, timedOut };
-      void Promise.resolve(terminating).then(() => resolve(result));
-    };
+      void Promise.resolve(terminating)
+        .then(async () => {
+          stdout = keep(stdout, stdoutDecoder.end());
+          stderr = keep(stderr, stderrDecoder.end());
+          let publicationTimer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            // Bound only observation. The original publication keeps its handlers
+            // and may settle later; a deadline never proves persistence or retirement.
+            await Promise.race([
+              identityPublication,
+              new Promise<never>((_, reject) => {
+                publicationTimer = setTimeout(
+                  () =>
+                    reject(
+                      new Error(
+                        "Process identity publication timed out; verification remains locked.",
+                      ),
+                    ),
+                  IDENTITY_PUBLICATION_WAIT_MS,
+                );
+                publicationTimer.unref?.();
+              }),
+            ]);
+          } catch (error) {
+            terminationFailed ??= `The original command process identity could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+          } finally {
+            clearTimeout(publicationTimer);
+          }
+          const tail = terminationFailed ?? failure ?? stderr;
+          const output =
+            tail.trim() && stdout && !stdout.endsWith("\n")
+              ? `${stdout}\n${tail}`
+              : stdout + (tail.trim() ? tail : "");
+          resolve({
+            output,
+            exitCode: timedOut || signal?.aborted || terminationFailed ? null : exitCode,
+            timedOut,
+            ...(terminationFailed ? { terminationFailed, physicalIdentity } : {}),
+          });
+        })
+        .catch(() => {
+          // Even an unexpected observer/decoder failure must resolve conservatively.
+          // Avoid formatting the thrown value: its own conversion can also throw.
+          terminationFailed ??=
+            "Command completion could not be confirmed; verification remains locked.";
+          resolve({
+            output: stdout ? `${stdout}\n${terminationFailed}` : terminationFailed,
+            exitCode: null,
+            timedOut,
+            terminationFailed,
+            physicalIdentity,
+          });
+        });
+    }
     child.on("error", (error) => finish(null, error.message));
     child.on("close", (code) => finish(code));
   });

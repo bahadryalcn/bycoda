@@ -306,6 +306,7 @@ import { discoverHermesModels } from "../src/integrations/harness/providers/herm
 import { discoverAntigravityModels } from "../src/integrations/harness/providers/antigravity/antigravityCatalog";
 import { setHarnessModels, type AgentModel } from "../src/features/sessions/model/models";
 import { listShellProfiles, setChosenProfile, setReviewedProfile } from "./shellProfiles";
+import { hasShellPhysicalOwner } from "./shell-ownership";
 import {
   resolveAntigravityBinary,
   resolveClaudeBinary,
@@ -470,7 +471,11 @@ export async function createHostServer(
           )
             add("provider", summary.id);
           const snapshot = await engine.store.session(summary.id);
-          if (snapshot.session.blocks.some((block) => block.shell?.running))
+          if (
+            snapshot.session.blocks.some(
+              (block) => block.shell?.running || block.shell?.terminationFailed,
+            )
+          )
             add("shell", summary.id);
         }
       }
@@ -484,6 +489,7 @@ export async function createHostServer(
           (task.artifactDeliveryPending === true || !!task.artifactDeliveryActivityId),
       ),
     canReconcileActivity: async (entry) => {
+      if (await hasShellPhysicalOwner(engine.store, "session", entry.ownerId)) return false;
       // Only rows from a previous Host process reach here; the workspace probe
       // still refuses while a real process uses the directory.
       if (

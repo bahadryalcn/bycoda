@@ -566,7 +566,7 @@ export class HostStore {
           session_cwd = json_extract(snapshot, '$.session.cwd'),
           shell_running = EXISTS (
             SELECT 1 FROM json_each(snapshot, '$.session.blocks')
-            WHERE COALESCE(json_extract(value, '$.shell.running'), 0) <> 0
+            WHERE COALESCE(json_extract(value, '$.shell.running'), 0) <> 0 OR json_extract(value, '$.shell.terminationFailed') IS NOT NULL
           );
         COMMIT;`);
     }
@@ -1576,7 +1576,9 @@ export class HostStore {
               unwritten.authorityGeneration !== undefined || !!Number(row.has_authority),
             hasDesktop: unwritten.desktop != null,
             running: unwritten.status === "running",
-            shellRunning: unwritten.session.blocks.some((block) => block.shell?.running),
+            shellRunning: unwritten.session.blocks.some(
+              (block) => block.shell?.running || block.shell?.terminationFailed,
+            ),
             workspaceId: unwritten.session.workspaceId,
             providerSessionId: unwritten.session.providerSessionId || null,
             harness: unwritten.session.harness ?? null,
@@ -2053,7 +2055,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
         );
       await this.db
         .prepare(`INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2070,7 +2076,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
       const eventRows = rows.map((row) => [
@@ -2154,7 +2164,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");

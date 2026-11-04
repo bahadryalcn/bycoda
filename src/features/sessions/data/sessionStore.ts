@@ -1977,9 +1977,15 @@ function sanitizeShellRun(value: Block["shell"]): Block["shell"] {
   return {
     command: value.command,
     output: typeof value.output === "string" ? value.output : "",
-    exitCode: typeof value.exitCode === "number" && !value.running ? value.exitCode : null,
+    exitCode:
+      typeof value.exitCode === "number" && !value.running && !value.terminationFailed
+        ? value.exitCode
+        : null,
     ...(value.timedOut ? { timedOut: true } : {}),
     ...(value.truncated ? { truncated: true } : {}),
+    ...(typeof value.terminationFailed === "string" && value.terminationFailed
+      ? { terminationFailed: value.terminationFailed }
+      : {}),
   };
 }
 
