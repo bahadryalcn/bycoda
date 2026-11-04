@@ -10980,5 +10980,6 @@
   "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "无法安全核对 {p0} 个已保存请求的状态。再次发送前，请检查 Host 上的对话；某个请求可能已执行。",
   "Archive reviewed request": "归档已检查的请求",
   "Could not save this draft. It is kept in this window.": "无法保存此草稿。草稿仍保留在此窗口中。",
-  "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "无法在本地保存此请求。草稿仍保留在此窗口中，请先重试保存，再继续操作。"
+  "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "无法在本地保存此请求。草稿仍保留在此窗口中，请先重试保存，再继续操作。",
+  "Recent sessions changed while loading. Retry shortly.": "最近会话在加载期间发生了变化。请稍后重试。"
 }

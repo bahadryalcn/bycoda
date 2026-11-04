@@ -48,6 +48,10 @@ semantics. Source paths below are repository-relative.
   loading until continuation. Order/time filters use `lastActivityAt`, falling
   back to `updatedAt` for old summaries. Quit/recovery preserves activity while
   `updatedAt` still advances for Host synchronization and conflict checks.
+- Last Sessions reads seven-day Native history in bounded revision-fenced pages.
+  Keep the previous complete result during refresh, retry a changed snapshot, and
+  recheck Host ownership before publishing the assembled list.
+  Metadata-only updates keep the active history stream.
 - Owner Stop is not interruption: `Stopped by you.` notices retain
   their transcript bytes but do not set the list interruption flag. Keep the
   TypeScript classifier and native summary projection consistent.

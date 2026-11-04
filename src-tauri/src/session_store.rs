@@ -1083,6 +1083,40 @@ pub async fn session_list_recent_since(
     .await
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSessionCursor {
+    activity_at: i64,
+    id: String,
+    revision: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSessionPage {
+    rows: Vec<SessionSummary>,
+    next_cursor: Option<RecentSessionCursor>,
+}
+
+#[tauri::command]
+pub async fn session_list_recent_since_page(
+    app: tauri::AppHandle,
+    since: i64,
+    cursor: Option<RecentSessionCursor>,
+) -> Result<RecentSessionPage, String> {
+    if cursor
+        .as_ref()
+        .is_some_and(|value| value.id.is_empty() || value.id.len() > 1024)
+    {
+        return Err("Invalid recent-session cursor".into());
+    }
+    crate::harness::run_blocking("session_list_recent_since_page", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent_since_page(conn, since, cursor.as_ref()))
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn session_get(
     app: AppHandle,
@@ -2642,6 +2676,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     ensure_orchestration_history(conn)?;
     incremental::ensure_schema(conn)?;
     ensure_list_summaries(conn)?;
+    ensure_recent_session_revision(conn)?;
     rewind::ensure_schema(conn)?;
     crate::native_workspace::ensure_schema(conn)?;
     crate::native_editor_drafts::ensure_schema(conn)?;
@@ -2652,6 +2687,25 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     native_raw_capture::ensure_schema(conn)?;
     row_identity::ensure_schema(conn)?;
     Ok(())
+}
+
+fn ensure_recent_session_revision(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS recent_session_revision (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
+        INSERT OR IGNORE INTO recent_session_revision(id,revision) VALUES(1,0);
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_insert AFTER INSERT ON sessions BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_update AFTER UPDATE OF id,has_user_message,archived,pinned,inbox_ask,last_activity_at,updated_at ON sessions
+        WHEN OLD.id IS NOT NEW.id OR OLD.has_user_message IS NOT NEW.has_user_message OR OLD.archived IS NOT NEW.archived OR OLD.pinned IS NOT NEW.pinned OR OLD.inbox_ask IS NOT NEW.inbox_ask OR COALESCE(OLD.last_activity_at,OLD.updated_at) IS NOT COALESCE(NEW.last_activity_at,NEW.updated_at)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_delete AFTER DELETE ON sessions BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_insert AFTER INSERT ON orchestration_workers
+        WHEN EXISTS(SELECT 1 FROM sessions WHERE id=NEW.session_id AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_update AFTER UPDATE OF session_id ON orchestration_workers
+        WHEN OLD.session_id IS NOT NEW.session_id AND EXISTS(SELECT 1 FROM sessions WHERE id IN (OLD.session_id,NEW.session_id) AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_delete AFTER DELETE ON orchestration_workers
+        WHEN EXISTS(SELECT 1 FROM sessions WHERE id=OLD.session_id AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;")
 }
 
 // Backfill one row per transaction: interrupted migrations resume, and a
@@ -3780,6 +3834,61 @@ fn list_recent_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<Sess
     Ok(rows)
 }
 
+const RECENT_SESSION_PAGE_SIZE: usize = 100;
+fn list_recent_since_page(
+    conn: &Connection,
+    since: i64,
+    cursor: Option<&RecentSessionCursor>,
+) -> Result<RecentSessionPage, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let revision: i64 = tx
+        .query_row(
+            "SELECT revision FROM recent_session_revision WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if cursor.is_some_and(|value| value.revision != revision) {
+        return Err("RECENT_SESSIONS_CHANGED".into());
+    }
+    let mut rows = recent_rows_after(
+        &tx,
+        true,
+        (RECENT_SESSION_PAGE_SIZE + 1) as i64,
+        since,
+        cursor,
+    )
+    .map_err(|e| e.to_string())?;
+    rows.extend(
+        recent_rows_after(
+            &tx,
+            false,
+            (RECENT_SESSION_PAGE_SIZE + 1) as i64,
+            since,
+            cursor,
+        )
+        .map_err(|e| e.to_string())?,
+    );
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let has_more = rows.len() > RECENT_SESSION_PAGE_SIZE;
+    rows.truncate(RECENT_SESSION_PAGE_SIZE);
+    let next_cursor = if has_more {
+        rows.last().map(|row| RecentSessionCursor {
+            activity_at: row.last_activity_at,
+            id: row.id.clone(),
+            revision,
+        })
+    } else {
+        None
+    };
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(RecentSessionPage { rows, next_cursor })
+}
+
 // `sessions_recent_idx` is ordered by (pinned, updated_at DESC, id), so the
 // LIMIT stops after a few rows instead of sorting every session; the cover
 // index leads with `cwd` and could not give that order. Pinned for the same
@@ -3789,7 +3898,8 @@ const RECENT_ROWS_SQL: &str =
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
                 automation_id, workspace_id, workspace_revision, workspace_mode,
-                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json,
+                COALESCE(last_activity_at,updated_at)
          FROM sessions INDEXED BY sessions_activity_recent_cover_v2_idx
          LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
@@ -3807,12 +3917,37 @@ fn recent_rows(
     limit: i64,
     since: i64,
 ) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut statement = conn.prepare(RECENT_ROWS_SQL)?;
-    let rows = statement.query_map(params![pinned as i64, limit, since], |row| {
+    recent_rows_after(conn, pinned, limit, since, None)
+}
+
+fn recent_rows_after(
+    conn: &Connection,
+    pinned: bool,
+    limit: i64,
+    since: i64,
+    cursor: Option<&RecentSessionCursor>,
+) -> rusqlite::Result<Vec<SessionSummary>> {
+    let sql = if cursor.is_some() {
+        RECENT_ROWS_SQL.replace("AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)",
+            "AND COALESCE(last_activity_at,updated_at) <= ?4 AND (COALESCE(last_activity_at,updated_at) < ?4 OR id > ?5) AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)")
+    } else {
+        RECENT_ROWS_SQL.to_owned()
+    };
+    let mut statement = conn.prepare(&sql)?;
+    let mut args = vec![
+        rusqlite::types::Value::Integer(pinned as i64),
+        rusqlite::types::Value::Integer(limit),
+        rusqlite::types::Value::Integer(since),
+    ];
+    if let Some(value) = cursor {
+        args.push(rusqlite::types::Value::Integer(value.activity_at));
+        args.push(rusqlite::types::Value::Text(value.id.clone()));
+    }
+    let rows = statement.query_map(rusqlite::params_from_iter(args), |row| {
         let worktree_removed = row.get::<_, i64>(14)? != 0;
         let branch: Option<String> = row.get(9)?;
-        let (interrupted, provider_history, last_activity_at, managed_by) =
-            list_projection(conn, row, 20)?;
+        let (interrupted, provider_history, _, managed_by) = list_projection(conn, row, 20)?;
+        let last_activity_at = row.get(24)?;
         Ok(SessionSummary {
             last_activity_at,
             interrupted,
@@ -5023,6 +5158,93 @@ mod tests {
         assert_eq!(list_recent(&conn, 1).unwrap()[0].id, "legacy");
         assert_eq!(list_linked(&conn).unwrap()[0].id, "legacy");
         assert_eq!(list_recent_since(&conn, 250).unwrap()[0].id, "legacy");
+    }
+
+    #[test]
+    fn recent_pages_are_bounded_complete_and_reject_concurrent_mutation() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for index in 0..1050 {
+            let id = format!("recent-{index:04}");
+            let mut session = sample(&id, "/tmp/paged", &id);
+            session.updated_at = Some(10_000 + (index / 3) as i64);
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+            if index % 5 == 0 {
+                conn.execute("UPDATE sessions SET pinned=1 WHERE id=?1", [&id])
+                    .unwrap();
+            }
+        }
+        let expected = list_recent_since(&conn, 10_000).unwrap();
+        let mut cursor = None;
+        let mut actual = Vec::new();
+        loop {
+            let page = list_recent_since_page(&conn, 10_000, cursor.as_ref()).unwrap();
+            assert!(page.rows.len() <= RECENT_SESSION_PAGE_SIZE);
+            actual.extend(page.rows.into_iter().map(|row| row.id));
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(
+            actual,
+            expected.into_iter().map(|row| row.id).collect::<Vec<_>>()
+        );
+        conn.execute("INSERT INTO orchestration_workers(session_id,lead_id) VALUES('outside-worker','lead-1')", []).unwrap();
+        let first = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute(
+            "UPDATE orchestration_workers SET lead_id='lead-2' WHERE session_id='outside-worker'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE sessions SET title='stream metadata' WHERE id='recent-0000'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE session_blocks SET block_json=json_set(block_json,'$.text','stream') WHERE session_id='recent-0000'", []).unwrap();
+        conn.execute(
+            "UPDATE session_list_summaries SET activity_at=1 WHERE session_id='recent-0001'",
+            [],
+        )
+        .unwrap();
+        let next = list_recent_since_page(&conn, 10_000, first.next_cursor.as_ref()).unwrap();
+        assert!(!next.rows.is_empty());
+        let after_stale_projection = list_recent_since_page(&conn, 10_000, None).unwrap();
+        assert!(after_stale_projection
+            .rows
+            .iter()
+            .all(|row| row.last_activity_at >= 10_000));
+        let mut stale_cursor = after_stale_projection.next_cursor;
+        let mut found_stale = false;
+        while let Some(cursor) = stale_cursor {
+            let page = list_recent_since_page(&conn, 10_000, Some(&cursor)).unwrap();
+            if let Some(row) = page.rows.iter().find(|row| row.id == "recent-0001") {
+                assert!(row.last_activity_at >= 10_000);
+                found_stale = true;
+            }
+            stale_cursor = page.next_cursor;
+        }
+        assert!(found_stale);
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=50000 WHERE id='recent-0000'",
+            [],
+        )
+        .unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, first.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+        let before_worker = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute("UPDATE orchestration_workers SET session_id='recent-0002' WHERE session_id='outside-worker'", []).unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, before_worker.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+        let before_delete = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute("DELETE FROM sessions WHERE id='recent-0001'", [])
+            .unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, before_delete.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
     }
 
     #[test]

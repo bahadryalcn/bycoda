@@ -89,7 +89,9 @@ process state stays protected.
 Click **Last sessions** in the project rail to open a combined workspace list. It
 shows conversations active during the last seven days, newest first, with each
 project's saved icon, color and background. This view stays open when a conversation
-is selected. Explorer and Changes follow that conversation's real project and
+is selected. A refresh keeps the previous complete list visible until the new
+history has loaded; an error leaves that list available while retrying.
+Explorer and Changes follow that conversation's real project and
 execution worktree. The **+** action in Last Sessions first asks which project should own the new
 conversation. Search or choose a project, including the current one; cancelling
 creates nothing. The new conversation uses that project’s defaults and selected

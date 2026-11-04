@@ -10980,5 +10980,6 @@
   "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "Kaydedilmiş {p0} istek güvenle uzlaştırılamadı. Yeniden göndermeden önce Host üzerindeki konuşmaları kontrol edin; bir istek zaten çalışmış olabilir.",
   "Archive reviewed request": "İncelenen isteği arşivle",
   "Could not save this draft. It is kept in this window.": "Taslak kaydedilemedi. Bu pencerede korunuyor.",
-  "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "İstek yerel olarak kaydedilemedi. Taslağınız bu pencerede korunuyor; devam etmeden önce kaydetmeyi yeniden deneyin."
+  "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "İstek yerel olarak kaydedilemedi. Taslağınız bu pencerede korunuyor; devam etmeden önce kaydetmeyi yeniden deneyin.",
+  "Recent sessions changed while loading. Retry shortly.": "Son oturumlar yüklenirken değişti. Kısa süre sonra yeniden deneyin."
 }
