@@ -18,6 +18,7 @@ Source paths below are repository-relative.
 
 ## Workflow and contracts
 
+- Host scheduling selects indexed active/recovery runs before decoding history. Keep strict cleanup booleans, legacy truthiness, local-day limits and exact pending/unknown occurrence identity; query failure cannot become empty history or idle.
 Automatic event/due/recovery polling belongs to one canonical workspace window, including background scheduling while hidden. Tool/overlay windows never own it. Leader election only reduces duplicate reads; persisted claim, recovery and execution admission remain authoritative, including explicit launches from another window.
 
 1. Trace schedule selection through occurrence claim, run admission, session creation

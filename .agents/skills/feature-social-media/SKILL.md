@@ -21,6 +21,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Program interval jitter includes stable program identity; previews of saved programs use that same identity. Accepted occurrences and publication receipts retain their existing identity.
+- Feature-only Codex discovery coalesces its original pending probe and briefly caches a cloned snapshot. Explicit refresh remains available; generation capability and actual image generation retain fresh checks and existing authority gates.
 - Query relevant Social jobs through indexed scopes or explicit pages. Preserve exact receipt and pending/unknown identities; legacy full-history calls and durable evidence need explicit migration or archival contracts before eviction.
 - Meta/LinkedIn comment polling requests an indexed two-publication Host page only after its original pending comment batch drains. Persist its exact job-key continuation with provider cursors; never replace legacy pending post IDs or turn connection changes into accepted inbox data.
 

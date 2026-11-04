@@ -21,6 +21,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Host Git watch callbacks classify irrelevant paths before IO and coalesce bounded asynchronous directory checks. Slow/failed metadata remains unknown and conservatively notifies; late callbacks belong to their original watcher generation.
 - Diff hover reuses mounted row/action membership between DOM commits; pointer motion must not rescan every row. Refresh membership after virtual-window or comment changes and clear original pointer marks on leave.
 - Repository/project, Git review target and execution checkout are distinct. Preserve independent submodule identity and complete paths.
 - Native Git status caches have bounded repository count, retained payload and idle lifetime; eviction must re-query without changing status or diff results.
