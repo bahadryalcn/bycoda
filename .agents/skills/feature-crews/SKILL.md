@@ -24,6 +24,8 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Scheduler caches use exact persisted bytes and private cloned active snapshots only within bounded history-dominated rows. Recheck storage each tick; uncommitted and ineligible rows stay fresh.
+
 - Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, candidate ratings, scope/groups and defaults tombstones.
 - Saved-definition edits do not rewrite existing run/member/model snapshots. Device-local appearance must not change execution settings.
 - Preserve capability-gated confirmed stop/delete, revision-bound deletion, dependencies/file leases, reviewer identity and retained failed/unknown request records.

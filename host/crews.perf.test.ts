@@ -30,10 +30,10 @@ describe("host crews idle tick (perf)", () => {
     const { crews, engine } = await setup();
     const entered = Promise.withResolvers<void>();
     const released = Promise.withResolvers<void>();
-    const read = vi.spyOn(crews as any, "read").mockImplementation(async () => {
+    const read = vi.spyOn(crews as any, "readActiveRuns").mockImplementation(async () => {
       entered.resolve();
       await released.promise;
-      return { definitions: [], runs: [] };
+      return [];
     });
     const ticking = crews.tick();
     await entered.promise;
@@ -50,14 +50,17 @@ describe("host crews idle tick (perf)", () => {
     expect(read).toHaveBeenCalledOnce();
     expect(engine.command).not.toHaveBeenCalled();
   });
-  // perf P15: skip the crew-state SELECT + JSON.parse when there are no runs.
-  it("does not query the database for crew state when there are no runs", async () => {
+  // Idle polling still checks authoritative bytes so another writer can activate a run.
+  it("rechecks crew state without parsing unchanged idle history", async () => {
     const { store, crews, engine } = await setup();
     // Whatever the first tick needs to learn that nothing is running.
     await crews.tick();
     const prepare = vi.spyOn(store.db, "prepare");
     for (let i = 0; i < 5; i++) await crews.tick();
-    expect(prepare).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledTimes(5);
+    expect(
+      prepare.mock.calls.every(([sql]) => sql === "SELECT value FROM metadata WHERE key=?"),
+    ).toBe(true);
     expect(engine.command).not.toHaveBeenCalled();
   });
   it("still ticks cleanly with no runs and sends nothing", async () => {
