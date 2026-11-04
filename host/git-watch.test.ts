@@ -78,6 +78,7 @@ describe("GitWatches with injected watchers", () => {
     fail: () => void;
   };
   let fakes: Fake[];
+  let directory: (path: string) => Promise<boolean>;
   let failPaths: Set<string>;
   let watches: GitWatches;
   const watchFactory: GitWatchFactory = (path, recursive, onEvent, onError) => {
@@ -104,10 +105,12 @@ describe("GitWatches with injected watchers", () => {
     vi.useFakeTimers();
     fakes = [];
     failPaths = new Set();
+    directory = async () => false;
     // The fake git dirs do not exist on disk.
     watches = new GitWatches({
       watch: watchFactory,
       resolve,
+      isDirectory: (path) => directory(path),
       exists: (path) => normalize(path).startsWith("/r/") || existsSync(path),
     });
   });
@@ -124,6 +127,63 @@ describe("GitWatches with injected watchers", () => {
       [normalize("/r/.git/logs/refs"), false],
       [normalize("/r/.git/worktrees"), false],
     ]);
+  });
+
+  it("coalesces native metadata checks and skips unrelated Git paths before filesystem work", async () => {
+    let release!: (directory: boolean) => void;
+    const pending = new Promise<boolean>((done) => { release = done; });
+    const check = vi.fn(() => pending);
+    directory = check;
+    await watches.read("/r");
+    for (let index = 0; index < 1000; index++) {
+      at("/r/.git").emit("change", "index");
+      at("/r/.git").emit("change", "objects");
+      at("/r/.git").emit("change", "index.lock");
+    }
+    await Promise.resolve();
+    expect(check).toHaveBeenCalledTimes(1);
+    release(false);
+    await vi.advanceTimersByTimeAsync(301);
+    expect(watches.etag("/r")).toBe("1.0");
+  });
+
+  it("ignores directory access-time events without blocking other Git notifications", async () => {
+    directory = async () => true;
+    await watches.read("/r");
+    at("/r/.git/refs").emit("change", "heads");
+    at("/r/.git").emit("rename", "index");
+    await vi.advanceTimersByTimeAsync(301);
+    expect(watches.etag("/r")).toBe("1.0");
+  });
+
+  it("caps unsettled metadata work and reports unknown paths while original queries remain held", async () => {
+    const check = vi.fn(() => new Promise<boolean>(() => {}));
+    directory = check;
+    await watches.read("/r");
+    for (let index = 0; index < 100; index++) at("/r/.git/refs").emit("change", `heads/ref-${index}`);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(check).toHaveBeenCalledTimes(32);
+    expect(watches.etag("/r")).toBe("0.1");
+    at("/r/.git/refs").emit("change", "heads/ref-0");
+    await vi.advanceTimersByTimeAsync(301);
+    expect(check).toHaveBeenCalledTimes(32);
+    expect(watches.etag("/r")).toBe("0.2");
+  });
+
+  it("rejects metadata and watcher callbacks from the original failed generation after restart", async () => {
+    let release!: (directory: boolean) => void;
+    directory = () => new Promise<boolean>((done) => { release = done; });
+    await watches.read("/r");
+    const original = at("/r/.git");
+    original.emit("change", "index");
+    await Promise.resolve();
+    original.fail();
+    await watches.read("/r");
+    const current = watches.etag("/r");
+    release(false);
+    original.emit("rename", "index");
+    await vi.advanceTimersByTimeAsync(301);
+    expect(watches.etag("/r")).toBe(current);
   });
 
   it("coalesces a burst into one bump after 300 ms of quiet", async () => {

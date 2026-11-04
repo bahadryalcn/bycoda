@@ -1,4 +1,5 @@
-import { existsSync, statSync, watch as fsWatch } from "node:fs";
+import { existsSync, watch as fsWatch } from "node:fs";
+import { stat } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 
@@ -19,6 +20,7 @@ const MAX_WATCHES = 128;
 const EVICTABLE_IDLE_MS = 15_000;
 /** A checkout that failed to resolve or watch is not retried sooner. */
 const RETRY_MS = 5000;
+const MAX_DIRECTORY_CHECKS = 32;
 
 export type GitChange = { index: boolean; refs: boolean };
 
@@ -146,6 +148,7 @@ export type GitWatchOptions = {
   resolve?: (cwd: string) => Promise<{ gitDir: string; commonDir: string }>;
   now?: () => number;
   exists?: (path: string) => boolean;
+  isDirectory?: (path: string) => Promise<boolean>;
 };
 
 type Entry = {
@@ -165,24 +168,29 @@ type Entry = {
   pending: GitChange | null;
   firstAt: number;
   timer: NodeJS.Timeout | undefined;
+  directoryChecks: Map<string, { expired: boolean; generation: number }>;
+  generation: number;
 };
 
 export class GitWatches {
   private readonly entries = new Map<string, Entry>();
   private sweeper: NodeJS.Timeout | undefined;
   private closed = false;
+  private directoryChecks = 0;
   /** New watches count up from above every dropped one, so an old cursor never matches. */
   private floor = 0;
   private readonly watchPath: GitWatchFactory;
   private readonly resolveDirs: NonNullable<GitWatchOptions["resolve"]>;
   private readonly now: () => number;
   private readonly exists: (path: string) => boolean;
+  private readonly isDirectory: (path: string) => Promise<boolean>;
 
   constructor(private readonly options: GitWatchOptions = {}) {
     this.watchPath = options.watch ?? nodeWatch;
     this.resolveDirs = options.resolve ?? resolveGitDirs;
     this.now = options.now ?? Date.now;
     this.exists = options.exists ?? existsSync;
+    this.isDirectory = options.isDirectory ?? (async (path) => (await stat(path)).isDirectory());
   }
 
   /** Starts watching `cwd`, or keeps its watch alive. */
@@ -211,6 +219,8 @@ export class GitWatches {
       pending: null,
       firstAt: 0,
       timer: undefined,
+      directoryChecks: new Map(),
+      generation: 0,
     };
     this.entries.set(cwd, entry);
     this.start(entry);
@@ -249,6 +259,7 @@ export class GitWatches {
   }
 
   private start(entry: Entry) {
+    entry.generation++;
     entry.state = "resolving";
     entry.ready = this.resolveDirs(entry.cwd).then(
       ({ gitDir, commonDir }) => {
@@ -281,11 +292,12 @@ export class GitWatches {
   }
 
   private open(entry: Entry, plan: GitWatchPlan): GitWatchHandle {
+    const generation = entry.generation;
     return this.watchPath(
       plan.path,
       plan.recursive,
-      (type, changed) => this.onEvent(entry, type, changed),
-      () => this.onError(entry),
+      (type, changed) => { if (entry.generation === generation) this.onEvent(entry, type, changed); },
+      () => { if (entry.generation === generation) this.onError(entry); },
     );
   }
 
@@ -315,16 +327,56 @@ export class GitWatches {
   }
 
   private onEvent(entry: Entry, type: string, changed: string | undefined) {
-    if (entry.state !== "ready") return;
+    if (entry.state !== "ready" || this.entries.get(entry.cwd) !== entry) return;
     let change: GitChange;
     if (changed === undefined) change = ALL;
     else {
-      // Reading a folder can update its access time, which is reported as a
-      // change to the folder itself; a real ref change also reports the file.
-      if (type === "change" && isDirectory(changed)) return;
       change = classifyGitPath(normGitPath(changed), entry.gitDir, entry.commonDir);
+      if (!change.index && !change.refs) return;
+      if (type === "change") {
+        this.checkDirectory(entry, changed, change);
+        return;
+      }
     }
     if (change.index || change.refs) this.queue(entry, change);
+  }
+
+  private checkDirectory(entry: Entry, path: string, change: GitChange) {
+    const existing = entry.directoryChecks.get(path);
+    if (existing?.generation === entry.generation) {
+      if (existing.expired) this.queue(entry, change);
+      return;
+    }
+    // Saturation/slow metadata is unknown, so notify conservatively. Actual
+    // filesystem work retains its slot until settlement, including after drop.
+    if (this.directoryChecks >= MAX_DIRECTORY_CHECKS) {
+      this.queue(entry, change);
+      return;
+    }
+    const generation = entry.generation;
+    const record = { expired: false, generation };
+    entry.directoryChecks.set(path, record);
+    this.directoryChecks++;
+    const current = () => this.entries.get(entry.cwd) === entry && entry.state === "ready" && entry.generation === generation;
+    const deadline = setTimeout(() => {
+      record.expired = true;
+      if (current()) this.queue(entry, change);
+    }, SETTLE_MS);
+    deadline.unref();
+    void Promise.resolve()
+      .then(() => this.isDirectory(path))
+      .then((directory) => {
+        // Folder access-time events are noise; a real ref reports its file.
+        if (!directory && current()) this.queue(entry, change);
+      }, () => {
+        if (current()) this.queue(entry, change);
+      })
+      .finally(() => {
+        clearTimeout(deadline);
+        this.directoryChecks--;
+        if (entry.directoryChecks.get(path) === record) entry.directoryChecks.delete(path);
+      })
+      .catch(() => { /* Watch disposal cannot turn failed metadata into absence. */ });
   }
 
   /** The OS dropped events or the watch broke: anything may have changed. */
@@ -411,13 +463,5 @@ export class GitWatches {
       clearInterval(this.sweeper);
       this.sweeper = undefined;
     }
-  }
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
   }
 }
