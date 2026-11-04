@@ -27,6 +27,7 @@ Code paths below are repository-root relative.
 ## Preserve
 
 - Drafts survive hibernation/remount and provider/model/account changes; preserve caret, selection, IME and configured shortcuts.
+- A saved draft card offers Edit only for local chats: it removes the draft block and returns its text/files through the composer recall path, so the composer reappears. Host-bound drafts keep Send/Remove, because removing a host session's only draft discards that session.
 - Preserve queue order, edit/reorder/cancel, held messages and lease ownership. Unknown delivery is held, never automatically resent.
 - A follow-up refused before any provider write because its original turn ended returns to the queue as a typed wait, not a rejection. Release its claim without pausing an active queue; retain explicit Stop/paused/restored state and let the existing dispatcher continue when free.
 - Keep provider, model, reasoning, account and workspace choices independent, including custom IDs and first-send preparation errors.

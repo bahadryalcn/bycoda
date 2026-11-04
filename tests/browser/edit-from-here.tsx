@@ -3,7 +3,12 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionPane, type SessionPaneProps } from "../../src/features/sessions/ui/SessionPane";
 import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
-import { newSession, type Session } from "../../src/features/sessions/model/session";
+import {
+  newSession,
+  removeSessionDraft,
+  type Block,
+  type Session,
+} from "../../src/features/sessions/model/session";
 import { rewindConversationBeforeMessage } from "../../src/features/sessions/model/conversationRewind";
 import {
   findModel,
@@ -153,9 +158,34 @@ const initial: Session = {
     { id: "later-user", role: "user", text: "A later prompt that will also be rewound." },
   ],
 };
+// ?saved-draft opens a chat holding only a saved draft; adding &history keeps an
+// earlier exchange before it, as a reopened conversation would.
+const savedDraft: Block = {
+  id: "saved-draft",
+  role: "user",
+  text: "[image1] explain this screen",
+  draft: true,
+  attachments: [
+    {
+      id: "draft-image",
+      kind: "file",
+      name: "image.png",
+      mimeType: "text/plain",
+      size: 4,
+      data: btoa("draft"),
+    },
+  ],
+};
+const start: Session = query.has("saved-draft")
+  ? {
+      ...initial,
+      title: "image.png",
+      blocks: query.has("history") ? [...initial.blocks.slice(0, 2), savedDraft] : [savedDraft],
+    }
+  : initial;
 const noop = () => {};
 function Fixture() {
-  const [session, setSession] = useState(initial);
+  const [session, setSession] = useState(start);
   const props: SessionPaneProps = {
     session,
     visible: true,
@@ -178,7 +208,10 @@ function Fixture() {
       return false;
     },
     onSaveDraft: () => false,
-    onRemoveDraft: () => false,
+    onRemoveDraft: (_id, blockId) => {
+      setSession((current) => removeSessionDraft(current, blockId) ?? current);
+      return true;
+    },
     onStop: noop,
     onCompactContext: () => false,
     onPlaceSessionInFolder: noop,

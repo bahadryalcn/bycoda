@@ -47,7 +47,8 @@ work; saved editor and terminal panes are not recreated.
 
 Closing a new local chat that still holds unsent text or attachments keeps it in
 the project's conversation list. The unsent input becomes the chat's saved draft;
-open the chat to send it, or remove the draft to discard the chat. A new chat
+open the chat to send it, **Edit** it to return its text and files to the composer,
+or remove the draft to discard the chat. A new chat
 closed without any input is still discarded.
 
 Open all and restore target the eligible population, including records hidden by
