@@ -1,9 +1,7 @@
-import { flatMapAsync } from "./async-collections";
 import { randomUUID } from "node:crypto";
 import { assertExpectedConfiguration } from "./configurationConflict";
 import {
   automationLimits,
-  dailyRunLimitSkip,
 } from "../src/features/automations/model/automationLimits";
 import { nextAutomationRunAt } from "../src/features/automations/model/automationSchedule";
 import {
@@ -78,7 +76,10 @@ export class HostAutomations {
         await store.db.exec(`
       CREATE TABLE IF NOT EXISTS automations (id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, value TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);`);
+      CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS automation_runs_status_idx ON automation_runs (automation_id, json_extract(value, '$.status'));
+      CREATE INDEX IF NOT EXISTS automation_runs_started_idx ON automation_runs (automation_id, json_extract(value, '$.startedAt'));
+      CREATE INDEX IF NOT EXISTS automation_runs_cleanup_idx ON automation_runs (json_extract(value, '$.status'), json_extract(value, '$.cleanupPending'));`);
       });
     })();
   }
@@ -179,11 +180,10 @@ export class HostAutomations {
   }
   async delete(id: string): Promise<void> {
     await this.ready;
-    const history = await this.runs(id);
-    if (history.some((run) => run.status === "running")) {
+    if (await this.hasRunningRun(id)) {
       throw new Error("This automation is still running. Stop its session before deleting it.");
     }
-    if (history.some((run) => run.cleanupPending))
+    if (await this.store.db.prepare("SELECT 1 FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.cleanupPending') LIMIT 1").get(id))
       throw new Error(
         "This automation is still releasing an owned activity. Wait for cleanup before deleting it.",
       );
@@ -230,7 +230,8 @@ export class HostAutomations {
   }> {
     await this.ready;
 
-    const run = (await this.runs(automationId)).find((entry) => entry.id === runId);
+    const row = await this.store.db.prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?").get(runId, automationId);
+    const run = row ? JSON.parse(String(row.value)) as HostAutomationRun : undefined;
     if (!run || run.status !== "running") throw new Error("Automation run is not running.");
     await cancelSessionRun(this.engine, run);
     return { requested: true, run };
@@ -309,17 +310,30 @@ export class HostAutomations {
       status: "pending",
     });
   }
+  private async hasRunningRun(automationId: string, exceptId = ""): Promise<boolean> {
+    return Boolean(await this.store.db.prepare(
+      "SELECT 1 FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status')='running' AND id<>? LIMIT 1",
+    ).get(automationId, exceptId));
+  }
   private async activeRuns(): Promise<HostAutomationRun[]> {
-    return (
-      await flatMapAsync(await this.list(), async (automation) => await this.runs(automation.id))
-    ).filter(
-      (run) =>
-        run.status === "running" ||
-        (run.status === "failed" && run.cleanupPending === true) ||
-        (run.status === "pending" &&
-          Boolean((run as ManagedAutomationRun).workspaceId) &&
-          !this.launching.has(run.automationId)),
+    // SQL narrows history before parsing; pending managed ownership remains recoverable.
+    return (await this.store.db.prepare(
+      "SELECT r.value FROM automation_runs r JOIN automations a ON a.id=r.automation_id WHERE json_extract(r.value, '$.status')='running' OR (json_extract(r.value, '$.status')='failed' AND json_extract(r.value, '$.cleanupPending')=1) OR (json_extract(r.value, '$.status')='pending' AND COALESCE(json_extract(r.value, '$.workspaceId'), '')<>'') ORDER BY json_extract(a.value, '$.createdAt'), r.created_at DESC, r.rowid DESC",
+    ).all()).map((row) => JSON.parse(String(row.value)) as ManagedAutomationRun).filter(
+      (run) => run.status !== "pending" || !this.launching.has(run.automationId),
     );
+  }
+  private async dailyLimitSkip(automation: HostAutomation, runId: string, now: number): Promise<string | null> {
+    const { maxRunsPerDay } = automationLimits(automation);
+    if (maxRunsPerDay <= 0) return null;
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const row = await this.store.db.prepare(
+      "SELECT COUNT(*) AS count FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.startedAt')>=? AND id<>? AND json_extract(value, '$.status')<>'skipped'",
+    ).get(automation.id, dayStart.getTime(), runId);
+    if (!row) throw new Error("Could not read automation daily run count.");
+    if (Number(row.count) < maxRunsPerDay) return null;
+    return `Skipped: reached the limit of ${maxRunsPerDay} ${maxRunsPerDay === 1 ? "run" : "runs"} per day.`;
   }
   private async launch(
     automation: HostAutomation,
@@ -331,12 +345,11 @@ export class HostAutomations {
     this.launching.add(automation.id);
     let accepted: { sessionId: string; runId?: string } | undefined;
     try {
-      const history = await this.runs(automation.id);
-      const skip = history.some((other) => other.id !== run.id && other.status === "running")
+      const skip = await this.hasRunningRun(automation.id, run.id)
         ? PREVIOUS_RUN_SKIP
         : run.trigger === "manual"
           ? null
-          : dailyRunLimitSkip(automationLimits(automation), history, run.id, now);
+          : await this.dailyLimitSkip(automation, run.id, now);
       if (skip) return await this.finish(run, "skipped", skip, now);
       if (this.closing)
         return await this.finish(run, "skipped", "Skipped: the host is stopping.", now);
@@ -602,9 +615,9 @@ export class HostAutomations {
           lastRunError: finished.error,
           lastSessionId: finished.sessionId ?? automation.lastSessionId,
           needsInput:
-            (await this.runs(run.automationId)).some(
-              (other) => other.status === "running" && other.needsInput,
-            ) || undefined,
+            Boolean(await this.store.db.prepare(
+              "SELECT 1 FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status')='running' AND json_extract(value, '$.needsInput') LIMIT 1",
+            ).get(run.automationId)) || undefined,
         });
       const dayStart = new Date(now);
       dayStart.setHours(0, 0, 0, 0);
