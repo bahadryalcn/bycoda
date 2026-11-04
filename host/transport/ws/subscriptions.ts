@@ -78,6 +78,8 @@ export class HostSubscriptionHub {
   private readonly now: () => number;
   private bytes = 0;
   private reads = 0;
+  private readonly connectionReads = new Map<string, number>();
+  private lastScheduledKey?: string;
   private queued = false;
   private refreshTimer?: ReturnType<typeof setTimeout>;
   private stopped = false;
@@ -108,11 +110,16 @@ export class HostSubscriptionHub {
         >
       >;
       maxConcurrentReads?: number;
+      maxConcurrentReadsPerConnection?: number;
     },
   ) {
     this.limits = { ...WS_LIMITS, ...options.limits };
     this.now = options.now ?? Date.now;
-    for (const value of [...Object.values(this.limits), options.maxConcurrentReads ?? 8])
+    for (const value of [
+      ...Object.values(this.limits),
+      options.maxConcurrentReads ?? 8,
+      options.maxConcurrentReadsPerConnection ?? 2,
+    ])
       if (!Number.isSafeInteger(value) || value < 1)
         throw new Error("Invalid stream resource limit.");
     this.pruning = setInterval(() => this.prune(), Math.min(30_000, this.limits.maxReplayAgeMs));
@@ -377,7 +384,10 @@ export class HostSubscriptionHub {
     queueMicrotask(() => {
       this.queued = false;
       if (this.stopped) return;
-      for (const stream of this.streams.values()) {
+      const streams = [...this.streams.values()];
+      const previous = streams.findIndex((stream) => stream.key === this.lastScheduledKey);
+      if (previous >= 0) streams.push(...streams.splice(0, previous + 1));
+      for (const stream of streams) {
         if (this.reads >= (this.options.maxConcurrentReads ?? 8)) break;
         if (
           !stream.dirty ||
@@ -386,6 +396,13 @@ export class HostSubscriptionHub {
           ![...stream.consumers.values()].some((consumer) => consumer.active)
         )
           continue;
+        const owner = [...stream.consumers.values()].find(
+          (consumer) =>
+            consumer.active &&
+            (this.connectionReads.get(consumer.owner.connectionId) ?? 0) <
+              (this.options.maxConcurrentReadsPerConnection ?? 2),
+        )?.owner;
+        if (!owner) continue;
         const delay = (stream.refreshAt ?? 0) - Date.now();
         if (delay > 0) {
           if (!this.refreshTimer) {
@@ -399,6 +416,11 @@ export class HostSubscriptionHub {
         }
         stream.refreshAt = Date.now() + 250;
         this.reads++;
+        this.connectionReads.set(
+          owner.connectionId,
+          (this.connectionReads.get(owner.connectionId) ?? 0) + 1,
+        );
+        this.lastScheduledKey = stream.key;
         stream.dirty = false;
         const controller = new AbortController();
         stream.reading = controller;
@@ -412,9 +434,13 @@ export class HostSubscriptionHub {
           }
         }, this.limits.defaultResponseTimeoutMs);
         deadline.unref();
-        void this.refresh(stream, generation, controller).finally(() => {
+        void this.refresh(stream, generation, controller, owner).finally(() => {
           clearTimeout(deadline);
+          // Abort revokes delivery; only settlement releases accepted physical work.
           this.reads--;
+          const remaining = (this.connectionReads.get(owner.connectionId) ?? 1) - 1;
+          if (remaining) this.connectionReads.set(owner.connectionId, remaining);
+          else this.connectionReads.delete(owner.connectionId);
           stream.reading = undefined;
           stream.readingBaseline = undefined;
           this.schedule();
@@ -427,6 +453,7 @@ export class HostSubscriptionHub {
     stream: Stream,
     generation: number,
     controller: AbortController,
+    owner: HostStreamConsumer,
   ): Promise<void> {
     try {
       const live = [...stream.consumers.values()].filter((consumer) => consumer.active);
@@ -439,8 +466,6 @@ export class HostSubscriptionHub {
         );
       stream.forceSnapshot = false;
       stream.readingBaseline = forceSnapshot;
-      const owner = live[0]?.owner;
-      if (!owner) return;
       const snapshot = await this.options.load(
         stream.target,
         stream.principalId,
@@ -465,7 +490,14 @@ export class HostSubscriptionHub {
         if (await consumer.owner.authorized()) authorized.add(consumer);
         else this.detach(consumer.owner.connectionId);
       }
-      if (!stream.consumers.size) return;
+      if (
+        !stream.consumers.size ||
+        this.stopped ||
+        stream.deleted ||
+        generation !== stream.generation ||
+        controller.signal.aborted
+      )
+        return;
       if (!snapshot) {
         this.tombstone(stream);
         return;
@@ -544,6 +576,7 @@ export class HostSubscriptionHub {
     if (!entry) return false;
     entry.consumer.active = false;
     entry.stream.consumers.delete(identity);
+    if (!entry.stream.consumers.size) entry.stream.reading?.abort();
     entry.stream.touched = this.now();
     this.subscriptions.delete(identity);
     return true;
