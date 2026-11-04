@@ -1100,6 +1100,12 @@ describe("task list updates", () => {
       },
     });
   });
+  it("appends exact repeated and prefix-shaped plan deltas", () => {
+    let session = appendUser(newSession("codex", "/tmp"), "plan it");
+    for (const text of ["ha", "ha", "-", "--", "\n", "\n"])
+      session = applyHarnessEvent(session, { type: "plan", key: "exact", text, append: true, streaming: true });
+    expect(session.blocks.find((block) => block.role === "plan")?.text).toBe("haha---\n\n");
+  });
 
   it("promotes only the final assistant message when no native plan exists", () => {
     let session = appendUser(newSession("pi", "/tmp"), "plan it");

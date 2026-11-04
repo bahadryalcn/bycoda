@@ -45,7 +45,6 @@ import {
   capHeadTail,
   capStepOutput,
 } from "../../../features/sessions/model/agentOutput";
-import { joinStreamText } from "./streamText";
 import { MAX_TOOL_DETAIL_CHARS } from "./toolDetailLimits";
 import { registerStreamingTextUpdate } from "../../../features/sessions/model/stableBlocks";
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
@@ -582,7 +581,7 @@ function upsertPlan(session: Session, event: Extract<HarnessEvent, { type: "plan
   if (existing >= 0) {
     const current = session.blocks[existing];
     const text = event.append
-      ? joinStreamText(current.text, event.text)
+      ? current.text + event.text
       : event.text || current.text;
     const blocks = session.blocks.slice();
     blocks[existing] = {

@@ -270,6 +270,22 @@ it("retires binary-held A without dispatch and starts B on a distinct original h
   }
 });
 
+it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n"] }])(
+  "preserves exact Cursor utility delta chunks $chunks",
+  async ({ chunks }) => {
+    const events: HarnessEvent[] = [];
+    const result = runCursorTextPrompt({ cwd: "/repo", prompt: "Exact text", onEvent: (event) => events.push(event) });
+    await openScopedText("cursor-exact");
+    await waitFor(() => !!outbound("session/prompt"), "exact prompt");
+    for (const content of chunks)
+      onLine?.(JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: {
+        sessionId: "cursor-exact", update: { sessionUpdate: "agent_message_chunk", content },
+      } }));
+    reply("session/prompt", {});
+    await expect(result).resolves.toBe(chunks.join(""));
+    expect(events.filter((event) => event.type === "message.delta").map((event) => event.text).join("")).toBe(chunks.join(""));
+  },
+);
 it("forwards Cursor text deltas without duplicating snapshots", async () => {
   const events: HarnessEvent[] = [];
   const result = runCursorTextPrompt({

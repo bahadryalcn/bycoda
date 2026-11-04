@@ -669,8 +669,13 @@ function handleNotification(session: LiveText | null, method: string, params: un
 
   const mapped = mapCodexNotification(method, params, session.usage);
   for (const event of mapped.events) {
+    const previousOutput = session.output;
     const output =
-      event.type === "message.delta" ? mergeStream(session.output, event.text) : session.output;
+      event.type === "message.delta"
+        ? method === "item/agentMessage/delta"
+          ? session.output + event.text
+          : mergeStream(session.output, event.text)
+        : session.output;
     const reasoningChars =
       (session.reasoningChars ?? 0) + (event.type === "reasoning.delta" ? event.text.length : 0);
     if (utilityOutputExceeded(output, reasoningChars, session.outputLimit)) {
@@ -684,7 +689,10 @@ function handleNotification(session: LiveText | null, method: string, params: un
     }
     session.output = output;
     session.reasoningChars = reasoningChars;
-    session.onEvent?.(event);
+    if (event.type === "message.delta") {
+      const delta = output.slice(previousOutput.length);
+      if (delta) session.onEvent?.({ ...event, text: delta });
+    } else session.onEvent?.(event);
   }
 
   if (method === "item/agentMessage/delta") {

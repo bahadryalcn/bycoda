@@ -214,8 +214,10 @@ async function startLive(
       onNotification: (method, params) => {
         const session = acpRef.session;
         if (!session || method !== "session/update" || !session.collecting) return;
+        const update = messageFromUpdate(params);
+        if (!update) return;
         const previous = session.output;
-        session.output = mergeStream(previous, textFromUpdate(params));
+        session.output = update.delta ? previous + update.text : mergeStream(previous, update.text);
         const delta = session.output.slice(previous.length);
         if (delta) session.onEvent?.({ type: "message.delta", text: delta });
       },
@@ -399,7 +401,7 @@ function permissionOptionIds(params: unknown): string[] {
   });
 }
 
-function textFromUpdate(params: unknown): string {
+function messageFromUpdate(params: unknown): { text: string; delta: boolean } | undefined {
   const rec =
     params && typeof params === "object" && !Array.isArray(params)
       ? (params as Record<string, unknown>)
@@ -408,10 +410,10 @@ function textFromUpdate(params: unknown): string {
     rec?.update && typeof rec.update === "object" && !Array.isArray(rec.update)
       ? (rec.update as Record<string, unknown>)
       : rec;
-  if (!update) return "";
+  if (!update) return;
   const kind = String(update.sessionUpdate ?? update.session_update ?? update.type ?? "");
-  if (kind !== "agent_message_chunk" && kind !== "agent_message") return "";
-  return textFromContent(update.content ?? update.text);
+  if (kind !== "agent_message_chunk" && kind !== "agent_message") return;
+  return { text: textFromContent(update.content ?? update.text), delta: kind === "agent_message_chunk" };
 }
 
 function textFromContent(content: unknown): string {
