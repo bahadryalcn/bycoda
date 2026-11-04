@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { HostSession } from "../src/features/connections/model/protocol";
 import type { Block } from "../src/features/sessions/model/session";
 import { blockDigest, conversationHead } from "../src/features/sync/model/conversationDigest";
@@ -21,6 +21,25 @@ const snapshot = (): HostSession =>
     },
     revision: 1,
   }) as HostSession;
+it("caps truncation search serialization at the preview budget for huge escaped Unicode sources", () => {
+  const text = '\u0000"\\漢😀'.repeat(100_000);
+  const block: Block = { id: "bounded-search", role: "assistant", text };
+  const stringify = JSON.stringify;
+  const stringSizes: number[] = [];
+  const spy = vi.spyOn(JSON, "stringify").mockImplementation((value, replacer, space) => {
+    if (typeof value === "string") stringSizes.push(value.length);
+    return stringify(value, replacer, space);
+  });
+  let result: Block;
+  try { result = previewBlock(block, 7); } finally { spy.mockRestore(); }
+  expect(stringSizes.length).toBeGreaterThan(1);
+  expect(Math.max(...stringSizes)).toBeLessThanOrEqual(64 * 1024);
+  expect(Buffer.byteLength(stringify(result.text))).toBeLessThanOrEqual(32 * 1024);
+  expect(result.text.endsWith("…")).toBe(true);
+  expect(text.startsWith(result.text.slice(0, -1))).toBe(true);
+  expect(result.text).not.toMatch(/[\uD800-\uDBFF]…$/);
+  expect(result.remoteContent).toMatchObject({ revision: 7, bytes: Buffer.byteLength(stringify(block)) });
+});
 it("opens a bounded tail then reconstructs every block in order", () => {
   const value = snapshot();
   let page = transcriptPage(value);

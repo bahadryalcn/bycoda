@@ -7,9 +7,11 @@ export const TRANSCRIPT_BLOCK_PREVIEW_BYTES = 64 * 1024;
 export const REWIND_ARCHIVE_PREVIEW_BYTES = 128 * 1024;
 
 function truncateJsonString(value: string, maxBytes: number): string {
-  if (Buffer.byteLength(JSON.stringify(value)) <= maxBytes) return value;
+  // JSON cannot use fewer bytes than UTF-16 code units. Avoid serializing an
+  // already oversized source; every search candidate stays within the budget.
+  if (value.length <= maxBytes && Buffer.byteLength(JSON.stringify(value)) <= maxBytes) return value;
   let lo = 0,
-    hi = value.length;
+    hi = Math.min(value.length, Math.max(0, maxBytes - 5)); // Quotes plus UTF-8 ellipsis.
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
     const candidate = value.slice(0, mid) + "…";
