@@ -35,7 +35,7 @@ import {
   toolKindFromName,
   toolStartFromEvent,
   toolTitle,
-  tryParseJsonRecord,
+  createJsonRecordAccumulator,
   turnStatusFromResult,
   turnMetricsFromResult,
   usageFromResult,
@@ -69,7 +69,7 @@ type InFlightTool = {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  partialJson: string;
+  inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
 };
 
@@ -557,7 +557,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
       id: started.id,
       name: started.name,
       input: started.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
     };
     if (started.index >= 0) session.toolsByIndex.set(started.index, tool);
@@ -580,8 +580,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   if (!jsonDelta) return;
   const tool = session.toolsByIndex.get(jsonDelta.index);
   if (!tool) return;
-  tool.partialJson += jsonDelta.partial;
-  const parsed = tryParseJsonRecord(tool.partialJson);
+  const parsed = tool.inputJson.append(jsonDelta.partial);
   if (!parsed) return;
   tool.input = parsed;
   tool.title = toolTitle(tool.name, parsed);

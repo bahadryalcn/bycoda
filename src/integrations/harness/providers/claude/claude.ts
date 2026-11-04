@@ -110,7 +110,7 @@ import {
   toolResultsFromUserMessage,
   toolStartFromEvent,
   toolTitle,
-  tryParseJsonRecord,
+  createJsonRecordAccumulator,
   turnStatusFromResult,
   usageLimitFromRateLimitEvent,
   type ClaudeAgentTaskNotification,
@@ -163,7 +163,7 @@ type InFlightTool = {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  partialJson: string;
+  inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
   outputPath?: string;
 };
@@ -1321,7 +1321,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
       id: started.id,
       name: started.name,
       input: started.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
     };
     if (started.index >= 0) live.toolsByIndex.set(started.index, tool);
@@ -1344,8 +1344,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
     if (subagent) return;
     const tool = live.toolsByIndex.get(jsonDelta.index);
     if (!tool) return;
-    tool.partialJson += jsonDelta.partial;
-    const parsed = tryParseJsonRecord(tool.partialJson);
+    const parsed = tool.inputJson.append(jsonDelta.partial);
     if (!parsed) return;
     tool.input = parsed;
     tool.title = toolTitle(tool.name, parsed);
@@ -1425,7 +1424,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
       id: use.id,
       name: use.name,
       input: use.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(use.name, use.input),
     };
     live.toolsById.set(use.id, tool);
@@ -2096,7 +2095,7 @@ function upsertAgentTool(
       id,
       name: "Agent",
       input: {},
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title,
     });
     live.onEvent({

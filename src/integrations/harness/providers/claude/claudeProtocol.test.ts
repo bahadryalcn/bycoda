@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { modelsForClaudeVersion, modelsFromClaudeListModels } from "./claudeCatalog";
 
 it("records the concrete version behind a moving Claude alias", () => {
@@ -1135,5 +1135,51 @@ describe("tryParseJsonRecord chunked input", () => {
     expect(tryParseJsonRecord(`${full}\n `)).toEqual(JSON.parse(full));
     expect(tryParseJsonRecord("[1]")).toBeUndefined();
     expect(tryParseJsonRecord("")).toBeUndefined();
+  });
+});
+
+describe("original tool JSON accumulator", () => {
+  it("does one full parse for brace-heavy streamed string content", async () => {
+    const { createJsonRecordAccumulator } = await import("./claudeProtocol");
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      const reader = createJsonRecordAccumulator();
+      expect(reader.append('{"content":"')).toBeUndefined();
+      for (let index = 0; index < 5000; index++) expect(reader.append("}")).toBeUndefined();
+      expect(parse).not.toHaveBeenCalled();
+      const value = reader.append('"}');
+      expect(value?.content).toBe("}".repeat(5000));
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(reader.append("\n \t")).toBe(value);
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(reader.append("trailing junk}")).toBeUndefined();
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("retains escaped quotes, slash parity and nested arrays across every chunk split", async () => {
+    const { createJsonRecordAccumulator, tryParseJsonRecord } = await import("./claudeProtocol");
+    const text = JSON.stringify({ content: 'a \\" } { [ ]', rows: [{ value: "漢" }, 1, null] });
+    for (let split = 0; split <= text.length; split++) {
+      const reader = createJsonRecordAccumulator();
+      const first = reader.append(text.slice(0, split));
+      const value = reader.append(text.slice(split));
+      expect(value ?? first).toEqual(tryParseJsonRecord(text));
+    }
+  });
+
+  it("keeps original tool accumulators separate and rejects irreparable malformed roots", async () => {
+    const { createJsonRecordAccumulator } = await import("./claudeProtocol");
+    const first = createJsonRecordAccumulator(),
+      replacement = createJsonRecordAccumulator();
+    expect(first.append('{"old":')).toBeUndefined();
+    expect(replacement.append('{"new":true}')).toEqual({ new: true });
+    expect(first.append("1}")).toEqual({ old: 1 });
+    for (const input of ["[{}]", '{"x":]}', '{"x":}', "{}{}", "\uFEFF{}"]) {
+      const reader = createJsonRecordAccumulator();
+      expect(reader.append(input)).toBeUndefined();
+      expect(reader.append('{"cannot":"repair"}')).toBeUndefined();
+    }
   });
 });

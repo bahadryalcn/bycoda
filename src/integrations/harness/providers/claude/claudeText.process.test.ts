@@ -360,3 +360,54 @@ it("retires a setup stopped during binary resolution without spawning it or reta
       .every((entry) => entry.handle === replacement),
   ).toBe(true);
 });
+
+it("parses brace-heavy utility tool deltas once without changing original utility callbacks", async () => {
+  mocks.hold = true;
+  const events: Array<{ type: string; callId?: string }> = [];
+  const pending = runClaudeTextPrompt({
+    cwd: "/chief",
+    prompt: "inspect",
+    maxOutputChars: 1000,
+    onEvent: (event) => events.push(event),
+  });
+  await vi.waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+  const line = [...mocks.callbacks.values()][0];
+  const emit = (event: Record<string, unknown>) => line(JSON.stringify(event));
+  emit({
+    type: "stream_event",
+    event: {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "utility-tool", name: "Write", input: {} },
+    },
+  });
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    const delta = (partial_json: string) =>
+      emit({
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json },
+        },
+      });
+    delta('{"file_path":"a.ts","content":"');
+    for (let index = 0; index < 500; index++) delta("}".repeat(20));
+    expect(events.filter((event) => event.type === "tool.updated")).toHaveLength(0);
+    delta('"}');
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "utility-tool"),
+    ).toHaveLength(1);
+    expect(
+      parse.mock.calls.filter(([text]) =>
+        String(text).startsWith('{"file_path":"a.ts","content":"'),
+      ),
+    ).toHaveLength(1);
+  } finally {
+    parse.mockRestore();
+  }
+  emit({ type: "assistant", message: { content: [{ type: "text", text: "done" }] } });
+  emit({ type: "result", subtype: "success", is_error: false });
+  await expect(pending).resolves.toBe("done");
+});

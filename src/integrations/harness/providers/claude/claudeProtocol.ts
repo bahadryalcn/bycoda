@@ -983,6 +983,80 @@ export function tryParseJsonRecord(value: string): Record<string, unknown> | und
   }
 }
 
+/** One original tool's append-only input. Each code unit enters the frontier once.
+ * Full JSON validation runs only after the root closes; string braces never trigger reparses. */
+export function createJsonRecordAccumulator() {
+  const chunks: string[] = [];
+  const closing: string[] = [];
+  let started = false;
+  let inString = false;
+  let escaping = false;
+  let terminal = false;
+  let parsed: Record<string, unknown> | undefined;
+  const whitespace = (char: string) =>
+    char === " " || char === "\t" || char === "\r" || char === "\n";
+  return {
+    append(chunk: string): Record<string, unknown> | undefined {
+      if (terminal) {
+        if (!parsed) return undefined;
+        for (let index = 0; index < chunk.length; index++) {
+          if (!whitespace(chunk[index])) {
+            parsed = undefined;
+            return undefined;
+          }
+        }
+        return parsed;
+      }
+      chunks.push(chunk);
+      for (let index = 0; index < chunk.length; index++) {
+        const char = chunk[index];
+        if (!started) {
+          if (whitespace(char)) continue;
+          if (char !== "{") {
+            terminal = true;
+            chunks.length = 0;
+            return undefined;
+          }
+          started = true;
+          closing.push("}");
+          continue;
+        }
+        if (inString) {
+          if (escaping) escaping = false;
+          else if (char === "\\") escaping = true;
+          else if (char === '"') inString = false;
+          continue;
+        }
+        if (char === '"') inString = true;
+        else if (char === "{" || char === "[") closing.push(char === "{" ? "}" : "]");
+        else if (char === "}" || char === "]") {
+          if (closing.pop() !== char) {
+            terminal = true;
+            chunks.length = 0;
+            return undefined;
+          }
+          if (closing.length) continue;
+          terminal = true;
+          for (let tail = index + 1; tail < chunk.length; tail++) {
+            if (!whitespace(chunk[tail])) {
+              chunks.length = 0;
+              return undefined;
+            }
+          }
+          try {
+            parsed = asRecord(JSON.parse(chunks.join(""))) ?? undefined;
+          } catch {
+            parsed = undefined;
+          }
+          chunks.length = 0;
+          return parsed;
+        }
+      }
+      return undefined;
+    },
+  };
+}
+
 export function taskListFromTodos(input: Record<string, unknown>): TaskListItem[] | null {
   return taskListFromToolInput("TodoWrite", input);
 }
