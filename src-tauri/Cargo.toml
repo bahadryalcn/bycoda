@@ -67,6 +67,7 @@ tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "tra
 portable-pty = { version = "0.9", path = "../vendor/portable-pty" }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
+  "Win32_Networking_WinSock",
   "Win32_Security",
   "Win32_Security_Credentials",
   "Win32_Security_Authorization",

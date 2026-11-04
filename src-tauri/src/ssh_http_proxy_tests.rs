@@ -1,6 +1,54 @@
 use super::*;
 use std::sync::mpsc;
 
+fn readiness_pair() -> (TcpStream, TcpStream) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    (socket, peer)
+}
+
+#[test]
+fn readiness_wait_blocks_idle_tcp_and_accepts_either_original_direction() {
+    let (mut local, mut local_peer) = readiness_pair();
+    let (mut remote, mut remote_peer) = readiness_pair();
+    assert_eq!(wait_tcp_ready(&[(&local, true, false), (&remote, true, false)], Duration::from_millis(20)).unwrap(), 0);
+    remote_peer.write_all(b"r").unwrap();
+    assert!(wait_tcp_ready(&[(&local, true, false), (&remote, true, false)], TLS_READY_SLICE).unwrap() > 0);
+    let mut byte = [0];
+    remote.read_exact(&mut byte).unwrap();
+    assert_eq!(byte, [b'r']);
+    local_peer.write_all(b"l").unwrap();
+    assert!(wait_tcp_ready(&[(&local, true, false), (&remote, true, false)], TLS_READY_SLICE).unwrap() > 0);
+    local.read_exact(&mut byte).unwrap();
+    assert_eq!(byte, [b'l']);
+    assert!(wait_tcp_ready(&[(&local, false, true)], TLS_READY_SLICE).unwrap() > 0);
+}
+
+#[test]
+fn readiness_wait_observes_original_lease_shutdown() {
+    let (socket, _peer) = readiness_pair();
+    let state = Arc::new(State {
+        stopped: AtomicBool::new(false), streams: Mutex::new(Vec::new()),
+        failure: Mutex::new(None), credentials: Mutex::new(None),
+    });
+    state.track(&socket).unwrap();
+    let (entered, waiting) = mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        entered.send(()).unwrap();
+        wait_tcp_ready(&[(&socket, true, false)], TLS_READY_SLICE)
+    });
+    waiting.recv_timeout(Duration::from_secs(1)).unwrap();
+    state.stop();
+    assert!(waiter.join().unwrap().unwrap() > 0);
+}
+
+#[test]
+fn readiness_wait_rejects_missing_interest() {
+    let (socket, _peer) = readiness_pair();
+    assert_eq!(wait_tcp_ready(&[(&socket, false, false)], TLS_READY_SLICE).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+}
+
 fn fixture(
     response: Vec<u8>,
     echo: bool,
