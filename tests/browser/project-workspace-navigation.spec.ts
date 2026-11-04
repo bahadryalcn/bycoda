@@ -95,7 +95,11 @@ test("working sessions and usage meters stay contained in narrow and short works
       expect(lines[1].y).toBeGreaterThanOrEqual(lines[0].bottom);
       expect(Math.abs(lines[0].x - lines[1].x)).toBeLessThan(1);
       await expect(rail.getByRole("button", { name: "Notes", exact: true })).toBeInViewport();
-      await expect(rail.getByRole("button", { name: /^Settings/ }).first()).toBeInViewport();
+      await expect(
+        rail
+          .getByRole("navigation", { name: "Settings", exact: true })
+          .getByRole("button", { name: "Settings", exact: true }),
+      ).toBeInViewport();
       const usage = page.locator("[data-provider-usage]");
       const chips = usage.getByRole("button", { name: /usage details/ });
       await expect(chips).toHaveCount(2);

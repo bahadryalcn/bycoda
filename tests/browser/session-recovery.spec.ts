@@ -45,10 +45,14 @@ for (const theme of ["dark", "light"]) {
           true,
         );
       }
+      const tools = rail.locator('nav[aria-label="Workspace tools"]:visible');
+      await expect(tools.getByRole("button", { name: "Assistant", exact: true })).toBeVisible();
+      await expect(tools.getByRole("button", { name: "Settings", exact: true })).toHaveCount(0);
       const settings = rail
-        .locator('nav[aria-label="Workspace tools"]:visible')
+        .getByRole("navigation", { name: "Settings", exact: true })
         .getByRole("button", { name: "Settings", exact: true });
       await expect(settings).toBeVisible();
+      await expect(settings).toBeInViewport();
       await settings.focus();
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("settings-destination")).toHaveText("general");
