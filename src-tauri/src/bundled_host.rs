@@ -167,12 +167,56 @@ fn read_lifecycle_response(
     serde_json::from_slice(&bytes).map_err(|_| LifecycleProbeError::Unconfirmed)
 }
 
+/// The Node owner keeps this SQLite transaction open for its entire lifetime.
+/// A legacy PID, corrupt record, or unavailable witness cannot prove a stop.
+fn owner_verified_stopped(base: &Path) -> bool {
+    let database = base.join("owner.db");
+    let has_database = match std::fs::metadata(&database) {
+        Ok(info) if info.is_file() => true,
+        Ok(_) => return false,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return false,
+    };
+    let connection = if has_database {
+        let Ok(connection) = rusqlite::Connection::open_with_flags(
+            &database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            return false;
+        };
+        if connection.busy_timeout(Duration::ZERO).is_err()
+            || connection.execute_batch("BEGIN EXCLUSIVE").is_err()
+        {
+            return false;
+        }
+        Some(connection)
+    } else {
+        None
+    };
+    let result = match std::fs::read_to_string(base.join("owner.lock")) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .is_some_and(|value| {
+                has_database
+                    && value.get("version").and_then(serde_json::Value::as_u64) == Some(2)
+                    && value
+                        .get("pid")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|pid| pid > 0)
+            }),
+    };
+    drop(connection);
+    result
+}
+
 pub(crate) fn probe_lifecycle_status(
     base: &Path,
 ) -> Result<(serde_json::Value, serde_json::Value), LifecycleProbeError> {
     use LifecycleProbeError::{Stopped, Unconfirmed};
     let record = std::fs::read_to_string(base.join("running.json")).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
+        if error.kind() == std::io::ErrorKind::NotFound && owner_verified_stopped(base) {
             Stopped
         } else {
             Unconfirmed
@@ -203,7 +247,11 @@ pub(crate) fn probe_lifecycle_status(
                     .downcast_ref::<std::io::Error>()
                     .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused)
                 {
-                    return Stopped;
+                    return if owner_verified_stopped(base) {
+                        Stopped
+                    } else {
+                        Unconfirmed
+                    };
                 }
                 source = cause.source();
             }
@@ -341,6 +389,37 @@ fn host_busy(base: &Path) -> Result<bool, ()> {
         )
         .map(|count| count > 0)
         .map_err(|_| ())
+}
+
+// Existing installations have no durable stop-intent or complete process-tree
+// idle proof. The explicit installer remains available to the owner; automatic
+// maintenance only admits a genuinely fresh profile.
+fn automatic_activity(base: &Path) -> Result<bool, ()> {
+    if !owner_verified_stopped(base) {
+        return Err(());
+    }
+    let entries = std::fs::read_dir(base).map_err(|_| ())?;
+    for entry in entries {
+        let entry = entry.map_err(|_| ())?;
+        if entry.file_name() != "app-install.lock" {
+            return Err(());
+        }
+    }
+    for name in [
+        "runtime-path",
+        "running.json",
+        "service.ps1",
+        "host.db",
+        "owner.db",
+        "owner.lock",
+    ] {
+        match std::fs::metadata(base.join(name)) {
+            Ok(_) => return Err(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(()),
+        }
+    }
+    host_busy(base)
 }
 
 /// A local update coordinator job for the host that is still in progress.
@@ -565,7 +644,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
     let decision = plan(
         installed.as_deref(),
         &bundled,
-        host_busy(&base),
+        automatic_activity(&base),
         job_pending(&base),
         host_healthy(&base),
     );
@@ -799,6 +878,73 @@ mod tests {
         assert_eq!(
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn missing_or_refused_lifecycle_never_overrides_live_or_unknown_owner() {
+        let base = scratch("owner-probe");
+        let db = rusqlite::Connection::open(base.join("owner.db")).unwrap();
+        db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        std::fs::write(base.join("owner.lock"), r#"{"version":2,"pid":123}"#).unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        std::fs::write(
+            base.join("running.json"),
+            format!(r#"{{"port":{port},"secret":"test"}}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        drop(db);
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Stopped)
+        );
+        std::fs::write(base.join("owner.lock"), "not valid").unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::write(base.join("owner.lock"), "123").unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn automatic_updates_admit_fresh_only_and_preserve_installed_stop_intent() {
+        let base = scratch("automatic-authority");
+        assert_eq!(automatic_activity(&base), Ok(false));
+        assert_eq!(
+            plan(None, "0.6.75", automatic_activity(&base), false, false),
+            Plan::Install
+        );
+        std::fs::write(base.join("runtime-path"), "stopped-runtime").unwrap();
+        for installed in [None, Some("0.6.74"), Some("0.6.75")] {
+            assert!(matches!(
+                plan(installed, "0.6.75", automatic_activity(&base), false, false),
+                Plan::Deferred(_)
+            ));
+        }
+        // Owner-directed repair/upgrade retains the existing verified-idle plan.
+        assert_eq!(
+            plan(Some("0.6.75"), "0.6.75", Ok(false), false, false),
+            Plan::Repair
+        );
+        assert_eq!(
+            plan(Some("0.6.74"), "0.6.75", Ok(false), false, false),
+            Plan::Upgrade
         );
         std::fs::remove_dir_all(base).unwrap();
     }

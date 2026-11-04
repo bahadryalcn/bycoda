@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { Worker } from "node:worker_threads";
 import {
   copyFileSync,
   cpSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
   readlinkSync,
   renameSync,
@@ -179,6 +179,75 @@ async function registrations(cwd: string) {
   });
 }
 
+/** A negative result only rejects automatic retention; it never authorizes removal. */
+export async function retentionSourceClean(path: string): Promise<boolean> {
+  const status = await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  if (status) return false;
+  const ignored = await git(path, [
+    "ls-files",
+    "-z",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+  ]);
+  return !ignored
+    .split("\0")
+    .filter(Boolean)
+    .some(
+      (file) =>
+        !file.split(/[\\/]/).includes("node_modules") &&
+        file !== "temp/" &&
+        !file.startsWith("temp/"),
+    );
+}
+
+// Serialize CPU/IO-heavy scans and bound both worker lifetime and queued admission.
+let fingerprintPending = 0;
+let fingerprintTail: Promise<void> = Promise.resolve();
+async function fingerprintSource(data: Record<string, unknown>): Promise<string> {
+  if (fingerprintPending >= 16) throw new Error("Cleanup fingerprint capacity exceeded; retry.");
+  fingerprintPending++;
+  const previous = fingerprintTail;
+  let release!: () => void;
+  fingerprintTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await previous;
+    const worker = new Worker(new URL("./workspace-cleanup-worker.mjs", import.meta.url), {
+      workerData: data,
+    });
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("Cleanup fingerprint timed out.")),
+          120_000,
+        );
+        worker.once("message", (result: { fingerprint?: string; error?: string }) => {
+          clearTimeout(timer);
+          if (result.error || !result.fingerprint)
+            reject(new Error(result.error ?? "Cleanup fingerprint failed."));
+          else resolve(result.fingerprint);
+        });
+        worker.once("error", (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        worker.once("exit", (code) => {
+          clearTimeout(timer);
+          reject(new Error(`Cleanup fingerprint worker exited (${code}).`));
+        });
+      });
+    } finally {
+      await worker.terminate();
+    }
+  } finally {
+    fingerprintPending--;
+    release();
+  }
+}
+
 async function sourceState(path: string, detachedLinks = new Map<string, string>()) {
   // A failed status is propagated, never converted to a clean result.
   const status = (await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]))
@@ -190,7 +259,6 @@ async function sourceState(path: string, detachedLinks = new Map<string, string>
   const files = (await git(path, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]))
     .split("\0")
     .filter(Boolean);
-  const hash = createHash("sha256").update(head).update(branch).update(status);
   const ignored = (
     await git(path, [
       "ls-files",
@@ -209,42 +277,24 @@ async function sourceState(path: string, detachedLinks = new Map<string, string>
         file !== "temp/" &&
         !file.startsWith("temp/"),
     );
-  // Unknown ignored inputs may be private source. Only known dependency/evidence
-  // directories are disposable; everything else requires owner preservation.
-  const addPrivateFiles = (file: string) => {
-    const full = resolve(path, file);
-    if (!inside(path, full)) throw new Error("Unsafe ignored source path.");
-    const info = lstatSync(full);
-    if (info.isDirectory()) {
-      for (const name of readdirSync(full)) {
-        if (name === ".git")
-          throw new Error("Nested repository requires private recovery support.");
-        if (name !== "node_modules") addPrivateFiles(join(file, name));
-      }
-    } else files.push(file);
-  };
-  for (const file of ignored) addPrivateFiles(file);
   const index = (
     await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
   ).trim();
-  if (exists(index)) hash.update(readFileSync(index));
-  for (const file of [...new Set(files)].sort()) {
-    const full = resolve(path, file);
-    if (!inside(path, full)) throw new Error("Unsafe source path.");
-    // Never read a tracked path through an ancestor link.
-    assertNoFollowPath(path, dirname(full) === path ? join(path, "__validation__") : dirname(full));
-    const info = lstatSync(full, { throwIfNoEntry: false });
-    hash.update(file).update("\0");
-    if (info?.isSymbolicLink()) hash.update(readlinkSync(full));
-    else if (info?.isFile()) hash.update(readFileSync(full));
-    else if (info) throw new Error("Unsupported source entry requires private recovery support.");
-    else hash.update(detachedLinks.get(file) ?? "missing");
-  }
+  const fingerprint = await fingerprintSource({
+    path,
+    files,
+    ignored,
+    index,
+    head,
+    branch,
+    status,
+    detachedLinks: [...detachedLinks],
+  });
   return {
     status: status || (ignored.length ? "ignored-private-inputs" : ""),
     head,
     branch,
-    fingerprint: hash.digest("hex"),
+    fingerprint,
   };
 }
 

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -273,4 +275,177 @@ it("cancels a queued cross-process build lease without entering or removing the 
   expect(build).not.toHaveBeenCalled();
   release();
   await first;
+});
+
+it("recovers a matching abandoned generation once, even when its PID was reused", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const nonce = "2b6a8d07-d77b-4b05-a00d-7fb50a91aa01";
+  const db = new DatabaseSync(join(target, ".bycoda-build-lease.db"));
+  db.prepare("UPDATE lease_generation SET nonce=? WHERE id=1").run(nonce);
+  db.close();
+  await writeFile(
+    join(target, ".bycoda-build-lease"),
+    JSON.stringify({ version: 2, phase: "owned", nonce, pid: process.pid, workspaceId: "old" }),
+  );
+  let active = 0;
+  let maximum = 0;
+  const build = async () => {
+    maximum = Math.max(maximum, ++active);
+    await new Promise((done) => setTimeout(done, 30));
+    active--;
+  };
+  await Promise.all([
+    service.withBuildCache("workspace", new AbortController().signal, build),
+    service.withBuildCache("workspace", new AbortController().signal, build),
+  ]);
+  expect(maximum).toBe(1);
+});
+
+it.each(["empty temporary", "synced temporary", "committed generation", "published sentinel"])(
+  "recovers safely after interruption at %s",
+  async (phase) => {
+    const root = await fixture();
+    const service = new WorkspaceBootstrapService({
+      resolveWorkspace: async () => root,
+      buildLeasePollMs: 10,
+    });
+    const target = await service.withBuildCache(
+      "workspace",
+      new AbortController().signal,
+      async (env) => env.cargoTargetDir,
+    );
+    const nonce = "2b6a8d07-d77b-4b05-a00d-7fb50a91aa03";
+    const owner = JSON.stringify({ version: 2, nonce, pid: process.pid, workspaceId: "old" });
+    await writeFile(
+      join(target, `.bycoda-build-lease-${nonce}.tmp`),
+      phase === "empty temporary" ? "" : owner,
+    );
+    if (phase === "committed generation" || phase === "published sentinel") {
+      const db = new DatabaseSync(join(target, ".bycoda-build-lease.db"));
+      db.exec("PRAGMA synchronous=FULL");
+      db.prepare("UPDATE lease_generation SET nonce=? WHERE id=1").run(nonce);
+      db.close();
+    }
+    if (phase === "published sentinel") await writeFile(join(target, ".bycoda-build-lease"), owner);
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async () => "built"),
+    ).resolves.toBe("built");
+  },
+);
+
+it("waits for a live kernel witness and recovers after its process exits", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const nonce = "2b6a8d07-d77b-4b05-a00d-7fb50a91aa02";
+  const dbPath = join(target, ".bycoda-build-lease.db");
+  const db = new DatabaseSync(dbPath);
+  db.prepare("UPDATE lease_generation SET nonce=? WHERE id=1").run(nonce);
+  db.close();
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      "const {DatabaseSync}=require('node:sqlite'); const d=new DatabaseSync(process.argv[1]); d.exec('BEGIN EXCLUSIVE'); process.stdout.write('ready'); setInterval(()=>{},1000)",
+      dbPath,
+    ],
+    { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
+  );
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.once("data", () => resolve());
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error("witness exited early")));
+  });
+  await writeFile(
+    join(target, ".bycoda-build-lease"),
+    JSON.stringify({ version: 2, phase: "owned", nonce, pid: child.pid, workspaceId: "old" }),
+  );
+  const build = vi.fn(async () => {});
+  const waiting = service.withBuildCache("workspace", new AbortController().signal, build);
+  try {
+    await new Promise((done) => setTimeout(done, 50));
+    expect(build).not.toHaveBeenCalled();
+  } finally {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill();
+    await exited;
+  }
+  await waiting;
+  expect(build).toHaveBeenCalledOnce();
+});
+
+it("holds an uncertain generation when its callback fails with a surviving child", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  let target = "";
+  try {
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async (environment) => {
+        target = environment.cargoTargetDir;
+        throw new Error("builder connection lost");
+      }),
+    ).rejects.toThrow("builder connection lost");
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+    ).rejects.toThrow("previous build completion is unknown");
+    expect(child.exitCode).toBeNull();
+    await unlink(join(target, ".bycoda-build-lease"));
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+    ).rejects.toThrow("previous build completion is unknown");
+  } finally {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill();
+    await exited;
+  }
+});
+
+it.each([
+  "corrupt",
+  JSON.stringify({ pid: 123 }),
+  JSON.stringify({ version: 2, phase: "owned", nonce: "wrong", pid: 123, workspaceId: "old" }),
+])("retains unknown sentinel %s when a waiter is cancelled", async (sentinel) => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const path = join(target, ".bycoda-build-lease");
+  await writeFile(path, sentinel);
+  const abort = new AbortController();
+  const build = vi.fn(async () => {});
+  const waiting = service.withBuildCache("workspace", abort.signal, build);
+  await new Promise((done) => setTimeout(done, 50));
+  abort.abort();
+  await expect(waiting).rejects.toBeDefined();
+  expect(await readFile(path, "utf8")).toBe(sentinel);
+  expect(build).not.toHaveBeenCalled();
 });

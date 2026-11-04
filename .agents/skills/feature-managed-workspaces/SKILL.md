@@ -28,6 +28,7 @@ Code paths below are repository-root relative.
 - Current checkout is the default; explicit/stored worktree choices remain valid. Existing sessions retain execution identity. A worktree failure never silently falls back to current/main.
 - Current-checkout work preserves concurrent dirty/staged state; managed writers retain their assigned owner/path. Directory retirement is distinct from branch deletion.
 - Active, dirty, unknown or in-use state blocks automatic cleanup. Preserve rescue refs, journals, retry identity, exact rewind/Undo and unrelated new work.
+- Retention preflight can reject dirty or private inputs early, but reviewed removal still binds the complete worker-computed fingerprint and revalidates it. A build-cache generation with unknown physical completion stays held even if its sentinel disappears; do not infer child-process exit from Host exit.
 - Removal fixes a canonical boundary and checks descendants without following links. Never remove a junction target or another workspace to satisfy a check.
 - Owner-reviewed delivery binds exact source/target identities and preserves unrelated target edits. Task completion or a tool response does not authorize merge/push/publication.
 - General managed capability does not establish native turn/buffer/rewind capability. Missing source/build/idle reads are unknown, not safe.

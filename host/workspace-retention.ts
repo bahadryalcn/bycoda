@@ -55,6 +55,7 @@ export interface WorkspaceRetentionDependencies {
   get(workspaceId: string): Promise<ManagedWorkspace>;
   policy(workspace: ManagedWorkspace): Promise<WorkspacePolicy>;
   removal: Pick<WorkspaceRemovalService, "plan" | "apply">;
+  sourceClean?(workspace: ManagedWorkspace): Promise<boolean>;
   now?: () => number;
   onError?: (error: unknown) => void;
 }
@@ -79,6 +80,8 @@ export function createWorkspaceRetentionScheduler(deps: WorkspaceRetentionDepend
           const workspace = await deps.get(candidate.id);
           const policy = await deps.policy(workspace);
           if (!workspaceRetentionEligibility(workspace, policy, now()).eligible) continue;
+          if (deps.sourceClean && !(await deps.sourceClean(workspace)))
+            throw new Error("Cleanup blocked: uncommitted changes");
           const plan = await deps.removal.plan({
             workspaceId: workspace.id,
             expectedRevision: workspace.revision,

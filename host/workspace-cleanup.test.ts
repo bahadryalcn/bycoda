@@ -2,6 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "./store";
 import * as processExecution from "../src/shared/lib/processExecution.node";
 import { execFileSync } from "node:child_process";
+import { Worker } from "node:worker_threads";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -20,6 +22,7 @@ import {
   createWorkspaceRemovalService,
   guardedRemoveWorkspace,
   inventoryWorkspaceLinks,
+  retentionSourceClean,
 } from "./workspace-cleanup";
 import type {
   ManagedWorkspace,
@@ -29,6 +32,59 @@ import type {
 import type { WorkspaceCleanupDependencies } from "./workspace-cleanup";
 
 const roots: string[] = [];
+
+it("rejects dirty and ignored private inputs before retention planning", async () => {
+  const s = await setup();
+  expect(await retentionSourceClean(s.path)).toBe(true);
+  writeFileSync(join(s.path, "source.txt"), "changed");
+  expect(await retentionSourceClean(s.path)).toBe(false);
+  writeFileSync(join(s.path, "source.txt"), "initial");
+  writeFileSync(join(s.path, ".gitignore"), "/temp/\n/node_modules\n/private.bin\n");
+  git(s.path, "add", ".gitignore");
+  git(s.path, "commit", "-q", "-m", "ignore private");
+  writeFileSync(join(s.path, "private.bin"), Buffer.alloc(1024 * 1024));
+  expect(await retentionSourceClean(s.path)).toBe(false);
+});
+
+it("hashes large clean content in a worker without blocking timers", async () => {
+  const s = await setup();
+  const bytes = Buffer.alloc(64 * 1024 * 1024, 42);
+  writeFileSync(join(s.path, "large.bin"), bytes);
+  const expected = createHash("sha256")
+    .update("head")
+    .update("branch")
+    .update("")
+    .update("large.bin\0")
+    .update(bytes)
+    .digest("hex");
+  const worker = new Worker(new URL("./workspace-cleanup-worker.mjs", import.meta.url), {
+    workerData: {
+      path: s.path,
+      files: ["large.bin"],
+      ignored: [],
+      index: join(s.root, "missing-index"),
+      head: "head",
+      branch: "branch",
+      status: "",
+      detachedLinks: [],
+    },
+  });
+  let ticked = false;
+  const timer = setTimeout(() => {
+    ticked = true;
+  }, 0);
+  try {
+    const result = await new Promise<{ fingerprint: string }>((resolve, reject) => {
+      worker.once("message", resolve);
+      worker.once("error", reject);
+    });
+    expect(ticked).toBe(true);
+    expect(result.fingerprint).toBe(expected);
+  } finally {
+    clearTimeout(timer);
+    await worker.terminate();
+  }
+});
 
 it("retains revoked removal's original failure and durable blocked ledger without restarting filesystem work", async () => {
   const s = await setup();

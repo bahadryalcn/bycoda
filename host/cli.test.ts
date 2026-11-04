@@ -53,7 +53,12 @@ it(
         '\nif (process.argv[2] === "serve") setInterval(() => {}, 60_000);\n',
     );
     // The detached bundle resolves SQLite and Notes workers relative to itself.
-    for (const sidecar of ["store-worker.mjs", "host-notes-worker.mjs", "provider-guard.mjs"]) {
+    for (const sidecar of [
+      "store-worker.mjs",
+      "host-notes-worker.mjs",
+      "provider-guard.mjs",
+      "workspace-cleanup-worker.mjs",
+    ]) {
       copyFileSync(join(dirname(sourceBundle), sidecar), join(directory, sidecar));
     }
     const run = (...args: string[]) =>
@@ -82,6 +87,19 @@ it(
       const runningPath = join(directory, "running.json");
       const originalRunning = readFileSync(runningPath);
       try {
+        const stalled = createServer((socket) => socket.resume());
+        await new Promise<void>((resolve, reject) => {
+          stalled.once("error", reject);
+          stalled.listen(0, "127.0.0.1", resolve);
+        });
+        try {
+          const state = JSON.parse(originalRunning.toString("utf8"));
+          state.port = (stalled.address() as AddressInfo).port;
+          writeFileSync(runningPath, JSON.stringify(state));
+          await expect(run("status")).rejects.toThrow("still owns");
+        } finally {
+          await new Promise<void>((resolve) => stalled.close(() => resolve()));
+        }
         writeFileSync(runningPath, "{broken");
         await expect(run("status")).rejects.toThrow("still owns");
         await expect(run("stop")).rejects.toThrow("still owns");

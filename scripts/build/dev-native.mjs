@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DevPortLeases } from "../../host/dev-port-leases.ts";
 import {
   WorkspaceBootstrapService,
+  BuildCacheSettledFailure,
   workspaceEnvironmentVariables,
 } from "../../host/workspace-bootstrap.ts";
 import { sourceIdentity, fingerprintFiles, parseBuildIdentity } from "./build-info.mjs";
@@ -161,6 +162,19 @@ export async function completed(child) {
   if (child.exitCode !== 0)
     throw new Error(childFailureMessage(child, `Build command failed (${child.exitCode})`));
   return child.failure.trim();
+}
+
+export async function completedCargoBuild(child) {
+  try {
+    return await completed(child);
+  } catch (error) {
+    // A numeric, unsignalled Cargo exit after stdio close is the same command
+    // completion boundary used on success. Spawn failures and interrupted
+    // commands retain the unknown-effect fence.
+    if (!child.spawnError && child.signalCode === null && Number.isInteger(child.exitCode))
+      throw new BuildCacheSettledFailure(error);
+    throw error;
+  }
 }
 
 export async function stopChildren(children) {
@@ -471,22 +485,26 @@ export async function runNativeDev(args = process.argv.slice(2)) {
           async ({ cargoTargetDir: leasedCargoTargetDir, cargoHome }) => {
             const cargoTargetDir = explicitCargoTarget ?? leasedCargoTargetDir;
             await mkdir(cargoTargetDir, { recursive: true });
-            await completed(
+            await completedCargoBuild(
               launch("cargo", ["build", "--manifest-path", join(root, "src-tauri", "Cargo.toml")], {
                 ...env,
                 CARGO_TARGET_DIR: cargoTargetDir,
                 CARGO_HOME: cargoHome,
               }),
             );
-            return bootstrap.copyExecutable({
-              workspaceId,
-              runId: lease.runId,
-              sourcePath: join(
-                cargoTargetDir,
-                "debug",
-                process.platform === "win32" ? "bycoda.exe" : "bycoda",
-              ),
-            });
+            try {
+              return await bootstrap.copyExecutable({
+                workspaceId,
+                runId: lease.runId,
+                sourcePath: join(
+                  cargoTargetDir,
+                  "debug",
+                  process.platform === "win32" ? "bycoda.exe" : "bycoda",
+                ),
+              });
+            } catch (error) {
+              throw new BuildCacheSettledFailure(error);
+            }
           },
         );
         if (JSON.stringify(await readSource()) !== JSON.stringify(source))

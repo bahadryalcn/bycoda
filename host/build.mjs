@@ -27,6 +27,11 @@ await build({
 await copyFile("host/provider-guard.mjs", "build/host/provider-guard.mjs");
 await build({
   ...options,
+  entryPoints: ["host/workspace-cleanup-worker.mjs"],
+  outfile: "build/host/workspace-cleanup-worker.mjs",
+});
+await build({
+  ...options,
   entryPoints: ["host/host-notes-worker.mjs"],
   outfile: "build/host/host-notes-worker.mjs",
 });

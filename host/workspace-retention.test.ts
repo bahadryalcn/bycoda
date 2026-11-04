@@ -47,7 +47,7 @@ const workspace = (changes: Partial<ManagedWorkspace> = {}): ManagedWorkspace =>
   ...changes,
 });
 const policy = (): WorkspacePolicy => structuredClone(DEFAULT_WORKSPACE_POLICY);
-function schedulerFixture(initial = workspace()) {
+function schedulerFixture(initial = workspace(), sourceClean?: () => Promise<boolean>) {
   let current = initial;
   const plan = vi.fn<WorkspaceRemovalService["plan"]>(
     async () =>
@@ -80,6 +80,7 @@ function schedulerFixture(initial = workspace()) {
     get: async () => structuredClone(current),
     policy: async () => activePolicy,
     removal: { plan, apply },
+    sourceClean,
     now: () => now,
   });
   return {
@@ -92,6 +93,21 @@ function schedulerFixture(initial = workspace()) {
     },
   };
 }
+
+it("skips full cleanup planning when retention preflight rejects or fails", async () => {
+  for (const sourceClean of [
+    async () => false,
+    async () => {
+      throw new Error("git failed");
+    },
+  ]) {
+    const fixture = schedulerFixture(workspace(), sourceClean);
+    const result = await fixture.scheduler.run({ trigger: "hourly" });
+    expect(result.blocked).toHaveLength(1);
+    expect(fixture.plan).not.toHaveBeenCalled();
+    expect(fixture.apply).not.toHaveBeenCalled();
+  }
+});
 
 describe("retention eligibility", () => {
   it.each([

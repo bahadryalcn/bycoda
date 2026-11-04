@@ -17,6 +17,7 @@ import { createWorkspaceFeatureClaims } from "./feature-claims";
 import {
   createExecutionActivityReservations,
   createWorkspaceRemovalService,
+  retentionSourceClean,
 } from "./workspace-cleanup";
 import {
   createWorkspaceRetentionScheduler,
@@ -270,6 +271,7 @@ export function createManagedWorkspaceRuntime(
     get,
     policy: currentPolicy,
     removal,
+    sourceClean: (workspace) => retentionSourceClean(workspace.path),
     onError: () => console.warn("Managed workspace retention is pending"),
   });
   for (const action of ["finish", "close"] as const) {

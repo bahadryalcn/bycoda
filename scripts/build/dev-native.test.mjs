@@ -10,11 +10,39 @@ import {
   reuseNativeDevProfile,
   supervisedChild,
   completed,
+  completedCargoBuild,
   stopChildren,
   waitForNativePage,
   frozenSourceIdentity,
 } from "./dev-native.mjs";
+import { WorkspaceBootstrapService } from "../../host/workspace-bootstrap.ts";
 import { fingerprintFiles } from "./build-info.mjs";
+
+test("a normally closed failing build releases its cache for a retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bycoda-build-failure-"));
+  const children = new Set();
+  try {
+    const service = new WorkspaceBootstrapService({ resolveWorkspace: async () => root });
+    await assert.rejects(
+      service.withBuildCache("workspace", new AbortController().signal, async () => {
+        const child = supervisedChild(process.execPath, ["-e", "process.exitCode=3"], {
+          cwd: root,
+          env: process.env,
+          children,
+        });
+        return completedCargoBuild(child);
+      }),
+      /Build command failed \(3\)/,
+    );
+    assert.equal(
+      await service.withBuildCache("workspace", new AbortController().signal, async () => "retry"),
+      "retry",
+    );
+  } finally {
+    await stopChildren(children);
+    await rm(root, { recursive: true, force: true });
+  }
+});
 import { loopbackUrl, screenshotOptions, verifyNativeIdentity } from "./dev-shot.mjs";
 
 test("frozen native builds verify original source bytes and reject tampering or path escape without Git", async () => {

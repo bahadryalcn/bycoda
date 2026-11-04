@@ -62,6 +62,7 @@ async function fixture(t) {
     "host-notes-worker",
     "store-worker",
     "snapshot-worker",
+    "workspace-cleanup-worker",
   ])
     files[`build/host/${name}.mjs`] = `// ${name}\n`;
   for (const [name, bytes] of Object.entries(files)) {

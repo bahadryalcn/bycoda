@@ -108,6 +108,7 @@ export function validateCommonArtifact(candidate, artifact) {
     "build/host/host-notes-worker.mjs",
     "build/host/store-worker.mjs",
     "build/host/snapshot-worker.mjs",
+    "build/host/workspace-cleanup-worker.mjs",
   ])
     assert(seen.has(required), `Missing common output: ${required}`);
   const actual = [

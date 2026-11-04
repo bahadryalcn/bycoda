@@ -244,6 +244,10 @@ for (const target of targets) {
   await copyFile("build/host/host-notes-worker.mjs", join(folder, "host-notes-worker.mjs"));
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("build/host/snapshot-worker.mjs", join(folder, "snapshot-worker.mjs"));
+  await copyFile(
+    "build/host/workspace-cleanup-worker.mjs",
+    join(folder, "workspace-cleanup-worker.mjs"),
+  );
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
   if (desktopHelpers.has(target)) {
     const expected = desktopHelpers.get(target),

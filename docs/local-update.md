@@ -215,6 +215,10 @@ recovery from an exited host whose state file remains.
 If the registered Windows host PID has already exited, installation may proceed
 after idle database and stopped-service checks. If the PID still runs, a lifecycle
 failure blocks installation. A connection error is not evidence that the host is idle.
+The desktop's automatic bundled-Host installer admits a fresh, empty profile only.
+For an existing profile it cannot prove all activity owners or distinguish an
+intentional stop from a failure, so it defers automatic repair and upgrades. The
+owner-directed update coordinator retains its separate admission and recovery checks.
 
 Database backups have a 15-second limit and release their connections. The app
 closes after its active turn ends. Verify the macOS bundle signature/version,

@@ -136,6 +136,15 @@ ownership, canonical path, branch/HEAD, clean source and activity checks precede
 removal. Failed status reads mean unknown. Dirty work blocks automatic cleanup;
 an explicit owner plan must bind the observed fingerprint and preserve source
 state before removal. Unknown directories and main are never cleanup targets.
+Retention rejects known dirty or private ignored inputs before full fingerprinting.
+The complete fingerprint runs in a bounded worker and remains mandatory for an
+owner review and revalidation. Build-cache leases retain an unknown-effect fence
+after interrupted build execution, including when the sentinel is missing. The
+current implementation cannot automatically prove an orphaned compiler tree has
+exited; it reports the held state instead of reclaiming that cache.
+The development supervisor accepts a normally closed Cargo command as its
+completion boundary, including a nonzero exit; it does not establish that an
+independently detached descendant has exited.
 
 Default disk policy is 50 GiB for materialized directories, an 80% warning and
 20 GiB minimum free space. Shared caches and recovery objects are reported
