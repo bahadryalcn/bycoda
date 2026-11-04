@@ -1160,7 +1160,7 @@ export function ProgramSetupForm({
                   run(async () => {
                     const result = await client.request<{ dates: number[] }>(
                       "programs.preview-schedule",
-                      { config },
+                      { config, ...(edit ? { id: edit.id } : {}) },
                     );
                     setPreview(result.dates);
                   }),

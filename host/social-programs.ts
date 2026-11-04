@@ -524,8 +524,10 @@ export class SocialPrograms {
       const c = parseProgramConfig(input.config);
       await this.allowed(actor, c, true);
       await this.checkConfig(c);
+      const program = input.id ? await this.get(input.id) : undefined;
+      if (program) await this.allowed(actor, program);
       return {
-        dates: previewProgramSchedule(c.schedule, c.totalPosts ?? 10),
+        dates: previewProgramSchedule(c.schedule, c.totalPosts ?? 10, program?.id),
         logicalPosts: c.totalPosts,
         accountPublications: c.totalPosts === null ? null : c.totalPosts * c.accountIds.length,
       };

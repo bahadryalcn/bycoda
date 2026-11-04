@@ -180,11 +180,11 @@ export function nextProgramSlot(s: ProgramSchedule, earliest: number): number | 
 export function followingProgramSlot(
   s: ProgramSchedule,
   previous: number,
-  _id: string,
+  id: string,
   sequence: number,
 ) {
   const seed = createHash("sha256")
-    .update(`${s.minIntervalMinutes}:${s.maxIntervalMinutes}:${sequence}`)
+    .update(JSON.stringify([id, s.minIntervalMinutes, s.maxIntervalMinutes, sequence]))
     .digest()
     .readUInt32BE(0);
   const delta =
@@ -193,12 +193,12 @@ export function followingProgramSlot(
       : 1;
   return nextProgramSlot(s, previous + delta * MINUTE);
 }
-export function previewProgramSchedule(s: ProgramSchedule, count = 10) {
+export function previewProgramSchedule(s: ProgramSchedule, count = 10, id = "preview") {
   const dates: number[] = [];
   let at = nextProgramSlot(s, s.startsAt);
   for (let i = 0; i < Math.min(count, 50) && at !== undefined; i++) {
     dates.push(at);
-    at = followingProgramSlot(s, at, "preview", i + 1);
+    at = followingProgramSlot(s, at, id, i + 1);
   }
   return dates;
 }
