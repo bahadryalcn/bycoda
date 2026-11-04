@@ -641,6 +641,9 @@ function VirtualRows({
   const codeRightRef = useRef<HTMLDivElement | null>(null);
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
   const hover = useRef<DiffHover | null>(null);
+  const hoverNodes = useRef(new Map<string, HTMLElement[]>());
+  const hoverActions = useRef(new Map<HTMLElement, HTMLElement[]>());
+  const markedHoverNodes = useRef<HTMLElement[]>([]);
   const [commentTarget, setCommentTarget] = useState<DiffCommentDraft | null>(null);
   const rows = useMemo(
     () =>
@@ -723,7 +726,7 @@ function VirtualRows({
       const body = bodyRef.current;
       const mark = (next: DiffHover | null) => {
         const syncActions = (node: HTMLElement) => {
-          for (const action of node.querySelectorAll<HTMLElement>("[data-gutter-action]")) {
+          for (const action of hoverActions.current.get(node) ?? []) {
             const pointerSelected =
               node.dataset.pointerRow === "true" &&
               (action.dataset.gutterAction === "stage" || node.dataset.pointerHover === "true");
@@ -735,20 +738,20 @@ function VirtualRows({
         };
         if (hover.current?.key === next?.key && hover.current?.side === next?.side) {
           // A comment draft may have closed since the last pointer movement.
-          for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? [])
+          for (const node of markedHoverNodes.current)
             syncActions(node);
           return;
         }
         hover.current = next;
-        for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) {
+        for (const node of markedHoverNodes.current) {
           node.dataset.pointerRow = "false";
           node.dataset.pointerHover = "false";
           syncActions(node);
         }
+        markedHoverNodes.current = [];
         if (!next || !body) return;
-        for (const node of body.querySelectorAll<HTMLElement>(
-          `[data-diff-hover-key="${CSS.escape(next.key)}"]`,
-        )) {
+        markedHoverNodes.current = hoverNodes.current.get(next.key) ?? [];
+        for (const node of markedHoverNodes.current) {
           node.dataset.pointerRow = "true";
           node.dataset.pointerHover =
             !splitRows || node.dataset.diffSide === next.side ? "true" : "false";
@@ -779,6 +782,26 @@ function VirtualRows({
     },
     [range.end, range.padTop, range.start, rows, sizedRows, splitRows],
   );
+
+  // DOM membership changes on commit, not on every pointer movement. Keep only
+  // currently mounted rows/actions so virtual windows and comment drafts refresh it.
+  useLayoutEffect(() => {
+    const nodes = new Map<string, HTMLElement[]>();
+    const actions = new Map<HTMLElement, HTMLElement[]>();
+    const marked: HTMLElement[] = [];
+    for (const node of bodyRef.current?.querySelectorAll<HTMLElement>("[data-diff-hover-key]") ?? []) {
+      const key = node.dataset.diffHoverKey!;
+      const group = nodes.get(key) ?? [];
+      group.push(node);
+      nodes.set(key, group);
+      actions.set(node, [...node.querySelectorAll<HTMLElement>("[data-gutter-action]")]);
+      if (node.dataset.pointerRow === "true") marked.push(node);
+    }
+    hoverNodes.current = nodes;
+    hoverActions.current = actions;
+    markedHoverNodes.current = marked;
+    if (!marked.length) hover.current = null;
+  });
 
   useLayoutEffect(() => {
     if (!near) return;
@@ -960,6 +983,7 @@ function VirtualRows({
       ) : null}
       <div
         ref={bodyRef}
+        data-diff-body
         className="flex"
         onMouseMove={(event) => {
           mouseRef.current = { x: event.clientX, y: event.clientY };
