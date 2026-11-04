@@ -6143,7 +6143,7 @@ fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) 
 /// How long a push, pull or fetch may run before it is stopped. A stuck
 /// credential helper would otherwise hold the Changes panel busy for good.
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
-const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn git_is_network_command(args: &[&str]) -> bool {
     matches!(args.first().copied(), Some("push" | "pull" | "fetch"))
@@ -6427,6 +6427,330 @@ pub(crate) fn git_output(root: &Path, args: &[&str]) -> Option<Vec<u8>> {
 /// a reader parked in `send`. A reader parked in `read` instead is a different
 /// case, and `stop` explains why that one is left detached.
 const GIT_OUTPUT_QUEUE_CHUNKS: usize = 16;
+const MAX_GIT_STREAMS: usize = 4;
+static ACTIVE_GIT_STREAMS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static ACTIVE_NESTED_GIT_STREAMS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+struct GitStreamLease(&'static std::sync::atomic::AtomicUsize);
+impl GitStreamLease {
+    fn acquire(nested: bool) -> Result<Arc<Self>, String> {
+        let counter = if nested {
+            &ACTIVE_NESTED_GIT_STREAMS
+        } else {
+            &ACTIVE_GIT_STREAMS
+        };
+        let mut active = counter.load(Ordering::Acquire);
+        loop {
+            if active >= MAX_GIT_STREAMS {
+                return Err("Git stream capacity is unavailable".into());
+            }
+            match counter.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(Arc::new(Self(counter))),
+                Err(actual) => active = actual,
+            }
+        }
+    }
+}
+impl Drop for GitStreamLease {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Stream a local Git command without retaining its output. A separate owner
+/// enforces the deadline even while the consumer validates a streamed record.
+pub(crate) fn git_stream_output(
+    root: &Path,
+    args: &[&str],
+    deadline: Instant,
+    nested: bool,
+    consume: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut command = git_cmd();
+    command
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    git_stream_command(command, deadline, nested, consume)
+}
+
+fn git_stream_command(
+    mut command: Command,
+    deadline: Instant,
+    nested: bool,
+    mut consume: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    if Instant::now() >= deadline {
+        return Err("Git output timed out".into());
+    }
+    let lease = GitStreamLease::acquire(nested)?;
+    let turn = GIT_SPAWN_GATE
+        .enter_cancellable(None)
+        .ok_or("Git startup unavailable")?;
+    if Instant::now() >= deadline {
+        return Err("Git output timed out".into());
+    }
+    let mut child = command.spawn().map_err(|_| "Could not start Git")?;
+    drop(turn);
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        if child.wait().is_err() {
+            std::mem::forget(lease);
+            return Err("Git process retirement is unknown".into());
+        }
+        return Err("Could not read Git output".into());
+    };
+    let (chunks_tx, chunks_rx) = mpsc::sync_channel(GIT_OUTPUT_QUEUE_CHUNKS);
+    let reader_lease = Arc::clone(&lease);
+    let reader = thread::Builder::new()
+        .name("git-stream-reader".into())
+        .spawn(move || {
+            let _lease = reader_lease;
+            let mut chunk = vec![0u8; 8192];
+            loop {
+                match stdout.read(&mut chunk) {
+                    Ok(0) => {
+                        let _ = chunks_tx.send(Ok(Vec::new()));
+                        break;
+                    }
+                    Ok(count) => {
+                        if chunks_tx.send(Ok(chunk[..count].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = chunks_tx.send(Err(error));
+                        break;
+                    }
+                }
+            }
+        });
+    if reader.is_err() {
+        let _ = child.kill();
+        if child.wait().is_err() {
+            std::mem::forget(lease);
+            return Err("Git process retirement is unknown".into());
+        }
+        return Err("Could not start Git output reader".into());
+    }
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    let child = Arc::new(Mutex::new(child));
+    let owned_child = Arc::clone(&child);
+    let owner_lease = Arc::clone(&lease);
+    let owner = thread::Builder::new()
+        .name("git-stream-owner".into())
+        .spawn(move || {
+            let lease = owner_lease;
+            let Ok(mut child) = owned_child.lock() else {
+                std::mem::forget(lease);
+                let _ = done_tx.send(Err("Git process owner unavailable".into()));
+                return;
+            };
+            let result = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        break if status.success() {
+                            Ok(())
+                        } else {
+                            Err("Git command failed".to_string())
+                        }
+                    }
+                    Err(_) => {
+                        let _ = child.kill();
+                        if child.wait().is_err() {
+                            std::mem::forget(lease);
+                            break Err("Git process retirement is unknown".into());
+                        }
+                        break Err("Could not wait for Git".into());
+                    }
+                    Ok(None) => {}
+                }
+                if Instant::now() >= deadline || stop_rx.try_recv().is_ok() {
+                    let _ = child.kill();
+                    if child.wait().is_err() {
+                        std::mem::forget(lease);
+                        break Err("Git process retirement is unknown".into());
+                    }
+                    break Err("Git command timed out or was cancelled".into());
+                }
+                thread::sleep(Duration::from_millis(25));
+            };
+            let _ = done_tx.send(result);
+        });
+    if owner.is_err() {
+        if let Ok(mut child) = child.lock() {
+            let _ = child.kill();
+            if child.wait().is_err() {
+                std::mem::forget(lease);
+                return Err("Git process retirement is unknown".into());
+            }
+        } else {
+            std::mem::forget(lease);
+            return Err("Git process retirement is unknown".into());
+        }
+        return Err("Could not start Git process owner".into());
+    }
+    let result = loop {
+        if Instant::now() >= deadline {
+            break Err("Git output timed out".into());
+        }
+        match chunks_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(chunk)) if chunk.is_empty() => break Ok(()),
+            Ok(Ok(chunk)) => {
+                if let Err(error) = consume(&chunk) {
+                    break Err(error);
+                }
+            }
+            Ok(Err(_)) => break Err("Could not read Git output".into()),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                break Err("Git output reader stopped".into())
+            }
+        }
+    };
+    if result.is_err() {
+        let _ = stop_tx.send(());
+    }
+    drop(chunks_rx);
+    let remaining = deadline
+        .saturating_duration_since(Instant::now())
+        .max(Duration::from_secs(1));
+    let status = done_rx
+        .recv_timeout(remaining)
+        .map_err(|_| "Git process retirement is unknown".to_string())?;
+    if matches!(&status, Err(error) if error == "Git process retirement is unknown" || error == "Git process owner unavailable")
+    {
+        return status;
+    }
+    result.and(status)
+}
+
+#[cfg(test)]
+mod git_stream_process_tests {
+    use super::*;
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn child(name: &str) -> Command {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        crate::hide_window_console(&mut command);
+        command
+            .args(["--exact", name, "--ignored", "--nocapture"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        command
+    }
+
+    #[test]
+    #[ignore = "isolated child fixture"]
+    fn silent_child() {
+        std::thread::sleep(Duration::from_secs(5));
+    }
+
+    #[test]
+    #[ignore = "isolated child fixture"]
+    fn inherited_pipe_parent() {
+        let mut hold = child("fs::git_stream_process_tests::inherited_pipe_holder");
+        hold.stdout(Stdio::inherit());
+        let _ = hold.spawn().unwrap();
+        println!("PIPE_HOLDER_READY");
+    }
+
+    #[test]
+    #[ignore = "isolated child fixture"]
+    fn inherited_pipe_holder() {
+        let signal = PathBuf::from(std::env::var_os("BYCODA_STREAM_FIXTURE_RELEASE").unwrap());
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !signal.exists() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn deadline_retires_silent_child_and_releases_capacity() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let started = Instant::now();
+        let result = git_stream_command(
+            child("fs::git_stream_process_tests::silent_child"),
+            started + Duration::from_millis(200),
+            false,
+            |_| Ok(()),
+        );
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+    }
+
+    #[test]
+    fn callback_failure_stops_owned_child() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let started = Instant::now();
+        let result = git_stream_command(
+            child("fs::git_stream_process_tests::silent_child"),
+            started + Duration::from_secs(3),
+            false,
+            |_| Err("synthetic callback failure".into()),
+        );
+        assert_eq!(result.unwrap_err(), "synthetic callback failure");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+    }
+
+    #[test]
+    fn inherited_pipe_retains_capacity_until_reader_retires() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let release =
+            std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
+        let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
+        process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
+        let mut observed = Vec::new();
+        let result = git_stream_command(
+            process,
+            Instant::now() + Duration::from_secs(3),
+            false,
+            |chunk| {
+                observed.extend_from_slice(chunk);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert!(observed
+            .windows(b"PIPE_HOLDER_READY".len())
+            .any(|window| window == b"PIPE_HOLDER_READY"));
+        assert!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before);
+        std::fs::write(&release, b"release").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+        std::fs::remove_file(release).unwrap();
+    }
+}
 
 pub(crate) fn git_output_capped(
     root: &Path,

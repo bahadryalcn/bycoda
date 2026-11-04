@@ -23,6 +23,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 - Repository/project, Git review target and execution checkout are distinct. Preserve independent submodule identity and complete paths.
 - Native Git status caches have bounded repository count, retained payload and idle lifetime; eviction must re-query without changing status or diff results.
+- Submodule discovery streams the Git index with bounded records and a shared deadline; keep staged and conflicted gitlinks, and report incomplete discovery as an error.
 - Retain staged/unstaged and selected hunk/line scopes, binary/large files, conflict provenance, index changes, drafts and operation recovery.
 - Filtering changes visible entries, not All-operation scope; partial staging may show one path twice. Explain exact target/consequence before mutations.
 - Commit remains independently available from push; preserve explicit combined variants, amend behavior and upstream-aware Push/Pull/Sync/Publish gates.
