@@ -54,14 +54,38 @@ export const TRANSCRIPT_POOL_LIMIT = 12;
 export const TRANSCRIPT_POOL_MAX_BYTES = 24 * 1024 * 1024;
 const blockWeights = new WeakMap<Block, number>();
 const arrayWeights = new WeakMap<readonly Block[], number>();
+function retainedPayloadWeight(value: unknown): number {
+  let bytes = 0;
+  const pending = [value];
+  const seen = new WeakSet<object>();
+  while (pending.length) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      bytes += current.length * 2;
+    } else if (current && typeof current === "object" && !seen.has(current)) {
+      seen.add(current);
+      bytes += 64;
+      if (Array.isArray(current)) {
+        bytes += current.length * 8;
+        for (const entry of current) pending.push(entry);
+      } else {
+        for (const key in current) {
+          if (Object.hasOwn(current, key))
+            pending.push((current as Record<string, unknown>)[key]);
+        }
+      }
+    }
+  }
+  return bytes;
+}
 function blockWeight(block: Block): number {
   let weight = blockWeights.get(block);
   if (weight === undefined) {
-    weight = 512 + block.text.length * 2;
-    for (const attachment of block.attachments ?? [])
-      weight += 256 + (attachment.data?.length ?? 0) * 2;
-    // Generated images keep their blob (known size) and any inline preview data.
-    if (block.image) weight += 256 + (block.image.size || 0) + (block.image.data?.length ?? 0) * 2;
+    // Include tool details/previews, delegated steps, shell output and inline data
+    // without serializing/copying their potentially large strings.
+    weight = 512 + retainedPayloadWeight(block);
+    // Generated images also keep their blob; its bytes are not string properties.
+    if (block.image) weight += block.image.size || 0;
     blockWeights.set(block, weight);
   }
   return weight;
