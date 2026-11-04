@@ -124,6 +124,7 @@ export function TerminalTools({
 
   useEffect(() => {
     if (mode !== "search" || !terminal) return;
+    let pendingRefresh: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       if (query)
         setFound(
@@ -142,9 +143,20 @@ export function TerminalTools({
     refresh();
     // xterm clears its selection when the grid resizes, including when this
     // compact toolbar wraps in a narrow split pane. Restore the active search.
-    const subscription = terminal.onResize(refresh);
-    const parsed = terminal.onWriteParsed(refresh);
+    const subscription = terminal.onResize(() => {
+      clearTimeout(pendingRefresh);
+      pendingRefresh = undefined;
+      refresh();
+    });
+    const parsed = terminal.onWriteParsed(() => {
+      if (!query || pendingRefresh !== undefined) return;
+      pendingRefresh = setTimeout(() => {
+        pendingRefresh = undefined;
+        refresh();
+      }, 150);
+    });
     return () => {
+      clearTimeout(pendingRefresh);
       subscription.dispose();
       parsed.dispose();
     };

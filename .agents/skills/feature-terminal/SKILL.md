@@ -26,6 +26,7 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Coalesce streaming-output search refreshes within a bounded delay; explicit query, navigation and resize remain responsive. Cancel queued refreshes when query, terminal or search mode changes without writing PTY input.
 - Keep active/pending/unknown terminal capacity separate from exited history. A stop dispatch or process error is not exit proof; failed lease release remains retriable. Replay retains original authorization, and shutdown reports unconfirmed retirement.
 - Mobile PTY close acknowledges only exact-generation physical exit. Replay retirement also needs output drain, no replay gap and no unknown input. Completed attach receipts may expire independently; expired IDs remain fenced for the native runtime lifetime.
 
