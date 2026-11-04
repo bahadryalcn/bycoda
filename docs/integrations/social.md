@@ -134,7 +134,13 @@ rechecks the actor and reads persisted state back. A partial or uncertain update
 requires inspection instead of automatic repetition.
 
 Connected accounts do not need a foreground account window for routine supported
-operations. `SocialService.tick` runs on the host, polls eligible accounts when
+operations. YouTube API polling refreshes newest top-level comments while older
+thread/reply pages continue through their saved cursor, with at most four reads
+per poll. The refresh never resets the historical cursor or grows its reply queue;
+replies still follow the bounded backlog. Host ingest deduplicates repeated event
+IDs. This is not a claim of complete coverage between polls.
+
+`SocialService.tick` runs on the host, polls eligible accounts when
 `inbox.polling` is enabled, feeds inbound events into existing activated rules and
 dispatches approved jobs. Continuous product promotion uses the existing
 `SocialPrograms` schedule, verified public facts, generation limits and activation

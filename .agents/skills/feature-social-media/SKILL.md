@@ -29,6 +29,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Keep exact consequence review, media/context identity, idempotent request IDs, partial batch successes and uncertain-result recovery; never resend blindly.
 - Preserve people/segments access, scheduling, campaigns/programs, reply rules and activity inspection when simplifying navigation.
 - Public/browser/API modes and platforms differ. Do not advertise one adapter capability as universal provider support.
+- YouTube API polling reserves a newest-thread read while historical pages or replies drain. Preserve the saved backlog cursor and bounded reply queue; repeated event IDs are deduplicated by Host ingest. A newest-page refresh is not complete reply-history coverage.
 
 ## Workflow
 

@@ -213,18 +213,19 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): SocialAd
         });
       };
       let budget = 4;
-      if (!state.replies.length) {
+      const threads = async (page: string | undefined, advance: boolean) => {
         const params = new URLSearchParams({
           part: "snippet",
           allThreadsRelatedToChannelId: identity(account.platformId),
           maxResults: "100",
           order: "time",
           textFormat: "plainText",
-          ...(state.page ? { pageToken: state.page } : {}),
+          ...(page ? { pageToken: page } : {}),
         });
         const { value } = await http.request(`${endpoint}commentThreads?${params}`, token);
         budget--;
-        state.page = typeof value.nextPageToken === "string" ? value.nextPageToken : undefined;
+        if (advance)
+          state.page = typeof value.nextPageToken === "string" ? value.nextPageToken : undefined;
         for (const thread of value.items ?? []) {
           const snippet = thread.snippet;
           // Only this channel's videos; channel-level/foreign threads need a separate product contract.
@@ -238,9 +239,14 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): SocialAd
             video = identity(snippet.videoId);
           const allowed = snippet.canReply === true;
           add(snippet.topLevelComment, root, video, allowed);
-          if (snippet.totalReplyCount > 0) state.replies.push({ root, video, allowed });
+          if (advance && snippet.totalReplyCount > 0) state.replies.push({ root, video, allowed });
         }
-      }
+      };
+      // Reserve one read for new top-level comments even while old replies/pages
+      // are draining. This refresh cannot replace the durable backlog cursor or
+      // grow its bounded reply queue. Host ingest deduplicates repeated event IDs.
+      if (state.page || state.replies.length) await threads(undefined, false);
+      if (!state.replies.length) await threads(state.page, true);
       while (budget-- > 0 && state.replies.length) {
         const current = state.replies[0];
         const params = new URLSearchParams({
