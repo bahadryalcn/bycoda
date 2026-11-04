@@ -39,6 +39,42 @@ const owner: SocialPrincipal = {
   actorId: "owner-device",
   provider: "owner",
 };
+it("pages owned publications by indexed identity without loading full account history", async () => {
+  const s = await fixture();
+  const account = await s.account("facebook");
+  const campaign = await s.campaign([account]);
+  const [original] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+  await s.store.transaction(async () => {
+    const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    for (let index = 0; index < 7; index++) {
+      const job = { ...original, id: `owned-${index}`, dedupeKey: `owned-${index}`, status: "succeeded", kind: "publish", platformId: `post-${index}` };
+      await insert.run(job.id, job.dedupeKey, account.id, job.status, job.scheduledAt, JSON.stringify(job));
+    }
+  });
+  s.adapters.facebook.ownedPostPages = true;
+  const pages: string[][] = [];
+  s.poll.mockImplementation(async (_account, _token, posts, cursor, source) => {
+    expect(posts).toEqual([]);
+    const page = await source!(JSON.parse(cursor ?? "{}").after);
+    pages.push(page.posts);
+    return { events: [], cursor: JSON.stringify({ after: page.next }) };
+  });
+  const prepare = vi.spyOn(s.store.db, "prepare");
+  cleanups.push(() => { prepare.mockRestore(); });
+  for (let index = 0; index < 5; index++) {
+    await s.social.pollAccount(account.id);
+    s.clock.value += 60_000;
+  }
+  expect(pages).toEqual([["post-0", "post-1"], ["post-2", "post-3"], ["post-4", "post-5"], ["post-6"], ["post-0", "post-1"]]);
+  const ownedQueries = prepare.mock.calls.map(([sql]) => sql).filter((sql) => sql.includes("AS platform_id FROM social_jobs"));
+  expect(ownedQueries).toHaveLength(5);
+  expect(ownedQueries.every((sql) => sql.includes("ORDER BY id LIMIT 3"))).toBe(true);
+  const plan = await s.store.db.prepare(`EXPLAIN QUERY PLAN SELECT id,json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+    WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
+      AND json_extract(value,'$.platformId') IS NOT NULL AND id>? ORDER BY id LIMIT 3`).all(account.id, "");
+  expect(JSON.stringify(plan)).toContain("social_jobs_owned_poll");
+  expect(s.send).not.toHaveBeenCalled();
+});
 it("pages explicit job history while retaining the legacy complete array and exact job identity", async () => {
   const s = await fixture();
   const account = await s.account();

@@ -320,6 +320,8 @@ export class SocialService {
       CREATE INDEX IF NOT EXISTS social_jobs_due ON social_jobs(status,scheduled_at);
       CREATE INDEX IF NOT EXISTS social_jobs_due_page ON social_jobs(status,scheduled_at,id);
       CREATE INDEX IF NOT EXISTS social_jobs_poll_lookup ON social_jobs(account_id,status,json_extract(value,'$.kind'));
+      CREATE INDEX IF NOT EXISTS social_jobs_owned_poll ON social_jobs(account_id,id)
+        WHERE status='succeeded' AND json_extract(value,'$.kind')='publish' AND json_extract(value,'$.platformId') IS NOT NULL;
       CREATE TABLE IF NOT EXISTS social_events (account_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(account_id,event_id));
       CREATE TABLE IF NOT EXISTS social_audit (operation_id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS social_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -5243,10 +5245,27 @@ export class SocialService {
       throw new SocialPlatformError("expired");
     try {
       await currentConnection();
-      const result = await this.adapterFor(account).poll(
+      const adapter = this.adapterFor(account);
+      // The adapter persists its exact page continuation alongside comment cursors.
+      // Query only at its empty-batch boundary; never replace legacy pending IDs.
+      const ownedPosts = async (after?: string) => {
+        await currentConnection();
+        const rows = await this.store.db
+          .prepare(`SELECT id,json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+            WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
+              AND json_extract(value,'$.platformId') IS NOT NULL AND id>?
+            ORDER BY id LIMIT 3`)
+          .all(account.id, after ?? "");
+        await currentConnection();
+        return {
+          posts: rows.slice(0, 2).map((row) => String(row.platform_id)),
+          next: rows.length > 2 ? String(rows[1].id) : undefined,
+        };
+      };
+      const result = await adapter.poll(
         account,
         credential.accessToken,
-        (
+        adapter.ownedPostPages ? [] : (
           await this.store.db
             .prepare(`SELECT json_extract(value,'$.platformId') AS platform_id FROM social_jobs
            WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
@@ -5256,6 +5275,7 @@ export class SocialService {
           .map((row) => String(row.platform_id))
           .filter(Boolean),
         await this.setting(`cursor:${account.id}`),
+        adapter.ownedPostPages ? ownedPosts : undefined,
       );
       return await this.transaction(async () => {
         await currentConnection();

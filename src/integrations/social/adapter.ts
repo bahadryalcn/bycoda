@@ -51,7 +51,13 @@ export type SocialInbound = {
   optedOut?: boolean;
   replyAllowed?: boolean;
 };
+export type SocialOwnedPostPage = (after?: string) => Promise<{
+  posts: string[];
+  next?: string;
+}>;
 export interface SocialAdapter {
+  /** Fetch bounded owned-publication pages only when the pending scan drains. */
+  ownedPostPages?: true;
   creatorInfo?(
     account: SocialAccount,
     token: string,
@@ -70,6 +76,7 @@ export interface SocialAdapter {
     token: string,
     posts: string[],
     cursor?: string,
+    ownedPosts?: SocialOwnedPostPage,
   ): Promise<{
     events: SocialInbound[];
     cursor?: string;
