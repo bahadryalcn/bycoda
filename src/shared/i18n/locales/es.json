@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "Un mensaje puede incluir hasta {p0} archivos adjuntos.",
   "Some files could not be attached. Try attaching them again.": "No se pudieron adjuntar algunos archivos. Intenta adjuntarlos de nuevo.",
   "This host cannot upload attachments.": "Este host no puede subir archivos adjuntos.",
-  "The original question changed before the attachments were ready.": "La pregunta original cambió antes de que los archivos adjuntos estuvieran listos."
+  "The original question changed before the attachments were ready.": "La pregunta original cambió antes de que los archivos adjuntos estuvieran listos.",
+  "Loading Inbox read status…": "Cargando el estado de lectura de la bandeja de entrada…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "El estado de lectura de la bandeja de entrada no está disponible. Los indicadores de elementos no leídos pueden estar incompletos.",
+  "Could not save read status. Please try again.": "No se pudo guardar el estado de lectura. Inténtalo de nuevo.",
+  "Some read status updates may have saved. Retry to complete.": "Es posible que algunos cambios del estado de lectura se hayan guardado. Reinténtalo para completar la operación."
 }

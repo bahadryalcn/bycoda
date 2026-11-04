@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "Un message peut contenir jusqu’à {p0} pièces jointes.",
   "Some files could not be attached. Try attaching them again.": "Certains fichiers n’ont pas pu être joints. Réessayez de les joindre.",
   "This host cannot upload attachments.": "Cet hôte ne peut pas téléverser de pièces jointes.",
-  "The original question changed before the attachments were ready.": "La question initiale a changé avant que les pièces jointes soient prêtes."
+  "The original question changed before the attachments were ready.": "La question initiale a changé avant que les pièces jointes soient prêtes.",
+  "Loading Inbox read status…": "Chargement de l’état de lecture de la boîte de réception…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "L’état de lecture de la boîte de réception est indisponible. Les indicateurs de messages non lus peuvent être incomplets.",
+  "Could not save read status. Please try again.": "L’état de lecture n’a pas pu être enregistré. Veuillez réessayer.",
+  "Some read status updates may have saved. Retry to complete.": "Certaines modifications de l’état de lecture ont peut-être été enregistrées. Réessayez pour terminer."
 }

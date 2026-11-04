@@ -104,9 +104,12 @@ import {
   relatedSessionsForInboxItem,
 } from "../../sessions/model/sessionWorkItem";
 import {
-  isInboxEntryUnseen,
+  inboxHasUnseenItems,
+  inboxSeenStatus,
   markInboxItemSeen,
   markInboxItemsSeen,
+  retryInboxSeenStorage,
+  useInboxItemUnseen,
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
@@ -239,6 +242,7 @@ export function InboxView({
   const refreshActionRef = useRef<"toolbar" | "retry" | null>(null);
   const [readStatusError, setReadStatusError] = useState<string | null>(null);
   const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
+  const seenSaveGeneration = useRef(0);
   const [refresh, setRefresh] = useState(0);
   const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
@@ -460,12 +464,18 @@ export function InboxView({
   }, [sessions]);
   const selectItem = useStableCallback((item: InboxItem) => {
     const key = inboxItemKey(item);
-    const saved = markInboxItemSeen({ key, updatedAt: item.updatedAt });
-    setFailedReadItem(saved ? null : item);
-    setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+    const generation = ++seenSaveGeneration.current;
     releaseTarget();
     setSelectedKey(key);
     setDetailOpen(true);
+    const applyResult = (saved: boolean) => {
+      if (seenSaveGeneration.current !== generation) return;
+      setFailedReadItem(saved ? null : item);
+      setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+    };
+    const result = markInboxItemSeen({ key, updatedAt: item.updatedAt });
+    if (typeof result === "boolean") applyResult(result);
+    else void result.then(applyResult).catch(() => applyResult(false));
   });
   const {
     provider: codeScopesProvider,
@@ -508,6 +518,7 @@ export function InboxView({
   );
 
   const inboxSeenTick = useInboxSeenTick();
+  const seenStorageStatus = inboxSeenStatus();
   const sourceEntries = useMemo(
     () =>
       sourceAvailable
@@ -521,7 +532,7 @@ export function InboxView({
     [items, source, sourceAvailable],
   );
   const sourceHasUnseen = useMemo(
-    () => sourceEntries.some(isInboxEntryUnseen),
+    () => inboxHasUnseenItems(sourceEntries),
     [inboxSeenTick, sourceEntries],
   );
 
@@ -779,11 +790,18 @@ export function InboxView({
                 disabled={!sourceHasUnseen}
                 onClick={() => {
                   setFailedReadItem(null);
-                  setReadStatusError(
-                    markInboxItemsSeen(sourceEntries)
-                      ? null
-                      : "Could not save read status. Please try again.",
-                  );
+                  const generation = ++seenSaveGeneration.current;
+                  const applyResult = (saved: boolean) => {
+                    if (seenSaveGeneration.current === generation)
+                      setReadStatusError(
+                        saved
+                          ? null
+                          : "Some read status updates may have saved. Retry to complete.",
+                      );
+                  };
+                  const result = markInboxItemsSeen(sourceEntries);
+                  if (typeof result === "boolean") applyResult(result);
+                  else void result.then(applyResult).catch(() => applyResult(false));
                 }}
                 className="shrink-0"
               >
@@ -809,8 +827,8 @@ export function InboxView({
         </div>
       )}
       {readStatusError ? (
-        <Alert tone="danger" role="alert">
-          {readStatusError}
+        <Alert tone="danger">
+          {t(readStatusError)}
           {failedReadItem ? (
             <Button
               data-inbox-read-retry
@@ -820,6 +838,16 @@ export function InboxView({
               {t("Retry")}
             </Button>
           ) : null}
+        </Alert>
+      ) : null}
+      {seenStorageStatus.state === "loading" ? (
+        <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
+      ) : seenStorageStatus.state === "error" ? (
+        <Alert tone="danger">
+          {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}
+          <Button variant="secondary" onClick={retryInboxSeenStorage}>
+            {t("Retry")}
+          </Button>
         </Alert>
       ) : null}
       {sourceError && visibleItems.length > 0 ? (
@@ -1369,7 +1397,32 @@ const InboxCard = memo(function InboxCard({
   onSelect: (item: InboxItem) => void;
 }) {
   useLocale();
-  useInboxSeenTick();
+  const visibilityRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const entryKey = inboxItemKey(item);
+  const unseen = useInboxItemUnseen({ key: entryKey, updatedAt: item.updatedAt }, visible);
+  useEffect(() => {
+    const element = visibilityRef.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      const update = () => {
+        const bounds = element.getBoundingClientRect();
+        setVisible(bounds.bottom >= -300 && bounds.top <= window.innerHeight + 300);
+      };
+      update();
+      window.addEventListener("scroll", update, true);
+      window.addEventListener("resize", update);
+      return () => {
+        window.removeEventListener("scroll", update, true);
+        window.removeEventListener("resize", update);
+      };
+    }
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
+      rootMargin: "300px",
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const status = inboxStatusMark(item);
   const kindLabel =
     item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
@@ -1381,10 +1434,6 @@ const InboxCard = memo(function InboxCard({
     item.provider === "gitlab" || item.provider === "azuredevops"
       ? gitlabAttentionLabel(item.attentionReason ?? "")
       : "";
-  const unseen = isInboxEntryUnseen({
-    key: inboxItemKey(item),
-    updatedAt: item.updatedAt,
-  });
 
   // The label badges hold their own "+N" button, which cannot sit inside the row button: with
   // labels the source line is a sibling laid over the row (clicks outside the badges fall through
@@ -1410,79 +1459,81 @@ const InboxCard = memo(function InboxCard({
   );
 
   return (
-    <ActionHost selected={active} className="w-full min-w-0">
-      <Button
-        variant="item"
-        layout="stacked"
-        className="w-full min-w-0"
-        type="button"
-        tooltip={item.title}
-        tooltipWhen="overflow"
-        aria-current={active ? "true" : undefined}
-        selected={active}
-        aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
-          item,
-        )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
-        onClick={() => onSelect(item)}
-        onMouseEnter={() => prefetchInboxItem(item)}
-        onFocus={() => prefetchInboxItem(item)}
-      >
-        <span
-          className={`min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unseen ? "font-medium" : "font-normal"}`}
+    <div ref={visibilityRef}>
+      <ActionHost selected={active} className="w-full min-w-0">
+        <Button
+          variant="item"
+          layout="stacked"
+          className="w-full min-w-0"
+          type="button"
+          tooltip={item.title}
+          tooltipWhen="overflow"
+          aria-current={active ? "true" : undefined}
+          selected={active}
+          aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
+            item,
+          )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
+          onClick={() => onSelect(item)}
+          onMouseEnter={() => prefetchInboxItem(item)}
+          onFocus={() => prefetchInboxItem(item)}
         >
-          {item.title}
-        </span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <status.Icon className={`icon-xs shrink-0 ${status.className}`} strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
-              {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
-              {attentionLabel ? ` · ${attentionLabel}` : ""}
-            </span>
+          <span
+            className={`min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unseen ? "font-medium" : "font-normal"}`}
+          >
+            {item.title}
           </span>
-          {relatedSessionCount > 0 || time || unseen ? (
-            <span className="flex shrink-0 items-center gap-1.5">
-              {relatedSessionCount > 0 ? (
-                <span
-                  title={t(
-                    relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
-                    { p0: relatedSessionCount },
-                  )}
-                  className="inline-flex items-center gap-0.5 text-ui-micro tabular-nums text-(--ui-tone-accent-fg)"
-                >
-                  <MessageMultiple className="icon-xs" strokeWidth={1.75} />
-                  {relatedSessionCount}
-                </span>
-              ) : null}
-              {time ? (
-                <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">
-                  {time}
-                </span>
-              ) : null}
-              {unseen ? (
-                <span
-                  data-inbox-unread
-                  aria-hidden
-                  className="size-1.5 rounded-full bg-(--ui-tone-accent-fg)"
-                />
-              ) : null}
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <status.Icon className={`icon-xs shrink-0 ${status.className}`} strokeWidth={1.75} />
+              <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+                {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
+                {attentionLabel ? ` · ${attentionLabel}` : ""}
+              </span>
             </span>
-          ) : null}
-        </span>
+            {relatedSessionCount > 0 || time || unseen ? (
+              <span className="flex shrink-0 items-center gap-1.5">
+                {relatedSessionCount > 0 ? (
+                  <span
+                    title={t(
+                      relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
+                      { p0: relatedSessionCount },
+                    )}
+                    className="inline-flex items-center gap-0.5 text-ui-micro tabular-nums text-(--ui-tone-accent-fg)"
+                  >
+                    <MessageMultiple className="icon-xs" strokeWidth={1.75} />
+                    {relatedSessionCount}
+                  </span>
+                ) : null}
+                {time ? (
+                  <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">
+                    {time}
+                  </span>
+                ) : null}
+                {unseen ? (
+                  <span
+                    data-inbox-unread
+                    aria-hidden
+                    className="size-1.5 rounded-full bg-(--ui-tone-accent-fg)"
+                  />
+                ) : null}
+              </span>
+            ) : null}
+          </span>
+          {item.labels.length > 0 ? (
+            <span aria-hidden="true" className="mt-1 block h-4" />
+          ) : (
+            <span className="mt-1 flex min-w-0 items-center gap-2">{sourceLine}</span>
+          )}
+        </Button>
         {item.labels.length > 0 ? (
-          <span aria-hidden="true" className="mt-1 block h-4" />
-        ) : (
-          <span className="mt-1 flex min-w-0 items-center gap-2">{sourceLine}</span>
-        )}
-      </Button>
-      {item.labels.length > 0 ? (
-        <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-          {sourceLine}
-          <span className="pointer-events-auto min-w-0 max-w-[45%] shrink-0 [&>div>ul]:justify-end">
-            <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
-          </span>
-        </div>
-      ) : null}
-    </ActionHost>
+          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+            {sourceLine}
+            <span className="pointer-events-auto min-w-0 max-w-[45%] shrink-0 [&>div>ul]:justify-end">
+              <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
+            </span>
+          </div>
+        ) : null}
+      </ActionHost>
+    </div>
   );
 });

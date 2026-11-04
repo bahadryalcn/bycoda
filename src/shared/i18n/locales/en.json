@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "A message carries up to {p0} attachments.",
   "Some files could not be attached. Try attaching them again.": "Some files could not be attached. Try attaching them again.",
   "This host cannot upload attachments.": "This host cannot upload attachments.",
-  "The original question changed before the attachments were ready.": "The original question changed before the attachments were ready."
+  "The original question changed before the attachments were ready.": "The original question changed before the attachments were ready.",
+  "Loading Inbox read status…": "Loading Inbox read status…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "Inbox read status is unavailable. Unread indicators may be incomplete.",
+  "Could not save read status. Please try again.": "Could not save read status. Please try again.",
+  "Some read status updates may have saved. Retry to complete.": "Some read status updates may have saved. Retry to complete."
 }

@@ -1,10 +1,13 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
 import {
   inboxHasUnseenItems,
+  inboxSeenStatus,
   knownInboxEntries,
   markInboxItemsSeen,
+  retryInboxSeenStorage,
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { useProjectNotificationPreferences } from "../../notifications/hooks/useProjectNotificationPreferences";
@@ -32,6 +35,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
   useLocale();
   const notificationProjects = useNotificationProjects(projectPaths);
   useInboxSeenTick();
+  const seenStatus = inboxSeenStatus();
   const preferences = useProjectNotificationPreferences();
   const pathsKey = JSON.stringify(projectPaths);
   // Dialog state belongs to the project set it was opened for; a different set
@@ -139,21 +143,29 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
               p2: mutedIds.length,
             })}
           </p>
-          {saveError ? (
-            <Alert tone="danger" role="alert">
-              {saveError}
+          {seenStatus.state === "loading" ? (
+            <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
+          ) : seenStatus.state === "error" ? (
+            <Alert tone="danger">
+              {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}{" "}
+              <Button variant="secondary" onClick={retryInboxSeenStorage}>
+                {t("Retry")}
+              </Button>
             </Alert>
           ) : null}
+          {saveError ? <Alert tone="danger">{t(saveError)}</Alert> : null}
         </div>
       }
       onPick={(id) => {
         if (id === "read-all") {
           if (!hasUnread) return;
-          if (!markInboxItemsSeen(entries)) {
-            setError("Could not save read status. Please try again.");
-            return;
-          }
-          onClose();
+          const applyResult = (saved: boolean) => {
+            if (!saved) setError("Some read status updates may have saved. Retry to complete.");
+            else onClose();
+          };
+          const result = markInboxItemsSeen(entries);
+          if (typeof result === "boolean") applyResult(result);
+          else void result.then(applyResult).catch(() => applyResult(false));
           return;
         }
         if (id === "settings") {

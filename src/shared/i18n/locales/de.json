@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "Eine Nachricht kann bis zu {p0} Anhänge enthalten.",
   "Some files could not be attached. Try attaching them again.": "Einige Dateien konnten nicht angehängt werden. Versuchen Sie, sie erneut anzuhängen.",
   "This host cannot upload attachments.": "Dieser Host kann keine Anhänge hochladen.",
-  "The original question changed before the attachments were ready.": "Die ursprüngliche Frage wurde geändert, bevor die Anhänge bereit waren."
+  "The original question changed before the attachments were ready.": "Die ursprüngliche Frage wurde geändert, bevor die Anhänge bereit waren.",
+  "Loading Inbox read status…": "Lesestatus des Posteingangs wird geladen…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "Der Lesestatus des Posteingangs ist nicht verfügbar. Ungelesen-Anzeigen können unvollständig sein.",
+  "Could not save read status. Please try again.": "Der Lesestatus konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+  "Some read status updates may have saved. Retry to complete.": "Einige Änderungen des Lesestatus wurden möglicherweise gespeichert. Versuchen Sie es erneut, um den Vorgang abzuschließen."
 }

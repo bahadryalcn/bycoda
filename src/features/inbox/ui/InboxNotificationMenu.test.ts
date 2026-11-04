@@ -165,7 +165,7 @@ it("keeps unread items and the menu open when marking read fails, then allows re
   });
   act(() => button("Mark all as read").click());
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "Could not save read status",
+    "Some read status updates may have saved",
   );
   expect(isInboxEntryUnseen(entry)).toBe(true);
   expect(button("Mark all as read").disabled).toBe(false);

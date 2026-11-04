@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "每条消息最多可添加 {p0} 个附件。",
   "Some files could not be attached. Try attaching them again.": "部分文件无法添加为附件。请尝试重新添加。",
   "This host cannot upload attachments.": "此主机无法上传附件。",
-  "The original question changed before the attachments were ready.": "附件准备就绪之前，原始问题已更改。"
+  "The original question changed before the attachments were ready.": "附件准备就绪之前，原始问题已更改。",
+  "Loading Inbox read status…": "正在加载收件箱已读状态…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "收件箱已读状态不可用。未读标记可能不完整。",
+  "Could not save read status. Please try again.": "无法保存已读状态。请重试。",
+  "Some read status updates may have saved. Retry to complete.": "部分已读状态更新可能已保存。请重试以完成操作。"
 }

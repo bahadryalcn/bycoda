@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "Bir mesaja en fazla {p0} ek eklenebilir.",
   "Some files could not be attached. Try attaching them again.": "Bazı dosyalar eklenemedi. Yeniden eklemeyi deneyin.",
   "This host cannot upload attachments.": "Bu Host'a ek yüklenemiyor.",
-  "The original question changed before the attachments were ready.": "Ekler hazır olmadan önce asıl soru değişti."
+  "The original question changed before the attachments were ready.": "Ekler hazır olmadan önce asıl soru değişti.",
+  "Loading Inbox read status…": "Gelen kutusunun okunma durumu yükleniyor…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "Gelen kutusunun okunma durumu kullanılamıyor. Okunmamış göstergeleri eksik olabilir.",
+  "Could not save read status. Please try again.": "Okunma durumu kaydedilemedi. Yeniden deneyin.",
+  "Some read status updates may have saved. Retry to complete.": "Bazı okunma durumu güncellemeleri kaydedilmiş olabilir. Tamamlamak için yeniden deneyin."
 }

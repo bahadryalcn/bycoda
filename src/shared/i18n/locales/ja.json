@@ -10967,5 +10967,9 @@
   "A message carries up to {p0} attachments.": "1つのメッセージに添付できるファイルは最大{p0}個です。",
   "Some files could not be attached. Try attaching them again.": "一部のファイルを添付できませんでした。もう一度添付してください。",
   "This host cannot upload attachments.": "このホストは添付ファイルをアップロードできません。",
-  "The original question changed before the attachments were ready.": "添付ファイルの準備ができる前に、元の質問が変更されました。"
+  "The original question changed before the attachments were ready.": "添付ファイルの準備ができる前に、元の質問が変更されました。",
+  "Loading Inbox read status…": "受信トレイの既読状態を読み込み中…",
+  "Inbox read status is unavailable. Unread indicators may be incomplete.": "受信トレイの既読状態を利用できません。未読の表示が不完全な可能性があります。",
+  "Could not save read status. Please try again.": "既読状態を保存できませんでした。もう一度お試しください。",
+  "Some read status updates may have saved. Retry to complete.": "既読状態の一部は保存された可能性があります。完了するには再試行してください。"
 }
