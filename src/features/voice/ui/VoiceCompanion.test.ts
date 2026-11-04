@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
@@ -251,6 +251,48 @@ vi.mock("../../../shared/i18n", () => ({
   translateAt: (_locale: string, key: string) => key,
 }));
 import { VoiceCompanion } from "./VoiceCompanion";
+
+it.each(["pointerup", "pointercancel"] as const)("moves presentation without rendering audio controls until %s", async (finishEvent) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
+  localStorage.removeItem("bycoda:voice-position");
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  let commits = 0;
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return new DOMRect(Number.parseFloat(this.style.left) || 100, Number.parseFloat(this.style.top) || 100, 300, 250);
+  });
+  try {
+    await act(async () => root.render(createElement(Profiler, { id: "voice-drag", onRender: () => { commits++; } },
+      createElement(VoiceCompanion, { activeId: "a", sessions: [a, b], onSubmit: () => true, onStop: () => {} }),
+    )));
+    await click("Voice companion");
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    const move = container.querySelector<HTMLButtonElement>('button[aria-label^="Move voice window"]')!;
+    move.setPointerCapture = vi.fn();
+    await act(async () => { move.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 17, clientX: 110, clientY: 110 })); });
+    const before = commits;
+    await act(async () => {
+      for (let index = 0; index < 20; index++) move.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true, pointerId: 17, clientX: 210 + index, clientY: 210 + index,
+      }));
+    });
+    expect(commits).toBe(before);
+    const panel = container.querySelector<HTMLElement>('section[aria-label="Voice companion"]')!;
+    expect(panel.style.left).toBe("219px");
+    await act(async () => { move.dispatchEvent(new PointerEvent(finishEvent, { bubbles: true, pointerId: 17, clientX: 229, clientY: 229 })); });
+    expect(commits).toBeGreaterThan(before);
+    expect(panel.style.left).toBe("219px");
+    if (finishEvent === "pointerup")
+      expect(JSON.parse(localStorage.getItem("bycoda:voice-position")!)).toEqual({ x: 219, y: 219 });
+    else expect(localStorage.getItem("bycoda:voice-position")).toBeNull();
+  } finally {
+    bounds.mockRestore();
+    localStorage.removeItem("bycoda:voice-position");
+  }
+});
+
 let root: Root, container: HTMLDivElement;
 // Existing scenarios start after the owner skipped persona setup; first run is covered below.
 beforeEach(() => {

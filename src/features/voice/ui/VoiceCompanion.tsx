@@ -1020,7 +1020,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     text: string;
     result: Promise<{ accepted: boolean }>;
   } | null>(null);
-  const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    position?: { x: number; y: number };
+  } | null>(null);
   const shellTarget = voiceTarget(props.activeId, pinned, props.sessions);
   const target = useSession(open ? shellTarget?.id : undefined) ?? shellTarget;
   const findSession = (id: string | undefined) =>
@@ -2732,21 +2737,30 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                 ),
             );
             const rect = panel.current!.getBoundingClientRect();
-            setPosition(
-              clampVoicePosition(
-                event.clientX - drag.current.x,
-                event.clientY - drag.current.y,
-                rect.width,
-                rect.height,
-                window.innerWidth,
-                window.innerHeight,
-              ),
+            const next = clampVoicePosition(
+              event.clientX - drag.current.x,
+              event.clientY - drag.current.y,
+              rect.width,
+              rect.height,
+              window.innerWidth,
+              window.innerHeight,
             );
+            drag.current.position = next;
+            // Pointer movement owns presentation until release. Keep audio,
+            // transcript and tool controls out of the per-event render path.
+            Object.assign(panel.current!.style, {
+              left: `${next.x}px`,
+              top: `${next.y}px`,
+              right: "auto",
+              bottom: "auto",
+            });
           }}
           onPointerUp={(event) => {
             const grab = drag.current;
+            if (!grab || grab.pointerId !== event.pointerId) return;
             drag.current = null;
             setDetaching(false);
+            if (grab.position) setPosition(grab.position);
             // Released beyond the app: continue as a native floating window
             // under the pointer, keeping the same grab point.
             if (
@@ -2762,14 +2776,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               void popOut({ fromCursor: true, x: grab.x, y: grab.y });
               return;
             }
-            if (position)
+            if (grab.position)
               try {
-                localStorage.setItem("bycoda:voice-position", JSON.stringify(position));
+                localStorage.setItem("bycoda:voice-position", JSON.stringify(grab.position));
               } catch {
                 /* Optional. */
               }
           }}
-          onPointerCancel={() => {
+          onPointerCancel={(event) => {
+            if (drag.current?.pointerId !== event.pointerId) return;
+            if (drag.current.position) setPosition(drag.current.position);
             drag.current = null;
             setDetaching(false);
           }}

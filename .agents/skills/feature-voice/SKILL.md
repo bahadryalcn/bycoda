@@ -18,6 +18,8 @@ owns actions; composer owns drafts/send. Paths are repository-relative.
 
 ## Preserve
 
+- Voice-panel pointer motion updates presentation without rendering audio/tool controls per event. Commit exact latest clamped position on release/cancel; retain pointer identity, keyboard placement and native detach gates.
+- Output-only complete briefings use the shared speech-sized playback budget plus startup allowance; long healthy playback must not hit a fixed two-minute cutoff. Abort still wins and never grants capture/tools or retries speech.
 - Microphone capture is opt-in and starts only from explicit user action. Mute,
   disable, close and device changes invalidate the appropriate pending work.
 - Cloud recovery may reacquire a microphone already authorized for the live
