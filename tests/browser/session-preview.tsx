@@ -84,7 +84,9 @@ export function SessionPreviewFixture() {
             }))}
             activeSessionId={active}
             searchActive={false}
-            onOpenSession={actions.onPreviewHistorySession}
+            onOpenSession={(id, _cwd, options) => {
+              void actions.onPreviewHistorySession(id, options);
+            }}
             onOpenProject={() => {}}
             onTogglePin={() => {}}
             groupLabels={{}}
