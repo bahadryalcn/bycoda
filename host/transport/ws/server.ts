@@ -196,14 +196,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     } else if (peer.socket.readyState !== WebSocket.CLOSED) peer.socket.terminate();
   }
 
-  function send(peer: Peer, value: unknown): boolean {
+  function send(
+    peer: Peer,
+    value: unknown,
+    normalized?: { serialized: string; wire: unknown },
+  ): boolean {
     if (peer.closed || peer.socket.readyState !== WebSocket.OPEN) return false;
     let serialized: string;
     try {
-      serialized = JSON.stringify(value);
+      serialized = normalized?.serialized ?? JSON.stringify(value);
       if (Buffer.byteLength(serialized) > WS_LIMITS.maxMessageBytes)
         throw new Error("Response too large.");
-      const wire = JSON.parse(serialized);
+      const wire = normalized ? normalized.wire : JSON.parse(serialized);
       if (wire?.method === "subscription.event") SubscriptionEventSchema.parse(wire);
       else RpcResponseSchema.parse(wire);
     } catch {
@@ -456,14 +460,23 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           });
           for (const check of resultAuthorities)
             if (!(await check())) throw new HostBulkError(409, "Result authority expired.");
-          const validated = definition.resultSchema.parse(JSON.parse(JSON.stringify(result)));
-          return lease
-            ? options.bulk!.encode(
-                lease,
-                JsonValueSchema.parse(validated),
-                WS_LIMITS.maxMessageBytes - 1024,
-              )
+          const encoded = JSON.stringify(result);
+          const validated = definition.resultSchema.parse(JSON.parse(encoded));
+          const bulkValue = lease ? JsonValueSchema.parse(validated) : undefined;
+          const delivered = lease
+            ? options.bulk!.encode(lease, bulkValue!, WS_LIMITS.maxMessageBytes - 1024)
             : validated;
+          return {
+            value: delivered,
+            // Only this exact built-in JSON schema preserves the normalized wire value.
+            // Typed schemas may strip/transform fields and must use send's full wire check.
+            encoded:
+              definition.resultSchema === JsonValueSchema &&
+              encoded.length <= WS_LIMITS.maxMessageBytes - 1024 &&
+              delivered === (lease ? bulkValue : validated)
+                ? encoded
+                : undefined,
+          };
         } finally {
           if (lease) options.bulk!.release(lease);
         }
@@ -487,7 +500,21 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         for (const check of resultAuthorities)
           if (!(await waitFor(check(), controller.signal)))
             throw new HostBulkError(409, "Result authority expired.");
-        if (!controller.signal.aborted) send(peer, { jsonrpc: "2.0", id: request.id, result });
+        if (!controller.signal.aborted) {
+          const wire = { jsonrpc: "2.0", id: request.id, result: result.value };
+          send(
+            peer,
+            wire,
+            result.encoded === undefined
+              ? undefined
+              : {
+                  // The result was normalized from these exact bytes before validation. Only
+                  // the validated primitive request ID is added; no service toJSON runs twice.
+                  serialized: `{"jsonrpc":"2.0","id":${JSON.stringify(request.id)},"result":${result.encoded}}`,
+                  wire,
+                },
+          );
+        }
       }
     } catch (error) {
       if (peer.closed) return;

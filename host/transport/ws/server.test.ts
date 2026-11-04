@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
+import { HostBulkTransfers } from "../http/bulk";
 import { HostDispatchError, createHostDispatcher } from "../dispatch";
 import {
   HOST_SCHEMA_VERSION,
@@ -119,7 +120,10 @@ class ProbeClient {
 
 async function fixture(
   overrides: Partial<
-    Pick<HostWebSocketOptions, "authenticate" | "dispatch" | "limits" | "allowedHosts">
+    Pick<
+      HostWebSocketOptions,
+      "authenticate" | "dispatch" | "limits" | "allowedHosts" | "methods" | "bulk"
+    >
   > = {},
 ) {
   const server = createServer((_request, response) => {
@@ -283,6 +287,77 @@ describe("WebSocket read admission and safe disclosure", () => {
     expect(context.principal).toEqual({ kind: "device", id: "device-a" });
     expect(context.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.stringify(client.received)).not.toContain(TOKEN_A);
+  });
+
+  it.each([false, true])(
+    "preserves normalized generic result bytes with bulk=%s",
+    async (withBulk) => {
+      const toJSON = vi.fn((key: string) => ({
+        key,
+        missing: undefined,
+        list: [undefined, NaN, Infinity, -0],
+        text: '"\\\n\u96ea',
+      }));
+      const host = await fixture({
+        ...(withBulk ? { bulk: new HostBulkTransfers({ environmentId: ENVIRONMENT }) } : {}),
+        dispatch: async () => ({ toJSON }),
+      });
+      const client = await host.ready();
+      const id = "normalized-response";
+      const received = await client.request(id, "environment.describe");
+      expect(received).toEqual({
+        jsonrpc: "2.0",
+        id,
+        result: { key: "", list: [null, null, null, 0], text: '"\\\n\u96ea' },
+      });
+      expect(toJSON).toHaveBeenCalledExactlyOnceWith("");
+    },
+  );
+
+  it.each(["cycle", "bigint", "undefined"])(
+    "rejects unrepresentable generic %s results",
+    async (kind) => {
+      const cycle: Record<string, unknown> = {};
+      cycle.self = cycle;
+      const host = await fixture({
+        dispatch: async () => (kind === "cycle" ? cycle : kind === "bigint" ? 1n : undefined),
+      });
+      const client = await host.ready();
+      expect(await client.request("invalid-result", "environment.describe")).toMatchObject({
+        error: { code: RPC_ERROR_CODES.internalError },
+      });
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    },
+  );
+
+  it("keeps typed method result validation before delivery", async () => {
+    const host = await fixture({ dispatch: async () => [{ id: "project", name: "bad", cwd: 42 }] });
+    const client = await host.ready();
+    expect(await client.request("invalid-project", "projects.list")).toMatchObject({
+      error: { code: RPC_ERROR_CODES.internalError },
+    });
+  });
+
+  it("sends the bulk descriptor rather than reusing offloaded result bytes", async () => {
+    const host = await fixture({
+      bulk: new HostBulkTransfers({ environmentId: ENVIRONMENT }),
+      dispatch: async () => "x".repeat(WS_LIMITS.maxMessageBytes),
+    });
+    const client = await host.ready();
+    expect(await client.request("bulk-result", "environment.describe")).toMatchObject({
+      result: { $bulk: { totalBytes: WS_LIMITS.maxMessageBytes + 2 } },
+    });
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("retains the outbound size fence for normalized generic responses", async () => {
+    const host = await fixture({ dispatch: async () => "x".repeat(WS_LIMITS.maxMessageBytes) });
+    const client = await host.ready();
+    client.send("large-result", "environment.describe");
+    expect(await client.closed).toMatchObject({
+      code: 1011,
+      reason: "Response cannot be represented by this transport.",
+    });
   });
 
   it.each(["commands.dispatch", "sessions.page", "subscriptions.open", "constructor"])(
