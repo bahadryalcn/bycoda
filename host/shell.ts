@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
+import { OutputBuffer } from "./output-buffer";
 import {
   SHELL_TIMEOUT_MS,
   type ShellResult,
@@ -61,7 +62,7 @@ export function runHostShell(
       });
       return;
     }
-    let stdout = "";
+    const stdout = new OutputBuffer(MAX_CAPTURED);
     let physicalIdentity: ShellPhysicalIdentity | undefined = child.pid
       ? { pid: child.pid, hostPid: process.pid, spawnObservedAt: Date.now() }
       : undefined;
@@ -74,22 +75,17 @@ export function runHostShell(
       }
     };
     publishIdentity();
-    let stderr = "";
+    const stderr = new OutputBuffer(MAX_CAPTURED);
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
     let timedOut = false;
     let settled = false;
     let terminationFailed: string | undefined;
-    const keep = (current: string, chunk: string) => {
-      const next = current + chunk;
-      // Keep the end, where a failing command says why.
-      return next.length > MAX_CAPTURED ? next.slice(-MAX_CAPTURED) : next;
-    };
     child.stdout.on("data", (chunk: Buffer) => {
-      if (!settled) stdout = keep(stdout, stdoutDecoder.write(chunk));
+      if (!settled) stdout.append(stdoutDecoder.write(chunk));
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      if (!settled) stderr = keep(stderr, stderrDecoder.write(chunk));
+      if (!settled) stderr.append(stderrDecoder.write(chunk));
     });
     let terminating: Promise<void> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -176,8 +172,8 @@ export function runHostShell(
       signal?.removeEventListener("abort", abort);
       void Promise.resolve(terminating)
         .then(async () => {
-          stdout = keep(stdout, stdoutDecoder.end());
-          stderr = keep(stderr, stderrDecoder.end());
+          stdout.append(stdoutDecoder.end());
+          stderr.append(stderrDecoder.end());
           let publicationTimer: ReturnType<typeof setTimeout> | undefined;
           try {
             // Bound only observation. The original publication keeps its handlers
@@ -202,11 +198,12 @@ export function runHostShell(
           } finally {
             clearTimeout(publicationTimer);
           }
-          const tail = terminationFailed ?? failure ?? stderr;
+          const captured = stdout.slice();
+          const tail = terminationFailed ?? failure ?? stderr.slice();
           const output =
-            tail.trim() && stdout && !stdout.endsWith("\n")
-              ? `${stdout}\n${tail}`
-              : stdout + (tail.trim() ? tail : "");
+            tail.trim() && captured && !captured.endsWith("\n")
+              ? `${captured}\n${tail}`
+              : captured + (tail.trim() ? tail : "");
           resolve({
             output,
             exitCode: timedOut || signal?.aborted || terminationFailed ? null : exitCode,
@@ -219,8 +216,14 @@ export function runHostShell(
           // Avoid formatting the thrown value: its own conversion can also throw.
           terminationFailed ??=
             "Command completion could not be confirmed; verification remains locked.";
+          let captured = "";
+          try {
+            captured = stdout.slice();
+          } catch {
+            /* Preserve failure-to-result even if materialization failed. */
+          }
           resolve({
-            output: stdout ? `${stdout}\n${terminationFailed}` : terminationFailed,
+            output: captured ? `${captured}\n${terminationFailed}` : terminationFailed,
             exitCode: null,
             timedOut,
             terminationFailed,

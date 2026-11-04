@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { OutputBuffer } from "./output-buffer";
 import type {
   HostTerminal,
   HostTerminalList,
@@ -16,7 +17,7 @@ const SETTLED_TTL = 10 * 60 * 1000;
 type TerminalEntry = {
   value: HostTerminal;
   process?: OwnedTerminalProcess;
-  output: string;
+  output: OutputBuffer;
   end: number;
   releaseActivity?: () => Promise<void>;
   releasingActivity?: Promise<void>;
@@ -186,7 +187,7 @@ export class HostTerminals {
         createdAt: Date.now(),
         exitCode: null,
       },
-      output: "",
+      output: new OutputBuffer(TERMINAL_OUTPUT_LIMIT),
       end: 0,
       settle: () => {
         creation.settledAt = this.now();
@@ -222,7 +223,7 @@ export class HostTerminals {
         cwd,
         (data) => {
           entry.end += data.length;
-          entry.output = (entry.output + data).slice(-TERMINAL_OUTPUT_LIMIT);
+          entry.output.append(data);
         },
         (code) => {
           entry.value.state = "exited";

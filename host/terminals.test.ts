@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostTerminals, TERMINAL_OUTPUT_LIMIT } from "./terminals";
 import { listShellProfiles } from "./shellProfiles";
+import { OutputBuffer } from "./output-buffer";
 
 const services: HostTerminals[] = [];
 afterEach(async () => {
@@ -472,4 +473,35 @@ it("reports unconfirmed shutdown and retains the terminal for retry", async () =
   );
   await s.service.close();
   expect(s.service.list(project.id).terminals).toHaveLength(0);
+});
+
+
+it("tiny terminal chunks retain exact ANSI/UTF16 ranges without append-time materialization", async () => {
+  const s = setup();
+  const terminal = await s.service.create(project, { requestId: "paged-output" }, "owner", () => true);
+  const reads = vi.spyOn(OutputBuffer.prototype, "slice");
+  try {
+    let expected = "x".repeat(TERMINAL_OUTPUT_LIMIT);
+    let end = expected.length;
+    s.output(expected);
+    for (const chunk of ["\ud83d", "\ude80", "\u001b[", "31m", "終", "\r\n"]) {
+      s.output(chunk);
+      end += chunk.length;
+      expected = (expected + chunk).slice(-TERMINAL_OUTPUT_LIMIT);
+    }
+    expect(reads).not.toHaveBeenCalled();
+    const start = end - expected.length;
+    expect(s.service.read(project.id, { id: terminal.id, after: 0, limit: 3 })).toMatchObject({
+      output: expected.slice(0, 3), cursor: start + 3, truncated: true, hasMore: true,
+    });
+    const after = end - 10;
+    const first = s.service.read(project.id, { id: terminal.id, after, limit: 3 });
+    expect(first).toMatchObject({ output: expected.slice(after - start, after - start + 3), cursor: after + 3, truncated: false });
+    const rest = s.service.read(project.id, { id: terminal.id, after: first.cursor, limit: 65536 });
+    expect(rest).toMatchObject({ output: expected.slice(first.cursor - start), cursor: end, truncated: false, hasMore: false });
+    s.output("later");
+    expect(rest.output).toBe(expected.slice(first.cursor - start));
+  } finally {
+    reads.mockRestore();
+  }
 });
