@@ -110,6 +110,8 @@ export function normalizeAppearancePreferences(
   };
 }
 let lastKnownPreferences: AppearancePreferences | null = null;
+let cachedPreferenceRaw: string | null | undefined;
+let invalidPreferenceRaw: string | undefined;
 let preferenceReadUnavailable = false;
 export function appearancePreferencesReadUnavailable() {
   return preferenceReadUnavailable;
@@ -117,10 +119,26 @@ export function appearancePreferencesReadUnavailable() {
 
 export function loadAppearancePreferences(): AppearancePreferences {
   try {
-    const value = normalizeAppearancePreferences(
-      JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {},
-    );
+    const raw = localStorage.getItem(KEY);
+    if (raw === cachedPreferenceRaw && lastKnownPreferences) {
+      preferenceReadUnavailable = false;
+      return lastKnownPreferences;
+    }
+    if (raw !== null && raw === invalidPreferenceRaw) {
+      preferenceReadUnavailable = true;
+      return lastKnownPreferences ?? { ...APPEARANCE_DEFAULTS };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw ?? "{}");
+    } catch (error) {
+      invalidPreferenceRaw = raw ?? undefined;
+      throw error;
+    }
+    const value = normalizeAppearancePreferences(parsed ?? {});
     lastKnownPreferences = value;
+    cachedPreferenceRaw = raw;
+    invalidPreferenceRaw = undefined;
     preferenceReadUnavailable = false;
     return value;
   } catch {
@@ -182,6 +200,7 @@ export function saveAppearancePreferences(
     preferenceReadUnavailable = false;
     const notify = () => {
       lastKnownPreferences = next;
+      cachedPreferenceRaw = undefined;
       applyAppearancePreferences(next);
       window.dispatchEvent(new Event(APPEARANCE_PREFERENCES_EVENT));
     };

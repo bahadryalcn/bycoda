@@ -3,6 +3,8 @@ import { sameProjectPath } from "../../projects/model/recents";
 
 const KEY = "bycoda.inboxSeen";
 const LEGACY_KEY = "bycoda.inboxSeenAt";
+// Never evict a seen identity merely because a partial provider fetch omitted it.
+const MAX_SEEN_ITEMS = 50_000;
 
 export type InboxSeenEntry = {
   key: string;
@@ -19,6 +21,8 @@ type SeenStore = {
 type Listener = () => void;
 
 const listeners = new Set<Listener>();
+let cachedRaw: string | null | undefined;
+let cachedStore: SeenStore | undefined;
 const knownItems = new Map<string, InboxSeenEntry & { projectPaths: string[] }>();
 
 /** Share fetched activity across the Inbox view, background poll, and rail menu. */
@@ -70,27 +74,52 @@ function isSeenMap(value: unknown): value is SeenMap {
 function loadInboxSeenStore(): SeenStore {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { seeded: false, items: {} };
-    const parsed: unknown = JSON.parse(raw);
+    if (raw === cachedRaw && cachedStore) return cachedStore;
+    if (!raw) {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: false, items: {} });
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: false, items: {} });
+    }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { seeded: false, items: {} };
+      cachedRaw = raw;
+      return (cachedStore = { seeded: false, items: {} });
     }
     const record = parsed as { seeded?: unknown; items?: unknown };
     if (typeof record.seeded === "boolean" && isSeenMap(record.items)) {
-      return { seeded: record.seeded, items: record.items };
+      cachedRaw = raw;
+      return (cachedStore = { seeded: record.seeded, items: record.items });
     }
     if (isSeenMap(parsed)) {
-      return { seeded: true, items: parsed };
+      cachedRaw = raw;
+      return (cachedStore = { seeded: true, items: parsed });
     }
-    return { seeded: false, items: {} };
+    cachedRaw = raw;
+    return (cachedStore = { seeded: false, items: {} });
   } catch {
+    cachedRaw = undefined;
+    cachedStore = undefined;
     return { seeded: false, items: {} };
   }
 }
 
 function saveInboxSeenStore(store: SeenStore): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ seeded: store.seeded, items: store.items }));
+    const existing = loadInboxSeenStore();
+    if (
+      Object.keys(store.items).length > MAX_SEEN_ITEMS &&
+      Object.keys(store.items).length > Object.keys(existing.items).length
+    )
+      return false;
+    const raw = JSON.stringify({ seeded: store.seeded, items: store.items });
+    localStorage.setItem(KEY, raw);
+    cachedRaw = raw;
+    cachedStore = store;
   } catch {
     return false;
   }
@@ -147,9 +176,12 @@ export function markInboxItemSeen(entry: InboxSeenEntry): boolean {
 
 export function markInboxItemsSeen(entries: readonly InboxSeenEntry[]): boolean {
   const store = loadInboxSeenStore();
+  const items = { ...store.items };
+  for (const entry of entries)
+    if (entry.key) items[entry.key] = Math.max(items[entry.key] ?? 0, inboxUpdatedAt(entry));
   return saveInboxSeenStore({
     ...store,
-    items: entries.reduce(mergeSeen, store.items),
+    items,
   });
 }
 
@@ -170,10 +202,21 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
 }
 
 export function subscribeInboxSeen(listener: Listener): () => void {
+  if (listeners.size === 0 && typeof window !== "undefined")
+    window.addEventListener("storage", onStorage);
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0 && typeof window !== "undefined")
+      window.removeEventListener("storage", onStorage);
   };
+}
+
+function onStorage(event: StorageEvent) {
+  if (event.key !== KEY && event.key !== null) return;
+  cachedRaw = undefined;
+  cachedStore = undefined;
+  notifyInboxSeen();
 }
 
 export function useInboxSeenTick(): number {

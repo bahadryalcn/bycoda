@@ -2,6 +2,8 @@
 
 Paths are repository-relative. Read the affected subsection only; reports and rule gates are not interchangeable.
 
+`src/features/providers/model/rateLimitHistory.ts` shares one storage listener and caches bounded per-account observations. Preserve 90-day/16,000-sample retention, explicit cross-window clears, and in-memory samples after failed storage writes.
+
 ## Analytics and visualization
 
 - UI: `src/features/usage/ui/UsageOverview.tsx`, `UsageCharts.tsx`, `UsageVisualizations.tsx`, `UsageAnalytics.css`, `UsagePage.tsx`; preserve Overview/Projects/Time analysis grouping and drilldown identity.

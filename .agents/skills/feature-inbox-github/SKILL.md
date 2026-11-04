@@ -23,6 +23,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 - Keep provider/account/repository/kind/key/cwd and exact PR head identity through reads, drafts and writes. An old head cannot authorize a newer review.
 - Unread, lifecycle and needs-review are distinct. Shown counts/local reveal are not proof of complete provider results or full-body search.
+- `inboxSeen.ts` caches raw storage snapshots and admits at most 50,000 new seen identities without deleting existing ones. At capacity, existing identities remain updatable; a rejected write must retain visible failure and retry behavior. Partial fetches do not prove an identity is safe to evict.
 - Retain saved filters, selected detail/tab/file, comment/Ask/repair drafts and responsive detail/back navigation.
 - Keep bounded fetching, cache/in-flight deduplication, late-response rejection, good data on error and operation-specific recovery.
 - Public comments, reviews, merge and repair actions retain their native owner approval and provider gates; reads and drafts grant no write authority.

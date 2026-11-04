@@ -10,6 +10,24 @@ import {
 } from "./appearancePreferences";
 
 describe("appearance preferences", () => {
+  it("reuses normalized snapshots and sees direct storage changes", () => {
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({ codeTheme: "dracula" }),
+    );
+    const parse = vi.spyOn(JSON, "parse");
+    const first = loadAppearancePreferences();
+    expect(loadAppearancePreferences()).toBe(first);
+    expect(parse).toHaveBeenCalledTimes(1);
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({ codeTheme: "github" }),
+    );
+    expect(loadAppearancePreferences().codeTheme).toBe("github");
+    localStorage.removeItem("bycoda.appearancePreferences.v1");
+    expect(loadAppearancePreferences().codeTheme).toBe(APPEARANCE_DEFAULTS.codeTheme);
+    parse.mockRestore();
+  });
   it("defaults old preferences to GitHub and persists the selected code theme", () => {
     expect(normalizeAppearancePreferences({}).codeTheme).toBe("github");
     expect(normalizeAppearancePreferences({ codeTheme: "unknown" as never }).codeTheme).toBe(
