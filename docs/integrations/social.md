@@ -587,6 +587,8 @@ account's monitoring state.
 
 The host owns the durable queue. Jobs continue across UI/session closure, but do not execute while the host is offline. Account/campaign/global stops, opt-outs, consent and current project permissions are checked before dispatch, including after credential I/O. Parallel replies to the same inbound event produce one job.
 
+For bounded history, call `jobs.status` or `campaigns.status` with `page: true`, an optional zero-based `offset`, and `limit` from 1 to 100 (default 50). The response contains `jobs` and `page: { offset, limit, total }`; campaign status also includes its campaign. Pages describe live history, so refresh from offset zero after new jobs arrive. `jobs.status` with an exact `id` keeps its single-job result. Calls without pagination retain their complete legacy array/collection results; the Social workspace uses its existing bounded pages. Queue admission, quota checks and startup recovery query only relevant rows, preserving original job identities and uncertain results. No job history or receipt eviction policy is introduced.
+
 Rate limits use Retry-After/reset headers; browser pacing supplements platform
 limits. A dispatched timeout, crash or uncertain platform response goes to review
 and is never blindly resent. Accepted TikTok publish IDs and YouTube video IDs

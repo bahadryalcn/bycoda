@@ -138,7 +138,15 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   ),
   "campaigns.preview": byId(),
   "campaigns.schedule": byId(),
-  "campaigns.status": byId(),
+  "campaigns.status": object(
+    {
+      id: string(),
+      page: { type: "boolean" },
+      offset: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+    },
+    ["id"],
+  ),
   "inbox.list": object({}, []),
   "thread.read": byId(),
   "replies.draft": object({ threadId: string(), text: string(), factIds: strings() }, [
@@ -208,7 +216,15 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     ["name", "accountId", "mode", "trigger", "topics", "dailyLimit", "answers"],
   ),
   "automations.pause": byId(),
-  "jobs.status": object({ id: string() }, []),
+  "jobs.status": object(
+    {
+      id: string(),
+      page: { type: "boolean" },
+      offset: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+    },
+    [],
+  ),
   "jobs.cancel": byId(),
 };
 function string() {

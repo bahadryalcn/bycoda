@@ -70,6 +70,12 @@ describe("Social tool receipt transport", () => {
       properties: { requestId: { minLength: 1, maxLength: 200 } },
     });
     expect(SOCIAL_TOOL_SCHEMAS["replies.send"].properties).not.toHaveProperty("requestId");
+    expect(SOCIAL_TOOL_SCHEMAS["jobs.status"].properties).toMatchObject({
+      page: { type: "boolean" },
+      offset: { minimum: 0 },
+      limit: { minimum: 1, maximum: 100 },
+    });
+    expect(SOCIAL_TOOL_SCHEMAS["campaigns.status"].properties).toHaveProperty("page");
     expect(() => socialAuthorizationScope("execution.enable")).toThrow("Unsupported social tool");
     const responses = await protocol([{ jsonrpc: "2.0", id: 1, method: "tools/list" }], vi.fn());
     expect(responses[0].result.tools).toEqual(catalog);
@@ -387,7 +393,65 @@ describe("Gerçek yerel CLI ve MCP taşıması", () => {
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line));
-      expect(responses.find((value) => value.id === 2).result.tools).toHaveLength(27);
+      const tools = responses.find((value) => value.id === 2).result.tools;
+      const reads = [
+        "policy.get",
+        "accounts.list",
+        "capabilities.get",
+        "campaigns.preview",
+        "campaigns.status",
+        "inbox.list",
+        "thread.read",
+        "drafts.read",
+        "contacts.search",
+        "jobs.status",
+        "programs.list",
+        "programs.status",
+        "programs.preview-schedule",
+      ];
+      const writes = [
+        "campaigns.create",
+        "campaigns.schedule",
+        "drafts.update",
+        "replies.draft",
+        "replies.send",
+        "contacts.upsert",
+        "segments.create",
+        "messages.draft",
+        "messages.send",
+        "comments.draft",
+        "comments.send",
+        "automations.create",
+        "automations.pause",
+        "jobs.cancel",
+        "programs.configure",
+        "programs.generate",
+      ];
+      const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
+      // Draft inspection/editing is a concurrent additive capability. Keep the
+      // original 27 methods mandatory and reject every other unadvertised ID.
+      const concurrent = ["social_drafts_read", "social_drafts_update"];
+      expect(
+        tools
+          .map((tool: { name: string }) => tool.name)
+          .filter((name: string) => !concurrent.includes(name))
+          .sort(),
+      ).toEqual(
+        [...reads, ...writes]
+          .filter((action) => action !== "drafts.read" && action !== "drafts.update")
+          .map(method)
+          .sort(),
+      );
+      for (const tool of tools) {
+        const readOnly = reads.map(method).includes(tool.name);
+        expect(tool).not.toHaveProperty("action");
+        expect(tool.annotations).toMatchObject({
+          readOnlyHint: readOnly,
+          destructiveHint: !readOnly,
+          idempotentHint: readOnly,
+        });
+      }
+      expect(tools).toEqual(socialToolCatalog().map(({ action: _action, ...tool }) => tool));
       const campaignTool = responses
         .find((value) => value.id === 2)
         .result.tools.find((tool: { name: string }) => tool.name === "social_campaigns_create");

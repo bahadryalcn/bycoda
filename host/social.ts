@@ -248,7 +248,7 @@ export class SocialService {
   async suspendLocalExecution() {
     await this.ready;
 
-    if ((await this.jobs()).some((job) => job.status === "running"))
+    if (await this.jobExists("status='running'"))
       throw new Error("Wait for active social sends before switching authority.");
     await this.setSetting("sending", "false");
     await this.setSetting("polling", "false");
@@ -494,7 +494,15 @@ export class SocialService {
       CREATE INDEX IF NOT EXISTS social_jobs_created_order
         ON social_jobs(json_extract(value,'$.createdAt') DESC,scheduled_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS social_jobs_campaign_status
-        ON social_jobs(json_extract(value,'$.campaignId'),status,account_id);`);
+        ON social_jobs(json_extract(value,'$.campaignId'),status,account_id);
+      CREATE INDEX IF NOT EXISTS social_jobs_draft_status ON social_jobs(json_extract(value,'$.draftId'),status);
+      CREATE INDEX IF NOT EXISTS social_jobs_contact_status ON social_jobs(json_extract(value,'$.contactId'),status,id);
+      CREATE INDEX IF NOT EXISTS social_jobs_platform ON social_jobs(account_id,json_extract(value,'$.platformId'),scheduled_at,id);
+      CREATE INDEX IF NOT EXISTS social_jobs_rule_created ON social_jobs(json_extract(value,'$.ruleId'),json_extract(value,'$.createdAt'),status);
+      CREATE INDEX IF NOT EXISTS social_jobs_rule_dispatched ON social_jobs(json_extract(value,'$.ruleId'),json_extract(value,'$.dispatchedAt'),id);
+      CREATE INDEX IF NOT EXISTS social_jobs_order ON social_jobs(scheduled_at,id);
+      CREATE INDEX IF NOT EXISTS social_jobs_status_id ON social_jobs(status,id);
+      CREATE INDEX IF NOT EXISTS social_jobs_campaign_order ON social_jobs(json_extract(value,'$.campaignId'),scheduled_at,id);`);
         await this.programs.ready;
         await store.db.registerFunction("social_text_matches");
         // A small durable change clock lets polling skip historical reads entirely.
@@ -702,10 +710,67 @@ export class SocialService {
     )!;
     if (capability.status !== "available") throw new Error(capability.reason);
   }
-  private async jobs(): Promise<SocialJob[]> {
+  /** Explicit legacy full-history responses retain their array contract. Hot paths never call this. */
+  private async legacyJobs(where: string, values: (string | number)[]): Promise<SocialJob[]> {
     return (
-      await this.store.db.prepare("SELECT value FROM social_jobs ORDER BY scheduled_at,id").all()
+      await this.store.db
+        .prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id`)
+        .all(...values)
     ).map((row) => JSON.parse(String(row.value)) as SocialJob);
+  }
+  private async jobPage(
+    where: string,
+    values: (string | number)[],
+    input: Record<string, unknown>,
+  ) {
+    const offset = finite(input.offset ?? 0, "job offset", 0, Number.MAX_SAFE_INTEGER);
+    const limit = finite(input.limit ?? 50, "job limit", 1, 100);
+    if (!Number.isInteger(offset) || !Number.isInteger(limit)) throw new Error("Invalid job page.");
+    const total = await this.jobCount(where, values);
+    const jobs = (
+      await this.store.db
+        .prepare(
+          `SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT ? OFFSET ?`,
+        )
+        .all(...values, limit, offset)
+    ).map((row) => JSON.parse(String(row.value)) as SocialJob);
+    return { jobs, page: { offset, limit, total } };
+  }
+  private async jobExists(where: string, values: (string | number)[] = []): Promise<boolean> {
+    return !!(await this.store.db
+      .prepare(`SELECT 1 FROM social_jobs WHERE ${where} LIMIT 1`)
+      .get(...values));
+  }
+  private async firstJob(
+    where: string,
+    values: (string | number)[],
+  ): Promise<SocialJob | undefined> {
+    const row = await this.store.db
+      .prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1`)
+      .get(...values);
+    return row ? (JSON.parse(String(row.value)) as SocialJob) : undefined;
+  }
+  private async jobCount(where: string, values: (string | number)[]): Promise<number> {
+    return Number(
+      (await this.store.db
+        .prepare(`SELECT COUNT(*) AS total FROM social_jobs WHERE ${where}`)
+        .get(...values))!.total,
+    );
+  }
+  /** Recovery/mutation walks keep every relevant owner without materializing history. */
+  private async *jobPages(where: string, values: (string | number)[]): AsyncGenerator<SocialJob[]> {
+    let after: string | undefined;
+    for (;;) {
+      const rows = await this.store.db
+        .prepare(
+          `SELECT id,value FROM social_jobs WHERE ${where}${after === undefined ? "" : " AND id>?"} ORDER BY id LIMIT 128`,
+        )
+        .all(...values, ...(after === undefined ? [] : [after]));
+      if (!rows.length) return;
+      yield rows.map((row) => JSON.parse(String(row.value)) as SocialJob);
+      after = String(rows[rows.length - 1].id);
+      if (rows.length < 128) return;
+    }
   }
   private async job(id: string): Promise<SocialJob> {
     const row = await this.store.db.prepare("SELECT value FROM social_jobs WHERE id=?").get(id);
@@ -1376,11 +1441,7 @@ export class SocialService {
       case "accounts.executor": {
         this.owner(p);
         const account = await this.access(p, str(input.accountId, "account"), "read");
-        if (
-          (await this.jobs()).some(
-            (job) => job.accountId === account.id && job.status === "running",
-          )
-        )
+        if (await this.jobExists("account_id=? AND status='running'", [account.id]))
           throw new Error("Wait for the active send before changing executor ownership.");
         await this.cancelBrowserWorkflow?.(account.id);
         account.executorId = str(input.executorId, "executor", 200);
@@ -1495,9 +1556,16 @@ export class SocialService {
         return await this.scheduleCampaign(p, str(input.id, "campaign"), operationId);
       case "campaigns.status": {
         const campaign = await this.campaign(p, str(input.id, "campaign"));
+        if (input.page === true)
+          return {
+            campaign,
+            ...(await this.jobPage("json_extract(value,'$.campaignId')=?", [campaign.id], input)),
+          };
+        if (input.offset !== undefined || input.limit !== undefined)
+          throw new Error("Set page=true to request bounded job history.");
         return {
           campaign,
-          jobs: (await this.jobs()).filter((job) => job.campaignId === campaign.id),
+          jobs: await this.legacyJobs("json_extract(value,'$.campaignId')=?", [campaign.id]),
         };
       }
       case "campaigns.pause": {
@@ -1716,6 +1784,13 @@ export class SocialService {
           await this.jobAccess(p, job);
           return job;
         }
+        if (input.page === true) {
+          const scope = await this.readScope(p);
+          const filter = this.visibleJobCriteria(p, scope);
+          return await this.jobPage(filter.where, filter.values, input);
+        }
+        if (input.offset !== undefined || input.limit !== undefined)
+          throw new Error("Set page=true to request bounded job history.");
         return await this.visibleJobs(p);
       }
       case "jobs.cancel": {
@@ -1824,11 +1899,21 @@ export class SocialService {
   }
   private async visibleJobs(p: SocialPrincipal, scope?: SocialReadScope): Promise<SocialJob[]> {
     scope ??= await this.readScope(p);
-    return (await this.jobs()).filter(
-      (job) =>
-        p.kind === "owner" ||
-        (job.projectIds.includes(p.projectId!) && scope.allowedAccountIds.has(job.accountId)),
-    );
+    const filter = this.visibleJobCriteria(p, scope);
+    return await this.legacyJobs(filter.where, filter.values);
+  }
+  private visibleJobCriteria(
+    p: SocialPrincipal,
+    scope: SocialReadScope,
+  ): { where: string; values: string[] } {
+    if (p.kind !== "owner" && !p.projectId) return { where: "0", values: [] };
+    return p.kind === "owner"
+      ? { where: "1", values: [] }
+      : {
+          where:
+            "account_id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM json_each(social_jobs.value,'$.projectIds') WHERE value=?)",
+          values: [JSON.stringify([...scope.allowedAccountIds]), p.projectId!],
+        };
   }
   private historyProjection(property: "events" | "history", offset: string, limit: number): string {
     const total = `COALESCE(json_array_length(r.value,'$.${property}'),0)`;
@@ -2900,10 +2985,9 @@ export class SocialService {
       );
     // A campaign variant has one global dedupe key, including normal one-off scheduling.
     for (const entry of plan.campaigns.slice(plan.nextIndex)) {
-      const existing = (await this.jobs()).find(
-        (job) =>
-          job.dedupeKey === `campaign:${entry.campaignId}:${entry.revision}:${plan.accountId}` &&
-          (job.status !== "cancelled" || job.dispatchedAt !== undefined),
+      const existing = await this.firstJob(
+        "dedupe_key=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)",
+        [`campaign:${entry.campaignId}:${entry.revision}:${plan.accountId}`],
       );
       if (existing && existing.id !== plan.pendingJobId)
         throw new Error(
@@ -3226,11 +3310,10 @@ export class SocialService {
       );
     if (
       previous &&
-      (await this.jobs()).some(
-        (job) =>
-          job.campaignId === previous.id &&
-          ["queued", "running", "succeeded", "review"].includes(job.status),
-      )
+      (await this.jobExists(
+        "json_extract(value,'$.campaignId')=? AND status IN ('queued','running','succeeded','review')",
+        [previous.id],
+      ))
     )
       throw new Error(
         "A scheduled campaign is immutable. Create a new campaign for another announcement.",
@@ -3503,10 +3586,9 @@ export class SocialService {
     if (draft.generation?.status === "running" || this.generationControllers.has(draft.id))
       throw new Error("Wait for AI generation to finish before editing this draft.");
     if (
-      (await this.jobs()).some(
-        (job) =>
-          job.draftId === draft.id &&
-          (job.status !== "cancelled" || job.dispatchedAt !== undefined),
+      await this.jobExists(
+        "json_extract(value,'$.draftId')=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)",
+        [draft.id],
       )
     )
       throw new Error("Cancel a queued send before editing; dispatched drafts cannot be edited.");
@@ -3773,8 +3855,11 @@ export class SocialService {
     contact.commentEligible = false;
     if (contact.consent) contact.consent.allowed = false;
     await this.put("contact", contact.id, contact);
-    for (const job of await this.jobs())
-      if (job.contactId === contact.id && job.status === "queued") {
+    for await (const page of this.jobPages(
+      "json_extract(value,'$.contactId')=? AND status='queued'",
+      [contact.id],
+    ))
+      for (const job of page) {
         job.status = "cancelled";
         job.error = "Contact opted out.";
         await this.writeJob(job);
@@ -3890,11 +3975,11 @@ export class SocialService {
             account.grants[project].includes("read"),
           );
           const linked = event.postId
-            ? (await this.jobs()).find(
-                (job) =>
-                  job.accountId === accountId &&
-                  job.platformId === event.postId &&
-                  job.projectIds.length === 1,
+            ? (
+                await this.firstJob(
+                  "account_id=? AND json_extract(value,'$.platformId')=? AND json_array_length(value,'$.projectIds')=1",
+                  [accountId, event.postId],
+                )
               )?.projectIds[0]
             : undefined;
           const projectId = linked ?? (projects.length === 1 ? projects[0] : undefined);
@@ -4013,13 +4098,12 @@ export class SocialService {
       if ((await this.get<SocialAccount>("account", rule.accountId)).platform === "linkedin")
         reason = "LinkedIn third-party API content cannot feed automatic reply generation.";
       const day = new Date(this.now()).toISOString().slice(0, 10);
+      const quotaDayStart = Math.floor(this.now() / 86_400_000) * 86_400_000;
       if (
-        (await this.jobs()).filter(
-          (job) =>
-            job.ruleId === rule.id &&
-            new Date(job.createdAt).toISOString().slice(0, 10) === day &&
-            job.status !== "cancelled",
-        ).length >= rule.dailyLimit
+        (await this.jobCount(
+          "json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
+          [rule.id, quotaDayStart, quotaDayStart + 86_400_000],
+        )) >= rule.dailyLimit
       )
         reason = "Daily automatic reply limit reached.";
       let fact: PublicFact | undefined;
@@ -4555,16 +4639,16 @@ export class SocialService {
         if (epoch !== this.backgroundEpoch) return;
       }
     // A dispatch marker survives crashes. Never put uncertain sends back in the queue.
-    const jobs = await this.jobs();
-    if (epoch !== this.backgroundEpoch) return;
-    for (const job of jobs)
-      if (job.status === "running") {
+    for await (const page of this.jobPages("status='running'", [])) {
+      if (epoch !== this.backgroundEpoch) return;
+      for (const job of page) {
         job.status = "review";
         job.error =
           "Host restarted during a send. Reconcile the platform result before another send.";
         await this.writeJob(job);
         if (epoch !== this.backgroundEpoch) return;
       }
+    }
     await this.store.db
       .prepare("DELETE FROM social_locks WHERE executor_id=?")
       .run(this.store.environmentId);
@@ -4982,15 +5066,12 @@ export class SocialService {
             throw new Error("Automatic rule was paused or changed.");
           if (draft.ruleId) {
             const rule = await this.get<SocialRule>("rule", draft.ruleId);
-            const day = new Date(this.now()).toISOString().slice(0, 10);
+            const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
             if (
-              (await this.jobs()).filter(
-                (other) =>
-                  other.id !== job.id &&
-                  other.ruleId === rule.id &&
-                  other.dispatchedAt &&
-                  new Date(other.dispatchedAt).toISOString().slice(0, 10) === day,
-              ).length >= rule.dailyLimit
+              (await this.jobCount(
+                "id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?",
+                [job.id, rule.id, day, day + 86_400_000],
+              )) >= rule.dailyLimit
             )
               throw new Error("Daily automatic send limit reached.");
           }

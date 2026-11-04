@@ -494,6 +494,8 @@ export const SOCIAL_COLLECTIONS = [
 ] as const;
 export type SocialCollection = (typeof SOCIAL_COLLECTIONS)[number];
 export type SocialPage = { offset: number; limit: number; total: number };
+/** jobs.status with page=true; omitted pagination retains its legacy array response. */
+export type SocialJobsPage = { jobs: SocialJob[]; page: SocialPage };
 export type SocialCollectionFilter = {
   query?: string;
   accountId?: string;

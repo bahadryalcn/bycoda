@@ -26,6 +26,7 @@ import type {
   SocialSnapshot,
   SocialThread,
   SocialWorkspaceResponse,
+  SocialJobsPage,
 } from "../src/features/social/model/social";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import { SOCIAL_ACCOUNT_TYPES, SOCIAL_PLATFORMS } from "../src/features/social/model/social";
@@ -38,6 +39,204 @@ const owner: SocialPrincipal = {
   actorId: "owner-device",
   provider: "owner",
 };
+it("pages explicit job history while retaining the legacy complete array and exact job identity", async () => {
+  const s = await fixture();
+  const account = await s.account();
+  const campaign = await s.campaign([account]);
+  const [original] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+  await s.store.transaction(async () => {
+    const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    for (let index = 0; index < 257; index++) {
+      const job = {
+        ...original,
+        id: `settled-${String(index).padStart(4, "0")}`,
+        dedupeKey: `settled-${index}`,
+        status: "succeeded",
+        historyOnly: true,
+        scheduledAt: s.clock.value - 10_000 + index,
+      };
+      await insert.run(
+        job.id,
+        job.dedupeKey,
+        account.id,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
+    }
+  });
+  const ids: string[] = [];
+  for (let offset = 0; offset < 258; offset += 100) {
+    const page = await s.call<SocialJobsPage>("jobs.status", { page: true, offset, limit: 100 });
+    expect(page.jobs.length).toBeLessThanOrEqual(100);
+    expect(page.page).toEqual({ offset, limit: 100, total: 258 });
+    ids.push(...page.jobs.map((job) => job.id));
+  }
+  expect(new Set(ids).size).toBe(258);
+  expect(ids).toContain(original.id);
+  expect(await s.call("jobs.status", { id: original.id })).toEqual(original);
+  expect(await s.call<SocialJob[]>("jobs.status")).toHaveLength(258);
+  await expect(s.call("jobs.status", { offset: 1 })).rejects.toThrow("page=true");
+  await expect(s.call("jobs.status", { page: true, limit: 101 })).rejects.toThrow("job limit");
+  const campaignPage = await s.call<SocialJobsPage>("campaigns.status", {
+    id: campaign.id,
+    page: true,
+    offset: 200,
+    limit: 100,
+  });
+  expect(campaignPage.jobs).toHaveLength(58);
+  expect(campaignPage.page.total).toBe(258);
+  const otherAccount = await s.account("x", [s.b.id], "Unrelated project");
+  const otherCampaign = await s.campaign([otherAccount], [s.b.id]);
+  await s.call("campaigns.schedule", { id: otherCampaign.id });
+  const session = await s.session();
+  const scoped = await s.call<SocialJobsPage>(
+    "jobs.status",
+    { page: true, limit: 100 },
+    session.principal,
+  );
+  expect(scoped.page.total).toBe(258);
+  expect(scoped.jobs.every((job) => job.accountId === account.id)).toBe(true);
+  expect(s.send).not.toHaveBeenCalled();
+});
+it("checks authority and restarts every running original without parsing unrelated terminal history", async () => {
+  const s = await fixture();
+  const account = await s.account();
+  const campaign = await s.campaign([account]);
+  const [original] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+  await s.store.transaction(async () => {
+    const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    for (let index = 0; index < 400; index++) {
+      const job = {
+        ...original,
+        id: `terminal-${index}`,
+        dedupeKey: `terminal-${index}`,
+        status: "succeeded",
+        historyOnly: true,
+      };
+      await insert.run(
+        job.id,
+        job.dedupeKey,
+        account.id,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
+    }
+  });
+  const parse = JSON.parse;
+  let unrelatedParses = 0;
+  const spy = vi
+    .spyOn(JSON, "parse")
+    .mockImplementation(
+      (
+        value: string,
+        ...args: Parameters<typeof JSON.parse> extends [string, ...infer Tail] ? Tail : never
+      ) => {
+        if (value.includes('"historyOnly":true')) unrelatedParses++;
+        return parse(value, ...args);
+      },
+    );
+  const tick = vi.spyOn(s.social, "tick").mockResolvedValue();
+  try {
+    await s.social.suspendLocalExecution();
+    await s.call("accounts.executor", { accountId: account.id, executorId: s.store.environmentId });
+    await s.store.transaction(async () => {
+      const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+      for (let index = 0; index < 260; index++) {
+        const job = {
+          ...original,
+          id: `unknown-${String(index).padStart(4, "0")}`,
+          dedupeKey: `unknown-${index}`,
+          status: "running",
+          dispatchedAt: s.clock.value,
+        };
+        await insert.run(
+          job.id,
+          job.dedupeKey,
+          account.id,
+          job.status,
+          job.scheduledAt,
+          JSON.stringify(job),
+        );
+      }
+    });
+    await s.social.start();
+    await s.social.stop();
+    expect(unrelatedParses).toBe(0);
+    const reviewed = await s.store.db
+      .prepare(
+        "SELECT COUNT(*) AS total FROM social_jobs WHERE id LIKE 'unknown-%' AND status='review' AND json_extract(value,'$.dispatchedAt')=?",
+      )
+      .get(s.clock.value);
+    expect(Number(reviewed!.total)).toBe(260);
+    const recoveryPlan = await s.store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT id,value FROM social_jobs WHERE status='running' AND id>? ORDER BY id LIMIT 128",
+      )
+      .all("");
+    expect(JSON.stringify(recoveryPlan)).toContain("social_jobs_status_id");
+    const countPlan = await s.store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM social_jobs WHERE json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
+      )
+      .all("rule", s.clock.value, s.clock.value + 86_400_000);
+    expect(JSON.stringify(countPlan)).toContain("social_jobs_rule_created");
+    expect(await s.call("jobs.status", { id: original.id })).toEqual(original);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally {
+    spy.mockRestore();
+    tick.mockRestore();
+  }
+});
+it.each([
+  ["America/Los_Angeles", "2026-03-08T09:59:00Z", "2026-03-08T10:01:00Z", 1],
+  ["America/Los_Angeles", "2026-11-01T08:59:00Z", "2026-11-01T09:01:00Z", 1],
+  ["Pacific/Kiritimati", "2026-11-03T23:59:00Z", "2026-11-04T00:01:00Z", 2],
+])(
+  "preserves UTC quota boundaries through DST and UTC midnight in %s",
+  async (zone, before, after, expectedJobs) => {
+    const previous = process.env.TZ;
+    process.env.TZ = String(zone);
+    try {
+      const s = await fixture();
+      s.clock.value = Date.parse(String(before));
+      const account = await s.account();
+      await s.call("profiles.save", {
+        projectId: s.a.id,
+        productName: "Product",
+        brandVoice: "Calm",
+        facts: [
+          {
+            id: "public",
+            topic: "release",
+            text: "Verified release information.",
+            source: "Public changelog",
+          },
+        ],
+      });
+      const rule = await s.call<SocialRule>("automations.create", {
+        accountId: account.id,
+        projectId: s.a.id,
+        name: "Release",
+        mode: "automatic",
+        trigger: "message",
+        topics: ["release"],
+        dailyLimit: 1,
+        answers: [{ keyword: "release", factId: "public" }],
+      });
+      await s.call("automations.activate", { id: rule.id, confirm: "ENABLE_AUTOMATIC_REPLIES" });
+      await s.thread(account, "first", "release");
+      s.clock.value = Date.parse(String(after));
+      await s.thread(account, "second", "release");
+      expect((await s.social.snapshot(owner)).jobs).toHaveLength(Number(expectedJobs));
+      expect(s.send).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  },
+);
 async function seedThreadCopies(store: HostStore, source: SocialThread, count: number, offset = 0) {
   const insert = store.db.prepare("INSERT INTO social_records VALUES ('thread',?,?)");
   // Seed history together so the query-count regression does not measure disk flushes.

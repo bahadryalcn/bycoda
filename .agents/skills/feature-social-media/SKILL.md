@@ -21,6 +21,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Query relevant Social jobs through indexed scopes or explicit pages. Preserve exact receipt and pending/unknown identities; legacy full-history calls and durable evidence need explicit migration or archival contracts before eviction.
+
 - `host/social-credentials.ts` preserves encrypted vault bytes on read/decrypt/schema failures. Sync ciphertext and exclusive Windows key creation before acknowledging persistence; a failed save may be retried after repair but never authorizes replacing unreadable credentials with an empty vault.
 
 - Keep Host/account/project/thread identity, isolated queries, stale-result rejection, retained panels and independent drafts across navigation.
