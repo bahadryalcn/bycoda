@@ -1223,7 +1223,11 @@ describe("explicit task workspaces and owner controls", () => {
     });
     const ticking = tasks.tick();
     try {
-      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      // Windows CI can take several seconds to admit the independent provider.
+      // Keep the slow workspace held throughout; this tests ordering, not speed.
+      await vi.waitFor(() => expect(turns).toHaveLength(1), {
+        timeout: process.platform === "win32" ? 10000 : 1000,
+      });
       expect((await tasks.get("fast"))?.status).toBe("running");
       expect((await tasks.get("slow"))?.status).toBe("queued");
     } finally {

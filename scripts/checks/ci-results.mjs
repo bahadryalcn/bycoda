@@ -346,7 +346,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     const directory = path.resolve(options.directory);
     mkdirSync(directory, { recursive: true });
     const name = `${report.job}-${report.variant}`.replaceAll(/[^A-Za-z0-9_.-]/g, "_");
-    writeFileSync(path.join(directory, `${name}.json`), `${JSON.stringify(report, null, 2)}\n`);
+    // Merged artifacts from reruns must retain both receipts. The evaluator,
+    // rather than download order, chooses the latest attempt for this run/SHA.
+    writeFileSync(
+      path.join(directory, `${name}-attempt-${report.runAttempt}.json`),
+      `${JSON.stringify(report, null, 2)}\n`,
+    );
   } else if (command === "check") {
     const result = evaluateResults({
       needs: JSON.parse(process.env.CI_NEEDS ?? "{}"),

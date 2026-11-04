@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { gates } from "./ci-changes.mjs";
 import { expectedCiSelection, digest } from "./browser-ci.mjs";
 import {
@@ -103,6 +104,74 @@ test("the aggregate accepts full success and only explicitly irrelevant skips", 
   const input = passing(false);
   delete input.needs.changes.outputs.browser;
   assert.equal(evaluateResults(input).success, false);
+});
+
+test("recorded rerun receipts survive artifact merging and keep strict source/attempt checks", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "bycoda-ci-rerun-evidence-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const cli = fileURLToPath(new URL("./ci-results.mjs", import.meta.url));
+  for (const [runAttempt, result] of [
+    ["1", "failure"],
+    ["2", "success"],
+  ]) {
+    execFileSync(
+      process.execPath,
+      [
+        cli,
+        "record",
+        "--job",
+        "check",
+        "--variant",
+        "ubuntu-latest",
+        "--result",
+        result,
+        "--directory",
+        root,
+      ],
+      {
+        windowsHide: true,
+        stdio: "pipe",
+        env: {
+          ...process.env,
+          GITHUB_SHA: identity.sourceSha,
+          GITHUB_RUN_ID: identity.runId,
+          GITHUB_RUN_ATTEMPT: runAttempt,
+        },
+      },
+    );
+  }
+  const receipts = readEvidence(root).sort((a, b) => Number(a.runAttempt) - Number(b.runAttempt));
+  assert.equal(receipts.length, 2);
+  assert.deepEqual(
+    receipts.map(({ runAttempt, result }) => [runAttempt, result]),
+    [
+      ["1", "failure"],
+      ["2", "success"],
+    ],
+  );
+  const input = passing();
+  input.runAttempt = "2";
+  input.evidence = input.evidence.filter(
+    (entry) => !(entry.job === "check" && entry.variant === "ubuntu-latest"),
+  );
+  input.evidence.push(...receipts);
+  assert.equal(evaluateResults(input).success, true);
+  assert.equal(
+    evaluateResults({ ...input, evidence: [...input.evidence].reverse() }).success,
+    true,
+  );
+  const latest = receipts.find((entry) => entry.runAttempt === "2");
+  const duplicate = evaluateResults({ ...input, evidence: [...input.evidence, { ...latest }] });
+  assert.equal(duplicate.success, false);
+  assert.ok(duplicate.errors.includes("Duplicate evidence: check/ubuntu-latest"));
+  for (const change of [{ runId: "99" }, { sourceSha: "b".repeat(40) }]) {
+    const foreign = evaluateResults({
+      ...input,
+      evidence: [...input.evidence, { ...latest, ...change }],
+    });
+    assert.equal(foreign.success, false);
+    assert.ok(foreign.errors.includes("Stale or foreign evidence: check/ubuntu-latest"));
+  }
 });
 
 test("failed or missing preflight cannot qualify a release even when downstream evidence exists", () => {
