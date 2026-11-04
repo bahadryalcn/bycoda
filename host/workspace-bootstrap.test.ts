@@ -423,6 +423,72 @@ it("holds an uncertain generation when its callback fails with a surviving child
   }
 });
 
+it("recovers only an exact-generation verified retirement receipt under the cache witness", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  let receipt!: { nonce: string; path: string };
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async (env) => {
+      receipt = env.buildReceipt;
+      throw new Error("lost owner");
+    }),
+  ).rejects.toThrow("lost owner");
+  await writeFile(
+    receipt.path,
+    JSON.stringify({ version: 1, nonce: "wrong", retirement: "verified" }),
+  );
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+  ).rejects.toThrow("previous build completion is unknown");
+  await writeFile(receipt.path, "{partial");
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+  ).rejects.toThrow("previous build completion is unknown");
+  await writeFile(
+    receipt.path,
+    JSON.stringify({ version: 1, nonce: receipt.nonce, retirement: "verified" }),
+  );
+  expect(
+    await service.withBuildCache(
+      "workspace",
+      new AbortController().signal,
+      async () => "recovered",
+    ),
+  ).toBe("recovered");
+  await expect(readFile(receipt.path)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("retires only each settled build's exact receipt and leaves unrelated files", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({ resolveWorkspace: async () => root });
+  const seen: string[] = [];
+  for (let index = 0; index < 2; index++) {
+    await service.withBuildCache(
+      "workspace",
+      new AbortController().signal,
+      async ({ buildReceipt, cargoTargetDir }) => {
+        seen.push(buildReceipt.path);
+        await writeFile(join(cargoTargetDir, ".bycoda-build-retired-unrelated.json"), "keep");
+        await writeFile(
+          buildReceipt.path,
+          JSON.stringify({ version: 1, nonce: buildReceipt.nonce, retirement: "verified" }),
+        );
+      },
+    );
+  }
+  expect(seen[0]).not.toBe(seen[1]);
+  for (const path of seen) await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(
+    await readFile(
+      join(root, "temp/build/cargo-target/.bycoda-build-retired-unrelated.json"),
+      "utf8",
+    ),
+  ).toBe("keep");
+});
+
 it.each([
   "corrupt",
   JSON.stringify({ pid: 123 }),

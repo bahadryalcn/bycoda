@@ -139,12 +139,21 @@ state before removal. Unknown directories and main are never cleanup targets.
 Retention rejects known dirty or private ignored inputs before full fingerprinting.
 The complete fingerprint runs in a bounded worker and remains mandatory for an
 owner review and revalidation. Build-cache leases retain an unknown-effect fence
-after interrupted build execution, including when the sentinel is missing. The
-current implementation cannot automatically prove an orphaned compiler tree has
-exited; it reports the held state instead of reclaiming that cache.
-The development supervisor accepts a normally closed Cargo command as its
-completion boundary, including a nonzero exit; it does not establish that an
-independently detached descendant has exited.
+after interrupted build execution, including when the sentinel is missing. On
+Windows, an available verified guardian with build-receipt capability contains
+Cargo in its own kernel job and survives the Node owner's exit. Only verified
+tree retirement publishes an immutable receipt for that exact cache generation.
+Recovery validates the receipt under the SQLite ownership witness before admitting
+another build; missing, malformed or mismatched evidence keeps the cache held.
+Settled receipts are removed only after durable generation settlement. Guardian
+failure does not authorize PID-based recovery or a second build.
+Without a compatible guardian, ordinary development retains the existing process
+fallback. A normally closed Cargo command, including a nonzero exit, remains its
+completion boundary; independently detached descendants are not proven retired.
+Managed development servers also use an available verified Windows guardian for
+supported shell invocations. Normal shutdown waits for exact owned retirement;
+unknown outcomes retain activity and port leases. Discovered processes are not
+owned merely because they use a project directory or port.
 
 Default disk policy is 50 GiB for materialized directories, an 80% warning and
 20 GiB minimum free space. Shared caches and recovery objects are reported

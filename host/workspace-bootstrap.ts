@@ -342,7 +342,11 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
   async withBuildCache<T>(
     workspaceId: string,
     signal: AbortSignal,
-    build: (environment: { cargoTargetDir: string; cargoHome: string }) => Promise<T>,
+    build: (environment: {
+      cargoTargetDir: string;
+      cargoHome: string;
+      buildReceipt: { nonce: string; path: string };
+    }) => Promise<T>,
   ): Promise<T> {
     const root = await this.workspace(workspaceId);
     const cargoTargetDir = await this.cargoTarget(root);
@@ -356,6 +360,45 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
     let published = false;
     let effectStarted = false;
     let settled = false;
+    const retireReceipt = async (receiptNonce: string) => {
+      const receiptPath = join(cargoTargetDir, `.bycoda-build-retired-${receiptNonce}.json`);
+      try {
+        const before = await lstat(receiptPath);
+        if (!before.isFile() || before.isSymbolicLink() || before.size > 1024) return;
+        const proof = JSON.parse(await readFile(receiptPath, "utf8"));
+        const after = await lstat(receiptPath);
+        if (
+          before.dev !== after.dev ||
+          before.ino !== after.ino ||
+          before.size !== after.size ||
+          before.mtimeMs !== after.mtimeMs ||
+          Object.keys(proof).sort().join(",") !== "nonce,retirement,version" ||
+          proof.version !== 1 ||
+          proof.nonce !== receiptNonce ||
+          proof.retirement !== "verified"
+        )
+          return;
+        await unlink(receiptPath);
+      } catch {
+        /* Cleanup failure keeps harmless proof for later inspection. */
+      }
+    };
+    const retireSettledReceipt = async () => {
+      try {
+        db!.exec("BEGIN EXCLUSIVE");
+        const current = db!
+          .prepare("SELECT nonce, uncertain FROM lease_generation WHERE id=1")
+          .get() as { nonce?: unknown; uncertain?: unknown } | undefined;
+        if (current?.nonce === nonce && current.uncertain === 0) await retireReceipt(nonce);
+        db!.exec("COMMIT");
+      } catch {
+        try {
+          db!.exec("ROLLBACK");
+        } catch {
+          /* No witness was acquired. */
+        }
+      }
+    };
     const pause = async () => {
       this.options.onBuildCacheState?.(workspaceId, "waitingForBuildCache");
       await new Promise<void>((done, reject) => {
@@ -404,13 +447,60 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
         }
         db = candidate;
         try {
+          let recoveredNonce: string | undefined;
           const generation = db
             .prepare("SELECT nonce, uncertain FROM lease_generation WHERE id=1")
             .get() as { nonce?: unknown; uncertain?: unknown } | undefined;
-          if (generation?.uncertain === 1)
-            throw new Error(
-              "Build cache is held: previous build completion is unknown; verify its process tree before recovery.",
-            );
+          if (generation?.uncertain === 1) {
+            const priorNonce = generation.nonce;
+            let proven = false;
+            if (
+              typeof priorNonce === "string" &&
+              /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
+                priorNonce,
+              )
+            ) {
+              const receiptPath = join(cargoTargetDir, `.bycoda-build-retired-${priorNonce}.json`);
+              try {
+                const stat = await lstat(receiptPath);
+                if (stat.isFile() && !stat.isSymbolicLink() && stat.size <= 1024) {
+                  const file = await open(
+                    receiptPath,
+                    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+                  );
+                  try {
+                    const before = await file.stat();
+                    const proof = JSON.parse(await file.readFile({ encoding: "utf8" }));
+                    const after = await file.stat();
+                    proven =
+                      before.isFile() &&
+                      before.dev === stat.dev &&
+                      before.ino === stat.ino &&
+                      before.size <= 1024 &&
+                      before.size === after.size &&
+                      before.mtimeMs === after.mtimeMs &&
+                      Object.keys(proof).sort().join(",") === "nonce,retirement,version" &&
+                      proof.version === 1 &&
+                      proof.nonce === priorNonce &&
+                      proof.retirement === "verified";
+                  } finally {
+                    await file.close();
+                  }
+                }
+              } catch {
+                /* Missing, corrupt or unreadable proof remains unknown. */
+              }
+            }
+            if (!proven || typeof priorNonce !== "string")
+              throw new Error(
+                "Build cache is held: previous build completion is unknown; verify its process tree before recovery.",
+              );
+            db.prepare(
+              "UPDATE lease_generation SET uncertain=0 WHERE id=1 AND nonce=? AND uncertain=1",
+            ).run(priorNonce);
+            generation.uncertain = 0;
+            recoveredNonce = priorNonce;
+          }
           let old: string | undefined;
           try {
             old = await readFile(path, "utf8");
@@ -473,6 +563,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
             await pause();
             continue;
           }
+          if (recoveredNonce) await retireReceipt(recoveredNonce);
           signal.throwIfAborted();
           try {
             await link(temporary, path);
@@ -511,17 +602,23 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
         result = await build({
           cargoTargetDir,
           cargoHome: process.env.CARGO_HOME ?? join(homedir(), ".cargo"),
+          buildReceipt: {
+            nonce,
+            path: join(cargoTargetDir, `.bycoda-build-retired-${nonce}.json`),
+          },
         });
       } catch (error) {
         if (!(error instanceof BuildCacheSettledFailure)) throw error;
         db!.prepare("UPDATE lease_generation SET uncertain=0 WHERE id=1 AND nonce=?").run(nonce);
         db!.exec("COMMIT");
         settled = true;
+        await retireSettledReceipt();
         throw error.original;
       }
       db!.prepare("UPDATE lease_generation SET uncertain=0 WHERE id=1 AND nonce=?").run(nonce);
       db!.exec("COMMIT");
       settled = true;
+      await retireSettledReceipt();
       return result;
     } finally {
       try {

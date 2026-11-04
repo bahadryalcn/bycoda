@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { constants, fstatSync, lstatSync, type Stats } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -6,7 +7,7 @@ import {
   NativeGuardianChild,
   ProviderGuardianError,
   type GuardianLaunch,
-} from "./provider-guardian";
+} from "./provider-guardian.ts";
 
 const MAX_EXECUTABLE = 64 * 1024 * 1024;
 const MAX_MANIFEST = 64 * 1024;
@@ -34,6 +35,7 @@ function identity(stat: Stats): string {
 }
 
 export type PreparedGuardian = {
+  supportsBuildReceipt(): Promise<boolean>;
   spawn(
     launch: GuardianLaunch,
     beforeStart?: () => Promise<void>,
@@ -153,6 +155,26 @@ export async function prepareProviderGuardian(
     let used = false;
     let disposed = false;
     return {
+      async supportsBuildReceipt() {
+        if (disposed || process.platform !== "win32") return false;
+        try {
+          const result = await new Promise<boolean>((done) => {
+            execFile(
+              path,
+              ["--build-receipt-capability"],
+              { windowsHide: true, timeout: 3_000, maxBuffer: 1024 },
+              (error, stdout) => done(!error && stdout.trim() === "bycoda-build-receipt-v1"),
+            );
+          });
+          return (
+            result &&
+            identity(lstatSync(path)) === identity(before) &&
+            identity(fstatSync(original.fd)) === identity(before)
+          );
+        } catch {
+          return false;
+        }
+      },
       spawn(launch, beforeStart, commitStart) {
         if (used || disposed) throw unavailable();
         used = true;

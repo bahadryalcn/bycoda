@@ -1,9 +1,13 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, relative, resolve, win32 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import type { EventEmitter } from "node:events";
+import type { Readable } from "node:stream";
 import { monotonicNow } from "../src/shared/lib/time/timestamps";
+import { prepareDevServerGuardian } from "./dev-server-guardian";
+import type { NativeGuardianChild } from "./provider-guardian";
 import type {
   DevProcess,
   DevProcessIdentity,
@@ -44,9 +48,17 @@ export interface DevServerProcessDiscovery {
   invalidate?(): void;
 }
 
+type DevServerChild = EventEmitter & {
+  readonly pid?: number;
+  readonly stdout: Readable | null;
+  readonly stderr: Readable | null;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+};
 type ManagedServer = {
   server: DevServer;
-  child: ChildProcess;
+  child: DevServerChild;
+  guardian?: NativeGuardianChild;
   identities: Map<number, DevProcess>;
   output: string;
   expectedPort?: number;
@@ -60,6 +72,7 @@ type ManagedServer = {
 export type DevServersOptions = {
   discovery?: DevServerProcessDiscovery;
   spawnProcess?: typeof spawn;
+  prepareGuardian?: typeof prepareDevServerGuardian;
   shellProfile?: ShellProfile | null;
   graceMs?: number;
   pollMs?: number;
@@ -257,12 +270,22 @@ export class DevServersService {
   ) {
     const launched = await this.portLeases.launchWithRetry(request, async (lease) => {
       await authorize?.();
-      const result = await this.start(
-        { ...request, expectedPort: lease.ports.vite ?? lease.ports.host },
-        projects,
-        portLeaseEnvironment(lease),
-        authorize,
-      );
+      let result: DevServerStartResult;
+      try {
+        result = await this.start(
+          { ...request, expectedPort: lease.ports.vite ?? lease.ports.host },
+          projects,
+          portLeaseEnvironment(lease),
+          authorize,
+        );
+      } catch (error) {
+        const id = (error as { devServerId?: unknown })?.devServerId;
+        const uncertain = typeof id === "string" ? this.managed.get(id) : undefined;
+        if (!uncertain) throw error;
+        this.serverLeases.set(uncertain.server.id, lease.id);
+        this.workspaceLaunches.set(uncertain.server.id, structuredClone(request));
+        return { server: { ...uncertain.server } };
+      }
       if (
         result.conflict ||
         (result.server?.state === "error" && /already in use/i.test(result.server.error ?? ""))
@@ -433,6 +456,26 @@ export class DevServersService {
             throw new Error("An owned operation is still running; shutdown is unverified.");
           if (monotonicNow() >= deadline)
             throw new Error("Development server shutdown timed out; ownership remains unknown.");
+          if (record.guardian) {
+            await bounded(record.guardian.stop(), Math.max(1, deadline - monotonicNow()));
+            if (!record.guardian.retirementVerified)
+              throw new Error("Guardian did not verify process tree retirement.");
+            record.treeRetired = true;
+            record.server.state = "stopped";
+            if (this.serverLeases.has(id)) {
+              await bounded(
+                this.portLeases.release(this.serverLeases.get(id)!),
+                Math.max(1, deadline - monotonicNow()),
+              );
+              this.serverLeases.delete(id);
+            }
+            await bounded(
+              Promise.resolve(this.activityReleases.get(id)?.()),
+              Math.max(1, deadline - monotonicNow()),
+            );
+            this.activityReleases.delete(id);
+            continue;
+          }
           if (!record.server.process) {
             throw new Error("Owned process identity is unavailable; shutdown is unverified.");
           }
@@ -583,6 +626,12 @@ export class DevServersService {
           if (record.server.state !== "stopping" && record.server.state !== "error") {
             record.server.state = endpoints.length ? "running" : "starting";
           }
+        } else if (
+          record.guardian &&
+          !record.guardian.retirementVerified &&
+          record.server.state !== "error"
+        ) {
+          record.server.state = "starting";
         } else if (root && record.server.state !== "error") {
           record.server.state =
             record.exitCode === undefined || record.exitCode === 0 ? "stopped" : "error";
@@ -808,6 +857,46 @@ export class DevServersService {
       );
     if (selected.targets.length > 128)
       throw new Error("The selected process tree is too large to stop safely in one operation.");
+    if (selected.managed?.guardian) {
+      const record = selected.managed;
+      record.server.state = "stopping";
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await authorize?.();
+        await Promise.race([
+          record.guardian!.stop(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(new Error("Guardian retirement timed out; process ownership is unknown.")),
+              20_000,
+            );
+          }),
+        ]);
+        if (!record.guardian!.retirementVerified)
+          throw new Error("Guardian retirement is unknown.");
+        record.treeRetired = true;
+        record.server.state = "stopped";
+        if (!retainUntilExit) {
+          const id = selected.server.id;
+          if (this.serverLeases.has(id)) {
+            await this.portLeases.release(this.serverLeases.get(id)!);
+            this.serverLeases.delete(id);
+          }
+          await this.activityReleases.get(id)?.();
+          this.activityReleases.delete(id);
+        }
+        return { state: "stopped", requiresForce: false, affectedPorts: selected.affectedPorts };
+      } catch (error) {
+        record.shutdownUnverified = true;
+        record.server.state = "error";
+        record.server.error = failure(error);
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
+        this.invalidate();
+      }
+    }
     const operationDeadline = Date.now() + 20_000;
     if (selected.managed) selected.managed.server.state = "stopping";
     this.invalidate();
@@ -919,7 +1008,9 @@ export class DevServersService {
       } else await release?.();
       return result;
     } catch (error) {
-      await release?.();
+      const id = (error as { devServerId?: unknown })?.devServerId;
+      if (typeof id === "string" && release) this.activityReleases.set(id, release);
+      else await release?.();
       throw error;
     }
   }
@@ -958,7 +1049,9 @@ export class DevServersService {
     if (this.managed.size >= MAX_MANAGED) {
       const retired = [...this.managed].find(
         ([, record]) =>
-          record.exitCode !== undefined && ["stopped", "error"].includes(record.server.state),
+          record.exitCode !== undefined &&
+          ["stopped", "error"].includes(record.server.state) &&
+          (!record.guardian || record.guardian.retirementVerified),
       );
       if (!retired) throw new Error("Too many managed dev servers are active.");
       this.managed.delete(retired[0]);
@@ -974,19 +1067,54 @@ export class DevServersService {
           env: {},
           verbatim: false,
         };
-    await authorize?.();
-    if (this.closing) throw new Error("Development server service is closing.");
-    const child = (this.options.spawnProcess ?? spawn)(invocation.file, invocation.args, {
-      cwd,
-      env: { ...process.env, ...invocation.env, ...environment },
-      windowsVerbatimArguments: invocation.verbatim,
-      windowsHide: true,
-      // A dedicated command, separate from shared terminal tabs. No group-wide kills.
-      detached: !windows,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const prepared =
+      isAbsolute(invocation.file) &&
+      !invocation.verbatim &&
+      (!this.options.spawnProcess || this.options.prepareGuardian)
+        ? await (this.options.prepareGuardian ?? prepareDevServerGuardian)()
+        : undefined;
+    try {
+      await authorize?.();
+      if (this.closing) throw new Error("Development server service is closing.");
+    } catch (error) {
+      await prepared?.dispose();
+      throw error;
+    }
+    let guardian: NativeGuardianChild | undefined;
+    if (prepared) {
+      try {
+        guardian = prepared.spawn(
+          {
+            command: invocation.file,
+            args: invocation.args,
+            cwd,
+            env: { ...process.env, ...invocation.env, ...environment },
+          },
+          async () => {
+            await authorize?.();
+          },
+          () => {
+            if (this.closing) throw new Error("Development server service is closing.");
+          },
+        );
+      } finally {
+        await prepared.dispose();
+      }
+    }
+    const child: DevServerChild =
+      guardian ??
+      (this.options.spawnProcess ?? spawn)(invocation.file, invocation.args, {
+        cwd,
+        env: { ...process.env, ...invocation.env, ...environment },
+        windowsVerbatimArguments: invocation.verbatim,
+        windowsHide: true,
+        // A dedicated command, separate from shared terminal tabs. No group-wide kills.
+        detached: !windows,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     const record: ManagedServer = {
       child,
+      guardian,
       identities: new Map(),
       output: "",
       expectedPort: expectedPort as number | undefined,
@@ -1100,7 +1228,7 @@ export class DevServersService {
       append(redactStderr(text));
       captureStderr(text);
     });
-    child.on("error", (error) => {
+    child.on("error", (error: Error) => {
       if (closed) return;
       record.server.state = "error";
       record.server.error = error.message;
@@ -1112,7 +1240,7 @@ export class DevServersService {
     child.once("exit", () => {
       record.exited = true;
     });
-    child.on("close", (code) => {
+    child.on("close", (code: number | null) => {
       if (closed) return;
       closed = true;
       const stdoutEnd = stdout.end(),
@@ -1121,7 +1249,11 @@ export class DevServersService {
       captureStdout(stdoutEnd, true);
       captureStderr(stderrEnd, true);
       record.exitCode = code;
-      if (record.server.state !== "error" && record.server.state !== "stopping") {
+      if (guardian && !guardian.retirementVerified) {
+        record.shutdownUnverified = true;
+        record.server.state = "error";
+        record.server.error = "Guardian process tree retirement is unknown.";
+      } else if (record.server.state !== "error" && record.server.state !== "stopping") {
         record.server.state = code === 0 ? "stopped" : "error";
         if (code !== 0) record.server.error = `Dev server exited (${code ?? "signal"}).`;
       }
@@ -1132,6 +1264,17 @@ export class DevServersService {
       });
       this.invalidate();
     });
+    if (guardian) {
+      try {
+        await guardian.started;
+      } catch (error) {
+        record.server.state = "error";
+        record.server.error = `Guardian startup outcome is unknown for ${record.server.id}; verify retirement before retrying.`;
+        throw Object.assign(new Error(record.server.error, { cause: error }), {
+          devServerId: record.server.id,
+        });
+      }
+    }
     this.invalidate();
     const until = Date.now() + 2000;
     while (child.pid && record.exitCode === undefined && record.server.state !== "error") {

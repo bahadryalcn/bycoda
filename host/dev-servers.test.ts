@@ -202,6 +202,150 @@ it("bounds a pending admission and refuses a late spawn after shutdown begins", 
   expect(f.spawnProcess).not.toHaveBeenCalled();
 });
 
+it("uses the retained guardian retirement proof without signalling discovered PIDs", async () => {
+  const f = fixture();
+  const child = Object.assign(new EventEmitter(), {
+    pid: root.pid,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    exitCode: null,
+    signalCode: null,
+    retirementVerified: false,
+    started: Promise.resolve(),
+    stop: vi.fn(async () => {
+      child.retirementVerified = true;
+      child.emit("close", 0, null);
+    }),
+  });
+  const dispose = vi.fn(async () => {});
+  const prepared = { spawn: vi.fn(() => child), dispose };
+  const service = new DevServersService({
+    discovery: f.discovery,
+    spawnProcess: f.spawnProcess as unknown as typeof spawn,
+    shellProfile: { id: "test", name: "Test", kind: "powershell", path: process.execPath },
+    graceMs: 0,
+    prepareGuardian: async () => prepared as never,
+  });
+  await service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  );
+  await service.close();
+  expect(child.stop).toHaveBeenCalledOnce();
+  expect(f.discovery.signal).not.toHaveBeenCalled();
+  expect(f.spawnProcess).not.toHaveBeenCalled();
+  expect(dispose).toHaveBeenCalledOnce();
+});
+
+it("retains unknown guardian retirement without falling back to PID signals", async () => {
+  const f = fixture();
+  const child = Object.assign(new EventEmitter(), {
+    pid: root.pid,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    exitCode: null,
+    signalCode: null,
+    retirementVerified: false,
+    started: Promise.resolve(),
+    stop: vi.fn(async () => {
+      throw new Error("unknown");
+    }),
+  });
+  const service = new DevServersService({
+    discovery: f.discovery,
+    spawnProcess: f.spawnProcess as unknown as typeof spawn,
+    shellProfile: { id: "test", name: "Test", kind: "powershell", path: process.execPath },
+    graceMs: 0,
+    prepareGuardian: async () => ({ spawn: () => child, dispose: async () => {} }) as never,
+  });
+  await service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  );
+  await expect(service.close()).rejects.toThrow("not fully verified");
+  expect(f.discovery.signal).not.toHaveBeenCalled();
+});
+
+it("retains workspace port and activity ownership when guardian admission is unknown", async () => {
+  const f = fixture();
+  const release = vi.fn(async () => {});
+  const started = Promise.reject(new Error("unknown admission"));
+  void started.catch(() => {});
+  const child = Object.assign(new EventEmitter(), {
+    pid: undefined,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    exitCode: null,
+    signalCode: null,
+    retirementVerified: false,
+    started,
+    stop: vi.fn(async () => {
+      throw new Error("unknown retirement");
+    }),
+  });
+  const service = new DevServersService({
+    discovery: f.discovery,
+    spawnProcess: f.spawnProcess as unknown as typeof spawn,
+    shellProfile: { id: "test", name: "Test", kind: "powershell", path: process.execPath },
+    startActivity: async () => release,
+    prepareGuardian: async () => ({ spawn: () => child, dispose: async () => {} }) as never,
+  });
+  const result = await service.startWorkspace(
+    {
+      workspaceId: "workspace",
+      runId: "run",
+      kinds: ["vite"],
+      command: "node server.js",
+      cwd: process.cwd(),
+      projectId: "project",
+    },
+    projects,
+  );
+  expect(result.result.server).toMatchObject({
+    state: "error",
+    error: expect.stringContaining("outcome is unknown"),
+  });
+  expect(await service.portLeases.list("workspace")).toHaveLength(1);
+  expect(release).not.toHaveBeenCalled();
+  await expect(service.close()).rejects.toThrow("not fully verified");
+  expect(await service.portLeases.list("workspace")).toHaveLength(1);
+});
+
+it("uses guardian retirement for an explicitly stopped managed server", async () => {
+  const f = fixture();
+  const child = Object.assign(new EventEmitter(), {
+    pid: root.pid,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    exitCode: null,
+    signalCode: null,
+    retirementVerified: false,
+    started: Promise.resolve(),
+    stop: vi.fn(async () => {
+      child.retirementVerified = true;
+      child.emit("close", 0, null);
+    }),
+  });
+  const service = new DevServersService({
+    discovery: f.discovery,
+    spawnProcess: f.spawnProcess as unknown as typeof spawn,
+    shellProfile: { id: "test", name: "Test", kind: "powershell", path: process.execPath },
+    prepareGuardian: async () => ({ spawn: () => child, dispose: async () => {} }) as never,
+  });
+  const started = (await service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  )) as DevServerStartResult;
+  expect(
+    await service.handle("devServers.stop", { id: started.server!.id }, projects),
+  ).toMatchObject({ state: "stopped", requiresForce: false });
+  expect(child.stop).toHaveBeenCalledOnce();
+  expect(f.discovery.signal).not.toHaveBeenCalled();
+});
+
 it("rejects reserved workspace starts before spawning and releases attempted port allocations", async () => {
   const startActivity = vi.fn(async () => {
     throw new Error("Workspace reservation is active");

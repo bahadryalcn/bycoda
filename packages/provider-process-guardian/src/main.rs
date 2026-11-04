@@ -1,5 +1,13 @@
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 2 && args[1] == std::ffi::OsStr::new("--build-receipt-capability") {
+        if cfg!(windows) {
+            println!("bycoda-build-receipt-v1");
+        } else {
+            std::process::exit(2);
+        }
+        return;
+    }
     if args.len() != 2 || args[1] != std::ffi::OsStr::new("--provider-process-guardian") {
         std::process::exit(2);
     }

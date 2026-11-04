@@ -10,10 +10,11 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
+import { access, cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { delimiter, dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DevPortLeases } from "../../host/dev-port-leases.ts";
+import { prepareProviderGuardian } from "../../host/provider-guardian-deployment.ts";
 import {
   WorkspaceBootstrapService,
   BuildCacheSettledFailure,
@@ -166,12 +167,19 @@ export async function completed(child) {
 
 export async function completedCargoBuild(child) {
   try {
-    return await completed(child);
+    const output = await completed(child);
+    if (child.retirement) await child.retirement;
+    return output;
   } catch (error) {
     // A numeric, unsignalled Cargo exit after stdio close is the same command
     // completion boundary used on success. Spawn failures and interrupted
     // commands retain the unknown-effect fence.
-    if (!child.spawnError && child.signalCode === null && Number.isInteger(child.exitCode))
+    if (
+      !child.spawnError &&
+      child.signalCode === null &&
+      Number.isInteger(child.exitCode) &&
+      (!child.retirement || child.retirementVerified)
+    )
       throw new BuildCacheSettledFailure(error);
     throw error;
   }
@@ -180,6 +188,10 @@ export async function completedCargoBuild(child) {
 export async function stopChildren(children) {
   await Promise.all(
     [...children].map(async (child) => {
+      if (child.retirement) {
+        await child.stop();
+        return;
+      }
       if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
         await child.closed;
         return;
@@ -386,7 +398,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
     supervisedChild(command, parameters, { cwd: root, env, children });
   const cancel = () => {
     abort.abort();
-    void stopChildren(children);
+    void stopChildren(children).catch((error) =>
+      console.warn("Development child retirement is unknown:", error),
+    );
   };
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
@@ -482,16 +496,70 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         const executable = await bootstrap.withBuildCache(
           workspaceId,
           abort.signal,
-          async ({ cargoTargetDir: leasedCargoTargetDir, cargoHome }) => {
+          async ({ cargoTargetDir: leasedCargoTargetDir, cargoHome, buildReceipt }) => {
             const cargoTargetDir = explicitCargoTarget ?? leasedCargoTargetDir;
             await mkdir(cargoTargetDir, { recursive: true });
-            await completedCargoBuild(
-              launch("cargo", ["build", "--manifest-path", join(root, "src-tauri", "Cargo.toml")], {
-                ...env,
-                CARGO_TARGET_DIR: cargoTargetDir,
-                CARGO_HOME: cargoHome,
-              }),
-            );
+            const cargoArgs = ["build", "--manifest-path", join(root, "src-tauri", "Cargo.toml")];
+            const cargoEnv = {
+              ...env,
+              CARGO_TARGET_DIR: cargoTargetDir,
+              CARGO_HOME: cargoHome,
+            };
+            let cargoChild;
+            const prepared = await prepareProviderGuardian(hostRuntime);
+            try {
+              const searchPath =
+                Object.entries(cargoEnv).find(([key]) => key.toUpperCase() === "PATH")?.[1] ?? "";
+              const cargoPath =
+                process.platform === "win32"
+                  ? (
+                      await Promise.all(
+                        searchPath
+                          .split(delimiter)
+                          .filter(isAbsolute)
+                          .map(async (directory) => {
+                            const candidate = join(directory, "cargo.exe");
+                            try {
+                              await access(candidate);
+                              return candidate;
+                            } catch {
+                              return undefined;
+                            }
+                          }),
+                      )
+                    ).find(Boolean)
+                  : undefined;
+              if (prepared && cargoPath && (await prepared.supportsBuildReceipt())) {
+                abort.signal.throwIfAborted();
+                const child = prepared.spawn(
+                  { command: cargoPath, args: cargoArgs, cwd: root, env: cargoEnv, buildReceipt },
+                  async () => abort.signal.throwIfAborted(),
+                  () => abort.signal.throwIfAborted(),
+                );
+                child.failure = "";
+                child.spawnError = null;
+                child.on("error", (error) => {
+                  child.spawnError = error;
+                });
+                child.stdout.on("data", (chunk) => {
+                  child.failure = (child.failure + chunk).slice(-8192);
+                });
+                child.stderr.on("data", (chunk) => {
+                  child.failure = (child.failure + chunk).slice(-8192);
+                });
+                children.add(child);
+                child.closed = new Promise((done) =>
+                  child.once("close", () => {
+                    children.delete(child);
+                    done();
+                  }),
+                );
+                cargoChild = child;
+              }
+            } finally {
+              await prepared?.dispose();
+            }
+            await completedCargoBuild(cargoChild ?? launch("cargo", cargoArgs, cargoEnv));
             try {
               return await bootstrap.copyExecutable({
                 workspaceId,
