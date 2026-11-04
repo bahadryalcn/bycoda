@@ -963,6 +963,61 @@ describe("reviewed campaign approval", () => {
     expect((await s.social.snapshot(owner)).jobs).toEqual([]);
     expect(s.send).not.toHaveBeenCalled();
   });
+  it("keeps the UTC AI generation and dispatch limit across local midnight", async () => {
+    const previous = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      const generate = vi.fn<import("./social-generation").SocialTextGenerator>(async () =>
+        JSON.stringify({ text: "Verified release information." }),
+      );
+      const s = await fixture(generate);
+      s.clock.value = Date.parse("2026-11-04T07:59:00Z");
+      const account = await s.account();
+      await s.call("profiles.save", {
+        projectId: s.a.id,
+        productName: "Product",
+        brandVoice: "Calm",
+        facts: [
+          {
+            id: "public",
+            topic: "release",
+            text: "Verified release information.",
+            source: "Public changelog",
+          },
+        ],
+      });
+      const rule = await s.call<SocialRule>("automations.create", {
+        accountId: account.id,
+        projectId: s.a.id,
+        name: "AI release",
+        agent: { provider: "antigravity" },
+        mode: "automatic",
+        trigger: "message",
+        topics: ["release"],
+        dailyLimit: 1,
+        answers: [{ keyword: "release", factId: "public" }],
+      });
+      await s.call("automations.activate", { id: rule.id, confirm: "ENABLE_AUTOMATIC_REPLIES" });
+      await s.thread(account, "first-ai", "release");
+      await s.enable();
+      await s.social.tick();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(s.send).toHaveBeenCalledTimes(1);
+      s.clock.value = Date.parse("2026-11-04T08:01:00Z");
+      await s.thread(account, "second-ai", "release");
+      await s.social.tick();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(s.send).toHaveBeenCalledTimes(1);
+      expect(
+        (await s.social.snapshot(owner)).drafts.some((draft) =>
+          draft.reviewReason?.includes("Daily AI generation limit"),
+        ),
+      ).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
   it("rejects a replacement while a reviewing client awaits policy lookup", async () => {
     const s = await fixture(),
       campaign = await draft(s);
@@ -3733,6 +3788,60 @@ describe("Merkezi sosyal servis", () => {
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
   });
+  it.each([
+    ["America/Los_Angeles", "2026-11-04T07:59:00Z", "2026-11-04T08:01:00Z"],
+    ["Pacific/Kiritimati", "2026-11-04T09:59:00Z", "2026-11-04T10:01:00Z"],
+  ])(
+    "keeps the UTC automatic reply limit across local midnight in %s",
+    async (zone, before, after) => {
+      const previous = process.env.TZ;
+      process.env.TZ = zone;
+      try {
+        const s = await fixture();
+        s.clock.value = Date.parse(before);
+        const account = await s.account();
+        await s.call("profiles.save", {
+          projectId: s.a.id,
+          productName: "Product",
+          brandVoice: "Calm",
+          facts: [
+            {
+              id: "public",
+              topic: "release",
+              text: "Verified release information.",
+              source: "Public changelog",
+            },
+          ],
+        });
+        const rule = await s.call<SocialRule>("automations.create", {
+          accountId: account.id,
+          projectId: s.a.id,
+          name: "Release",
+          mode: "automatic",
+          trigger: "message",
+          topics: ["release"],
+          dailyLimit: 1,
+          answers: [{ keyword: "release", factId: "public" }],
+        });
+        await s.call("automations.activate", { id: rule.id, confirm: "ENABLE_AUTOMATIC_REPLIES" });
+        await s.thread(account, "first", "release");
+        expect((await s.social.snapshot(owner)).jobs).toHaveLength(1);
+        s.clock.value = Date.parse(after);
+        await s.thread(account, "second", "release");
+        const snapshot = await s.social.snapshot(owner);
+        expect(snapshot.jobs).toHaveLength(1);
+        expect(
+          snapshot.drafts.some((draft) =>
+            draft.reviewReason?.includes("Daily automatic reply limit"),
+          ),
+        ).toBe(true);
+        expect(s.send).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) delete process.env.TZ;
+        else process.env.TZ = previous;
+      }
+    },
+  );
   it("yürütücü sahipliği ve hesap/kampanya durdurma kontrolleri korunur", async () => {
     const s = await fixture();
     const account = await s.account();

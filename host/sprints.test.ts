@@ -55,6 +55,31 @@ async function setup() {
 }
 
 describe("HostSprints", () => {
+  it("requires exact source cursor to recover a history gap and marks reseeded history incomplete", async () => {
+    const { sprints, input, task, advance } = await setup();
+    await sprints.create(input);
+    advance(5000);
+    await expect(
+      sprints.ingest({
+        environmentId: "pc",
+        fromCursor: 1,
+        historyGap: true,
+        cursor: 7,
+        snapshot: { cursor: 7, tasks: [task("same", "a", "done")], historyAvailableFrom: 4000 },
+      }),
+    ).rejects.toThrow("cursor gap");
+    await sprints.ingest({
+      environmentId: "pc",
+      fromCursor: 0,
+      historyGap: true,
+      cursor: 7,
+      snapshot: { cursor: 7, tasks: [task("same", "a", "done")], historyAvailableFrom: 4000 },
+    });
+    const source = (await sprints.report("one")).sources.find(
+      (entry) => entry.environmentId === "pc",
+    );
+    expect(source).toMatchObject({ cursor: 7, historyAvailableFrom: 5000 });
+  });
   it("marks delayed effective times as incomplete history instead of inventing exact earlier totals", async () => {
     const { sprints, input, advance } = await setup();
     await sprints.create(input);

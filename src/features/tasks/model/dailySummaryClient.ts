@@ -54,6 +54,7 @@ export async function gatherDailySummary(since: number, now = Date.now()): Promi
     machineName: entry.machineName,
     usedMinutes: entry.usedMinutes,
     dailyAgentMinutes: entry.dailyAgentMinutes,
+    usageUncertain: entry.usageUncertain,
   }));
   return buildDailySummary({
     since,

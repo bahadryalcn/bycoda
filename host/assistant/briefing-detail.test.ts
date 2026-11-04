@@ -388,6 +388,28 @@ it("returns the exact retained daily artifact after another day replaces the glo
   expect(await count()).toBe(notifications);
 });
 
+it("reuses the same local-day artifact across restart while note titles remain UTC", async () => {
+  const previous = process.env.TZ;
+  process.env.TZ = "America/Los_Angeles";
+  try {
+    const f = await fixture();
+    f.time(10);
+    const first = (await f.owner({ op: "briefing.daily", day: "2026-11-02" })).snapshot!.briefing!;
+    await f.restart();
+    const second = (await f.owner({ op: "briefing.daily", day: "2026-11-02" })).snapshot!.briefing!;
+    expect(second).toEqual(first);
+    const count = await f.store.db
+      .prepare(
+        "SELECT count(*) AS n FROM assistant_runtime WHERE id LIKE 'dailyBriefingArtifact:%'",
+      )
+      .get();
+    expect(Number(count!.n)).toBe(1);
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+});
+
 it("reuses a legacy daily key only when its exact current briefing is retained, otherwise returns missing without creating anything", async () => {
   const f = await fixture();
   f.time(10);

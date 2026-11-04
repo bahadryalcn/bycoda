@@ -655,8 +655,13 @@ export class HostSprints {
         }
       };
       if (input.snapshot) {
-        if (previous && input.snapshot.cursor !== cursor && !scopeChanged)
+        if (previous && input.snapshot.cursor !== cursor && !scopeChanged && !input.historyGap)
           throw new Error("Source cursor gap; replay task history before refreshing the snapshot.");
+        if (
+          input.historyGap &&
+          (!previous || input.fromCursor !== cursor || input.snapshot.cursor < cursor)
+        )
+          throw new Error("Invalid task history gap recovery.");
         if (!Number.isSafeInteger(input.snapshot.cursor) || input.snapshot.cursor < 0)
           throw new Error("Invalid snapshot cursor.");
         for (const task of input.snapshot.tasks) await apply(task, false, task.updatedAt);
@@ -730,6 +735,7 @@ export class HostSprints {
         historyAvailableFrom:
           Math.max(
             historyGapAt,
+            input.historyGap ? this.now() : 0,
             scopeChanged && previous ? this.now() : 0,
             input.snapshot?.historyAvailableFrom ?? previous?.historyAvailableFrom ?? 0,
           ) || undefined,

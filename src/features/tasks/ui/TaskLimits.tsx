@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import {
@@ -245,6 +246,15 @@ export function LimitsPanel({
               {formatAgentMinutes(entry.usedMinutes)}
             </span>
           </div>
+          {entry.usageUncertain ? (
+            <InlineError>
+              {entry.dailyAgentMinutes > 0
+                ? t(
+                    "Today's agent time is incomplete. New work waits until tomorrow while a daily limit is set.",
+                  )
+                : t("Today's agent time is incomplete.")}
+            </InlineError>
+          ) : null}
           <div className="task-limits-row">
             <span>{t("Max concurrent tasks")}</span>
             <SearchableSelect

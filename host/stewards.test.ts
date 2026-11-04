@@ -7,6 +7,7 @@ import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { HostProvider } from "./providers";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
+import { finishedRunProgress } from "./run-duration";
 import { HostTasks } from "./tasks";
 import { HostStewards, PREVIOUS_RUN_SKIP, openLimitSkip } from "./stewards";
 import { writerWorkspaces } from "./writer-workspaces.test-support";
@@ -565,22 +566,30 @@ describe("host stewards", () => {
   });
   it("stops a run past its time limit and removes its checkout", async () => {
     const { stewards, input, startDue, clock, steward, worktrees } = await setup();
-    await stewards.save(input());
-    await startDue();
-    clock.now += 21 * MINUTE;
-    await stewards.tick();
-    await vi.waitFor(async () => expect((await steward()).run?.error).toBeDefined());
-    clock.now += MINUTE;
-    // Settling removes a worktree, which takes git a while.
-    await vi.waitFor(
-      async () => {
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      await stewards.save(input());
+      await startDue();
+      await stewards.tick();
+      for (let i = 0; i < 40; i++) {
+        clock.now += MINUTE / 2;
         await stewards.tick();
-        expect((await steward()).lastRunStatus).toBe("failed");
-      },
-      { timeout: 30000, interval: 200 },
-    );
-    expect((await steward()).lastRunError).toContain("20");
-    expect(worktrees()).toBe(1);
+      }
+      await vi.waitFor(async () => expect((await steward()).run?.error).toBeDefined());
+      clock.now += MINUTE;
+      // Settling removes a worktree, which takes git a while.
+      await vi.waitFor(
+        async () => {
+          await stewards.tick();
+          expect((await steward()).lastRunStatus).toBe("failed");
+        },
+        { timeout: 30000, interval: 200 },
+      );
+      expect((await steward()).lastRunError).toContain("20");
+      expect(worktrees()).toBe(1);
+    } finally {
+      monotonic.mockRestore();
+    }
   });
   it("cancels only the exact steward turn and settles through normal cleanup", async () => {
     const { stewards, input, startDue, steward, store, worktrees } = await setup();
@@ -670,12 +679,17 @@ describe("steward work limits and merging", () => {
     await finish(reply([{ title: "Do it", description: "Specific work." }]));
     expect((await tasks.list())[0].autoMerge).toBeUndefined();
   });
-  it("counts the run toward the day", async () => {
-    const { stewards, tasks, input, startDue, finish } = await setup();
+  it("retains the owned steward completion checkpoint", async () => {
+    const { stewards, store, input, startDue, finish } = await setup();
     await stewards.save(input());
-    await startDue();
+    const turn = await startDue();
+    const session = await store.session(turn.input.sessionId);
     await finish(reply([]));
-    expect(await tasks.limits.usedMinutes()).toBeCloseTo(1, 1);
+    await vi.waitFor(async () =>
+      expect(await finishedRunProgress(store, session.session.id, session.runId!)).toMatchObject({
+        uncertain: false,
+      }),
+    );
   });
   it("records a skipped run once the day is used up, and runs again tomorrow", async () => {
     const { stewards, tasks, input, startDue, steward, turns, clock } = await setup();

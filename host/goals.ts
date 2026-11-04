@@ -272,14 +272,16 @@ export class HostGoals {
             await tasks.budgets.markUnknownHistory({ goalId: goal.id });
         }
         tasks.onTick(async () => await this.work());
-        tasks.limits.track(async () =>
+        tasks.limits.trackRuns(async () =>
           (await this.all(false, true)).flatMap((goal) =>
-            goal.status === "planning" && goal.plannerSessionId
-              ? [goal.plannerStartedAt ?? goal.createdAt]
+            goal.status === "planning" && goal.plannerSessionId && goal.plannerRunId
+              ? [{ sessionId: goal.plannerSessionId, runId: goal.plannerRunId }]
               : goal.status === "running" &&
                   goal.finalAcceptance?.status === "running" &&
+                  goal.finalAcceptance.sessionId &&
+                  goal.finalAcceptance.runId &&
                   goal.finalAcceptance.accountedRunId !== goal.finalAcceptance.runId
-                ? [goal.finalAcceptance.startedAt ?? goal.updatedAt]
+                ? [{ sessionId: goal.finalAcceptance.sessionId, runId: goal.finalAcceptance.runId }]
                 : [],
           ),
         );
@@ -841,7 +843,7 @@ export class HostGoals {
       (await sessionRunState(this.store, run, 0, this.now())).state === "running"
     ) {
       await cancelSessionRun(this.engine, run);
-      await this.tasks.limits.record(run.startedAt, this.now());
+      await this.tasks.limits.recordRun(run, this.now());
     }
   }
   /** Resume only host-authored infrastructure interruptions, never an owner
@@ -969,7 +971,7 @@ export class HostGoals {
       await cancelSessionRun(this.engine, run);
       return;
     }
-    await this.tasks.limits.record(run.startedAt, now);
+    await this.tasks.limits.recordRun(run, now);
     if (outcome.status !== "succeeded") {
       if (
         await deferredAssistantTurn(this.store, goal.plannerSessionId, goal.plannerRunId, goal.id)
@@ -1502,7 +1504,7 @@ export class HostGoals {
       ).state === "running"
     ) {
       await cancelSessionRun(this.engine, final);
-      await this.tasks.limits.record(final.startedAt, this.now());
+      await this.tasks.limits.recordRun(final, this.now());
     }
   }
   private async canResumeFinalReview(goal: HostGoal): Promise<boolean> {
@@ -1713,7 +1715,7 @@ export class HostGoals {
       return;
     }
     if (final.accountedRunId !== final.runId) {
-      await this.tasks.limits.record(final.startedAt, now);
+      await this.tasks.limits.recordRun(final, now);
       goal = await this.write({
         ...goal,
         finalAcceptance: { ...final, accountedRunId: final.runId },

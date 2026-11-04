@@ -84,6 +84,7 @@ import type {
 import { HostLimits } from "./limits";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import { HostTaskBudgets } from "./task-budgets";
+import { admitRunDuration, confirmedRunElapsed } from "./run-duration";
 import { checkTaskPreflight } from "./task-preflight";
 import { evaluateTaskPreflight } from "../src/features/tasks/model/taskPreflight";
 import { parseTaskEvaluation } from "../src/features/tasks/model/taskMetrics";
@@ -108,6 +109,7 @@ import type { WorkspaceOwnerAuthorization } from "./workspace-service-contracts"
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type { BranchMergeReceipt } from "./workspace-contracts";
 const TICK_MS = 30000;
+const TASK_HISTORY_RETAINED = 10_000;
 /** How many tasks a machine works on at once until its owner changes it. */
 export const MAX_RUNNING_TASKS = DEFAULT_MAX_RUNNING_TASKS;
 /** How long a task's check command may run. */
@@ -470,7 +472,14 @@ export class HostTasks {
         .get(input.jobId);
     if (
       task.maxRunMinutes > 0 &&
-      this.now() - (task.startedAt ?? task.createdAt) >= task.maxRunMinutes * 60000
+      (
+        await sessionRunState(
+          this.store,
+          { ...task, startedAt: task.startedAt ?? task.createdAt },
+          task.maxRunMinutes,
+          this.now(),
+        )
+      ).state === "overLimit"
     )
       throw new Error("The original worker reached its time limit; recovery cannot bypass it.");
     if (
@@ -589,7 +598,14 @@ export class HostTasks {
         throw new Error("The canonical recovery task was stopped, paused or changed.");
       if (
         task.maxRunMinutes > 0 &&
-        this.now() - (task.startedAt ?? task.createdAt) >= task.maxRunMinutes * 60000
+        (
+          await sessionRunState(
+            this.store,
+            { ...task, startedAt: task.startedAt ?? task.createdAt },
+            task.maxRunMinutes,
+            this.now(),
+          )
+        ).state === "overLimit"
       )
         throw new Error("The original worker reached its time limit; recovery cannot bypass it.");
       const reason = await this.budgetReason(task, true);
@@ -840,7 +856,14 @@ export class HostTasks {
         throw new Error("The managed worker was stopped, paused or changed before dispatch.");
       if (
         task.maxRunMinutes > 0 &&
-        this.now() - (task.startedAt ?? task.createdAt) >= task.maxRunMinutes * 60000
+        (
+          await sessionRunState(
+            this.store,
+            { ...task, startedAt: task.startedAt ?? task.createdAt },
+            task.maxRunMinutes,
+            this.now(),
+          )
+        ).state === "overLimit"
       )
         throw new Error("The original managed worker reached its time limit.");
       const budget = await this.budgetReason(task, stage.phase === "command");
@@ -949,7 +972,14 @@ export class HostTasks {
           throw new Error("The managed worker was stopped, paused or changed before continuation.");
         if (
           task.maxRunMinutes > 0 &&
-          this.now() - (task.startedAt ?? task.createdAt) >= task.maxRunMinutes * 60000
+          (
+            await sessionRunState(
+              this.store,
+              { ...task, startedAt: task.startedAt ?? task.createdAt },
+              task.maxRunMinutes,
+              this.now(),
+            )
+          ).state === "overLimit"
         )
           throw new Error("The original managed worker reached its time limit.");
         const budget = await this.budgetReason(task, true);
@@ -1494,6 +1524,8 @@ export class HostTasks {
         // credentials or session output: planning only needs this compact projection.
         await store.db.exec(`
           CREATE TABLE IF NOT EXISTS task_history_meta (id INTEGER PRIMARY KEY CHECK(id=1), available_from INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS task_history_floor (id INTEGER PRIMARY KEY CHECK(id=1), sequence INTEGER NOT NULL);
+          INSERT OR IGNORE INTO task_history_floor VALUES (1, 0);
           CREATE TABLE IF NOT EXISTS task_history (sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, task_id TEXT NOT NULL, status TEXT NOT NULL, effective_at INTEGER NOT NULL, deleted INTEGER NOT NULL, task TEXT NOT NULL);
           CREATE TRIGGER IF NOT EXISTS task_history_insert AFTER INSERT ON tasks BEGIN
             INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
@@ -1544,15 +1576,17 @@ export class HostTasks {
           await store.db.exec("ROLLBACK TO mark_legacy_task_usage; RELEASE mark_legacy_task_usage");
           throw error;
         }
-        this.limits.track(async () =>
+        this.limits.trackRuns(async () =>
           Array.from(
             (this.schedulerTasks ?? (await this.schedulerSnapshot(false))).values(),
           ).flatMap((task) =>
-            task.status === "running"
-              ? [task.startedAt ?? task.createdAt]
-              : task.status === "verifying" && task.reviewer
-                ? [task.reviewer.startedAt]
-                : [],
+            task.status === "running" && task.crewExecutionId
+              ? [{ sessionId: `\u0000crew-task:${task.id}`, runId: task.crewExecutionId }]
+              : task.status === "running" && task.sessionId && task.runId
+                ? [{ sessionId: task.sessionId, runId: task.runId }]
+                : task.status === "verifying" && task.reviewer?.sessionId && task.reviewer.runId
+                  ? [{ sessionId: task.reviewer.sessionId, runId: task.reviewer.runId }]
+                  : [],
           ),
         );
       });
@@ -1767,12 +1801,16 @@ export class HostTasks {
     cursor: number;
     hasMore: boolean;
     historyAvailableFrom: number;
+    gap?: boolean;
   }> {
     await this.ready;
     if (!Number.isSafeInteger(after) || after < 0) throw new Error("Invalid task history cursor.");
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
       throw new Error("Task history page size must be between 1 and 1000.");
     return this.store.transaction(async () => {
+      const floor = await this.store.db
+        .prepare("SELECT sequence FROM task_history_floor WHERE id=1")
+        .get();
       const watermark = await this.store.db
         .prepare("SELECT coalesce(max(sequence),0) AS cursor FROM task_history")
         .get();
@@ -1780,6 +1818,18 @@ export class HostTasks {
         throw new Error(
           "Task history cursor is ahead of this source. Reconnect the original environment.",
         );
+      if (after < Number(floor!.sequence)) {
+        const meta = await this.store.db
+          .prepare("SELECT available_from FROM task_history_meta WHERE id=1")
+          .get();
+        return {
+          events: [],
+          cursor: after,
+          hasMore: false,
+          historyAvailableFrom: Number(meta!.available_from),
+          gap: true,
+        };
+      }
       const rows = await this.store.db
         .prepare("SELECT * FROM task_history WHERE sequence>? ORDER BY sequence LIMIT ?")
         .all(after, limit + 1);
@@ -2254,14 +2304,14 @@ export class HostTasks {
           (await sessionRunState(this.store, task.reviewer, 0, now)).state === "running"
         ) {
           await cancelSessionRun(this.engine, task.reviewer);
-          await this.limits.record(task.reviewer.startedAt, now);
+          await this.limits.recordRun(task.reviewer, now);
         }
         return await this.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
       }
       const run = { ...task, startedAt: task.startedAt ?? task.createdAt };
       if ((await sessionRunState(this.store, run, 0, now)).state === "running") {
         await cancelSessionRun(this.engine, run);
-        await this.limits.record(run.startedAt, now);
+        await this.limits.recordRun(run, now);
       }
       return await this.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
     }
@@ -2691,6 +2741,25 @@ export class HostTasks {
   }
   private async work(): Promise<void> {
     const now = this.now();
+    await this.store.transaction(async () => {
+      const cutoff = await this.store.db
+        .prepare("SELECT sequence FROM task_history ORDER BY sequence DESC LIMIT 1 OFFSET ?")
+        .get(TASK_HISTORY_RETAINED);
+      if (!cutoff) return;
+      const sequence = Number(cutoff.sequence);
+      const removed = await this.store.db
+        .prepare(
+          "SELECT coalesce(max(effective_at),0) AS latest FROM task_history WHERE sequence<=?",
+        )
+        .get(sequence);
+      await this.store.db
+        .prepare("UPDATE task_history_floor SET sequence=max(sequence, ?) WHERE id=1")
+        .run(sequence);
+      await this.store.db
+        .prepare("UPDATE task_history_meta SET available_from=max(available_from, ?) WHERE id=1")
+        .run(Math.max(now, Number(removed!.latest)));
+      await this.store.db.prepare("DELETE FROM task_history WHERE sequence<=?").run(sequence);
+    });
     // Refresh once per tick, including persisted recovery edits made outside
     // this board. All later reads in this pass use the live index below.
     const maintenanceRows = new Map<string, string>();
@@ -2764,11 +2833,16 @@ export class HostTasks {
           parent?.budget ??
           (activeStatus && goalId ? (await this.owningGoal(goalId))?.budget : undefined);
         if (activeStatus && configuredBudget && task.budgetUsage?.measuredAt !== now) {
+          const usage = await this.budgets.read({ taskId: task.id });
+          const { measuredAt: _measuredAt, ...materialUsage } = usage;
+          const { measuredAt: _previousMeasuredAt, ...previousMaterialUsage } =
+            task.budgetUsage ?? {};
           const fresh = await this.unchangedTask(task.id, maintenanceRows.get(task.id));
           if (!fresh) continue;
-          // This scheduler-owned refresh advances the exact expected row. Owner
-          // edits made by onChange still invalidate the queued operation.
-          task = await this.write(fresh, maintenanceRows);
+          if (!isDeepStrictEqual(materialUsage, previousMaterialUsage)) {
+            // Owner edits made by onChange still invalidate the queued operation.
+            task = await this.write(fresh, maintenanceRows);
+          }
         }
         const budgetReason = activeStatus ? await this.budgetReason(task) : undefined;
         const budgetRun = task.status === "verifying" && task.reviewer ? task.reviewer : task;
@@ -3613,6 +3687,13 @@ export class HostTasks {
             crewExecutionId: randomUUID(),
             updatedAt: this.now(),
           });
+      if (!task.crewExecutionId && pending.crewExecutionId)
+        await admitRunDuration(
+          this.store,
+          `\u0000crew-task:${task.id}`,
+          pending.crewExecutionId,
+          now,
+        );
       try {
         if (this.closing || (task.goalId && this.pausedGoals.has(task.goalId))) return pending;
         const coordinator = await this.crewRunner.start(pending);
@@ -4121,7 +4202,14 @@ export class HostTasks {
         });
       } else if (
         task.maxRunMinutes > 0 &&
-        now - (task.startedAt ?? now) >= task.maxRunMinutes * 60000
+        task.crewExecutionId &&
+        (await confirmedRunElapsed(
+          this.store,
+          `\u0000crew-task:${task.id}`,
+          task.crewExecutionId,
+          now,
+        )) >=
+          task.maxRunMinutes * 60000
       ) {
         await this.crewRunner.stop(task);
         const latest = await this.find(task.id);
@@ -4198,7 +4286,7 @@ export class HostTasks {
       await this.write({ ...task, error: outcome.error });
       await cancelSessionRun(this.engine, task);
     } else if (outcome.status === "succeeded") {
-      await this.limits.record(task.startedAt ?? task.createdAt, now);
+      await this.limits.recordRun(task, now);
       if (this.continuingSessions.has(task.id) || (await this.find(task.id))?.runId !== task.runId)
         return;
       await this.verify(
@@ -4211,7 +4299,7 @@ export class HostTasks {
         }),
       );
     } else {
-      await this.limits.record(task.startedAt ?? task.createdAt, now);
+      await this.limits.recordRun(task, now);
       if (await deferredAssistantTurn(this.store, task.sessionId, task.runId, task.id)) {
         await this.store.transaction(async () => {
           const fresh = await this.unchangedTask(task.id, expected);
@@ -4649,7 +4737,7 @@ export class HostTasks {
       await cancelSessionRun(this.engine, task.reviewer);
       return;
     }
-    await this.limits.record(task.reviewer.startedAt, now);
+    await this.limits.recordRun(task.reviewer, now);
     if (
       await deferredAssistantTurn(this.store, task.reviewer.sessionId, task.reviewer.runId, task.id)
     ) {

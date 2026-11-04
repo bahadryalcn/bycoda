@@ -1,4 +1,5 @@
 import { EngineOperations } from "./engine-operations";
+import { admitRunDuration, finishRunDuration } from "./run-duration";
 import {
   AssistantTurnPolicyDeferredError,
   recordDeferredAssistantTurn,
@@ -2653,6 +2654,7 @@ export class HostEngine {
                 }
               }
               const runId = randomUUID();
+              await admitRunDuration(this.store, value.session.id, runId);
               const firstTurn =
                 command.type === "send" && !value.session.blocks.some((block) => !block.draft);
               const placeholderTitle =
@@ -4258,6 +4260,7 @@ export class HostEngine {
                   : settled,
                 { type: "settled", error, cancelled: active.cancelled },
               );
+              await finishRunDuration(this.store, session.id, runId!);
             }
             // The settled state is saved: whatever happens next, drop the running entry.
             try {

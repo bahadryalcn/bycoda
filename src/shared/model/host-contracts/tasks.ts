@@ -319,6 +319,7 @@ export const TasksSnapshotResultSchema = z.strictObject({
   historyAvailableFrom: SafeCounterSchema,
 });
 export const TasksEventsResultSchema = z.strictObject({
+  gap: z.boolean().optional(),
   events: z.array(
     z.strictObject({
       sequence: SafeCounterSchema,

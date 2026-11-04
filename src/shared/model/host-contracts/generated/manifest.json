@@ -33459,6 +33459,7 @@
                 "type": "array"
               },
               "fromCursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "historyGap": { "type": "boolean" },
               "snapshot": {
                 "additionalProperties": false,
                 "properties": {
@@ -35494,6 +35495,7 @@
             },
             "type": "array"
           },
+          "gap": { "type": "boolean" },
           "hasMore": { "type": "boolean" },
           "historyAvailableFrom": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
         },
@@ -51276,6 +51278,7 @@
                       "type": "array"
                     },
                     "fromCursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "historyGap": { "type": "boolean" },
                     "snapshot": {
                       "additionalProperties": false,
                       "properties": {
@@ -59448,5 +59451,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "debe932971ce8435375275f23275c1ca72bc1d7ca14967981365310463402a77"
+  "schemaHash": "8fbefcc2431d39fd4bfd15c2d05912cd73c9c14db9001617bff37af7e2502a0e"
 }

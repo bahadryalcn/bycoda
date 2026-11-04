@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { NO_LIMITS, automationLimits, dailyRunLimitSkip, runLimitBreach } from "./automationLimits";
+import {
+  NO_LIMITS,
+  ObservedRunDuration,
+  automationLimits,
+  dailyRunLimitSkip,
+  runLimitBreach,
+} from "./automationLimits";
 
 const at = (value: string) => new Date(value).getTime();
 
 describe("automation limits", () => {
+  it("counts regular samples after an unknown long gap or a wall clock jump", () => {
+    const duration = new ObservedRunDuration(1_000, 100, 20_000);
+    expect(duration.sample(16_000, 15_100, 45_000)).toBe(35_000);
+    expect(duration.sample(3_616_000, 3_615_100, 45_000)).toBe(35_000);
+    expect(duration.sample(3_631_000, 3_630_100, 45_000)).toBe(50_000);
+    expect(duration.sample(3_000, 3_645_100, 45_000)).toBe(50_000);
+    expect(duration.sample(18_000, 3_660_100, 45_000)).toBe(65_000);
+  });
   it("treats missing, negative and non-finite values as off", () => {
     expect(automationLimits({})).toEqual(NO_LIMITS);
     expect(automationLimits({ maxRunMinutes: -5, maxRunsPerDay: Number.NaN })).toEqual(NO_LIMITS);

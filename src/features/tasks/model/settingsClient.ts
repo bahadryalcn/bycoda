@@ -60,11 +60,15 @@ export async function saveMachineLimits(
 
 /** The board's notice for machines whose daily agent time is used up, or null. */
 export function dailyLimitNotice(
-  limits: readonly Pick<MachineLimits, "machineName" | "limitReached">[],
+  limits: readonly (Pick<MachineLimits, "machineName" | "limitReached"> &
+    Pick<Partial<MachineLimits>, "usageUncertain">)[],
 ): string | null {
-  const names = limits.filter((entry) => entry.limitReached).map((entry) => entry.machineName);
-  if (!names.length) return null;
-  return names
-    .map((name) => `Daily agent time on ${name} is used up; queued work resumes tomorrow.`)
-    .join(" ");
+  const notices = limits
+    .filter((entry) => entry.limitReached)
+    .map((entry) =>
+      entry.usageUncertain
+        ? `Daily agent time on ${entry.machineName} is incomplete; queued work waits until tomorrow.`
+        : `Daily agent time on ${entry.machineName} is used up; queued work resumes tomorrow.`,
+    );
+  return notices.length ? notices.join(" ") : null;
 }

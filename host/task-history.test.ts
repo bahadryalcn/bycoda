@@ -86,6 +86,27 @@ it("rolls journal entries back with task mutations and rejects invalid cursors",
   await expect(tasks.events(0, 1001)).rejects.toThrow("page size");
 });
 
+it("bounds retained history and reports a durable cursor gap", async () => {
+  const { store, tasks, value } = await fixture();
+  await store.db.prepare("INSERT INTO tasks VALUES (?,?)").run(value.id, JSON.stringify(value));
+  await store.db.exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10005)
+    INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task)
+    SELECT 'project-a','task-a','todo',100,0,'{}' FROM n`);
+  await tasks.tick();
+  const gap = await tasks.events(0);
+  expect(gap).toMatchObject({
+    gap: true,
+    events: [],
+    cursor: 0,
+    hasMore: false,
+    historyAvailableFrom: 200,
+  });
+  const retained = await store.db.prepare("SELECT count(*) AS count FROM task_history").get();
+  expect(retained?.count).toBe(10_000);
+  expect((await tasks.snapshotWithCursor()).cursor).toBe(10006);
+  expect((await tasks.events(6, 1)).events[0]?.sequence).toBe(7);
+});
+
 it("tombstones the old project identity on a task transfer and retains optional goal context", async () => {
   const { store, tasks, value } = await fixture();
   await store.db

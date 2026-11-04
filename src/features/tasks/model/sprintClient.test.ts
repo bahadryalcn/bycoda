@@ -71,6 +71,49 @@ afterEach(async () => {
 });
 
 describe("sprint planning authority", () => {
+  it("replaces a pruned source cursor with a scoped snapshot and marks the gap", async () => {
+    const project = { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" };
+    mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list")
+        return {
+          sprints: [],
+          planning: [],
+          sources: [{ environmentId: "mac", cursor: 2, syncedAt: 1, visibleProjectIds: ["b"] }],
+        };
+      if (method === "tasks.events")
+        return { gap: true, cursor: 2, events: [], hasMore: false, historyAvailableFrom: 50 };
+      if (method === "tasks.snapshotWithCursor")
+        return {
+          cursor: 20,
+          historyAvailableFrom: 50,
+          tasks: [
+            { id: "included", projectId: "b", title: "Included", status: "todo", updatedAt: 40 },
+            {
+              id: "excluded",
+              projectId: "other",
+              title: "Excluded",
+              status: "todo",
+              updatedAt: 40,
+            },
+          ],
+        };
+      if (method === "sprints.ingest") return {};
+      throw new Error(`Unexpected ${method}`);
+    });
+    await act(async () => root!.render(createElement(Harness, { projects: [project] })));
+    await act(async () => board.refresh());
+    const call = mocks.request.mock.calls.find((entry) => entry[1] === "sprints.ingest");
+    expect(call?.[2]).toMatchObject({
+      input: {
+        environmentId: "mac",
+        fromCursor: 2,
+        historyGap: true,
+        cursor: 20,
+        snapshot: { historyAvailableFrom: 50, tasks: [{ id: "included" }] },
+      },
+    });
+  });
   it("keeps coordinator loading visible until both read lanes settle", async () => {
     const replies: ((value: unknown) => void)[] = [];
     mocks.request.mockImplementation(async (_id, method) => {

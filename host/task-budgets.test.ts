@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { HostSession } from "../src/features/connections/model/protocol";
 import type { TurnMetrics } from "../src/features/sessions/model/session";
+import { admitRunDuration, finishRunDuration } from "./run-duration";
 const stores: HostStore[] = [];
 const directories: string[] = [];
 afterEach(async () => {
@@ -18,7 +19,11 @@ async function setup() {
   await stores.push(store);
   const project = await store.addProject("/budget", "Budget");
   const clock = { now: 1000 };
-  const budgets = new HostTaskBudgets(store, () => clock.now);
+  const budgets = new HostTaskBudgets(
+    store,
+    () => clock.now,
+    () => clock.now,
+  );
   const save = async (
     id: string,
     runId: string,
@@ -133,6 +138,104 @@ async function setup() {
 }
 const reported = { inputTokens: 100, outputTokens: 20, cacheReadTokens: 40, cacheWriteTokens: 5 };
 describe("durable task/goal family budgets", () => {
+  it("admits another limited run after a confirmed owned completion", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.store.transaction(() =>
+      admitRunDuration(s.store, "session", "run", s.clock.now, s.clock.now),
+    );
+    await s.register();
+    s.clock.now += 30_000;
+    await finishRunDuration(s.store, "session", "run", s.clock.now, s.clock.now);
+    await s.finish("session", { durationMs: 3_600_000, metrics: reported });
+    const result = await s.budgets.evaluate(
+      { taskId: "task" },
+      { maxAgentMinutes: 2 },
+      { starting: true },
+    );
+    expect(result).toMatchObject({
+      blocked: false,
+      usage: { agentMinutes: 0.5, historyComplete: true, tokens: 125 },
+    });
+  });
+  it("reconciles a trusted completion checkpoint arriving after the first terminal read", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.store.transaction(() =>
+      admitRunDuration(s.store, "session", "run", s.clock.now, s.clock.now),
+    );
+    await s.register();
+    s.clock.now += 30_000;
+    await s.finish("session", { durationMs: 3_600_000, metrics: reported });
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }))
+        .blocked,
+    ).toBe(true);
+    await finishRunDuration(s.store, "session", "run", s.clock.now, s.clock.now);
+    expect(
+      await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }),
+    ).toMatchObject({ blocked: false, usage: { agentMinutes: 0.5, historyComplete: true } });
+  });
+  it("excludes an unobserved gap, keeps confirmed time and marks history incomplete", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.register();
+    s.clock.now += 30_000;
+    expect((await s.budgets.read({ taskId: "task" })).agentMinutes).toBe(0.5);
+    s.clock.now += 3_600_000;
+    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
+      agentMinutes: 0.5,
+      historyComplete: false,
+    });
+    s.clock.now += 30_000;
+    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
+      agentMinutes: 1,
+      historyComplete: false,
+    });
+  });
+  it("preserves legacy wall-derived time without treating it as a proven active-time breach", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.register();
+    await s.store.db
+      .prepare(
+        "UPDATE task_run_budget_ledger SET value=json_set(json_remove(value, '$.confirmedElapsedMs'), '$.elapsedMs', 3600000) WHERE session_id='session' AND run_id='run'",
+      )
+      .run();
+    const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 });
+    expect(result.usage).toMatchObject({ historyComplete: false, agentMinutes: 0 });
+    expect(result.blocked).toBe(false);
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 }, { starting: true }))
+        .blocked,
+    ).toBe(true);
+    const row = await s.store.db
+      .prepare(
+        "SELECT value FROM task_run_budget_ledger WHERE session_id='session' AND run_id='run'",
+      )
+      .get();
+    expect(JSON.parse(String(row?.value))).toMatchObject({ legacyElapsedMs: 3600000 });
+  });
+  it("does not treat a settled legacy transcript duration as confirmed budget use", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.register();
+    await s.store.db
+      .prepare(
+        "UPDATE task_run_budget_ledger SET value=json_set(json_remove(value, '$.confirmedElapsedMs'), '$.elapsedMs', 3600000) WHERE session_id='session' AND run_id='run'",
+      )
+      .run();
+    await s.finish("session", { durationMs: 3_600_000, metrics: reported, cost: 2 });
+    const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 });
+    expect(result).toMatchObject({
+      blocked: false,
+      usage: { agentMinutes: 0, historyComplete: false, tokens: 125, reportedCostUsd: 2 },
+    });
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 }, { starting: true }))
+        .blocked,
+    ).toBe(true);
+  });
   it("accounts active time once, then settles without double counting or polling inflation", async () => {
     const s = await setup();
     await s.save("session", "run");
@@ -148,14 +251,14 @@ describe("durable task/goal family budgets", () => {
     s.clock.now += 30000;
     await s.finish("session", { durationMs: 60000, metrics: reported });
     expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-      agentMinutes: 1,
+      agentMinutes: 0.5,
       attempts: 1,
       completedRuns: 1,
       runningRuns: 0,
       tokens: 125,
     });
     s.clock.now += 60000;
-    expect((await s.budgets.read({ goalId: "goal" })).agentMinutes).toBe(1);
+    expect((await s.budgets.read({ goalId: "goal" })).agentMinutes).toBe(0.5);
   });
   it("adds concurrent planner, worker, reviewer and repair time to the owning family", async () => {
     const s = await setup();
@@ -192,7 +295,7 @@ describe("durable task/goal family budgets", () => {
     const restarted = new HostTaskBudgets(s.store, () => s.clock.now);
     expect(await restarted.read({ taskId: "task" })).toMatchObject({
       attempts: 2,
-      agentMinutes: 0.5,
+      agentMinutes: 0,
       tokens: 135,
     });
     expect(first.runId).toBe("run");
@@ -268,8 +371,8 @@ describe("durable task/goal family budgets", () => {
     await s.store.deleteSession("session");
     s.clock.now += 90000;
     expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-      historyComplete: true,
-      agentMinutes: 5000 / 60000,
+      historyComplete: false,
+      agentMinutes: 0,
       tokens: 125,
       attempts: 1,
     });
@@ -324,7 +427,7 @@ describe("durable task/goal family budgets", () => {
       expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
         historyComplete: false,
         agentMinutes: 4000 / 60000,
-        tokens: null,
+        tokens: 125,
       });
     },
   );
@@ -454,7 +557,7 @@ describe("durable task/goal family budgets", () => {
       historyComplete: false,
       reportedTokens: 125,
       tokens: null,
-      agentMinutes: 1000 / 60000,
+      agentMinutes: 0,
     });
     expect((await restarted.read({ goalId: "goal" })).historyComplete).toBe(false);
   });

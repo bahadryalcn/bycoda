@@ -86,6 +86,7 @@ export type SprintIngestInput = {
   events?: SprintSourceEvent[];
   cursor: number;
   fromCursor?: number;
+  historyGap?: boolean;
   visibleProjectIds?: string[];
   caughtUp?: boolean;
 };

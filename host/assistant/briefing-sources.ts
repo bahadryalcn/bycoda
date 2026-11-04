@@ -4,6 +4,7 @@ import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { assertAssistantGoalProjects } from "../assistant-job-scope";
 import { assistantJobProjectIds } from "../../src/shared/model/assistantProjects";
+import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 
 export type BriefingApproval = {
   jobId: string;
@@ -126,15 +127,10 @@ export async function readBriefingApprovals(
   }
   return { items, complete };
 }
-const localDay = (at: number) => {
-  const date = new Date(at);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-/** Actual daily notes; title date remains valid after an assistant rename. */
+const utcNoteDay = (at: number) => isoTimestamp(at)?.slice(0, 10);
+/** Daily note titles use UTC; briefing schedule/artifact keys separately use Host local dates. */
 export function recentBriefingNotes(notes: readonly AssistantNote[], now: number): AssistantNote[] {
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const days = new Set([localDay(now), localDay(yesterday.getTime())]);
+  const days = new Set([utcNoteDay(now), utcNoteDay(now - 24 * 60 * 60 * 1000)]);
   return notes
     .filter(
       (note) =>

@@ -9,7 +9,10 @@ import {
   type HostSteward as StoredHostSteward,
   type StewardRunStatus,
 } from "../src/features/tasks/model/hostStewards";
-import { DAILY_LIMIT_SKIP } from "../src/features/tasks/model/hostSettings";
+import {
+  DAILY_LIMIT_SKIP,
+  DAILY_LIMIT_UNCERTAIN_SKIP,
+} from "../src/features/tasks/model/hostSettings";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import type { HostEngine } from "./engine";
 import {
@@ -151,8 +154,12 @@ export class HostStewards {
         await store.db.exec(
           "UPDATE stewards SET value=json_set(json_remove(value, '$.autoMerge'), '$.deliveryApprovalRequired', json('true')) WHERE json_extract(value, '$.autoMerge')=1",
         );
-        tasks.limits.track(async () =>
-          (await this.list()).flatMap((steward) => (steward.run ? [steward.run.startedAt] : [])),
+        tasks.limits.trackRuns(async () =>
+          (await this.list()).flatMap((steward) =>
+            steward.run?.sessionId && steward.run.runId
+              ? [{ sessionId: steward.run.sessionId, runId: steward.run.runId }]
+              : [],
+          ),
         );
       });
     })();
@@ -261,7 +268,7 @@ export class HostStewards {
     if (steward.run) {
       try {
         await cancelSessionRun(this.engine, steward.run);
-        await this.tasks.limits.record(steward.run.startedAt, this.now());
+        await this.tasks.limits.recordRun(steward.run, this.now());
       } catch {
         /* the session is gone */
       }
@@ -434,8 +441,13 @@ export class HostStewards {
         await this.skip(steward, PREVIOUS_RUN_SKIP, now);
         return;
       }
-      if (await this.tasks.limits.reached()) {
-        await this.skip(steward, DAILY_LIMIT_SKIP, now);
+      const limitState = await this.tasks.limits.state();
+      if (limitState.limitReached) {
+        await this.skip(
+          steward,
+          limitState.usageUncertain ? DAILY_LIMIT_UNCERTAIN_SKIP : DAILY_LIMIT_SKIP,
+          now,
+        );
         return;
       }
       const open = (await this.tasks.list()).filter(
@@ -721,7 +733,7 @@ export class HostStewards {
       await cancelSessionRun(this.engine, run);
       return;
     }
-    await this.tasks.limits.record(run.startedAt, now);
+    await this.tasks.limits.recordRun(run, now);
     if (outcome.status !== "succeeded") {
       await this.removeWorktree(steward.projectId, run);
       await this.finish(

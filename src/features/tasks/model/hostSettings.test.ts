@@ -224,6 +224,9 @@ describe("limits client", () => {
       ]),
     ).toBe("Daily agent time on MacBook is used up; queued work resumes tomorrow.");
     expect(dailyLimitNotice([{ machineName: "MacBook", limitReached: false }])).toBeNull();
+    expect(
+      dailyLimitNotice([{ machineName: "MacBook", limitReached: true, usageUncertain: true }]),
+    ).toContain("incomplete");
     expect(dailyLimitNotice([])).toBeNull();
   });
 });

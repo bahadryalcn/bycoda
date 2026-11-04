@@ -252,7 +252,7 @@ export function SprintManagement({
                     }[selected.state],
                   )}
                 </span>
-                {selected.startsAt || selected.endsAt ? (
+                {selected.startsAt !== undefined || selected.endsAt !== undefined ? (
                   <span>
                     {dateValue(selected.startsAt) || t("No start date")} ·{" "}
                     {dateValue(selected.endsAt) || t("No end date")}

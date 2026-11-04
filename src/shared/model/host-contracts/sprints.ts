@@ -100,6 +100,7 @@ export const SprintIngestInputSchema = z.strictObject({
   events: z.array(SprintSourceEventSchema).optional(),
   cursor: SafeCounterSchema,
   fromCursor: SafeCounterSchema.optional(),
+  historyGap: z.boolean().optional(),
   visibleProjectIds: z.array(z.string()).optional(),
   caughtUp: z.boolean().optional(),
 });

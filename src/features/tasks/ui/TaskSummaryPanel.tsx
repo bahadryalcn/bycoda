@@ -153,6 +153,7 @@ export function SummaryPanel({
                     {entry.dailyAgentMinutes
                       ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) })
                       : ""}
+                    {entry.usageUncertain ? ` · ${t("Incomplete")}` : ""}
                   </li>
                 ))}
               </ul>

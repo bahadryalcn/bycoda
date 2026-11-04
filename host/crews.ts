@@ -6,6 +6,7 @@ import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
 import { RequestAuthorizationError } from "./store-db";
 import { launchSessionRun, STOPPED_BY_USER } from "./sessionRuns";
+import { finishRunDuration } from "./run-duration";
 import { callConversationCrewRead, CONVERSATION_CREW_READ_TOOLS } from "./conversation-crew-tools";
 import {
   parseCrewDefinition,
@@ -1401,6 +1402,9 @@ export class HostCrews {
           run.messages.some((m) => !m.resolvedAt)
         )
           throw new Error("Accept assignments and resolve requests before finishing");
+        const source = run.sourceTaskId && tasks.find((task) => task.id === run.sourceTaskId);
+        if (source && source.crewExecutionId === run.id)
+          await finishRunDuration(this.store, `\u0000crew-task:${source.id}`, run.id, this.now());
         run.status = "finished";
         await this.update(run);
         return run;

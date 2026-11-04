@@ -31,6 +31,8 @@ Source paths below are repository-relative.
    terminal transitions. An uncertain admission reply must not trigger a new launch.
 5. Keep native SSH outcomes owned by the SSH execution engine. General status updates
    never override them. Failed reads and unknown outcomes are not completed work.
+6. Run limits count confirmed monotonic intervals. A long or divergent observation
+   gap is unknown, not proof of sleep or elapsed limit exhaustion.
 
 ## Checks and references
 

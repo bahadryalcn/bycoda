@@ -979,6 +979,30 @@ describe("explicit task workspaces and owner controls", () => {
     });
     expect(s.provider.send).not.toHaveBeenCalled();
   });
+  it("does not write task history or notify for a measuredAt-only budget refresh", async () => {
+    const s = await setup();
+    await s.tasks.save(await s.input({ budget: { maxAgentMinutes: 60 }, review: true }));
+    await s.store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.status', 'verifying') WHERE id='main'")
+      .run();
+    const target = s.tasks as unknown as { settleVerification: (task: HostTask) => Promise<void> };
+    const settle = vi.spyOn(target, "settleVerification").mockResolvedValue();
+    try {
+      await s.tasks.tick();
+      await s.tasks.idle();
+      const before = await s.tasks.events(0);
+      const change = vi.fn();
+      s.tasks.onChange = change;
+      s.clock.now += MINUTE;
+      await s.tasks.tick();
+      await s.tasks.idle();
+      const after = await s.tasks.events(0);
+      expect(after.cursor).toBe(before.cursor);
+      expect(change).not.toHaveBeenCalled();
+    } finally {
+      settle.mockRestore();
+    }
+  });
   it("does not permit an owner edit made during the scheduler's budget refresh", async () => {
     const s = await setup();
     await s.tasks.save(await s.input({ budget: { maxAgentMinutes: 60 }, review: true }));
@@ -987,17 +1011,28 @@ describe("explicit task workspaces and owner controls", () => {
       .run();
     s.clock.now += MINUTE;
     let edited = false;
-    s.tasks.onChange = async () => {
-      if (edited) return;
-      edited = true;
-      await s.store.db
-        .prepare(
-          "UPDATE tasks SET value=json_set(value, '$.status', 'blocked', '$.title', 'Stopped during budget refresh') WHERE id='main'",
-        )
-        .run();
-    };
-    await s.tasks.tick();
-    await s.tasks.idle();
+    const budgets = (
+      s.tasks as unknown as { budgets: { read: (scope: { taskId: string }) => Promise<unknown> } }
+    ).budgets;
+    const read = budgets.read.bind(budgets);
+    const spy = vi.spyOn(budgets, "read").mockImplementation(async (scope) => {
+      const usage = await read(scope);
+      if (!edited) {
+        edited = true;
+        await s.store.db
+          .prepare(
+            "UPDATE tasks SET value=json_set(value, '$.status', 'blocked', '$.title', 'Stopped during budget refresh') WHERE id='main'",
+          )
+          .run();
+      }
+      return usage;
+    });
+    try {
+      await s.tasks.tick();
+      await s.tasks.idle();
+    } finally {
+      spy.mockRestore();
+    }
     expect(await s.tasks.get("main")).toMatchObject({
       status: "blocked",
       title: "Stopped during budget refresh",
@@ -1907,20 +1942,46 @@ describe("host tasks", () => {
   });
   it("stops a task that passes its time limit and blocks it", async () => {
     const { tasks, run, task, provider, settled, clock } = await setup();
-    const started = await run({ maxRunMinutes: 30 });
-    clock.now += 29 * MINUTE;
-    await tasks.tick();
-    expect(provider.cancel).not.toHaveBeenCalled();
-    clock.now += MINUTE;
-    await tasks.tick();
-    expect(provider.cancel).toHaveBeenCalledTimes(1);
-    await settled(started.sessionId!);
-    clock.now += MINUTE;
-    await tasks.tick();
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Stopped: reached the 30-minute time limit.",
-    });
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      const started = await run({ maxRunMinutes: 30 });
+      for (let i = 0; i < 58; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      expect(provider.cancel).not.toHaveBeenCalled();
+      for (let i = 0; i < 2; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      expect(provider.cancel).toHaveBeenCalledTimes(1);
+      await settled(started.sessionId!);
+      clock.now += MINUTE;
+      await tasks.tick();
+      expect(await task()).toMatchObject({
+        status: "blocked",
+        error: "Stopped: reached the 30-minute time limit.",
+      });
+    } finally {
+      monotonic.mockRestore();
+    }
+  });
+  it("keeps the exact task running after an unknown gap and enforces later observed time", async () => {
+    const { tasks, run, provider, clock } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      await run({ maxRunMinutes: 1 });
+      clock.now += 30_000;
+      await tasks.tick();
+      clock.now += 3_600_000;
+      await tasks.tick();
+      expect(provider.cancel).not.toHaveBeenCalled();
+      clock.now += 30_000;
+      await tasks.tick();
+      expect(provider.cancel).toHaveBeenCalledTimes(1);
+    } finally {
+      monotonic.mockRestore();
+    }
   });
   it(
     "resumes an interrupted task in its retained session and worktree before releasing dependencies",
@@ -3775,19 +3836,28 @@ describe("task verification", () => {
   });
   it("holds the reviewer to the task's time limit", async () => {
     const { tasks, reviewing, task, provider, settled, clock, advance } = await setup();
-    const verifying = await reviewing({ maxRunMinutes: 30 });
-    clock.now += 29 * MINUTE;
-    await tasks.tick();
-    expect(provider.cancel).not.toHaveBeenCalled();
-    clock.now += MINUTE;
-    await tasks.tick();
-    expect(provider.cancel).toHaveBeenCalledTimes(1);
-    await settled(verifying.reviewer!.sessionId!);
-    await advance();
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Review failed: Stopped: reached the 30-minute time limit.",
-    });
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      const verifying = await reviewing({ maxRunMinutes: 30 });
+      for (let i = 0; i < 58; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      expect(provider.cancel).not.toHaveBeenCalled();
+      for (let i = 0; i < 2; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      expect(provider.cancel).toHaveBeenCalledTimes(1);
+      await settled(verifying.reviewer!.sessionId!);
+      await advance();
+      expect(await task()).toMatchObject({
+        status: "blocked",
+        error: "Review failed: Stopped: reached the 30-minute time limit.",
+      });
+    } finally {
+      monotonic.mockRestore();
+    }
   });
   it("stops a task that is being verified", async () => {
     const { tasks, reviewing, task, provider, settled, advance } = await setup();
@@ -3972,17 +4042,16 @@ describe("host work limits", () => {
       "running",
     ]);
   });
-  it("starts nothing new once the day is used up, lets running work finish, and resumes tomorrow", async () => {
+  it("holds new work when elapsed time is uncertain, lets running work finish, and resumes tomorrow", async () => {
     const { tasks, input, run, task, turns, settled, clock, advance, addProject } = await setup();
     await tasks.limits.save({ dailyAgentMinutes: 5 });
     const first = await run({ id: "a", projectId: (await addProject("a")).id });
     await tasks.save(input({ id: "b", projectId: (await addProject("b")).id }));
     clock.now += 1;
-    // The run still going counts as it goes.
+    // A wall-clock jump without matching monotonic observations is uncertain.
     clock.now += 5 * MINUTE;
     await tasks.tick();
-    expect(await tasks.limits.state()).toMatchObject({ limitReached: true });
-    expect(await tasks.limits.usedMinutes()).toBeCloseTo(5, 1);
+    expect(await tasks.limits.state()).toMatchObject({ limitReached: true, usageUncertain: true });
     expect((await task("a")).status).toBe("running");
     expect((await task("b")).status).toBe("queued");
     expect(turns).toHaveLength(1);
@@ -3992,7 +4061,7 @@ describe("host work limits", () => {
     await advance();
     expect((await task("a")).status).toBe("done");
     expect((await task("b")).status).toBe("queued");
-    expect(await tasks.limits.usedMinutes()).toBeCloseTo(6, 1);
+    expect(await tasks.limits.state()).toMatchObject({ limitReached: true, usageUncertain: true });
     expect(turns).toHaveLength(1);
     // A new local day starts a fresh total.
     clock.now += 24 * 60 * MINUTE;
@@ -4033,7 +4102,7 @@ describe("host work limits", () => {
     await settled(started.sessionId!);
     await advance();
     const used = await tasks.limits.usedMinutes();
-    expect(used).toBeCloseTo(11, 1);
+    expect((await tasks.limits.state()).usageUncertain).toBe(true);
     const restarted = new HostTasks(store, engine, () => clock.now);
     expect(await restarted.limits.settings()).toEqual({
       maxRunningTasks: 3,
@@ -4041,13 +4110,12 @@ describe("host work limits", () => {
     });
     expect(await restarted.limits.usedMinutes()).toBeCloseTo(used, 5);
   });
-  it("counts the reviewer time too", async () => {
+  it("tracks reviewer runs and marks unobserved reviewer time uncertain", async () => {
     const { tasks, reviewing, finish, clock } = await setup();
     const verifying = await reviewing();
     clock.now += 4 * MINUTE;
     await finish(verifying.reviewer!.sessionId!, "VERDICT: PASS");
-    // The run took a minute, and the reviewer the minutes after it.
-    expect(await tasks.limits.usedMinutes()).toBeGreaterThan(4);
+    expect((await tasks.limits.state()).usageUncertain).toBe(true);
   });
 });
 it("caches unchanged lists and filters projects before JSON parsing", async () => {

@@ -1,5 +1,7 @@
 import type { HostStore } from "./store";
+import { confirmedRunElapsed, confirmedRunProgress, finishedRunProgress } from "./run-duration";
 import { sessionBudgetTokens } from "../src/features/usage/model/usageBudgets";
+import { monotonicNow } from "../src/shared/lib/time/timestamps";
 import type {
   BudgetRunRole,
   TaskBudgetScope,
@@ -20,6 +22,10 @@ export type BudgetRunRegistration = {
 type LedgerRun = BudgetRunRegistration & {
   blockId?: string;
   elapsedMs: number;
+  confirmedElapsedMs?: number;
+  legacyElapsedMs?: number;
+  durationUncertain?: boolean;
+  awaitingFinishCheckpoint?: boolean;
   settledAt?: number;
   tokens: number | null;
   costBaseline: number | null;
@@ -44,6 +50,7 @@ export class HostTaskBudgets {
   constructor(
     private readonly store: HostStore,
     private readonly now: () => number = Date.now,
+    private readonly monotonic: () => number = monotonicNow,
   ) {
     this.ready = (async () => {
       await store.ready;
@@ -152,10 +159,18 @@ export class HostTaskBudgets {
         ...input,
         blockId,
         elapsedMs: 0,
+        confirmedElapsedMs: 0,
         tokens: null,
         costBaseline,
         costUsd: null,
       };
+      await confirmedRunElapsed(
+        this.store,
+        input.sessionId,
+        input.runId,
+        this.now(),
+        this.monotonic(),
+      );
       await this.store.db
         .prepare(
           "INSERT INTO task_run_budget_ledger (session_id,run_id,task_id,goal_id,value,parent_task_id) VALUES (?,?,?,?,?,?)",
@@ -190,18 +205,49 @@ export class HostTaskBudgets {
     for (const row of rows) {
       const run = JSON.parse(String(row.value)) as LedgerRun;
       const previous = JSON.stringify(run);
+      if (run.confirmedElapsedMs === undefined) {
+        run.legacyElapsedMs = run.elapsedMs;
+        run.elapsedMs = 0;
+        run.confirmedElapsedMs = 0;
+        run.durationUncertain = true;
+      }
       try {
         const session = await this.store.session(run.sessionId);
         const block = session.session.blocks.find((entry) => entry.id === run.blockId);
         const running = session.status === "running" && session.runId === run.runId;
         if (run.settledAt === undefined && !running) {
           run.settledAt = now;
-          // The next poll is not an execution end timestamp. A missing duration
-          // can include host downtime, removed history or an unobserved later turn.
-          if (!block || !finite(block.durationMs)) await this.markRunUnknownHistory(run);
+          // Only the owned lifecycle checkpoint proves the final interval.
+          const finished = await finishedRunProgress(this.store, run.sessionId, run.runId);
+          if (finished) {
+            run.confirmedElapsedMs = finished.elapsed;
+            run.elapsedMs = finished.elapsed;
+            run.durationUncertain ||= finished.uncertain;
+          } else {
+            run.durationUncertain = true;
+            run.awaitingFinishCheckpoint = true;
+          }
+        } else if (run.settledAt !== undefined && run.awaitingFinishCheckpoint) {
+          const finished = await finishedRunProgress(this.store, run.sessionId, run.runId);
+          if (finished) {
+            run.confirmedElapsedMs = finished.elapsed;
+            run.elapsedMs = finished.elapsed;
+            run.durationUncertain = finished.uncertain || run.legacyElapsedMs !== undefined;
+            delete run.awaitingFinishCheckpoint;
+          }
         }
-        if (run.settledAt === undefined) run.elapsedMs = Math.max(0, now - run.startedAt);
-        else if (block && finite(block.durationMs)) run.elapsedMs = block.durationMs;
+        if (run.settledAt === undefined) {
+          const progress = await confirmedRunProgress(
+            this.store,
+            run.sessionId,
+            run.runId,
+            now,
+            this.monotonic(),
+          );
+          run.confirmedElapsedMs = progress.elapsed;
+          run.durationUncertain ||= progress.uncertain;
+          run.elapsedMs = run.confirmedElapsedMs;
+        }
         if (block) {
           const tokens = sessionBudgetTokens({ ...session.session, blocks: [block] }, "all", now);
           if (tokens !== null && Number.isSafeInteger(tokens))
@@ -269,7 +315,8 @@ export class HostTaskBudgets {
       const history = await this.store.db
         .prepare("SELECT complete FROM task_run_budget_history WHERE scope=? AND id=?")
         .get(scopeKind, scope.taskId ?? scope.goalId);
-      const historyComplete = history?.complete !== 0;
+      const knownHistory = history?.complete !== 0;
+      const historyComplete = knownHistory && rows.every((run) => !run.durationUncertain);
       let elapsedMs = 0,
         reportedTokens = 0,
         knownCost = 0,
@@ -285,7 +332,7 @@ export class HostTaskBudgets {
         else knownCost += run.costUsd;
       }
       const tokensComplete =
-        historyComplete &&
+        knownHistory &&
         unknownTokenRuns === 0 &&
         runningRuns === 0 &&
         Number.isSafeInteger(reportedTokens);
@@ -299,7 +346,7 @@ export class HostTaskBudgets {
         tokens: tokensComplete ? reportedTokens : null,
         tokensComplete,
         unknownTokenRuns,
-        reportedCostUsd: unknownCosts || !historyComplete ? null : knownCost,
+        reportedCostUsd: unknownCosts || !knownHistory ? null : knownCost,
         estimatedCostUsd: null,
         measuredAt: this.now(),
       };
@@ -318,7 +365,14 @@ export class HostTaskBudgets {
       const reasons: string[] = [];
       let warning = false;
       const threshold = (budget?.warningPercent ?? 80) / 100;
-      if (budget && !usage.historyComplete) {
+      const scopeKind = scope.taskId !== undefined ? "task" : "goal";
+      const history = await this.store.db
+        .prepare("SELECT complete FROM task_run_budget_history WHERE scope=? AND id=?")
+        .get(scopeKind, scope.taskId ?? scope.goalId);
+      if (
+        budget &&
+        (history?.complete === 0 || (budget.maxAgentMinutes && !usage.historyComplete))
+      ) {
         warning = true;
         if (options.starting)
           reasons.push(
@@ -326,7 +380,13 @@ export class HostTaskBudgets {
           );
       }
       if (budget?.maxAgentMinutes) {
-        if (usage.agentMinutes >= budget.maxAgentMinutes)
+        const rows = await this.rows(scope);
+        const confirmedMinutes =
+          rows.reduce((sum, row) => {
+            const run = JSON.parse(String(row.value)) as LedgerRun;
+            return sum + (run.confirmedElapsedMs ?? 0);
+          }, 0) / 60_000;
+        if (confirmedMinutes >= budget.maxAgentMinutes)
           reasons.push(
             "The total agent-time budget is exhausted. Increase the budget to continue; completed work is retained.",
           );

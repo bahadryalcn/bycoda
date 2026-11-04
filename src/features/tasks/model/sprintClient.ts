@@ -65,6 +65,7 @@ type SourceSnapshot = {
   historyAvailableFrom?: number;
 };
 type SourceEvents = {
+  gap?: boolean;
   events: SprintSourceEvent[];
   cursor: number;
   hasMore: boolean;
@@ -299,6 +300,51 @@ export function useSprintBoard(
                   projectIds,
                 });
                 if (!current()) return;
+                if (result.gap) {
+                  const snapshot = await remoteRequest<SourceSnapshot>(
+                    source.id,
+                    "tasks.snapshotWithCursor",
+                    { projectIds },
+                  );
+                  if (!current()) return;
+                  snapshot.tasks = snapshot.tasks.filter((task) =>
+                    allowed.has(
+                      sprintProjectKey({
+                        environmentId: source.environmentId,
+                        projectId: task.projectId,
+                      }),
+                    ),
+                  );
+                  await remoteRequest(coordinatorId, "sprints.ingest", {
+                    input: {
+                      environmentId: source.environmentId,
+                      visibleProjectIds: projectIds,
+                      fromCursor: cursor,
+                      historyGap: true,
+                      snapshot,
+                      cursor: snapshot.cursor,
+                      caughtUp: true,
+                    },
+                  });
+                  if (!current()) return;
+                  for (const key of knownTasks.current) {
+                    const [environmentId, projectId] = JSON.parse(key) as [string, string, string];
+                    if (environmentId === source.environmentId && projectIds.includes(projectId))
+                      knownTasks.current.delete(key);
+                  }
+                  snapshot.tasks.forEach((task) =>
+                    knownTasks.current.add(
+                      sprintTaskKey({
+                        environmentId: source.environmentId,
+                        projectId: task.projectId,
+                        taskId: task.id,
+                      }),
+                    ),
+                  );
+                  cursor = snapshot.cursor;
+                  caughtUp = true;
+                  break;
+                }
                 if (
                   !Number.isSafeInteger(result.cursor) ||
                   result.cursor < cursor ||

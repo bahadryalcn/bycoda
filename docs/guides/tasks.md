@@ -20,4 +20,6 @@ If creating a task loses its reply, keep the draft and retry it. The draft retai
 
 A failed limits refresh means usage is unknown or last known, not zero. Existing Host budget enforcement remains active. Read the task's reason before retrying a blocked operation, and use the recorded task for recovery rather than creating duplicates.
 
+Daily agent time uses confirmed run intervals and the Host's local calendar day. If an interval cannot be measured, usage is marked incomplete and new limited work waits; this does not mean the limit was reached. Running work can still finish. Sprint reports mark history as incomplete when older task events are no longer available, and refresh the affected source from its current snapshot.
+
 Completion, review, delivery, installation and release are separate. Task results and retained branches still use the existing owner delivery approval workflow.

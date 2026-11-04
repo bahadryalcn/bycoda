@@ -1,4 +1,5 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
 import {
   listAutomationRuns,
@@ -8,6 +9,7 @@ import {
 } from "../../../features/automations/model/automations";
 import {
   LOCKED_PROJECT_SKIP,
+  ObservedRunDuration,
   automationLimits,
   dailyRunLimitSkip,
   runLimitBreach,
@@ -216,10 +218,11 @@ export function useAutomationLaunch({
         });
         started();
         if (limits.maxRunMinutes > 0) {
-          const startedAt = Date.now();
+          const duration = new ObservedRunDuration(Date.now(), monotonicNow());
           const sessionId = session.id;
           watchdog = window.setInterval(() => {
-            breach = runLimitBreach(limits, { startedAt, now: Date.now() });
+            const elapsed = duration.sample(Date.now(), monotonicNow(), 45_000);
+            breach = runLimitBreach(limits, { startedAt: 0, now: elapsed });
             if (!breach) return;
             window.clearInterval(watchdog);
             onStopRef.current(sessionId);
