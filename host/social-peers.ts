@@ -33,7 +33,6 @@ function endpoint(value: unknown): string {
  * It cannot read social data or administer either host. Native pairing transfers it
  * directly between the two hosts; neither renderer nor model ever receives it. */
 export class SocialPeers {
-  private readonly identities = new Map<string, HostSession>();
   readonly ready: Promise<void>;
   constructor(
     private readonly service: SocialService,
@@ -45,10 +44,10 @@ export class SocialPeers {
       await service.ready;
       await service.store.db.scope(async () => {
         await service.store.db.exec(
-          "CREATE TABLE IF NOT EXISTS social_peers (id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_tokens (hash TEXT PRIMARY KEY,peer_id TEXT NOT NULL,device_hash TEXT NOT NULL)",
+          "CREATE TABLE IF NOT EXISTS social_peers (id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_tokens (hash TEXT PRIMARY KEY,peer_id TEXT NOT NULL,device_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_identities (id TEXT PRIMARY KEY, value TEXT NOT NULL)",
         );
         service.setPeerResolver(
-          (id) => this.identities.get(id),
+          (id) => this.identity(id),
           async (id) => await this.verify(id),
         );
         service.remoteAccess = async (id) => await this.access(id);
@@ -65,7 +64,7 @@ export class SocialPeers {
   private async save(id: string, peer: Peer) {
     await this.service.store.db
       .prepare(
-        "INSERT INTO social_peers VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
+        "INSERT INTO social_peers VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
       )
       .run(id, JSON.stringify(peer));
   }
@@ -248,6 +247,22 @@ export class SocialPeers {
     }
     throw new Error("Peer credentials cannot access this operation.");
   }
+  private async identity(id: string): Promise<HostSession | undefined> {
+    if (!id.includes("/")) return undefined;
+    // A durable row alone never upgrades restart state into verified authority.
+    await this.verify(id);
+    const peer = await this.get(id.slice(0, id.indexOf("/")));
+    if (!peer || await this.get("authority")) return undefined;
+    const row = await this.service.store.db.prepare(
+      "SELECT value FROM social_peer_identities WHERE id=?",
+    ).get(id);
+    if (!row) return undefined;
+    const identity = JSON.parse(String(row.value)) as HostSession;
+    if (!Object.values(peer.mapping).includes(identity.projectId)) return undefined;
+    // This lookup is identity data only; verifyPeer still owns fresh token and
+    // source-session checks before each existing delivery/admission boundary.
+    return identity;
+  }
   private async verify(id: string) {
     if (!id.includes("/")) return;
     const split = id.indexOf("/");
@@ -255,7 +270,6 @@ export class SocialPeers {
     const sessionId = id.slice(split + 1);
     const peer = await this.get(peerId);
     if (!peer || (await this.get("authority"))) {
-      this.identities.delete(id);
       throw new Error("Social peer was removed or is no longer an authority.");
     }
     try {
@@ -269,12 +283,18 @@ export class SocialPeers {
       if (identity.sessionId !== sessionId || !projectId || typeof identity.provider !== "string")
         throw new Error("Source session/project identity changed.");
       await this.service.store.project(projectId);
-      this.identities.set(id, {
-        projectId,
-        session: { id, harness: identity.provider },
-      } as HostSession);
+      // Persist only the exact freshly verified mapping. Yielded verification may
+      // not overwrite a removed/replaced peer's identity.
+      const current = await this.get(peerId);
+      const currentCredential = await this.vault.get(`social-peer:${peerId}`);
+      if (!current || JSON.stringify(current) !== JSON.stringify(peer) ||
+          await this.get("authority") || currentCredential?.accessToken !== credential.accessToken ||
+          await this.authenticated(credential.accessToken) !== peerId)
+        throw new Error("Peer identity changed while verifying.");
+      await this.service.store.db.prepare(
+        "INSERT INTO social_peer_identities VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
+      ).run(id, JSON.stringify({ projectId, session: { id, harness: identity.provider } }));
     } catch {
-      this.identities.delete(id);
       throw new Error(
         "Trusted source session is unavailable or unmapped. Social access is denied.",
       );

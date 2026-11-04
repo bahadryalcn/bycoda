@@ -208,10 +208,10 @@ export class SocialService {
     | undefined
   >;
   isDelegated?: () => boolean | Promise<boolean>;
-  private peerSession?: (id: string) => HostSession | undefined;
+  private peerSession?: (id: string) => HostSession | undefined | Promise<HostSession | undefined>;
   private verifyPeer?: (id: string) => Promise<void>;
   setPeerResolver(
-    session: (id: string) => HostSession | undefined,
+    session: (id: string) => HostSession | undefined | Promise<HostSession | undefined>,
     verify: (id: string) => Promise<void>,
   ) {
     this.peerSession = session;
@@ -232,11 +232,11 @@ export class SocialService {
   }
   async prepareSessionIdentity(id: string): Promise<void> {
     await this.ready;
-    if (!this.peerSession?.(id)) await this.authorityResolver?.prepare(id);
+    if (!(await this.peerSession?.(id))) await this.authorityResolver?.prepare(id);
   }
   async sessionAuthority(id: string): Promise<SessionAuthorityIdentity> {
     await this.ready;
-    const peer = this.peerSession?.(id);
+    const peer = await this.peerSession?.(id);
     const identity = peer
       ? { projectId: peer.projectId, provider: peer.session.harness }
       : this.authorityResolver

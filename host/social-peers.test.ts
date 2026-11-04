@@ -210,3 +210,23 @@ describe("Tek merkezi host'a güvenilir session erişimi", () => {
     expect(await authority.social.call(owner, "jobs.status", {})).toEqual([] as SocialJob[]);
   });
 });
+
+
+it("loads durable peer identities without a lifetime Map and re-verifies source before reuse", async () => {
+  const { source, authority } = await pair();
+  const sourceId = crypto.randomUUID();
+  source.sessions.set(sourceId, { projectId: source.project.id, session: { id: sourceId, harness: "claude" } } as HostSession);
+  const enrollment = await source.peers.enroll(authority.store.environmentId, source.deviceHash);
+  const mapping = { [source.project.id]: authority.project.id };
+  await authority.peers.register({ ...enrollment, endpoint: source.endpoint, mapping }, authority.deviceHash);
+  await source.peers.useAuthority({ environmentId: authority.store.environmentId, endpoint: authority.endpoint, mapping });
+  const id = `${source.store.environmentId}/${sourceId}`;
+  expect((await authority.social.sessionIdentity(id)).projectId).toBe(authority.project.id);
+  expect("identities" in authority.peers).toBe(false);
+  const persisted = await authority.store.db.prepare("SELECT value FROM social_peer_identities WHERE id=?").get(id);
+  expect(persisted).toBeDefined();
+  source.sessions.delete(sourceId);
+  await expect(authority.social.sessionIdentity(id)).rejects.toThrow("unavailable or unmapped");
+  // Retained evidence never becomes successful authority when fresh lookup fails.
+  expect(await authority.store.db.prepare("SELECT value FROM social_peer_identities WHERE id=?").get(id)).toEqual(persisted);
+});
