@@ -1722,7 +1722,7 @@ pub fn host_connection_detach(
 #[allow(clippy::too_many_arguments)]
 pub async fn host_connection_request(
     app: AppHandle,
-    window: tauri::Window,
+    window: tauri::WebviewWindow,
     machine_id: String,
     method: String,
     params: Value,
@@ -1731,6 +1731,8 @@ pub async fn host_connection_request(
     response_timeout_ms: Option<u64>,
     allow_connect: Option<bool>,
 ) -> Result<WsReply, WsFailure> {
+    let issuer = crate::control::receipts::capture(&window)
+        .map_err(|_| WsFailure::local("RPC_WS_DETACHED", "Native window is unavailable"))?;
     run_ws_blocking("host_connection_request", move || {
         let state = app.state::<RemoteConnections>();
         if !HostWsBroker::supports_method(&method) {
@@ -1753,6 +1755,7 @@ pub async fn host_connection_request(
                     command_id: command_id.clone(),
                     response_timeout: response_timeout_ms.map(std::time::Duration::from_millis),
                     absolute_deadline: None,
+                    issuer: Some(issuer.clone()),
                 },
             )
         });

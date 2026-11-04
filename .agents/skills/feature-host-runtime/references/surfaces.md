@@ -4,6 +4,9 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
 
 ## Service and transport owners
 
+- `host/transport/read-budget.ts`, `dispatch.ts`, `ws/server.ts`: separate authentication/heartbeat/control admission, shared physical work accounting and retryable overload classification. Adjacent tests exercise the actual dispatcher nesting.
+- `src/shared/lib/host-runtime/environmentRuntime.ts` and its tests: bounded control FIFO, original monotonic deadlines, never-sent cancellation and physical slot retention. `src-tauri/src/host_ws/{connection,demand}.rs`, `mod.rs` and tests own reconnect queue and native cursor proof.
+
 - `host/server.ts`, `host/engine.ts`: authenticated dispatch, session operations and provider lifecycle. Search the exact method in current neutral contracts, RPC registry/dispatcher and domain service; avoid adding a second service for WebSocket callers.
 - `src/features/connections/model/`: shared client policy, protocol/capability handling and Host/native adapters. `mobile/` has its own active and compatibility transports; inspect its nested repository rules and actual producer.
 - `src/integrations/harness/core/`: registry, child backend, JSON-RPC/ACP/Pi operation views, source context and output reduction. `src/integrations/harness/providers/` retains adapter-specific protocol and cleanup ownership.

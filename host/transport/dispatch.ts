@@ -135,7 +135,11 @@ async function authorize(context: HostDispatchContext, environmentId: string): P
     permitted = (await waitForRead(context.authorized, context.signal)) === true;
   } catch (cause) {
     assertNotCancelled(context.signal);
-    if (cause instanceof HostDispatchError && cause.code === "overloaded") throw cause;
+    if (
+      cause instanceof HostDispatchError &&
+      (cause.code === "overloaded" || cause.code === "service-unavailable")
+    )
+      throw cause;
     throw new HostDispatchError("unauthorized", "Device authorization could not be verified.", {
       cause,
     });

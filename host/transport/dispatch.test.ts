@@ -367,4 +367,26 @@ describe("transport-neutral read dispatcher", () => {
       cause,
     });
   });
+  it("preserves temporary authorization unavailability instead of marking credentials revoked", async () => {
+    const { dispatch, context, list } = fixture();
+    const failure = new HostDispatchError(
+      "service-unavailable",
+      "Authorization temporarily unavailable.",
+      undefined,
+      { category: "unavailable", retryable: true, delivery: "not-sent" },
+    );
+    await expect(
+      dispatch.dispatch(
+        "projects.list",
+        {},
+        {
+          ...context,
+          authorized: async () => {
+            throw failure;
+          },
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(list).not.toHaveBeenCalled();
+  });
 });

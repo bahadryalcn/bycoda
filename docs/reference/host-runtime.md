@@ -543,6 +543,22 @@ cancellation. A command response deadline or client detach loses only the wait:
 accepted work retains its command ID, is reconciled through its receipt, and is
 never automatically replayed with a new identity.
 
+Authentication and heartbeat work have their own bounded admission lanes. A
+positive authentication rejection blocks the connection; temporary storage or
+admission failures retain retryable unavailable/overload outcomes. Renderer
+controls use eight physical slots and a FIFO of at most 64 waiters, independent
+of ordinary reads. One monotonic response deadline covers startup, queue wait,
+request and bulk decoding. Local cancellation releases a wait, not the physical
+control slot. The native reconnect queue retains only never-sent requests with
+their original deadline, owner and resource scope; dispatched mutations are
+never queued for replay.
+
+Native reconnect can resume one retained subscription only from its proven
+application-committed cursor, exact live page issuer, logical target and resource
+scope. Missing proof, a replacement page, multiple consumers, a new member or an
+invalid epoch requires a fresh baseline. The bounded proof ledger does not accept
+an arbitrary renderer cursor as evidence of application.
+
 File mutations retain the existing workspace confinement, serialized content CAS
 and editor activity owner. They recheck the authenticated grant inside the actual
 filesystem mutation queue. Files and queue operations without durable command

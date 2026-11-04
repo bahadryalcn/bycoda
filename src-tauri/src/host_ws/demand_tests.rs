@@ -84,6 +84,93 @@ fn whole_projection_shape_is_in_the_union_key_but_cursors_are_per_consumer() {
 }
 
 #[test]
+fn verified_resume_accepts_delta_without_fabricating_a_new_application_ack() {
+    let mut union = union();
+    let (member, effects) = union
+        .open_resumable("a", &params("a", "s"), Some(&cursor(10)))
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    assert_eq!(open.params["cursor"], cursor(10));
+    union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    let delta = union.event(&event(&open, "delta", 11)).unwrap();
+    assert_eq!(delta.notices.len(), 1);
+    assert!(delta.operations.is_empty());
+    let ack = union.acknowledge(&member, &cursor(11)).unwrap();
+    assert_eq!(
+        operation(&ack, OperationKind::Ack).params["cursor"],
+        cursor(11)
+    );
+}
+
+#[test]
+fn verified_resume_with_no_replay_events_does_not_emit_a_fabricated_ack() {
+    let mut union = union();
+    let (member, effects) = union
+        .open_resumable("a", &params("a", "s"), Some(&cursor(10)))
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    let opened = union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    assert!(opened.operations.is_empty());
+    assert!(union
+        .acknowledge(&member, &cursor(10))
+        .unwrap()
+        .operations
+        .is_empty());
+}
+
+#[test]
+fn resumed_delta_gap_or_changed_epoch_requires_fresh_snapshot() {
+    for (epoch, sequence) in [("epoch", 12), ("other-epoch", 11)] {
+        let mut union = union();
+        let (_, effects) = union
+            .open_resumable("a", &params("a", "s"), Some(&cursor(10)))
+            .unwrap();
+        let open = operation(&effects, OperationKind::Open);
+        union
+            .complete(
+                &open,
+                &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+            )
+            .unwrap();
+        let mut update = event(&open, "delta", sequence);
+        update["params"]["cursor"]["epoch"] = epoch.into();
+        let resync = union.event(&update).unwrap();
+        assert_eq!(
+            operation(&resync, OperationKind::Close).kind,
+            OperationKind::Close
+        );
+        assert!(resync.notices.iter().any(|notice| matches!(notice, Notice::Event { event, .. } if event["params"]["kind"] == "resync-required")));
+    }
+}
+
+#[test]
+fn a_new_member_during_resume_forces_fresh_snapshot() {
+    let mut union = union();
+    let (_, effects) = union
+        .open_resumable("a", &params("a", "s"), Some(&cursor(10)))
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    union.sent(&open);
+    let (_, joined) = union.open("b", &params("b", "s")).unwrap();
+    let close = operation(&joined, OperationKind::Close);
+    let reopen = union.complete(&close, &json!({"accepted":true})).unwrap();
+    assert!(operation(&reopen, OperationKind::Open)
+        .params
+        .get("cursor")
+        .is_none());
+}
+
+#[test]
 fn host_ack_never_outruns_the_slowest_real_applied_window_cursor() {
     let mut union = union();
     let (a, first) = union.open("a", &params("logical-a", "s")).unwrap();

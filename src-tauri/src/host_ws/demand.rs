@@ -97,6 +97,7 @@ struct Demand {
     tombstoned: bool,
     first: Option<Cursor>,
     last_ack: Option<Cursor>,
+    resume: Option<Cursor>,
     events: VecDeque<Value>,
     bytes: usize,
     recovery_attempts: usize,
@@ -155,7 +156,7 @@ impl DemandUnion {
             self.demands.get_mut(&operation.key).unwrap().wire_sent = true;
         }
     }
-    fn shape(params: &Value) -> Value {
+    pub(super) fn shape(params: &Value) -> Value {
         let mut shape = params.as_object().cloned().unwrap_or_default();
         shape.remove("subscriptionId");
         shape.remove("cursor");
@@ -183,19 +184,24 @@ impl DemandUnion {
         demand.phase = Phase::Opening;
         demand.wire_sent = false;
         demand.stream = None;
-        demand.first = None;
-        demand.last_ack = None;
+        demand.first = demand.resume.clone();
+        demand.last_ack = demand.resume.clone();
         demand.events.clear();
         demand.bytes = 0;
         for member in demand.members.values_mut() {
-            member.baseline = None;
+            member.baseline = demand.resume.clone();
+            member.applied = demand.resume.clone();
             member.delivered.clear();
         }
         let mut params = demand.shape.clone();
         params["subscriptionId"] = demand.wire.clone().into();
+        if let Some(cursor) = &demand.resume {
+            params["cursor"] = cursor.value();
+        }
         Self::operation(key, demand, OperationKind::Open, params)
     }
     fn begin_close(key: &str, demand: &mut Demand, refresh: bool, effects: &mut Effects) {
+        demand.resume = None;
         demand.refresh |= refresh;
         if demand.phase == Phase::Closing {
             return;
@@ -214,6 +220,14 @@ impl DemandUnion {
         &mut self,
         owner: &str,
         params: &Value,
+    ) -> Result<(MemberId, Effects), &'static str> {
+        self.open_resumable(owner, params, None)
+    }
+    pub fn open_resumable(
+        &mut self,
+        owner: &str,
+        params: &Value,
+        verified: Option<&Value>,
     ) -> Result<(MemberId, Effects), &'static str> {
         let id = params["subscriptionId"].as_str().ok_or("subscription")?;
         let member_id = MemberId::new(owner, id);
@@ -250,6 +264,7 @@ impl DemandUnion {
                     tombstoned: false,
                     first: None,
                     last_ack: None,
+                    resume: verified.map(Cursor::parse).transpose()?,
                     events: VecDeque::new(),
                     bytes: 0,
                     recovery_attempts: 0,
@@ -272,7 +287,9 @@ impl DemandUnion {
         );
         self.members.insert(member_id.clone(), key.clone());
         let mut effects = Effects::default();
-        if demand.phase == Phase::Active && demand.first.is_none() {
+        if demand.phase == Phase::Opening && demand.resume.is_some() && demand.members.len() > 1 {
+            Self::begin_close(&key, demand, true, &mut effects);
+        } else if demand.phase == Phase::Active && demand.first.is_none() {
             if let Some(stream) = &demand.virtual_stream {
                 demand.members.get_mut(&member_id).unwrap().waiting = false;
                 effects.notices.push(Notice::Opened {

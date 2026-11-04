@@ -2,6 +2,7 @@
 use super::{
     bulk,
     demand::{DemandUnion, Effects, MemberId, Notice, Operation, OperationKind},
+    permits::ResourceScope,
     Contracts, NativeEvent, Request, Shared, WsFailure, WsReply,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -54,6 +55,26 @@ fn socket_error(error: &Error) -> (&'static str, bool) {
         }
         Error::Tls(_) => ("authentication", true),
         _ => ("unavailable", false),
+    }
+}
+
+// A well-formed error response is not itself a protocol error. Older Hosts may
+// omit category; only explicit identity/authentication/schema evidence blocks.
+pub(super) fn remote_error_class(value: &Value) -> (&'static str, bool) {
+    match value["error"]["data"]["category"].as_str() {
+        Some("authentication") => ("authentication", true),
+        Some("identity") => ("identity", true),
+        Some("schema") => ("schema", true),
+        Some("unsupported") => ("unsupported", true),
+        Some("overload") => ("overload", false),
+        _ => match value["error"]["code"].as_i64() {
+            Some(-32700 | -32600) => ("schema", true),
+            Some(-32601) => ("unsupported", true),
+            Some(-32001) => ("authentication", true),
+            Some(-32002) => ("identity", true),
+            Some(-32004) => ("overload", false),
+            _ => ("unavailable", false),
+        },
     }
 }
 
@@ -119,14 +140,7 @@ async fn connect(
                     return Err(("schema", true));
                 }
                 if value.get("error").is_some() {
-                    return Err((
-                        match value["error"]["data"]["category"].as_str() {
-                            Some("authentication") => "authentication",
-                            Some("identity") => "identity",
-                            _ => "schema",
-                        },
-                        true,
-                    ));
+                    return Err(remote_error_class(&value));
                 }
                 let result = &value["result"];
                 if !contracts.methods["connection.hello"]
@@ -202,6 +216,55 @@ fn deliver(mut request: Request, mut response: Result<WsReply, WsFailure>) {
     let _ = reply.send(response);
 }
 
+pub(super) fn prune_reconnect_queue(
+    shared: &Shared,
+    queue: &mut VecDeque<Request>,
+    generation: u64,
+    now: Instant,
+) {
+    for _ in 0..queue.len() {
+        let request = queue.pop_front().expect("queue length checked");
+        let reason = if !shared.active(&request.consumer)
+            || shared.cancelled(&request.id)
+            || request
+                .issuer
+                .as_ref()
+                .is_some_and(|issuer| !issuer.is_live())
+        {
+            Some((
+                "RPC_WS_CANCELLED",
+                "Host request was cancelled before dispatch",
+            ))
+        } else if !request.resource_scope.live() {
+            Some((
+                "RPC_WS_RESOURCE_RETIRED",
+                "Host resource changed before request dispatch",
+            ))
+        } else if now >= request.admission_deadline || now >= request.deadline {
+            Some((
+                "RPC_WS_DEADLINE",
+                "Host request deadline elapsed before dispatch",
+            ))
+        } else {
+            None
+        };
+        if let Some((code, message)) = reason {
+            settle(request, generation, false, code, message);
+        } else {
+            queue.push_back(request);
+        }
+    }
+}
+
+fn reconnect_queue_wait(queue: &VecDeque<Request>, now: Instant) -> Duration {
+    queue
+        .iter()
+        .map(|request| request.admission_deadline.min(request.deadline))
+        .min()
+        .map(|deadline| deadline.saturating_duration_since(now))
+        .unwrap_or(Duration::from_secs(60))
+}
+
 pub(super) async fn worker(
     shared: Arc<Shared>,
     contracts: Arc<Contracts>,
@@ -210,7 +273,8 @@ pub(super) async fn worker(
     let mut generation = 0u64;
     let mut attempts = 0u32;
     let mut blocked: Option<(&str, bool)> = None;
-    while !shared.stopped() {
+    let mut queued = VecDeque::<Request>::new();
+    'worker: while !shared.stopped() {
         if let Some((category, unsupported)) = blocked {
             tokio::select! {
                 _ = shared.changed.notified() => {},
@@ -231,16 +295,34 @@ pub(super) async fn worker(
             None => break,
         };
         shared.state(generation, "connecting", None);
-        let result = tokio::select! {
-            _ = shared.changed.notified() => { if shared.stopped() { break; } else { continue; } },
-            result = time::timeout(contracts.duration("handshakeTimeoutMs"), connect(&shared, &contracts, generation)) =>
-                result.unwrap_or(Err(("unavailable", false))),
+        let handshake = time::timeout(
+            contracts.duration("handshakeTimeoutMs"),
+            connect(&shared, &contracts, generation),
+        );
+        tokio::pin!(handshake);
+        let result = loop {
+            prune_reconnect_queue(&shared, &mut queued, generation, Instant::now());
+            let wait = reconnect_queue_wait(&queued, Instant::now());
+            tokio::select! {
+                _ = shared.changed.notified() => { if shared.stopped() { break 'worker; } },
+                _ = time::sleep(wait) => {},
+                request = rx.recv() => match request { Some(request) => queued.push_back(request), None => break 'worker },
+                result = &mut handshake => break result.unwrap_or(Err(("unavailable", false))),
+            }
         };
         let (category, permanent) = match result {
             Ok(connection) => {
                 shared.state(generation, "ready", None);
                 let ready_at = Instant::now();
-                let failure = serve(&shared, &contracts, generation, connection, &mut rx).await;
+                let failure = serve(
+                    &shared,
+                    &contracts,
+                    generation,
+                    connection,
+                    &mut rx,
+                    &mut queued,
+                )
+                .await;
                 if ready_at.elapsed()
                     >= Duration::from_millis(
                         contracts.manifest["retryPolicy"]["stableReadyMs"]
@@ -254,22 +336,24 @@ pub(super) async fn worker(
             }
             Err(failure) => failure,
         };
-        while let Ok(request) = rx.try_recv() {
-            let error = if category == "unsupported" {
-                WsFailure::unsupported()
-            } else if permanent {
-                WsFailure::local(
-                    "RPC_WS_BLOCKED",
-                    "Native Host authentication, identity or protocol is invalid",
-                )
-            } else {
-                WsFailure::local(
-                    "RPC_WS_UNAVAILABLE",
-                    "Host connection is unavailable before dispatch",
-                )
-            };
-            let error = error.for_request(&request, generation, false);
-            deliver(request, Err(error));
+        if permanent {
+            while let Some(request) = queued.pop_front().or_else(|| rx.try_recv().ok()) {
+                let error = if category == "unsupported" {
+                    WsFailure::unsupported()
+                } else if permanent {
+                    WsFailure::local(
+                        "RPC_WS_BLOCKED",
+                        "Native Host authentication, identity or protocol is invalid",
+                    )
+                } else {
+                    WsFailure::local(
+                        "RPC_WS_UNAVAILABLE",
+                        "Host connection is unavailable before dispatch",
+                    )
+                };
+                let error = error.for_request(&request, generation, false);
+                deliver(request, Err(error));
+            }
         }
         if shared.stopped() {
             break;
@@ -294,18 +378,30 @@ pub(super) async fn worker(
         let delay = time::sleep(Duration::from_millis(random % (cap + 1)));
         tokio::pin!(delay);
         loop {
+            prune_reconnect_queue(&shared, &mut queued, generation, Instant::now());
+            let wait = reconnect_queue_wait(&queued, Instant::now());
             tokio::select! {
                 _ = &mut delay => break,
                 _ = shared.changed.notified() => { if shared.stopped() { break; } },
+                _ = time::sleep(wait) => {},
                 request = rx.recv() => match request {
-                    Some(request) => settle(request, generation, false, "RPC_WS_UNAVAILABLE", "Host connection is reconnecting before dispatch"),
-                    None => return,
+                    Some(request) => queued.push_back(request),
+                    None => break 'worker,
                 }
             }
             if shared.stopped() {
                 break;
             }
         }
+    }
+    while let Some(request) = queued.pop_front() {
+        settle(
+            request,
+            generation,
+            false,
+            "RPC_WS_DETACHED",
+            "Native consumer detached before dispatch",
+        );
     }
     while let Ok(request) = rx.try_recv() {
         settle(
@@ -390,7 +486,15 @@ struct SubscriptionWork {
     pending: HashMap<String, InternalOperation>,
     queued: VecDeque<Operation>,
     retired_opens: HashMap<String, String>,
-    bindings: HashMap<MemberId, (String, Value)>,
+    bindings: HashMap<
+        MemberId,
+        (
+            String,
+            Value,
+            Arc<ResourceScope>,
+            Option<Arc<crate::control::receipts::WindowIssuer>>,
+        ),
+    >,
 }
 impl SubscriptionWork {
     fn new(contracts: &Contracts) -> Self {
@@ -447,6 +551,10 @@ impl SubscriptionWork {
                         if let Some(request) = self.waiters.remove(&member) {
                             if !shared.active(&member.owner)
                                 || shared.cancelled(&request.id)
+                                || request
+                                    .issuer
+                                    .as_ref()
+                                    .is_some_and(|issuer| !issuer.is_live())
                                 || Instant::now() >= request.deadline
                                 || !request.resource_scope.live()
                                 || !request.subscription_epoch.as_deref().is_some_and(|token| {
@@ -481,7 +589,7 @@ impl SubscriptionWork {
                         }
                     }
                     Notice::Event { member, event } => {
-                        let Some((token, target)) = self.bindings.get(&member) else {
+                        let Some((token, target, _, issuer)) = self.bindings.get(&member) else {
                             continue;
                         };
                         if shared
@@ -495,18 +603,27 @@ impl SubscriptionWork {
                             )
                             .map_err(|category| (category, category != "overload"))?
                         {
-                            shared.emit(
-                                NativeEvent::Subscription {
-                                    environment_id: shared.route.environment_id.clone(),
-                                    generation,
-                                    event,
-                                },
-                                Some(&member.owner),
-                            );
+                            let emit = || {
+                                shared.emit(
+                                    NativeEvent::Subscription {
+                                        environment_id: shared.route.environment_id.clone(),
+                                        generation,
+                                        event,
+                                    },
+                                    Some(&member.owner),
+                                );
+                                Ok(())
+                            };
+                            if let Some(issuer) = issuer {
+                                let _ = issuer.with_live(emit);
+                            } else {
+                                let _ = emit();
+                            }
                         }
                     }
                     Notice::Rejected { member } => {
-                        if let Some((token, _)) = self.bindings.remove(&member) {
+                        shared.remove_resume(&member);
+                        if let Some((token, _, _, _)) = self.bindings.remove(&member) {
                             shared.permits.revoke_attempt(
                                 &member.owner,
                                 &member.logical_id,
@@ -540,46 +657,97 @@ impl SubscriptionWork {
             .unwrap_or("")
             .to_owned();
         let member = MemberId::new(&request.consumer, &logical_id);
-        let effects = match request.method.as_str() {
-            "subscriptions.open" => match self.union.open(&request.consumer, &request.params) {
-                Ok((member, effects)) => {
-                    request.deadline = Instant::now() + request.timeout;
-                    if self.bindings.len() >= contracts.limit("maxSubscriptionsPerHost")
-                        && !self.bindings.contains_key(&member)
-                    {
-                        settle(
-                            request,
-                            generation,
-                            false,
-                            "RPC_WS_OVERLOAD",
-                            "Native logical subscription binding limit reached",
-                        );
-                        return Err(("overload", false));
-                    }
-                    self.bindings.insert(
-                        member.clone(),
-                        (
-                            request.subscription_epoch.clone().unwrap_or_default(),
-                            request.params["target"].clone(),
-                        ),
-                    );
-                    self.waiters.insert(member, request);
-                    effects
-                }
-                Err(_) => {
+        if request.method != "subscriptions.open" {
+            if let Some((_, _, _, original)) = self.bindings.get(&member) {
+                let current = request.issuer.as_ref();
+                let same = match (original.as_ref(), current) {
+                    (Some(a), Some(b)) => Arc::ptr_eq(a, b) && a.is_live(),
+                    (None, None) => true,
+                    _ => false,
+                };
+                if !same {
                     settle(
                         request,
                         generation,
                         false,
-                        "RPC_WS_SUBSCRIPTION",
-                        "Subscription identity, ownership or capacity is unavailable",
+                        "RPC_WS_DETACHED",
+                        "Subscription belongs to a retired page",
                     );
                     return Ok(None);
                 }
-            },
+            }
+        }
+        let effects = match request.method.as_str() {
+            "subscriptions.open" => {
+                let shape = DemandUnion::shape(&request.params);
+                let resume = shared.register_resume(
+                    &member,
+                    shape,
+                    request.params.get("cursor"),
+                    generation,
+                    request.issuer.as_ref(),
+                );
+                match self
+                    .union
+                    .open_resumable(&request.consumer, &request.params, resume.as_ref())
+                {
+                    Ok((member, effects)) => {
+                        request.deadline = (Instant::now() + request.timeout).min(request.deadline);
+                        if self.bindings.len() >= contracts.limit("maxSubscriptionsPerHost")
+                            && !self.bindings.contains_key(&member)
+                        {
+                            settle(
+                                request,
+                                generation,
+                                false,
+                                "RPC_WS_OVERLOAD",
+                                "Native logical subscription binding limit reached",
+                            );
+                            return Err(("overload", false));
+                        }
+                        self.bindings.insert(
+                            member.clone(),
+                            (
+                                request.subscription_epoch.clone().unwrap_or_default(),
+                                request.params["target"].clone(),
+                                request.resource_scope.clone(),
+                                request.issuer.clone(),
+                            ),
+                        );
+                        self.waiters.insert(member, request);
+                        effects
+                    }
+                    Err(_) => {
+                        shared.remove_resume(&member);
+                        settle(
+                            request,
+                            generation,
+                            false,
+                            "RPC_WS_SUBSCRIPTION",
+                            "Subscription identity, ownership or capacity is unavailable",
+                        );
+                        return Ok(None);
+                    }
+                }
+            }
             "subscriptions.ack" => {
                 match self.union.acknowledge(&member, &request.params["cursor"]) {
                     Ok(effects) => {
+                        if let Some((_, _, resource, issuer)) = self.bindings.get(&member) {
+                            let same_issuer = issuer
+                                .as_ref()
+                                .zip(request.issuer.as_ref())
+                                .is_some_and(|(a, b)| Arc::ptr_eq(a, b));
+                            if same_issuer {
+                                shared.record_resume(
+                                    &member,
+                                    generation,
+                                    request.params["cursor"].clone(),
+                                    resource.clone(),
+                                    request.issuer.as_ref(),
+                                );
+                            }
+                        }
                         deliver(
                             request,
                             Ok(WsReply::new(generation, json!({"accepted":true}))),
@@ -594,6 +762,7 @@ impl SubscriptionWork {
             }
             "subscriptions.close" => match self.union.close(&member) {
                 Ok(effects) => {
+                    shared.remove_resume(&member);
                     self.bindings.remove(&member);
                     if let Some(waiting) = self.waiters.remove(&member) {
                         settle(
@@ -736,24 +905,18 @@ impl SubscriptionWork {
         if !self.union.operation_current(&pending.operation) {
             return Ok(true);
         }
-        if value.get("error").is_some()
-            || !contracts.methods[pending.operation.method]
-                .result
-                .is_valid(&value["result"])
+        if value.get("error").is_some() {
+            let effects = self.union.failed(&pending.operation);
+            self.effects(shared, contracts, generation, effects)?;
+            return Err(remote_error_class(value));
+        }
+        if !contracts.methods[pending.operation.method]
+            .result
+            .is_valid(&value["result"])
         {
             let effects = self.union.failed(&pending.operation);
             self.effects(shared, contracts, generation, effects)?;
-            let category = value["error"]["data"]["category"]
-                .as_str()
-                .unwrap_or("schema");
-            return Err((
-                match category {
-                    "authentication" => "authentication",
-                    "identity" => "identity",
-                    _ => "schema",
-                },
-                true,
-            ));
+            return Err(("schema", true));
         }
         let effects = self
             .union
@@ -784,7 +947,7 @@ impl SubscriptionWork {
                     | Notice::Event { member, .. }
                     | Notice::Rejected { member } => member,
                 };
-                if let Some((_, target)) = self.bindings.get(member) {
+                if let Some((_, target, _, _)) = self.bindings.get(member) {
                     shared
                         .permits
                         .retire_resource(target, value["params"]["kind"] == "closed");
@@ -808,6 +971,7 @@ async fn serve(
     generation: u64,
     mut connection: Connected,
     rx: &mut channel::Receiver<Request>,
+    queued: &mut VecDeque<Request>,
 ) -> (&'static str, bool) {
     let mut pending: HashMap<String, Request> = HashMap::new();
     let mut subscriptions = SubscriptionWork::new(contracts);
@@ -867,6 +1031,10 @@ async fn serve(
             if Instant::now() >= request.admission_deadline
                 || !shared.active(&request.consumer)
                 || shared.cancelled(&request.id)
+                || request
+                    .issuer
+                    .as_ref()
+                    .is_some_and(|issuer| !issuer.is_live())
             {
                 settle(
                     request,
@@ -887,6 +1055,10 @@ async fn serve(
             };
             if !shared.active(&request.consumer)
                 || shared.cancelled(&request.id)
+                || request
+                    .issuer
+                    .as_ref()
+                    .is_some_and(|issuer| !issuer.is_live())
                 || Instant::now() >= request.admission_deadline
             {
                 settle(
@@ -898,10 +1070,10 @@ async fn serve(
                 );
                 continue;
             }
-            request.deadline = Instant::now() + request.timeout;
+            request.deadline = (Instant::now() + request.timeout).min(request.deadline);
             let envelope = json!({"jsonrpc":"2.0","id":request.wire_id,"method":request.method,"params":request.params});
             if !time::timeout(
-                request.timeout,
+                request.deadline.saturating_duration_since(Instant::now()),
                 send(&mut connection.socket, contracts, envelope),
             )
             .await
@@ -1003,13 +1175,13 @@ async fn serve(
                     }
                 }
             },
-            request = rx.recv() => {
+            request = async { match queued.pop_front() { Some(request) => Some(request), None => rx.recv().await } } => {
                 let Some(mut request) = request else { break ("unavailable", false); };
                 if shared.stopped() {
                     settle(request, generation, false, "RPC_WS_DETACHED", "Native connection detached before dispatch");
                     break ("unavailable", false);
                 }
-                if !shared.active(&request.consumer) || shared.cancelled(&request.id) {
+                if !shared.active(&request.consumer) || shared.cancelled(&request.id) || request.issuer.as_ref().is_some_and(|issuer| !issuer.is_live()) {
                     settle(request, generation, false, "RPC_WS_CANCELLED", "Host request was cancelled before dispatch"); continue;
                 }
                 if !request.resource_scope.live() {

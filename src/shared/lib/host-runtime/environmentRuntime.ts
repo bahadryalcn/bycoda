@@ -23,6 +23,7 @@ import {
   type ManagedHostConnectionPort,
   type ManagedHostEvent,
   type RuntimeRequestOptions,
+  type RuntimeClock,
   type RuntimeScope,
 } from "./ports";
 import { SubscriptionRegistry, type CursorCommit, type SubscriptionLease } from "./subscriptions";
@@ -65,6 +66,7 @@ type Entry = {
   abandoned: Set<Promise<void>>;
   controls: Map<string, "closed" | "resync-required">;
 };
+type ControlWaiter = { grant(): void; reject(error: Error): void };
 let runtimeSequence = 0;
 
 export class HostCommandUncertainError extends Error {
@@ -140,7 +142,12 @@ export class HostRpcUncertainError extends Error {
 export class EnvironmentRuntime {
   private readonly registry = new SubscriptionRegistry();
   private readonly entries = new Map<string, Entry>();
-  private readonly pending = new Map<string, { cancel(): void; cost: "read" | "control" }>();
+  private readonly pending = new Map<
+    string,
+    { cancel(): void; cancelQueued(reason: string, code?: string): void; cost: "read" | "control" }
+  >();
+  private readonly controlQueue: ControlWaiter[] = [];
+  private activeControls = 0;
   private readonly id = `runtime-${++runtimeSequence}`;
   private sequence = 0;
   private stateValue: ConnectionState;
@@ -152,6 +159,13 @@ export class EnvironmentRuntime {
   constructor(
     readonly scope: RuntimeScope,
     private readonly port: ManagedHostConnectionPort,
+    private readonly clock: RuntimeClock = {
+      now: () => performance.now(),
+      schedule: (delay, callback) => {
+        const timer = setTimeout(callback, delay);
+        return () => clearTimeout(timer);
+      },
+    },
   ) {
     for (const value of [scope.environmentId, scope.principalId, scope.accessEpoch]) {
       if (typeof value !== "string") throw new Error("Invalid runtime scope");
@@ -168,6 +182,50 @@ export class EnvironmentRuntime {
   }
   get pendingCount(): number {
     return this.pending.size;
+  }
+
+  private acquireControl(): { promise: Promise<() => void>; cancel(error: Error): void } {
+    let waiter!: ControlWaiter;
+    let waiting = true;
+    const promise = new Promise<() => void>((resolve, reject) => {
+      waiter = {
+        grant: () => {
+          if (!waiting) return;
+          waiting = false;
+          this.activeControls++;
+          let released = false;
+          resolve(() => {
+            if (released) return;
+            released = true;
+            this.activeControls--;
+            this.drainControlQueue();
+          });
+        },
+        reject: (error) => {
+          if (!waiting) return;
+          waiting = false;
+          const index = this.controlQueue.indexOf(waiter);
+          if (index >= 0) this.controlQueue.splice(index, 1);
+          reject(error);
+        },
+      };
+      if (!this.controlQueue.length && this.activeControls < WS_LIMITS.maxControlJobsPerDevice)
+        waiter.grant();
+      else if (this.controlQueue.length >= WS_LIMITS.maxPendingRpc)
+        waiter.reject(
+          Object.assign(new Error("Host pending control queue limit reached"), {
+            code: "RPC_WS_OVERLOAD",
+            uncertain: false,
+          }),
+        );
+      else this.controlQueue.push(waiter);
+    });
+    return { promise, cancel: (error) => waiter.reject(error) };
+  }
+
+  private drainControlQueue(): void {
+    while (this.controlQueue.length && this.activeControls < WS_LIMITS.maxControlJobsPerDevice)
+      this.controlQueue.shift()!.grant();
   }
 
   start(): Promise<void> {
@@ -215,57 +273,110 @@ export class EnvironmentRuntime {
       method === "commands.dispatch" ? IdentifierSchema.parse(parsed.commandId) : undefined;
     if (options.commandId !== undefined && options.commandId !== commandId)
       throw new Error("Command ID does not match the request");
-    await this.start();
-    if (this.disposed || options.signal?.aborted) throw new Error("Host request is cancelled");
+    const timeout = options.responseTimeoutMs ?? definition.responseTimeoutMs;
+    if (!Number.isFinite(timeout) || timeout <= 0) throw new Error("Invalid Host request timeout");
+    const deadline = this.clock.now() + timeout;
     const cost = hostRpcCost(method, parsed);
-    const laneLimit =
-      cost === "control" ? WS_LIMITS.maxControlJobsPerDevice : WS_LIMITS.maxPendingRpc;
-    if ([...this.pending.values()].filter((value) => value.cost === cost).length >= laneLimit)
-      throw new Error(`Host pending ${cost} request limit reached`);
+    if (
+      cost === "read" &&
+      [...this.pending.values()].filter((value) => value.cost === "read").length >=
+        WS_LIMITS.maxPendingRpc
+    )
+      throw new Error("Host pending read request limit reached");
+    if (
+      cost === "control" &&
+      [...this.pending.values()].filter((value) => value.cost === "control").length >=
+        WS_LIMITS.maxControlJobsPerDevice + WS_LIMITS.maxPendingRpc
+    )
+      throw Object.assign(new Error("Host pending control queue limit reached"), {
+        code: "RPC_WS_OVERLOAD",
+        uncertain: false,
+        commandId,
+      });
     const requestId = `${this.id}-${++this.sequence}`;
     const version = this.scopeVersion;
+    let admissionGeneration: number | undefined;
     let submitted = false;
     let replySeen = false;
     let cancelledLocally = false;
+    let cancelError: Error | undefined;
     let releaseSignal: (() => void) | undefined;
+    let releaseDeadline: (() => void) | undefined;
+    let releaseControl: (() => void) | undefined;
+    let cancelWait: ((error: Error) => void) | undefined;
     let rejectCancelled!: (error: Error) => void;
     const cancelled = new Promise<never>((_resolve, reject) => {
       rejectCancelled = reject;
     });
-    const cancel = () => {
+    void cancelled.catch(() => {});
+    const cancelWith = (code: string, message: string) => {
+      if (cancelledLocally) return;
       cancelledLocally = true;
       if (submitted && definition.cancellation === "query")
         void this.port.cancel(requestId).catch(() => {});
-      const error = Object.assign(new Error("Host request is cancelled"), {
-        code: "RPC_WS_CANCELLED",
+      cancelError = Object.assign(new Error(message), {
+        code,
+        ...(!submitted ? { uncertain: false, commandId } : {}),
       });
-      rejectCancelled(
-        !submitted
-          ? Object.assign(error, { code: "RPC_WS_CANCELLED", uncertain: false, commandId })
-          : error,
-      );
+      cancelWait?.(cancelError);
+      rejectCancelled(cancelError);
     };
-    this.pending.set(requestId, { cancel, cost });
+    const cancel = () => cancelWith("RPC_WS_CANCELLED", "Host request is cancelled");
+    this.pending.set(requestId, {
+      cancel,
+      cost,
+      cancelQueued: (reason, code = "RPC_WS_UNAVAILABLE") => {
+        if (!submitted && admissionGeneration !== undefined) cancelWith(code, reason);
+      },
+    });
     try {
+      releaseDeadline = this.clock.schedule(timeout, () =>
+        cancelWith("RPC_WS_DEADLINE", "Host request deadline exceeded"),
+      );
       releaseSignal = options.signal?.subscribe(cancel);
       if (options.signal?.aborted) cancel();
-      submitted = !cancelledLocally;
-      const reply = await Promise.race([
-        cancelledLocally
-          ? new Promise<{ generation: number; result: unknown }>(() => {})
-          : this.port.request(method, parsed, {
-              requestId,
-              commandId,
-              responseTimeoutMs: options.responseTimeoutMs ?? definition.responseTimeoutMs,
-            }),
-        cancelled,
-      ]);
+      if (cancelledLocally) throw cancelError;
+      await Promise.race([this.start(), cancelled]);
+      if (cancelledLocally || this.disposed)
+        throw cancelError ?? new Error("Host request is cancelled");
+      admissionGeneration = this.stateValue.generation;
+      if (cost === "control") {
+        const ticket = this.acquireControl();
+        cancelWait = ticket.cancel;
+        releaseControl = await ticket.promise;
+        cancelWait = undefined;
+      }
+      if (cancelledLocally) throw cancelError;
+      if (
+        version !== this.scopeVersion ||
+        admissionGeneration !== this.stateValue.generation ||
+        this.stateValue.transport === "blocked" ||
+        this.stateValue.transport === "closed"
+      )
+        throw Object.assign(new Error("Host connection changed before request admission"), {
+          code: "RPC_WS_UNAVAILABLE",
+          uncertain: false,
+          commandId,
+        });
+      const remaining = Math.ceil(deadline - this.clock.now());
+      if (remaining <= 0) {
+        cancelWith("RPC_WS_DEADLINE", "Host request deadline exceeded");
+        throw cancelError;
+      }
+      submitted = true;
+      const physical = this.port.request(method, parsed, {
+        requestId,
+        commandId,
+        responseTimeoutMs: remaining,
+      });
+      const releasePhysical = releaseControl;
+      releaseControl = undefined;
+      if (releasePhysical) void physical.then(releasePhysical, releasePhysical);
+      const reply = await Promise.race([physical, cancelled]);
       replySeen = true;
       requireSafeCounter(reply.generation, "reply generation");
       if (this.disposed || version !== this.scopeVersion)
         throw new Error("Stale Host access scope");
-      // A validated acceptance receipt remains an outcome across reconnects in
-      // this same access scope. It must never turn into an automatic replay.
       if (commandId) {
         const receipt = CommandReceiptSchema.parse(reply.result);
         if (receipt.commandId !== commandId)
@@ -273,13 +384,28 @@ export class EnvironmentRuntime {
         return receipt;
       }
       this.assertCurrent(reply.generation, version);
+      const bulkRemaining = Math.ceil(deadline - this.clock.now());
+      if (bulkRemaining <= 0) {
+        cancelWith("RPC_WS_DEADLINE", "Host request deadline exceeded");
+        throw cancelError;
+      }
       const value = await Promise.race([
-        this.resolveBulk(reply.result, reply.generation, version, options.responseTimeoutMs),
+        this.resolveBulk(reply.result, reply.generation, version, bulkRemaining),
         cancelled,
       ]);
       this.assertCurrent(reply.generation, version);
       return definition.resultSchema.parse(value);
     } catch (error) {
+      if (
+        !submitted &&
+        commandId &&
+        typeof error === "object" &&
+        error !== null &&
+        "uncertain" in error &&
+        error.uncertain === false &&
+        !("commandId" in error)
+      )
+        Object.assign(error, { commandId });
       if (submitted) {
         const knownFailure =
           !replySeen &&
@@ -301,6 +427,9 @@ export class EnvironmentRuntime {
       }
       throw error;
     } finally {
+      cancelWait?.(cancelError ?? new Error("Host request is cancelled"));
+      releaseControl?.();
+      releaseDeadline?.();
       releaseSignal?.();
       this.pending.delete(requestId);
     }
@@ -370,6 +499,8 @@ export class EnvironmentRuntime {
       return;
     if (event.kind === "state") {
       if (event.generation > this.stateValue.generation) {
+        for (const pending of this.pending.values())
+          pending.cancelQueued("Host connection generation changed before request admission");
         this.stateValue = reduceConnectionState(this.stateValue, {
           type: "attempt",
           generation: event.generation,
@@ -418,6 +549,11 @@ export class EnvironmentRuntime {
               : event.category === "authentication"
                 ? "RPC_WS_BLOCKED"
                 : "RPC_WS_SCHEMA";
+          for (const pending of this.pending.values())
+            pending.cancelQueued(
+              "Host connection is blocked or closed before request admission",
+              event.phase === "blocked" ? code : "RPC_WS_UNAVAILABLE",
+            );
           const error =
             event.phase === "blocked"
               ? Object.assign(new Error(`${code}: Host connection admission was refused`), {

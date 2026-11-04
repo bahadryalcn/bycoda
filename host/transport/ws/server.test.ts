@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
-import { HostDispatchError } from "../dispatch";
+import { HostDispatchError, createHostDispatcher } from "../dispatch";
 import {
   HOST_SCHEMA_VERSION,
   RPC_ERROR_CODES,
@@ -727,5 +727,350 @@ describe("WS framing and orderly disposal", () => {
     expect(signal?.aborted).toBe(true);
     expect(host.server.listenerCount("upgrade")).toBe(0);
     finish.resolve([]);
+  });
+  it("keeps multiple sockets healthy while eight control jobs occupy backend capacity", async () => {
+    const release = deferred<unknown>();
+    const allStarted = deferred<void>();
+    let started = 0;
+    const host = await fixture({
+      methods: ["environment.persistence.status"],
+      limits: { heartbeatIntervalMs: 15, heartbeatResponseTimeoutMs: 500 },
+      dispatch: async () => {
+        if (++started === 8) allStarted.resolve();
+        return release.promise;
+      },
+    });
+    const first = await host.ready();
+    const second = await host.ready();
+    const third = await host.ready();
+    const pings = Promise.all(
+      [first, second, third].map(
+        (client) => new Promise<void>((resolve) => client.socket.once("ping", () => resolve())),
+      ),
+    );
+    const jobs = Array.from({ length: 8 }, (_, i) =>
+      (i < 4 ? first : second).request(`held-${i}`, "environment.persistence.status"),
+    );
+    await allStarted.promise;
+    try {
+      expect(await third.request("excess-control", "environment.persistence.status")).toMatchObject(
+        {
+          error: {
+            code: RPC_ERROR_CODES.overloaded,
+            data: { category: "overload", retryable: true, delivery: "not-sent" },
+          },
+        },
+      );
+      expect(await third.request("health-probe", "connection.probe")).toMatchObject({
+        result: { environmentId: ENVIRONMENT },
+      });
+      await pings;
+      expect(
+        [first, second, third].every((client) => client.socket.readyState === WebSocket.OPEN),
+      ).toBe(true);
+    } finally {
+      release.resolve({ state: "ready" });
+    }
+    expect(await Promise.all(jobs)).toHaveLength(8);
+  });
+
+  it("reports temporary authorization failure without falsely revoking the socket", async () => {
+    let mode: "ok" | "unavailable" | "revoked" = "ok";
+    const host = await fixture({
+      authenticate: async () => ({
+        id: "device-a",
+        authorized: async () => {
+          if (mode === "unavailable") throw new Error("backend unavailable");
+          return mode === "ok";
+        },
+      }),
+    });
+    const client = await host.ready();
+    mode = "unavailable";
+    expect(await client.request("auth-unavailable", "projects.list")).toMatchObject({
+      error: { data: { category: "unavailable", retryable: true, delivery: "not-sent" } },
+    });
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    mode = "ok";
+    expect(await client.request("after-auth-recovery", "connection.probe")).toHaveProperty(
+      "result",
+    );
+    mode = "revoked";
+    expect(await client.request("revoked", "projects.list")).toMatchObject({
+      error: { code: RPC_ERROR_CODES.unauthorized },
+    });
+    await client.closed;
+  });
+
+  it("does not claim an overloaded mutation was unsent after dispatch began", async () => {
+    const dispatch = vi.fn<HostWebSocketOptions["dispatch"]>(async () => {
+      throw new HostDispatchError("overloaded", "busy", undefined, {
+        category: "overload",
+        retryable: true,
+        delivery: "not-sent",
+      });
+    });
+    const host = await fixture({ methods: ["commands.dispatch"], dispatch });
+    const client = await host.ready();
+    const response = await client.request("command", "commands.dispatch", {
+      commandId: "command-a",
+      sessionId: "session-a",
+      type: "draft",
+      text: "keep",
+    });
+    expect(response).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.overloaded,
+        data: {
+          category: "overload",
+          retryable: false,
+          delivery: "unknown",
+          commandId: "command-a",
+        },
+      },
+    });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+  it("keeps detached heartbeat work bounded without falsely closing a replacement", async () => {
+    const finish = deferred<boolean>();
+    const started = deferred<void>();
+    let block = false;
+    let revoked = false;
+    let blockedChecks = 0;
+    const host = await fixture({
+      authenticate: async () => ({
+        id: "device-a",
+        authorized: async () => {
+          if (block) {
+            blockedChecks++;
+            started.resolve();
+            return finish.promise;
+          }
+          return !revoked;
+        },
+      }),
+      limits: { maxSocketsPerDevice: 1, heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
+    });
+    const first = await host.ready();
+    block = true;
+    await started.promise;
+    await first.closed;
+    block = false;
+    const second = await host.ready();
+    await new Promise<void>((resolve) => second.socket.once("ping", () => resolve()));
+    expect(blockedChecks).toBe(1);
+    expect(await second.request("still-authorized", "connection.probe")).toHaveProperty("result");
+    revoked = true;
+    finish.resolve(true);
+    await second.closed;
+  });
+
+  it("returns transient hello overload and allows retry after detached auth settles", async () => {
+    const finish = deferred<boolean>();
+    const started = deferred<void>();
+    let block = false;
+    const host = await fixture({
+      authenticate: async () => ({
+        id: "device-a",
+        authorized: async () => {
+          if (block) {
+            started.resolve();
+            return finish.promise;
+          }
+          return true;
+        },
+      }),
+      limits: { maxControlJobsPerDevice: 1, defaultResponseTimeoutMs: 40 },
+    });
+    const first = await host.ready();
+    block = true;
+    const pending = first.request("auth-stalled", "projects.list");
+    await started.promise;
+    expect(await pending).toMatchObject({ error: { code: RPC_ERROR_CODES.deadlineExceeded } });
+    block = false;
+    const second = host.connect();
+    await second.opened;
+    expect(await second.hello("hello-overload")).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.overloaded,
+        data: { category: "overload", retryable: true, delivery: "not-sent" },
+      },
+    });
+    finish.resolve(true);
+    await finish.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await second.hello("hello-retry")).toHaveProperty("result");
+  });
+  it("classifies per-socket control saturation without dispatching a ninth job", async () => {
+    const release = deferred<unknown>();
+    const started = deferred<void>();
+    let count = 0;
+    const dispatch = vi.fn<HostWebSocketOptions["dispatch"]>(async () => {
+      if (++count === 8) started.resolve();
+      return release.promise;
+    });
+    const host = await fixture({ methods: ["environment.persistence.status"], dispatch });
+    const client = await host.ready();
+    const jobs = Array.from({ length: 8 }, (_, i) =>
+      client.request(`socket-${i}`, "environment.persistence.status"),
+    );
+    await started.promise;
+    try {
+      expect(
+        await client.request("socket-overload", "environment.persistence.status"),
+      ).toMatchObject({
+        error: {
+          code: RPC_ERROR_CODES.overloaded,
+          data: { category: "overload", retryable: true, delivery: "not-sent" },
+        },
+      });
+      expect(dispatch).toHaveBeenCalledTimes(8);
+    } finally {
+      release.resolve({ state: "ready" });
+    }
+    await Promise.all(jobs);
+  });
+
+  it("marks a command authorization deadline as not sent", async () => {
+    const finish = deferred<boolean>();
+    const started = deferred<void>();
+    let block = false;
+    const dispatch = vi.fn<HostWebSocketOptions["dispatch"]>(async () => {
+      throw new Error("must not dispatch");
+    });
+    const host = await fixture({
+      methods: ["commands.dispatch"],
+      dispatch,
+      limits: { defaultResponseTimeoutMs: 40 },
+      authenticate: async () => ({
+        id: "device-a",
+        authorized: async () => {
+          if (block) {
+            started.resolve();
+            return finish.promise;
+          }
+          return true;
+        },
+      }),
+    });
+    const client = await host.ready();
+    block = true;
+    const pending = client.request("pre-dispatch", "commands.dispatch", {
+      commandId: "command-a",
+      sessionId: "session-a",
+      type: "draft",
+      text: "keep",
+    });
+    await started.promise;
+    expect(await pending).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.deadlineExceeded,
+        data: {
+          category: "deadline",
+          retryable: true,
+          delivery: "not-sent",
+          commandId: "command-a",
+        },
+      },
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    finish.resolve(true);
+  });
+  it("admits eight real dispatcher controls without double charging tracked work", async () => {
+    const finish = deferred<unknown>();
+    const allStarted = deferred<void>();
+    let started = 0;
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "environment.persistence.status": async () => {
+          if (++started === 8) allStarted.resolve();
+          return finish.promise;
+        },
+      },
+    });
+    const host = await fixture({
+      methods: ["environment.persistence.status"],
+      dispatch: dispatcher.dispatch,
+    });
+    const first = await host.ready();
+    const second = await host.ready();
+    const third = await host.ready();
+    const jobs = Array.from({ length: 8 }, (_, i) =>
+      (i < 4 ? first : second).request(`real-${i}`, "environment.persistence.status"),
+    );
+    await allStarted.promise;
+    try {
+      expect(await third.request("real-overload", "environment.persistence.status")).toMatchObject({
+        error: {
+          code: RPC_ERROR_CODES.overloaded,
+          data: { category: "overload", delivery: "not-sent" },
+        },
+      });
+    } finally {
+      finish.resolve({ state: "ready" });
+    }
+    expect((await Promise.all(jobs)).every((item) => "result" in item)).toBe(true);
+  });
+
+  it("holds the real tracked child slot after a query response deadline", async () => {
+    const finish = deferred<unknown>();
+    const started = deferred<void>();
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: {
+        list: async () => {
+          started.resolve();
+          return finish.promise;
+        },
+      },
+    });
+    const host = await fixture({
+      dispatch: dispatcher.dispatch,
+      limits: { maxReadJobsPerDevice: 1, defaultResponseTimeoutMs: 40 },
+    });
+    const client = await host.ready();
+    const first = client.request("real-timeout", "projects.list");
+    await started.promise;
+    expect(await first).toMatchObject({ error: { code: RPC_ERROR_CODES.deadlineExceeded } });
+    expect(await client.request("real-held", "projects.list")).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.overloaded,
+        data: { category: "overload", delivery: "not-sent" },
+      },
+    });
+    finish.resolve([]);
+    await finish.promise;
+  });
+  it("preserves explicitly accepted effect delivery from a domain outcome", async () => {
+    const dispatch = vi.fn<HostWebSocketOptions["dispatch"]>(async () => {
+      throw new HostDispatchError("service-unavailable", "Committed but unconfirmed.", undefined, {
+        category: "unavailable",
+        retryable: false,
+        delivery: "accepted",
+        commandId: "command-a",
+      });
+    });
+    const host = await fixture({ methods: ["commands.dispatch"], dispatch });
+    const client = await host.ready();
+    const result = await client.request("accepted", "commands.dispatch", {
+      commandId: "command-a",
+      sessionId: "session-a",
+      type: "draft",
+      text: "keep",
+    });
+    expect(result).toMatchObject({
+      error: {
+        data: {
+          category: "unavailable",
+          retryable: false,
+          delivery: "accepted",
+          commandId: "command-a",
+        },
+      },
+    });
   });
 });

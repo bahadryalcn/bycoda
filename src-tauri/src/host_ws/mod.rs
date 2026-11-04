@@ -330,6 +330,7 @@ pub struct RequestOptions {
     /// Optional operation budget, including queue admission and socket send.
     /// A relative response timeout must never extend this absolute deadline.
     pub absolute_deadline: Option<Instant>,
+    pub(crate) issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -476,6 +477,7 @@ struct Request {
     id: String,
     wire_id: String,
     consumer: String,
+    issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
     method: String,
     params: Value,
     command_id: Option<String>,
@@ -538,10 +540,124 @@ struct Shared {
     next_generation: Arc<AtomicU64>,
     last_state: Mutex<Option<NativeEvent>>,
     permits: Arc<permits::Permits>,
+    resume: Mutex<HashMap<demand::MemberId, ResumeProof>>,
+    resume_disabled: AtomicBool,
     changed: Notify,
 }
 
+struct ResumeProof {
+    shape: Value,
+    cursor: Option<Value>,
+    generation: u64,
+    resource: Option<Arc<permits::ResourceScope>>,
+    issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
+}
+
 impl Shared {
+    fn register_resume(
+        &self,
+        member: &demand::MemberId,
+        shape: Value,
+        requested: Option<&Value>,
+        generation: u64,
+        issuer: Option<&Arc<crate::control::receipts::WindowIssuer>>,
+    ) -> Option<Value> {
+        if self.resume_disabled.load(Ordering::Acquire) {
+            return None;
+        }
+        let active: HashSet<String> = self.consumers().keys().cloned().collect();
+        let mut proofs = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        proofs.retain(|id, proof| {
+            active.contains(&id.owner)
+                && proof.issuer.as_ref().is_none_or(|issuer| issuer.is_live())
+        });
+        let unique = proofs
+            .iter()
+            .filter(|(_, proof)| proof.shape == shape)
+            .count()
+            == 1;
+        let previous = proofs.remove(member);
+        let candidate = previous
+            .as_ref()
+            .filter(|proof| {
+                unique
+                    && proof.shape == shape
+                    && proof.generation < generation
+                    && proof.cursor.as_ref() == requested
+                    && requested.is_some()
+                    && proof.resource.as_ref().is_some_and(|scope| scope.live())
+                    && proof
+                        .issuer
+                        .as_ref()
+                        .zip(issuer)
+                        .is_some_and(|(prior, current)| {
+                            Arc::ptr_eq(prior, current) && current.is_live()
+                        })
+            })
+            .and_then(|proof| proof.cursor.clone());
+        if proofs.len() >= 512 {
+            proofs.clear();
+            self.resume_disabled.store(true, Ordering::Release);
+            return None;
+        }
+        proofs.insert(
+            member.clone(),
+            ResumeProof {
+                shape,
+                cursor: candidate.clone(),
+                generation,
+                resource: previous.and_then(|proof| {
+                    if candidate.is_some() {
+                        proof.resource
+                    } else {
+                        None
+                    }
+                }),
+                issuer: issuer.cloned(),
+            },
+        );
+        candidate
+    }
+    fn record_resume(
+        &self,
+        member: &demand::MemberId,
+        generation: u64,
+        cursor: Value,
+        resource: Arc<permits::ResourceScope>,
+        issuer: Option<&Arc<crate::control::receipts::WindowIssuer>>,
+    ) {
+        if !resource.live() || !self.active(&member.owner) {
+            return;
+        }
+        if let Some(proof) = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_mut(member)
+        {
+            if proof.generation == generation
+                && proof
+                    .issuer
+                    .as_ref()
+                    .zip(issuer)
+                    .is_some_and(|(prior, current)| {
+                        Arc::ptr_eq(prior, current) && current.is_live()
+                    })
+            {
+                proof.cursor = Some(cursor);
+                proof.resource = Some(resource);
+            }
+        }
+    }
+    fn remove_resume(&self, member: &demand::MemberId) {
+        self.resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(member);
+    }
     fn consumers(&self) -> std::sync::MutexGuard<'_, HashMap<String, Option<EventSink>>> {
         self.consumers
             .lock()
@@ -776,6 +892,8 @@ impl HostWsBroker {
             route: route.clone(),
             consumers: Mutex::new(HashMap::from([(consumer.into(), None)])),
             cancelled: Arc::new(Mutex::new(HashSet::new())),
+            resume: Mutex::new(HashMap::new()),
+            resume_disabled: AtomicBool::new(false),
             ids: Arc::new(Mutex::new(HashMap::new())),
             stop: AtomicBool::new(false),
             pending: Arc::new(AtomicUsize::new(0)),
@@ -1191,6 +1309,7 @@ impl HostWsBroker {
             id: id.clone(),
             wire_id,
             consumer: consumer.into(),
+            issuer: options.issuer.clone(),
             method: method.into(),
             params,
             command_id: command_id.clone(),
@@ -1271,6 +1390,12 @@ impl HostWsBroker {
             }
             handle.shared.consumers().remove(consumer);
             handle.shared.permits.revoke_owner(consumer);
+            handle
+                .shared
+                .resume
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .retain(|member, _| member.owner != consumer);
             let keep = !handle.shared.consumers().is_empty();
             if !keep {
                 handle.shared.stop.store(true, Ordering::Release);

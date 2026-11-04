@@ -1,6 +1,139 @@
 use super::*;
 
 #[test]
+fn remote_admission_errors_block_only_explicit_identity_auth_or_schema() {
+    for (error, expected) in [
+        (json!({"error":{"code":-32004}}), ("overload", false)),
+        (json!({"error":{"code":-32603}}), ("unavailable", false)),
+        (
+            json!({"error":{"code":-32004,"data":{"category":"overload"}}}),
+            ("overload", false),
+        ),
+        (json!({"error":{"code":-32001}}), ("authentication", true)),
+        (json!({"error":{"code":-32002}}), ("identity", true)),
+        (json!({"error":{"code":-32601}}), ("unsupported", true)),
+        (json!({"error":{"code":-32600}}), ("schema", true)),
+        (
+            json!({"error":{"code":-32603,"data":{"category":"schema"}}}),
+            ("schema", true),
+        ),
+    ] {
+        assert_eq!(connection::remote_error_class(&error), expected);
+    }
+}
+
+#[test]
+fn transient_hello_overload_reconnects_and_queues_a_never_sent_request_once() {
+    let (second_tx, second_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let server = Server::spawn(move |listener| async move {
+        let mut first = accept(&listener).await;
+        let hello_request = next(&mut first).await;
+        first.send(Message::Text(json!({"jsonrpc":"2.0","id":hello_request["id"],"error":{"code":-32004,"message":"busy"}}).to_string().into())).await.unwrap();
+        drop(first);
+        let mut second = accept(&listener).await;
+        let hello_request = next(&mut second).await;
+        second_tx.send(()).unwrap();
+        tokio::task::spawn_blocking(move || release_rx.recv().unwrap())
+            .await
+            .unwrap();
+        answer_hello(&mut second, &hello_request, &["projects.list"], "host.1").await;
+        let request = next(&mut second).await;
+        assert_eq!(request["method"], "projects.list");
+        result(&mut second, &request, project_list("queued")).await;
+        assert!(time::timeout(Duration::from_millis(150), second.next())
+            .await
+            .is_err());
+    });
+    let broker = HostWsBroker::default();
+    let route = server.route();
+    broker.attach(&route, "window.a", Arc::new(|_| {})).unwrap();
+    second_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    let pending = broker
+        .begin_request(
+            &route,
+            "window.a",
+            "projects.list",
+            json!({}),
+            RequestOptions {
+                request_id: Some("queued-once".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    release_tx.send(()).unwrap();
+    assert_eq!(pending.wait().unwrap().result, project_list("queued"));
+    drop(server);
+    broker.shutdown();
+}
+
+#[test]
+fn uncategorized_subscription_overload_reconnects_without_blocking_lane() {
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    let server = Server::spawn(move |listener| async move {
+        let mut first = accept(&listener).await;
+        hello(
+            &mut first,
+            &["subscriptions.open", "subscriptions.close"],
+            "host.1",
+        )
+        .await;
+        let open = next(&mut first).await;
+        first
+            .send(Message::Text(
+                json!({"jsonrpc":"2.0","id":open["id"],"error":{"code":-32004,"message":"busy"}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        drop(first);
+        let mut second = accept(&listener).await;
+        hello(
+            &mut second,
+            &["subscriptions.open", "subscriptions.close"],
+            "host.1",
+        )
+        .await;
+        ready_tx.send(()).unwrap();
+        let fresh = next(&mut second).await;
+        assert_eq!(fresh["method"], "subscriptions.open");
+        result(
+            &mut second,
+            &fresh,
+            json!({"subscriptionId":fresh["params"]["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .await;
+        tokio::task::spawn_blocking(move || done_rx.recv().unwrap())
+            .await
+            .unwrap();
+    });
+    let broker = HostWsBroker::default();
+    let route = server.route();
+    let first = broker.request(
+        &route,
+        "window-a",
+        "subscriptions.open",
+        json!({"subscriptionId":"first","target":{"kind":"environment"}}),
+        RequestOptions::default(),
+    );
+    assert!(first.is_err());
+    ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    let second = broker.request(
+        &route,
+        "window-a",
+        "subscriptions.open",
+        json!({"subscriptionId":"second","target":{"kind":"environment"}}),
+        RequestOptions::default(),
+    );
+    assert!(second.is_ok());
+    done_tx.send(()).unwrap();
+    drop(server);
+    broker.shutdown();
+}
+
+#[test]
 fn generic_ws_cannot_bypass_private_native_or_raw_development_gateway_ingress() {
     let broker = HostWsBroker::default();
     let route = NativeRoute::new(
@@ -1017,6 +1150,107 @@ fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() 
         )
         .unwrap();
     done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    broker.shutdown();
+}
+
+#[test]
+fn single_committed_consumer_resumes_replay_after_reconnect() {
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let server = Server::spawn(move |listener| async move {
+        let mut first = accept(&listener).await;
+        hello(
+            &mut first,
+            &["subscriptions.open", "subscriptions.ack"],
+            "host.1",
+        )
+        .await;
+        let open = next(&mut first).await;
+        assert!(open["params"].get("cursor").is_none());
+        result(
+            &mut first,
+            &open,
+            json!({"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .await;
+        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{
+            "subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":1},"kind":"snapshot","data":{"version":1}}}).to_string().into())).await.unwrap();
+        let ack = next(&mut first).await;
+        assert_eq!(ack["method"], "subscriptions.ack");
+        result(&mut first, &ack, json!({"accepted":true})).await;
+        drop(first);
+        let mut second = accept(&listener).await;
+        hello(
+            &mut second,
+            &["subscriptions.open", "subscriptions.ack"],
+            "host.1",
+        )
+        .await;
+        ready_tx.send(()).unwrap();
+        let resumed = next(&mut second).await;
+        assert_eq!(
+            resumed["params"]["cursor"],
+            json!({"epoch":"epoch.1","sequence":1})
+        );
+        result(
+            &mut second,
+            &resumed,
+            json!({"subscriptionId":resumed["params"]["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .await;
+        second.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{
+            "subscriptionId":resumed["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":2},"kind":"delta","data":{"version":2}}}).to_string().into())).await.unwrap();
+    });
+    let broker = HostWsBroker::default();
+    let route = server.route();
+    let (tx, rx) = mpsc::channel();
+    broker
+        .attach(
+            &route,
+            "window-a",
+            Arc::new(move |event| {
+                let _ = tx.send(event);
+            }),
+        )
+        .unwrap();
+    broker
+        .request(
+            &route,
+            "window-a",
+            "subscriptions.open",
+            json!({"subscriptionId":"logical-a","target":{"kind":"session","sessionId":"session"}}),
+            RequestOptions {
+                issuer: Some(issuer.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    union_snapshot(&rx, "logical-a", 1);
+    broker
+        .request(
+            &route,
+            "window-a",
+            "subscriptions.ack",
+            json!({"subscriptionId":"logical-a","cursor":{"epoch":"epoch.1","sequence":1}}),
+            RequestOptions {
+                issuer: Some(issuer.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    broker.request(&route, "window-a", "subscriptions.open", json!({"subscriptionId":"logical-a","target":{"kind":"session","sessionId":"session"},"cursor":{"epoch":"epoch.1","sequence":1}}), RequestOptions { issuer: Some(issuer), ..Default::default() }).unwrap();
+    loop {
+        if let NativeEvent::Subscription { event, .. } =
+            rx.recv_timeout(Duration::from_secs(3)).unwrap()
+        {
+            if event["params"]["kind"] == "delta" {
+                assert_eq!(event["params"]["cursor"]["sequence"], 2);
+                break;
+            }
+        }
+    }
+    drop(server);
     broker.shutdown();
 }
 

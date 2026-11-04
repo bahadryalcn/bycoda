@@ -137,6 +137,13 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     if (!Number.isSafeInteger(value) || value < 1)
       throw new Error("Invalid Host WS resource limit.");
   const workBudget = new HostReadWorkBudget(limits);
+  // Authorization work keeps bounded slots until physical settlement.
+  const authBudget = new HostReadWorkBudget(limits);
+  const heartbeatBudget = new HostReadWorkBudget({
+    ...limits,
+    maxControlJobs: limits.maxAuthenticatedSockets,
+    maxControlJobsPerDevice: limits.maxSocketsPerDevice,
+  });
   const methods = options.methods ?? READ_METHODS;
   for (const method of methods)
     if (
@@ -223,20 +230,25 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     send(peer, { jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } });
   }
 
-  async function authorized(peer: Peer): Promise<boolean> {
-    return !peer.closed && (await executionAuthorized(peer));
+  async function authorized(peer: Peer, heartbeat = false): Promise<boolean> {
+    return !peer.closed && (await executionAuthorized(peer, heartbeat));
   }
 
-  async function executionAuthorized(peer: Peer): Promise<boolean> {
+  async function executionAuthorized(peer: Peer, heartbeat = false): Promise<boolean> {
     try {
-      return await workBudget.run(
+      return await (heartbeat ? heartbeatBudget : authBudget).run(
         peer.principal.id,
         async () => await peer.principal.authorized(),
         "control",
       );
     } catch (error) {
       if (error instanceof HostDispatchError && error.code === "overloaded") throw error;
-      return false;
+      throw new HostDispatchError(
+        "service-unavailable",
+        "Device authorization could not be verified; retry later.",
+        { cause: error },
+        { category: "unavailable", retryable: true, delivery: "not-sent" },
+      );
     }
   }
 
@@ -263,7 +275,20 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         closePeer(peer);
         return;
       }
-      if (!(await authorized(peer))) {
+      let permitted: boolean;
+      try {
+        permitted = await authorized(peer);
+      } catch (error) {
+        if (
+          !(error instanceof HostDispatchError) ||
+          !["overloaded", "service-unavailable"].includes(error.code)
+        )
+          throw error;
+        peer.initializing = false;
+        failure(peer, request.id, DISPATCH_ERROR_CODES[error.code], error.message, error.details);
+        return;
+      }
+      if (!permitted) {
         failure(
           peer,
           request.id,
@@ -311,7 +336,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         ? peer.controls.size >= 8
         : peer.pending.size - peer.controls.size >= limits.maxPendingRpc
     ) {
-      failure(peer, request.id, RPC_ERROR_CODES.overloaded, "Too many pending requests.");
+      failure(peer, request.id, RPC_ERROR_CODES.overloaded, "Too many pending requests.", {
+        category: "overload",
+        retryable: true,
+        delivery: "not-sent",
+      });
       return;
     }
     const controller = new AbortController();
@@ -395,7 +424,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             ? `project:${request.params.projectId}`
             : "environment";
       const resultAuthorities: Array<() => Promise<boolean>> = [];
-      const action = async () => {
+      const action = async (track: <T>(work: () => Promise<T>) => Promise<T>) => {
         const dependencies = options.bulk
           ? await (options.bulkDependencies?.(request.method, request.params) ??
               hostBulkDependencies(request.method, request.params))
@@ -409,7 +438,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             authorized: () => authorized(peer),
             executionAuthorized: () => executionAuthorized(peer),
             trackWork: (work) =>
-              workBudget.run(peer.principal.id, work, control ? "control" : "read"),
+              controller.signal.aborted
+                ? Promise.reject(new HostDispatchError("cancelled", "Host work admission closed."))
+                : track(work),
             exposeQueueAttachments: peer.principal.exposeQueueAttachments,
             retargetTask: peer.principal.retargetTask,
             devServerAccess: peer.principal.devServerAccess,
@@ -438,7 +469,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         }
       };
       const result = await waitFor(
-        workBudget.run(peer.principal.id, action, control ? "control" : "read"),
+        workBudget.runScoped(peer.principal.id, action, control ? "control" : "read"),
         controller.signal,
       );
       if (!(await waitFor(authorized(peer), controller.signal))) {
@@ -463,9 +494,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       if (controller.signal.reason instanceof RequestExpired)
         failure(peer, request.id, RPC_ERROR_CODES.deadlineExceeded, "Request deadline exceeded.", {
           category: "deadline",
-          retryable: definition.kind === "query",
+          retryable: definition.kind === "query" || !dispatchStarted,
           ...(hostRpcHasEffect(request.method, definition.kind)
-            ? { delivery: "unknown" as const }
+            ? { delivery: dispatchStarted ? ("unknown" as const) : ("not-sent" as const) }
             : {}),
           ...(definition.kind === "command" ? { commandId: String(request.params.commandId) } : {}),
         });
@@ -474,7 +505,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           category: "cancelled",
           retryable: definition.kind === "query",
           ...(hostRpcHasEffect(request.method, definition.kind)
-            ? { delivery: "unknown" as const }
+            ? { delivery: dispatchStarted ? ("unknown" as const) : ("not-sent" as const) }
             : {}),
           ...(definition.kind === "command" ? { commandId: String(request.params.commandId) } : {}),
         });
@@ -484,16 +515,36 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           request.id,
           DISPATCH_ERROR_CODES[error.code],
           error.message,
-          error.code === "unauthorized" &&
-            dispatchStarted &&
-            hostRpcHasEffect(request.method, definition.kind)
+          error.code === "overloaded" || error.code === "service-unavailable"
             ? {
-                category: "authentication",
                 ...error.details,
-                retryable: false,
-                delivery: "unknown",
+                category:
+                  error.code === "overloaded"
+                    ? "overload"
+                    : (error.details?.category ?? "unavailable"),
+                retryable:
+                  (error.code === "overloaded" || error.details?.retryable === true) &&
+                  !(dispatchStarted && hostRpcHasEffect(request.method, definition.kind)),
+                delivery:
+                  error.code === "service-unavailable" && error.details?.delivery === "accepted"
+                    ? "accepted"
+                    : dispatchStarted && hostRpcHasEffect(request.method, definition.kind)
+                      ? "unknown"
+                      : "not-sent",
+                ...(definition.kind === "command"
+                  ? { commandId: String(request.params.commandId) }
+                  : {}),
               }
-            : error.details,
+            : error.code === "unauthorized" &&
+                dispatchStarted &&
+                hostRpcHasEffect(request.method, definition.kind)
+              ? {
+                  category: "authentication",
+                  ...error.details,
+                  retryable: false,
+                  delivery: "unknown",
+                }
+              : error.details,
         );
         if (error.code === "unauthorized") closePeer(peer);
       } else if (error instanceof HostStreamError)
@@ -502,6 +553,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           request.id,
           error.code === "limit" ? RPC_ERROR_CODES.overloaded : RPC_ERROR_CODES.invalidParams,
           error.message,
+          error.code === "limit"
+            ? { category: "overload", retryable: true, delivery: "not-sent" }
+            : undefined,
         );
       else if (error instanceof HostBulkError)
         failure(
@@ -509,9 +563,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           request.id,
           error.status === 429 ? RPC_ERROR_CODES.overloaded : RPC_ERROR_CODES.resyncRequired,
           error.message,
-          hostRpcHasEffect(request.method, definition.kind)
-            ? { category: "unavailable", retryable: false, delivery: "unknown" }
-            : undefined,
+          error.status === 429
+            ? {
+                category: "overload",
+                retryable: !(dispatchStarted && hostRpcHasEffect(request.method, definition.kind)),
+                delivery:
+                  dispatchStarted && hostRpcHasEffect(request.method, definition.kind)
+                    ? "unknown"
+                    : "not-sent",
+              }
+            : hostRpcHasEffect(request.method, definition.kind)
+              ? { category: "unavailable", retryable: false, delivery: "unknown" }
+              : undefined,
         );
       else
         failure(
@@ -753,6 +816,15 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     })();
   };
   options.server.on("upgrade", upgrade);
+  function ping(peer: Peer): void {
+    if (peer.closed || peer.socket.readyState !== WebSocket.OPEN || peer.pongTimer) return;
+    peer.pongTimer = setTimeout(() => {
+      closePeer(peer, 1001, "Connection heartbeat timed out.");
+      peer.socket.terminate();
+    }, limits.heartbeatResponseTimeoutMs);
+    peer.pongTimer.unref();
+    peer.socket.ping();
+  }
   const heartbeat = setInterval(() => {
     for (const peer of peers) {
       if (peer.closed || peer.pongTimer || peer.heartbeatCheck) continue;
@@ -763,21 +835,24 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         limits.heartbeatResponseTimeoutMs,
       );
       authDeadline.unref();
-      void waitFor(authorized(peer), controller.signal)
+      void waitFor(authorized(peer, true), controller.signal)
         .then((permitted) => {
           if (!permitted) {
             closePeer(peer);
             return;
           }
-          if (peer.closed || peer.socket.readyState !== WebSocket.OPEN || peer.pongTimer) return;
-          peer.pongTimer = setTimeout(() => {
-            closePeer(peer, 1001, "Connection heartbeat timed out.");
-            peer.socket.terminate();
-          }, limits.heartbeatResponseTimeoutMs);
-          peer.pongTimer.unref();
-          peer.socket.ping();
+          ping(peer);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          if (
+            error instanceof HostDispatchError &&
+            ["overloaded", "service-unavailable"].includes(error.code)
+          ) {
+            // Health admission is unavailable, not evidence of revocation.
+            // Keep transport liveness checked; work still requires authorization.
+            ping(peer);
+            return;
+          }
           closePeer(peer, 1001, "Connection authorization timed out.");
           peer.socket.terminate();
         })

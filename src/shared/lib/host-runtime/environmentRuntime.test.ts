@@ -4,16 +4,36 @@ import {
   HostCommandUncertainError,
   HostRpcUncertainError,
 } from "./environmentRuntime";
-import type { ManagedHostConnectionPort, ManagedHostEvent } from "./ports";
+import type { ManagedHostConnectionPort, ManagedHostEvent, RuntimeClock } from "./ports";
 
 const runtimes: EnvironmentRuntime[] = [];
 afterEach(async () => {
   for (const runtime of runtimes.splice(0)) await runtime.close();
 });
 async function flush() {
-  for (let index = 0; index < 15; index++) await Promise.resolve();
+  for (let index = 0; index < 40; index++) await Promise.resolve();
 }
-function fixture() {
+class TestClock implements RuntimeClock {
+  time = 0;
+  timers = new Map<object, { at: number; callback: () => void }>();
+  now = () => this.time;
+  schedule(delay: number, callback: () => void) {
+    const key = {};
+    this.timers.set(key, { at: this.time + delay, callback });
+    return () => {
+      this.timers.delete(key);
+    };
+  }
+  advance(ms: number) {
+    this.time += ms;
+    for (const [key, timer] of this.timers)
+      if (timer.at <= this.time) {
+        this.timers.delete(key);
+        timer.callback();
+      }
+  }
+}
+function fixture(clock?: RuntimeClock) {
   let listener: ((event: ManagedHostEvent) => void) | undefined;
   let generation = 1;
   const stopListening = vi.fn();
@@ -45,6 +65,7 @@ function fixture() {
   const runtime = new EnvironmentRuntime(
     { environmentId: "env", principalId: "device", accessEpoch: "unlocked" },
     port,
+    clock,
   );
   runtimes.push(runtime);
   const ready = (next: number) => {
@@ -1119,5 +1140,268 @@ describe("environment logical runtime", () => {
     expect(errors.mock.calls[0][0]).not.toHaveProperty("code");
     expect(runtime.state.transport).toBe("closed");
     expect(port.detach).toHaveBeenCalledOnce();
+  });
+  it("queues the ninth control FIFO and deducts queue time from its original deadline", async () => {
+    const clock = new TestClock();
+    const { runtime, port, calls } = fixture(clock);
+    const releases = new Map<string, (value: { generation: number; result: null }) => void>();
+    vi.mocked(port.request).mockImplementation(
+      (_method, params) =>
+        new Promise((resolve) => {
+          releases.set((params as { commandId: string }).commandId, resolve);
+        }),
+    );
+    const jobs = Array.from({ length: 9 }, (_, i) =>
+      runtime.request("commands.status", { commandId: `c-${i}` }, { responseTimeoutMs: 12000 }),
+    );
+    await flush();
+    expect(calls("commands.status")).toHaveLength(8);
+    clock.advance(3000);
+    releases.get("c-0")!({ generation: 1, result: null });
+    await flush();
+    expect(calls("commands.status")).toHaveLength(9);
+    expect(calls("commands.status")[8][2].responseTimeoutMs).toBe(9000);
+    for (let i = 1; i < 9; i++) releases.get(`c-${i}`)!({ generation: 1, result: null });
+    await Promise.all(jobs);
+    expect(clock.timers.size).toBe(0);
+  });
+
+  it("does not dispatch a queued cancelled, expired, or changed-generation request", async () => {
+    const clock = new TestClock();
+    const { runtime, port, calls, ready } = fixture(clock);
+    vi.mocked(port.request).mockImplementation(() => new Promise(() => {}));
+    const active = Array.from({ length: 8 }, (_, i) =>
+      runtime.request("commands.status", { commandId: `active-${i}` }).catch((error) => error),
+    );
+    await flush();
+    let cancel!: () => void;
+    const cancelled = runtime
+      .request(
+        "commands.status",
+        { commandId: "cancelled" },
+        {
+          signal: {
+            aborted: false,
+            subscribe: (callback) => {
+              cancel = callback;
+              return () => {};
+            },
+          },
+        },
+      )
+      .catch((error) => error);
+    const expired = runtime
+      .request("commands.status", { commandId: "expired" }, { responseTimeoutMs: 100 })
+      .catch((error) => error);
+    const changed = runtime
+      .request("commands.status", { commandId: "changed" })
+      .catch((error) => error);
+    await flush();
+    cancel();
+    clock.advance(100);
+    ready(2);
+    expect(await cancelled).toMatchObject({ code: "RPC_WS_CANCELLED", uncertain: false });
+    expect(await expired).toMatchObject({ code: "RPC_WS_DEADLINE", uncertain: false });
+    expect(await changed).toMatchObject({ code: "RPC_WS_UNAVAILABLE", uncertain: false });
+    expect(calls("commands.status")).toHaveLength(8);
+    expect(port.cancel).not.toHaveBeenCalled();
+    await runtime.close();
+    await Promise.all(active);
+  });
+
+  it("retains a control slot until the native promise settles after local cancellation", async () => {
+    const { runtime, port, calls } = fixture(new TestClock());
+    const releases: Array<(value: { generation: number; result: null }) => void> = [];
+    vi.mocked(port.request).mockImplementation(
+      () => new Promise((resolve) => releases.push(resolve)),
+    );
+    let cancel!: () => void;
+    const first = runtime
+      .request(
+        "commands.status",
+        { commandId: "first" },
+        {
+          signal: {
+            aborted: false,
+            subscribe: (callback) => {
+              cancel = callback;
+              return () => {};
+            },
+          },
+        },
+      )
+      .catch((error) => error);
+    const rest = Array.from({ length: 7 }, (_, i) =>
+      runtime.request("commands.status", { commandId: `other-${i}` }).catch((error) => error),
+    );
+    await flush();
+    const queued = runtime
+      .request("commands.status", { commandId: "queued" })
+      .catch((error) => error);
+    await flush();
+    cancel();
+    await first;
+    await flush();
+    expect(calls("commands.status")).toHaveLength(8);
+    releases[0]({ generation: 1, result: null });
+    await flush();
+    expect(calls("commands.status")).toHaveLength(9);
+    for (const release of releases.slice(1)) release({ generation: 1, result: null });
+    await Promise.all([...rest, queued]);
+  });
+
+  it("opens nine distinct subscription demands while at most eight native controls run", async () => {
+    const { runtime, port, calls } = fixture(new TestClock());
+    const releases: Array<() => void> = [];
+    vi.mocked(port.request).mockImplementation((method, params) => {
+      if (method !== "subscriptions.open")
+        return Promise.resolve({ generation: 1, result: { accepted: true } });
+      return new Promise((resolve) =>
+        releases.push(() =>
+          resolve({
+            generation: 1,
+            result: {
+              subscriptionId: (params as { subscriptionId: string }).subscriptionId,
+              streamId: "stream",
+            },
+          }),
+        ),
+      );
+    });
+    for (let i = 0; i < 9; i++)
+      runtime.retain(
+        { kind: "session", sessionId: `s-${i}` },
+        { parse: (value) => value, commit: () => {} },
+      );
+    await flush();
+    expect(calls("subscriptions.open")).toHaveLength(8);
+    releases[0]();
+    await flush();
+    expect(calls("subscriptions.open")).toHaveLength(9);
+    for (const release of releases.slice(1)) release();
+    await flush();
+  });
+  it("bounds queued controls and closes without cancelling unsubmitted requests", async () => {
+    const { runtime, port, calls } = fixture(new TestClock());
+    vi.mocked(port.request).mockImplementation(() => new Promise(() => {}));
+    const jobs = Array.from({ length: 72 }, (_, i) =>
+      runtime.request("commands.status", { commandId: `bounded-${i}` }).catch((error) => error),
+    );
+    await flush();
+    expect(calls("commands.status")).toHaveLength(8);
+    expect(runtime.pendingCount).toBe(72);
+    await expect(
+      runtime.request("commands.dispatch", {
+        type: "cancel",
+        commandId: "overflow",
+        sessionId: "s",
+        runId: "r",
+      }),
+    ).rejects.toMatchObject({ code: "RPC_WS_OVERLOAD", uncertain: false, commandId: "overflow" });
+    await runtime.close();
+    const outcomes = await Promise.all(jobs);
+    expect(outcomes.slice(8).every((error) => error.uncertain === false)).toBe(true);
+    expect(port.cancel).toHaveBeenCalledTimes(8);
+    expect(calls("commands.status")).toHaveLength(8);
+    expect(runtime.pendingCount).toBe(0);
+  });
+
+  it("passes only remaining response budget to bulk resolution", async () => {
+    const clock = new TestClock();
+    const { runtime, port } = fixture(clock);
+    let deliver!: (value: { generation: number; result: unknown }) => void;
+    vi.mocked(port.request).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          deliver = resolve;
+        }),
+    );
+    vi.mocked(port.bulk).mockImplementation(() => new Promise(() => {}));
+    const result = runtime
+      .request("goals.list", {}, { responseTimeoutMs: 12000 })
+      .catch((error) => error);
+    await flush();
+    clock.advance(3000);
+    deliver({
+      generation: 1,
+      result: {
+        $bulk: {
+          kind: "bulk",
+          transferId: "bulk",
+          environmentId: "env",
+          totalBytes: 2,
+          chunkBytes: 2,
+          sha256: "a".repeat(64),
+          expiresAt: 100,
+        },
+      },
+    });
+    await flush();
+    expect(port.bulk).toHaveBeenCalledWith(expect.anything(), { responseTimeoutMs: 9000 });
+    clock.advance(9000);
+    expect(await result).toMatchObject({ name: "HostRpcUncertainError", uncertain: true });
+  });
+  it("rejects a queued command on a blocked event with its original identity", async () => {
+    const { runtime, port, calls, receive } = fixture(new TestClock());
+    vi.mocked(port.request).mockImplementation(() => new Promise(() => {}));
+    const active = Array.from({ length: 8 }, (_, i) =>
+      runtime.request("commands.status", { commandId: `held-${i}` }).catch((error) => error),
+    );
+    await flush();
+    const queued = runtime
+      .request("commands.dispatch", {
+        type: "cancel",
+        commandId: "queued-command",
+        sessionId: "s",
+        runId: "r",
+      })
+      .catch((error) => error);
+    await flush();
+    receive({
+      kind: "state",
+      environmentId: "env",
+      generation: 1,
+      phase: "blocked",
+      category: "authentication",
+    });
+    expect(await queued).toMatchObject({
+      code: "RPC_WS_BLOCKED",
+      uncertain: false,
+      commandId: "queued-command",
+    });
+    expect(calls("commands.dispatch")).toHaveLength(0);
+    expect(port.cancel).not.toHaveBeenCalled();
+    await runtime.close();
+    await Promise.all(active);
+  });
+  it("counts startup time against a command deadline before any native request", async () => {
+    const clock = new TestClock();
+    const { runtime, port } = fixture(clock);
+    let finishListen!: (stop: () => void) => void;
+    vi.mocked(port.listen).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishListen = resolve;
+        }),
+    );
+    const command = runtime
+      .request(
+        "commands.dispatch",
+        { type: "cancel", commandId: "startup-deadline", sessionId: "s", runId: "r" },
+        { responseTimeoutMs: 100 },
+      )
+      .catch((error) => error);
+    await flush();
+    clock.advance(100);
+    expect(await command).toMatchObject({
+      code: "RPC_WS_DEADLINE",
+      uncertain: false,
+      commandId: "startup-deadline",
+    });
+    expect(port.request).not.toHaveBeenCalled();
+    expect(port.cancel).not.toHaveBeenCalled();
+    await runtime.close();
+    finishListen(() => {});
+    await flush();
   });
 });
