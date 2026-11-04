@@ -186,6 +186,66 @@ async function setup(fullAuthority = false) {
   };
 }
 
+it("limits transcript hydration before candidate ownership probes and rechecks visibility", async () => {
+  const f = await setup();
+  const original = await f.store.session(f.sessionId);
+  for (let i = 0; i < 1001; i++)
+    await f.store.save(
+      {
+        ...original,
+        revision: 1,
+        updatedAt: i + 1000,
+        session: { ...original.session, id: `candidate-${i}`, title: `Candidate ${i}` },
+      },
+      {},
+    );
+  const read = vi.spyOn(f.store, "session");
+  const candidates = await f.manual.listCandidates("owner");
+  expect(candidates).toHaveLength(100);
+  expect(read).toHaveBeenCalledTimes(100);
+  expect(candidates.every((item) => !JSON.stringify(item).includes("500000"))).toBe(true);
+  f.setVisible(false);
+  expect(await f.manual.listCandidates("owner")).toEqual([]);
+  read.mockRestore();
+});
+
+it("keeps every canonical owner exclusion in batched candidate reads", async () => {
+  const f = await setup();
+  const original = await f.store.session(f.sessionId);
+  const tables = [
+    "tasks",
+    "goals",
+    "automations",
+    "automation_runs",
+    "stewards",
+    "crew_runs",
+    "crew_run_members",
+  ];
+  for (const table of tables) {
+    await f.store.db.exec(
+      `CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY,value TEXT NOT NULL)`,
+    );
+    const id = `owned-${table}`;
+    await f.store.save({ ...original, revision: 1, session: { ...original.session, id } }, {});
+    await f.store.db
+      .prepare(`INSERT INTO ${table}(id,value) VALUES(?,?)`)
+      .run(id, JSON.stringify({ workerSessionId: id }));
+  }
+  await f.store.save(
+    { ...original, revision: 1, session: { ...original.session, id: "crew-coordinator" } },
+    {},
+  );
+  await f.store.db
+    .prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES(?,?)")
+    .run("crews.v1", JSON.stringify({ runs: [{ coordinatorSessionId: "crew-coordinator" }] }));
+  const candidates = await f.manual.listCandidates("owner");
+  for (const table of tables)
+    expect(candidates.find((entry) => entry.sessionId === `owned-${table}`)?.eligible).toBe(false);
+  expect(candidates.find((entry) => entry.sessionId === "crew-coordinator")?.reason).toContain(
+    "Crew coordinator",
+  );
+});
+
 it("integrates owner enrollment, dynamic privacy, captured policy epochs and exact per-grant usage through the real core and engine", async () => {
   const f = await setup(true);
   f.setEnabled(true);

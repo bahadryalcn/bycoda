@@ -2,6 +2,7 @@
 
 Paths are repository-root relative. Follow only the lane affected by the change.
 
+- Manual supervision: `host/assistant-manual-sessions.ts`, `host/store.ts`. Candidate discovery selects bounded recent metadata before transcript hydration and batches canonical owner lookups; enrollment revalidates visibility, ownership and the exact source token.
 - Core: `host/assistant/service.ts`, `repository.ts` there,
   `host/assistant-runtime.ts`, `host/assistant-domain.ts`.
 - DTOs: `src/shared/model/host-contracts/assistant.ts`.

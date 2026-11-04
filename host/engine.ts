@@ -663,6 +663,18 @@ export class HostEngine {
   }
   private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
+  private readonly deferredManagedBindings = new Map<
+    string,
+    {
+      projectId: string;
+      revision: number;
+      workspaceId: string;
+      providerSessionId: string | null;
+      harness: string | null;
+      cwd: string | null;
+      environmentId: string;
+    }
+  >();
   private running = new Map<string, ActiveHostTurn>();
   private readonly questionReplyAuthors = new Map<
     string,
@@ -917,6 +929,60 @@ export class HostEngine {
       );
     if (workspace && (await this.exactGitRewindEnabled()))
       await this.managedTurns!.assertWritable(workspace.workspaceId);
+    const deferred = this.deferredManagedBindings.get(value.session.id);
+    if (deferred) {
+      const current = await this.store.session(value.session.id);
+      const identity = await this.store.sessionStartupIdentity(value.session.id);
+      if (
+        !identity ||
+        this.store.environmentId !== deferred.environmentId ||
+        identity.revision !== deferred.revision ||
+        identity.projectId !== deferred.projectId ||
+        identity.workspaceId !== deferred.workspaceId ||
+        identity.providerSessionId !== deferred.providerSessionId ||
+        identity.harness !== deferred.harness ||
+        identity.cwd !== deferred.cwd ||
+        current.revision !== deferred.revision ||
+        current.projectId !== deferred.projectId ||
+        current.session.workspaceId !== deferred.workspaceId ||
+        current.revision !== value.revision ||
+        current.projectId !== value.projectId ||
+        current.authorityGeneration !== value.authorityGeneration ||
+        current.session.workspaceId !== value.session.workspaceId ||
+        current.session.worktreeCwd !== value.session.worktreeCwd ||
+        current.session.providerSessionId !== value.session.providerSessionId ||
+        current.session.harness !== value.session.harness ||
+        current.session.providerAccountId !== value.session.providerAccountId
+      ) {
+        // Retire the stale attempt. A later explicit attempt may validate a
+        // coherent replacement, but this operation never binds that replacement.
+        if (
+          identity?.workspaceId &&
+          this.store.environmentId === deferred.environmentId &&
+          identity.projectId === current.projectId &&
+          identity.revision === current.revision &&
+          identity.workspaceId === current.session.workspaceId &&
+          identity.providerSessionId === (current.session.providerSessionId || null) &&
+          identity.harness === current.session.harness &&
+          identity.cwd === current.session.cwd
+        )
+          this.deferredManagedBindings.set(value.session.id, {
+            ...identity,
+            workspaceId: identity.workspaceId,
+            environmentId: deferred.environmentId,
+          });
+        throw new Error("Session identity changed before deferred provider binding");
+      }
+      await this.store.assertAuthority(value.session.id, value.authorityGeneration);
+      if (value.session.providerSessionId)
+        this.provider(value.session.harness).bind(
+          value.session.id,
+          value.session.providerSessionId,
+          workspace?.path ?? value.session.cwd,
+          value.session.providerAccountId,
+        );
+      this.deferredManagedBindings.delete(value.session.id);
+    }
     return workspace;
   }
 
@@ -1180,6 +1246,27 @@ export class HostEngine {
     for (const state of await store.startupStates()) {
       if (!this.managedTurns && state.workspaceId) continue;
       if (managedOnly && !state.workspaceId) continue;
+      // An idle managed conversation needs no provider until an explicit operation.
+      // Its exact workspace and authority are validated when that operation loads it.
+      if (
+        this.managedTurns &&
+        state.workspaceId &&
+        state.status === "idle" &&
+        state.hasDesktop &&
+        !state.shellRunning &&
+        !state.hasAuthority
+      ) {
+        this.deferredManagedBindings.set(state.id, {
+          projectId: state.projectId,
+          revision: state.revision,
+          workspaceId: state.workspaceId,
+          providerSessionId: state.providerSessionId,
+          harness: state.harness,
+          cwd: state.cwd,
+          environmentId: store.environmentId,
+        });
+        continue;
+      }
       const snapshot =
         this.managedTurns || state.running || state.shellRunning || !state.hasDesktop
           ? await store.session(state.id)

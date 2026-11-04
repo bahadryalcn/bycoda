@@ -4,6 +4,8 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
 
 ## Service and transport owners
 
+- `host/store.ts`: legacy summary refresh bounds transcript hydration and uses revision/old-summary CAS with an authority fence. Cache publication requires unchanged project and external versions; skipped refreshes do not publish a cache.
+- `host/store.ts`, `host/engine.ts`: cold, idle, desktop-shared managed sessions without a current authority head defer provider binding. First use rechecks the original indexed identity, current workspace and authority; a stale attempt fails before a later explicit retry may bind a verified replacement. Running, interrupted and authority-owned recovery remains eager.
 - `host/transport/read-budget.ts`, `dispatch.ts`, `ws/server.ts`: separate authentication/heartbeat/control admission, shared physical work accounting and retryable overload classification. Adjacent tests exercise the actual dispatcher nesting.
 - `src/shared/lib/host-runtime/environmentRuntime.ts` and its tests: bounded control FIFO, original monotonic deadlines, never-sent cancellation and physical slot retention. `src-tauri/src/host_ws/{connection,demand}.rs`, `mod.rs` and tests own reconnect queue and native cursor proof.
 

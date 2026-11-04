@@ -109,12 +109,26 @@ export class HostAssistantManualSessions {
       .all();
     return rows.map((row) => JSON.parse(row.value) as ManualSupervisionGrant);
   }
-  private async canonicalOwner(record: HostSession): Promise<string | undefined> {
+  private async canonicalOwner(
+    record: HostSession,
+    indexed?: Map<string, string>,
+  ): Promise<string | undefined> {
     const management = record.session.managedBy ?? record.managedBy;
     if (management && "jobId" in management)
       return "This conversation belongs to an assistant job.";
     if (record.session.orchestrationLeadId)
       return "This conversation is an internal orchestration worker.";
+    if (indexed) {
+      const owner = indexed.get(record.session.id);
+      if (owner) return owner;
+      if (
+        record.session.blocks.some(
+          (block) => block.author && ["task", "automation", "steward"].includes(block.author.kind),
+        )
+      )
+        return "This conversation retains a canonical unattended-run author.";
+      return undefined;
+    }
     const crew = await this.store.db
       .prepare(
         "SELECT 1 FROM metadata,json_tree(metadata.value,'$.runs') AS node WHERE metadata.key='crews.v1' AND node.type='text' AND node.value=? AND node.key='coordinatorSessionId' LIMIT 1",
@@ -145,9 +159,13 @@ export class HostAssistantManualSessions {
     )
       return "This conversation retains a canonical unattended-run author.";
   }
-  private async candidate(record: HostSession): Promise<ManualSessionCandidate> {
-    const reason = await this.canonicalOwner(record),
-      grant = await this.read(record.session.id);
+  private async candidate(
+    record: HostSession,
+    owners?: Map<string, string>,
+    grants?: Map<string, ManualSupervisionGrant>,
+  ): Promise<ManualSessionCandidate> {
+    const reason = await this.canonicalOwner(record, owners),
+      grant = grants ? grants.get(record.session.id) : await this.read(record.session.id);
     const sourceToken = digest({
       source: source(record),
       runId: record.runId ?? null,
@@ -170,14 +188,62 @@ export class HostAssistantManualSessions {
     this.owner(principal);
     await this.ready;
     await this.store.db.checkAuthorization();
+    const ids: string[] = [];
+    for (const project of await this.store.projects()) {
+      if (await this.ports.visibleProject(project.id))
+        ids.push(...(await this.store.recentSessionIds(project.id, 100 - ids.length)));
+      if (ids.length >= 100) break;
+    }
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => "?").join(",");
+    const owners = new Map<string, string>();
+    const crew = await this.store.db
+      .prepare(
+        `SELECT DISTINCT node.value AS id FROM metadata,json_tree(metadata.value,'$.runs') AS node WHERE metadata.key='crews.v1' AND node.type='text' AND node.key='coordinatorSessionId' AND node.value IN (${placeholders})`,
+      )
+      .all(...ids);
+    for (const row of crew)
+      owners.set(String(row.id), "This conversation is a canonical Crew coordinator.");
+    const tables = await this.store.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tasks','goals','automations','automation_runs','stewards','crew_runs','crew_run_members')",
+      )
+      .all();
+    for (const row of tables) {
+      const table = String(row.name);
+      const columns = await this.store.db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!columns.some((column) => column.name === "value")) continue;
+      const found = await this.store.db
+        .prepare(
+          `SELECT DISTINCT node.value AS id FROM ${table},json_tree(${table}.value) AS node WHERE node.type='text' AND node.value IN (${placeholders}) AND lower(CAST(node.key AS TEXT)) IN ('sessionid','workersessionid','reviewersessionid','previoussessionid','plannersessionid','lastsessionid')`,
+        )
+        .all(...ids);
+      for (const entry of found)
+        if (!owners.has(String(entry.id)))
+          owners.set(
+            String(entry.id),
+            "This conversation has a canonical task, planner, review, automation, steward or Crew owner.",
+          );
+    }
+    const grants = new Map<string, ManualSupervisionGrant>();
+    for (const row of await this.store.db
+      .prepare(
+        `SELECT session_id,value FROM assistant_manual_supervision WHERE session_id IN (${placeholders})`,
+      )
+      .all(...ids))
+      grants.set(String(row.session_id), JSON.parse(row.value) as ManualSupervisionGrant);
     const values: ManualSessionCandidate[] = [];
-    for (const project of await this.store.projects())
-      if (await this.ports.visibleProject(project.id)) {
-        for (const record of await this.store.sessions(project.id)) {
-          values.push(await this.candidate(record));
-          if (values.length >= 100) return values;
-        }
+    for (const id of ids) {
+      let record: HostSession;
+      try {
+        record = await this.store.session(id);
+      } catch {
+        continue;
       }
+      if (!(await this.ports.visibleProject(record.projectId))) continue;
+      values.push(await this.candidate(record, owners, grants));
+    }
+    await this.store.db.checkAuthorization();
     return values;
   }
   async enroll(

@@ -139,6 +139,71 @@ describe("durable desktop command receipts", () => {
   });
 });
 describe("managed workspace persistence", () => {
+  it("hydrates legacy summaries in bounded batches without overwriting newer projections", async () => {
+    const store = new HostStore(join(open(), "summary-batches.db"));
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/summary-batches", "Summaries");
+    for (let i = 0; i < 40; i++)
+      await store.save(session(`legacy-${i}`, project.id, { updatedAt: i }), {});
+    await store.db
+      .prepare("UPDATE session_state SET summary=? WHERE project_id=?")
+      .run("{}", project.id);
+    const original = store.session.bind(store);
+    let active = 0,
+      peak = 0,
+      changed = false;
+    const spy = vi.spyOn(store, "session").mockImplementation(async (id) => {
+      active++;
+      peak = Math.max(peak, active);
+      const value = await original(id);
+      if (!changed) {
+        changed = true;
+        await store.db
+          .prepare("UPDATE session_state SET revision=revision+1,summary=? WHERE id=?")
+          .run('{"newer":true}', id);
+      }
+      active--;
+      return value;
+    });
+    const summaries = await store.summaries(project.id);
+    expect(peak).toBeLessThanOrEqual(32);
+    expect(summaries).toHaveLength(40);
+    expect(summaries.map((value) => value.updatedAt)).toEqual(
+      summaries.map((value) => value.updatedAt).sort((a, b) => b - a),
+    );
+    expect(
+      await store.db
+        .prepare("SELECT count(*) AS n FROM session_state WHERE summary=?")
+        .get('{"newer":true}'),
+    ).toMatchObject({ n: 1 });
+    spy.mockRestore();
+  });
+  it("does not refresh a legacy summary after authority transfers during hydration", async () => {
+    const store = new HostStore(join(open(), "summary-authority.db"));
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/summary-authority", "Authority");
+    await store.save(session("authority-session", project.id), {});
+    await store.db
+      .prepare("UPDATE session_state SET summary=? WHERE id=?")
+      .run("{}", "authority-session");
+    const original = store.session.bind(store);
+    const spy = vi.spyOn(store, "session").mockImplementation(async (id) => {
+      const value = await original(id);
+      await store.db
+        .prepare(
+          "INSERT INTO host_authority_heads(environment_id,session_id,generation,migration_id,phase) VALUES(?,?,?,?,?)",
+        )
+        .run("env", id, 1, "migration", "active");
+      return value;
+    });
+    await store.summaries(project.id);
+    expect(
+      await store.db
+        .prepare("SELECT summary FROM session_state WHERE id=?")
+        .get("authority-session"),
+    ).toMatchObject({ summary: "{}" });
+    spy.mockRestore();
+  });
   it("keeps provider history in cold summaries after reopen", async () => {
     const path = join(open(), "provider-history.db");
     const store = new HostStore(path);

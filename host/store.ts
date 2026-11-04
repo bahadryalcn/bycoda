@@ -626,7 +626,8 @@ export class HostStore {
       session_cwd TEXT,
       shell_running INTEGER NOT NULL DEFAULT 0
     );
-    CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);`);
+    CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);
+    CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);`);
     // An older host binary only knows `sessions`; these keep the side table
     // current when it writes there after a rollback.
     await this.db
@@ -1317,9 +1318,52 @@ export class HostStore {
       return String(row.status);
     });
   }
+  /** Fresh durable or pending identity for deferred startup binding. */
+  async sessionStartupIdentity(
+    id: string,
+  ): Promise<
+    | {
+        projectId: string;
+        revision: number;
+        workspaceId?: string;
+        providerSessionId: string | null;
+        harness: string | null;
+        cwd: string | null;
+      }
+    | undefined
+  > {
+    return this.db.storeScope(async () => {
+      const pending = this.pending.get(id)?.value;
+      if (pending)
+        return {
+          projectId: pending.projectId,
+          revision: pending.revision,
+          workspaceId: pending.session.workspaceId,
+          providerSessionId: pending.session.providerSessionId || null,
+          harness: pending.session.harness ?? null,
+          cwd: pending.session.cwd ?? null,
+        };
+      const row = await this.db
+        .prepare(
+          "SELECT project_id,revision,provider_session_id,harness,session_cwd,json_extract(summary,'$.workspaceId') AS workspace_id FROM session_state WHERE id=?",
+        )
+        .get(id);
+      return row
+        ? {
+            projectId: String(row.project_id),
+            revision: Number(row.revision),
+            workspaceId: row.workspace_id == null ? undefined : String(row.workspace_id),
+            providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
+            harness: row.harness == null ? null : String(row.harness),
+            cwd: row.session_cwd == null ? null : String(row.session_cwd),
+          }
+        : undefined;
+    });
+  }
   async summaries(projectId: string): Promise<HostSessionSummary[]> {
     return this.db.storeScope(async () => {
       const external = await this.dataVersion();
+      const version = this.projectVersion(projectId);
       const entry = this.summaryRows.get(projectId);
       if (
         !this.inTransaction &&
@@ -1329,13 +1373,16 @@ export class HostStore {
         entry.sorted ??= [...entry.rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
         return entry.sorted.slice();
       }
-      const list = (
-        await Promise.all(
-          (
-            await this.db
-              .prepare("SELECT id, summary FROM session_state WHERE project_id=?")
-              .all(projectId)
-          ).map(async (row) => {
+      const rows = await this.db
+        .prepare("SELECT id, revision, summary FROM session_state WHERE project_id=?")
+        .all(projectId);
+      const list: HostSessionSummary[] = [];
+      let refreshComplete = true;
+      // Bound concurrent transcript reads and write legacy projections in small CAS batches.
+      for (let offset = 0; offset < rows.length; offset += 32) {
+        const updates: { id: string; revision: number; old: string | null; value: string }[] = [];
+        const batch = await Promise.all(
+          rows.slice(offset, offset + 32).map(async (row) => {
             const unwritten = this.pending.get(String(row.id));
             if (unwritten) {
               if (unwritten.value.authorityGeneration !== undefined)
@@ -1359,22 +1406,43 @@ export class HostStore {
             )
               return cached;
             const fresh = summary(await this.session(String(row.id)));
-            if (
-              !(await this.db
-                .prepare("SELECT 1 FROM host_authority_heads WHERE session_id=?")
-                .get(String(row.id)))
-            )
-              await this.db
-                .prepare("UPDATE session_state SET summary=? WHERE id=?")
-                .run(JSON.stringify(fresh), String(row.id));
+            updates.push({
+              id: String(row.id),
+              revision: Number(row.revision),
+              old: row.summary == null ? null : String(row.summary),
+              value: JSON.stringify(fresh),
+            });
             return fresh;
           }),
-        )
-      ).sort((a, b) => b.updatedAt - a.updatedAt);
-      if (!this.inTransaction && list.length <= 100000) {
+        );
+        list.push(...batch);
+        const safe = updates.filter((update) => !this.pending.has(update.id));
+        if (safe.length !== updates.length) refreshComplete = false;
+        if (safe.length) {
+          const placeholders = safe.map(() => "(?,?,?,?)").join(",");
+          const result = await this.db
+            .prepare(`WITH refreshed(id, revision, old_summary, new_summary) AS (VALUES ${placeholders})
+            UPDATE session_state SET summary=(SELECT new_summary FROM refreshed WHERE refreshed.id=session_state.id)
+            WHERE EXISTS (SELECT 1 FROM refreshed WHERE refreshed.id=session_state.id
+              AND refreshed.revision=session_state.revision AND refreshed.old_summary IS session_state.summary)
+              AND NOT EXISTS (SELECT 1 FROM host_authority_heads WHERE session_id=session_state.id)`)
+            .run(
+              ...safe.flatMap((update) => [update.id, update.revision, update.old, update.value]),
+            );
+          if (Number(result.changes) !== safe.length) refreshComplete = false;
+        }
+      }
+      list.sort((a, b) => b.updatedAt - a.updatedAt);
+      if (
+        !this.inTransaction &&
+        refreshComplete &&
+        list.length <= 100000 &&
+        version === this.projectVersion(projectId) &&
+        external === (await this.dataVersion())
+      ) {
         this.summaryRows.delete(projectId);
         this.summaryRows.set(projectId, {
-          version: this.projectVersion(projectId),
+          version,
           external,
           rows: new Map(list.map((item) => [item.id, item])),
           sorted: list,
@@ -1484,6 +1552,10 @@ export class HostStore {
   async startupStates(): Promise<
     {
       id: string;
+      projectId: string;
+      revision: number;
+      status: HostSession["status"];
+      hasAuthority: boolean;
       hasDesktop: boolean;
       running: boolean;
       shellRunning: boolean;
@@ -1496,8 +1568,9 @@ export class HostStore {
     return this.db.storeScope(async () => {
       return (
         await this.db
-          .prepare(`SELECT id, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
-          json_extract(summary, '$.workspaceId') AS workspace_id
+          .prepare(`SELECT id, project_id, revision, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
+          json_extract(summary, '$.workspaceId') AS workspace_id,
+          EXISTS(SELECT 1 FROM host_authority_heads h WHERE h.session_id=session_state.id) AS has_authority
         FROM session_state ORDER BY updated_at DESC`)
           .all()
       ).map((row) => {
@@ -1505,6 +1578,11 @@ export class HostStore {
         if (unwritten)
           return {
             id: unwritten.session.id,
+            projectId: unwritten.projectId,
+            revision: unwritten.revision,
+            status: unwritten.status,
+            hasAuthority:
+              unwritten.authorityGeneration !== undefined || !!Number(row.has_authority),
             hasDesktop: unwritten.desktop != null,
             running: unwritten.status === "running",
             shellRunning: unwritten.session.blocks.some((block) => block.shell?.running),
@@ -1515,6 +1593,10 @@ export class HostStore {
           };
         return {
           id: String(row.id),
+          projectId: String(row.project_id),
+          revision: Number(row.revision),
+          status: String(row.status) as HostSession["status"],
+          hasAuthority: !!Number(row.has_authority),
           hasDesktop: !!Number(row.has_desktop),
           running: row.status === "running",
           shellRunning: !!Number(row.shell_running),
@@ -1534,6 +1616,27 @@ export class HostStore {
       return (await Promise.all(rows.map(async (row) => await this.session(String(row.id))))).sort(
         (a, b) => b.updatedAt - a.updatedAt,
       );
+    });
+  }
+  /** Candidate metadata is bounded before loading any transcript. */
+  async recentSessionIds(projectId: string, limit: number): Promise<string[]> {
+    return this.db.storeScope(async () => {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new Error("Invalid candidate limit");
+      const pending = [...this.pending.values()]
+        .map(({ value }) => value)
+        .filter((value) => value.projectId === projectId);
+      const rows = await this.db
+        .prepare(
+          "SELECT id,updated_at FROM session_state WHERE project_id=? ORDER BY updated_at DESC,id ASC LIMIT ?",
+        )
+        .all(projectId, limit + pending.length);
+      const candidates = new Map(rows.map((row) => [String(row.id), Number(row.updated_at)]));
+      for (const value of pending) candidates.set(value.session.id, value.updatedAt);
+      return [...candidates]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, limit)
+        .map(([id]) => id);
     });
   }
   /** Usage reads expose only timing/token metadata. SQLite projects persisted JSON;
