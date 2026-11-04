@@ -4,6 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@tauri-apps/api/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@tauri-apps/api/core")>();
+  return {
+    ...original,
+    invoke: (command: string, args?: unknown) =>
+      command === "write_attachment"
+        ? Promise.resolve(`/attachments/${(args as { name: string }).name}`)
+        : original.invoke(command, args),
+  };
+});
+
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));
