@@ -48,6 +48,56 @@ it("uses fresh exact briefing text with the existing output-only completion port
   expect(voice.listeners.size).toBe(0);
   expect(args[3].aborted).toBe(true);
 });
+
+it("lets a long briefing finish beyond two minutes while keeping its length-based deadline", async () => {
+  vi.useFakeTimers();
+  snapshot.briefing.text = "a".repeat(3000);
+  let finish!: () => void;
+  let started!: () => void;
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  let playbackSignal!: AbortSignal;
+  voice.preview.mockImplementation(async (_settings, _language, _name, signal: AbortSignal) => {
+    playbackSignal = signal;
+    started();
+    await new Promise<void>((resolve) => { finish = resolve; });
+  });
+  try {
+    const playing = listenAssistantBriefing("brief", new AbortController().signal, () => {});
+    await entered;
+    await vi.advanceTimersByTimeAsync(120_001);
+    expect(playbackSignal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(playbackSignal.aborted).toBe(false);
+    finish();
+    await playing;
+    expect(voice.listeners.size).toBe(0);
+  } finally {
+    finish?.();
+    vi.useRealTimers();
+  }
+});
+
+it("still bounds a stalled long playback without creating a retry", async () => {
+  vi.useFakeTimers();
+  snapshot.briefing.text = "a".repeat(3000);
+  let started!: () => void;
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  voice.preview.mockImplementation(async (_settings, _language, _name, signal: AbortSignal) => {
+    started();
+    await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+  });
+  try {
+    const result = listenAssistantBriefing("brief", new AbortController().signal, () => {})
+      .then(() => undefined, (error: unknown) => error);
+    await entered;
+    await vi.advanceTimersByTimeAsync(570_001);
+    expect(String(await result)).toContain("Briefing playback timed out.");
+    expect(voice.preview).toHaveBeenCalledTimes(1);
+    expect(voice.listeners.size).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("refuses stale briefings, incomplete setup and newly forbidden text before creating output", async () => {
   snapshot.briefing.id = "replacement";
   await expect(

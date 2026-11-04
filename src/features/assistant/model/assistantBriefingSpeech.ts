@@ -1,6 +1,7 @@
 import { captureAssistantHostRead } from "./assistantHostRead";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
 import { previewVoice } from "../../voice/model/voicePreview";
+import { voicePlaybackTimeoutMs } from "../../voice/model/voicePlaybackDeadline";
 import {
   isVoiceConversationActive,
   subscribeVoiceConversationActivity,
@@ -31,7 +32,7 @@ export async function listenAssistantBriefing(
     if (isVoiceConversationActive())
       controller.abort(new Error("Voice became active. The briefing stopped."));
   });
-  const timer = setTimeout(
+  let timer = setTimeout(
     () => controller.abort(new Error("Briefing playback timed out.")),
     120000,
   );
@@ -70,6 +71,11 @@ export async function listenAssistantBriefing(
       );
     if (isVoiceConversationActive())
       throw new Error("Finish the voice conversation before listening to the briefing.");
+    clearTimeout(timer);
+    timer = setTimeout(
+      () => controller.abort(new Error("Briefing playback timed out.")),
+      30_000 + voicePlaybackTimeoutMs(text),
+    );
     await previewVoice(
       loadVoiceSettings(),
       current.profile.language,

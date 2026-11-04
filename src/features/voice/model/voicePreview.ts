@@ -3,6 +3,7 @@ import { realtimeSecret } from "./realtimeVoiceClient";
 import { localVoiceBackend } from "./localVoiceClient";
 import { voiceRuntimeSettings, type VoiceSettings } from "./voiceSettings";
 import { voiceLanguageCode } from "./voiceLanguage";
+import { voicePlaybackTimeoutMs } from "./voicePlaybackDeadline";
 
 /** Output-only preview. Never acquires a microphone or grants tools. */
 export async function previewVoice(
@@ -113,7 +114,7 @@ export async function previewVoice(
       if (options.complete) {
         const deadline = setTimeout(
           () => rejectComplete(new Error("Voice preview timed out.")),
-          Math.min(600000, Math.max(90000, text.length * 180)),
+          voicePlaybackTimeoutMs(text),
         );
         try {
           await ended;
