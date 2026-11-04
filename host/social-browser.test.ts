@@ -129,6 +129,8 @@ async function fixture(
     },
     true,
     plain,
+    undefined,
+    now,
   );
   const social = new SocialService(
     store,
@@ -972,6 +974,79 @@ describe("X tarayıcı oturumu", () => {
   });
 });
 describe("X browser background monitoring and messaging", () => {
+  it("expires idle reads without another polling tick", async () => {
+    const fake = fakeBrowser({ emptyMentions: true });
+    const released = vi.fn(async () => undefined);
+    const s = await fixture(async (...args) => ({
+      ...(await fake.launcher(...args)),
+      profileReleased: released,
+    }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await s.browser.adapter().poll({ ...s.account, platformId: "42", scopes: ["tweet.read"] }, "", []);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(fake.calls.filter((call) => call === "close")).toHaveLength(1);
+      expect(released).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      await s.browser.stop(s.social);
+    }
+  });
+  it("reuses bounded background reads and retires before forgetting the profile", async () => {
+    const fake = fakeBrowser({ emptyMentions: true });
+    const released = vi.fn(async () => undefined);
+    const launcher: BrowserLauncher = async (...args) => ({
+      ...(await fake.launcher(...args)),
+      profileReleased: released,
+    });
+    const s = await fixture(launcher);
+    const account = { ...s.account, platformId: "42", scopes: ["tweet.read"] };
+    await s.browser.adapter().poll(account, "", []);
+    await s.browser.adapter().poll(account, "", []);
+    expect(fake.launcher).toHaveBeenCalledTimes(1);
+    expect(fake.calls).not.toContain("close");
+    await s.browser.forget(account.id);
+    expect(fake.calls.filter((call) => call === "close")).toHaveLength(1);
+    expect(released).toHaveBeenCalledTimes(1);
+  });
+  it("requires physical release before another operation can reuse the profile", async () => {
+    const fake = fakeBrowser({ emptyMentions: true });
+    let release!: () => void;
+    const proof = new Promise<void>((resolve) => { release = resolve; });
+    const launcher: BrowserLauncher = async (...args) => ({
+      ...(await fake.launcher(...args)),
+      profileReleased: async () => await proof,
+    });
+    let now = 1_000_000;
+    const s = await fixture(launcher, () => now);
+    const account = { ...s.account, platformId: "42", scopes: ["tweet.read"] };
+    await s.browser.adapter().poll(account, "", []);
+    now += 10 * 60_000;
+    const next = s.browser.adapter().poll(account, "", []);
+    await settle(() => fake.calls.includes("close"));
+    expect(fake.launcher).toHaveBeenCalledTimes(1);
+    release();
+    await next;
+    expect(fake.launcher).toHaveBeenCalledTimes(2);
+    await s.browser.stop(s.social);
+  });
+  it("caps idle sessions and stops every retained read without relaunching", async () => {
+    const fake = fakeBrowser({ emptyMentions: true });
+    const released = vi.fn(async () => undefined);
+    const launcher: BrowserLauncher = async (...args) => ({
+      ...(await fake.launcher(...args)),
+      profileReleased: released,
+    });
+    const s = await fixture(launcher);
+    const accounts = [s.account.id, "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"];
+    for (const id of accounts)
+      await s.browser.adapter().poll({ ...s.account, id, platformId: "42", scopes: ["tweet.read"] }, "", []);
+    expect(fake.calls.filter((call) => call === "close")).toHaveLength(1);
+    await s.browser.stop(s.social);
+    expect(fake.calls.filter((call) => call === "close")).toHaveLength(3);
+    await expect(s.browser.adapter().poll({ ...s.account, platformId: "42" }, "", [])).rejects.toThrow("stopping");
+    expect(fake.launcher).toHaveBeenCalledTimes(3);
+  });
   it("rotates owned post comment reads and deduplicates mentions from the same poll", async () => {
     const fake = fakeBrowser({});
     const s = await fixture(fake.launcher);

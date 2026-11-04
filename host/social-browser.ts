@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { lstat, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import type {
   SocialAccount,
   SocialJob,
@@ -80,6 +81,8 @@ export interface BrowserSession {
   page: BrowserPage;
   closed: Promise<void>;
   close(): Promise<void>;
+  /** After close, resolves only once the persistent profile is available again. */
+  profileReleased?(): Promise<void>;
 }
 /** `background` starts a real, minimized window: headless mode is easier for X to flag. */
 export type BrowserLauncher = (profile: string, background: boolean) => Promise<BrowserSession>;
@@ -242,7 +245,7 @@ async function profileInUse(profile: string): Promise<boolean> {
   }
   return lstat(join(profile, "SingletonLock")).then(
     () => true,
-    () => false,
+    (error: NodeJS.ErrnoException) => error.code !== "ENOENT",
   );
 }
 
@@ -387,7 +390,14 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
         });
       });
       await cdp.send("Target.setDiscoverTargets", { discover: true });
-      return { page: cdpPage(cdp, sessionId, send), closed, close };
+      return {
+        page: cdpPage(cdp, sessionId, send),
+        closed,
+        close,
+        async profileReleased() {
+          while (await profileInUse(profile)) await sleep(1000);
+        },
+      };
     } catch (error) {
       await close();
       throw error;
@@ -600,6 +610,15 @@ const FILE_INPUT = 'input[data-testid="fileInput"]';
 const LOGIN_PATH = /^\/(login|logout|i\/flow\/login|i\/flow\/signup)/;
 const MIN_SEND_GAP = 30_000;
 const LOGIN_TIMEOUT = 10 * 60_000;
+const READ_IDLE_TIMEOUT = 120_000;
+const READ_MAX_AGE = 10 * 60_000;
+const READ_POOL_LIMIT = 2;
+type ReadSession = {
+  session?: BrowserSession;
+  timer?: ReturnType<typeof setTimeout>;
+  started: number;
+  usable: boolean;
+};
 type LoginFlow = {
   status: "waiting" | "connected" | "failed";
   error?: string;
@@ -621,6 +640,7 @@ export class XBrowserSessions {
   private locks = new Map<string, Promise<unknown>>();
   private logins = new Map<string, LoginFlow>();
   private lastSend = new Map<string, number>();
+  private reads = new Map<string, ReadSession>();
   constructor(
     private readonly directory: string,
     private readonly launcher: BrowserLauncher | undefined = systemBrowserLauncher(),
@@ -629,6 +649,7 @@ export class XBrowserSessions {
     private readonly background = process.env.BYCODA_SOCIAL_BROWSER_HEADED !== "1",
     private readonly plain: PlainBrowserLauncher | undefined = systemPlainLauncher(),
     private readonly recipes: readonly BrowserRecipe[] = SOCIAL_BROWSER_RECIPES,
+    private readonly readNow = monotonicNow,
   ) {
     this.platforms = new PlatformBrowserSessions(
       directory,
@@ -837,15 +858,92 @@ export class XBrowserSessions {
     if (!/^[0-9a-f-]{36}$/i.test(accountId)) throw new Error("Invalid social account.");
     return join(this.directory, folder, accountId);
   }
-  private exclusive<T>(accountId: string, action: () => Promise<T>): Promise<T> {
+  private exclusive<T>(
+    accountId: string,
+    action: () => Promise<T>,
+    retainRead = false,
+  ): Promise<T> {
     const previous = this.locks.get(accountId) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(action);
+    const next = previous.catch(() => undefined).then(async () => {
+      if (!retainRead) await this.closeRead(accountId);
+      return await action();
+    });
     const settled = next.catch(() => undefined);
     this.locks.set(accountId, settled);
     void settled.then(() => {
       if (this.locks.get(accountId) === settled) this.locks.delete(accountId);
     });
     return next;
+  }
+  private async closeRead(accountId: string): Promise<void> {
+    const owner = this.reads.get(accountId);
+    if (!owner) return;
+    owner.usable = false;
+    clearTimeout(owner.timer);
+    if (owner.session) {
+      await owner.session.close();
+      // A CDP disconnect is not physical profile retirement. Keep ownership
+      // and its capacity reservation when release fails or remains unknown.
+      await owner.session.profileReleased!();
+    }
+    if (this.reads.get(accountId) === owner) this.reads.delete(accountId);
+  }
+  private async readSession(accountId: string): Promise<BrowserSession> {
+    if (this.stopped) throw new Error("The browser executor is stopping.");
+    let owner = this.reads.get(accountId);
+    if (owner && (!owner.usable || elapsedSince(owner.started, this.readNow()) >= READ_MAX_AGE)) {
+      await this.closeRead(accountId);
+      owner = undefined;
+    }
+    if (owner?.session) {
+      clearTimeout(owner.timer);
+      return owner.session;
+    }
+    const reserve = this.background && this.reads.size < READ_POOL_LIMIT;
+    owner = { started: this.readNow(), usable: true };
+    if (reserve) this.reads.set(accountId, owner);
+    try {
+      const session = await this.launcher!(this.profile(accountId), this.background);
+      if (reserve && session.profileReleased) {
+        owner.session = session;
+        const captured = owner;
+        void session.closed.then(
+          () => { captured.usable = false; },
+          () => { captured.usable = false; },
+        );
+        if (this.stopped) {
+          await this.closeRead(accountId);
+          throw new Error("The browser executor is stopping.");
+        }
+      } else if (reserve) this.reads.delete(accountId);
+      if (this.stopped && !owner.session) {
+        await session.close();
+        await session.profileReleased?.();
+        throw new Error("The browser executor is stopping.");
+      }
+      return session;
+    } catch (error) {
+      if (!owner.session && this.reads.get(accountId) === owner) this.reads.delete(accountId);
+      throw error;
+    }
+  }
+  private async releaseRead(accountId: string, session: BrowserSession, success: boolean) {
+    const owner = this.reads.get(accountId);
+    if (owner?.session !== session) {
+      await session.close().catch(() => undefined);
+      await session.profileReleased?.();
+      return;
+    }
+    if (!success || this.stopped || !owner.usable) {
+      await this.closeRead(accountId);
+      return;
+    }
+    const delay = Math.min(READ_IDLE_TIMEOUT, Math.max(0, READ_MAX_AGE - elapsedSince(owner.started, this.readNow())));
+    owner.timer = setTimeout(() => {
+      if (this.reads.get(accountId) !== owner) return;
+      void this.exclusive(accountId, async () => {}).catch(() => undefined);
+    }, delay);
+    owner.timer.unref?.();
   }
   async begin(
     service: SocialService,
@@ -985,6 +1083,7 @@ export class XBrowserSessions {
     this.logins.clear();
     await this.platforms.stop();
     await this.workflows.stop(service);
+    await Promise.all([...this.reads.keys()].map((id) => this.exclusive(id, async () => {})));
   }
   private async until<T>(
     page: BrowserPage,
@@ -1012,7 +1111,7 @@ export class XBrowserSessions {
           : platforms.send(account, job, token, media, checkpoint, beforeSubmit),
       poll: (account, token, posts, cursor) =>
         account.platform === "x"
-          ? this.exclusive(account.id, async () => await this.poll(account, posts, cursor))
+          ? this.exclusive(account.id, async () => await this.poll(account, posts, cursor), true)
           : platforms.poll(account, token, posts, cursor),
     };
   }
@@ -1024,7 +1123,8 @@ export class XBrowserSessions {
   }
   private async poll(account: SocialAccount, posts: string[], cursor?: string) {
     if (!this.launcher) throw new SocialPlatformError("unsupported");
-    const session = await this.launcher(this.profile(account.id), this.background);
+    const session = await this.readSession(account.id);
+    let success = false;
     const events: import("../src/integrations/social/adapter").SocialInbound[] = [];
     const coverage: SocialMonitorChannel[] = [];
     try {
@@ -1138,13 +1238,14 @@ export class XBrowserSessions {
         nextCursor = String((start + count) % targets.length);
       }
       if (!supported) throw new SocialPlatformError("unsupported");
+      success = true;
       return {
         events: [...new Map(events.map((event) => [event.eventId, event])).values()],
         coverage,
         ...(nextCursor !== undefined ? { cursor: nextCursor } : {}),
       };
     } finally {
-      await session.close().catch(() => undefined);
+      await this.releaseRead(account.id, session, success);
     }
   }
   private async sendMessage(
