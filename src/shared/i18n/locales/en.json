@@ -10971,5 +10971,10 @@
   "Loading Inbox read status…": "Loading Inbox read status…",
   "Inbox read status is unavailable. Unread indicators may be incomplete.": "Inbox read status is unavailable. Unread indicators may be incomplete.",
   "Could not save read status. Please try again.": "Could not save read status. Please try again.",
-  "Some read status updates may have saved. Retry to complete.": "Some read status updates may have saved. Retry to complete."
+  "Some read status updates may have saved. Retry to complete.": "Some read status updates may have saved. Retry to complete.",
+  "Checking saved requests…": "Checking saved requests…",
+  "Saved requests cannot be read. Sending is held until storage is available.": "Saved requests cannot be read. Sending is held until storage is available.",
+  "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.",
+  "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.",
+  "Archive reviewed request": "Archive reviewed request"
 }

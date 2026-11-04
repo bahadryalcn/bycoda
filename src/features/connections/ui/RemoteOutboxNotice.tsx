@@ -3,7 +3,10 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
-import { archiveRemoteOutboxIssue, useRemoteOutboxIssues } from "../model/remoteOutbox";
+import {
+  archiveDurableRemoteOutboxIssue,
+  useDurableRemoteOutboxIssues,
+} from "../model/remoteOutbox";
 
 export function RemoteOutboxNotice({
   project,
@@ -13,21 +16,30 @@ export function RemoteOutboxNotice({
   environment?: string;
 }) {
   useLocale();
-  const issues = useRemoteOutboxIssues(project, environment);
+  const issues = useDurableRemoteOutboxIssues(project, environment);
   const [reviewed, setReviewed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   if (!issues.length) return null;
   const issue = issues[0];
+  if (issue.unavailable)
+    return (
+      <Alert tone="warning">
+        {issue.loading
+          ? t("Checking saved requests…")
+          : t("Saved requests cannot be read. Sending is held until storage is available.")}
+      </Alert>
+    );
   return (
     <Alert role="alert" tone="warning">
       <p className="font-medium">{t("An unfinished request needs recovery")}</p>
       <p className="leading-relaxed text-content">
         {issues.length === 1
           ? t(
-              "1 saved request could not be read. Check the conversations on the host before sending again; a request may already have run.",
+              "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.",
             )
           : t(
-              "{p0} saved requests could not be read. Check the conversations on the host before sending again; a request may already have run.",
+              "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.",
               { p0: issues.length },
             )}
       </p>
@@ -41,20 +53,23 @@ export function RemoteOutboxNotice({
       </label>
       <Button
         type="button"
-        disabled={reviewed !== issue.key}
+        disabled={reviewed !== issue.key || saving}
 
         onClick={() => {
-          try {
-            archiveRemoteOutboxIssue(issue.key);
-            setReviewed(null);
-            setError(null);
-          } catch (reason) {
-            setError(reason instanceof Error ? reason.message : "Could not archive the request.");
-          }
+          setSaving(true);
+          void archiveDurableRemoteOutboxIssue(issue.key)
+            .then(() => {
+              setReviewed(null);
+              setError(null);
+            })
+            .catch((reason: unknown) =>
+              setError(reason instanceof Error ? reason.message : "Could not archive the request."),
+            )
+            .finally(() => setSaving(false));
         }}
         variant="secondary"
       >
-        {t("Archive unreadable request")}
+        {t("Archive reviewed request")}
       </Button>
       {error ? (
         <Alert role="alert" tone="warning">

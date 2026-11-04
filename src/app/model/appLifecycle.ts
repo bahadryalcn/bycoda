@@ -602,19 +602,17 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
       : null,
   );
   // Entries saved before a remote chat was ever sent are not recoverable history.
-  const previousRecovery =
-    savedRecovery &&
-    dropRecoverySessions(
-      savedRecovery,
-      savedRecovery.workspace.sessions
-        .filter((stub) =>
-          isUnsentRemoteShell(
-            stub,
-            remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
-          ),
-        )
-        .map((stub) => stub.id),
-    );
+  const unsentRecoveryIds: string[] = [];
+  for (const stub of savedRecovery?.workspace.sessions ?? []) {
+    if (
+      isUnsentRemoteShell(
+        stub,
+        await remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
+      )
+    )
+      unsentRecoveryIds.push(stub.id);
+  }
+  const previousRecovery = savedRecovery && dropRecoverySessions(savedRecovery, unsentRecoveryIds);
   setSessionRecovery(previousRecovery);
 
   const ids = new Set<string>();
@@ -802,14 +800,16 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     // Recovery is for work the app closed in the middle of, not for every open chat.
     // Remote chats keep running on their Host, so they enter only when the in-flight
     // list names them. A still-loading placeholder is kept when its id was in flight.
-    const recoverable = workspace.sessions.filter(
-      (session) =>
+    const recoverable: Session[] = [];
+    for (const session of workspace.sessions) {
+      if (
         interrupted.has(session.id) &&
         !session.inboxAsk &&
         !session.orchestrationLeadId &&
-        // Drafts live in their own store and stay with the tab, so they do not keep it here.
-        !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })),
-    );
+        !isUnsentRemoteChat(session, await remoteShellState(session, { hasDraft: false }))
+      )
+        recoverable.push(session);
+    }
     if (recoverable.length) {
       setSessionRecovery(
         captureSessionRecovery(

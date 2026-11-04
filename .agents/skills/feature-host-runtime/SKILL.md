@@ -12,6 +12,7 @@ Own common authority and transport contracts across domain services and desktop/
 Code paths below are repository-root relative.
 
 - `host/engine.ts`
+- `src/features/connections/model/remoteOutbox.ts` and `remoteOutboxDatabase.ts` for desktop remote-command evidence.
 - `host/server.ts`
 - `host/owner.ts`, `host/lifecycle-state.ts` and `host/storage/atomic-write.ts`
 - `host/workspace.ts` and `host/storage/workspace-publication.ts`
@@ -47,6 +48,7 @@ Code paths below are repository-root relative.
 - Subscription resume requires committed cursor proof bound to the exact live page, owner, target and resource. Unproven or changed membership takes a fresh snapshot; renderer cursor input alone grants no replay authority.
 - Desktop control admission persists the original receipt and delivery identity before offering it. Offered/unknown work is never reoffered after a lost response or restart; ACK proves handling only. Native page tokens route existing authority and never replace exact original turn/process grants.
 - Retire only proven settled receipts using monotonic time. Fence their original authority/request identity before removing exact records; a fence match refuses execution. Keep pending effects, failed cleanup and unknown physical completion retained. Resource retirement requires its own proof, not only a fulfilled request.
+- Persist remote commands before dispatch; retain exact ID, payload and unknown outcomes. IndexedDB settlements and quarantine preserve reviewed raw evidence; legacy localStorage bytes remain until a qualified writer-cohort retirement proves safe. Storage failures hold dispatch and attachment cleanup.
 - Browser preview settlement includes verified presentation when requested. Read-only status failures can retire; uncertain claim/navigation/presentation work cannot. Token revocation removes disclosure authority, not evidence of an accepted effect. Recheck both original and current authority after delayed waits.
 - Keep drafts, queues, approvals, attachments, exact source bytes and recovery copies. Detach does not Stop; new migration/default authority requires its complete admission contract.
 - Snapshot/unit evidence does not prove crash/power-loss durability, all-actor closure, native sandbox enforcement or installed source inclusion.

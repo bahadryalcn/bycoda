@@ -10971,5 +10971,10 @@
   "Loading Inbox read status…": "受信トレイの既読状態を読み込み中…",
   "Inbox read status is unavailable. Unread indicators may be incomplete.": "受信トレイの既読状態を利用できません。未読の表示が不完全な可能性があります。",
   "Could not save read status. Please try again.": "既読状態を保存できませんでした。もう一度お試しください。",
-  "Some read status updates may have saved. Retry to complete.": "既読状態の一部は保存された可能性があります。完了するには再試行してください。"
+  "Some read status updates may have saved. Retry to complete.": "既読状態の一部は保存された可能性があります。完了するには再試行してください。",
+  "Checking saved requests…": "保存済みリクエストを確認中…",
+  "Saved requests cannot be read. Sending is held until storage is available.": "保存済みリクエストを読み取れません。ストレージが利用可能になるまで送信を保留します。",
+  "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "保存済みリクエスト1件の状態を安全に照合できませんでした。再送信する前にHost上の会話を確認してください。リクエストはすでに実行されている可能性があります。",
+  "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "保存済みリクエスト{p0}件の状態を安全に照合できませんでした。再送信する前にHost上の会話を確認してください。すでに実行されたリクエストがある可能性があります。",
+  "Archive reviewed request": "確認済みリクエストをアーカイブ"
 }

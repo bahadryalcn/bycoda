@@ -10971,5 +10971,10 @@
   "Loading Inbox read status…": "正在加载收件箱已读状态…",
   "Inbox read status is unavailable. Unread indicators may be incomplete.": "收件箱已读状态不可用。未读标记可能不完整。",
   "Could not save read status. Please try again.": "无法保存已读状态。请重试。",
-  "Some read status updates may have saved. Retry to complete.": "部分已读状态更新可能已保存。请重试以完成操作。"
+  "Some read status updates may have saved. Retry to complete.": "部分已读状态更新可能已保存。请重试以完成操作。",
+  "Checking saved requests…": "正在检查已保存的请求…",
+  "Saved requests cannot be read. Sending is held until storage is available.": "无法读取已保存的请求。在存储可用之前暂停发送。",
+  "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "无法安全核对 1 个已保存请求的状态。再次发送前，请检查 Host 上的对话；该请求可能已执行。",
+  "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "无法安全核对 {p0} 个已保存请求的状态。再次发送前，请检查 Host 上的对话；某个请求可能已执行。",
+  "Archive reviewed request": "归档已检查的请求"
 }

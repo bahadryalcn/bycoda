@@ -26,17 +26,21 @@ import {
 } from "../../sessions/model/approvalIntents";
 import type { UserQuestionDelivery, UserQuestionPrompt } from "../../sessions/model/userQuestion";
 import { t, useLocale } from "../../../shared/i18n";
+import { canonicalJson } from "../../sync/model/canonicalJson";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import type { RemoteDataState } from "../model/remoteDataState";
 import {
-  markRemoteCommandStopped,
-  remoteCommandWasStopped,
-  remoteCommandNeedsVerification,
   remoteIntentAuthority,
   remoteIntentAuthorityMatches,
-  useRemoteOutboxIssues,
+  useDurableRemoteOutboxIssues,
+  readDurableRemoteCommand,
+  admitDurableRemoteCommand,
+  readDurableRemoteEntry,
+  markDurableRemoteCommandStopped,
+  settleDurableRemoteCommand,
+  subscribeOutbox,
 } from "../model/remoteOutbox";
 import type { SessionPaneProps } from "../../sessions/ui/SessionPane";
 import type {
@@ -110,13 +114,10 @@ import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/model/
 import { loadResumeAtReset } from "../../settings/model/settings";
 import {
   cachedRemoteSessionIds,
-  clearPendingRemoteCommand,
   loadRemoteBlock,
   loadRemoteHistoryPage,
   loadRemoteSession,
   OPEN_CONNECTIONS_EVENT,
-  pendingRemoteCommand,
-  pendingRemoteFollowup,
   rememberRemotePendingWorktree,
   rememberRemoteSession,
   REMOTE_HISTORY_CHANGE,
@@ -125,7 +126,6 @@ import {
   remotePendingWorktree,
   remoteSessionFor,
   remoteShellBoundTo,
-  savePendingRemoteCommand,
   sessionAccessForMachine,
   sessionExecutionClientForMachine,
   useRemoteMachines,
@@ -228,6 +228,8 @@ type OptimisticTurn = {
   startedAt: number;
   turnModel: NonNullable<Block["turnModel"]>;
   acceptedRun?: { sessionId: string; runId: string; authorityGeneration?: number };
+  onSendRejected?: () => boolean;
+  restoredDraft?: boolean;
 };
 
 const noop = () => {};
@@ -347,7 +349,7 @@ export function RemoteSession({
       </div>
     );
   return (
-    <ConnectedRemoteSession
+    <DurableRemoteSessionGate
       key={`${machine.id}:${shell.id}`}
       shell={shell}
       visible={visible}
@@ -363,6 +365,50 @@ export function RemoteSession({
   );
 }
 
+function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSession>[0]) {
+  const { project, machine, shell } = props;
+  const [state, setState] = useState<{ ready: boolean; pending?: HostCommand; error?: string }>({
+    ready: false,
+  });
+  const [attempt, setAttempt] = useState(0);
+  const issues = useDurableRemoteOutboxIssues(project.key, machine.environmentId);
+  useEffect(() => {
+    let active = true;
+    const owner = hostSessionBinding(shell);
+    const session = owner?.created ? owner.sessionId : remoteSessionFor(shell.id);
+    void readDurableRemoteCommand(project.key, machine.environmentId, session ?? null, shell.id)
+      .then((result) => {
+        if (active) setState({ ready: true, pending: result.command });
+      })
+      .catch((error: unknown) => {
+        if (active) setState({ ready: false, error: String(error) });
+      });
+    return () => {
+      active = false;
+    };
+  }, [project.key, machine.environmentId, shell.id, attempt]);
+  if (!state.ready)
+    return (
+      <div className="flex h-full flex-col gap-3 p-4">
+        {state.error ? (
+          <>
+            {issues.length ? (
+              <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
+            ) : (
+              <Alert tone="warning">{t("Saved requests need review before continuing.")}</Alert>
+            )}
+            <div>
+              <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry")}</Button>
+            </div>
+          </>
+        ) : (
+          <p>{t("Checking saved requests…")}</p>
+        )}
+      </div>
+    );
+  return <ConnectedRemoteSession {...props} initialDurablePending={state.pending} />;
+}
+
 function ConnectedRemoteSession({
   shell,
   visible,
@@ -374,6 +420,7 @@ function ConnectedRemoteSession({
   hostLabel,
   project,
   render,
+  initialDurablePending,
 }: {
   shell: Session;
   visible: boolean;
@@ -386,6 +433,7 @@ function ConnectedRemoteSession({
   hostLabel: string;
   project: RemoteProject;
   render: (overrides: RemoteSessionOverrides) => ReactNode;
+  initialDurablePending?: HostCommand;
 }) {
   useLocale();
   const visibleRef = useRef(visible);
@@ -494,7 +542,6 @@ function ConnectedRemoteSession({
         setUploadProgress(undefined);
         setSnapshot(next ? cachedSessionSnapshots.get(snapshotKey(machine.id, next)) : undefined);
       }
-      setPending(pendingRemoteCommand(project.key, machine.environmentId, next ?? null, shell.id));
       setSessionId(next);
     };
     window.addEventListener(REMOTE_HISTORY_CHANGE, changed);
@@ -619,9 +666,7 @@ function ConnectedRemoteSession({
   >();
   // A first message waits here while its session is created on the host.
   const [starting, setStarting] = useState<OptimisticTurn & { failed?: boolean }>();
-  const [pending, setPending] = useState(() =>
-    pendingRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id),
-  );
+  const [pending, setPending] = useState(initialDurablePending);
   const [draft, setDraft] = useState<Configuration>(() => ({
     harness: isRemoteProvider(shell.harness) ? shell.harness : "codex",
     model: shell.model,
@@ -647,9 +692,24 @@ function ConnectedRemoteSession({
     };
   }, []);
   useEffect(() => {
-    setPending(
-      pendingRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id),
-    );
+    let active = true;
+    let generation = 0;
+    const refresh = () => {
+      const version = ++generation;
+      void readDurableRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id)
+        .then((result) => {
+          if (active && version === generation) setPending(result.command);
+        })
+        .catch((reason: unknown) => {
+          if (active && version === generation) setError(String(reason));
+        });
+    };
+    const unsubscribe = subscribeOutbox(refresh);
+    refresh();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [project.key, machine.environmentId, sessionId]);
 
   const hostSession = snapshot && snapshot.session.id === sessionId ? snapshot.session : undefined;
@@ -1448,9 +1508,23 @@ function ConnectedRemoteSession({
     )
       return undefined;
     const version = bindingGen.version;
-    const priorPending =
-      pendingRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id)
-        ?.commandId === command.commandId;
+    let priorPending: boolean;
+    try {
+      priorPending =
+        (
+          await readDurableRemoteCommand(
+            project.key,
+            machine.environmentId,
+            sessionId ?? null,
+            shell.id,
+          )
+        ).command?.commandId === command.commandId;
+    } catch (reason) {
+      setError(String(reason));
+      return undefined;
+    }
+    if (!alive.current || version !== bindingGen.version || sendingRef.current) return undefined;
+    let persisted = priorPending;
     const owner = Symbol();
     sendingOwner.current = owner;
     sendingRef.current = true;
@@ -1475,8 +1549,33 @@ function ConnectedRemoteSession({
     // Keep the original ID across disconnects and app restarts. An ambiguous
     // response is retried explicitly instead of silently sending a new prompt.
     try {
-      if (!recoveredReceipt)
-        savePendingRemoteCommand(project.key, machine.environmentId, command, shell.id, followup);
+      if (!recoveredReceipt) {
+        await admitDurableRemoteCommand(
+          project.key,
+          machine.environmentId,
+          command,
+          shell.id,
+          followup,
+        );
+        persisted = true;
+        const current = await readDurableRemoteEntry(
+          project.key,
+          machine.environmentId,
+          command.commandId,
+        );
+        if (!current.entry || canonicalJson(current.entry.command) !== canonicalJson(command))
+          throw new Error("The pending request changed; check the host before continuing.");
+        if (
+          !alive.current ||
+          version !== bindingGen.version ||
+          current.entry?.stopRequested ||
+          (generation !== undefined && generation !== submissionGeneration.current)
+        ) {
+          // Another window may already have offered this exact command. Without a
+          // receipt, keep its original evidence even when this attempt did not send.
+          return undefined;
+        }
+      }
       setPending(command);
       const traceId = sessionPerformanceTrace(shell.id);
       let receipt = recoveredReceipt;
@@ -1496,9 +1595,14 @@ function ConnectedRemoteSession({
       recordPerformanceEvent("host-ack", { revision: receipt.revision }, traceId);
       const stopped =
         (generation !== undefined && generation !== submissionGeneration.current) ||
-        remoteCommandWasStopped(project.key, machine.environmentId, command.commandId);
+        (await readDurableRemoteEntry(project.key, machine.environmentId, command.commandId)).entry
+          ?.stopRequested;
       if (stopped) {
-        markRemoteCommandStopped(project.key, machine.environmentId, command.commandId);
+        await markDurableRemoteCommandStopped(
+          project.key,
+          machine.environmentId,
+          command.commandId,
+        );
         if (receipt.runId) {
           // A newer turn may already exist. Cancel only the run this command
           // accepted, never whichever run happens to be in the latest snapshot.
@@ -1524,7 +1628,7 @@ function ConnectedRemoteSession({
         // reachable from this tab unless a newer turn is already creating its own.
         if (command.type === "create" && !preparingTurn.current)
           adoptCreatedSession(receipt.sessionId, alive.current && version === bindingGen.version);
-        clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
+        await settleDurableRemoteCommand(project.key, machine.environmentId, command);
         const handedOff =
           command.type === "create" ? command.firstTurn?.commandId : command.commandId;
         if (handedOff && ownership) {
@@ -1539,29 +1643,32 @@ function ConnectedRemoteSession({
             current?.commandId === command.commandId ? undefined : current,
           );
           setPending(
-            pendingRemoteCommand(
-              project.key,
-              machine.environmentId,
-              bindingGen.session ?? null,
-              shell.id,
-            ),
+            (
+              await readDurableRemoteCommand(
+                project.key,
+                machine.environmentId,
+                bindingGen.session ?? null,
+                shell.id,
+              )
+            ).command,
           );
           setRefresh((value) => value + 1);
         }
         return receipt;
       }
       if (command.type === "create") {
-        const next = pendingRemoteFollowup(project.key, machine.environmentId, command.commandId);
-        if (next && next.type !== "create")
-          savePendingRemoteCommand(
-            project.key,
-            machine.environmentId,
-            { ...next, sessionId: receipt.sessionId },
-            shell.id,
-          );
+        const next = (
+          await readDurableRemoteEntry(project.key, machine.environmentId, command.commandId)
+        ).entry?.followup;
+        await settleDurableRemoteCommand(
+          project.key,
+          machine.environmentId,
+          command,
+          next && next.type !== "create" ? { ...next, sessionId: receipt.sessionId } : undefined,
+          shell.id,
+        );
         adoptCreatedSession(receipt.sessionId, version === bindingGen.version);
-      }
-      clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
+      } else await settleDurableRemoteCommand(project.key, machine.environmentId, command);
       const handedOff =
         command.type === "create" ? command.firstTurn?.commandId : command.commandId;
       if (handedOff && ownership) {
@@ -1629,17 +1736,31 @@ function ConnectedRemoteSession({
         setStarting(undefined);
       }
       setPending(
-        pendingRemoteCommand(
-          project.key,
-          machine.environmentId,
-          command.type === "create" ? receipt.sessionId : (sessionId ?? null),
-          shell.id,
-        ),
+        (
+          await readDurableRemoteCommand(
+            project.key,
+            machine.environmentId,
+            command.type === "create" ? receipt.sessionId : (sessionId ?? null),
+            shell.id,
+          )
+        ).command,
       );
       setRefresh((value) => value + 1);
       return receipt;
     } catch (reason) {
       if (!alive.current || version !== bindingGen.version) return undefined;
+      if (
+        !persisted &&
+        !priorPending &&
+        String(reason).includes("Cannot save remote requests.") &&
+        optimistic?.onSendRejected?.()
+      ) {
+        optimistic.restoredDraft = true;
+        setStarting(undefined);
+        setUnseenSend((current) =>
+          current?.commandId === command.commandId ? undefined : current,
+        );
+      }
       reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
       const message = String(reason);
       lastRunFailure.current = message;
@@ -1655,10 +1776,29 @@ function ConnectedRemoteSession({
           setUnseenSend((current) =>
             current?.commandId === command.commandId ? undefined : current,
           );
-        clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
-        setPending(
-          pendingRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id),
-        );
+        if (persisted) {
+          try {
+            await settleDurableRemoteCommand(project.key, machine.environmentId, command);
+          } catch (settlementError) {
+            setError(String(settlementError));
+            return undefined;
+          }
+        }
+        try {
+          setPending(
+            (
+              await readDurableRemoteCommand(
+                project.key,
+                machine.environmentId,
+                sessionId ?? null,
+                shell.id,
+              )
+            ).command,
+          );
+        } catch (storageError) {
+          setError(String(storageError));
+          return undefined;
+        }
       }
       // Another computer runs a turn of this conversation: a wait, not an error.
       // The message goes to the queue and is sent when that turn is over.
@@ -1945,7 +2085,7 @@ function ConnectedRemoteSession({
       );
       if (version !== bindingGen.version || generation !== submissionGeneration.current) return;
       if (!receipt) {
-        if (alive.current) setStarting({ ...turn, failed: true });
+        if (alive.current) setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
         return;
       }
       if (version !== bindingGen.version) return;
@@ -1962,7 +2102,7 @@ function ConnectedRemoteSession({
         version === bindingGen.version &&
         generation === submissionGeneration.current
       )
-        if (!sent) setStarting({ ...turn, failed: true });
+        if (!sent) setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
     } catch (reason) {
       if (
         alive.current &&
@@ -2103,7 +2243,7 @@ function ConnectedRemoteSession({
             if (isLeaseHeld(lastRunFailure.current) && queueForLease(turn)) {
               setStarting(undefined);
               retryAfterLease();
-            } else setStarting({ ...turn, failed: true });
+            } else setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
           }
       })
       .catch((reason) => {
@@ -2187,20 +2327,27 @@ function ConnectedRemoteSession({
 
   // `!commands` this window sent; the agent carries on once each one finishes.
   const shellFollowUps = useRef(new Map<string, { authorityGeneration?: number }>());
-  const dispatchShell = (id: string, command: string, authorityGeneration?: number) => {
+  const dispatchShell = (
+    id: string,
+    command: string,
+    authorityGeneration?: number,
+    optimistic?: OptimisticTurn,
+  ) => {
     const commandId = crypto.randomUUID();
-    return executionClient
-      .dispatchCommand({
+    return run(
+      {
         type: "shell",
         ...remoteIntentAuthority({ authorityGeneration }),
         commandId,
         sessionId: id,
         line: command,
-      })
-      .then(() => {
-        shellFollowUps.current.set(commandId, remoteIntentAuthority({ authorityGeneration }));
-        if (alive.current) setRefresh((value) => value + 1);
-      });
+      },
+      optimistic,
+    ).then((receipt) => {
+      if (!receipt) return;
+      shellFollowUps.current.set(commandId, remoteIntentAuthority({ authorityGeneration }));
+      if (alive.current) setRefresh((value) => value + 1);
+    });
   };
   useEffect(() => {
     for (const [id, authority] of Array.from(shellFollowUps.current)) {
@@ -2221,7 +2368,7 @@ function ConnectedRemoteSession({
 
   /** Runs a `!command` on the host. It is not a turn: nothing is queued or
    * retried, and a refused one stays in the composer. */
-  const runShell = (command: string): boolean => {
+  const runShell = (command: string, options?: ComposerTurnOptions): boolean => {
     if (!descriptor) {
       setError(t("This project’s machine isn’t connected yet."));
       return false;
@@ -2232,6 +2379,8 @@ function ConnectedRemoteSession({
     }
     if (sendingRef.current || preparingRef.current) return false;
     const version = bindingGen.version;
+    const optimistic = optimisticTurn(`!${command}`, [], "default", false);
+    optimistic.onSendRejected = options?.onSendRejected;
     const failed = (reason: unknown) => {
       if (alive.current && version === bindingGen.version) {
         reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
@@ -2240,7 +2389,9 @@ function ConnectedRemoteSession({
     };
     setError("");
     if (hostSession) {
-      void dispatchShell(hostSession.id, command, snapshot?.authorityGeneration).catch(failed);
+      void dispatchShell(hostSession.id, command, snapshot?.authorityGeneration, optimistic).catch(
+        failed,
+      );
       return true;
     }
     // A new conversation: the command needs a session to run in.
@@ -2282,7 +2433,7 @@ function ConnectedRemoteSession({
     })()
       .then((receipt) =>
         receipt
-          ? dispatchShell(receipt.sessionId, command, receipt.authorityGeneration)
+          ? dispatchShell(receipt.sessionId, command, receipt.authorityGeneration, optimistic)
           : undefined,
       )
       .catch(failed)
@@ -2342,7 +2493,7 @@ function ConnectedRemoteSession({
       asDraft || queuedId || attachments.length || options?.draftBlockId || planBlockId
         ? undefined
         : parseShellCommand(text);
-    if (shellCommand) return runShell(shellCommand);
+    if (shellCommand) return runShell(shellCommand, options);
     if (
       busy &&
       remoteCanSteer &&
@@ -2462,8 +2613,14 @@ function ConnectedRemoteSession({
             !receipt &&
             alive.current &&
             version === bindingGen.version &&
-            pendingRemoteCommand(project.key, machine.environmentId, targetSessionId, shell.id)
-              ?.commandId !== commandId
+            (
+              await readDurableRemoteCommand(
+                project.key,
+                machine.environmentId,
+                targetSessionId,
+                shell.id,
+              )
+            ).command?.commandId !== commandId
           )
             await holdFollowUp();
         } catch (reason) {
@@ -2535,6 +2692,7 @@ function ConnectedRemoteSession({
       planBlockId,
     );
     turn.authorityGeneration = authority.authorityGeneration;
+    turn.onSendRejected = options?.onSendRejected;
     if (queuedId) turn.queued = queue.dispatch(queuedId, options?.followUpBehavior === "steer");
     const generation = ++submissionGeneration.current;
     preparingRef.current = true;
@@ -2775,12 +2933,13 @@ function ConnectedRemoteSession({
       pending.type === "cancel" ||
       pending.type === "approve" ||
       pending.type === "answer";
-    const needsVerification = remoteCommandNeedsVerification(
+    const stored = await readDurableRemoteEntry(
       project.key,
       machine.environmentId,
       pending.commandId,
     );
-    const stopped = remoteCommandWasStopped(project.key, machine.environmentId, pending.commandId);
+    const needsVerification = !stored.entry?.savedAt;
+    const stopped = !!stored.entry?.stopRequested;
     let recovered: CommandReceipt | null | undefined;
     if (descriptor?.capabilities.includes("commands.status")) {
       try {
@@ -2818,13 +2977,17 @@ function ConnectedRemoteSession({
     const receipt = recovered
       ? await run(pending, undefined, undefined, recovered)
       : await run(pending);
+    if (receipt && pending.type === "shell")
+      shellFollowUps.current.set(pending.commandId, remoteIntentAuthority(pending));
     if (receipt && pending.type === "create" && !stopped && version === bindingGen.version) {
-      const next = pendingRemoteCommand(
-        project.key,
-        machine.environmentId,
-        receipt.sessionId,
-        shell.id,
-      );
+      const next = (
+        await readDurableRemoteCommand(
+          project.key,
+          machine.environmentId,
+          receipt.sessionId,
+          shell.id,
+        )
+      ).command;
       if (next) await run(next);
     }
   };
@@ -2849,7 +3012,7 @@ function ConnectedRemoteSession({
             get label() {
               return t("Retry");
             },
-            run: () => void retryPending(),
+            run: () => void retryPending().catch((reason) => setError(String(reason))),
           },
         }
       : starting?.failed
@@ -2959,7 +3122,7 @@ function ConnectedRemoteSession({
     submit(`Build the approved plan:\n\n${block.text}`, [], { intent: "build" }, false, blockId);
   };
 
-  const stopTurn = () => {
+  const stopTurnAsync = async () => {
     followUpGeneration.current += 1;
     submissionGeneration.current += 1;
     const stoppedTurn = preparingTurn.current;
@@ -2971,15 +3134,17 @@ function ConnectedRemoteSession({
       setStarting((current) =>
         current?.commandId === stoppedTurn.commandId ? { ...current, failed: true } : current,
       );
-    const inFlight = pendingRemoteCommand(
-      project.key,
-      machine.environmentId,
-      bindingGen.session ?? null,
-      shell.id,
-    );
-    if (inFlight?.type === "send" || inFlight?.type === "compact" || inFlight?.type === "create")
-      markRemoteCommandStopped(project.key, machine.environmentId, inFlight.commandId);
     queue.pause();
+    const inFlight = (
+      await readDurableRemoteCommand(
+        project.key,
+        machine.environmentId,
+        bindingGen.session ?? null,
+        shell.id,
+      )
+    ).command;
+    if (inFlight?.type === "send" || inFlight?.type === "compact" || inFlight?.type === "create")
+      await markDurableRemoteCommandStopped(project.key, machine.environmentId, inFlight.commandId);
     const target =
       unseenActive && unseenSend?.runId
         ? {
@@ -3015,6 +3180,11 @@ function ConnectedRemoteSession({
         .catch((reason) => setError(t("Could not stop the turn: {p0}", { p0: String(reason) })));
     }
   };
+  const stopTurn = () => {
+    void stopTurnAsync().catch((reason) =>
+      setError(t("Could not stop the turn: {p0}", { p0: String(reason) })),
+    );
+  };
   const approve = (
     requestId: number,
     decision: Parameters<SessionPaneProps["onApproval"]>[2],
@@ -3045,7 +3215,10 @@ function ConnectedRemoteSession({
       action,
     });
   };
-  const answer = (requestId: number, reply: Parameters<SessionPaneProps["onQuestionReply"]>[2]) => {
+  const answer = async (
+    requestId: number,
+    reply: Parameters<SessionPaneProps["onQuestionReply"]>[2],
+  ) => {
     if (!hostSession || !snapshot?.runId) return;
     const sessionId = hostSession.id;
     const runId = snapshot.runId;
@@ -3075,12 +3248,15 @@ function ConnectedRemoteSession({
       )
     )
       return;
-    const heldCommand = pendingRemoteCommand(
-      project.key,
-      machine.environmentId,
-      sessionId,
-      shell.id,
-    );
+    let heldCommand: HostCommand | undefined;
+    try {
+      heldCommand = (
+        await readDurableRemoteCommand(project.key, machine.environmentId, sessionId, shell.id)
+      ).command;
+    } catch (reason) {
+      updateDelivery("failed", String(reason));
+      return;
+    }
     if (
       heldCommand?.type === "answer" &&
       heldCommand.runId === runId &&
@@ -3505,7 +3681,7 @@ function ConnectedRemoteSession({
     return displayPath(absolute);
   };
 
-  const outboxIssues = useRemoteOutboxIssues(project.key, machine.environmentId);
+  const outboxIssues = useDurableRemoteOutboxIssues(project.key, machine.environmentId);
   const loadEarlierRemote = async (): Promise<number> => {
     const current = snapshotRef.current;
     if (!sessionId || !current?.history || historyPageRequest.current) return 0;

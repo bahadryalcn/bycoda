@@ -10971,5 +10971,10 @@
   "Loading Inbox read status…": "Carregando o status de leitura da caixa de entrada…",
   "Inbox read status is unavailable. Unread indicators may be incomplete.": "O status de leitura da caixa de entrada está indisponível. Os indicadores de itens não lidos podem estar incompletos.",
   "Could not save read status. Please try again.": "Não foi possível salvar o status de leitura. Tente novamente.",
-  "Some read status updates may have saved. Retry to complete.": "Algumas alterações no status de leitura podem ter sido salvas. Tente novamente para concluir."
+  "Some read status updates may have saved. Retry to complete.": "Algumas alterações no status de leitura podem ter sido salvas. Tente novamente para concluir.",
+  "Checking saved requests…": "A verificar pedidos guardados…",
+  "Saved requests cannot be read. Sending is held until storage is available.": "Não é possível ler os pedidos guardados. O envio fica em espera até o armazenamento estar disponível.",
+  "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "Não foi possível reconciliar com segurança 1 pedido guardado. Verifique as conversas no Host antes de voltar a enviar; o pedido pode já ter sido executado.",
+  "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "Não foi possível reconciliar com segurança {p0} pedidos guardados. Verifique as conversas no Host antes de voltar a enviar; um pedido pode já ter sido executado.",
+  "Archive reviewed request": "Arquivar pedido revisto"
 }

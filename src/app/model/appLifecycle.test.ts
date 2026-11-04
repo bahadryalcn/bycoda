@@ -747,6 +747,38 @@ it("boots secondary windows blank without reading the shared recovery snapshot",
   expect(store.loadWorkspaceSnapshot).not.toHaveBeenCalled();
 });
 
+it("bounds durable recovery scans to one active session at a time", async () => {
+  vi.resetModules();
+  const store = await import("../../features/sessions/data/sessionStore");
+  const shellState = await import("../../features/connections/model/remoteShellState");
+  const sessions = ["first", "second", "third"].map((id) => ({
+    ...newSession("cursor", "/repo"),
+    id,
+  }));
+  const tabs = sessions.map((session) => newTab(session.id));
+  const snapshot = collectWorkspaceSnapshot(tabs, sessions, tabs[0].id, "/repo", new Map());
+  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue({
+    ...snapshot,
+    sessionRecovery: { capturedAt: 1, dismissed: false, workspace: snapshot },
+  });
+  let active = 0;
+  let maximum = 0;
+  const read = vi.spyOn(shellState, "remoteShellState").mockImplementation(async () => {
+    maximum = Math.max(maximum, ++active);
+    await Promise.resolve();
+    active--;
+    return { bound: true, pending: false, hasDraft: false };
+  });
+  try {
+    const { loadResumedWorkspace } = await import("./appLifecycle");
+    await loadResumedWorkspace();
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(maximum).toBe(1);
+  } finally {
+    read.mockRestore();
+  }
+});
+
 it("restores only sessions whose native window ownership is confirmed", async () => {
   vi.resetModules();
   const store = await import("../../features/sessions/data/sessionStore");

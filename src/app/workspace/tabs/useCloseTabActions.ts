@@ -204,7 +204,7 @@ export function useCloseTabActions({
          * Automatic closes only: decided again right before the tabs are removed,
          * after any confirmation await. A tab for which it returns false is kept.
          */
-        stillClosable?: (tabId: string) => boolean;
+        stillClosable?: (tabId: string) => boolean | Promise<boolean>;
       },
     ) => {
       if (windowTransferPendingRef.current || ids.some((id) => movingTabIds.current.has(id)))
@@ -224,12 +224,28 @@ export function useCloseTabActions({
       );
       const terminals = closingFiles.filter((file) => file.terminal);
 
-      const finishClose = () => {
-        for (const id of ids) if (opts?.stillClosable?.(id) === false) closingIds.delete(id);
+      const finishClose = async () => {
+        if (opts?.stillClosable) {
+          for (const id of ids) {
+            try {
+              if ((await opts.stillClosable(id)) === false) closingIds.delete(id);
+            } catch {
+              closingIds.delete(id);
+            }
+          }
+        }
         const remainingIds = ids.filter((id) => closingIds.has(id));
         if (remainingIds.length === 0) return;
         const latest = tabsRef.current;
-        const latestClosing = latest.filter((tab) => closingIds.has(tab.id));
+        const sameIdentity = (left: WorkspaceTab, right: WorkspaceTab) =>
+          left.id === right.id &&
+          JSON.stringify(leafIds(left.layout)) === JSON.stringify(leafIds(right.layout));
+        const latestClosing = latest.filter(
+          (tab) =>
+            closingIds.has(tab.id) && closing.some((original) => sameIdentity(original, tab)),
+        );
+        for (const id of closingIds)
+          if (!latestClosing.some((tab) => tab.id === id)) closingIds.delete(id);
         const latestFallback =
           latest.find((tab) => tab.id === fallbackId && !closingIds.has(tab.id)) ??
           latest.find((tab) => !closingIds.has(tab.id));
@@ -257,6 +273,14 @@ export function useCloseTabActions({
           return;
         }
         commitClose((previous) => {
+          if (
+            previous.some(
+              (tab) =>
+                closingIds.has(tab.id) &&
+                !latestClosing.some((latestTab) => sameIdentity(latestTab, tab)),
+            )
+          )
+            return;
           const closing = previous.filter((tab) => closingIds.has(tab.id));
           const next = previous.filter((tab) => !closingIds.has(tab.id));
           if (
@@ -290,7 +314,7 @@ export function useCloseTabActions({
 
       // The caller already confirmed unsaved files and terminals.
       if (opts?.confirmed) {
-        finishClose();
+        void finishClose().catch(console.error);
         return;
       }
 
@@ -309,8 +333,8 @@ export function useCloseTabActions({
           ))
         )
           return;
-        finishClose();
-      })();
+        await finishClose();
+      })().catch(console.error);
     },
     [commitClose],
   );

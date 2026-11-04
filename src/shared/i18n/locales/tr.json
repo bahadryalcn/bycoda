@@ -10971,5 +10971,10 @@
   "Loading Inbox read status…": "Gelen kutusunun okunma durumu yükleniyor…",
   "Inbox read status is unavailable. Unread indicators may be incomplete.": "Gelen kutusunun okunma durumu kullanılamıyor. Okunmamış göstergeleri eksik olabilir.",
   "Could not save read status. Please try again.": "Okunma durumu kaydedilemedi. Yeniden deneyin.",
-  "Some read status updates may have saved. Retry to complete.": "Bazı okunma durumu güncellemeleri kaydedilmiş olabilir. Tamamlamak için yeniden deneyin."
+  "Some read status updates may have saved. Retry to complete.": "Bazı okunma durumu güncellemeleri kaydedilmiş olabilir. Tamamlamak için yeniden deneyin.",
+  "Checking saved requests…": "Kaydedilmiş istekler kontrol ediliyor…",
+  "Saved requests cannot be read. Sending is held until storage is available.": "Kaydedilmiş istekler okunamıyor. Depolama kullanılabilir olana kadar gönderim bekletiliyor.",
+  "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "Kaydedilmiş 1 istek güvenle uzlaştırılamadı. Yeniden göndermeden önce Host üzerindeki konuşmaları kontrol edin; istek zaten çalışmış olabilir.",
+  "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "Kaydedilmiş {p0} istek güvenle uzlaştırılamadı. Yeniden göndermeden önce Host üzerindeki konuşmaları kontrol edin; bir istek zaten çalışmış olabilir.",
+  "Archive reviewed request": "İncelenen isteği arşivle"
 }

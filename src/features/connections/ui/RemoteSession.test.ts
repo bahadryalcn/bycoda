@@ -29,7 +29,6 @@ import {
   resetRemoteSessionCachesForTests,
 } from "./RemoteSession";
 import {
-  pendingRemoteCommand,
   rememberRemoteSession,
   remoteSessionFor,
   resetRemoteSessionReadsForTests,
@@ -42,7 +41,12 @@ import {
   resetRemoteHealth,
 } from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
-import { savePendingRemoteCommand } from "../model/remoteOutbox";
+import {
+  admitDurableRemoteCommand,
+  readDurableRemoteCommand,
+  readDurableRemoteEntry,
+  savePendingRemoteCommand,
+} from "../model/remoteOutbox";
 import { DESKTOP_CONTROL_RECEIPTS_CAPABILITY } from "../model/desktopControlCapability";
 import { resetRemoteQueuesForTests } from "../model/useRemoteQueue";
 import { resetRemoteMachineChannelsForTests } from "../model/remoteMachineChannel";
@@ -81,6 +85,103 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 
 const transportProbe = vi.hoisted(() => ({
   current: undefined as RemoteSessionOverrides | undefined,
+}));
+// UI tests use an isolated transaction fixture; real IndexedDB races are checked in Chromium.
+const outboxFixture = vi.hoisted(() => ({
+  entries: new Map<string, string>(),
+  settlements: new Map<string, string>(),
+  modern: new Set<string>(),
+  revision: 0,
+  unavailable: false,
+  failWrites: false,
+  afterCommit: undefined as Promise<void> | undefined,
+}));
+vi.mock("../model/remoteOutboxDatabase", () => ({
+  readOutboxDatabasePage: async (
+    kind: "entries" | "settlements",
+    prefix: string,
+    after?: string,
+  ) => {
+    if (outboxFixture.unavailable) throw new Error("Remote request storage is unavailable.");
+    const keys = [...outboxFixture[kind].keys()]
+      .filter((key) => key.startsWith(prefix) && (after === undefined || key > after))
+      .sort();
+    const selected = keys.slice(0, 128);
+    return {
+      values: selected.map((key) => ({ key, raw: outboxFixture[kind].get(key)! })),
+      next: keys.length > 128 ? selected.at(-1) : undefined,
+      revision: outboxFixture.revision,
+    };
+  },
+  readOutboxDatabaseRecord: async (key: string) => ({
+    entry: outboxFixture.entries.get(key),
+    settlement: outboxFixture.modern.has(key) ? undefined : outboxFixture.settlements.get(key),
+    resolved: outboxFixture.settlements.has(key),
+    revision: outboxFixture.revision,
+  }),
+  changeOutboxDatabase: async (
+    key: string,
+    expected: string | null,
+    next: string | null,
+    legacy?: string,
+    revision?: number,
+  ) => {
+    if (outboxFixture.failWrites) throw new Error("Cannot save remote requests.");
+    if (
+      (outboxFixture.entries.get(key) ?? null) !== expected ||
+      (revision !== undefined && revision !== outboxFixture.revision)
+    )
+      throw new Error("The pending request changed.");
+    if (next === null) outboxFixture.entries.delete(key);
+    else outboxFixture.entries.set(key, next);
+    if (legacy !== undefined) {
+      outboxFixture.settlements.set(key, legacy);
+      outboxFixture.modern.delete(key);
+    }
+    outboxFixture.revision++;
+    const wait = outboxFixture.afterCommit;
+    outboxFixture.afterCommit = undefined;
+    if (wait) await wait;
+  },
+  settleOutboxDatabase: async (
+    key: string,
+    expected: string,
+    legacy?: string,
+    next?: { key: string; raw: string },
+    revision?: number,
+  ) => {
+    if (
+      outboxFixture.entries.get(key) !== expected ||
+      (revision !== undefined && revision !== outboxFixture.revision) ||
+      (next &&
+        outboxFixture.entries.has(next.key) &&
+        outboxFixture.entries.get(next.key) !== next.raw)
+    )
+      throw new Error("The pending request changed.");
+    outboxFixture.entries.delete(key);
+    if (next) outboxFixture.entries.set(next.key, next.raw);
+    outboxFixture.settlements.set(key, legacy ?? "");
+    if (legacy === undefined) outboxFixture.modern.add(key);
+    else outboxFixture.modern.delete(key);
+    outboxFixture.revision++;
+  },
+  quarantineOutboxDatabase: async (
+    key: string,
+    expected: string | null,
+    legacy: string | null,
+    revision: number,
+  ) => {
+    if (
+      (outboxFixture.entries.get(key) ?? null) !== expected ||
+      revision !== outboxFixture.revision
+    )
+      throw new Error("The pending request changed.");
+    outboxFixture.entries.delete(key);
+    if (legacy !== null || expected !== null) outboxFixture.settlements.set(key, legacy ?? "");
+    if (legacy === null) outboxFixture.modern.add(key);
+    else outboxFixture.modern.delete(key);
+    outboxFixture.revision++;
+  },
 }));
 // Observe the real transport's render-probe contract without changing its props,
 // the pane, or Composer's fail-closed creation policy. Creation transport tests
@@ -246,6 +347,7 @@ let dispatchDelay: Promise<void> | undefined;
 let attachmentReadDelay: Promise<void> | undefined;
 let describeDelay: Promise<void> | undefined;
 let steerFailure: string | undefined;
+let shellFailure: string | undefined;
 /** What the host answers to a `send` (a refusal, as the other computer's turn makes it). */
 let sendFailure: string | undefined;
 let commandStatusSupported = false;
@@ -272,6 +374,13 @@ let machineDown: string | undefined;
 const unreachable = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 
 beforeEach(() => {
+  outboxFixture.entries.clear();
+  outboxFixture.settlements.clear();
+  outboxFixture.modern.clear();
+  outboxFixture.revision = 0;
+  outboxFixture.unavailable = false;
+  outboxFixture.failWrites = false;
+  outboxFixture.afterCommit = undefined;
   approvalOccurrenceSupported = true;
   desktopControlReceiptsSupported = true;
   commandStatusSupported = false;
@@ -316,6 +425,7 @@ beforeEach(() => {
   attachmentReadDelay = undefined;
   describeDelay = undefined;
   steerFailure = undefined;
+  shellFailure = undefined;
   sendFailure = undefined;
   answerFailure = undefined;
   receiptRunId = undefined;
@@ -608,6 +718,7 @@ beforeEach(() => {
     if (method === "commands.dispatch") {
       if (dispatchDelay && params.type !== "cancel") await dispatchDelay;
       if (params.type === "steer" && steerFailure) throw new Error(steerFailure);
+      if (params.type === "shell" && shellFailure) throw new Error(shellFailure);
       if (params.type === "send" && sendFailure) throw new Error(sendFailure);
       if (params.type === "answer" && answerFailure) throw new Error(answerFailure);
       return dispatch(params);
@@ -633,6 +744,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(async () => {
+  shellSupported = false;
   await act(async () => root.unmount());
   await settle();
   resetRemoteMachineChannelsForTests();
@@ -917,6 +1029,20 @@ async function settle() {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 }
+it("holds the composer while durable outbox storage is unavailable and recovers on retry", async () => {
+  outboxFixture.unavailable = true;
+  await renderRemoteProbe();
+  expect(transportProbe.current).toBeUndefined();
+  expect(container.textContent).toContain("Saved requests cannot be read.");
+  outboxFixture.unavailable = false;
+  const retry = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Retry"),
+  );
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  await settle();
+  expect(transportProbe.current).toBeDefined();
+});
 const byLabel = (prefix: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label^="${prefix}"]`);
 
@@ -1055,7 +1181,9 @@ it.each(["cancel", "approve", "answer"] as const)(
     });
     await settle();
     expect(commands.filter((command) => command.type === kind)).toHaveLength(0);
-    expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toBeUndefined();
+    expect(
+      (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+    ).toBeUndefined();
     if (kind === "answer") {
       expect(remoteOverrides.session?.pendingQuestion).toMatchObject({
         delivery: "failed",
@@ -1094,7 +1222,9 @@ it("keeps a previously uncertain desktop answer when an old Host cannot confirm 
   expect(retry).toBeDefined();
   await act(async () => retry!.click());
   await settle();
-  expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toMatchObject({
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toMatchObject({
     commandId: command.commandId,
   });
   expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("unknown");
@@ -1133,6 +1263,59 @@ async function sendTransport(text: string) {
   await act(async () => transportProbe.current!.onSubmit!("shell", text, []));
   await settle();
 }
+it("does not dispatch when durable outbox admission fails and retains the draft", async () => {
+  openExistingChat();
+  await render();
+  outboxFixture.failWrites = true;
+  await send("Keep this draft");
+  expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
+  expect(container.textContent).toContain("Cannot save remote requests.");
+  expect(container.querySelector("textarea")?.value).toContain("Keep this draft");
+  outboxFixture.failWrites = false;
+  await act(async () => byLabel("Send")!.click());
+  await settle();
+  expect(commands.filter((command) => command.type === "send")).toMatchObject([
+    { text: "Keep this draft" },
+  ]);
+});
+
+it("keeps admitted evidence when Stop arrives before the original dispatch", async () => {
+  openExistingChat();
+  await renderRemoteProbe();
+  let release!: () => void;
+  outboxFixture.afterCommit = new Promise<void>((resolve) => { release = resolve; });
+  await act(async () => remoteOverrides.onSubmit!("shell", "Keep original identity", []));
+  await vi.waitFor(() => expect(outboxFixture.entries.size).toBe(1));
+  const original = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command!;
+  await act(async () => remoteOverrides.onStop!("shell"));
+  await vi.waitFor(async () => expect((await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested).toBe(true));
+  await act(async () => release());
+  await settle();
+  const held = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command;
+  expect(held).toEqual(original);
+  expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
+  expect(outboxFixture.settlements.size).toBe(0);
+});
+
+it("keeps an existing unknown command when a second-window retry is stopped during admission", async () => {
+  openExistingChat();
+  const original: HostCommand = { type: "send", commandId: "already-unknown", sessionId: "host-session", text: "Original" };
+  await admitDurableRemoteCommand(projectKey, "env", original, "shell");
+  await render();
+  let release!: () => void;
+  outboxFixture.afterCommit = new Promise<void>((resolve) => { release = resolve; });
+  const retry = [...container.querySelectorAll("button")].find((button) => button.textContent === "Retry");
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  await vi.waitFor(() => expect(outboxFixture.afterCommit).toBeUndefined());
+  await act(async () => transportProbe.current!.onStop!("shell"));
+  await vi.waitFor(async () => expect((await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested).toBe(true));
+  await act(async () => release());
+  await settle();
+  expect((await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command).toEqual(original);
+  expect(outboxFixture.settlements.size).toBe(0);
+  expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
+});
 // The combined picker opens a settings menu; its "Model" row shows the model list.
 async function openModels(triggerLabel: string) {
   // The flyout loads on demand; have it ready before the menu opens.
@@ -2422,7 +2605,9 @@ it("authority intent: checks the old pending ID once and keeps its old payload w
   await settle();
   expect(statusRequests).toEqual(["old-pending-id"]);
   expect(commands).toEqual([]);
-  expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toEqual(pending);
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toEqual(pending);
   expect(container.textContent).toContain("earlier session authority");
 });
 
@@ -2673,7 +2858,8 @@ it("keeps the exact original nonce and command ID in the actual outbox through a
       );
     });
     await settle();
-    const original = pendingRemoteCommand(projectKey, "env", "host-session", "shell")!;
+    const original = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell"))
+      .command!;
     expect(original).toMatchObject({
       type: "approve",
       requestId,
@@ -2689,7 +2875,9 @@ it("keeps the exact original nonce and command ID in the actual outbox through a
         captureApprovalRequest(remoteOverrides.session!, requestId),
       );
     });
-    expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toEqual(original);
+    expect(
+      (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+    ).toEqual(original);
     await act(async () => {
       finish();
       dispatchDelay = undefined;
@@ -3556,6 +3744,49 @@ slow("runs a !command on the host instead of sending it as a message, even mid-t
   }
 });
 
+slow(
+  "keeps an unconfirmed shell command under its original ID without replay on remount",
+  async () => {
+    shellSupported = true;
+    shellFailure = "Connection lost before receipt";
+    openExistingChat();
+    await render();
+    await send("!git status");
+    const held = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell"))
+      .command;
+    expect(held).toMatchObject({ type: "shell", line: "git status" });
+    const attempts = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.map(
+          ([, args]) => args as { method?: string; params?: { type?: string; commandId?: string } },
+        )
+        .filter(
+          (request) => request?.method === "commands.dispatch" && request.params?.type === "shell",
+        );
+    expect(attempts()).toHaveLength(1);
+    expect(attempts()[0].params?.commandId).toBe(held?.commandId);
+    await act(async () => root.render(null));
+    await render();
+    expect(attempts()).toHaveLength(1);
+  },
+);
+
+slow("retains a shell draft when durable admission fails", async () => {
+  shellSupported = true;
+  openExistingChat();
+  await render();
+  outboxFixture.failWrites = true;
+  await send("!git status");
+  expect(container.querySelector("textarea")?.value).toBe("!git status");
+  expect(
+    vi.mocked(invoke).mock.calls.some(([, args]) => {
+      const request = args as { method?: string; params?: { type?: string } };
+      return request?.method === "commands.dispatch" && request.params?.type === "shell";
+    }),
+  ).toBe(false);
+});
+
 slow("keeps a !command in the composer when the host is too old to run it", async () => {
   openExistingChat();
   await render();
@@ -3956,7 +4187,9 @@ slow(
         },
       ],
     });
-    expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toBeUndefined();
+    expect(
+      (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+    ).toBeUndefined();
     endTurn();
     await settle();
     expect(sends()).toHaveLength(0);
@@ -4134,12 +4367,28 @@ slow(
     await whenStopShown();
     await send("Verify before sending again");
     expect(queueCard()).toBeNull();
-    expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toMatchObject({
+    const held = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell"))
+      .command;
+    expect(held).toMatchObject({
       type: "steer",
       text: "Verify before sending again",
       runId: "run-1",
     });
     expect(sends()).toHaveLength(0);
+    const attempts = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.map(
+          ([, args]) => args as { method?: string; params?: { type?: string; commandId?: string } },
+        )
+        .filter(
+          (request) => request?.method === "commands.dispatch" && request.params?.type === "steer",
+        );
+    expect(attempts()).toHaveLength(1);
+    expect(attempts()[0].params?.commandId).toBe(held?.commandId);
+    await act(async () => root.render(null));
+    await render();
+    expect(attempts()).toHaveLength(1);
   },
 );
 
@@ -4277,7 +4526,9 @@ slow("Stop cancels a late accepted send by its exact receipt run ID", async () =
   expect(commands.filter((command) => command.type === "cancel")).toEqual([
     expect.objectContaining({ sessionId: "host-session", runId: "accepted-run" }),
   ]);
-  expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toBeUndefined();
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toBeUndefined();
 });
 
 slow("Stop reaches an acknowledged run while its first host snapshot is still unseen", async () => {
@@ -4290,7 +4541,9 @@ slow("Stop reaches an acknowledged run while its first host snapshot is still un
   receiptRunId = "acknowledged-run";
   await send("Awaiting host transcript");
   await whenStopShown();
-  expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toBeUndefined();
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toBeUndefined();
   await act(async () => byLabel("Stop")!.click());
   expect(commands.filter((command) => command.type === "cancel")).toEqual([
     expect.objectContaining({ sessionId: "host-session", runId: "acknowledged-run" }),
@@ -4771,20 +5024,20 @@ it("local Host opt-in: lost atomic first-turn receipt survives restart and recon
   const session = await newLocalHostSession("/home/me/repo");
   await render(session);
   await sendTransport("Preserve exactly once");
-  const pending = pendingRemoteCommand(session.cwd, "env", null, session.id)!;
+  const pending = (await readDurableRemoteCommand(session.cwd, "env", null, session.id)).command!;
   expect(pending).toMatchObject({
     type: "create",
     commandId: session.id,
     firstTurn: { text: "Preserve exactly once" },
   });
-  expect(() =>
-    savePendingRemoteCommand(
+  await expect(
+    admitDurableRemoteCommand(
       session.cwd,
       "env",
       { ...pending, model: "changed" } as HostCommand,
       session.id,
     ),
-  ).toThrow("changed");
+  ).rejects.toThrow("changed");
   await act(async () => root.unmount());
   resetRemoteSessionCachesForTests();
   root = createRoot(container);
@@ -4802,7 +5055,9 @@ it("local Host opt-in: lost atomic first-turn receipt survives restart and recon
   expect(
     host!.session.blocks.filter((block) => block.text === "Preserve exactly once"),
   ).toHaveLength(1);
-  expect(pendingRemoteCommand(session.cwd, "env", null, session.id)).toBeUndefined();
+  expect(
+    (await readDurableRemoteCommand(session.cwd, "env", null, session.id)).command,
+  ).toBeUndefined();
 });
 
 it("local Host opt-in: offline owners keep the original intent and cannot execute through Native", async () => {

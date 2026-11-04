@@ -1,8 +1,15 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { isRemoteProvider, type HostCommand } from "./protocol";
 import { RUNTIME_MODES } from "../../sessions/model/session";
 import { t } from "../../../shared/i18n/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
+import {
+  changeOutboxDatabase,
+  readOutboxDatabasePage,
+  readOutboxDatabaseRecord,
+  settleOutboxDatabase,
+  quarantineOutboxDatabase,
+} from "./remoteOutboxDatabase";
 
 type AttachmentCommand =
   | HostCommand
@@ -11,6 +18,17 @@ type AttachmentCommand =
 const PREFIX = "bycoda.remote-command.v1:";
 const ARCHIVE_PREFIX = "bycoda.remote-command-quarantine.v1:";
 const CHANGE = "bycoda:remote-outbox-change";
+let outboxChannel: BroadcastChannel | undefined;
+function ensureOutboxChannel() {
+  if (outboxChannel || typeof BroadcastChannel === "undefined" || typeof window === "undefined")
+    return;
+  try {
+    outboxChannel = new BroadcastChannel(CHANGE);
+    outboxChannel.onmessage = () => window.dispatchEvent(new Event(CHANGE));
+  } catch {
+    // Authoritative reads still validate revision before an effect.
+  }
+}
 const pendingPrefix = (project: string, environment: string) =>
   `${PREFIX}${JSON.stringify([project, environment])}:`;
 type PendingEntry = {
@@ -21,7 +39,13 @@ type PendingEntry = {
   followup?: HostCommand;
   stopRequested?: boolean;
 };
-export type OutboxIssue = { key: string; project: string; environment: string };
+export type OutboxIssue = {
+  key: string;
+  project: string;
+  environment: string;
+  unavailable?: boolean;
+  loading?: boolean;
+};
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const strings = (value: unknown): boolean =>
@@ -282,7 +306,121 @@ export function useRemoteOutboxIssues(project?: string, environment?: string): O
   return useSyncExternalStore(subscribeOutbox, snapshot, emptyIssues);
 }
 
-function subscribeOutbox(listener: () => void) {
+export async function durableRemoteOutboxIssues(
+  project?: string,
+  environment?: string,
+): Promise<OutboxIssue[]> {
+  const issues = new Map<string, OutboxIssue>();
+  const owners = new Map<string, OutboxIssue>();
+  let revision: number | undefined;
+  let after: string | undefined;
+  const consider = (key: string, raw: string, force = false) => {
+    const scope = scopeForKey(key);
+    if (
+      scope &&
+      ((project !== undefined && scope.project !== project) ||
+        (environment !== undefined && scope.environment !== environment))
+    )
+      return;
+    const entry = scope && readPendingEntry(raw, scope.id);
+    if (force || !scope || !entry) {
+      issues.set(key, {
+        key,
+        project: scope?.project ?? "Unknown project",
+        environment: scope?.environment ?? "",
+      });
+      return;
+    }
+    const owner = JSON.stringify([
+      scope.project,
+      scope.environment,
+      entry.command.type === "create"
+        ? ["create", entry.shellId ?? null]
+        : ["session", entry.command.sessionId],
+    ]);
+    const issue = { key, project: scope.project, environment: scope.environment };
+    const previous = owners.get(owner);
+    if (previous && previous.key !== key) {
+      issues.set(previous.key, previous);
+      issues.set(key, issue);
+    } else owners.set(owner, issue);
+  };
+  do {
+    const page = await readOutboxDatabasePage("entries", PREFIX, after);
+    if (revision !== undefined && page.revision !== revision)
+      throw new Error("Pending requests changed; try again.");
+    revision = page.revision;
+    for (const item of page.values) consider(item.key, item.raw);
+    after = page.next;
+  } while (after !== undefined);
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(PREFIX)) continue;
+    const scope = scopeForKey(key);
+    if (
+      scope &&
+      ((project !== undefined && scope.project !== project) ||
+        (environment !== undefined && scope.environment !== environment))
+    )
+      continue;
+    const raw = localStorage.getItem(key);
+    if (raw === null) throw new Error("Pending requests changed; try again.");
+    const record = await readOutboxDatabaseRecord(key);
+    if (record.revision !== revision || localStorage.getItem(key) !== raw)
+      throw new Error("Pending requests changed; try again.");
+    if (record.settlement === raw) continue;
+    consider(key, raw, record.entry !== undefined && record.entry !== raw);
+  }
+  const check = await readOutboxDatabaseRecord(PREFIX);
+  if (check.revision !== revision) throw new Error("Pending requests changed; try again.");
+  return [...issues.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+export function useDurableRemoteOutboxIssues(
+  project?: string,
+  environment?: string,
+): OutboxIssue[] {
+  const [issues, setIssues] = useState<OutboxIssue[]>([
+    { key: "", project: "", environment: "", unavailable: true, loading: true },
+  ]);
+  useEffect(() => {
+    let active = true;
+    let generation = 0;
+    const refresh = () => {
+      const current = ++generation;
+      void durableRemoteOutboxIssues(project, environment)
+        .then((value) => {
+          if (active && current === generation) setIssues(value);
+        })
+        .catch(() => {
+          if (active && current === generation)
+            setIssues([{ key: "", project: "", environment: "", unavailable: true }]);
+        });
+    };
+    const unsubscribe = subscribeOutbox(refresh);
+    refresh();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [project, environment]);
+  return issues;
+}
+
+export async function archiveDurableRemoteOutboxIssue(key: string) {
+  if (!(await durableRemoteOutboxIssues()).some((issue) => issue.key === key))
+    throw new Error("This request no longer needs recovery.");
+  const record = await readOutboxDatabaseRecord(key);
+  const legacy = localStorage.getItem(key);
+  if (record.entry === undefined && legacy === null)
+    throw new Error("This request no longer needs recovery.");
+  if (localStorage.getItem(key) !== legacy) throw new Error("The request changed during recovery.");
+  await quarantineOutboxDatabase(key, record.entry ?? null, legacy, record.revision);
+  changed();
+}
+
+export function subscribeOutbox(listener: () => void) {
+  ensureOutboxChannel();
   const storage = (event: StorageEvent) => {
     if (event.key === null || event.key.startsWith(PREFIX) || event.key.startsWith(ARCHIVE_PREFIX))
       listener();
@@ -295,7 +433,13 @@ function subscribeOutbox(listener: () => void) {
   };
 }
 function changed() {
+  ensureOutboxChannel();
   window.dispatchEvent(new Event(CHANGE));
+  try {
+    outboxChannel?.postMessage(null);
+  } catch {
+    // Notification failure never changes the committed transaction outcome.
+  }
 }
 
 /** Only called after the person checked the host; archive first, then release. */
@@ -512,4 +656,252 @@ export function remoteCommandWasStopped(
 export function clearPendingRemoteCommand(project: string, environment: string, commandId: string) {
   localStorage.removeItem(`${pendingPrefix(project, environment)}${commandId}`);
   changed();
+}
+
+/** Read durable and legacy evidence against one IDB revision. Unknown data holds sending. */
+export async function readDurableRemoteCommand(
+  project: string,
+  environment: string,
+  sessionId?: string | null,
+  shellId?: string,
+): Promise<{ command?: HostCommand; revision: number }> {
+  const prefix = pendingPrefix(project, environment);
+  let after: string | undefined;
+  let revision: number | undefined;
+  let command: HostCommand | undefined;
+  const consider = (key: string, raw: string) => {
+    const scope = scopeForKey(key);
+    if (!scope) throw new Error("An unreadable pending request requires recovery.");
+    if (scope.project !== project || scope.environment !== environment) return;
+    const entry = readPendingEntry(raw, scope.id);
+    if (!entry) throw new Error("An unreadable pending request requires recovery.");
+    if (
+      sessionId === undefined ||
+      (sessionId === null
+        ? entry.command.type === "create" && (!entry.shellId || entry.shellId === shellId)
+        : entry.command.type !== "create" && entry.command.sessionId === sessionId)
+    ) {
+      if (
+        sessionId !== undefined &&
+        command &&
+        canonicalJson(command) !== canonicalJson(entry.command)
+      )
+        throw new Error("Multiple pending requests require recovery.");
+      command ??= entry.command;
+    }
+  };
+  do {
+    const page = await readOutboxDatabasePage("entries", PREFIX, after);
+    if (revision !== undefined && page.revision !== revision)
+      throw new Error("Pending requests changed; try again.");
+    revision = page.revision;
+    for (const value of page.values) consider(value.key, value.raw);
+    after = page.next;
+  } while (after !== undefined);
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(PREFIX)) continue;
+    const scope = scopeForKey(key);
+    if (scope && (scope.project !== project || scope.environment !== environment)) continue;
+    const raw = localStorage.getItem(key);
+    if (raw === null) throw new Error("Pending requests changed; try again.");
+    const record = await readOutboxDatabaseRecord(key);
+    if (record.revision !== revision || localStorage.getItem(key) !== raw)
+      throw new Error("Pending requests changed; try again.");
+    if (record.settlement === raw) continue;
+    if (record.entry !== undefined && record.entry !== raw)
+      throw new Error("A pending request has conflicting saved versions.");
+    if (record.entry === undefined) consider(key, raw);
+  }
+  const check = await readOutboxDatabaseRecord(prefix);
+  if (check.revision !== revision) throw new Error("Pending requests changed; try again.");
+  return { command, revision: revision ?? 0 };
+}
+
+/** Persist the immutable command before any Host dispatch. */
+export async function admitDurableRemoteCommand(
+  project: string,
+  environment: string,
+  command: HostCommand,
+  shellId?: string,
+  followup?: HostCommand,
+): Promise<void> {
+  const sessionId = command.type === "create" ? null : command.sessionId;
+  const observed = await readDurableRemoteCommand(project, environment, sessionId, shellId);
+  if (observed.command && canonicalJson(observed.command) !== canonicalJson(command))
+    throw new Error(
+      "The pending request changed. Recover the original request before sending again.",
+    );
+  const key = `${pendingPrefix(project, environment)}${command.commandId}`;
+  const record = await readOutboxDatabaseRecord(key);
+  const legacy = localStorage.getItem(key);
+  if (record.revision !== observed.revision)
+    throw new Error("Pending requests changed; try again.");
+  if (record.entry === undefined && record.resolved)
+    throw new Error("This request identity has already been resolved.");
+  const existingRaw = record.entry ?? (record.settlement === legacy ? null : legacy);
+  const existing = existingRaw ? readPendingEntry(existingRaw, command.commandId) : undefined;
+  if (existingRaw && !existing) throw new Error("An unreadable pending request requires recovery.");
+  if (
+    existing &&
+    (canonicalJson(existing.command) !== canonicalJson(command) ||
+      (followup !== undefined &&
+        canonicalJson(existing.followup ?? null) !== canonicalJson(followup)))
+  )
+    throw new Error(
+      "The pending request changed. Recover the original request before sending again.",
+    );
+  const entry: PendingEntry = {
+    v: 1,
+    savedAt: existing?.savedAt ?? Date.now(),
+    command: existing?.command ?? command,
+    shellId: existing?.shellId ?? shellId,
+    stopRequested: existing?.stopRequested,
+    followup: followup ?? existing?.followup,
+  };
+  const raw = JSON.stringify(entry);
+  if (raw.length * 2 > 2 * 1024 * 1024 || !readPendingEntry(raw, command.commandId))
+    throw new Error("Cannot save an invalid or oversized remote request.");
+  if (localStorage.getItem(key) !== legacy) throw new Error("Pending requests changed; try again.");
+  await changeOutboxDatabase(
+    key,
+    record.entry ?? null,
+    raw,
+    legacy ?? undefined,
+    observed.revision,
+  );
+  changed();
+}
+
+/** Definitive receipt settlement keeps the legacy bytes and, for creates, atomically saves the follow-up. */
+export async function settleDurableRemoteCommand(
+  project: string,
+  environment: string,
+  command: HostCommand,
+  followup?: HostCommand,
+  shellId?: string,
+): Promise<void> {
+  const key = `${pendingPrefix(project, environment)}${command.commandId}`;
+  let record = await readOutboxDatabaseRecord(key);
+  const legacy = localStorage.getItem(key);
+  const original =
+    record.entry ?? (record.settlement === legacy ? undefined : (legacy ?? undefined));
+  const entry = original ? readPendingEntry(original, command.commandId) : undefined;
+  if (!entry || canonicalJson(entry.command) !== canonicalJson(command))
+    throw new Error("The pending request changed; check the host before continuing.");
+  if (record.entry === undefined) {
+    await changeOutboxDatabase(key, null, original!, legacy ?? undefined, record.revision);
+    record = await readOutboxDatabaseRecord(key);
+  }
+  if (!record.entry || record.entry !== original || localStorage.getItem(key) !== legacy)
+    throw new Error("The pending request changed; check the host before continuing.");
+  let next: { key: string; raw: string } | undefined;
+  if (followup) {
+    const nextEntry: PendingEntry = { v: 1, savedAt: Date.now(), command: followup, shellId };
+    const raw = JSON.stringify(nextEntry);
+    if (raw.length * 2 > 2 * 1024 * 1024 || !readPendingEntry(raw, followup.commandId))
+      throw new Error("Cannot save the follow-up request safely.");
+    next = { key: `${pendingPrefix(project, environment)}${followup.commandId}`, raw };
+    if (localStorage.getItem(next.key) !== null)
+      throw new Error("The follow-up request has an existing saved identity.");
+  }
+  await settleOutboxDatabase(key, record.entry, legacy ?? undefined, next, record.revision);
+  changed();
+}
+
+export async function readDurableRemoteEntry(
+  project: string,
+  environment: string,
+  commandId: string,
+) {
+  const key = `${pendingPrefix(project, environment)}${commandId}`;
+  const record = await readOutboxDatabaseRecord(key);
+  const legacy = localStorage.getItem(key);
+  if (
+    legacy !== null &&
+    record.settlement !== legacy &&
+    record.entry !== undefined &&
+    record.entry !== legacy
+  )
+    throw new Error("A pending request has conflicting saved versions.");
+  const raw = record.entry ?? (record.settlement === legacy ? undefined : (legacy ?? undefined));
+  const entry = raw ? readPendingEntry(raw, commandId) : undefined;
+  if (raw && !entry) throw new Error("An unreadable pending request requires recovery.");
+  if (localStorage.getItem(key) !== legacy) throw new Error("Pending requests changed; try again.");
+  return { key, record, legacy, entry };
+}
+
+export async function markDurableRemoteCommandStopped(
+  project: string,
+  environment: string,
+  commandId: string,
+) {
+  const { key, record, legacy, entry } = await readDurableRemoteEntry(
+    project,
+    environment,
+    commandId,
+  );
+  if (!entry) throw new Error("The pending request changed; check the host before continuing.");
+  if (entry.stopRequested) return;
+  const raw = JSON.stringify({ ...entry, stopRequested: true });
+  await changeOutboxDatabase(key, record.entry ?? null, raw, legacy ?? undefined, record.revision);
+  changed();
+}
+
+/** Attachment cleanup requires a complete, stable durable inventory. */
+export async function durableRemoteAttachmentIds(
+  environment: string,
+  project?: string,
+  shellId?: string,
+) {
+  const ids = new Set<string>();
+  let revision: number | undefined;
+  let after: string | undefined;
+  const collectCommand = (command?: AttachmentCommand) => {
+    if (!command) return;
+    if ("attachments" in command)
+      for (const attachment of command.attachments ?? []) ids.add(attachment.id);
+    if (command.type === "create") collectCommand(command.firstTurn);
+  };
+  const consider = (key: string, raw: string) => {
+    const scope = scopeForKey(key);
+    if (!scope) throw new Error("Attachment ownership is held by an unreadable pending request");
+    if (scope.environment !== environment || (project !== undefined && scope.project !== project))
+      return;
+    const entry = readPendingEntry(raw, scope.id);
+    if (!entry) throw new Error("Attachment ownership is held by an unreadable pending request");
+    if (shellId && entry.shellId && entry.shellId !== shellId) return;
+    collectCommand(entry.command);
+    collectCommand(entry.followup);
+  };
+  do {
+    const page = await readOutboxDatabasePage("entries", PREFIX, after);
+    if (revision !== undefined && page.revision !== revision)
+      throw new Error("Pending requests changed; try again.");
+    revision = page.revision;
+    for (const item of page.values) consider(item.key, item.raw);
+    after = page.next;
+  } while (after !== undefined);
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(PREFIX)) continue;
+    const scope = scopeForKey(key);
+    if (
+      scope &&
+      (scope.environment !== environment || (project !== undefined && scope.project !== project))
+    )
+      continue;
+    const raw = localStorage.getItem(key);
+    if (raw === null) throw new Error("Pending requests changed; try again.");
+    const record = await readOutboxDatabaseRecord(key);
+    if (record.revision !== revision || localStorage.getItem(key) !== raw)
+      throw new Error("Pending requests changed; try again.");
+    if (record.settlement === raw) continue;
+    if (record.entry !== undefined && record.entry !== raw)
+      throw new Error("A pending request has conflicting saved versions.");
+    if (record.entry === undefined) consider(key, raw);
+  }
+  const check = await readOutboxDatabaseRecord(PREFIX);
+  if (check.revision !== revision) throw new Error("Pending requests changed; try again.");
+  return [...ids];
 }
