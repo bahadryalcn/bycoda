@@ -1,3 +1,4 @@
+import type { WorkspaceBootstrapReceipts } from "./workspace-bootstrap-receipts";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomUUID } from "node:crypto";
@@ -36,6 +37,7 @@ export type BootstrapCommand = (request: {
   env?: NodeJS.ProcessEnv;
 }) => Promise<string>;
 export interface WorkspaceBootstrapOptions {
+  receipts?: WorkspaceBootstrapReceipts;
   resolveWorkspace(workspaceId: string): Promise<string>;
   runCommand?: BootstrapCommand;
   sharedCargoTargetRoot?: string;
@@ -48,6 +50,9 @@ type Operation = {
   status: WorkspaceBootstrapStatus;
   abort: AbortController;
   finished: Promise<void>;
+  physicalUnknown?: boolean;
+  restored?: boolean;
+  durableSettled?: boolean;
 };
 const hash = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 const safeId = (text: string) => hash(text).slice(0, 24);
@@ -144,6 +149,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
   private readonly requests = new Map<string, { fingerprint: string; id: string }>();
   private readonly activeWorkspaces = new Map<string, string>();
   private readonly options: WorkspaceBootstrapOptions;
+  private admission: Promise<unknown> = Promise.resolve();
   constructor(options: WorkspaceBootstrapOptions) {
     this.options = options;
   }
@@ -151,25 +157,33 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
   async prepare(
     request: Parameters<WorkspaceBootstrap["prepare"]>[0],
   ): Promise<WorkspaceBootstrapStatus> {
+    const pending = this.admission.then(() => this.prepareOwned(request));
+    this.admission = pending.catch(() => undefined);
+    return pending;
+  }
+  private async prepareOwned(
+    request: Parameters<WorkspaceBootstrap["prepare"]>[0],
+  ): Promise<WorkspaceBootstrapStatus> {
     if (!request.workspaceId || !request.idempotencyKey || !request.lockfileFingerprint)
       throw new Error("Workspace, lockfile fingerprint and idempotency key are required.");
     const requestKey = JSON.stringify([request.workspaceId, request.idempotencyKey]);
-    const existingRequest = this.requests.get(requestKey);
+    const existingRequest = this.options.receipts ? await this.options.receipts.request(requestKey) : this.requests.get(requestKey);
     if (existingRequest) {
       if (existingRequest.fingerprint !== request.lockfileFingerprint)
         throw new Error("Bootstrap idempotency key was already used with another lockfile.");
-      return snapshot(this.operation(existingRequest.id));
+      return snapshot(await this.operation(existingRequest.id));
     }
     const key = JSON.stringify([request.workspaceId, request.lockfileFingerprint]);
-    const previous = this.identities.get(key);
+    const previous = this.options.receipts ? await this.options.receipts.identity(request.workspaceId, request.lockfileFingerprint) : this.identities.get(key);
     if (previous) {
-      const operation = this.operations.get(previous)!;
+      const operation = await this.operation(previous);
       if (!["cancelled", "failed"].includes(operation.status.state)) {
-        this.requests.set(requestKey, { fingerprint: request.lockfileFingerprint, id: previous });
+        if (this.options.receipts) await this.options.receipts.link(requestKey, request.lockfileFingerprint, previous);
+        else this.requests.set(requestKey, { fingerprint: request.lockfileFingerprint, id: previous });
         return snapshot(operation);
       }
     }
-    if (this.activeWorkspaces.has(request.workspaceId))
+    if (this.activeWorkspaces.has(request.workspaceId) || await this.options.receipts?.held(request.workspaceId))
       throw new Error("Another lockfile preparation is already running for this workspace.");
     const id = randomUUID();
     const operation: Operation = {
@@ -182,36 +196,67 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       abort: new AbortController(),
       finished: Promise.resolve(),
     };
+    // Persist original identity before resolving paths or starting commands.
+    if (this.options.receipts) await this.options.receipts.admit(operation.status, requestKey);
     this.operations.set(id, operation);
-    this.requests.set(requestKey, { fingerprint: request.lockfileFingerprint, id });
-    this.identities.set(key, id);
+    if (!this.options.receipts) {
+      this.requests.set(requestKey, { fingerprint: request.lockfileFingerprint, id });
+      this.identities.set(key, id);
+    }
     this.activeWorkspaces.set(request.workspaceId, id);
-    operation.finished = this.install(operation).finally(() =>
-      this.activeWorkspaces.delete(request.workspaceId),
-    );
+    operation.finished = this.install(operation).then(async () => {
+      // Rejected command may still own physical descendants. Keep its exact owner.
+      const settled = !operation.physicalUnknown;
+      await this.options.receipts?.finish(operation.status, settled);
+      operation.durableSettled = settled;
+      if (settled && this.activeWorkspaces.get(request.workspaceId) === id)
+        this.activeWorkspaces.delete(request.workspaceId);
+      if (this.options.receipts && settled) {
+        // Durable exact lookup backs bounded settled hot snapshots.
+        const ready = [...this.operations].filter(([, value]) =>
+          value.durableSettled === true);
+        for (const [oldId, original] of ready.slice(0, Math.max(0, ready.length - 128)))
+          if (this.operations.get(oldId) === original) this.operations.delete(oldId);
+      }
+    });
+    void operation.finished.catch(() => undefined);
     return snapshot(operation);
   }
 
   async status(bootstrapId: string): Promise<WorkspaceBootstrapStatus> {
-    return snapshot(this.operation(bootstrapId));
+    return snapshot(await this.operation(bootstrapId));
   }
   async wait(bootstrapId: string): Promise<WorkspaceBootstrapStatus> {
-    const operation = this.operation(bootstrapId);
+    const operation = await this.operation(bootstrapId);
+    if (operation.restored && operation.physicalUnknown)
+      throw new Error(`Workspace bootstrap ${bootstrapId} retains an unresolved original owner.`);
     await operation.finished;
     return snapshot(operation);
   }
   async cancel(bootstrapId: string): Promise<WorkspaceBootstrapStatus> {
-    const operation = this.operation(bootstrapId);
+    const operation = await this.operation(bootstrapId);
+    if (operation.restored && operation.physicalUnknown)
+      throw new Error(`Workspace bootstrap ${bootstrapId} retains an unresolved original owner; cancellation requires its original process.`);
     if (["pending", "installing", "waitingForBuildCache"].includes(operation.status.state)) {
       operation.abort.abort();
       await operation.finished;
     }
     return snapshot(operation);
   }
-  private operation(id: string) {
+  private async operation(id: string): Promise<Operation> {
     const operation = this.operations.get(id);
-    if (!operation) throw new Error("Unknown workspace bootstrap.");
-    return operation;
+    if (operation) return operation;
+    const receipt = await this.options.receipts?.status(id);
+    if (!receipt) throw new Error("Unknown workspace bootstrap.");
+    // Read-only durable snapshot: never recreate an install or accumulate read cache.
+    return {
+      status: receipt.settled ? receipt.status : {
+        ...receipt.status,
+        error: { code: "BOOTSTRAP_OWNER_UNRESOLVED", message: "Original workspace preparation owner requires inspection before retrying." },
+      },
+      abort: new AbortController(), finished: Promise.resolve(), restored: true,
+      physicalUnknown: !receipt.settled,
+    };
   }
   private async workspace(id: string): Promise<string> {
     const path = await this.options.resolveWorkspace(id);
@@ -240,7 +285,16 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       if (!pin) throw new Error("PNPM_PIN_REQUIRED");
       signal.throwIfAborted();
       operation.status.state = "installing";
-      const run = this.options.runCommand ?? runBootstrapCommand;
+      const command = this.options.runCommand ?? runBootstrapCommand;
+      const run: BootstrapCommand = async (request) => {
+        await this.options.receipts?.commandEvidence(operation.status.id, {
+          command: request.command, args: request.args, cwd: request.cwd,
+        });
+        operation.physicalUnknown = true;
+        const output = await command(request);
+        operation.physicalUnknown = false;
+        return output;
+      };
       const version = await run({ command: "pnpm", args: ["--version"], cwd: root, signal });
       if (version.trim() !== pin[1]) throw new Error("PNPM_VERSION_MISMATCH");
       signal.throwIfAborted();

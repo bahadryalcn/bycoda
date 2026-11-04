@@ -1,3 +1,5 @@
+import { HostStore } from "./store";
+import { WorkspaceBootstrapReceipts } from "./workspace-bootstrap-receipts";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
@@ -514,4 +516,56 @@ it.each([
   await expect(waiting).rejects.toBeDefined();
   expect(await readFile(path, "utf8")).toBe(sentinel);
   expect(build).not.toHaveBeenCalled();
+});
+
+
+it("bounds settled bootstrap hot snapshots with exact durable replay after eviction and restart", async () => {
+  const root = await fixture();
+  const store = new HostStore(join(root, "bootstrap-host.db"));
+  try {
+    const receipts = new WorkspaceBootstrapReceipts(store);
+    const run = vi.fn<BootstrapCommand>(async ({ args }) => args[0] === "--version" ? "12.15.0" : "");
+    const options = { receipts, resolveWorkspace: async () => root, runCommand: run };
+    const service = new WorkspaceBootstrapService(options);
+    let original = "";
+    for (let index = 0; index < 130; index++) {
+      const value = await service.prepare({ ...request, workspaceId: `workspace-${index}` });
+      if (!index) original = value.id;
+      expect((await service.wait(value.id)).state).toBe("ready");
+    }
+    const cache = service as unknown as { operations: Map<string, unknown>; identities: Map<string, unknown>; requests: Map<string, unknown> };
+    expect(cache.operations.size).toBeLessThanOrEqual(128);
+    expect(cache.operations.has(original)).toBe(false);
+    expect(cache.identities.size).toBe(0);
+    expect(cache.requests.size).toBe(0);
+    const before = run.mock.calls.length;
+    expect((await service.status(original)).state).toBe("ready");
+    const restarted = new WorkspaceBootstrapService(options);
+    expect((await restarted.prepare({ ...request, workspaceId: "workspace-0" })).id).toBe(original);
+    expect(run.mock.calls).toHaveLength(before);
+    await expect(restarted.prepare({ ...request, workspaceId: "workspace-0", lockfileFingerprint: "changed" })).rejects.toThrow("already used");
+  } finally {
+    await store.close();
+  }
+});
+
+it("keeps rejected-command ownership held across restart without replaying install", async () => {
+  const root = await fixture();
+  const store = new HostStore(join(root, "bootstrap-held-host.db"));
+  try {
+    const receipts = new WorkspaceBootstrapReceipts(store);
+    const run = vi.fn<BootstrapCommand>(async () => { throw new Error("physical completion unknown"); });
+    const options = { receipts, resolveWorkspace: async () => root, runCommand: run };
+    const service = new WorkspaceBootstrapService(options);
+    const original = await service.prepare(request);
+    expect((await service.wait(original.id)).state).toBe("failed");
+    const restarted = new WorkspaceBootstrapService(options);
+    expect((await restarted.prepare(request)).id).toBe(original.id);
+    expect((await restarted.status(original.id)).error?.code).toBe("BOOTSTRAP_OWNER_UNRESOLVED");
+    await expect(restarted.wait(original.id)).rejects.toThrow("unresolved original owner");
+    await expect(restarted.prepare({ ...request, idempotencyKey: "replacement" })).rejects.toThrow("already running");
+    expect(run).toHaveBeenCalledTimes(1);
+  } finally {
+    await store.close();
+  }
 });

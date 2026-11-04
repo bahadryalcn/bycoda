@@ -1,3 +1,4 @@
+import { WorkspaceBootstrapReceipts } from "./workspace-bootstrap-receipts";
 import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
@@ -283,6 +284,7 @@ export function createManagedWorkspaceRuntime(
     };
   }
   const bootstrap = new WorkspaceBootstrapService({
+    receipts: new WorkspaceBootstrapReceipts(store),
     resolveWorkspace: async (id) => {
       await assertWritable(id);
       return (await workspace(id)).path;
