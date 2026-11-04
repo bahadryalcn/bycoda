@@ -961,7 +961,19 @@ describe("desktop sessions on the host", () => {
       approval: { requestId: 7, occurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001" },
     };
     const question = { requestId: 9, questions: [] };
-    const beat = async (body: unknown) => await s.call("sessions.desktopLive", body);
+    const pageToken = "7e1c4dc0-6f53-4a8c-b8d8-000000000010";
+    const turnReceipt = {
+      version: 1,
+      sessionId: "a",
+      turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000011",
+    };
+    const beat = async (body: { sessions?: Record<string, unknown>[]; acked?: string[] }) =>
+      await s.call("sessions.desktopLive", {
+        ...body,
+        clientId: "desktop-window",
+        pageToken,
+        sessions: body.sessions?.map((session) => ({ ...session, turnReceipt })),
+      });
     expect(
       (
         await beat({
@@ -1002,7 +1014,20 @@ describe("desktop sessions on the host", () => {
       { type: "cancel", commandId: "k2", sessionId: "a", runId: "desktop" },
     ])
       expect((await s.call("commands.dispatch", command)).error).toBeUndefined();
-    const queued = (await beat({ sessions: [{ id: "a", busy: true }] })).result.commands;
+    const accepted = await s.store.db
+      .prepare("SELECT id,state FROM desktop_command_delivery ORDER BY id")
+      .all();
+    expect(accepted).toEqual([
+      { id: "k1", state: "accepted" },
+      { id: "k2", state: "accepted" },
+    ]);
+    const queued = (
+      await beat({
+        sessions: [
+          { id: "a", busy: true, pending: [approval], patch: { pendingQuestion: question } },
+        ],
+      })
+    ).result.commands;
     expect(queued).toMatchObject([
       {
         id: "k1",
@@ -1012,14 +1037,34 @@ describe("desktop sessions on the host", () => {
         requestId: 7,
         approvalOccurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
         decision: "allow",
+        pageToken,
+        turnReceipt,
       },
-      { sessionId: "a", type: "cancel" },
+      { sessionId: "a", type: "cancel", pageToken, turnReceipt },
     ]);
     expect(s.send).not.toHaveBeenCalled();
+    // A lost response is not offered again. Another page cannot acknowledge it.
+    expect((await beat({ sessions: [{ id: "a", busy: true }] })).result.commands).toEqual([]);
+    expect(
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: "desktop-window",
+          pageToken: "7e1c4dc0-6f53-4a8c-b8d8-000000000012",
+          sessions: [],
+          acked: queued.map((c: any) => c.id),
+        })
+      ).result.commands,
+    ).toEqual([]);
+    expect(
+      await s.store.db.prepare("SELECT state FROM desktop_command_delivery ORDER BY id").all(),
+    ).toEqual([{ state: "offered_unknown" }, { state: "offered_unknown" }]);
     expect(
       (await beat({ sessions: [{ id: "a", busy: true }], acked: queued.map((c: any) => c.id) }))
         .result,
     ).toMatchObject({ commands: [] });
+    expect(
+      await s.store.db.prepare("SELECT state FROM desktop_command_delivery ORDER BY id").all(),
+    ).toEqual([{ state: "acknowledged" }, { state: "acknowledged" }]);
 
     // The prompt is gone: only that changed, so only a delta goes out.
     const second = (
