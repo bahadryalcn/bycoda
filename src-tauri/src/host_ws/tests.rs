@@ -1255,6 +1255,205 @@ fn single_committed_consumer_resumes_replay_after_reconnect() {
 }
 
 #[test]
+fn two_consumers_resume_at_proven_minimum_without_duplicate_delivery() {
+    let (drop_tx, drop_rx) = mpsc::sync_channel::<()>(1);
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let (finish_tx, finish_rx) = mpsc::sync_channel::<()>(1);
+    let server = Server::spawn(move |listener| async move {
+        let mut first = accept(&listener).await;
+        hello(
+            &mut first,
+            &[
+                "subscriptions.open",
+                "subscriptions.close",
+                "subscriptions.ack",
+            ],
+            "host.1",
+        )
+        .await;
+        let initial = next(&mut first).await;
+        result(
+            &mut first,
+            &initial,
+            json!({"subscriptionId":initial["params"]["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .await;
+        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":initial["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":1},"kind":"snapshot","data":{}}}).to_string().into())).await.unwrap();
+        let close = next(&mut first).await;
+        result(&mut first, &close, json!({"accepted":true})).await;
+        let open = next(&mut first).await;
+        result(
+            &mut first,
+            &open,
+            json!({"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .await;
+        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":2},"kind":"snapshot","data":{}}}).to_string().into())).await.unwrap();
+        let ack = next(&mut first).await;
+        assert_eq!(ack["params"]["cursor"]["sequence"], 2);
+        result(&mut first, &ack, json!({"accepted":true})).await;
+        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":3},"kind":"delta","data":{}}}).to_string().into())).await.unwrap();
+        drop_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        drop(first);
+        let mut second = accept(&listener).await;
+        hello(
+            &mut second,
+            &[
+                "subscriptions.open",
+                "subscriptions.close",
+                "subscriptions.ack",
+            ],
+            "host.1",
+        )
+        .await;
+        ready_tx.send(()).unwrap();
+        let resumed = next(&mut second).await;
+        assert_eq!(
+            resumed["params"]["cursor"],
+            json!({"epoch":"epoch.1","sequence":2})
+        );
+        result(
+            &mut second,
+            &resumed,
+            json!({"subscriptionId":resumed["params"]["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .await;
+        for sequence in [3, 4] {
+            second.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":resumed["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":sequence},"kind":"delta","data":{}}}).to_string().into())).await.unwrap();
+        }
+        finish_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    });
+    let broker = HostWsBroker::default();
+    let route = server.route();
+    let (a_tx, a_rx) = mpsc::channel();
+    let (b_tx, b_rx) = mpsc::channel();
+    broker
+        .attach(
+            &route,
+            "window-a",
+            Arc::new(move |event| {
+                let _ = a_tx.send(event);
+            }),
+        )
+        .unwrap();
+    broker
+        .attach(
+            &route,
+            "window-b",
+            Arc::new(move |event| {
+                let _ = b_tx.send(event);
+            }),
+        )
+        .unwrap();
+    let a_issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let b_issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let call = |owner: &str,
+                issuer: &Arc<crate::control::receipts::WindowIssuer>,
+                method: &str,
+                params: Value| {
+        broker
+            .request(
+                &route,
+                owner,
+                method,
+                params,
+                RequestOptions {
+                    issuer: Some(issuer.clone()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    let target = json!({"kind":"session","sessionId":"session"});
+    call(
+        "window-a",
+        &a_issuer,
+        "subscriptions.open",
+        json!({"subscriptionId":"a","target":target}),
+    );
+    union_snapshot(&a_rx, "a", 1);
+    call(
+        "window-b",
+        &b_issuer,
+        "subscriptions.open",
+        json!({"subscriptionId":"b","target":target}),
+    );
+    union_snapshot(&a_rx, "a", 2);
+    union_snapshot(&b_rx, "b", 2);
+    for (owner, issuer, id) in [("window-a", &a_issuer, "a"), ("window-b", &b_issuer, "b")] {
+        call(
+            owner,
+            issuer,
+            "subscriptions.ack",
+            json!({"subscriptionId":id,"cursor":{"epoch":"epoch.1","sequence":2}}),
+        );
+    }
+    loop {
+        if let NativeEvent::Subscription { event, .. } =
+            a_rx.recv_timeout(Duration::from_secs(3)).unwrap()
+        {
+            if event["params"]["kind"] == "delta" {
+                assert_eq!(event["params"]["cursor"]["sequence"], 3);
+                break;
+            }
+        }
+    }
+    loop {
+        if let NativeEvent::Subscription { event, .. } =
+            b_rx.recv_timeout(Duration::from_secs(3)).unwrap()
+        {
+            if event["params"]["kind"] == "delta" {
+                assert_eq!(event["params"]["cursor"]["sequence"], 3);
+                break;
+            }
+        }
+    }
+    call(
+        "window-a",
+        &a_issuer,
+        "subscriptions.ack",
+        json!({"subscriptionId":"a","cursor":{"epoch":"epoch.1","sequence":3}}),
+    );
+    drop_tx.send(()).unwrap();
+    ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    call(
+        "window-a",
+        &a_issuer,
+        "subscriptions.open",
+        json!({"subscriptionId":"a","target":target,"cursor":{"epoch":"epoch.1","sequence":3}}),
+    );
+    loop {
+        if let NativeEvent::Subscription { event, .. } =
+            a_rx.recv_timeout(Duration::from_secs(3)).unwrap()
+        {
+            if event["params"]["kind"] == "delta" {
+                assert_eq!(event["params"]["cursor"]["sequence"], 4);
+                break;
+            }
+        }
+    }
+    call(
+        "window-b",
+        &b_issuer,
+        "subscriptions.open",
+        json!({"subscriptionId":"b","target":target,"cursor":{"epoch":"epoch.1","sequence":2}}),
+    );
+    let mut replayed = Vec::new();
+    while replayed.len() < 2 {
+        if let NativeEvent::Subscription { event, .. } =
+            b_rx.recv_timeout(Duration::from_secs(3)).unwrap()
+        {
+            if event["params"]["kind"] == "delta" {
+                replayed.push(event["params"]["cursor"]["sequence"].as_u64().unwrap());
+            }
+        }
+    }
+    assert_eq!(replayed, vec![3, 4]);
+    finish_tx.send(()).unwrap();
+    broker.shutdown();
+}
+
+#[test]
 fn route_requires_native_tls_and_keeps_secrets_out_of_errors() {
     for endpoint in [
         "http://192.168.1.20:4000",

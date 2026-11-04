@@ -553,11 +553,15 @@ control slot. The native reconnect queue retains only never-sent requests with
 their original deadline, owner and resource scope; dispatched mutations are
 never queued for replay.
 
-Native reconnect can resume one retained subscription only from its proven
-application-committed cursor, exact live page issuer, logical target and resource
-scope. Missing proof, a replacement page, multiple consumers, a new member or an
-invalid epoch requires a fresh baseline. The bounded proof ledger does not accept
-an arbitrary renderer cursor as evidence of application.
+Native reconnect resumes retained subscriptions only from proven application
+commits, exact live page issuers, logical targets and resource scopes. A complete
+membership cut from the retired connection permits shared streams to resume from
+their minimum committed cursor. Returning members never receive replay they
+already committed. Absent members retain bounded replay/backpressure state for
+at most ten seconds, without event disclosure or physical request slots. Missing
+proof, changed membership, replacement pages, gaps, invalid epochs or expired
+rejoin waits require a fresh baseline. Renderer cursor input alone never proves
+application or authorizes an ACK.
 
 File mutations retain the existing workspace confinement, serialized content CAS
 and editor activity owner. They recheck the authenticated grant inside the actual

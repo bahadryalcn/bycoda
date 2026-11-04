@@ -35,6 +35,7 @@ impl PreparedQueue {
             last_state: Mutex::new(None),
             permits: Arc::new(Permits::new("env.1")),
             resume: Mutex::new(HashMap::new()),
+            resume_cuts: Mutex::new(HashMap::new()),
             resume_disabled: AtomicBool::new(false),
             changed: tokio::sync::Notify::new(),
         });
@@ -131,6 +132,37 @@ fn resume_requires_prior_committed_cursor_unique_owner_and_live_resource() {
     assert!(shared
         .register_resume(&member, shape, Some(&cursor), 5, Some(&replacement))
         .is_none());
+}
+
+#[test]
+fn retirement_cut_requires_every_exact_live_proof() {
+    use super::super::demand::MemberId;
+    let fixture = PreparedQueue::new();
+    let shared = &fixture.handle.shared;
+    shared.consumers().insert("a".into(), None);
+    shared.consumers().insert("b".into(), None);
+    let a = MemberId::new("a", "a");
+    let b = MemberId::new("b", "b");
+    let shape = json!({"target":{"kind":"session","sessionId":"s"}});
+    let cursor = json!({"epoch":"epoch","sequence":1});
+    let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+    let scope_a = shared.permits.scope("a", "open-a", &shape).unwrap();
+    let scope_b = shared.permits.scope("b", "open-b", &shape).unwrap();
+    shared.register_resume(&a, shape.clone(), None, 1, Some(&issuer));
+    shared.record_resume(&a, 1, cursor.clone(), scope_a, Some(&issuer));
+    let cut = vec![(
+        shape.clone(),
+        vec![(a.clone(), cursor.clone()), (b.clone(), cursor.clone())],
+    )];
+    shared.capture_resume_cuts(1, cut.clone());
+    assert!(shared.take_resume_cut(&shape).unwrap().is_empty());
+    shared.register_resume(&b, shape.clone(), None, 1, Some(&issuer));
+    shared.record_resume(&b, 1, cursor, scope_b, Some(&issuer));
+    shared.capture_resume_cuts(1, cut.clone());
+    assert_eq!(shared.take_resume_cut(&shape).unwrap().len(), 2);
+    shared.permits.revoke_owner("b");
+    shared.capture_resume_cuts(1, cut);
+    assert!(shared.take_resume_cut(&shape).unwrap().is_empty());
 }
 
 #[test]

@@ -486,6 +486,7 @@ struct SubscriptionWork {
     pending: HashMap<String, InternalOperation>,
     queued: VecDeque<Operation>,
     retired_opens: HashMap<String, String>,
+    cohort_witnesses: HashMap<MemberId, super::ResumeProof>,
     bindings: HashMap<
         MemberId,
         (
@@ -511,6 +512,7 @@ impl SubscriptionWork {
             pending: HashMap::new(),
             queued: VecDeque::new(),
             retired_opens: HashMap::new(),
+            cohort_witnesses: HashMap::new(),
             bindings: HashMap::new(),
         }
     }
@@ -521,6 +523,9 @@ impl SubscriptionWork {
         generation: u64,
         effects: Effects,
     ) -> Result<(), (&'static str, bool)> {
+        self.union.prune_missing();
+        self.cohort_witnesses
+            .retain(|id, _| self.union.is_ghost(id));
         let mut batches = VecDeque::from([effects]);
         while let Some(effects) = batches.pop_front() {
             for id in effects.retired {
@@ -680,17 +685,124 @@ impl SubscriptionWork {
         let effects = match request.method.as_str() {
             "subscriptions.open" => {
                 let shape = DemandUnion::shape(&request.params);
-                let resume = shared.register_resume(
-                    &member,
-                    shape,
-                    request.params.get("cursor"),
-                    generation,
-                    request.issuer.as_ref(),
-                );
-                match self
-                    .union
-                    .open_resumable(&request.consumer, &request.params, resume.as_ref())
-                {
+                let witness_matches = |proof: &super::ResumeProof| {
+                    proof.shape == shape
+                        && proof.cursor.as_ref() == request.params.get("cursor")
+                        && proof.cursor.is_some()
+                        && proof.resource.as_ref().is_some_and(|scope| scope.live())
+                        && proof
+                            .issuer
+                            .as_ref()
+                            .zip(request.issuer.as_ref())
+                            .is_some_and(|(old, current)| {
+                                Arc::ptr_eq(old, current) && current.is_live()
+                            })
+                };
+                let rejoin = self
+                    .cohort_witnesses
+                    .get(&member)
+                    .filter(|proof| witness_matches(proof))
+                    .cloned();
+                let conflicts = self
+                    .cohort_witnesses
+                    .iter()
+                    .any(|(id, proof)| proof.shape == shape && (id != &member || rejoin.is_none()));
+                if rejoin.is_none() && conflicts {
+                    let effects = self.union.expire_cohorts(Instant::now(), |id| {
+                        self.cohort_witnesses
+                            .get(id)
+                            .is_none_or(|proof| proof.shape != shape)
+                    });
+                    self.cohort_witnesses
+                        .retain(|_, proof| proof.shape != shape);
+                    self.effects(shared, contracts, generation, effects)?;
+                }
+                let mut adopted = rejoin.clone();
+                let raw_cut = if rejoin.is_none() {
+                    shared.take_resume_cut(&shape)
+                } else {
+                    None
+                };
+                let safe_single = raw_cut.as_ref().is_some_and(|cut| {
+                    cut.len() == 1
+                        && cut[0].0 == member
+                        && witness_matches(&cut[0].1)
+                        && shared.active(&member.owner)
+                });
+                let cut = if rejoin.is_none() {
+                    raw_cut.filter(|cut| {
+                        cut.len() > 1
+                            && cut.iter().all(|(id, proof)| {
+                                shared.active(&id.owner)
+                                    && proof.resource.as_ref().is_some_and(|scope| scope.live())
+                                    && proof.issuer.as_ref().is_some_and(|issuer| issuer.is_live())
+                            })
+                            && cut
+                                .iter()
+                                .any(|(id, proof)| *id == member && witness_matches(proof))
+                    })
+                } else {
+                    None
+                };
+                let resume = if rejoin.is_none() && cut.is_none() {
+                    shared.register_resume(
+                        &member,
+                        shape.clone(),
+                        if safe_single {
+                            request.params.get("cursor")
+                        } else {
+                            None
+                        },
+                        generation,
+                        request.issuer.as_ref(),
+                    )
+                } else {
+                    None
+                };
+                let opened = if let Some(proof) = rejoin {
+                    self.cohort_witnesses.remove(&member);
+                    self.union
+                        .rejoin_cohort(&member, &request.params, proof.cursor.as_ref().unwrap())
+                        .map(|effects| (member.clone(), effects))
+                } else if let Some(cut) = cut {
+                    let members: Vec<_> = cut
+                        .iter()
+                        .map(|(id, proof)| (id.clone(), proof.cursor.clone().unwrap()))
+                        .collect();
+                    let result = self.union.open_cohort(
+                        &request.consumer,
+                        &request.params,
+                        &members,
+                        Instant::now() + Duration::from_secs(10),
+                    );
+                    if result.is_ok() {
+                        for (id, proof) in cut {
+                            if id == member {
+                                adopted = Some(proof);
+                            } else {
+                                self.cohort_witnesses.insert(id, proof);
+                            }
+                        }
+                    }
+                    match result {
+                        Ok(opened) => Ok(opened),
+                        Err(_) => {
+                            shared.register_resume(
+                                &member,
+                                shape.clone(),
+                                None,
+                                generation,
+                                request.issuer.as_ref(),
+                            );
+                            self.union
+                                .open_resumable(&request.consumer, &request.params, None)
+                        }
+                    }
+                } else {
+                    self.union
+                        .open_resumable(&request.consumer, &request.params, resume.as_ref())
+                };
+                match opened {
                     Ok((member, effects)) => {
                         request.deadline = (Instant::now() + request.timeout).min(request.deadline);
                         if self.bindings.len() >= contracts.limit("maxSubscriptionsPerHost")
@@ -714,6 +826,14 @@ impl SubscriptionWork {
                                 request.issuer.clone(),
                             ),
                         );
+                        if let Some(proof) = adopted {
+                            shared.adopt_resume(
+                                &member,
+                                &proof,
+                                generation,
+                                request.resource_scope.clone(),
+                            );
+                        }
                         self.waiters.insert(member, request);
                         effects
                     }
@@ -801,6 +921,14 @@ impl SubscriptionWork {
         contracts: &Contracts,
         generation: u64,
     ) -> Result<(), (&'static str, bool)> {
+        let cohort_expiry = self.union.expire_cohorts(Instant::now(), |id| {
+            self.cohort_witnesses.get(id).is_some_and(|proof| {
+                shared.active(&id.owner)
+                    && proof.resource.as_ref().is_some_and(|scope| scope.live())
+                    && proof.issuer.as_ref().is_some_and(|issuer| issuer.is_live())
+            })
+        });
+        self.effects(shared, contracts, generation, cohort_expiry)?;
         let expired: Vec<_> = self
             .waiters
             .iter()
@@ -1148,6 +1276,7 @@ async fn serve(
                     .iter()
                     .map(|request| request.admission_deadline),
             )
+            .chain(subscriptions.union.next_cohort_deadline())
             .chain(std::iter::once(
                 ping.as_ref()
                     .map(|(_, deadline)| *deadline)
@@ -1313,6 +1442,7 @@ async fn serve(
     // Physical retirement invalidates every bulk grant. An inline reply already
     // delivered before the disconnect remains a completed RPC; explicit route,
     // owner and validated resource revocation still fence its retained scope.
+    shared.capture_resume_cuts(generation, subscriptions.union.retirement_cut());
     shared.permits.phase(generation, false);
     for (_, request) in pending {
         settle(

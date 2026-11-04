@@ -171,6 +171,226 @@ fn a_new_member_during_resume_forces_fresh_snapshot() {
 }
 
 #[test]
+fn cohort_resumes_at_slowest_cursor_and_suppresses_faster_duplicates() {
+    let mut union = union();
+    let a = MemberId::new("a", "a");
+    let b = MemberId::new("b", "b");
+    let members = vec![(a.clone(), cursor(10)), (b.clone(), cursor(12))];
+    let (_, effects) = union
+        .open_cohort(
+            "b",
+            &params("b", "s"),
+            &members,
+            Instant::now() + std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    assert_eq!(open.params["cursor"], cursor(10));
+    let opened = union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    assert_eq!(opened.notices.len(), 1);
+    assert!(union
+        .event(&event(&open, "delta", 11))
+        .unwrap()
+        .notices
+        .is_empty());
+    assert!(union
+        .event(&event(&open, "delta", 12))
+        .unwrap()
+        .notices
+        .is_empty());
+    assert_eq!(
+        union
+            .event(&event(&open, "delta", 13))
+            .unwrap()
+            .notices
+            .len(),
+        1
+    );
+    let joined = union
+        .rejoin_cohort(&a, &params("a", "s"), &cursor(10))
+        .unwrap();
+    assert_eq!(joined.notices.len(), 4); // registration and three retained deltas
+    assert!(joined.operations.is_empty());
+}
+
+#[test]
+fn missing_cohort_member_expires_to_fresh_snapshot() {
+    let mut union = union();
+    let now = Instant::now();
+    let members = vec![
+        (MemberId::new("a", "a"), cursor(10)),
+        (MemberId::new("b", "b"), cursor(10)),
+    ];
+    let (_, effects) = union
+        .open_cohort("a", &params("a", "s"), &members, now)
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    let expired = union.expire_cohorts(now, |_| true);
+    assert_eq!(
+        operation(&expired, OperationKind::Close).kind,
+        OperationKind::Close
+    );
+}
+
+#[test]
+fn equal_cursor_cohort_rejoins_without_fabricated_events_or_ack() {
+    let mut union = union();
+    let a = MemberId::new("a", "a");
+    let b = MemberId::new("b", "b");
+    let members = vec![(a.clone(), cursor(7)), (b.clone(), cursor(7))];
+    let (_, effects) = union
+        .open_cohort(
+            "a",
+            &params("a", "s"),
+            &members,
+            Instant::now() + std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    let joined = union
+        .rejoin_cohort(&b, &params("b", "s"), &cursor(7))
+        .unwrap();
+    assert_eq!(joined.notices.len(), 1);
+    assert!(joined.operations.is_empty());
+    assert!(union
+        .acknowledge(&a, &cursor(7))
+        .unwrap()
+        .operations
+        .is_empty());
+    assert!(union
+        .acknowledge(&b, &cursor(7))
+        .unwrap()
+        .operations
+        .is_empty());
+    assert!(union.next_cohort_deadline().is_none());
+    // Host may reject replay even after everyone rejoined. Start a new
+    // baseline so no delta can outrun application of that snapshot.
+    let fallback = union.event(&event(&open, "snapshot", 8)).unwrap();
+    assert_eq!(
+        operation(&fallback, OperationKind::Close).kind,
+        OperationKind::Close
+    );
+}
+
+#[test]
+fn retirement_cut_marks_uncommitted_and_awaiting_members_incomplete() {
+    let mut first_union = union();
+    let (_, open) = opened(&mut first_union, "a", "a", "s");
+    first_union.event(&event(&open, "snapshot", 1)).unwrap();
+    assert!(first_union.retirement_cut()[0].1.is_empty());
+    let mut resumed = union();
+    let members = vec![
+        (MemberId::new("a", "a"), cursor(1)),
+        (MemberId::new("b", "b"), cursor(1)),
+    ];
+    let (_, effects) = resumed
+        .open_cohort(
+            "a",
+            &params("a", "s"),
+            &members,
+            Instant::now() + std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+    let operation = operation(&effects, OperationKind::Open);
+    resumed
+        .complete(
+            &operation,
+            &json!({"subscriptionId":operation.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    assert!(resumed.retirement_cut()[0].1.is_empty());
+}
+
+#[test]
+fn revoked_cohort_member_and_host_snapshot_force_fresh_baseline() {
+    for host_snapshot in [false, true] {
+        let mut union = union();
+        let members = vec![
+            (MemberId::new("a", "a"), cursor(1)),
+            (MemberId::new("b", "b"), cursor(1)),
+        ];
+        let (_, effects) = union
+            .open_cohort(
+                "a",
+                &params("a", "s"),
+                &members,
+                Instant::now() + std::time::Duration::from_secs(10),
+            )
+            .unwrap();
+        let open = operation(&effects, OperationKind::Open);
+        union
+            .complete(
+                &open,
+                &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+            )
+            .unwrap();
+        let effects = if host_snapshot {
+            union.event(&event(&open, "snapshot", 2)).unwrap()
+        } else {
+            union.expire_cohorts(Instant::now(), |_| false)
+        };
+        assert!(effects.notices.iter().all(|notice| match notice {
+            Notice::Opened { member, .. }
+            | Notice::Event { member, .. }
+            | Notice::Rejected { member } => member != &members[1].0,
+        }));
+        assert_eq!(
+            operation(&effects, OperationKind::Close).kind,
+            OperationKind::Close
+        );
+        union.prune_missing();
+        assert!(!union.is_ghost(&members[1].0));
+    }
+}
+
+#[test]
+fn closed_cohort_does_not_notify_absent_member() {
+    let mut union = union();
+    let members = vec![
+        (MemberId::new("a", "a"), cursor(1)),
+        (MemberId::new("b", "b"), cursor(1)),
+    ];
+    let (_, effects) = union
+        .open_cohort(
+            "a",
+            &params("a", "s"),
+            &members,
+            Instant::now() + std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+    let open = operation(&effects, OperationKind::Open);
+    union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    let closed = union.event(&event(&open, "closed", 1)).unwrap();
+    assert!(closed.notices.iter().all(|notice| match notice {
+        Notice::Opened { member, .. }
+        | Notice::Event { member, .. }
+        | Notice::Rejected { member } => member != &members[1].0,
+    }));
+}
+
+#[test]
 fn host_ack_never_outruns_the_slowest_real_applied_window_cursor() {
     let mut union = union();
     let (a, first) = union.open("a", &params("logical-a", "s")).unwrap();

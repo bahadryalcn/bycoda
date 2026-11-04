@@ -541,10 +541,12 @@ struct Shared {
     last_state: Mutex<Option<NativeEvent>>,
     permits: Arc<permits::Permits>,
     resume: Mutex<HashMap<demand::MemberId, ResumeProof>>,
+    resume_cuts: Mutex<HashMap<String, Vec<(demand::MemberId, ResumeProof)>>>,
     resume_disabled: AtomicBool,
     changed: Notify,
 }
 
+#[derive(Clone)]
 struct ResumeProof {
     shape: Value,
     cursor: Option<Value>,
@@ -554,6 +556,64 @@ struct ResumeProof {
 }
 
 impl Shared {
+    fn capture_resume_cuts(
+        &self,
+        generation: u64,
+        cuts: Vec<(Value, Vec<(demand::MemberId, Value)>)>,
+    ) {
+        let active: HashSet<String> = self.consumers().keys().cloned().collect();
+        let proofs = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut captured = self
+            .resume_cuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        captured.clear();
+        for (shape, members) in cuts {
+            let witnesses: Option<Vec<_>> = members
+                .into_iter()
+                .map(|(id, cursor)| {
+                    let proof = proofs.get(&id)?;
+                    if proof.generation != generation
+                        || proof.shape != shape
+                        || proof.cursor.as_ref() != Some(&cursor)
+                        || !active.contains(&id.owner)
+                        || !proof.resource.as_ref().is_some_and(|scope| scope.live())
+                        || !proof.issuer.as_ref().is_some_and(|issuer| issuer.is_live())
+                    {
+                        return None;
+                    }
+                    Some((id, proof.clone()))
+                })
+                .collect();
+            captured.insert(shape.to_string(), witnesses.unwrap_or_default());
+        }
+    }
+
+    fn take_resume_cut(&self, shape: &Value) -> Option<Vec<(demand::MemberId, ResumeProof)>> {
+        self.resume_cuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&shape.to_string())
+    }
+
+    fn adopt_resume(
+        &self,
+        member: &demand::MemberId,
+        proof: &ResumeProof,
+        generation: u64,
+        resource: Arc<permits::ResourceScope>,
+    ) {
+        let mut adopted = proof.clone();
+        adopted.generation = generation;
+        adopted.resource = Some(resource);
+        self.resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(member.clone(), adopted);
+    }
     fn register_resume(
         &self,
         member: &demand::MemberId,
@@ -893,6 +953,7 @@ impl HostWsBroker {
             consumers: Mutex::new(HashMap::from([(consumer.into(), None)])),
             cancelled: Arc::new(Mutex::new(HashSet::new())),
             resume: Mutex::new(HashMap::new()),
+            resume_cuts: Mutex::new(HashMap::new()),
             resume_disabled: AtomicBool::new(false),
             ids: Arc::new(Mutex::new(HashMap::new())),
             stop: AtomicBool::new(false),
