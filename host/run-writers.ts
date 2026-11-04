@@ -33,6 +33,10 @@ type CwdGrant = {
   cwd: string;
   logicalSessionId: string;
   role: "text-sandbox" | "antigravity-launcher";
+  owner: Run;
+  revoked: boolean;
+  preparations: Set<Preparation>;
+  proofs: Set<{ state: "pending" | "verified" | "unknown" }>;
 };
 declare const processReservationBrand: unique symbol;
 export type HostRunProcessReservation = Readonly<{
@@ -245,6 +249,7 @@ export class HostRunWriters {
         );
       preparation.cwd = canonical;
       preparation.grant = grant;
+      grant?.preparations.add(preparation);
       preparation.provider = source.provider;
       const token = Object.freeze({ cwd: canonical }) as HostRunProcessReservation;
       this.preparations.set(token, preparation);
@@ -320,9 +325,52 @@ export class HostRunWriters {
       await this.authority(run);
       this.assertAdmission(run);
       const token = Object.freeze({}) as HostRunCwdGrant;
-      this.cwdGrants.set(token, { cwd: canonical, logicalSessionId: run.sessionId, role });
+      this.cwdGrants.set(token, {
+        cwd: canonical,
+        logicalSessionId: run.sessionId,
+        role,
+        owner: run,
+        revoked: false,
+        preparations: new Set(),
+        proofs: new Set(),
+      });
       return token;
     });
+  }
+
+  /** Fence an original sandbox only after its issuing run stopped accepting work. */
+  retireTextGrant(handle: HostRunHandle, token: HostRunCwdGrant): boolean {
+    const run = this.requireRun(handle);
+    const grant = this.cwdGrants.get(token);
+    if (!grant || grant.owner !== run || grant.role !== "text-sandbox")
+      throw new Error("An original text sandbox grant is required.");
+    if (!run.finished) return false;
+    if (grant.preparations.size || [...grant.proofs].some((proof) => proof.state !== "verified"))
+      return false;
+    grant.revoked = true;
+    return true;
+  }
+
+  isFinished(handle: HostRunHandle): boolean {
+    return this.requireRun(handle).finished;
+  }
+
+  /** Record the actual child before any further construction step can fail. */
+  observePreparedProcess(token: HostRunProcessReservation, completion: Promise<void>): void {
+    const preparation = this.requirePreparation(token);
+    const grant = preparation.grant;
+    if (!grant || grant.role !== "text-sandbox") return;
+    const proof: { state: "pending" | "verified" | "unknown" } = { state: "pending" };
+    grant.proofs.add(proof);
+    void completion.then(
+      () => {
+        proof.state = "verified";
+        grant.proofs.delete(proof);
+      },
+      () => {
+        proof.state = "unknown";
+      },
+    );
   }
 
   runWork<Result>(
@@ -679,6 +727,7 @@ export class HostRunWriters {
   }
   private grantMatches(run: Run, grant: CwdGrant, cwd: string): boolean {
     return (
+      !grant.revoked &&
       grant.logicalSessionId === run.sessionId &&
       workspacePathKey(grant.cwd) === workspacePathKey(cwd) &&
       (grant.role !== "text-sandbox" || run.source?.auxiliary === true)
@@ -692,6 +741,7 @@ export class HostRunWriters {
   private completePreparation(preparation: Preparation, error?: unknown, failed = false): void {
     if (preparation.completed) return;
     preparation.completed = true;
+    preparation.grant?.preparations.delete(preparation);
     if (failed) preparation.reject(error);
     else preparation.resolve();
   }

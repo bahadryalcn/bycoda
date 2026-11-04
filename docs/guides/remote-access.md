@@ -146,6 +146,12 @@ device service. Reconnect and check that computer's device-tool status before
 trying again. Mobile previews keep their original computer, project and access;
 switching projects does not transfer an existing preview to the new project.
 
+Completed device-preview receipts remain available for ten minutes. After expiry,
+the old request cannot run again or supply a stored screenshot; request a new
+preview explicitly. Work whose device effects are still pending or unknown stays
+tracked and can continue to occupy capacity. Expiry does not stop a device or
+remove an installed app.
+
 A social authority needs a stable HTTPS address, or a local loopback address for
 local use. An SSH connection alone is not an address that another Host can store
 and contact as its authority. The setup checks both peer addresses before issuing

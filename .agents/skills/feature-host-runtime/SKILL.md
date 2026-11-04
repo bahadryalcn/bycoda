@@ -15,6 +15,8 @@ Code paths below are repository-root relative.
 - `host/server.ts`
 - `host/owner.ts`, `host/lifecycle-state.ts` and `host/storage/atomic-write.ts`
 - `host/workspace.ts` and `host/storage/workspace-publication.ts`
+- `host/storage/request-fence.ts`, `host/terminals.ts`, `host/device-preview.ts`
+- `host/child-backend.ts` and `host/run-writers.ts`
 - `src/integrations/harness/core/`
 
 ## Workflow
@@ -35,6 +37,7 @@ Code paths below are repository-root relative.
 - Original construction receipts, turn bindings, approval occurrences and pending identities must survive waits, retries and route replacement. Missing/ambiguous identity must not fall back to PID/current writer.
 - A settled warm Host provider still owns its writer. Desktop continuation needs exact retirement before a run lease; timeout/refusal must retain unsent input rather than trigger an offline fallback on retirement-capable Hosts.
 - Uncertain sends retain the original command ID and are never replayed because a socket closed. Pending/unknown ownership records cannot be evicted to admit fresh work.
+- Retire only proven settled receipts using monotonic time. Fence their original authority/request identity before removing exact records; a fence match refuses execution. Keep pending effects, failed cleanup and unknown physical completion retained. Resource retirement requires its own proof, not only a fulfilled request.
 - Keep drafts, queues, approvals, attachments, exact source bytes and recovery copies. Detach does not Stop; new migration/default authority requires its complete admission contract.
 - Snapshot/unit evidence does not prove crash/power-loss durability, all-actor closure, native sandbox enforcement or installed source inclusion.
 

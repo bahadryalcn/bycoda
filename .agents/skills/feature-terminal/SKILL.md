@@ -14,6 +14,8 @@ Code paths below are repository-root relative.
 - `src/features/terminal/ui/TerminalView.tsx`
 - `src/features/terminal/ui/TerminalTools.tsx`
 - `src/features/terminal/`
+- `host/terminals.ts`, `host/terminal-process.ts`
+- `src-tauri/src/mobile_pty.rs`, `src-tauri/src/pty.rs`
 
 ## Workflow
 
@@ -23,6 +25,9 @@ Code paths below are repository-root relative.
 4. Exercise input/IME, copy/search, resize/visibility, zoom/reset, light/dark/custom surfaces and affected SSH/tab consumers without respawning a running shell.
 
 ## Preserve
+
+- Keep active/pending/unknown terminal capacity separate from exited history. A stop dispatch or process error is not exit proof; failed lease release remains retriable. Replay retains original authorization, and shutdown reports unconfirmed retirement.
+- Mobile PTY close acknowledges only exact-generation physical exit. Replay retirement also needs output drain, no replay gap and no unknown input. Completed attach receipts may expire independently; expired IDs remain fenced for the native runtime lifetime.
 
 - `src-tauri/src/provider_terminal_profiles.rs` retains invalid/unreadable registry evidence and writes through the synced native state helper. Missing, corrupt and dangling-linked profile registries are distinct; failed persistence cannot claim a connection or erase CLI-home references.
 

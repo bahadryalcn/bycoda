@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { DevicePreviews } from "./device-preview";
+import { DevicePreviews, DEVICE_PREVIEW_RECEIPT_TTL_MS } from "./device-preview";
 import type { DeviceHost } from "./device-host";
 const input = {
   requestId: "request",
@@ -7,7 +7,7 @@ const input = {
   url: "exp://127.0.0.1:8081",
   expectedText: "Kilidi aç",
 };
-function fixture() {
+function fixture(now?: () => number) {
   let confirmed = false;
   const host = {
     preflight: vi.fn().mockResolvedValue({
@@ -42,9 +42,115 @@ function fixture() {
   const previews = new DevicePreviews(
     host as unknown as DeviceHost,
     vi.fn().mockResolvedValue({ sdkVersion: "57.0.0" }),
+    undefined,
+    now,
   );
   return { host, previews };
 }
+
+async function settlePreview(previews: DevicePreviews, id: string) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const value = previews.status(id, "owner");
+    if (value.state === "ready" || value.state === "blocked") return value;
+    await Promise.resolve();
+  }
+  throw new Error("Fixture preview did not settle");
+}
+
+describe("device preview receipt retirement", () => {
+  it("admits more than 128 completed jobs without replaying an expired request", async () => {
+    let now = 0;
+    const { host, previews } = fixture(() => now);
+    for (let index = 0; index < 260; index++) {
+      const job = previews.start({ ...input, requestId: `preview-${index}` }, "owner");
+      expect((await settlePreview(previews, job.id)).state).toBe("ready");
+      now += DEVICE_PREVIEW_RECEIPT_TTL_MS;
+    }
+    expect(host.openExpo).toHaveBeenCalledTimes(260);
+    expect(() => previews.start({ ...input, requestId: "preview-0" }, "owner")).toThrow(
+      "PREVIEW_RECEIPT_EXPIRED",
+    );
+    expect(host.openExpo).toHaveBeenCalledTimes(260);
+  });
+
+  it("retains pending and unknown-effect jobs regardless of elapsed time", async () => {
+    let now = 0;
+    const { host, previews } = fixture(() => now);
+    let finish!: () => void;
+    host.openExpo.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = previews.start(input, "owner");
+    for (let index = 0; index < 100 && !finish; index++) await Promise.resolve();
+    expect(finish).toBeDefined();
+    now += DEVICE_PREVIEW_RECEIPT_TTL_MS * 10;
+    expect(previews.start(input, "owner").id).toBe(pending.id);
+    expect(previews.status(pending.id, "owner").state).toBe("running");
+    finish();
+    expect((await settlePreview(previews, pending.id)).state).toBe("ready");
+    host.openExpo.mockRejectedValueOnce(new Error("RPC_TIMEOUT: launch outcome unknown"));
+    const unknownInput = { ...input, requestId: "unknown" };
+    const unknown = previews.start(unknownInput, "owner");
+    expect((await settlePreview(previews, unknown.id)).state).toBe("blocked");
+    now += DEVICE_PREVIEW_RECEIPT_TTL_MS * 10;
+    expect(previews.start(unknownInput, "owner").id).toBe(unknown.id);
+    expect(previews.status(unknown.id, "owner").state).toBe("blocked");
+    expect(host.openExpo).toHaveBeenCalledTimes(2);
+  });
+
+  it("retires completed preflight failures but keeps their request IDs fenced", async () => {
+    let now = 0;
+    const { host, previews } = fixture(() => now);
+    const job = previews.start(input, "owner", () => false);
+    expect((await settlePreview(previews, job.id)).state).toBe("blocked");
+    now += DEVICE_PREVIEW_RECEIPT_TTL_MS;
+    expect(() => previews.start(input, "owner", () => true)).toThrow("PREVIEW_RECEIPT_EXPIRED");
+    expect(host.preflight).not.toHaveBeenCalled();
+    expect(host.openExpo).not.toHaveBeenCalled();
+  });
+
+  it("expires frame authority and preserves the same receipt until the TTL boundary", async () => {
+    let now = 0;
+    const { previews } = fixture(() => now);
+    const job = previews.start(input, "owner");
+    await settlePreview(previews, job.id);
+    const authority = previews.resultAuthority(job.id, "owner");
+    now = DEVICE_PREVIEW_RECEIPT_TTL_MS - 1;
+    expect(await authority()).toBe(true);
+    expect(previews.start(input, "owner").id).toBe(job.id);
+    now++;
+    expect(await authority()).toBe(false);
+    expect(() => previews.status(job.id, "owner", true)).toThrow("PREVIEW_NOT_FOUND");
+    expect(() => previews.start(input, "owner")).toThrow("PREVIEW_RECEIPT_EXPIRED");
+  });
+
+  it("revokes delayed frame disclosure when the TTL passes during authorization", async () => {
+    let now = 0;
+    let held = false;
+    let resume!: (allowed: boolean) => void;
+    const { previews } = fixture(() => now);
+    const job = previews.start(input, "owner", () =>
+      held
+        ? new Promise<boolean>((resolve) => {
+            resume = resolve;
+          })
+        : true,
+    );
+    await settlePreview(previews, job.id);
+    const authority = previews.resultAuthority(job.id, "owner");
+    now = DEVICE_PREVIEW_RECEIPT_TTL_MS - 1;
+    held = true;
+    const disclosure = authority();
+    expect(resume).toBeDefined();
+    now++;
+    resume(true);
+    expect(await disclosure).toBe(false);
+    expect(() => previews.status(job.id, "owner", true)).toThrow("PREVIEW_NOT_FOUND");
+  });
+});
 describe("observable device previews", () => {
   it("retains the accepted target and launch input across an asynchronous authority wait", async () => {
     const { host, previews } = fixture();

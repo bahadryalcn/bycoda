@@ -28,6 +28,7 @@ Code paths below are repository-root relative.
 - Preserve drafts, selection, model/settings choices, restored navigation and held uncertain sends. Reconnect does not authorize replay.
 - Use mobile PanelUI/shared controls, platform safe-area and keyboard handling; do not invoke Tauri commands from Expo.
 - Approval replies retain original occurrence/request identities and capability checks across active/compatibility transports; never mint identity on retry.
+- Mobile PTY close errors retain the current lease until exact native process exit is confirmed. Keep process exit, output drain, replay gaps and unknown input distinct; old expired request IDs never start another effect within that runtime.
 - Native preview/sandbox/device effects require their own contracts and device checks. Unsupported inline visuals retain ordinary tool/source fallback.
 
 ## Verification and references

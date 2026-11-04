@@ -19,8 +19,19 @@ async function setup() {
   await mkdir(otherPath);
   const store = new HostStore(join(root, "host.db"));
   const engine = new HostEngine(store, {});
-  const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
-  const launch = vi.fn(() => child);
+  let exit = (_code: number | null) => {};
+  const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => exit(0)) };
+  const launch = vi.fn(
+    (
+      _profile: unknown,
+      _cwd: string,
+      _output: (data: string) => void,
+      onExit: (code: number | null) => void,
+    ) => {
+      exit = onExit;
+      return child;
+    },
+  );
   const terminals = new HostTerminals(launch, () => ({
     profiles: [{ id: "test", name: "Test shell", path: "/test", kind: "sh" }],
     chosenId: null,

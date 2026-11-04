@@ -7,10 +7,10 @@ import { listShellProfiles } from "./shellProfiles";
 
 const services: HostTerminals[] = [];
 afterEach(async () => {
-  await Promise.all(services.splice(0).map(async (service) => await service.close()));
+  await Promise.allSettled(services.splice(0).map(async (service) => await service.close()));
 });
 const project = { id: "project", cwd: "/project" };
-function setup(locate = async (root: string) => root) {
+function setup(locate = async (root: string) => root, now?: () => number) {
   let output: (data: string) => void = () => {};
   let exit: (code: number | null) => void = () => {};
   const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => exit(0)) };
@@ -27,6 +27,7 @@ function setup(locate = async (root: string) => root) {
       chosenId: null,
     }),
     locate,
+    now,
   );
   services.push(service);
   return {
@@ -94,7 +95,7 @@ it.each(["exit", "interrupt", "remove", "close"])(
   },
 );
 
-it("releases terminal admission after launch failure and holds it for an unconfirmed shutdown", async () => {
+it("retains terminal admission after an unknown launch failure or unconfirmed shutdown", async () => {
   const failed = setup();
   const failedRelease = vi.fn(async () => {});
   failed.service.setActivityGate(async () => failedRelease);
@@ -104,7 +105,7 @@ it("releases terminal admission after launch failure and holds it for an unconfi
   await expect(
     failed.service.create(project, { requestId: "failed-01" }, "owner", () => true),
   ).rejects.toThrow("Could not start terminal shell");
-  expect(failedRelease).toHaveBeenCalledTimes(1);
+  expect(failedRelease).not.toHaveBeenCalled();
 
   const running = setup();
   const runningRelease = vi.fn(async () => {});
@@ -147,7 +148,8 @@ it.each(["close", "revoke"])(
       () => authorized,
     );
     await vi.waitFor(() => expect(gate).toHaveBeenCalledTimes(1));
-    if (action === "close") await s.service.close();
+    if (action === "close")
+      await expect(s.service.close()).rejects.toThrow("shutdown was not confirmed");
     else authorized = false;
     finishAdmission();
     await expect(creating).rejects.toThrow(action === "close" ? "stopping" : "revoked");
@@ -308,4 +310,166 @@ it("stops only its owned shell tree, including a running shell descendant", asyn
     await service.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("expires settled receipts without re-executing old IDs and bounds exited history separately", async () => {
+  let now = 0;
+  const s = setup(undefined, () => now);
+  for (let i = 0; i < 270; i++) {
+    await s.service.create(
+      project,
+      { requestId: `terminal-${i.toString().padStart(4, "0")}` },
+      "owner",
+      () => true,
+    );
+    s.exit(0);
+    now += 10 * 60 * 1000 + 1;
+  }
+  expect(s.launch).toHaveBeenCalledTimes(270);
+  await expect(async () =>
+    s.service.create(project, { requestId: "terminal-0000" }, "owner", () => true),
+  ).rejects.toThrow("receipt expired");
+  expect(s.launch).toHaveBeenCalledTimes(270);
+  const live = await s.service.create(project, { requestId: "live-0001" }, "owner", () => true);
+  expect(s.service.list(project.id).terminals).toContainEqual(
+    expect.objectContaining({ id: live.id, state: "running" }),
+  );
+  expect(s.service.list(project.id).terminals.length).toBeLessThanOrEqual(33);
+});
+
+it("rechecks authorization before replaying a creation receipt", async () => {
+  const s = setup();
+  const params = { requestId: "auth-replay-01" };
+  await s.service.create(project, params, "owner", () => true);
+  await expect(s.service.create(project, params, "owner", () => false)).rejects.toThrow("revoked");
+  expect(s.launch).toHaveBeenCalledTimes(1);
+});
+
+it("does not retire a terminal when stop resolves without an exit callback", async () => {
+  let now = 0;
+  const s = setup(undefined, () => now);
+  const params = { requestId: "unknown-stop-01" };
+  const terminal = await s.service.create(project, params, "owner", () => true);
+  s.child.stop.mockResolvedValue(undefined);
+  await expect(s.service.remove(project.id, terminal.id)).rejects.toThrow("not confirmed");
+  now += 20 * 60 * 1000;
+  expect((await s.service.create(project, params, "owner", () => true)).id).toBe(terminal.id);
+  expect(s.service.list(project.id).terminals).toContainEqual(
+    expect.objectContaining({ id: terminal.id, state: "running" }),
+  );
+  expect(s.launch).toHaveBeenCalledTimes(1);
+  s.exit(0);
+});
+
+it("keeps at most 32 exited outputs without counting them against live capacity", async () => {
+  const s = setup();
+  for (let i = 0; i < 40; i++) {
+    await s.service.create(
+      project,
+      { requestId: `history-${i.toString().padStart(4, "0")}` },
+      "owner",
+      () => true,
+    );
+    s.exit(0);
+  }
+  const live = await s.service.create(
+    project,
+    { requestId: "history-live-01" },
+    "owner",
+    () => true,
+  );
+  const rows = s.service.list(project.id).terminals;
+  expect(rows.filter((row) => row.state === "exited")).toHaveLength(32);
+  expect(rows).toContainEqual(expect.objectContaining({ id: live.id, state: "running" }));
+});
+
+it("retains unknown launch outcomes past receipt TTL", async () => {
+  let now = 0;
+  const s = setup(undefined, () => now);
+  const release = vi.fn(async () => {});
+  s.service.setActivityGate(async () => release);
+  s.launch.mockImplementation(() => {
+    throw new Error("unknown spawn");
+  });
+  const params = { requestId: "unknown-launch-01" };
+  await expect(s.service.create(project, params, "owner", () => true)).rejects.toThrow(
+    "Could not start",
+  );
+  now += 20 * 60 * 1000;
+  await expect(s.service.create(project, params, "owner", () => true)).rejects.toThrow(
+    "Could not start",
+  );
+  await expect(
+    s.service.create(project, { ...params, name: "Changed" }, "owner", () => false),
+  ).rejects.toThrow("revoked");
+  expect(s.launch).toHaveBeenCalledOnce();
+  expect(release).not.toHaveBeenCalled();
+});
+
+it("retains exited receipts and capacity when activity release is uncertain", async () => {
+  let now = 0;
+  const s = setup(undefined, () => now);
+  const release = vi.fn(async () => {
+    throw new Error("release unavailable");
+  });
+  s.service.setActivityGate(async () => release);
+  const params = { requestId: "release-unknown-01" };
+  const terminal = await s.service.create(project, params, "owner", () => true);
+  s.exit(0);
+  expect(release).toHaveBeenCalledOnce();
+  await Promise.resolve();
+  now += 20 * 60 * 1000;
+  expect((await s.service.create(project, params, "owner", () => true)).id).toBe(terminal.id);
+  expect(s.service.list(project.id).terminals).toContainEqual(
+    expect.objectContaining({ id: terminal.id, state: "exited" }),
+  );
+  expect(s.launch).toHaveBeenCalledOnce();
+});
+
+it("retries failed activity cleanup when authorization expires before launch", async () => {
+  const s = setup();
+  let allowed = true;
+  const release = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("release unavailable"))
+    .mockResolvedValue(undefined);
+  s.service.setActivityGate(async () => {
+    allowed = false;
+    return release;
+  });
+  await expect(
+    s.service.create(project, { requestId: "prelaunch-release-01" }, "owner", () => allowed),
+  ).rejects.toThrow("release unavailable");
+  const [entry] = s.service.list(project.id).terminals;
+  expect(entry.state).toBe("exited");
+  expect(s.launch).not.toHaveBeenCalled();
+  expect(await s.service.remove(project.id, entry.id)).toEqual({ closed: true });
+  expect(release).toHaveBeenCalledTimes(2);
+});
+
+it("requires original admission authority when replaying with a fresh callback", async () => {
+  const s = setup();
+  let originalAllowed = true;
+  const params = { requestId: "original-auth-01" };
+  await s.service.create(project, params, "owner", () => originalAllowed);
+  originalAllowed = false;
+  await expect(s.service.create(project, params, "owner", () => true)).rejects.toThrow("revoked");
+  expect(s.launch).toHaveBeenCalledOnce();
+});
+
+it("reports unconfirmed shutdown and retains the terminal for retry", async () => {
+  const s = setup();
+  const terminal = await s.service.create(
+    project,
+    { requestId: "close-unknown-01" },
+    "owner",
+    () => true,
+  );
+  s.child.stop.mockResolvedValueOnce(undefined);
+  await expect(s.service.close()).rejects.toThrow("shutdown was not confirmed");
+  expect(s.service.list(project.id).terminals).toContainEqual(
+    expect.objectContaining({ id: terminal.id, state: "running" }),
+  );
+  await s.service.close();
+  expect(s.service.list(project.id).terminals).toHaveLength(0);
 });

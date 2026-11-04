@@ -62,7 +62,9 @@ export function startTerminalProcess(
     output(stderr.end());
     exit(code);
   };
-  child.once("error", () => complete(null));
+  // An error after spawn does not prove that the child has exited. Node emits
+  // close after spawn failure too, so keep ownership until that event.
+  child.once("error", () => {});
   child.once("close", (code) => complete(code));
   return {
     write(data) {

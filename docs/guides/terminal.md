@@ -18,6 +18,12 @@ active terminal. Closing asks first when a process is still running in that term
 or when it is the last one, because closing the last terminal also closes the panel.
 Holding the toggle chord switches the dock once, not on every key repeat.
 
+Host terminal history no longer consumes active-terminal slots after confirmed
+exit. Recent output remains bounded; do not treat it as permanent storage.
+If a mobile terminal close reports that exit is unconfirmed, keep its existing
+terminal identity and check again after the process exits. A close request alone
+does not prove the shell stopped. Hiding or detaching still leaves it running.
+
 Ctrl/Cmd+F opens a compact **Find** overlay that searches the terminal buffer.
 Escape closes Find and returns focus to the terminal. Next/previous actions and Enter/Shift+Enter
 move between matches. The result indicator shows the current match and count when

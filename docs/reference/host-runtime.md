@@ -305,6 +305,27 @@ continuity; it does not require a live Desktop snapshot to execute on a headless
 Host. Project registration is not proof of Desktop UI visibility; complete
 Host-owned project/privacy provenance remains separate work.
 
+Terminal and device-preview receipts use a ten-minute monotonic retirement
+window only after their own settlement proof. Before deleting an exact receipt,
+the Host records its authority/request key in a fixed-size, process-lifetime
+fence. Fence matches refuse execution (including possible false positives);
+saturation refuses new resource admission. This is not durable cross-restart
+idempotency. Live, pending and unknown effects never expire to make room.
+Terminal history is bounded separately from live capacity, and physical close
+plus successful activity-lease release proves terminal retirement. Device
+previews settle on a confirmed ready result or read-only preflight failure;
+failures after setup begins remain uncertain. Receipt expiry does not tear down
+device resources. Original authorization is retained for replay and checked
+again after delayed authorization before screenshot disclosure.
+
+Text workspace retirement follows the issuing run, all accepted grant-wide
+preparations and every observed physical child completion. Finishing a run alone
+does not revoke its live child access. Proven retirement revokes the grant;
+cleanup moves only its exact owned temporary directory to a unique same-root
+candidate and rechecks identity before removal. Failed or uncertain cleanup keeps
+the candidate and capacity slot for retry. Node pathname operations still cannot
+exclude every uncooperative same-user path or child-entry swap.
+
 HTTP and WS preserve known pre-admission rejection versus an admitted device
 operation whose outcome cannot be confirmed. The HTTP compatibility path reads a
 bounded rejection envelope before classifying device401 responses, preserves

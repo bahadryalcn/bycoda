@@ -2,6 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(windows)]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -480,6 +482,7 @@ pub fn pty_spawn(
         working_dir(&cwd)
     };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
+    crate::mobile_pty::reserve_native_spawn(&app, &id)?;
 
     let shell = shell_for(profile.as_deref());
 
@@ -707,6 +710,7 @@ fn spawn_private_program(
         .spawn_gate
         .lock()
         .unwrap_or_else(|e| e.into_inner());
+    crate::mobile_pty::desktop_control(&app, &id)?;
     let (cols, rows) = (cols.max(2), rows.max(2));
     ensure_identity(host.get(&id).as_deref(), Some(&identity))?;
     if let Some(live) = host.get(&id) {
@@ -1150,21 +1154,31 @@ fn spawn_unix(
         .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
     let data_app = app.clone();
     let data_id = id.clone();
+    let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
+    let data_generation = mobile_generation.clone();
     thread::spawn(move || {
         let mut file = reader;
         let fd = file.as_raw_fd();
         let mut buf = vec![0_u8; READ_CHUNK];
         let mut acc = Vec::with_capacity(READ_CHUNK);
         let mut last_emit = Instant::now();
+        let mut complete = false;
         loop {
             if acc.is_empty() {
                 match file.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        complete = true;
+                        break;
+                    }
                     Ok(n) => {
                         acc.extend_from_slice(&buf[..n]);
                         last_emit = Instant::now();
                     }
-                    Err(_) => break,
+                    Err(error) => {
+                        complete =
+                            cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
+                        break;
+                    }
                 }
             } else if pty_should_flush(acc.len(), last_emit.elapsed())
                 || !wait_readable(fd, PTY_COALESCE.saturating_sub(last_emit.elapsed()))
@@ -1185,9 +1199,16 @@ fn spawn_unix(
                 last_emit = Instant::now();
             } else {
                 match file.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        complete = true;
+                        break;
+                    }
                     Ok(n) => acc.extend_from_slice(&buf[..n]),
-                    Err(_) => break,
+                    Err(error) => {
+                        complete =
+                            cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
+                        break;
+                    }
                 }
             }
         }
@@ -1204,7 +1225,9 @@ fn spawn_unix(
             &integration,
         );
         if !private {
-            crate::mobile_pty::drained(&data_app, &data_id);
+            if let Some(generation) = data_generation.as_deref() {
+                crate::mobile_pty::drained(&data_app, &data_id, generation, complete);
+            }
         }
     });
 
@@ -1213,6 +1236,11 @@ fn spawn_unix(
     thread::spawn(move || {
         let exit = child.wait();
         let code = exit.as_ref().ok().and_then(|status| status.code());
+        if exit.is_ok() && !private {
+            if let Some(generation) = mobile_generation.as_deref() {
+                crate::mobile_pty::exited(&wait_app, &wait_id, generation, code);
+            }
+        }
         if exit.is_ok() {
             if let Some(activity) = workspace_activity {
                 let _ = activity.settled();
@@ -1231,9 +1259,6 @@ fn spawn_unix(
             None
         };
         if let Some(owner) = owner {
-            if !private {
-                crate::mobile_pty::exited(&wait_app, &wait_id, code);
-            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1346,16 +1371,26 @@ fn spawn_windows(
         .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
     let data_app = app.clone();
     let data_id = id.clone();
+    let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
+    let data_generation = mobile_generation.clone();
     // A blocking read on the ConPTY pipe cannot be polled with a timeout, so
     // this thread only reads; the emitter below owns the timed drain. The
     // bounded queue makes a flooding child wait instead of piling up memory.
     // Either side ending closes the channel and stops the other.
     let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(PTY_QUEUE_CHUNKS);
+    let drain_complete = Arc::new(AtomicBool::new(false));
+    let reader_complete = drain_complete.clone();
     thread::spawn(move || {
         let mut buf = vec![0_u8; READ_CHUNK];
         loop {
+            // ConPTY returns filedescriptor::FileDescriptor (vendor/portable-pty
+            // win/conpty.rs); its Windows Read maps BrokenPipe to Ok(0).
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    reader_complete.store(true, Ordering::Release);
+                    break;
+                }
+                Err(_) => break,
                 Ok(n) => {
                     if tx.send(buf[..n].to_vec()).is_err() {
                         break;
@@ -1380,7 +1415,14 @@ fn spawn_windows(
             )
         });
         if !private {
-            crate::mobile_pty::drained(&data_app, &data_id);
+            if let Some(generation) = data_generation.as_deref() {
+                crate::mobile_pty::drained(
+                    &data_app,
+                    &data_id,
+                    generation,
+                    drain_complete.load(Ordering::Acquire),
+                );
+            }
         }
     });
 
@@ -1389,6 +1431,11 @@ fn spawn_windows(
     thread::spawn(move || {
         let exit = child.wait();
         let code = exit.as_ref().ok().map(|status| status.exit_code() as i32);
+        if exit.is_ok() && !private {
+            if let Some(generation) = mobile_generation.as_deref() {
+                crate::mobile_pty::exited(&wait_app, &wait_id, generation, code);
+            }
+        }
         if exit.is_ok() {
             if let Some(activity) = workspace_activity {
                 let _ = activity.settled();
@@ -1402,9 +1449,6 @@ fn spawn_windows(
             None
         };
         if let Some(owner) = owner {
-            if !private {
-                crate::mobile_pty::exited(&wait_app, &wait_id, code);
-            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),

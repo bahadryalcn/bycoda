@@ -10,8 +10,19 @@ import {
 import { authorizeSocialAcpFrame } from "./social-tools";
 import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
 import { authorizeConversationAcpFrame } from "./conversation-tools";
-import { join, basename, dirname, extname, isAbsolute } from "node:path";
-import { readFile, stat, mkdtemp, mkdir, writeFile, open, realpath } from "node:fs/promises";
+import { join, basename, dirname, extname, isAbsolute, relative } from "node:path";
+import {
+  readFile,
+  stat,
+  lstat,
+  rm,
+  rename,
+  mkdtemp,
+  mkdir,
+  writeFile,
+  open,
+  realpath,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { homedir, tmpdir } from "node:os";
@@ -161,6 +172,15 @@ export async function readProviderBinaryOverrides(
 }
 
 type PreparedTool = { env: NodeJS.ProcessEnv; mcpUrl?: string };
+type TextWorkspaceSlot = {
+  run: HostRunHandle;
+  cwd?: string;
+  key?: string;
+  cleanupPath?: string;
+  grant?: HostRunCwdGrant;
+  identity?: { dev: number; ino: number };
+  preparing: boolean;
+};
 type ToolPreparation = {
   live: boolean;
   owner?: object;
@@ -202,7 +222,8 @@ export class HostChildBackend implements ChildBackend {
   private readonly processLifecycles = new ProviderProcessLifecycle();
   private readonly processCwds = new WeakMap<ProviderChild, string>();
   private readonly textWorkspaces = new Map<string, HostRunCwdGrant>();
-  private readonly textWorkspaceSlots = new Set<object>();
+  private readonly textWorkspaceSlots = new Set<TextWorkspaceSlot>();
+  private textWorkspaceReap?: Promise<void>;
   private readonly httpTargets = new HostRunHttpTargets();
   private starts = new Map<string, object>();
   private readonly pendingStarts = new Map<string, Set<object>>();
@@ -216,8 +237,66 @@ export class HostChildBackend implements ChildBackend {
     private readonly artifactDirectory = join(homedir(), ".bycoda-host", "attachments"),
     private readonly guardianDirectory = fileURLToPath(new URL("./", import.meta.url)),
     private readonly runWriters?: HostRunWriters,
+    private readonly removeTextWorkspace: (path: string) => Promise<void> = (path) =>
+      rm(path, { recursive: true }),
   ) {
     this.events.setMaxListeners(0);
+  }
+
+  private reapTextWorkspaces(writers: HostRunWriters): Promise<void> {
+    if (this.textWorkspaceReap) return this.textWorkspaceReap;
+    const reap = (async () => {
+      const root = await realpath(tmpdir());
+      for (const slot of this.textWorkspaceSlots) {
+        if (slot.preparing || !writers.isFinished(slot.run)) continue;
+        if (slot.grant && !writers.retireTextGrant(slot.run, slot.grant)) continue;
+        if (!slot.cwd) continue;
+        if (!slot.identity || !slot.identity.ino) continue;
+        try {
+          const matches = async (path: string) => {
+            const current = await lstat(path);
+            const canonical = await realpath(path);
+            const child = relative(root, canonical);
+            return (
+              current.isDirectory() &&
+              !current.isSymbolicLink() &&
+              current.dev === slot.identity!.dev &&
+              current.ino === slot.identity!.ino &&
+              !!child &&
+              !child.startsWith("..") &&
+              !isAbsolute(child) &&
+              dirname(canonical) === root &&
+              workspacePathKey(canonical) === workspacePathKey(path)
+            );
+          };
+          slot.cleanupPath ??= join(root, `bycoda-text-cleanup-${randomUUID()}`);
+          let candidateExists = true;
+          try {
+            await lstat(slot.cleanupPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            candidateExists = false;
+          }
+          if (!candidateExists) {
+            if (!(await matches(slot.cwd))) continue;
+            await rename(slot.cwd, slot.cleanupPath);
+          }
+          if (!(await matches(slot.cleanupPath))) continue;
+          await this.removeTextWorkspace(slot.cleanupPath);
+          if (slot.key) this.textWorkspaces.delete(slot.key);
+          this.textWorkspaceSlots.delete(slot);
+        } catch (error) {
+          console.warn("Text sandbox cleanup failed; retained for retry:", error);
+        }
+      }
+    })();
+    this.textWorkspaceReap = reap;
+    void reap
+      .finally(() => {
+        if (this.textWorkspaceReap === reap) this.textWorkspaceReap = undefined;
+      })
+      .catch(() => {});
+    return reap;
   }
 
   async resolve(provider: RemoteProvider): Promise<string> {
@@ -319,9 +398,9 @@ export class HostChildBackend implements ChildBackend {
           throw new Error("Invalid text agent profile");
         const content = args.content;
         const hostRun = args.hostRun as HostRunHandle | undefined;
-        const create = async (created?: (cwd: string) => void) => {
+        const create = async (created?: (cwd: string) => Promise<void>) => {
           const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
-          created?.(cwd);
+          await created?.(cwd);
           const profile = join(cwd, ".agents", "agents");
           await mkdir(profile, { recursive: true });
           await writeFile(join(profile, "bycoda-text.md"), content, "utf8");
@@ -331,27 +410,30 @@ export class HostChildBackend implements ChildBackend {
         const writers = this.requireRunWriters();
         if (!writers.executionSource(hostRun).auxiliary)
           throw new Error("An original auxiliary Host scope is required for a text sandbox.");
+        await this.reapTextWorkspaces(writers);
         if (this.textWorkspaceSlots.size >= 512)
           throw new Error("Host text sandbox ownership capacity is full.");
-        const slot: { cwd?: string; error?: unknown } = {};
+        const slot: TextWorkspaceSlot = { run: hostRun, preparing: true };
         this.textWorkspaceSlots.add(slot);
         let started = false;
         try {
           return (await writers.runWork(hostRun, async () => {
             started = true;
-            const workspace = await create((cwd) => {
+            const workspace = await create(async (cwd) => {
               slot.cwd = cwd;
+              const identity = await lstat(cwd);
+              slot.identity = { dev: identity.dev, ino: identity.ino };
             });
             const grant = await writers.grantCwd(hostRun, workspace.cwd, "text-sandbox");
+            slot.grant = grant;
             const canonical = await canonicalWorkspacePath(workspace.cwd);
             writers.assertOpen(hostRun);
-            this.textWorkspaces.set(workspacePathKey(canonical), grant);
+            slot.key = workspacePathKey(canonical);
+            this.textWorkspaces.set(slot.key, grant);
             return workspace;
           })) as T;
-        } catch (error) {
-          slot.error = error;
-          throw error;
         } finally {
+          slot.preparing = false;
           if (!started) this.textWorkspaceSlots.delete(slot);
         }
       }
@@ -907,6 +989,8 @@ export class HostChildBackend implements ChildBackend {
         child,
         child instanceof NativeGuardianChild ? child.retirement : undefined,
       );
+      if (runWriters && runPreparation)
+        runWriters.observePreparedProcess(runPreparation, this.processLifecycles.completion(child));
       ownedChild = child;
       const guardianCleanup = guardian?.dispose();
       const constructionId = randomUUID();

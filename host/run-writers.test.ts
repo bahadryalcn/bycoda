@@ -56,6 +56,70 @@ function fixture(options?: ConstructorParameters<typeof HostRunWriters>[0]) {
   return { writers, directory, issue, attach };
 }
 
+it("retains a sandbox grant until every accepted child has verified retirement", async () => {
+  const f = fixture();
+  const issueAux = async () => {
+    const run = f.writers.reserve({
+      owner: {},
+      sessionId: "logical",
+      runId: randomUUID(),
+      isCurrent: () => true,
+      auxiliary: true,
+    });
+    await f.writers.setExecutionCwd(run, f.directory);
+    return run;
+  };
+  const original = await issueAux();
+  const grant = await f.writers.grantCwd(original, f.directory, "text-sandbox");
+  const other = await issueAux();
+  const reservation = await f.writers.prepareProcess(other, {
+    sessionId: "child",
+    cwd: f.directory,
+    provider: "antigravity",
+    cwdGrant: grant,
+  });
+  const completion = gate();
+  f.writers.observePreparedProcess(reservation, completion.promise);
+  await f.writers.finish(original);
+  expect(f.writers.retireTextGrant(original, grant)).toBe(false);
+  f.writers.completeProcess(reservation);
+  expect(f.writers.retireTextGrant(original, grant)).toBe(false);
+  completion.resolve();
+  await completion.promise;
+  expect(f.writers.retireTextGrant(original, grant)).toBe(true);
+  await expect(
+    f.writers.prepareProcess(other, {
+      sessionId: "new",
+      cwd: f.directory,
+      provider: "antigravity",
+      cwdGrant: grant,
+    }),
+  ).rejects.toThrow(/grant/);
+});
+
+it("never retires a sandbox after unknown child completion", async () => {
+  const f = fixture();
+  const run = f.writers.reserve({
+    owner: {},
+    sessionId: "logical",
+    runId: "unknown",
+    isCurrent: () => true,
+    auxiliary: true,
+  });
+  await f.writers.setExecutionCwd(run, f.directory);
+  const grant = await f.writers.grantCwd(run, f.directory, "text-sandbox");
+  const token = await f.writers.prepareProcess(run, {
+    sessionId: "child",
+    cwd: f.directory,
+    provider: "antigravity",
+    cwdGrant: grant,
+  });
+  f.writers.observePreparedProcess(token, Promise.reject(new Error("retirement unknown")));
+  f.writers.completeProcess(token);
+  await f.writers.finish(run);
+  expect(f.writers.retireTextGrant(run, grant)).toBe(false);
+});
+
 it("reserves before Engine publication and retains an exact optional authority generation", async () => {
   const f = fixture();
   let published = false;

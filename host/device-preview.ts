@@ -7,8 +7,10 @@ import type {
 } from "../src/shared/model/host-contracts/native-devices";
 import { expoManifest, expoPreviewUrl } from "./expo-go";
 import { scrubRuntimeLogText } from "./runtime-logs";
+import { RetiredRequestFence } from "./storage/request-fence";
 
 const OPEN_LABELS = ["Open", "Aç", "Öffnen", "Ouvrir", "Abrir", "打开", "開く"];
+export const DEVICE_PREVIEW_RECEIPT_TTL_MS = 10 * 60 * 1000;
 
 /** Bounded, observable setup jobs. Request IDs prevent duplicate launch/install attempts. */
 export class DevicePreviews {
@@ -19,10 +21,13 @@ export class DevicePreviews {
   private authorizations = new Map<string, () => boolean | Promise<boolean>>();
   private resultAuthorizations = new Map<string, () => Promise<boolean>>();
   private work = new Set<Promise<void>>();
+  private settledAt = new Map<string, number>();
+  private retired = new RetiredRequestFence();
   constructor(
     private host: DeviceHost,
     private manifest = expoManifest,
     private readonly outsideScope: <T>(action: () => T) => T = (action) => action(),
+    private readonly now: () => number = () => performance.now(),
   ) {}
   start(
     input: PreviewInput,
@@ -30,6 +35,7 @@ export class DevicePreviews {
     authorized: () => boolean | Promise<boolean> = () => true,
   ) {
     expoPreviewUrl(input.url);
+    this.expireSettled();
     const existing = [...this.jobs.values()].find(
       (job) => job.requestId === input.requestId && this.owners.get(job.id) === owner,
     );
@@ -48,15 +54,23 @@ export class DevicePreviews {
         );
       return this.status(existing.id, owner);
     }
+    if (this.retired.has(JSON.stringify([owner, input.requestId])))
+      throw new Error(
+        "PREVIEW_RECEIPT_EXPIRED: This request may have already completed; inspect the device before making a new request.",
+      );
+    if (this.retired.saturated)
+      throw new Error(
+        "PREVIEW_HISTORY_FULL: Retired request protection is full; no new preview was started.",
+      );
     if (this.stopping)
       throw new Error("PREVIEW_HOST_STOPPING: Wait for the device service to finish stopping.");
     if (this.disposed) throw new Error("PREVIEW_HOST_STOPPED: The device host is stopping.");
     if ([...this.jobs.values()].some((job) => job.state === "queued" || job.state === "running"))
       throw new Error("PREVIEW_BUSY: Wait for the active device preview before starting another.");
-    // Keep outcomes for request deduplication; only screenshots need large memory.
+    // Unknown effects remain protected; confirmed outcomes expire into a compact ID fence.
     if (this.jobs.size >= 128)
       throw new Error(
-        "PREVIEW_HISTORY_FULL: Restart the idle host before starting additional previews.",
+        "PREVIEW_HISTORY_FULL: Recent or unresolved preview outcomes fill this runtime; inspect them before starting more work.",
       );
     const job: Preview = {
       id: randomUUID(),
@@ -73,6 +87,7 @@ export class DevicePreviews {
     this.owners.set(job.id, owner);
     this.authorizations.set(job.id, authorized);
     this.resultAuthorizations.set(job.id, async () => {
+      this.expireSettled();
       if (
         this.disposed ||
         this.jobs.get(job.id) !== job ||
@@ -84,6 +99,7 @@ export class DevicePreviews {
       } catch {
         return false;
       }
+      this.expireSettled();
       return (
         !this.disposed &&
         this.jobs.get(job.id) === job &&
@@ -98,11 +114,26 @@ export class DevicePreviews {
     return this.status(job.id, owner);
   }
   private inputs = new Map<string, PreviewInput>();
+  private expireSettled(): void {
+    const now = this.now();
+    for (const [id, settledAt] of this.settledAt) {
+      if (now - settledAt < DEVICE_PREVIEW_RECEIPT_TTL_MS) continue;
+      const job = this.jobs.get(id);
+      if (job) this.retired.add(JSON.stringify([this.owners.get(id), job.requestId]));
+      this.jobs.delete(id);
+      this.inputs.delete(id);
+      this.owners.delete(id);
+      this.authorizations.delete(id);
+      this.resultAuthorizations.delete(id);
+      this.settledAt.delete(id);
+    }
+  }
   status(id: string, owner: string, includeFrame = false) {
+    this.expireSettled();
     const job = this.jobs.get(id);
     if (!job)
       throw new Error(
-        "PREVIEW_NOT_FOUND: This preview is unknown or its host restarted. Inspect the device before starting a new request.",
+        "PREVIEW_NOT_FOUND: This preview expired, is unknown or its host restarted. Inspect the device before starting a new request.",
       );
     if (this.owners.get(id) !== owner)
       throw new Error("PREVIEW_SCOPE_MISMATCH: This preview belongs to another conversation.");
@@ -188,6 +219,7 @@ export class DevicePreviews {
   }
   private async run(job: Preview, input: PreviewInput) {
     job.state = "running";
+    let setupStarted = false;
     const authorize = async () => {
       if (this.disposed)
         throw new Error("PREVIEW_HOST_STOPPED: The device host stopped during preparation.");
@@ -236,6 +268,7 @@ export class DevicePreviews {
         job.deviceName = check.device.name;
       });
       await stage("device-host", async () => {
+        setupStarted = true;
         if (!(await this.host.status(effect)).running) await this.host.start(effect);
       });
       await stage("boot", async () => {
@@ -336,8 +369,10 @@ export class DevicePreviews {
       job.state = "blocked";
     } finally {
       job.updatedAt = new Date().toISOString();
-      // Retain the original callback with the bounded outcome history. A fresh
-      // caller/re-enrollment must not resurrect disclosure of this old job.
+      // Preflight is read-only; after setup starts, any failure may hide a completed
+      // install/open/boot and stays unresolved. A ready result confirms all steps.
+      if (job.state === "ready" || !setupStarted) this.settledAt.set(job.id, this.now());
+      // Original authority stays attached until retirement; new authority cannot adopt it.
     }
   }
 }

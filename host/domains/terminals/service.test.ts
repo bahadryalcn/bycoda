@@ -10,9 +10,15 @@ afterEach(async () => {
 function fixture(locate = async (root: string) => root) {
   let output!: (data: string) => void;
   const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
-  const launch = vi.fn((_profile, _cwd, write) => {
+  const launch = vi.fn((_profile, _cwd, write, onExit) => {
     output = write;
-    return child;
+    return {
+      write: child.write,
+      stop: async () => {
+        await child.stop();
+        onExit(0);
+      },
+    };
   });
   const terminals = new HostTerminals(
     launch,
