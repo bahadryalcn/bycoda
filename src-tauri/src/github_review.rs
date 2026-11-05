@@ -49,6 +49,7 @@ impl RoomGithubAccount {
         }
         Ok(())
     }
+    #[allow(clippy::too_many_arguments)] // Each argument is a separately validated field of the GitHub write; a struct would only rename them.
     pub(crate) fn item(&self, cwd: &str, repo: &str, kind: &str, number: i64, action: &str, body: &str, guard: impl Fn() -> Result<(), String>) -> Result<Value, String> {
         let root = expand_home(cwd);
         guard()?;

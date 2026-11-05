@@ -975,6 +975,7 @@ pub fn control_assistant_source(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub fn control_assistant_source_v2(
     app: AppHandle,
     window: WebviewWindow,
@@ -1014,6 +1015,7 @@ pub fn control_assistant_source_v2(
 }
 
 /// Read-only Room dispatch. Its exact Host request and Room window stay pinned.
+#[allow(clippy::too_many_arguments)] // The pinned Host request and Room window are passed as explicit fields so each stays visible at the call site.
 pub(crate) fn assistant_ui_request_pinned(
     app: &AppHandle, thread: &str, environment: &str, action: &str, input: Value,
     project_id: Option<&str>, target_cwd: Option<&str>,
@@ -1108,6 +1110,7 @@ pub(crate) fn assistant_ui_request_pinned(
 
 /// Retain the exact native owner until its UI operation settles. The worker
 /// cannot emit the request until Host has durably accepted its signed receipt.
+#[allow(clippy::too_many_arguments)] // The native owner tuple is passed as explicit fields so each stays visible at the call site.
 pub(crate) fn start_workspace_owner(
     app: &AppHandle, thread: &str, environment: &str, project: &str, cwd: &str,
     action: &str, input: Value, operation_hash: &str, issuer: &Arc<crate::remote::NativeServiceChannel>,

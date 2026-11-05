@@ -485,7 +485,7 @@ fn install_lock_held(path: &Path) -> bool {
         Ok(meta) => meta.modified().ok(),
         Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
     };
-    let fresh = modified.map_or(true, |time| match SystemTime::now().duration_since(time) {
+    let fresh = modified.is_none_or(|time| match SystemTime::now().duration_since(time) {
         Ok(age) => age < STALE_INSTALL_LOCK,
         Err(_) => true,
     });

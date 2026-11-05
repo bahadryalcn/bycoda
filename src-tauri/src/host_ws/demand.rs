@@ -291,7 +291,8 @@ impl DemandUnion {
         verified: &Value,
     ) -> Result<Effects, &'static str> {
         let key = self.members.get(member).ok_or("owner")?.clone();
-        if key != Self::shape(params).to_string() {
+        let shape = Self::shape(params).to_string();
+        if key != shape {
             return Err("cohort");
         }
         let demand = self.demands.get_mut(&key).ok_or("owner")?;
@@ -446,6 +447,7 @@ impl DemandUnion {
             .push(Self::operation(key, demand, OperationKind::Close, params));
     }
 
+    #[cfg(test)]
     pub fn open(
         &mut self,
         owner: &str,

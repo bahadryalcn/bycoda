@@ -480,6 +480,12 @@ struct InternalOperation {
     operation: Operation,
     deadline: Instant,
 }
+type SubscriptionBinding = (
+    String,
+    Value,
+    Arc<ResourceScope>,
+    Option<Arc<crate::control::receipts::WindowIssuer>>,
+);
 struct SubscriptionWork {
     union: DemandUnion,
     waiters: HashMap<MemberId, Request>,
@@ -487,15 +493,7 @@ struct SubscriptionWork {
     queued: VecDeque<Operation>,
     retired_opens: HashMap<String, String>,
     cohort_witnesses: HashMap<MemberId, super::ResumeProof>,
-    bindings: HashMap<
-        MemberId,
-        (
-            String,
-            Value,
-            Arc<ResourceScope>,
-            Option<Arc<crate::control::receipts::WindowIssuer>>,
-        ),
-    >,
+    bindings: HashMap<MemberId, SubscriptionBinding>,
 }
 impl SubscriptionWork {
     fn new(contracts: &Contracts) -> Self {

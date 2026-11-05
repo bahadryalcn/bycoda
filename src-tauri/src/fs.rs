@@ -974,6 +974,7 @@ pub async fn list_project_files(cwd: String) -> Result<ProjectFileListing, Strin
         .map_err(|e| e.to_string())?
 }
 
+#[cfg(test)]
 pub(crate) fn list_project_files_sync(cwd: &str) -> Result<Vec<ProjectFile>, String> {
     list_project_files_sync_cancellable(cwd, None)
 }
@@ -1119,6 +1120,7 @@ fn git_ignored_names(dir: &Path, names: &[&str]) -> Option<HashSet<String>> {
 /// bounded by `MAX_PROJECT_FILES` and cancellable.
 const MAX_LS_FILES_BYTES: usize = 8 * 1024 * 1024;
 
+#[cfg(test)]
 fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectFile>> {
     git_ls_files_inner(root, cancel, &AtomicBool::new(false))
 }
@@ -4452,6 +4454,7 @@ fn git_github_work_items_for(
     git_github_work_items_for_token(root, repo, kind, assigned_to_me, state, search, limit, None)
 }
 
+#[allow(clippy::too_many_arguments)] // GitHub query fields map one-to-one onto the work-item filter; a struct would only rename them.
 pub(crate) fn git_github_work_items_for_token(
     root: &Path, repo: &str, kind: &str, assigned_to_me: bool, state: &str,
     search: &str, limit: u32, token: Option<&str>,
@@ -6728,6 +6731,8 @@ mod git_stream_process_tests {
     fn inherited_pipe_parent() {
         let mut hold = child("fs::git_stream_process_tests::inherited_pipe_holder");
         hold.stdout(Stdio::inherit());
+        // The holder is detached on purpose: it exits by its own deadline and is never waited on.
+        #[allow(clippy::zombie_processes)]
         let _ = hold.spawn().unwrap();
         println!("PIPE_HOLDER_READY");
     }
@@ -7873,6 +7878,7 @@ impl<'a> From<Option<&'a AtomicBool>> for WalkStop<'a> {
     }
 }
 
+#[cfg(test)]
 fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
     walk_project_files_inner(root, stop, &AtomicBool::new(false))
 }

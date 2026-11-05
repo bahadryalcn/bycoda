@@ -203,6 +203,7 @@ fn validate_claimable(dir: &Path, record: &serde_json::Value) -> Result<(), Stri
 
 /// Persist the exact draft operation before accepting its file bytes.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn reserve_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, operation_id: String, claim_id: String, file_id: String, name: String, mime_type: String, kind: String, size: u64) -> Result<(), String> {
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
@@ -312,6 +313,7 @@ pub async fn list_question_attachment_drafts(app: AppHandle, window: tauri::Wind
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn create_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, operation_id: String, claim_id: String, name: String, data: String) -> Result<serde_json::Value, String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
@@ -374,6 +376,7 @@ pub async fn create_question_attachment(app: AppHandle, window: tauri::Window, w
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn claim_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, receipt: String, claim_id: String, source_claim_id: String) -> Result<(), String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
@@ -393,6 +396,7 @@ pub async fn claim_question_attachment(app: AppHandle, window: tauri::Window, we
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn read_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, operation_id: String, claim_id: String) -> Result<serde_json::Value, String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
@@ -424,6 +428,7 @@ pub async fn read_question_attachment(app: AppHandle, window: tauri::Window, web
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn retain_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, receipt: String, claim_id: String) -> Result<(), String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
@@ -446,6 +451,7 @@ pub async fn retain_question_attachment(app: AppHandle, window: tauri::Window, w
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn release_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, receipt: String, claim_id: String) -> Result<serde_json::Value, String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
