@@ -101,11 +101,22 @@ test("pane maximization preserves ratios and mounted drafts, and restores the sp
   const field = page.getByRole("textbox").first();
   await field.fill("Draft before maximizing");
   await page.getByRole("button", { name: "Maximize panel", exact: true }).first().click();
+  await expect(
+    page
+      .getByRole("button", { name: "Restore panel layout", exact: true })
+      .locator(".lucide-minimize-2"),
+  ).toHaveCount(1);
   await expect(page.getByRole("separator")).toHaveCount(0);
   await expect(page.getByRole("textbox")).toHaveCount(1);
   await expect(field).toHaveValue("Draft before maximizing");
   expect(await layout.textContent()).toBe(original);
   await page.getByRole("button", { name: "Restore panel layout", exact: true }).click();
+  await expect(
+    page
+      .getByRole("button", { name: "Maximize panel", exact: true })
+      .first()
+      .locator(".lucide-maximize-2"),
+  ).toHaveCount(1);
   await expect(page.getByRole("separator")).toHaveCount(2);
   expect(await layout.textContent()).toBe(original);
   await expect(field).toHaveValue("Draft before maximizing");

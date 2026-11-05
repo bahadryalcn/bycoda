@@ -37,8 +37,11 @@ describe("queueShortcutApplies", () => {
     expect(queueShortcutApplies({ ...running, text: "  " })).toBe(false);
   });
 
-  it("leaves it alone for background-only turns, popups and drafts", () => {
-    expect(queueShortcutApplies({ ...running, backgroundOnly: true })).toBe(false);
+  it("queues while only background commands keep the turn open", () => {
+    expect(queueShortcutApplies({ ...running, backgroundOnly: true })).toBe(true);
+  });
+
+  it("leaves it alone for popups and drafts", () => {
     expect(queueShortcutApplies({ ...running, popupOpen: true })).toBe(false);
     expect(queueShortcutApplies({ ...running, draftMode: true })).toBe(false);
     expect(queueShortcutApplies({ ...running, allowBusySubmit: false })).toBe(false);

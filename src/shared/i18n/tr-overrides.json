@@ -1,4 +1,7 @@
 {
+  "Enable": "Etkinleştir",
+  "Disable": "Devre dışı bırak",
+  "Applies to this project for Claude Code.": "Claude Code için bu projede geçerlidir.",
   "Linear gradient": "Doğrusal",
   "Your accessibility settings hide workspace backgrounds. Your design is still saved.": "Erişilebilirlik ayarlarınız çalışma alanı arka planını gizliyor. Tasarımınız kayıtlı kalır.",
   "Workspace background": "Çalışma alanı arka planı",

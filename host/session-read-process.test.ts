@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { fork, type ChildProcess } from "node:child_process";
 import { expect, it, vi } from "vitest";
 import { SessionReadProcesses, type SessionReadRequest } from "./session-read-process";
+import { SessionReadError } from "./sessions/read-errors";
 const request: SessionReadRequest = {
   kind: "desktop",
   paths: [],
@@ -102,4 +103,65 @@ it("retains capacity after kill request and rejects forged result identity until
   f.children[0].emit("exit", 0);
   await expect(work).rejects.toThrow("identity changed");
   await expect(repeated).rejects.toThrow("identity changed");
+});
+
+it("refuses excess jobs as retryable overload without releasing occupied slots", async () => {
+  const f = fixture();
+  const pending = Array.from({ length: 8 }, (_, index) =>
+    f.processes.read({ ...request, sessionId: String(index) }, new AbortController().signal),
+  );
+  await dispatch();
+  await expect(
+    f.processes.read({ ...request, sessionId: "excess" }, new AbortController().signal),
+  ).rejects.toMatchObject({ name: "SessionReadError", kind: "overloaded" });
+  expect(f.spawn).toHaveBeenCalledTimes(8);
+  for (const child of f.children) {
+    child.emit("message", { id: child.input!.id, value: "done" });
+    child.emit("exit", 0);
+  }
+  await Promise.all(pending);
+});
+
+it("bounds coalesced observers without killing the shared read", async () => {
+  const f = fixture();
+  const pending = Array.from({ length: 128 }, () =>
+    f.processes.read(request, new AbortController().signal),
+  );
+  await dispatch();
+  await expect(f.processes.read(request, new AbortController().signal)).rejects.toMatchObject({
+    kind: "overloaded",
+  });
+  expect(f.spawn).toHaveBeenCalledTimes(1);
+  expect(f.children[0].kill).not.toHaveBeenCalled();
+  f.children[0].emit("message", { id: f.children[0].input!.id, value: "done" });
+  f.children[0].emit("exit", 0);
+  await Promise.all(pending);
+});
+
+it("rehydrates allowlisted helper failures with safe text after original child exit", async () => {
+  const f = fixture();
+  const pending = f.processes.read(request, new AbortController().signal);
+  const rejected = expect(pending).rejects.toEqual(new SessionReadError("snapshot-budget"));
+  await dispatch();
+  f.children[0].emit("message", {
+    id: f.children[0].input!.id,
+    error: "private database details",
+    errorKind: "snapshot-budget",
+  });
+  f.children[0].emit("exit", 1);
+  await rejected;
+});
+
+it("does not trust unknown helper error kinds", async () => {
+  const f = fixture();
+  const pending = f.processes.read(request, new AbortController().signal);
+  const rejected = expect(pending).rejects.not.toBeInstanceOf(SessionReadError);
+  await dispatch();
+  f.children[0].emit("message", {
+    id: f.children[0].input!.id,
+    error: "private error",
+    errorKind: "__proto__",
+  });
+  f.children[0].emit("exit", 1);
+  await rejected;
 });

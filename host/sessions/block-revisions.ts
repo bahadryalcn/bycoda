@@ -8,6 +8,11 @@ import { streamingTextUpdate } from "../../src/features/sessions/model/stableBlo
 const SHARDS = 128;
 type RevisionIndex = { shards: ReadonlyArray<Record<string, number>>; keys?: string[] };
 const indexes = new WeakMap<Record<string, number>, RevisionIndex>();
+/** Preserve the snapshot format while avoiding per-key proxy traps during JSON serialization. */
+export function materializeBlockRevisions(record: Record<string, number>): Record<string, number> {
+  const index = indexes.get(record);
+  return index ? Object.assign(Object.create(null), ...index.shards) : record;
+}
 const shardFor = (id: string) => {
   let hash = 2166136261;
   for (let index = 0; index < id.length; index++)

@@ -438,3 +438,55 @@ html[data-performance-no-blur] [data-message-queue-card] {
   background: var(--ui-tone-accent-fg);
   pointer-events: none;
 }
+
+/* Sibling input and queue surfaces sample the same background without nested filters. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html:not([data-performance-no-blur]) [data-composer-box],
+  html:not([data-performance-no-blur]) [data-composer-box]:hover,
+  html:not([data-performance-no-blur]) [data-composer-box]:focus-within {
+    background: var(--ui-activity-dock-glass);
+    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
+    backdrop-filter: var(--ui-activity-dock-filter);
+  }
+}
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html [data-composer-box],
+  html [data-composer-box]:hover,
+  html [data-composer-box]:focus-within {
+    background: var(--ui-composer-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.delivery-accepted {
+  animation: delivery-accepted-enter var(--motion-notice-duration) var(--motion-ease-out) both;
+}
+@keyframes delivery-accepted-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .delivery-accepted {
+    animation: none;
+  }
+}
+
+.queue-departure {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: queue-departure var(--motion-surface-duration) var(--motion-ease-out) forwards;
+}
+@keyframes queue-departure {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queue-departure {
+    animation: none;
+  }
+}

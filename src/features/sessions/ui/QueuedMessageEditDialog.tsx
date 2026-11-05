@@ -43,6 +43,7 @@ import {
 } from "../model/queuedMessageEdit";
 import type { Attachment, QueuedMessage } from "../model/session";
 import { AttachmentChip } from "./AttachmentChip";
+import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
 import {
   retainParentInput,
   useParentInputClosure,
@@ -130,6 +131,12 @@ function QueueEditContent({
   const empty = isQueuedEditEmpty(message, draft);
   const dirty = hasQueuedEditChanges(message, draft);
   const tokens = attachmentTokens(draft.attachments);
+
+  useEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    return installAttachmentSelectionPolicy(el, () => draftRef.current.attachments);
+  }, []);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {

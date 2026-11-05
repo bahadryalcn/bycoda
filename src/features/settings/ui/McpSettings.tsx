@@ -1,39 +1,35 @@
+import {
+  AddServerModal,
+  ProviderIcon,
+  PROVIDERS,
+  scopeLabel,
+  scopeDescription,
+  type Provider,
+} from "./McpAddServer";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { McpStatusDetails } from "./McpStatusDetails";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select as SharedSelect } from "../../../shared/ui/Select";
-import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { invoke } from "@tauri-apps/api/core";
 import { confirmInApp } from "../../../shared/model/appConfirm";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { revealPath } from "../../../platform/tauri/fs";
-import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import type { RecentProject } from "../../projects";
 import { Button } from "../../../shared/ui/Button";
 import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
-import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import styles from "./McpSettings.module.css";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
 import {
@@ -42,7 +38,6 @@ import {
   needsMcpSignIn,
   type McpConnection,
 } from "../model/mcp";
-import { AdvancedSettings, Row } from "./settingsControls";
 import {
   getCachedMcpSettings,
   loadMcpSettings,
@@ -73,225 +68,6 @@ function actionErrorText(cause: unknown, provider?: Provider): string {
   }
   return text;
 }
-type Provider = McpConnection["provider"];
-const PROVIDERS: Provider[] = ["claude", "claude_desktop", "codex", "cursor", "opencode"];
-const SCOPES: Record<Provider, Scope[]> = {
-  claude: ["user", "project", "local"],
-  claude_desktop: ["user"],
-  codex: ["user"],
-  cursor: ["project", "user"],
-  opencode: ["project", "user"],
-};
-
-function scopeLabel(scope: Scope): string {
-  return scope === "user" ? t("Global") : scope === "project" ? t("Project") : t("Local project");
-}
-
-function scopeDescription(scope: Scope): string {
-  return scope === "user"
-    ? t("Global: applies to every project for this provider on this machine.")
-    : scope === "project"
-      ? t(
-          "Project: saved in the selected project's provider configuration; it may be shared with the project.",
-        )
-      : t(
-          "Local project: applies only to the selected project in your personal Claude configuration.",
-        );
-}
-
-function ProviderIcon({ provider }: { provider: Provider }) {
-  useLocale();
-  return (
-    <HarnessIcon
-      harness={provider === "claude_desktop" ? "claude" : provider}
-      className="size-3.5 shrink-0"
-    />
-  );
-}
-
-function McpPicker<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string; icon?: ReactNode }[];
-  onChange: (value: T) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <SharedSelect
-      loopNavigation
-      disabled={disabled}
-      label={label}
-      value={value}
-      options={options}
-      onValueChange={(value) => onChange(value as T)}
-    />
-  );
-}
-
-function AddServerModal({
-  cwd,
-  initialProvider,
-  onClose,
-  onAdded,
-}: {
-  cwd: string;
-  initialProvider: Provider;
-  onClose: () => void;
-  onAdded: () => Promise<void>;
-}) {
-  useLocale();
-  const [provider, setProvider] = useState<Provider>(initialProvider);
-  const [scope, setScope] = useState<Scope>(SCOPES[initialProvider][0]);
-  const [name, setName] = useState("");
-  const [config, setConfig] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const adding = useRef(false);
-  const formId = useId();
-
-  async function add(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (adding.current) return;
-    adding.current = true;
-    try {
-      const parsed: unknown = JSON.parse(config);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error(t("Configuration must be a JSON object"));
-      }
-      setBusy(true);
-      setError("");
-      await invoke("mcp_add", {
-        cwd,
-        provider,
-        scope,
-        name: name.trim(),
-        config,
-      });
-      await onAdded();
-      onClose();
-    } catch (cause) {
-      setError(String(cause));
-    } finally {
-      adding.current = false;
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal
-      title={t("Add MCP server")}
-      description={t("Paste a server configuration and choose where to add it.")}
-      onClose={() => {
-        if (!adding.current) onClose();
-      }}
-      fitViewport
-      footer={
-        <ModalActions>
-          <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            type="submit"
-            form={formId}
-            loading={busy}
-            disabled={busy}
-          >
-            {t("Add server")}
-          </Button>
-        </ModalActions>
-      }
-    >
-      <form id={formId} onSubmit={(event) => void add(event)} className="space-y-4 p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <McpPicker
-            disabled={busy}
-            label={t("Provider")}
-            value={provider}
-            options={PROVIDERS.map((option) => ({
-              value: option,
-              label: MCP_PROVIDER_LABELS[option],
-              icon: <ProviderIcon provider={option} />,
-            }))}
-            onChange={(next) => {
-              setProvider(next);
-              setScope(SCOPES[next][0]);
-            }}
-          />
-          <McpPicker
-            disabled={busy}
-            label={t("Scope")}
-            value={scope}
-            options={SCOPES[provider].map((option) => ({
-              value: option,
-              label: scopeLabel(option),
-            }))}
-            onChange={setScope}
-          />
-        </div>
-        <p className="text-ui-caption text-(--ui-text-secondary)" role="status">
-          {MCP_PROVIDER_LABELS[provider]} · {scopeDescription(scope)}
-        </p>
-        <p className="break-all text-ui-caption text-(--ui-text-muted)">
-          {t("Selected project: {p0}", { p0: cwd })}
-        </p>
-        <label className="block text-ui-caption text-(--ui-text-secondary)">
-          {t("Name")}{" "}
-          <span className="text-(--ui-text-muted)">{t("(optional for an mcpServers block)")}</span>
-          <TextField
-            hideLabel
-            label={t("Name")}
-            value={name}
-            disabled={busy}
-            pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
-            onChange={(event) => setName(event.target.value)}
-
-            placeholder={t("my-server")}
-          />
-        </label>
-        <label className="block text-ui-caption text-(--ui-text-secondary)">
-          {t("JSON configuration")}
-          <TextareaField
-            hideLabel
-            label={t("JSON configuration")}
-            required
-            value={config}
-            disabled={busy}
-            onChange={(event) => setConfig(event.target.value)}
-            rows={7}
-            spellCheck={false}
-
-            placeholder={
-              '{"mcpServers":{"my-server":{"command":"npx","args":["-y","example-mcp"]}}}'
-            }
-          />
-        </label>
-        <p className="text-ui-caption text-(--ui-text-muted)">
-          {t(
-            "Paste one entry from an mcpServers block, or a single server object with a name above.",
-          )}
-        </p>
-        <AdvancedSettings title={t("Advanced: configuration requirements")}>
-          <Row
-            label={t("Before adding a server")}
-            description={t(
-              "Check the command or URL and required credentials. Adding saves configuration for the selected provider and scope; it does not confirm a working connection. Refresh to check available status.",
-            )}
-          />
-        </AdvancedSettings>
-        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-      </form>
-    </Modal>
-  );
-}
-
 /** A long provider message stays two lines until the reader asks for the rest. */
 function ExpandableWarning({ children }: { children: ReactNode }) {
   useLocale();
@@ -377,7 +153,10 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     false,
   );
   const [loading, setLoading] = useState(!cached);
-  const [busy, setBusy] = useState<{ server: string; action: "login" | "remove" } | null>(null);
+  const [busy, setBusy] = useState<{
+    server: string;
+    action: "login" | "remove" | "enable" | "disable";
+  } | null>(null);
   const busyRef = useRef(false);
   const [error, setError] = useState(cached?.error ?? "");
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
@@ -473,6 +252,36 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         cwd,
         provider: server.provider,
         name: server.name,
+      });
+      await refresh();
+    } catch (cause) {
+      setActionError(actionErrorText(cause, server.provider));
+    } finally {
+      busyRef.current = false;
+      setBusy(null);
+    }
+  }
+
+  async function setEnabled(server: ServerRow) {
+    if (
+      busyRef.current ||
+      !server.configPath ||
+      !["claude", "codex", "opencode"].includes(server.provider)
+    )
+      return;
+    busyRef.current = true;
+    const enabled = server.enabled === false;
+    setBusy({ server: serverRowKey(server), action: enabled ? "enable" : "disable" });
+    setActionError("");
+    try {
+      await invoke("mcp_set_enabled", {
+        cwd,
+        provider: server.provider,
+        name: server.name,
+        scope: server.scope,
+        configPath: server.configPath,
+        enabled,
+        expectedEnabled: server.enabled !== false,
       });
       await refresh();
     } catch (cause) {
@@ -699,14 +508,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         </Popover>
       ) : null}
       {actionError ? (
-        <SettingsFeedback
-          state="error"
-          action={
-            <Button variant="ghost" onClick={() => setActionError("")}>
-              {t("Dismiss")}
-            </Button>
-          }
-        >
+        <SettingsFeedback state="error" onDismiss={() => setActionError("")}>
           {actionError}
         </SettingsFeedback>
       ) : null}
@@ -798,7 +600,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                     aria-haspopup="menu"
                     aria-expanded={menu?.server === server}
                     disabled={loading || busy !== null}
-                    loading={busy?.server === serverRowKey(server) && busy.action === "remove"}
+                    loading={busy?.server === serverRowKey(server) && busy.action !== "login"}
                     onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
                   >
                     <MoreHorizontal className="icon-sm" />
@@ -842,7 +644,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
               p0: (() => {
                 const server = servers.find((entry) => serverRowKey(entry) === busy.server);
                 return server
-                  ? `${t(busy.action === "login" ? "Sign in" : "Remove")}: ${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`
+                  ? `${t(busy.action === "login" ? "Sign in" : busy.action === "enable" ? "Enable" : busy.action === "disable" ? "Disable" : "Remove")}: ${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`
                   : busy.server;
               })(),
             },
@@ -855,6 +657,21 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           label={t("Actions for {p0}", { p0: menu.server.name })}
           onClose={() => setMenu(null)}
           items={[
+            {
+              kind: "item",
+              id: "toggle-enabled",
+              label: t(menu.server.enabled === false ? "Enable" : "Disable"),
+              disabled:
+                loading ||
+                busy !== null ||
+                !menu.server.configPath ||
+                !["claude", "codex", "opencode"].includes(menu.server.provider),
+              description: !["claude", "codex", "opencode"].includes(menu.server.provider)
+                ? t("Edit in provider config")
+                : menu.server.provider === "claude"
+                  ? t("Applies to this project for Claude Code.")
+                  : undefined,
+            },
             ...(canSignInMcp(menu.server) &&
             menu.server.auth !== "none" &&
             !needsMcpSignIn(menu.server)
@@ -892,6 +709,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           onPick={(action) => {
             const server = menu.server;
             setMenu(null);
+            if (action === "toggle-enabled") void setEnabled(server);
             if (action === "login") void login(server);
             if (action === "reveal")
               void revealPath(server.configPath).catch((cause) => setActionError(String(cause)));

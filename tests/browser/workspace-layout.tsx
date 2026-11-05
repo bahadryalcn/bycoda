@@ -189,7 +189,7 @@ function HtmlLinkFixture() {
   } as unknown as SessionPaneDeps);
   const tab = tabs[0];
   return (
-    <main className="flex h-screen min-h-0 min-w-0 flex-col bg-background-base text-content">
+    <main className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
       <PaneTree
         {...callbacks}
         {...sessionPaneProps}
@@ -225,7 +225,7 @@ function Fixture() {
   const [focused, setFocused] = useState(withFiles ? initialEditors[0].id : sessions[0].id);
   const [editors, setEditors] = useState(withFiles ? initialEditors : []);
   return (
-    <main className="flex h-screen min-h-0 min-w-0 flex-col bg-background-base text-content">
+    <main className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
       {withChrome ? (
         <>
           <TitleBar

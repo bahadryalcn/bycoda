@@ -2,6 +2,7 @@ import {
   assertDomainAuthority as assertSessionAuthority,
   type HostDomainContext as SessionDomainContext,
 } from "../context";
+import { SessionReadError } from "../../sessions/read-errors";
 export {
   assertDomainAuthority as assertSessionAuthority,
   type HostDomainContext as SessionDomainContext,
@@ -173,7 +174,7 @@ export function createSessionReadService<
       let sync: Sync;
       if (watch && revision === watch.revision) {
         if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
-          throw new Error("Session read owner changed; retry");
+          throw new SessionReadError("source-changed");
         return { kind: "unchanged" as const, revision, ...(epoch ? { sourceEpoch: epoch } : {}) };
       }
       const view =
@@ -262,7 +263,7 @@ export function createSessionReadService<
           },
         };
       if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
-        throw new Error("Session read owner changed; retry");
+        throw new SessionReadError("source-changed");
       if (!epoch) return sync;
       if (sync.kind === "unchanged") return { ...sync, sourceEpoch: epoch };
       if (sync.kind === "snapshot")
@@ -297,7 +298,7 @@ export function createSessionReadService<
           params.digests === true,
         );
         if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
-          throw new Error("Session read owner changed; retry");
+          throw new SessionReadError("source-changed");
         return {
           ...page,
           sync: ports.transfers.respond(id, {

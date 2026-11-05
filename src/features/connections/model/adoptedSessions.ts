@@ -457,9 +457,7 @@ export function mergeAdoptedSession(
       : localChanged
         ? local.pendingContextReplay
         : remote.pendingContextReplay,
-    ...(remote.context && !(localChanged && provider(local) !== provider(remote))
-      ? { context: remote.context }
-      : {}),
+    context: localChanged && provider(local) !== provider(remote) ? local.context : remote.context,
     continuingElsewhere: host.status === "running" || undefined,
     adoptedRunId: host.status === "running" ? host.runId : undefined,
     adoptedAuthorityGeneration: appliedAuthorityGeneration(host, local),

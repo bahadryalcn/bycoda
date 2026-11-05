@@ -417,7 +417,7 @@ export async function compactContext(flavor: PiFlavor, input: CompactContextInpu
           const used = data?.estimatedTokensAfter;
           if (typeof used === "number" && Number.isFinite(used) && used > 0) {
             live.onEvent({
-              type: "context",
+              type: "context.compacted",
               used,
               ...(live.contextWindow ? { window: live.contextWindow } : {}),
             });

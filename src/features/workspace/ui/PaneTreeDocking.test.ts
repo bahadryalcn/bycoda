@@ -305,10 +305,17 @@ describe("pane docking UI", () => {
     const split = splitPane(leaf("a"), "a", "right", "b");
     const tree = setSplitRatio(split, split.id, 0, 0.7);
     render(tree);
+    const maximize = () => container.querySelector<HTMLButtonElement>('[data-pane-maximize="a"]')!;
+    expect(maximize().getAttribute("aria-label")).toBe("Maximize panel");
+    expect(maximize().getAttribute("aria-pressed")).toBe("false");
+    expect(maximize().querySelector(".lucide-maximize-2")).not.toBeNull();
     const draft = container.querySelector<HTMLInputElement>('[data-draft="b"]')!;
     draft.value = "retained work";
     const initialWidth = container.querySelector<HTMLElement>('[data-pane-id="a"]')!.style.width;
     act(() => container.querySelector<HTMLButtonElement>('[data-pane-maximize="a"]')!.click());
+    expect(maximize().getAttribute("aria-label")).toBe("Restore panel layout");
+    expect(maximize().getAttribute("aria-pressed")).toBe("true");
+    expect(maximize().querySelector(".lucide-minimize-2")).not.toBeNull();
     expect(container.querySelector<HTMLElement>('[data-pane-id="a"]')!.style.width).toBe("100%");
     expect(container.querySelector('[role="separator"]')).toBeNull();
     expect(container.querySelector('[data-draft="b"]')).toBe(draft);
@@ -321,6 +328,26 @@ describe("pane docking UI", () => {
     );
     expect(container.querySelector('[role="separator"]')).not.toBeNull();
     expect(draft.value).toBe("retained work");
+    expect(maximize().getAttribute("aria-label")).toBe("Maximize panel");
+    expect(maximize().querySelector(".lucide-maximize-2")).not.toBeNull();
+  });
+
+  it("reflects externally controlled maximization in the pane action", () => {
+    const tree = splitPane(leaf("a"), "a", "right", "b");
+    const toggle = vi.fn();
+    render(tree, vi.fn(), vi.fn(), { maximizedPaneId: null, onToggleMaximizePane: toggle });
+    const button = () => container.querySelector<HTMLButtonElement>('[data-pane-maximize="a"]')!;
+    act(() => button().click());
+    expect(toggle).toHaveBeenCalledWith("a");
+    expect(button().querySelector(".lucide-maximize-2")).not.toBeNull();
+    render(tree, vi.fn(), vi.fn(), { maximizedPaneId: "a", onToggleMaximizePane: toggle });
+    expect(button().getAttribute("aria-label")).toBe("Restore panel layout");
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    expect(button().querySelector(".lucide-minimize-2")).not.toBeNull();
+    act(() => button().click());
+    expect(toggle).toHaveBeenCalledTimes(2);
+    render(tree, vi.fn(), vi.fn(), { maximizedPaneId: null, onToggleMaximizePane: toggle });
+    expect(button().querySelector(".lucide-maximize-2")).not.toBeNull();
   });
 
   it("lets keyboard users resize and equalize a sash", () => {

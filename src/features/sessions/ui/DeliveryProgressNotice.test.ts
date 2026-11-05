@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { DeliveryProgressNotice } from "./DeliveryProgressNotice";
+import { DeliveryProgressIndicator, DeliveryProgressNotice } from "./DeliveryProgressNotice";
 import {
   beginDeliveryProgress,
   clearDeliveryProgress,
@@ -66,7 +66,7 @@ it("keeps the delivery summary compact with an accessible disclosure for failure
   await act(async () => root.unmount());
 });
 
-it("keeps the current delivery stage and elapsed time after remounting the composer surface", async () => {
+it("keeps routine waiting compact across time and remount", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   const container = document.createElement("div");
@@ -77,12 +77,11 @@ it("keeps the current delivery stage and elapsed time after remounting the compo
       createElement(DeliveryProgressNotice, { sessionId: "progress-chat", messages: [] }),
     ),
   );
-  expect(container.textContent).toContain("Synchronizing");
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(11_000);
   });
-  expect(container.textContent).toContain("11s elapsed");
-  expect(container.textContent).toContain("do not need to write it again");
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
   await act(async () => root.unmount());
   root = createRoot(container);
   await act(async () =>
@@ -93,10 +92,10 @@ it("keeps the current delivery stage and elapsed time after remounting the compo
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(container.textContent).toContain("11s elapsed");
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
   await act(async () => updateDeliveryProgress("progress-chat", progress, "accepted"));
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.textContent).toContain("accepted");
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
   await act(async () => root.unmount());
 });
 
@@ -353,5 +352,35 @@ it("shows why the choice could not be saved and keeps the row", async () => {
   expect(container.textContent).toContain("being sent elsewhere");
   expect(container.textContent).toContain("Queued");
   unregister();
+  await act(async () => root.unmount());
+});
+
+it("shows only authoritative acceptance and clears the compact indicator", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const progress = beginDeliveryProgress("progress-chat", "queued", "preparing");
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(DeliveryProgressIndicator, { sessionId: "progress-chat" }),
+        createElement(DeliveryProgressNotice, { sessionId: "progress-chat", messages: [] }),
+      ),
+    ),
+  );
+  expect(container.querySelector("[data-delivery-pending]")).not.toBeNull();
+  expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
+  await act(async () =>
+    updateDeliveryProgress("progress-chat", progress, "accepted", "Provider confirmed"),
+  );
+  expect(container.querySelector("[data-delivery-accepted]")).not.toBeNull();
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1800);
+  });
+  expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
   await act(async () => root.unmount());
 });

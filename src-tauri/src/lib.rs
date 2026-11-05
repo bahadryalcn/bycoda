@@ -918,6 +918,7 @@ pub fn run() {
             harness::claude_mcp_list,
             harness::codex_mcp_list,
             mcp::mcp_discover,
+            mcp::enablement::mcp_set_enabled,
             mcp::mcp_add,
             harness::claude_mcp_add,
             harness::claude_mcp_remove,

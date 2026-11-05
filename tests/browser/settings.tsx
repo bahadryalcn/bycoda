@@ -101,6 +101,14 @@ const skillDocuments = new Map(
     `---\nname: ${index === 0 ? "arc" : `skill-${index}`}\ndescription: Build and review interfaces using the shared component library.\n---\n\n# Instructions\n\nUse the existing components and preserve project conventions.\n\n${"## Workflow\n\n1. Inspect the page.\n2. Make the change.\n3. Verify the result.\n\n".repeat(12)}`,
   ]),
 );
+const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
+  name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,
+  provider: index % 2 === 0 ? "claude" : "codex",
+  scope: "user",
+  transport: "http",
+  configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
+  enabled: index !== 1,
+}));
 mockIPC(
   (command, args) => {
     if (command.startsWith("canonical_store_")) return canonicalFixture(command, args);
@@ -304,14 +312,32 @@ mockIPC(
           };
       }
     }
-    if (new URLSearchParams(location.search).get("mcp") === "1" && command === "mcp_discover") {
-      return Array.from({ length: 25 }, (_, index) => ({
-        name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,
-        provider: index % 2 === 0 ? "claude" : "codex",
-        scope: "user",
-        transport: "http",
-        configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
-      }));
+    if (
+      new URLSearchParams(location.search).get("mcpError") === "1" &&
+      command === "mcp_provider_login"
+    ) {
+      throw new Error(
+        `Fixture login failed for ${String(args.name)}: ${"unreachable-server-".repeat(12)}`,
+      );
+    }
+    if (new URLSearchParams(location.search).get("mcp") === "1") {
+      if (command === "mcp_discover") return structuredClone(mcpConnections);
+      if (command === "mcp_set_enabled") {
+        const server = mcpConnections.find(
+          (entry) =>
+            entry.provider === args.provider &&
+            entry.scope === args.scope &&
+            entry.name === args.name &&
+            entry.configPath === args.configPath,
+        );
+        if (!server || server.enabled !== args.expectedEnabled)
+          throw new Error("Fixture MCP configuration changed");
+        if (new URLSearchParams(location.search).get("mcpToggleError") === "1")
+          throw new Error("Fixture MCP write rejected");
+        server.enabled = Boolean(args.enabled);
+        sessionStorage.setItem("fixture-mcp-toggle", JSON.stringify(args));
+        return;
+      }
     }
     if (new URLSearchParams(location.search).get("skills") === "1") {
       if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };

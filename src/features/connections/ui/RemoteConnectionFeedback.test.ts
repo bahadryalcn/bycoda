@@ -30,15 +30,18 @@ vi.mock("./RemoteLoadError", () => ({
     cwd,
     failure,
     coordinated,
+    onDismiss,
   }: {
     cwd: string;
     failure: RemoteFailure;
     coordinated: boolean;
+    onDismiss?: () => void;
   }) =>
     createElement(
       "div",
       { role: "alert", "data-machine": cwd, "data-coordinated": String(coordinated) },
       failure.message,
+      onDismiss && createElement("button", { onClick: onDismiss }, "Dismiss"),
     ),
 }));
 
@@ -244,4 +247,29 @@ it("leaves standalone, local-path and operation-specific errors with their initi
   ]);
   expect(container.textContent).toBe("locallocal");
   expect(notices()).toHaveLength(0);
+});
+
+it("dismisses only one outage episode and never hides a later hard refusal", async () => {
+  state.autoReconnect = false;
+  state.machines.set("a", { status: "unreachable" });
+  state.machines.set("b", { status: "unreachable" });
+  const consumers = [
+    { id: "a", cwd: "a", failure: outage },
+    { id: "b", cwd: "b", failure: outage },
+  ];
+  await render(consumers);
+  expect(notices()).toHaveLength(2);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-machine="a"] button')!.click(),
+  );
+  expect(notices()).toHaveLength(1);
+  state.machines.set("a", { status: "connection-blocked", error: "RPC_WS_TLS: refused" });
+  await render(consumers);
+  expect(notices()).toHaveLength(2);
+  state.machines.set("a", { status: "connected" });
+  await render([{ id: "a", cwd: "a" }, consumers[1]!]);
+  await advance(0);
+  state.machines.set("a", { status: "unreachable" });
+  await render(consumers);
+  expect(notices()).toHaveLength(2);
 });

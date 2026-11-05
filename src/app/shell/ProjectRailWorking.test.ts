@@ -5,6 +5,19 @@ import { expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
 import { SessionRecoveryControl } from "./SessionRecoveryControl";
 import { workingProjectPaths } from "../../features/sessions/model/liveAgents";
+import { readFileSync } from "node:fs";
+
+it("keeps working decoration compositor-friendly and disables it with motion controls", () => {
+  const css = readFileSync("src/app/shell/projectRailRow.css", "utf8");
+  expect(css).toMatch(
+    /@keyframes project-row-working-pulse\s*\{[\s\S]*?opacity: 0;[\s\S]*?opacity: 1;/,
+  );
+  expect(css).not.toMatch(/animation:\s*project-row-working-sweep/);
+  expect(css).toContain('[data-decorative-motion="off"]');
+  expect(css).toContain('[data-window-focus="off"]');
+  expect(css).toContain("prefers-reduced-motion: reduce");
+  expect(css).toContain("data-performance-no-shimmer");
+});
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,

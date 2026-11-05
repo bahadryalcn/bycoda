@@ -230,7 +230,7 @@ export type DragPreview = {
   /** Follow the pointer; `state` sets the cursor and the short label shown on the copy. */
   move(
     pointer: { clientX: number; clientY: number },
-    state?: { action?: "move" | "window" | "blocked"; label?: string },
+    state?: { action?: "move" | "window" | "blocked"; label?: string; bounds?: DOMRect },
   ): void;
   /** Glide to `rect` (viewport coordinates) and remove the copy; no rect removes it at once. */
   settleTo(rect: DOMRect | null, onDone?: () => void): void;
@@ -316,7 +316,19 @@ export function createDragPreview(
           label.textContent = text;
         }
       }
-      element.style.transform = `translate3d(${point.clientX - pointer.clientX}px, ${point.clientY - pointer.clientY}px, 0)`;
+      const bounds = state?.bounds;
+      if (label) label.style.translate = bounds ? "0" : "";
+      const width = bounds ? Math.min(rect.width, Math.max(0, bounds.width)) : rect.width;
+      const height = bounds ? Math.min(rect.height, Math.max(0, bounds.height)) : rect.height;
+      element.style.width = `${width}px`;
+      element.style.height = `${height}px`;
+      element.style.scale = bounds ? "1" : "";
+      element.style.overflow = bounds ? "hidden" : "";
+      const left = rect.left + point.clientX - pointer.clientX;
+      const top = rect.top + point.clientY - pointer.clientY;
+      const x = bounds ? Math.max(bounds.left, Math.min(left, bounds.right - width)) : left;
+      const y = bounds ? Math.max(bounds.top, Math.min(top, bounds.bottom - height)) : top;
+      element.style.transform = `translate3d(${x - rect.left}px, ${y - rect.top}px, 0)`;
     },
     settleTo(target, onDone) {
       if (done) return;
@@ -329,6 +341,10 @@ export function createDragPreview(
       }
       label?.remove();
       label = null;
+      element.style.removeProperty("overflow");
+      element.style.removeProperty("scale");
+      element.style.width = `${rect.width}px`;
+      element.style.height = `${rect.height}px`;
       delete element.dataset.lifted;
       delete element.dataset.action;
       element.style.transition = `transform ${ms}ms ${easing}, scale ${ms}ms ${easing}, box-shadow ${ms}ms ${easing}`;

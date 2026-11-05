@@ -206,7 +206,7 @@ it("shows versioned Claude models and forwards their full IDs without changing t
   const advisor = container.querySelector<HTMLSelectElement>('[aria-label="Advisor"]')!;
   expect([...advisor.options].map((o) => o.text)).toContain("Opus 5.5");
   expect([...advisor.options].map((o) => o.value)).not.toContain("claude-opus-4-5");
-  expect([...advisor.options].find((o) => o.value === "opus")!.text).toBe("Opus");
+  expect([...advisor.options].map((o) => o.value)).not.toContain("opus");
   expect([...advisor.options].find((o) => o.value === "default")!.text).toBe("Claude default");
   act(() => {
     advisor.value = "claude-opus-5-5";
@@ -229,14 +229,26 @@ it("shows versioned Claude models and forwards their full IDs without changing t
 
 it("hides turned-off Claude models and labels aliases with their live version", () => {
   setHarnessModels("claude", [
-    { id: "claude:opus", harness: "claude", name: "Opus 5.5", nativeId: "opus" },
+    {
+      id: "claude:opus",
+      harness: "claude",
+      name: "Opus 5.5",
+      nativeId: "opus",
+      aliasTarget: "claude-opus-5-5",
+    },
     {
       id: "claude:sonnet",
       harness: "claude",
       name: "Sonnet 5.5 (1M context)",
       nativeId: "sonnet",
     },
-    { id: "claude:fable", harness: "claude", name: "Fable 5.1", nativeId: "fable" },
+    {
+      id: "claude:fable",
+      harness: "claude",
+      name: "Fable 5.1",
+      nativeId: "fable",
+      aliasTarget: "claude-fable-5-1",
+    },
     { id: "claude:haiku", harness: "claude", name: "Haiku 4.5", nativeId: "haiku" },
     {
       id: "claude:opus-4-8",

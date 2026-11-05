@@ -235,6 +235,7 @@ function AlertBox({
           variant="ghost"
           size="sm"
           iconOnly
+          className={styles.dismiss}
           label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
           onClick={onDismiss}
         >

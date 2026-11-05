@@ -3,6 +3,7 @@ export {
   flushHostSessionBindings,
   forgetHostSessionShell,
   hasHostSessionOwnerFence,
+  hydrateHostSessionBindings,
   hostSessionBinding,
   hostSessionShellSummaries,
   patchHostSessionShellMetadata,

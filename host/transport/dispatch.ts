@@ -15,6 +15,7 @@ import {
   type HostDomainContext,
 } from "../domains/context";
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
+import { SessionReadError } from "../sessions/read-errors";
 import {
   REQUEST_EXPIRED_ERROR_CODE,
   REQUEST_EXPIRED_MESSAGE,
@@ -224,6 +225,19 @@ export function createHostDispatcher(services: HostServices) {
       } catch (cause) {
         assertNotCancelled(context.signal);
         if (cause instanceof HostDispatchError) throw cause;
+        if (cause instanceof SessionReadError && !hostRpcHasEffect(method, definition.kind)) {
+          await authorize(context, services.environmentId);
+          const overloaded = cause.kind === "overloaded";
+          throw new HostDispatchError(
+            overloaded ? "overloaded" : "service-unavailable",
+            cause.message,
+            { cause },
+            {
+              category: overloaded ? "overload" : "unavailable",
+              retryable: cause.kind !== "snapshot-budget",
+            },
+          );
+        }
         if (cause instanceof HostDomainOutcomeError) {
           await authorize(context, services.environmentId);
           throw new HostDispatchError(

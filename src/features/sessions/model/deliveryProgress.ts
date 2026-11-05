@@ -15,6 +15,7 @@ export type DeliveryProgress = {
   stage: DeliveryStage;
   startedAt: number;
   detail?: string;
+  noticeOnly?: boolean;
   /** A manual review must not discard ownership of an outstanding late acknowledgement. */
   reconcileUntil?: number;
 };
@@ -66,6 +67,7 @@ export function updateDeliveryProgress(
   owner: DeliveryProgress,
   stage: DeliveryStage,
   detail?: string,
+  noticeOnly = false,
 ) {
   const current = operations.get(sessionId)?.get(owner.messageId);
   if (current?.operationId !== owner.operationId) return;
@@ -73,6 +75,7 @@ export function updateDeliveryProgress(
     ...current,
     stage,
     detail,
+    noticeOnly,
     ...(stage === "unknown" ? { reconcileUntil: Date.now() + 6 * 60_000 } : {}),
   });
   publish(sessionId);

@@ -2,6 +2,8 @@ import { SessionReadProcesses } from "../session-read-process";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
+import { desktopReadSource, readDesktopSnapshot, type DesktopReadSource } from "./snapshot-read";
+import { SessionReadError } from "../sessions/read-errors";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type {
@@ -142,7 +144,7 @@ const LIST_JOB_LIMIT = 2;
 
 type Row = Record<string, unknown>;
 /** `stored`: the database's in-flight mark; `inFlight` also weighs the heartbeat. */
-type Found = { row: Row; inFlight: boolean; stored: boolean };
+type Found = { row: Row; inFlight: boolean; stored: boolean; source?: DesktopReadSource };
 export type DesktopMetadataList = {
   key: string;
   database: string;
@@ -172,13 +174,18 @@ export type DesktopStampRow = {
   createdAt: number;
   updatedAt: number;
   stored: boolean;
+  source?: DesktopReadSource;
 };
 export type DesktopMetadataRecord = {
   cwd: string;
   harness: string;
   stored: boolean;
 };
-export type DesktopSnapshotRecord = { value: HostSession; stored: boolean };
+export type DesktopSnapshotRecord = {
+  value: HostSession;
+  stored: boolean;
+  source?: DesktopReadSource;
+};
 /** A snapshot without `session.blocks`; `lastUserText` is the last user block's text ("" if none). */
 export type DesktopSessionMeta = Omit<HostSession, "session"> & {
   session: Omit<Session, "blocks">;
@@ -300,17 +307,17 @@ export class DesktopSessions {
    * Windows an open handle stops the desktop app from replacing the file. */
   private query<T>(
     path: string,
-    run: (db: DatabaseSync, columns: () => Set<string>) => T,
+    run: (db: DatabaseSync, columns: () => Set<string>, physicalId: string) => T,
     required = false,
   ): T | undefined {
     for (let attempt = 0; ; attempt++) {
       try {
         const handle = this.handle(path);
-        const result = run(handle.db, () => this.columns(handle));
+        const result = run(handle.db, () => this.columns(handle), handle.id);
         this.release(path, handle);
         return result;
       } catch (error) {
-        if (isHostNotesAdmissionFault(error)) throw error;
+        if (isHostNotesAdmissionFault(error) || error instanceof SessionReadError) throw error;
         // A stale handle (file replaced, schema migrated) is retried once fresh.
         this.drop(path);
         if (attempt > 0) {
@@ -319,7 +326,7 @@ export class DesktopSessions {
             required &&
             !["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")
           )
-            throw new Error("Desktop session metadata is temporarily unavailable.", {
+            throw new SessionReadError("unavailable", {
               cause: error,
             });
           return undefined;
@@ -686,11 +693,22 @@ export class DesktopSessions {
       try {
         rows = this.query(
           path,
-          (db, columns) => {
+          (db, columns, physicalId) => {
             const set = columns();
             const filter =
               typeof where === "string" ? ([where, args] as [string, string[]]) : where(db, set);
-            return filter ? this.rows(db, set, filter[0], filter[1], blocks, required) : [];
+            if (!filter) return [];
+            const rows = this.rows(db, set, filter[0], filter[1], blocks, required);
+            if (blocks === true && required) {
+              const source = desktopReadSource(path, physicalId, "", "");
+              for (const found of rows)
+                found.source = {
+                  ...source,
+                  cwd: String(found.row.cwd),
+                  harness: String(found.row.harness),
+                };
+            }
+            return rows;
           },
           required,
         );
@@ -1074,10 +1092,12 @@ export class DesktopSessions {
       try {
         found = this.query(
           path,
-          (db) => {
+          (db, _columns, physicalId) => {
             // The covering index answers this without reading the transcript.
             const row = db
-              .prepare(`SELECT created_at, updated_at FROM sessions${coverIndex(db)} WHERE id=?`)
+              .prepare(
+                `SELECT created_at, updated_at, cwd, harness FROM sessions${coverIndex(db)} WHERE id=?`,
+              )
               .get(id);
             if (!row) return undefined;
             let stored = false;
@@ -1098,6 +1118,7 @@ export class DesktopSessions {
               createdAt: Number(row.created_at),
               updatedAt: Number(row.updated_at),
               stored,
+              source: desktopReadSource(path, physicalId, String(row.cwd), String(row.harness)),
             };
           },
           required,
@@ -1304,7 +1325,7 @@ export class DesktopSessions {
     )
       throw new Error("Desktop session project changed while reading.");
     const value = this.snapshotFromRow(id, projectId, found);
-    return value && { value, stored: found.stored };
+    return value && { value, stored: found.stored, source: found.source };
   }
 
   async snapshotAsync(
@@ -1314,52 +1335,18 @@ export class DesktopSessions {
     signal?: AbortSignal,
   ): Promise<HostSession | undefined> {
     const generation = this.metadataGeneration;
-    if (signal) {
-      const record = await this.sessionReadProcesses.read<DesktopSnapshotRecord | undefined>(
-        {
-          kind: "desktop",
-          paths: this.paths(),
-          platform: this.platform,
-          method: "snapshot",
-          sessionId: id,
-          projectId,
-          expectedProjectCwd,
-        },
+    if (signal)
+      return readDesktopSnapshot({
+        reads: this.sessionReadProcesses,
+        paths: this.paths,
+        platform: this.platform,
+        id,
+        projectId,
+        expectedProjectCwd,
         signal,
-      );
-      this.assertReadGeneration(generation);
-      signal.throwIfAborted();
-      if (!record) return undefined;
-      const rows = await this.sessionReadProcesses.read<DesktopStampRow[]>(
-        {
-          kind: "desktop",
-          paths: this.paths(),
-          platform: this.platform,
-          method: "stamp",
-          sessionId: id,
-        },
-        signal,
-      );
-      const owner = rows.reduce<DesktopStampRow | undefined>(
-        (old, row) => (!old || ownsBefore(row.createdAt, old.createdAt) ? row : old),
-        undefined,
-      );
-      this.assertReadGeneration(generation);
-      signal.throwIfAborted();
-      if (
-        !owner ||
-        owner.updatedAt !== record.value.revision ||
-        (owner.createdAt || owner.updatedAt) !== record.value.createdAt
-      )
-        throw new Error("Desktop session source changed while reading.");
-      const running = this.isRunning(id, record.stored);
-      const { busy: _busy, ...session } = record.value.session;
-      return {
-        ...record.value,
-        status: running ? "running" : "idle",
-        session: { ...session, ...(running ? { busy: true } : {}) },
-      };
-    }
+        assertCurrent: () => this.assertReadGeneration(generation),
+        isRunning: (stored) => this.isRunning(id, stored),
+      });
     const key = JSON.stringify([id, projectId, expectedProjectCwd]);
     let flight = this.snapshotFlights.get(key);
     if (!flight) {

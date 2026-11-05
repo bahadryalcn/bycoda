@@ -58,6 +58,7 @@ export class RemoteChanges {
   readonly instanceId = randomUUID();
   private active = 0;
   private sessionCache = new Map<string, { at: number; revision: SessionRead }>();
+  private sessionReads = new Map<string, { version: number; pending: Promise<SessionRead> }>();
   /** When a missing session was last reported deleted at a given cursor. A client
    * still subscribed to it would otherwise get an instant answer on every poll. */
   private deletedReported = new Map<string, number>();
@@ -173,11 +174,26 @@ export class RemoteChanges {
       this.cacheVersion = this.signal.version;
     }
     const readCachedSession = async (id: string) => {
+      if (this.cacheVersion !== this.signal.version) {
+        this.sessionCache.clear();
+        this.cacheVersion = this.signal.version;
+      }
       const now = Date.now();
       const cached = this.sessionCache.get(id);
       if (cached && now - cached.at < 200) return cached.revision;
       const version = this.signal.version;
-      const revision = await readSession(id);
+      let flight = this.sessionReads.get(id);
+      if (!flight || flight.version !== version) {
+        const pending = Promise.resolve().then(() => readSession(id));
+        flight = { version, pending };
+        this.sessionReads.set(id, flight);
+        void pending
+          .finally(() => {
+            if (this.sessionReads.get(id)?.pending === pending) this.sessionReads.delete(id);
+          })
+          .catch(() => {});
+      }
+      const revision = await flight.pending;
       if (version === this.signal.version) this.sessionCache.set(id, { at: now, revision });
       while (this.sessionCache.size > 4096)
         this.sessionCache.delete(this.sessionCache.keys().next().value!);

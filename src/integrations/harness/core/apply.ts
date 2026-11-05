@@ -24,7 +24,7 @@ import type {
 } from "../../../features/sessions/model/session";
 import {
   dropContextWindow,
-  mergeContextUsage,
+  applyContextReading,
 } from "../../../features/sessions/model/contextUsage";
 import {
   mergeSessionUsage,
@@ -343,19 +343,9 @@ export function applyHarnessEvent(
       };
       return { ...answered, busy: session.busy };
     }
-    case "context": {
-      const context = mergeContextUsage(session.context, {
-        used: event.used,
-        window: event.window,
-      });
-      if (
-        session.context &&
-        session.context.used === context.used &&
-        session.context.window === context.window
-      )
-        return session;
-      return { ...session, context };
-    }
+    case "context.compacted":
+    case "context":
+      return applyContextReading(session, event);
     case "usage": {
       const usage = mergeSessionUsage(session.usage, event);
       const previous = session.usage;

@@ -15,11 +15,12 @@ registerHooks({
 });
 const { DesktopSessions } = await import("./desktop/desktopSessions.ts");
 const { createHostNotesDatabaseFactory } = await import("./host-notes-admission.ts");
+const { SessionReadError } = await import("./sessions/read-errors.ts");
 let admitted = false;
 process.on("message", ({ id, request, comparison }) => {
   if (admitted) process.exit(1);
   admitted = true;
-  let value, error;
+  let value, error, errorKind;
   let desktop, db;
   const factory = createHostNotesDatabaseFactory(comparison);
   try {
@@ -109,17 +110,19 @@ process.on("message", ({ id, request, comparison }) => {
     if (!factory.connectionsClosed() || factory.closeFault())
       throw new Error("Session read connection close was not confirmed.");
     if (Buffer.byteLength(JSON.stringify(value) ?? "null") > 32 * 1024 * 1024)
-      throw new Error("Session exceeds full snapshot budget; use bounded transcript pages.");
+      throw new SessionReadError("snapshot-budget");
   } catch (cause) {
     value = undefined;
     error = cause instanceof Error ? cause.message : "Session readonly helper failed.";
+    if (cause instanceof SessionReadError) errorKind = cause.kind;
   } finally {
     try {
       db?.close();
       desktop?.releaseReadHandles();
     } catch {
       error = "Session read close was not confirmed.";
+      errorKind = undefined;
     }
   }
-  process.send?.({ id, value, error }, () => process.exit(error ? 1 : 0));
+  process.send?.({ id, value, error, errorKind }, () => process.exit(error ? 1 : 0));
 });

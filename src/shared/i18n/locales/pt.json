@@ -1,4 +1,7 @@
 {
+  "Enable": "Ativar",
+  "Disable": "Desativar",
+  "Applies to this project for Claude Code.": "Aplica-se a este projeto no Claude Code.",
   "Too many attachments": "Anexos demais",
   "Cannot attach {p0}: no file data is available.": "Não é possível anexar {p0}: os dados do arquivo não estão disponíveis.",
   "Could not save attachment {p0}.": "Não foi possível salvar o anexo {p0}.",

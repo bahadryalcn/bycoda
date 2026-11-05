@@ -27,7 +27,12 @@ export function RemoteConnectionBanner({ cwd, stale = false }: { cwd: string; st
         stale={stale}
         compact
         failure={{
-          kind: status === "outdated-host" ? "outdated" : "unreachable",
+          kind:
+            status === "outdated-host"
+              ? "outdated"
+              : status === "identity-mismatch"
+                ? "identity"
+                : "unreachable",
           message: `${error ?? t("Reconnecting…")}${since}`,
         }}
       />

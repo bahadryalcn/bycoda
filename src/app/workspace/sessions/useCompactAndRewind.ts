@@ -1,4 +1,5 @@
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { compactionContextEvents } from "../../../integrations/harness/core/compactionContext";
 import { type MutableRefObject, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
@@ -172,6 +173,9 @@ export function useCompactAndRewind({
       const controlsAgents = operatorAccess || orchestrator.run(sessionId)?.status === "active";
 
       void (async () => {
+        const contextEvents = compactionContextEvents((event) =>
+          enqueueHarnessEvent(sessionId, event),
+        );
         try {
           await compactHarnessContext({
             harness: current.harness,
@@ -187,10 +191,11 @@ export function useCompactAndRewind({
             appAccess: operatorAccess,
             onEvent: (event) => {
               if (turnGen.current.get(sessionId) !== gen) return;
-              enqueueHarnessEvent(sessionId, event);
+              contextEvents.onEvent(event);
             },
           });
           if (turnGen.current.get(sessionId) !== gen) return;
+          contextEvents.complete();
           enqueueHarnessEvent(sessionId, {
             type: "status",
             key: COMPACTION_STATUS_KEY,

@@ -141,9 +141,11 @@ function MachineConnectionNotice({
     active ? Date.now() : undefined,
   );
   const [now, setNow] = useState(Date.now);
+  const [dismissed, setDismissed] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => {
       setFirstFailureAt((previous) => (active ? (previous ?? Date.now()) : undefined));
+      if (!active) setDismissed(false);
     }, 0);
     return () => clearTimeout(timer);
   }, [active]);
@@ -156,6 +158,7 @@ function MachineConnectionNotice({
   }, [active, transient, autoReconnect, reconnecting, firstFailureAt]);
   if (
     !active ||
+    (dismissed && transient) ||
     (transient &&
       autoReconnect &&
       !reconnecting &&
@@ -179,7 +182,13 @@ function MachineConnectionNotice({
   const displayedFailure = hardState ? currentFailure : (failure ?? currentFailure);
   return (
     <div className="shrink-0 px-2 py-1" data-remote-connection-notice={environmentId}>
-      <RemoteLoadError cwd={environmentId} failure={displayedFailure} compact coordinated={false} />
+      <RemoteLoadError
+        cwd={environmentId}
+        failure={displayedFailure}
+        compact
+        coordinated={false}
+        onDismiss={transient ? () => setDismissed(true) : undefined}
+      />
     </div>
   );
 }

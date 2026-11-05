@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { createStore } from "../../../shared/lib/store";
 import {
   composerDraftOf,
   composerDraftRevision,
@@ -52,6 +53,13 @@ const spilled = new Map<string, Map<string, { data: string; path: string }>>();
 let listedSessions: Set<string> | null = null;
 /** True only once every saved draft is in the cache. A timeout leaves it false. */
 let draftsLoaded = false;
+const loadState = createStore();
+export const subscribeComposerDraftLoadState = loadState.subscribe;
+function setDraftsLoaded(loaded: boolean): void {
+  if (draftsLoaded === loaded) return;
+  draftsLoaded = loaded;
+  loadState.notify();
+}
 
 /** Whether the saved drafts are known to be in the cache, so an empty cache means no draft. */
 export function composerDraftsLoaded(): boolean {
@@ -79,6 +87,8 @@ function sameDraft(a: ComposerDraft, b: ComposerDraft): boolean {
   return (
     a.text === b.text &&
     a.mode === b.mode &&
+    a.sourceDraftId === b.sourceDraftId &&
+    a.sourceDraftDigest === b.sourceDraftDigest &&
     (a.attachments === b.attachments || (!a.attachments.length && !b.attachments.length)) &&
     (a.mcpTags === b.mcpTags || (!a.mcpTags.length && !b.mcpTags.length))
   );
@@ -340,7 +350,7 @@ export async function hydrateComposerDrafts(): Promise<void> {
   await draftPersistence.run("profile", "hydration", async (work) => {
     const startedAt = composerDraftRevision();
     listedSessions = null;
-    draftsLoaded = false;
+    setDraftsLoaded(false);
     try {
       const timeout = new Promise<null>((resolve) =>
         setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS),
@@ -370,7 +380,7 @@ export async function hydrateComposerDrafts(): Promise<void> {
           Promise.all(rows.map((row) => hydrateRow(row, startedAt, work))).then(() => true),
           timeout,
         ]);
-        draftsLoaded = finished === true;
+        setDraftsLoaded(finished === true);
         if (draftsLoaded) work.confirmRecovery();
       }
     } catch (error) {

@@ -60,6 +60,9 @@
   inline-size: 100%;
   block-size: 100%;
 }
+.dismiss {
+  align-self: flex-start;
+}
 /* A tone is a pairing of glyph, border and subtle surface; the text keeps the neutral ink. */
 .alert {
   border: 1px solid var(--alert-border, var(--border));

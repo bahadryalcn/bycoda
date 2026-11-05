@@ -377,3 +377,32 @@ describe("settings keyboard controls", () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+it("keeps recovery actions independent of feedback dismissal", async () => {
+  const dismiss = vi.fn();
+  const retry = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        SettingsFeedback,
+        {
+          state: "error",
+          onDismiss: dismiss,
+          action: createElement("button", { onClick: retry }, "Retry"),
+        },
+        "Connection failed",
+      ),
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!.click(),
+  );
+  expect(dismiss).toHaveBeenCalledOnce();
+  expect(retry).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
+  );
+  expect(retry).toHaveBeenCalledOnce();
+});

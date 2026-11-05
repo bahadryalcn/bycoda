@@ -2,6 +2,7 @@ import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { HostNotesAdmission } from "./host-notes-admission";
+import { isSessionReadErrorKind, SessionReadError } from "./sessions/read-errors";
 
 export type SessionReadRequest =
   | { kind: "host"; path: string; sessionId: string }
@@ -14,7 +15,7 @@ export type SessionReadRequest =
       projectId?: string;
       expectedProjectCwd?: string;
     };
-type Reply = { id: string; value?: unknown; error?: string };
+type Reply = { id: string; value?: unknown; error?: string; errorKind?: unknown };
 const aborted = () => new Error("Session read cancelled before completion.");
 /** One bounded readonly job per child. Never settle a dispatched job before EXIT. */
 export class SessionReadProcesses {
@@ -37,8 +38,7 @@ export class SessionReadProcesses {
     const key = JSON.stringify(request);
     let flight = this.flights.get(key);
     if (!flight) {
-      if (this.flights.size >= 8)
-        return Promise.reject(new Error("Session read process capacity is busy."));
+      if (this.flights.size >= 8) return Promise.reject(new SessionReadError("overloaded"));
       const controller = new AbortController();
       const original = {
         controller,
@@ -58,8 +58,7 @@ export class SessionReadProcesses {
     const original = flight;
     // Detached promises still await the original job; bound that retained metadata
     // too when an unresponsive child cannot be retired by the OS.
-    if (original.attached >= 128)
-      return Promise.reject(new Error("Session read observer capacity is busy."));
+    if (original.attached >= 128) return Promise.reject(new SessionReadError("overloaded"));
     original.attached++;
     const observer = {};
     original.observers.add(observer);
@@ -118,7 +117,11 @@ export class SessionReadProcesses {
         if (failure || code !== 0 || !reply || reply.error)
           reject(
             failure ??
-              new Error(reply?.error ?? "Session read helper exited without a confirmed result."),
+              (isSessionReadErrorKind(reply?.errorKind)
+                ? new SessionReadError(reply.errorKind)
+                : new Error(
+                    reply?.error ?? "Session read helper exited without a confirmed result.",
+                  )),
           );
         else resolve(reply.value);
       };

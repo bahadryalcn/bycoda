@@ -1,3 +1,4 @@
+import { checkpointWrites } from "./storage/checkpoint-writes";
 import { SessionReadProcesses } from "./session-read-process";
 import {
   compactCommandReceipts,
@@ -14,7 +15,7 @@ import {
 import { dispatchCommittedEffect, TransactionEffects } from "./storage/transaction-effects";
 import { ProjectIdentityFence } from "./projects/project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
-import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
+import { cachedProviderHistory, carryProviderHistory } from "./sessions/provider-history-cache";
 import { assistantJobSessionBelongs } from "./assistant/work/assistant-job-scope";
 import type { AssistantJob } from "../src/shared/model/host-contracts/assistant";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -48,7 +49,7 @@ import { sessionNeedsInput, type Block } from "../src/features/sessions/model/se
 import { changedBlocks } from "../src/features/sessions/model/blockChanges";
 import { streamingTextUpdate } from "../src/features/sessions/model/stableBlocks";
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
-import { blockRevisions } from "./sessions/block-revisions";
+import { blockRevisions, materializeBlockRevisions } from "./sessions/block-revisions";
 import type { BlockChanges } from "../src/features/sessions/model/blockChanges";
 import type { UsageMetadataPage, UsageTurnMetadata } from "./usage/usage-report";
 import type {
@@ -105,6 +106,7 @@ interface SummaryBlocks {
   notice?: Block;
   draft: number;
   approval: number;
+  shell: number;
   weight: number;
 }
 interface BlockIndex {
@@ -123,6 +125,7 @@ function aggregate(left: SummaryBlocks, right: SummaryBlocks): SummaryBlocks {
     notice: right.notice ?? left.notice,
     draft: left.draft + right.draft,
     approval: left.approval + right.approval,
+    shell: left.shell + right.shell,
     weight: left.weight + right.weight,
   };
 }
@@ -134,6 +137,7 @@ function blockSummary(block?: Block): SummaryBlocks {
     notice: block?.notice === "error" ? block : undefined,
     draft: block?.role === "user" && block.draft ? 1 : 0,
     approval: block?.approval && !block.approval.decided ? 1 : 0,
+    shell: block?.shell?.running || block?.shell?.terminationFailed ? 1 : 0,
     weight: block ? snapshotWeight(block) : 0,
   };
 }
@@ -193,6 +197,7 @@ function patchBlockIndex(previous: Block[], blocks: Block[], changes?: BlockChan
       else authors.delete(id);
     }
   for (const id of changes.keys()) root = patch(root, 0, blocks.length, before.positions.get(id)!);
+  carryProviderHistory(previous, blocks, changes, before.positions);
   blockIndexes.set(blocks, { positions: before.positions, authors, root });
   return false;
 }
@@ -2099,7 +2104,11 @@ export class HostStore {
         .run(
           value.session.id,
           value.projectId,
-          JSON.stringify(value),
+          JSON.stringify(
+            value.blockRevisions
+              ? { ...value, blockRevisions: materializeBlockRevisions(value.blockRevisions) }
+              : value,
+          ),
           summaryJson,
           value.desktop == null ? 0 : 1,
           value.revision,
@@ -2108,11 +2117,7 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some(
-            (block) => block.shell?.running || block.shell?.terminationFailed,
-          )
-            ? 1
-            : 0,
+          indexBlocks(value.session.blocks).root.shell > 0 ? 1 : 0,
         );
       await this.db
         .prepare(`INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2129,11 +2134,7 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some(
-            (block) => block.shell?.running || block.shell?.terminationFailed,
-          )
-            ? 1
-            : 0,
+          indexBlocks(value.session.blocks).root.shell > 0 ? 1 : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
       const eventRows = rows.map((row) => [
@@ -2171,65 +2172,20 @@ export class HostStore {
     const journal = await this.db
       .prepare("SELECT revision FROM session_journal WHERE session_id=?")
       .get(id);
-    const incremental = changes && !changes.structural;
     const previous =
       journal ?? (await this.db.prepare("SELECT revision FROM session_state WHERE id=?").get(id));
     const revision = Number(previous?.revision ?? -1);
-    const {
-      blockRevisions: _revisions,
-      session: { blocks, ...session },
-      ...rest
-    } = value;
     const run = async () => {
-      const writeBlock = this.db.prepare(
-        "INSERT INTO session_journal_blocks VALUES (?, ?, ?, ?) ON CONFLICT(session_id,block_id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload",
+      const { operations, eventRows } = checkpointWrites(
+        value,
+        rows,
+        revision,
+        !!journal,
+        changes,
+        () => JSON.stringify(summary(value)),
+        () => indexBlocks(value.session.blocks).root.shell > 0,
       );
-      for (const block of incremental ? changes.changed.values() : blocks) {
-        const stamp = value.blockRevisions?.[block.id] ?? value.revision;
-        if (stamp > revision) await writeBlock.run(id, block.id, stamp, JSON.stringify(block));
-      }
-      if (incremental && journal)
-        await this.db
-          .prepare("UPDATE session_journal SET revision=?,metadata=? WHERE session_id=?")
-          .run(value.revision, JSON.stringify({ ...rest, session }), id);
-      else
-        await this.db
-          .prepare(
-            "INSERT INTO session_journal VALUES (?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET revision=excluded.revision,metadata=excluded.metadata,block_ids=excluded.block_ids",
-          )
-          .run(
-            id,
-            value.revision,
-            JSON.stringify({ ...rest, session }),
-            JSON.stringify(blocks.map((block) => block.id)),
-          );
-      await this.db
-        .prepare(
-          "UPDATE session_state SET summary=?, revision=?, updated_at=?, status=?, has_desktop=?, desktop_updated_at=?, provider_session_id=?, harness=?, session_cwd=?, shell_running=? WHERE id=?",
-        )
-        .run(
-          JSON.stringify(summary(value)),
-          value.revision,
-          value.updatedAt,
-          value.status,
-          value.desktop == null ? 0 : 1,
-          value.desktop?.updatedAt ?? null,
-          value.session.providerSessionId || null,
-          value.session.harness ?? null,
-          value.session.cwd ?? null,
-          value.session.blocks.some(
-            (block) => block.shell?.running || block.shell?.terminationFailed,
-          )
-            ? 1
-            : 0,
-          id,
-        );
-      const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
-      const eventRows = rows.map((row) => [id, row.revision, JSON.stringify(row.event)]);
-      await insert.runMany(eventRows);
-      await this.db
-        .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
-        .run(id, value.revision - 2000);
+      await this.db.storeScope(() => this.db.batchWrites(operations));
       await this.capEvents(id, eventRows);
     };
     const guarded = () => this.sessionWrite(value.session.id, value.authorityGeneration, run);
@@ -2921,7 +2877,7 @@ export function summary(value: HostSession): HostSessionSummary {
     .sort((a, b) => positions.get(a.id)! - positions.get(b.id)!);
   return {
     ...summaryFromBlocks({ ...value, session: { ...value.session, blocks: representatives } }),
-    providerHistory: sessionProviderHistory(value.session),
+    providerHistory: cachedProviderHistory(value.session),
     draft: root.draft > 0,
     needsInput:
       !value.session.worktreeRemoved &&

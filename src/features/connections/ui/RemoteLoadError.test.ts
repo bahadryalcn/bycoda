@@ -9,16 +9,17 @@ const state = vi.hoisted(() => ({
   status: "unreachable" as RemoteConnectionStatus,
   auto: true,
   requested: false,
+  shared: true,
 }));
 vi.mock("../model/useRemoteConnection", () => ({
   useRemoteConnection: () => ({
     status: state.status,
     reconnecting: state.requested,
     reconnect: vi.fn(),
-    machine: undefined,
+    machine: { id: "env", name: "Server", ssh: true },
   }),
 }));
-vi.mock("./RemoteConnectionFeedback", () => ({ useRemoteConnectionFeedback: () => true }));
+vi.mock("./RemoteConnectionFeedback", () => ({ useRemoteConnectionFeedback: () => state.shared }));
 vi.mock("../../settings/model/settings", () => ({
   loadRemoteAutoReconnect: () => state.auto,
   subscribeRemoteAutoReconnect: () => () => {},
@@ -29,6 +30,7 @@ beforeEach(() => {
   state.status = "unreachable";
   state.auto = true;
   state.requested = false;
+  state.shared = true;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -48,31 +50,35 @@ async function render(message = "Machine is unreachable", stale = false) {
     ),
   );
 }
-it("shows waiting progress only while automatic recovery can run", async () => {
+it("suppresses duplicate status while the shared owner is mounted", async () => {
   await render();
-  expect(container.querySelector("[data-loading-layout]")).not.toBeNull();
+  expect(container.textContent).toBe("");
   state.auto = false;
   await render();
-  expect(container.querySelector("[data-loading-layout]")).toBeNull();
-  expect(container.querySelector('[role="status"]')).not.toBeNull();
-});
-it.each([
-  "identity-mismatch",
-  "connection-blocked",
-  "needs-auth",
-  "host-key",
-  "outdated-host",
-] as const)("does not pretend recovery is running for %s", async (status) => {
-  state.status = status;
-  await render();
-  expect(container.querySelector("[data-loading-layout]")).toBeNull();
-});
-it("keeps hard per-source failures neutral before shared state catches up", async () => {
-  state.status = "connected";
-  await render("RPC_WS_BLOCKED: Host authentication was refused");
-  expect(container.querySelector("[data-loading-layout]")).toBeNull();
+  expect(container.textContent).toBe("");
 });
 it("retains loaded content without adding a duplicate status row", async () => {
   await render("Machine is unreachable", true);
   expect(container.textContent).toBe("");
+});
+
+it("keeps the compact title, reconnect and disclosure in one row", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "unreachable", message: "SSH timed out" },
+        compact: true,
+      }),
+    ),
+  );
+  const row = container.querySelector("[data-remote-feedback-row]");
+  expect(row?.textContent).toContain("Server");
+  expect(row?.querySelector("button")?.textContent).toContain("Reconnect");
+  const details = row?.querySelector("details");
+  expect(details?.open).toBe(false);
+  expect(details?.querySelector("summary")?.textContent).toContain("Details");
+  expect(details?.textContent).toContain("SSH timed out");
+  expect(details?.textContent).toContain("Connection settings");
 });

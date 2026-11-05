@@ -61,6 +61,13 @@ async function typeInto(field: HTMLTextAreaElement, text: string) {
 }
 
 describe("QueuedMessageEditDialog", () => {
+  it("snaps selections around attached references", async () => {
+    const { field } = await open();
+    act(() => field.setSelectionRange(10, 10));
+    expect([field.selectionStart, field.selectionEnd]).toEqual([8, 8]);
+    act(() => field.setSelectionRange(9, 13));
+    expect([field.selectionStart, field.selectionEnd]).toEqual([8, 16]);
+  });
   it("keeps a rejected queue edit available for correction and retry", async () => {
     const onSave = vi.fn().mockImplementationOnce(() => {
       throw new Error("Remote queue is full");

@@ -969,8 +969,7 @@ export function ProviderRow({
   const inheritedRuntimeMode = inheritedDefaults?.runtimeMode;
   const validInheritedRuntimeMode =
     inheritedRuntimeMode != null && !runtimeModeUnavailableReason(harness, inheritedRuntimeMode);
-  // Every other model control (fast, advisor, subagents, auto-compact…) can
-  // also get a default for new conversations.
+  // Other model controls can also get defaults for new conversations.
   const extras = current
     ? pickerSettings(current)
         .filter((setting) => setting.id !== effort?.id)
@@ -979,6 +978,7 @@ export function ProviderRow({
             setting,
             models,
             scopeDefaults.extras?.[setting.id] ?? inheritedDefaults?.extras?.[setting.id],
+            current,
           ),
         )
     : [];

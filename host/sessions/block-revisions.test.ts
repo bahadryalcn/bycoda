@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { blockRevisions } from "./block-revisions";
+import { blockRevisions, materializeBlockRevisions } from "./block-revisions";
+import { cachedProviderHistory, carryProviderHistory } from "./provider-history-cache";
+import { sessionProviderHistory } from "../../src/features/sessions/model/sessionProviderHistory";
 import { HostStore } from "../store";
 import { applyHarnessEvent } from "../../src/integrations/harness/core/apply";
 import {
@@ -30,6 +32,37 @@ function value(blocks: Block[], revision = 1): HostSession {
 }
 
 describe("sparse block revisions", () => {
+  it("keeps provider history parity across text edits, provider edits and metadata changes", () => {
+    const first = value([
+      { id: "a", role: "user", text: "hello" },
+      { id: "b", role: "assistant", text: "one" },
+    ]).session;
+    expect(cachedProviderHistory(first)).toEqual(sessionProviderHistory(first));
+    const text = { ...first.blocks[1], text: "two" };
+    const next = { ...first, blocks: [first.blocks[0], text] };
+    carryProviderHistory(
+      first.blocks,
+      next.blocks,
+      new Map([[text.id, text]]),
+      new Map([
+        ["a", 0],
+        ["b", 1],
+      ]),
+    );
+    expect(cachedProviderHistory(next)).toEqual(sessionProviderHistory(next));
+    const draft = { ...next.blocks[0], draft: true };
+    const changed = { ...next, blocks: [draft, text], harness: "claude" as const };
+    carryProviderHistory(
+      next.blocks,
+      changed.blocks,
+      new Map([[draft.id, draft]]),
+      new Map([
+        ["a", 0],
+        ["b", 1],
+      ]),
+    );
+    expect(cachedProviderHistory(changed)).toEqual(sessionProviderHistory(changed));
+  });
   it("does not inspect historical blocks for a trusted text update and keeps prior revisions immutable", () => {
     let historyReads = 0;
     const history = Array.from({ length: 10000 }, (_, index) => ({
@@ -70,6 +103,10 @@ describe("sparse block revisions", () => {
     registerBlockChanges(initial.session.blocks, next.session.blocks, [c], ["a"]);
     next.blockRevisions = blockRevisions(initial, next);
     expect(JSON.parse(JSON.stringify(next.blockRevisions))).toEqual({ b: 1, c: 2 });
+    expect(JSON.parse(JSON.stringify(materializeBlockRevisions(next.blockRevisions)))).toEqual({
+      b: 1,
+      c: 2,
+    });
     expect(next.blockRevisions.a).toBeUndefined();
     expect("a" in next.blockRevisions).toBe(false);
     expect(initial.blockRevisions).toEqual({ a: 1, b: 1 });

@@ -673,7 +673,7 @@ describe("sparse journal checkpoints", () => {
     let next = await edit(store, base, [{ ...base.session.blocks[1], text: "first edit" }]);
     await flush(store); // The first journal has to seed block_ids.
     const ids = (await store.db.prepare("SELECT block_ids FROM session_journal").get())!.block_ids;
-    const prepare = vi.spyOn(store.db, "prepare");
+    const batch = vi.spyOn(store.db, "batchWrites");
     next = await edit(store, next, [{ ...next.session.blocks[1], text: "older" }]);
     next = await edit(store, next, [{ ...next.session.blocks[2], text: "second edit" }]);
     next = await edit(store, next, [{ ...next.session.blocks[1], text: "latest" }]);
@@ -683,12 +683,9 @@ describe("sparse journal checkpoints", () => {
     await flush(store);
     expect(getter).not.toHaveBeenCalled();
     getter.mockRestore();
-    expect(
-      prepare.mock.calls.some(([sql]) =>
-        sql.startsWith("UPDATE session_journal SET revision=?,metadata=?"),
-      ),
-    ).toBe(true);
-    prepare.mockRestore();
+    expect(batch).toHaveBeenCalledOnce();
+    expect(batch.mock.calls[0][0][1].sql).toMatch(/^UPDATE session_journal SET revision=/);
+    batch.mockRestore();
     expect((await store.db.prepare("SELECT block_ids FROM session_journal").get())!.block_ids).toBe(
       ids,
     );

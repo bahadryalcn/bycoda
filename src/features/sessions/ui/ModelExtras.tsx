@@ -37,7 +37,7 @@ function useModelExtras(harness: HarnessId, model: string, values: Record<string
   const merged = mergeModelSettings(current, values);
   const offered = source.modelsFor(harness);
   const settings = pickerSettings(current).map((setting) =>
-    offeredDelegationSetting(setting, offered, merged[setting.id] ?? setting.value),
+    offeredDelegationSetting(setting, offered, merged[setting.id] ?? setting.value, current),
   );
   const effective = Object.fromEntries(
     (current.settings ?? []).map((setting) => [setting.id, merged[setting.id] ?? setting.value]),

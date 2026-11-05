@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { HostTasks } from "./service";
@@ -27,6 +27,41 @@ async function setup() {
   return { store, tasks, input };
 }
 describe("task dependency cycles", () => {
+  it("hydrates a shared unfinished dependency once and skips admission reads", async () => {
+    const { store, tasks, input } = await setup();
+    const hold = await tasks.save({ ...input("hold"), status: "todo" });
+    const queued = await tasks.save({ ...input("first", ["hold", "hold"]), status: "todo" });
+    for (const id of ["first", "second"]) {
+      await store.db
+        .prepare("INSERT OR REPLACE INTO tasks VALUES (?, ?)")
+        .run(id, JSON.stringify({ ...queued, id, status: "queued" }));
+    }
+    const source = vi.fn(() => 0);
+    tasks.trackExternalRuns(source);
+    const find = vi.spyOn(tasks as never, "find" as never);
+    await tasks.tick();
+    expect(find.mock.calls.filter(([id]) => id === hold.id)).toHaveLength(1);
+    expect(source).not.toHaveBeenCalled();
+    expect((await tasks.list()).filter((task) => task.status === "queued")).toHaveLength(2);
+  });
+  it("creates the scheduler index on an already populated database", async () => {
+    const { store, tasks, input } = await setup();
+    await tasks.ready;
+    const legacy = await tasks.save({ ...input("legacy"), status: "todo" });
+    await store.db
+      .prepare("UPDATE tasks SET value=? WHERE id=?")
+      .run(JSON.stringify({ ...legacy, status: "done", merged: true }), legacy.id);
+    await store.db.exec("DROP INDEX tasks_scheduler_status_merged");
+    const reopened = new HostTasks(store, new HostEngine(store, {}), () => 1000);
+    await reopened.ready;
+    const plan = await store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT value FROM tasks WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1",
+      )
+      .all();
+    expect(JSON.stringify(plan)).toContain("tasks_scheduler_status_merged");
+    expect(await reopened.get("legacy")).toBeDefined();
+  });
   it("does not release unfinished dependents by deleting their prerequisite", async () => {
     const { tasks, input } = await setup();
     await tasks.save({ ...input("a"), status: "todo" });

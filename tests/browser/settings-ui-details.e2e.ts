@@ -1,6 +1,50 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`MCP enable and disable preserve connection identity: ${theme} ${width}`, async ({
+      page,
+    }, info) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/settings.html?section=mcp&mcp=1&theme=${theme}&lang=en`);
+      const connections = page.locator("#setting-mcp-servers");
+      await connections.getByRole("button", { name: "Actions for server-01", exact: true }).click();
+      await expect(page.getByRole("menuitem", { name: "Enable", exact: true })).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`mcp-enable-${theme}-${width}.png`) });
+      await page.getByRole("menuitem", { name: "Enable", exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => JSON.parse(sessionStorage.getItem("fixture-mcp-toggle") ?? "null")),
+        )
+        .toMatchObject({
+          provider: "codex",
+          name: "server-01",
+          scope: "user",
+          enabled: true,
+          expectedEnabled: false,
+        });
+      await connections.getByRole("button", { name: "Actions for server-01", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Disable", exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => JSON.parse(sessionStorage.getItem("fixture-mcp-toggle") ?? "null")),
+        )
+        .toMatchObject({
+          provider: "codex",
+          name: "server-01",
+          scope: "user",
+          enabled: false,
+          expectedEnabled: true,
+        });
+      await connections.getByRole("button", { name: "Actions for server-01", exact: true }).click();
+      await expect(page.getByRole("menuitem", { name: "Enable", exact: true })).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`mcp-disabled-${theme}-${width}.png`) });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
   for (const lang of ["en", "tr"]) {
     test(`narrow provider search preserves selection across resize: ${theme} ${lang}`, async ({
       page,

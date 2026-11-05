@@ -206,6 +206,26 @@ describe("session drag preview and gap", () => {
     expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   });
 
+  it("contains the preview at list edges, follows resize, and clears an invalid target", async () => {
+    await render();
+    startDrag("two");
+    const scroller = container.querySelector<HTMLElement>(".sidebar-session-scroll")!;
+    const rect = vi.mocked(scroller.getBoundingClientRect);
+    rect.mockReturnValue(new DOMRect(10, 20, 120, 100));
+    pointer(window, "pointermove", 125, 119);
+    const preview = document.querySelector<HTMLElement>("[data-drag-preview]")!;
+    expect(preview.style.width).toBe("120px");
+    expect(preview.style.transform).toBe("translate3d(10px, 76px, 0)");
+    pointer(window, "pointermove", 1, 10);
+    expect(preview.style.transform).toBe("translate3d(10px, 20px, 0)");
+    expect(Number.parseFloat(item("two").style.getPropertyValue("margin-block-start")) || 0).toBe(
+      0,
+    );
+    pointer(window, "pointerup", 1, 10);
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
+    expect(props.onSelectSession).not.toHaveBeenCalled();
+  });
+
   it("closes the gap and frames the card as a group target after the dwell, saying it on the copy", async () => {
     vi.useFakeTimers();
     await render();

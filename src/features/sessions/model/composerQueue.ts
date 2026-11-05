@@ -36,7 +36,7 @@ export function queueShortcutApplies(input: {
   text: string;
   attachmentCount: number;
 }): boolean {
-  if (!input.busy || input.backgroundOnly || !input.allowBusySubmit) return false;
+  if (!input.busy || !input.allowBusySubmit) return false;
   if (input.disabled || input.popupOpen || input.draftMode) {
     return false;
   }

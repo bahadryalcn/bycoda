@@ -3,6 +3,66 @@ import type { HostSessionSummary } from "../../src/features/connections/model/pr
 import { RemoteChanges } from "./remoteChanges";
 import { ChangeSignal } from "../changeSignal";
 
+it("coalesces concurrent idle session reads and refreshes on change and deletion", async () => {
+  const signal = new ChangeSignal();
+  const changes = new RemoteChanges(signal);
+  const revisions = new Map(Array.from({ length: 32 }, (_, i) => [`s${i}`, 1]));
+  const readSession = vi.fn(async (id: string) => revisions.get(id));
+  const input = {
+    instanceId: changes.instanceId,
+    sessions: [...revisions.keys()].map((sessionId) => ({ sessionId, revision: 1 })),
+    projects: [],
+  };
+  const project = async () => ({ etag: "p", sessions: [] });
+  const idle = await Promise.all(
+    Array.from({ length: 64 }, () => changes.read(input, readSession, project)),
+  );
+  expect(idle.every((value) => value.sessions.length === 0)).toBe(true);
+  expect(readSession).toHaveBeenCalledTimes(32);
+  revisions.set("s0", 2);
+  revisions.delete("s1");
+  signal.notify();
+  const changed = await changes.read(input, readSession, project);
+  expect(changed.sessions).toContainEqual({ sessionId: "s0", revision: 2 });
+  expect(changed.sessions).toContainEqual({ sessionId: "s1", revision: 1, deleted: true });
+  expect(readSession).toHaveBeenCalledTimes(64);
+});
+
+it("does not reuse a pending read across a signal or retain a failed read", async () => {
+  const signal = new ChangeSignal();
+  const changes = new RemoteChanges(signal);
+  const input = {
+    instanceId: changes.instanceId,
+    sessions: [{ sessionId: "s", revision: 1 }],
+    projects: [],
+  };
+  let finish!: (value: number) => void;
+  const readSession = vi
+    .fn<() => Promise<number>>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    )
+    .mockRejectedValueOnce(new Error("read failed"))
+    .mockResolvedValue(2);
+  const project = async () => ({ etag: "p", sessions: [] });
+  const old = changes.read(input, readSession, project);
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  signal.notify();
+  await expect(changes.read(input, readSession, project)).rejects.toThrow("read failed");
+  expect((await changes.read(input, readSession, project)).sessions).toEqual([
+    { sessionId: "s", revision: 2 },
+  ]);
+  finish(1);
+  await old;
+  expect((await changes.read(input, readSession, project)).sessions).toEqual([
+    { sessionId: "s", revision: 2 },
+  ]);
+  expect(readSession).toHaveBeenCalledTimes(3);
+});
+
 it("wakes only the changed owner and immediately resumes continuous new-demand updates", async () => {
   vi.useFakeTimers();
   try {

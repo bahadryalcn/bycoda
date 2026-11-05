@@ -230,7 +230,25 @@ describe("Shift+Tab queues while a turn runs", () => {
     );
   });
 
-  it("keeps Shift+Tab in the composer without sending when idle, empty, or background-only", async () => {
+  it.each(["shortcut", "button"])("queues background-only work through the %s", async (action) => {
+    const onSubmit = vi.fn(() => true);
+    const textarea = await renderComposer({ busy: true, backgroundOnly: true }, onSubmit);
+    await type(textarea, "after the tests, update the rules");
+    const button = container.querySelector<HTMLButtonElement>('[data-usage-guide="queue-button"]');
+    expect(button).not.toBeNull();
+    await act(async () => {
+      if (action === "shortcut") press(textarea, shiftTab);
+      else button!.click();
+    });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith(
+      "after the tests, update the rules",
+      [],
+      expect.objectContaining({ followUpBehavior: "queue" }),
+    );
+  });
+
+  it("keeps Shift+Tab in the composer without sending when idle or empty", async () => {
     const onSubmit = vi.fn(() => true);
     const idle = await renderComposer({ busy: false }, onSubmit);
     await type(idle, "hello");
@@ -240,9 +258,6 @@ describe("Shift+Tab queues while a turn runs", () => {
     await type(empty, "");
     expect(press(empty, shiftTab).defaultPrevented).toBe(true);
 
-    const bg = await renderComposer({ busy: true, backgroundOnly: true }, onSubmit);
-    await type(bg, "hello");
-    expect(press(bg, shiftTab).defaultPrevented).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -474,9 +489,8 @@ describe("a queue restored after a restart", () => {
     expect(send.getAttribute("aria-disabled")).toBe("true");
     act(() => send.click());
     expect(steer).toHaveBeenCalledOnce();
-    expect(
-      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
-    ).toContain("Waiting for confirmation");
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(container.querySelector("[data-queue-feedback]")).toBeNull();
     await act(async () => finish(false));
     // A refused send keeps the message queued without an extra notice line.
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -512,12 +526,11 @@ describe("a queue restored after a restart", () => {
         message: "Queue resumed. Messages will send when this turn finishes.",
       }),
     );
-    expect(
-      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
-    ).toContain("when this turn finishes");
+    expect(container.querySelector("[data-queue-feedback]")).toBeNull();
+    expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
   });
 
-  it("preserves the acceptance result after the last queued row disappears", async () => {
+  it("does not infer acceptance from a successful action or row removal", async () => {
     await renderQueue(
       [{ id: "q1", text: "first", attachments: [] }],
       vi.fn(async () => true),
@@ -527,9 +540,7 @@ describe("a queue restored after a restart", () => {
     )!;
     await act(async () => button.click());
     await renderQueue([]);
-    expect(
-      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
-    ).toContain("Message accepted");
+    expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
   });
 
   it("holds a message whose attachment is gone", async () => {

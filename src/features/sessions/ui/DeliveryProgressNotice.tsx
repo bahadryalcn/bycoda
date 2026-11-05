@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { Check, CircleDashed } from "../../../shared/ui/icons";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { nextQueueStatus } from "../../connections/public/queueState";
 import {
@@ -40,6 +41,39 @@ const labels: Record<DeliveryStage, string> = {
 export const deliveryIsPending = (stage?: DeliveryStage) =>
   !!stage && !["accepted", "rejected", "unknown"].includes(stage);
 
+/** Compact, session-owned indication; acceptance is not turn completion. */
+export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: string }) {
+  const t = useT();
+  const progress = useDeliveryProgress(sessionId);
+  if (
+    !progress ||
+    (!deliveryIsPending(progress.stage) && (progress.stage !== "accepted" || progress.noticeOnly))
+  )
+    return null;
+  const pending = deliveryIsPending(progress.stage);
+  const label = t(labels[progress.stage]);
+  return (
+    <span
+      data-delivery-accepted={pending ? undefined : ""}
+      data-delivery-pending={pending ? "" : undefined}
+      className={
+        pending ? "text-(--ui-text-muted)" : "delivery-accepted text-(--ui-tone-success-fg)"
+      }
+      title={label}
+    >
+      {pending ? (
+        <CircleDashed
+          className="icon-sm animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+      ) : (
+        <Check className="icon-sm" aria-hidden="true" />
+      )}
+      <LiveText className="sr-only" text={label} />
+    </span>
+  );
+}
+
 /** Remains meaningful across composer remounts; unknown rows also survive restart. */
 export function DeliveryProgressNotice({
   sessionId = "",
@@ -57,29 +91,15 @@ export function DeliveryProgressNotice({
     client?.subscribe ?? noSubscribe,
     client?.snapshot ?? (() => noClientState),
   );
-  const [clock, setClock] = useState<{ startedAt: number; elapsed: number }>();
   const [working, setWorking] = useState(false);
   const [resolveError, setResolveError] = useState<string>();
   const focusRequest = useDeliveryReviewRequest(sessionId);
   const lateSettlement = useLateSettlementPossible(sessionId);
   const unknownRow = messages.find((row) => row.deliveryUnknown);
   const pending = deliveryIsPending(progress?.stage);
-  const startedAt = progress?.startedAt;
-  const elapsed = clock?.startedAt === startedAt ? (clock?.elapsed ?? 0) : 0;
-  useEffect(() => {
-    if (startedAt === undefined || !pending) return;
-    const tick = () =>
-      setClock({ startedAt, elapsed: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) });
-    const initial = window.setTimeout(tick, 0);
-    const timer = window.setInterval(tick, 1000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(timer);
-    };
-  }, [startedAt, pending]);
   useEffect(() => {
     if (!progress || progress.stage !== "accepted") return;
-    const timer = window.setTimeout(() => clearDeliveryProgress(sessionId, progress), 6000);
+    const timer = window.setTimeout(() => clearDeliveryProgress(sessionId, progress), 1800);
     return () => window.clearTimeout(timer);
   }, [sessionId, progress]);
   useEffect(() => {
@@ -104,7 +124,12 @@ export function DeliveryProgressNotice({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sessionId, progress, messages, client, clientState]);
-  if (!progress && !unknownRow) return null;
+  if (
+    (!progress && !unknownRow) ||
+    (progress?.stage === "accepted" && !progress.noticeOnly && !unknownRow) ||
+    pending
+  )
+    return null;
   const stage = unknownRow && !pending ? "unknown" : (progress?.stage ?? "unknown");
   const failure = stage === "rejected" ? progress?.detail : undefined;
   const summary = failure?.split(/\r?\n/, 1)[0] || labels[stage];
@@ -134,6 +159,7 @@ export function DeliveryProgressNotice({
         owner,
         removed ? "accepted" : "rejected",
         outcomeText(outcome),
+        true,
       );
     };
     // A pane showing another computer's queue decides through the shared queue.
@@ -176,17 +202,7 @@ export function DeliveryProgressNotice({
           text={t(summary)}
           mode={stage === "rejected" ? "assertive" : "polite"}
         />
-        {pending ? (
-          <span className="shrink-0 tabular-nums text-(--ui-text-muted)">
-            {t("{p0}s elapsed", { p0: elapsed })}
-          </span>
-        ) : null}
       </div>
-      {pending && elapsed >= 10 ? (
-        <p className="mt-1 text-(--ui-text-muted)">
-          {t("Still waiting. Your message is retained; you do not need to write it again.")}
-        </p>
-      ) : null}
       {expandedDetail ? (
         <details className="mt-1 min-w-0 text-(--ui-text-muted)" data-delivery-details>
           <summary className="w-fit cursor-pointer text-ui-caption">{t("Details")}</summary>

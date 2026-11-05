@@ -1,4 +1,7 @@
 {
+  "Enable": "有効にする",
+  "Disable": "無効にする",
+  "Applies to this project for Claude Code.": "Claude Code のこのプロジェクトに適用されます。",
   "Too many attachments": "添付ファイルが多すぎます",
   "Cannot attach {p0}: no file data is available.": "{p0} を添付できません。ファイルデータがありません。",
   "Could not save attachment {p0}.": "添付ファイル {p0} を保存できませんでした。",

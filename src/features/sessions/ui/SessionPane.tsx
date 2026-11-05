@@ -1,11 +1,9 @@
-import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { AssistantSessionControl } from "./AssistantSessionControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
@@ -27,6 +25,8 @@ import {
 import { createPortal } from "react-dom";
 import { useTitleBarActionsSlot } from "../../../app/shell/TitleBarActionsSlot";
 import { Composer } from "./Composer";
+import { RewoundHistoryDisclosure } from "./RewoundHistoryDisclosure";
+import { useSavedDraftProjection } from "./useSavedDraftProjection";
 import {
   useParentInputClosure,
   canMutateParentInputs,
@@ -70,6 +70,7 @@ import {
 } from "../../projects/public/recents";
 import {
   HARNESS_TITLE,
+  hasPendingApproval,
   sessionDisplayTitle,
   sessionDraftBlock,
   sessionWorkCwd,
@@ -310,77 +311,6 @@ type Props = SessionPaneProps & {
   sendBlockedReason?: string;
   allowedModelHarnesses?: readonly HarnessId[];
 };
-
-function RewoundHistoryDisclosure({
-  history,
-  truncated = false,
-}: {
-  history: NonNullable<Session["rewindHistory"]>;
-  truncated?: boolean;
-}) {
-  const t = useT();
-  const locale = useLocale();
-  return (
-    <details
-      data-rewind-history
-      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2 text-ui-caption text-[var(--ui-text-secondary)]"
-    >
-      <summary className="cursor-pointer hover:text-(--ui-tone-neutral-fg)">
-        {t("Rewound history ({p0})", { p0: history.length })}
-      </summary>
-      {truncated ? (
-        <p className="mt-1 text-[var(--ui-text-disabled)]">
-          {t("Showing a preview of rewound history.")}
-        </p>
-      ) : null}
-      <div className="mt-2 flex flex-col gap-3">
-        {[...history].reverse().map((entry) => (
-          <section key={entry.id} className="flex flex-col gap-2">
-            <time
-              dateTime={isoTimestamp(entry.createdAt)}
-              className="text-[var(--ui-text-disabled)]"
-            >
-              {new Date(entry.createdAt).toLocaleString(locale)}
-            </time>
-            {entry.blocks
-              .filter(
-                (block) =>
-                  !block.internal &&
-                  !block.draft &&
-                  (Boolean(block.text) || Boolean(block.attachments?.length)),
-              )
-              .map((block, index) => (
-                <article
-                  key={`${block.id}:${index}`}
-                  className="min-w-0 rounded-md border border-(--ui-pane-border) px-2.5 py-2"
-                >
-                  {block.text ? (
-                    <pre className="select-text whitespace-pre-wrap break-words font-sans text-(--ui-tone-neutral-fg)">
-                      {block.text}
-                    </pre>
-                  ) : null}
-                  {block.attachments?.length ? (
-                    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[var(--ui-text-secondary)]">
-                      <span className="shrink-0">{t("Attachments")}:</span>
-                      <BadgeList
-                        label={t("Attachments")}
-                        size="xs"
-                        className="min-w-0 flex-1"
-                        items={block.attachments.map((file, index) => ({
-                          id: `${index}:${file.name}`,
-                          label: file.name,
-                        }))}
-                      />
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-          </section>
-        ))}
-      </div>
-    </details>
-  );
-}
 
 function sameRemoteFeatures(a: Props["remoteFeatures"], b: Props["remoteFeatures"]): boolean {
   return (
@@ -659,6 +589,31 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const [findAction, setFindAction] = useState<ExpandingButtonGroupItem | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const draftBlock = useMemo(() => sessionDraftBlock(stableSession), [stableSession]);
+  const savedDraftProjection = useSavedDraftProjection(
+    session.id,
+    visible &&
+      !remote &&
+      !managed &&
+      !session.busy &&
+      !session.continuingElsewhere &&
+      !session.historyLoading &&
+      !session.worktreePreparing &&
+      workspaceSwitchingSessionId !== session.id &&
+      !windowMovingSessionIds?.has(session.id) &&
+      !session.editingQueuedMessageId &&
+      !session.queuedMessages?.length &&
+      !session.pendingQuestion &&
+      !hasPendingApproval(session.blocks) &&
+      !session.inboxAsk &&
+      !session.worktreeRemoved &&
+      !sendBlockedReason &&
+      draftBlock &&
+      !draftBlock.followUpDelivery &&
+      !draftBlock.appRequestId
+      ? draftBlock
+      : undefined,
+  );
+  const projectedDraft = savedDraftProjection.projected;
   useSyncExternalStore(
     subscribeProjectChatBackground,
     projectChatBackgroundRevision,
@@ -928,7 +883,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const workCwd = sessionWorkCwd(session);
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   const dockComposer =
-    remoteSessionLoading || (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk));
+    remoteSessionLoading ||
+    ((!draftBlock || savedDraftProjection.ready) && (!isEmpty || inSplit || !!session.inboxAsk));
   const composerDockMotion = useComposerDockMotion(dockComposer);
   const composerEngagement = useComposerEngagement(composerDockMotion.dockedRef);
   // Reading history with focus elsewhere: the one mounted composer shows its
@@ -1025,6 +981,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       original?: ParentAdmission,
     ) => {
       if (!dockComposer) composerDockMotion.captureLaunch();
+      if (projectedDraft && draftBlock && !options?.draftBlockId) {
+        options = { ...options, draftBlockId: draftBlock.id };
+      }
       return original
         ? rootMutation(() => onSubmitProp(session.id, text, attachments, options), original)
         : onSubmit(session.id, text, attachments, options);
@@ -1310,6 +1269,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sessionUsage={session.usage}
       quoteRequest={quoteRequest}
       initialDraft={
+        savedDraftProjection.initialDraft ??
         draftRef.current ??
         (session.inboxCard || session.noteCard || session.handoffCard
           ? undefined
@@ -1646,6 +1606,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
               }
             />
           ) : null}
+          {savedDraftProjection.failed ? (
+            <Alert
+              tone="warning"
+              action={<Button onClick={savedDraftProjection.retry}>{t("Retry")}</Button>}
+            >
+              {t("Could not load session ownership. Your saved draft is still available.")}
+            </Alert>
+          ) : null}
           {fileRevertNotice ? (
             <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"} role="status">
               <div
@@ -1730,7 +1698,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     <AgentTranscript
                       approvalContext={approvalContext}
                       sessionId={session.id}
-                      blocks={liveBlocks}
+                      blocks={
+                        projectedDraft
+                          ? liveBlocks.filter((block) => block.id !== draftBlock?.id)
+                          : liveBlocks
+                      }
                       performanceTraceId={sessionPerformanceTrace(session.id)}
                       historyLoading={session.historyLoading}
                       historyLoadError={session.historyLoadError}

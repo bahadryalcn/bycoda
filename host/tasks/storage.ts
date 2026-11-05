@@ -368,12 +368,15 @@ export async function hydrateDependencies(
   roots: Iterable<Pick<HostTask, "id" | "dependsOn">>,
 ): Promise<void> {
   const queue = [...roots];
+  const enqueued = new Set(queue.map((task) => task.id));
   const visited = new Set<string>();
   for (let index = 0; index < queue.length; index++) {
     const task = queue[index];
     if (visited.has(task.id)) continue;
     visited.add(task.id);
     for (const id of task.dependsOn ?? []) {
+      if (enqueued.has(id)) continue;
+      enqueued.add(id);
       const dependency = graph.get(id) ?? (await context.find(id));
       if (!dependency) continue;
       graph.set(id, dependency);
@@ -416,13 +419,15 @@ export async function schedulerSnapshot(
       persisted?.set(task.id, value);
       return task;
     });
+    const enqueued = new Set(queue.map((task) => task.id));
     for (let index = 0; index < queue.length; index++) {
       const task = queue[index];
       if (result.has(task.id)) continue;
       result.set(task.id, task);
       if (!dependencies) continue;
       for (const id of task.dependsOn ?? []) {
-        if (result.has(id)) continue;
+        if (enqueued.has(id)) continue;
+        enqueued.add(id);
         const dependency = await context.find(id);
         if (dependency) queue.push(dependency);
       }

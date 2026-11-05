@@ -51,6 +51,8 @@ Conversation deletion keeps its confirmation and shows progress while work is
 pending. Successful deletion clears the progress without an extra success banner.
 Failures, skipped conversations and incomplete cleanup remain visible for review.
 
+While a queued message is being delivered, its queue header shows a compact progress indicator. A brief check means the provider accepted it; follow the conversation for execution and completion. Unconfirmed or rejected deliveries retain their explanation and recovery actions.
+
 Queued messages keep their order when the running provider turn ends before a
 follow-up can enter it. The message returns to the queue and an active queue
 continues automatically when the conversation is free; no second Resume is needed.
@@ -232,7 +234,7 @@ Remote workspace panels share one connection notice per machine. When automatic
 reconnection is enabled, short network interruptions retry quietly for eight
 seconds while loaded conversations, files and Git data remain available. A longer
 interruption shows the shared recovery controls instead of repeating the same
-warning in each pane. Content that has never loaded remains unverified, not empty.
+warning in each pane. Dismiss a transient outage notice for its current episode; it returns if the machine recovers and later disconnects again. Dismissal changes presentation only. Content that has never loaded remains unverified, not empty.
 Authentication, identity and compatibility problems appear immediately; turning
 automatic reconnection off also makes the recovery control available immediately.
 Independent service, storage and operation errors retain their own feedback and
@@ -252,3 +254,22 @@ fill the window and the same button to restore the size; this never reloads the
 page, so unsaved fields and the selected category are kept. Escape or the Close
 button closes Settings and returns focus to where you opened it. In narrow
 windows the category list becomes a picker.
+
+Contrast previews its thumb and percentage while dragging, then applies and saves
+the final value on release. Cancelled adjustments leave the saved value intact;
+reset and newer changes from another window take precedence over an older drag.
+
+Maximizing a split panel changes its corner action to Restore panel layout and
+shows inward arrows. Restoring returns the outward arrows and the previous split.
+
+After successful context compaction, the context meter replaces its old reading
+with the provider's new count when available. Otherwise the old fullness clears
+until the provider reports a new reading; compaction does not imply zero tokens.
+Failed compaction keeps the last valid reading.
+
+Reopening an eligible local saved draft puts its text and attachments into the
+normal composer while retaining the original saved turn until submission is
+accepted. Opening never sends it. Newer composer input or a changed saved source
+remains separate instead of being overwritten. Clearing an editable draft stays
+cleared after reopening; held or uncertain deliveries keep their recovery actions.
+If session ownership cannot be loaded, the saved source remains available with Retry.

@@ -1,4 +1,7 @@
 {
+  "Enable": "Activer",
+  "Disable": "Désactiver",
+  "Applies to this project for Claude Code.": "S’applique à ce projet dans Claude Code.",
   "Too many attachments": "Trop de pièces jointes",
   "Cannot attach {p0}: no file data is available.": "Impossible de joindre {p0} : les données du fichier sont indisponibles.",
   "Could not save attachment {p0}.": "Impossible d’enregistrer la pièce jointe {p0}.",

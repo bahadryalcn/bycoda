@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SessionReadError } from "../../sessions/read-errors";
 import {
   createSessionReadService,
   type ReadSync,
@@ -67,6 +68,19 @@ function setup() {
 }
 
 describe("session read domain", () => {
+  it.each(["sync", "page", "stream"] as const)(
+    "rejects a changed source epoch during %s as a typed retry",
+    async (method) => {
+      const { service, ports, auth } = setup();
+      ports.sourceEpoch = vi
+        .fn()
+        .mockResolvedValueOnce("original")
+        .mockResolvedValue("replacement");
+      await expect(service[method]({ sessionId: "session" }, auth)).rejects.toEqual(
+        new SessionReadError("source-changed"),
+      );
+    },
+  );
   it("keeps legacy list/etag negotiation and complete metadata", async () => {
     const { service, auth } = setup();
     expect(await service.list({ projectId: "p" }, auth)).toEqual([{ id: "session" }]);

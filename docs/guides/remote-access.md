@@ -16,6 +16,8 @@ bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, He
 
 A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
+When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
+
 ## Create a Host conversation on this computer
 
 Use matching current desktop and Host builds. Delayed input or cleanup for an
@@ -430,6 +432,19 @@ Remote history appears in the Sessions sidebar of each project on a machine. Hos
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 
 ## Verify
+
+### Conversation read failures
+
+Saving a running desktop conversation while another device reads it does not
+invalidate an already coherent snapshot. The Host still verifies the physical
+database, project and conversation owner before returning it. Replacement,
+deletion or a backwards revision requires a fresh read.
+
+Read capacity and owner transitions report a temporary read failure; the viewer
+keeps the last loaded conversation and retries through its existing refresh flow.
+The readonly helper keeps its 32 MiB full-snapshot safety limit. Exceeding that
+limit reports an explicit size error rather than a generic Host read failure;
+automatic retries cannot resolve that limit.
 
 ```sh
 pnpm run host:build

@@ -1,3 +1,4 @@
+import { resumeCodexThread } from "./codexThreadRecovery";
 import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
 import { isTauri } from "@tauri-apps/api/core";
 import { rpcTurnWriter, type JsonRpcWriterView } from "../turnWriter";
@@ -23,7 +24,6 @@ import {
   asRecord,
   buildThreadStartParams,
   buildTurnStartParams,
-  isRecoverableThreadResumeError,
   mapCodexNotification,
   stringField,
   type CodexTurnUsageState,
@@ -536,28 +536,23 @@ async function openThread(
   const config = await codexUtilityConfig(writer, cwd);
   let opened: { thread?: { id?: string } } | undefined;
   if (requestedThreadId) {
-    try {
-      opened = await writer.request<{ thread?: { id?: string } }>(
-        "thread/resume",
-        {
-          threadId: requestedThreadId,
-          // Only the id is consumed here; keep image-heavy history in Codex.
-          excludeTurns: true,
-          ...buildThreadStartParams({
-            cwd,
-            runtimeMode: TEXT_RUNTIME_MODE,
-            model: session.model || undefined,
-            serviceTier: session.serviceTier,
-          }),
-          config,
-        },
-        INIT_TIMEOUT_MS,
-      );
-    } catch (error) {
-      if (!isRecoverableThreadResumeError(error)) throw error;
-      opened = undefined;
-    }
-    if (!opened?.thread?.id?.trim()) opened = undefined;
+    opened = await resumeCodexThread<{ thread?: { id?: string } }>(
+      writer,
+      requestedThreadId,
+      {
+        threadId: requestedThreadId,
+        // Only the id is consumed here; keep image-heavy history in Codex.
+        excludeTurns: true,
+        ...buildThreadStartParams({
+          cwd,
+          runtimeMode: TEXT_RUNTIME_MODE,
+          model: session.model || undefined,
+          serviceTier: session.serviceTier,
+        }),
+        config,
+      },
+      INIT_TIMEOUT_MS,
+    );
   }
   if (!opened) {
     opened = await writer.request<{ thread?: { id?: string } }>(

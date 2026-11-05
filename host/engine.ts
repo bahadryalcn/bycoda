@@ -1,4 +1,5 @@
 import { EngineOperations } from "./engine-operations";
+import { hostCompactionEvents } from "./sessions/compaction-events";
 import { admitRunDuration, finishRunDuration } from "./execution/run-duration";
 import {
   AssistantTurnPolicyDeferredError,
@@ -64,6 +65,7 @@ import { isVisionImage } from "../src/features/sessions/model/attachmentPrompt";
 import { isSessionErrorBlock } from "../src/features/sessions/model/sessionIssue";
 import { adoptedTranscriptLead } from "../src/features/connections/model/adoptedSessions";
 import { transcriptDigests } from "../src/features/sync/model/conversationDigest";
+import { refreshDigests } from "./sessions/refresh-digest-cache";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
 import { refuseHost } from "./domains/context";
 import {
@@ -1728,8 +1730,7 @@ export class HostEngine {
     );
   }
 
-  /**
-   * Catches an adopted session up with turns the desktop app ran since: both
+  /** Catches an adopted session up with turns the desktop app ran since: both
    * resume the same provider conversation. A newer desktop copy replaces the
    * host transcript only when it still contains the host's turns or the host
    * has not changed since it last matched; otherwise the host keeps its turns
@@ -1805,8 +1806,7 @@ export class HostEngine {
         );
         // Which side changed since both last held the same transcript, from the
         // digests of the full blocks. Unreadable content falls back to comparing it.
-        const mine = transcriptDigests(session.blocks);
-        const held = transcriptDigests(current.session.blocks);
+        const { mine, held } = refreshDigests(session.blocks, current.session.blocks);
         const keptBlocks = current.session.blocks.filter((block) => !unseenFailures.has(block));
         // The desktop names the host transcript it last agreed on (and, when the user
         // kept its version of a divergence, the one it replaced); the host remembers
@@ -4363,8 +4363,7 @@ export class HostEngine {
                 console.warn("Workspace checkpoint failed", error);
               });
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-            // Startup binds from mirror columns without the account; a provider
-            // thread lives in its account's profile, so resume it from there.
+            // Resume the provider thread from its account's profile.
             if (!resetConversationFrom && session.providerAccountId && session.providerSessionId)
               provider.bind(
                 session.id,
@@ -4372,6 +4371,9 @@ export class HostEngine {
                 session.cwd,
                 session.providerAccountId,
               );
+            const contextEvents = hostCompactionEvents(prompt === null, (event, accepted) =>
+              this.event(session.id, runId!, event, accepted ? acceptReplay : undefined),
+            );
             const input: HarnessSessionInput = {
               sessionId: session.id,
               cwd: session.cwd,
@@ -4381,14 +4383,7 @@ export class HostEngine {
               runtimeMode: session.runtimeMode,
               intent,
               operationContext: active.operationContext,
-              onEvent: (event) => {
-                const accepted =
-                  event.type === "turn.started" ||
-                  event.type === "message.delta" ||
-                  event.type === "reasoning.delta" ||
-                  event.type === "tool.started";
-                this.event(session.id, runId!, event, accepted ? acceptReplay : undefined);
-              },
+              onEvent: contextEvents.onEvent,
             };
             if (prompt === null) {
               const compactInput = await (provider.prepareOperationPolicy?.(input) ?? input);
@@ -4405,6 +4400,7 @@ export class HostEngine {
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               active.providerEntered = true;
               await provider.compact!(compactInput);
+              contextEvents.complete();
               forgetRuntimeHint(session.id);
             } else {
               const preparedPrompt =

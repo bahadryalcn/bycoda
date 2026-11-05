@@ -378,7 +378,7 @@ export function modelsFromClaudeListModels(raw: unknown): AgentModel[] {
     seen.add(key);
     models.push(withClaudeAdvisor(model));
   }
-  return models;
+  return models.map((model) => withClaudeAdvisor(model, models));
 }
 
 function modelFromListRow(raw: unknown): AgentModel | null {
@@ -553,7 +553,7 @@ function claudeLaunchId(valueId: string, resolvedId: string): string {
 }
 
 export function modelsForClaudeVersion(version: string | null | undefined): AgentModel[] {
-  return CLAUDE_MODEL_CATALOG.filter((model) => {
+  const models = CLAUDE_MODEL_CATALOG.filter((model) => {
     const slug = model.nativeId ?? "";
     if (slug === "claude-opus-5-5") {
       return version ? compareSemver(version, MINIMUM_CLAUDE_OPUS_5_5_VERSION) >= 0 : false;
@@ -574,5 +574,6 @@ export function modelsForClaudeVersion(version: string | null | undefined): Agen
       return version ? compareSemver(version, MINIMUM_CLAUDE_OPUS_4_7_VERSION) >= 0 : false;
     }
     return true;
-  }).map((model) => withClaudeAdvisor(model));
+  });
+  return models.map((model) => withClaudeAdvisor(model, models));
 }

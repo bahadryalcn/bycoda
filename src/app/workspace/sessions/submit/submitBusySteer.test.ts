@@ -277,6 +277,45 @@ it("steers a message through the host running the adopted conversation", async (
   expect(getSessions()[0].queuedMessages).toHaveLength(1);
 });
 
+it("retains an explicit queue while Claude waits for background commands without writing to the provider", () => {
+  const session = {
+    ...newSession("claude", "/fake"),
+    id: "steer-test",
+    busy: true,
+    backgroundTasks: ["Wait for test runs to finish"],
+    backgroundAgents: 0,
+  };
+  resetSessionsStore([session]);
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+  } as unknown as SubmitDeps;
+  const input = {
+    sessionId: session.id,
+    text: "after the tests, update the rules",
+    attachments: [],
+    options: { followUpBehavior: "queue" },
+  } as SubmitInput;
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    submittedText: input.text,
+    harnessText: input.text,
+    operatorCommand: { matched: false },
+    initialWorkCwd: session.cwd,
+  } as unknown as SubmitPreflight;
+
+  expect(steerBusySubmit(ctx, input, pre)).toBe(true);
+  expect(getSessions()[0].queuedMessages).toEqual([
+    expect.objectContaining({ text: input.text, attachments: [] }),
+  ]);
+  expect(getSessions()[0].busy).toBe(true);
+  expect(getSessions()[0].blocks).toEqual(session.blocks);
+  expect(transport.steer).not.toHaveBeenCalled();
+  expect(transport.adopted).not.toHaveBeenCalled();
+});
+
 it("queues a message typed while two versions of the conversation await the user's choice", () => {
   const session = {
     ...newSession("codex", "/fake"),

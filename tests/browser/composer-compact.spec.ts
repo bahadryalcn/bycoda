@@ -39,6 +39,17 @@ const url = (query: Record<string, string> = {}, light = false) => {
 const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
+
+for (const turns of [0, 2]) {
+  test(`saved draft opens in composer with ${turns} history turns`, async ({ page }) => {
+    await page.goto(url({ savedDraft: "", turns: String(turns) }));
+    await expect(field(page)).toHaveValue("Saved draft for editing");
+    await expect(field(page)).toBeEditable();
+    if (turns)
+      await expect(page.getByText("Question 1: what should happen with item 1?")).toBeVisible();
+    expect((await fixtureEvents(page)).sends).toBe(0);
+  });
+}
 const state = (page: Page) =>
   page.evaluate(() => {
     const el = document.querySelector<HTMLElement>(".agent-transcript")!;

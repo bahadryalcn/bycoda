@@ -881,16 +881,17 @@ it("allows side questions to explicitly retain and resume their thread", async (
   expect(threadStarts()).toHaveLength(2);
 });
 
-it("retains resumable behavior when a side question's saved thread is missing", async () => {
+it("does not silently replace a missing side question thread", async () => {
   missingResume = true;
-  await runCodexTextPrompt({
-    cwd: "/repo",
-    ephemeral: false,
-    threadId: "missing_thread",
-    prompt: "Side question",
-  });
-  expect(threadStarts()).toHaveLength(1);
-  expect(threadStarts()[0].params).not.toHaveProperty("ephemeral");
+  await expect(
+    runCodexTextPrompt({
+      cwd: "/repo",
+      ephemeral: false,
+      threadId: "missing_thread",
+      prompt: "Side question",
+    }),
+  ).rejects.toThrow("thread not found");
+  expect(threadStarts()).toHaveLength(0);
 });
 
 it("keeps a failed generation and its retry unsaved", async () => {

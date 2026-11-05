@@ -285,8 +285,8 @@ export function steerBusySubmit(
       showSubmitNotice(sessionId, "/operator starts a new turn after the current turn finishes.");
       return false;
     }
-    // Background work with the agent yielded may never end (a dev
-    // server), so there the message is steered instead of parked behind it.
+    // Background work may never end (a dev server), so ordinary Send steers.
+    // Explicit Queue still waits for the current turn to finish.
     const followUpRoute = resolveFollowUpRoute({
       busy: true,
       worktreePreparing: current.worktreePreparing,

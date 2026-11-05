@@ -24,6 +24,9 @@ export type ComposerDraft = {
   attachments: Attachment[];
   /** A retained draft must never silently become an agent submission. */
   mode?: "save";
+  /** Original saved turn being edited; also retains an intentionally empty edit. */
+  sourceDraftId?: string;
+  sourceDraftDigest?: string;
 };
 
 /** What restoring a draft cost: the names of attachments that could not come back. */
@@ -43,7 +46,7 @@ function asMessage(draft: Pick<ComposerDraft, "text" | "attachments">): QueuedMe
 
 /** The draft as written to the store, or null when there is nothing worth keeping. */
 export function persistableDraft(draft: ComposerDraft): ComposerDraft | null {
-  if (!draft.text.trim() && draft.attachments.length === 0) return null;
+  if (!draft.text.trim() && draft.attachments.length === 0 && !draft.sourceDraftId) return null;
   const [message] = persistableQueue([asMessage(draft)]) ?? [];
   if (!message) return null;
   const saved: ComposerDraft = {
@@ -51,6 +54,10 @@ export function persistableDraft(draft: ComposerDraft): ComposerDraft | null {
     attachments: message.attachments,
     mcpTags: draft.mcpTags,
     ...(draft.mode === "save" ? { mode: "save" as const } : {}),
+    ...(draft.sourceDraftId ? { sourceDraftId: draft.sourceDraftId } : {}),
+    ...(draft.sourceDraftId && draft.sourceDraftDigest
+      ? { sourceDraftDigest: draft.sourceDraftDigest }
+      : {}),
   };
   // Keep a bounded recovery record even for callers without a file writer. The
   // store spills these payloads first, preserving their bytes rather than loss.
@@ -84,6 +91,19 @@ function restoreMcpTags(raw: unknown): McpTag[] {
 export function restoreDraft(raw: unknown): ComposerDraft | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
+  const sourceDraftId =
+    typeof value.sourceDraftId === "string" &&
+    value.sourceDraftId.length > 0 &&
+    value.sourceDraftId.length <= 512
+      ? value.sourceDraftId
+      : undefined;
+  const sourceDraftDigest =
+    sourceDraftId &&
+    typeof value.sourceDraftDigest === "string" &&
+    value.sourceDraftDigest.length > 0 &&
+    value.sourceDraftDigest.length <= 256
+      ? value.sourceDraftDigest
+      : undefined;
   const [message] = restoreQueuedMessages([
     {
       id: DRAFT_ID,
@@ -91,12 +111,31 @@ export function restoreDraft(raw: unknown): ComposerDraft | null {
       attachments: value.attachments,
     },
   ]);
-  if (!message) return null;
+  if (!message) {
+    if (
+      sourceDraftId &&
+      typeof value.text === "string" &&
+      !value.text.trim() &&
+      Array.isArray(value.attachments) &&
+      value.attachments.length === 0
+    )
+      return {
+        text: value.text,
+        attachments: [],
+        mcpTags: restoreMcpTags(value.mcpTags),
+        sourceDraftId,
+        ...(sourceDraftDigest ? { sourceDraftDigest } : {}),
+        ...(value.mode === "save" ? { mode: "save" as const } : {}),
+      };
+    return null;
+  }
   return {
     text: message.text,
     attachments: message.attachments,
     mcpTags: restoreMcpTags(value.mcpTags),
     ...(value.mode === "save" ? { mode: "save" as const } : {}),
+    ...(sourceDraftId ? { sourceDraftId } : {}),
+    ...(sourceDraftDigest ? { sourceDraftDigest } : {}),
   };
 }
 
@@ -114,7 +153,7 @@ export async function settleRestoredDraft(
   const settled = withoutMissingAttachments(checked);
   const result = { ...draft, text: settled.text, attachments: settled.attachments };
   if (!result.text.trim() && result.attachments.length === 0) {
-    return dropped.length > 0 ? { draft: result, dropped } : null;
+    return dropped.length > 0 || result.sourceDraftId ? { draft: result, dropped } : null;
   }
   return { draft: result, dropped };
 }
@@ -133,6 +172,10 @@ export function droppedAttachmentsNotice(dropped: string[]): string {
  * Whether a restored draft may be put in place. Text typed in this run always
  * wins: a draft is only restored into a slot that is still empty.
  */
-export function canRestoreOver(current: { text?: string; attachments?: Attachment[] }): boolean {
-  return !current.text && !(current.attachments?.length ?? 0);
+export function canRestoreOver(current: {
+  text?: string;
+  attachments?: Attachment[];
+  sourceDraftId?: string;
+}): boolean {
+  return !current.text && !(current.attachments?.length ?? 0) && !current.sourceDraftId;
 }

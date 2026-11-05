@@ -1,3 +1,4 @@
+import { resumeCodexThread } from "./codexThreadRecovery";
 import {
   queueProviderOperation,
   retireProviderEpoch,
@@ -63,7 +64,6 @@ import {
   buildTurnSteerParams,
   codexSkillsFromList,
   codexSkillStatesFromList,
-  isRecoverableThreadResumeError,
   mapApprovalRequest,
   codexSubagentStates,
   codexSubagentThreadIds,
@@ -1080,33 +1080,29 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     let didResume = false;
 
     if (canResume && resume) {
-      try {
-        const opened = await startupRpc.request<{ thread?: { id?: string }; model?: string }>(
-          "thread/resume",
-          {
-            threadId: resume.threadId,
-            // Bycoda already owns the transcript. Avoid retransmitting the
-            // full history (including base64 images); Codex keeps its context.
-            excludeTurns: true,
-            ...(skillConfig ? { config: skillConfig } : {}),
-            ...buildThreadStartParams({
-              cwd: input.cwd,
-              runtimeMode: input.runtimeMode,
-              controlsAgents: input.controlsAgents,
-              model,
-              serviceTier,
-              additionalDirs: additionalDirsFor(input.sessionId),
-            }),
-          },
-          120_000,
-        );
-        threadId = opened.thread?.id ?? resume.threadId;
-        threadModel = opened.model?.trim() || model;
-        didResume = true;
-      } catch (error) {
-        if (!isRecoverableThreadResumeError(error)) throw error;
-        threadId = undefined;
-      }
+      const opened = await resumeCodexThread<{ thread?: { id?: string }; model?: string }>(
+        startupRpc,
+        resume.threadId,
+        {
+          threadId: resume.threadId,
+          // Bycoda already owns the transcript. Avoid retransmitting the
+          // full history (including base64 images); Codex keeps its context.
+          excludeTurns: true,
+          ...(skillConfig ? { config: skillConfig } : {}),
+          ...buildThreadStartParams({
+            cwd: input.cwd,
+            runtimeMode: input.runtimeMode,
+            controlsAgents: input.controlsAgents,
+            model,
+            serviceTier,
+            additionalDirs: additionalDirsFor(input.sessionId),
+          }),
+        },
+        120_000,
+      );
+      threadId = opened.thread?.id;
+      threadModel = opened.model?.trim() || model;
+      didResume = true;
     }
 
     if (!threadId) {

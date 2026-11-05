@@ -44,10 +44,10 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await modelButton.click();
   await expect(row("Advisor")).toBeVisible();
   await expect(row("Advisor")).toHaveCSS("color-scheme", "dark");
-  await choose("Advisor", "Opus");
+  await choose("Advisor", "Claude Opus 5.5");
   await choose("Subagent model", "Haiku");
   await choose("Subagent model policy", "Apply to all subagents");
-  await expect(page.getByTestId("choice")).toHaveText(/"advisor":"opus"/);
+  await expect(page.getByTestId("choice")).toHaveText(/"advisor":"claude-opus-5-5"/);
   await expect(page.getByTestId("choice")).toHaveText(/"subagentModel":"haiku"/);
   await expect(page.getByTestId("choice")).toHaveText(/"subagentPolicy":"force"/);
   await expect(page.getByTestId("choice")).toHaveText(/"model":"claude:haiku-4.5"/);

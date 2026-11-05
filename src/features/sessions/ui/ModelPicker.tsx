@@ -273,7 +273,7 @@ export function ModelPicker({
     // Delegation and Context lead; Fast and Reasoning stay near Model.
     return groupSettings(
       pickerSettings(current).map((setting) =>
-        offeredDelegationSetting(setting, offered, settingValue(setting, values)),
+        offeredDelegationSetting(setting, offered, settingValue(setting, values), current),
       ),
     ).flatMap((group) => group.settings);
   }, [catalogVersion, current, harness, hideSettings, inheritSelected, source, values]);
@@ -1150,7 +1150,7 @@ export function ModelControlPills({
   const current = source.resolve(harness, model);
   const offered = source.modelsFor(harness);
   const pills = pillSettings(current).map((setting) =>
-    offeredDelegationSetting(setting, offered, settingValue(setting, values)),
+    offeredDelegationSetting(setting, offered, settingValue(setting, values), current),
   );
   const effort = pills.find((setting) => setting.kind === "select" && isEffortSetting(setting));
   const groupedSettings = effort

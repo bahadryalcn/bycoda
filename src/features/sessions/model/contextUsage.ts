@@ -1,3 +1,4 @@
+import type { Session } from "./session";
 import { formatTokens } from "../../../shared/i18n/format";
 export { formatTokens };
 /**
@@ -69,4 +70,24 @@ export function mergeContextUsage(
 export function dropContextWindow(usage: ContextUsage | undefined): ContextUsage | undefined {
   if (!usage) return undefined;
   return { used: usage.used };
+}
+
+export function applyContextReading(
+  session: Session,
+  event: { type: "context" | "context.compacted"; used?: number; window?: number },
+): Session {
+  if (
+    event.type === "context.compacted" &&
+    (event.used === undefined || !Number.isFinite(event.used) || event.used < 0)
+  )
+    return { ...session, context: undefined };
+  if (event.used === undefined && !session.context) return session;
+  const context = mergeContextUsage(session.context, event);
+  if (
+    session.context &&
+    session.context.used === context.used &&
+    session.context.window === context.window
+  )
+    return session;
+  return { ...session, context };
 }

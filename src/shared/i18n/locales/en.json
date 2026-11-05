@@ -1,4 +1,7 @@
 {
+  "Enable": "Enable",
+  "Disable": "Disable",
+  "Applies to this project for Claude Code.": "Applies to this project for Claude Code.",
   "Too many attachments": "Too many attachments",
   "Cannot attach {p0}: no file data is available.": "Cannot attach {p0}: no file data is available.",
   "Could not save attachment {p0}.": "Could not save attachment {p0}.",

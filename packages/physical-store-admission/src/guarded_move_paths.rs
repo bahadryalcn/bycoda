@@ -1,6 +1,8 @@
 //! Path adapter for a caller that has already authorized both parents.
 //! Capability handles anchor every mutation after admission.
-use crate::guarded_move::{move_with_recovery, sync_dir};
+use crate::guarded_move::move_with_recovery;
+#[cfg(unix)]
+use crate::guarded_move::sync_dir;
 use cap_fs_ext::{DirExt, MetadataExt};
 use cap_std::{
     ambient_authority,

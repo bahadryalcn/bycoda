@@ -386,7 +386,7 @@ describe("resolveFollowUpRoute", () => {
     );
   });
 
-  it("never parks an explicit queue behind background-only work", () => {
+  it("preserves an explicit queue while only background commands remain", () => {
     expect(
       resolveFollowUpRoute({
         ...base,
@@ -394,7 +394,7 @@ describe("resolveFollowUpRoute", () => {
         backgroundOnly: true,
         requested: "queue",
       }),
-    ).toBe("steer");
+    ).toBe("queue");
   });
 });
 

@@ -67,6 +67,7 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
       CREATE TRIGGER IF NOT EXISTS task_cache_update AFTER UPDATE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE TRIGGER IF NOT EXISTS task_cache_delete AFTER DELETE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status ON tasks(json_extract(value, '$.status'));
+      CREATE INDEX IF NOT EXISTS tasks_scheduler_status_merged ON tasks(json_extract(value, '$.status'), json_extract(value, '$.merged'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_cleanup ON tasks(id)
         WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1
           AND (json_extract(value, '$.worktreeCwd') IS NOT NULL OR json_array_length(value, '$.historyRecovery')>0);

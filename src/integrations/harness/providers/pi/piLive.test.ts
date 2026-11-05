@@ -696,7 +696,7 @@ describe("Pi live session", () => {
       runtimeMode: "supervised",
       onEvent: (event) => events.push(event),
     });
-    expect(events).toContainEqual({ type: "context", used: 32_000, window: 200_000 });
+    expect(events).toContainEqual({ type: "context.compacted", used: 32_000, window: 200_000 });
     const frame = mocks.frames[0]!;
     frame({ type: "config_update", model: { provider: "new-provider", id: "new-model" } });
     frame({ type: "message_update", usage: { totalTokens: 100_000 } });
@@ -787,7 +787,7 @@ describe("Pi live session", () => {
 
     expect(mocks.request).toHaveBeenCalledWith({ type: "compact" }, 30 * 60_000);
     expect(events).toContainEqual({
-      type: "context",
+      type: "context.compacted",
       used: 32_000,
       window: 200_000,
     });

@@ -19,7 +19,7 @@ import {
   suppressTextSelection,
   type DropPlacement,
 } from "../../../shared/lib/drag";
-import { Maximize2 } from "../../../shared/ui/icons";
+import { Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import { Sash as ResizeSash } from "../../../shared/ui/Sash";
 import {
   isPointerOutsideWindow,
@@ -761,7 +761,7 @@ function PaneTreeComponent({
                   onClick={() => toggleMaximum(leaf.id)}
                   className="absolute [inset-block-start:0.25rem] end-2 z-1 grid place-items-center"
                 >
-                  <Maximize2 className="icon-sm" />
+                  {maximum ? <Minimize2 className="icon-sm" /> : <Maximize2 className="icon-sm" />}
                 </Button>
               ) : null}
               <div

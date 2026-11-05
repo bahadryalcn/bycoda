@@ -108,6 +108,30 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
           parentPort.postMessage({ id, value: { rows, done } });
           return;
         }
+      } else if (method === "batchWrites") {
+        if (!db.isTransaction || typeof params[0] !== "string")
+          throw new Error("Batched writes require an active transaction.");
+        const operations = JSON.parse(params[0]);
+        if (!Array.isArray(operations)) throw new Error("Invalid batch operations.");
+        db.exec("SAVEPOINT host_batch_writes");
+        try {
+          for (const operation of operations) {
+            if (
+              typeof operation.sql !== "string" ||
+              !Array.isArray(operation.rows) ||
+              !operation.rows.every(Array.isArray)
+            )
+              throw new Error("Invalid batch operation.");
+            const statement = prepare(operation.sql);
+            for (const row of operation.rows) statement.run(...row);
+          }
+          db.exec("RELEASE host_batch_writes");
+        } catch (error) {
+          try {
+            db.exec("ROLLBACK TO host_batch_writes; RELEASE host_batch_writes");
+          } catch {}
+          throw error;
+        }
       } else if (method === "runMany") {
         if (!params.every(Array.isArray)) throw new Error("Invalid batch rows.");
         const statement = prepare(sql);

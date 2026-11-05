@@ -503,6 +503,7 @@ export class StoreDatabase {
     if (this.failed) return Promise.reject(this.failed);
     const writes =
       method === "runMany" ||
+      method === "batchWrites" ||
       method === "run" ||
       method === "exec" ||
       ((method === "get" || method === "all" || method === "cursorOpen") &&
@@ -525,7 +526,10 @@ export class StoreDatabase {
         sql,
         mutation:
           !this.internal.getStore() &&
-          (method === "runMany" || method === "run" || method === "exec"),
+          (method === "runMany" ||
+            method === "batchWrites" ||
+            method === "run" ||
+            method === "exec"),
         write: writes,
       });
       try {
@@ -551,6 +555,14 @@ export class StoreDatabase {
   }
   runMany(sql: string, rows: SQLInputValue[][]): Promise<void> {
     return this.scope(() => this.request("runMany", sql, rows));
+  }
+  /** Writes share the caller's transaction, owner and rollback boundary. */
+  batchWrites(operations: { sql: string; rows: (string | number | null)[][] }[]): Promise<void> {
+    if (!this.internal.getStore())
+      return Promise.reject(new Error("Batched writes require a store scope."));
+    return this.scope(() =>
+      this.request("batchWrites", "UPDATE session_journal", [JSON.stringify(operations)]),
+    );
   }
   async *iterate(sql: string, params: SQLInputValue[]): AsyncIterableIterator<StoreRow> {
     const owner = this.owners.getStore();

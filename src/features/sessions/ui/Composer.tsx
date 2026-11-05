@@ -1,18 +1,8 @@
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { MessageQueue } from "./MessageQueue";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 import { Alert } from "../../../shared/ui/Alert";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
-import {
-  DeliveryProgressNotice,
-  deliveryIsPending,
-  useDeliveryProgress,
-} from "./DeliveryProgressNotice";
-import { queueState } from "../../connections/public/queueState";
-import { useQueueHoldReason } from "../model/deliveryReview";
-import {
-  takeOverSharedLocalQueue,
-  useSharedQueueLeaseHeld,
-} from "../../connections/public/useSharedLocalQueues";
+import { DeliveryProgressNotice, DeliveryProgressIndicator } from "./DeliveryProgressNotice";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
@@ -64,20 +54,14 @@ import {
   AiIdea,
   Bot,
   CircleDashed,
-  CornerDownRight,
   CursorMagicSelection,
   FilePlus,
-  GripVertical,
   ListEnd,
-  Pause,
-  Pencil,
-  Play,
   Plus,
   Share,
   SlidersHorizontal,
   Square,
   StickyNote,
-  Trash2,
   Undo2,
   X,
 } from "../../../shared/ui/icons";
@@ -156,7 +140,6 @@ import { getSessions } from "../model/sessionsStore";
 import {
   canSteerHarness,
   isHarnessTurnStopping,
-  steerAppliesModelSettings,
   subscribeHarnessStopping,
 } from "../../../integrations/harness/core/registry";
 import {
@@ -165,12 +148,7 @@ import {
   planUnavailableReason,
   unavailableRuntimeModes,
 } from "../model/session";
-import { hasMissingAttachment } from "../model/queuePersistence";
-import { useQueuedSteerRoute, useQueuedTargetSummary } from "../model/reactiveReads";
-import { moveQueuedMessage, resolveFollowUpRoute, runningTargetOf } from "../model/messageQueue";
-import { HarnessIcon } from "./HarnessIcon";
-import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
-import { announceDrag } from "../../../shared/lib/drag";
+import { resolveFollowUpRoute } from "../model/messageQueue";
 import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestion";
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -190,7 +168,6 @@ import {
 import { AccessPicker } from "./AccessPicker";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
-import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import { BranchPicker } from "../../source-control/public/BranchPicker";
 import { WorktreePicker } from "../../source-control/public/WorktreePicker";
 import {
@@ -208,7 +185,6 @@ import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
-import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { ComposerQuestionForm } from "./ComposerQuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
@@ -310,6 +286,7 @@ import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import { applyTextareaEdit, insertAtCaret } from "./composerTextareaEdit";
+import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
 import { DictationButton } from "../../voice/ui/DictationButton";
 import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
 import { useEditingLastTurn } from "./useEditingLastTurn";
@@ -474,588 +451,6 @@ type Props = {
   onEditingLastTurnChange?: (editing: boolean) => void;
   children?: ReactNode;
 };
-function MessageQueue({
-  sessionId,
-  parentSessionId,
-  messages,
-  status,
-  onDelete,
-  canAttach,
-  remote = false,
-  busy = false,
-  runningTarget,
-  steerSupported = false,
-  onEdit,
-  onEditingChange,
-  onReorder,
-  onSteer,
-  onResume,
-}: {
-  sessionId?: string;
-  parentSessionId?: string;
-  messages: QueuedMessage[];
-  status?: MessageQueueStatus;
-  canAttach: boolean;
-  /** The turn runs on another machine: it cannot be steered, and the queue is this app's. */
-  remote?: boolean;
-  busy?: boolean;
-  /** The running turn's model and settings, for rows that must wait for their own turn. */
-  runningTarget?: {
-    harness: HarnessId;
-    model: string;
-    modelSettings: Record<string, string>;
-    runningModelTarget?: ModelTarget;
-  };
-  steerSupported?: boolean;
-  onDelete?: (messageId: string) => void;
-  onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
-  onEditingChange?: (messageId?: string) => void;
-  onReorder?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;
-  onSteer?: (messageId: string) => QueueAction;
-  onResume?: () => QueueAction;
-}) {
-  const t = useT();
-  const delivery = useDeliveryProgress(sessionId);
-  const pendingDelivery = deliveryIsPending(delivery?.stage);
-  // Another window sends this queue: say so, and let this one take it over.
-  const heldByOtherWindow = useSharedQueueLeaseHeld(sessionId ?? "");
-  // The host says why it paused the queue: "stopped" after a Stop, else the provider's error.
-  const holdReason = useQueueHoldReason(sessionId ?? "");
-  const holdDetail = holdReason && holdReason !== "stopped" ? holdReason : undefined;
-  const actionRef = useRef(false);
-  const [pendingAction, setPendingAction] = useState<string>();
-  const dragAdmission = useRef<{
-    admission: ParentAdmission;
-    identity: object | null;
-    committed: boolean;
-    ended: boolean;
-  } | null>(null);
-  useEffect(
-    () => () => {
-      const drag = dragAdmission.current;
-      // Shared reorder cleanup cancels its own timers before this finalizer.
-      drag?.admission.finish();
-      dragAdmission.current = null;
-    },
-    [],
-  );
-  const [feedback, setFeedback] = useState<{
-    error: boolean;
-    text: string;
-    actionId: string;
-  }>();
-  const queueClosed = useParentInputsClosed(parentSessionId);
-  const queueOwner = useParentInputClosure({
-    kind: "queue-edit",
-    sessionId: parentSessionId,
-    snapshot: () => ({
-      source: "message-queue",
-      messages,
-      editingId,
-      pendingAction,
-      feedback,
-      actionPending: actionRef.current,
-    }),
-  });
-  const activeFeedback =
-    feedback?.error &&
-    (feedback.actionId === "resume"
-      ? status === "active"
-      : feedback.actionId === "takeover"
-        ? !heldByOtherWindow
-        : !messages.some((message) => message.id === feedback.actionId))
-      ? undefined
-      : feedback;
-  useEffect(() => {
-    if (!feedback || feedback.error) return;
-    const timer = window.setTimeout(() => setFeedback(undefined), 6000);
-    return () => window.clearTimeout(timer);
-  }, [feedback]);
-  const perform = async (id: string, action: (() => QueueAction) | undefined) => {
-    if (actionRef.current) return;
-    const admitted = queueOwner.admit();
-    if (!admitted) return;
-    return admitted.run(async () => {
-      actionRef.current = true;
-      setPendingAction(id);
-      setFeedback(undefined);
-      try {
-        if (!action)
-          throw new Error(
-            t("This queue action is unavailable. Reopen the conversation and try again."),
-          );
-        const result = await action();
-        // A refused send leaves the message in the queue, where its row and the queue header
-        // already show it; no extra notice line under the queue.
-        if (result === false) return;
-        setFeedback({
-          error: false,
-          actionId: id,
-          text:
-            typeof result === "object" && result?.message
-              ? t(result.message)
-              : id === "resume" && status !== "restored"
-                ? t("Queue resumed. Messages will send when this turn finishes.")
-                : t("Message accepted. Follow its progress in the conversation."),
-        });
-      } catch (error) {
-        setFeedback({
-          error: true,
-          actionId: id,
-          text: t(String(error).replace(/^Error: /, "")),
-        });
-      } finally {
-        actionRef.current = false;
-        setPendingAction(undefined);
-      }
-    });
-  };
-  const sortable = useAnimatedReorder(
-    messages.map((message) => message.id),
-    (ids) => {
-      if (actionRef.current) return;
-      const drag = dragAdmission.current;
-      if (drag && !drag.admission.settled) {
-        try {
-          if (queueOwner.identity() !== drag.identity) return;
-          drag.admission.apply(() =>
-            canMutateParentInputs(parentSessionId)
-              ? onReorder?.(ids)
-              : onReorder?.(ids, drag.admission),
-          );
-          drag.committed = true;
-        } catch {
-          queueOwner();
-        }
-      } else mutateParentInput(queueOwner, () => onReorder?.(ids));
-    },
-    "y",
-    undefined,
-    {
-      // The row's text is the whole row; speak a short fixed name, not the message body.
-      label: () => t("Queued message"),
-      onEnd: () => {
-        const drag = dragAdmission.current;
-        if (!drag) return;
-        drag.ended = true;
-        // reset() precedes the shared hook's synchronous order callback. Keep
-        // the original ticket until that callback, including its settling timer.
-        queueMicrotask(() => {
-          if (!drag.committed && queueOwner.identity() === drag.identity) queueOwner();
-          drag.admission.finish();
-          if (dragAdmission.current === drag) dragAdmission.current = null;
-        });
-      },
-    },
-  );
-  const card = useRef<HTMLDivElement>(null);
-  const refocus = useRef<string | undefined>(undefined);
-  // Moving a focused row in the DOM drops its focus; give it back after a keyboard move.
-  useLayoutEffect(() => {
-    if (!refocus.current) return;
-    card.current?.querySelector<HTMLElement>(`[data-queue-handle="${refocus.current}"]`)?.focus();
-    refocus.current = undefined;
-  }, [messages]);
-  const moveByKey = (event: KeyboardEvent, id: string, index: number) => {
-    if (!queueOwner.canMutate()) return;
-    if (
-      actionRef.current ||
-      !event.altKey ||
-      (event.key !== "ArrowUp" && event.key !== "ArrowDown")
-    )
-      return;
-    event.preventDefault();
-    const next = moveQueuedMessage(messages, id, index + (event.key === "ArrowUp" ? -1 : 1));
-    if (next === messages) return;
-    refocus.current = id;
-    onReorder?.(next.map((message) => message.id));
-    announceDrag(
-      t("Moved {p0} to position {p1} of {p2}", {
-        p0: t("Queued message"),
-        p1: next.findIndex((message) => message.id === id) + 1,
-        p2: next.length,
-      }),
-    );
-  };
-  const [editingId, setEditingId] = useState<string>();
-  const onEditingChangeRef = useRef(onEditingChange);
-  const editingIdRef = useRef(editingId);
-  useLayoutEffect(() => {
-    onEditingChangeRef.current = onEditingChange;
-    editingIdRef.current = editingId;
-  }, [onEditingChange, editingId]);
-  useEffect(() => {
-    return () => {
-      if (editingIdRef.current) onEditingChangeRef.current?.();
-    };
-  }, []);
-  const editingMessage = messages.find((message) => message.id === editingId);
-  // The row was sent or removed while its dialog was open: close, never resurrect it.
-  useEffect(() => {
-    if (editingId && !editingMessage) {
-      setEditingId(undefined);
-      onEditingChangeRef.current?.();
-    }
-  }, [editingId, editingMessage]);
-  // Routes and target names resolve queued model targets against the live catalog.
-  const targetSummary = useQueuedTargetSummary();
-  const steerRoute = useQueuedSteerRoute(
-    runningTarget ? { ...runningTarget, busy } : undefined,
-    runningTarget ? steerAppliesModelSettings(runningTargetOf(runningTarget).harness) : false,
-  );
-  if (messages.length === 0 && !pendingAction && !activeFeedback) return null;
-  const paused = (status === "paused" || status === "resuming") && messages.length > 0;
-  const hold = queueState({
-    status,
-    messages,
-    unknownDelivery: delivery?.stage === "unknown",
-    rejected:
-      (delivery?.stage === "rejected" && delivery.messageId === messages[0]?.id) || !!holdDetail,
-    leaseHeld: heldByOtherWindow,
-  });
-  const leaseHeld = !paused && hold.kind === "held" && hold.reason === "lease";
-  const restored = status === "restored" && messages.length > 0;
-  const canSend = (message: QueuedMessage) =>
-    !queueClosed &&
-    !pendingAction &&
-    !pendingDelivery &&
-    !message.deliveryUnknown &&
-    !(delivery?.messageId === message.id && delivery.stage === "unknown") &&
-    !hasMissingAttachment(message) &&
-    (!busy || (steerSupported && message.intent !== "plan" && message.intent !== "orchestrate"));
-  const startEdit = (message: QueuedMessage) => {
-    if (!queueOwner.canMutate()) return;
-    setEditingId(message.id);
-    onEditingChange?.(message.id);
-  };
-  const cancelEdit = () => {
-    queueOwner();
-    setEditingId(undefined);
-    onEditingChange?.();
-  };
-  return (
-    <div className="px-2 text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
-      {queueClosed ? (
-        <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
-      ) : null}
-      <div className="relative z-0 rounded-t-xl px-2 py-1" data-message-queue-card ref={card}>
-        {paused ? (
-          <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
-            <Pause className="icon-sm" />
-            <span className="min-w-0 flex-1 truncate" title={holdDetail}>
-              {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
-              messages.some((message) => message.deliveryUnknown)
-                ? `${t("Queue")} · ${messages.length}`
-                : hold.kind === "held" && hold.reason === "unknown"
-                  ? t("Queue held: delivery is not confirmed")
-                  : hold.kind === "held" && hold.reason === "rejected"
-                    ? holdDetail?.split(/\r?\n/, 1)[0] ||
-                      t("Queue paused: the last message was not accepted")
-                    : t("Queue paused because you interrupted")}
-            </span>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={
-                !onResume ||
-                !!pendingAction ||
-                pendingDelivery ||
-                // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
-                (hold.kind === "held" && hold.reason === "unknown") ||
-                hasMissingAttachment(messages[0])
-              }
-              loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
-              onClick={() => void perform("resume", onResume)}
-              className="shrink-0"
-            >
-              <Play className="icon-sm" />
-              {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
-            </Button>
-          </div>
-        ) : null}
-        {leaseHeld && sessionId ? (
-          <div
-            className="mb-1 flex h-7 items-center gap-2 text-ui-caption"
-            data-queue-held-elsewhere
-          >
-            <Pause className="icon-sm" />
-            <span className="min-w-0 flex-1 truncate">
-              {t("Queue held by another window, which sends it")}
-            </span>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={queueClosed || !!pendingAction || pendingDelivery}
-              loading={pendingAction === "takeover"}
-              loadingLabel={t("Taking over…")}
-              onClick={() => void perform("takeover", () => takeOverSharedLocalQueue(sessionId))}
-              className="shrink-0"
-            >
-              {pendingAction === "takeover" ? t("Taking over…") : t("Take over")}
-            </Button>
-          </div>
-        ) : null}
-        {restored ? (
-          <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
-            <Pause className="icon-sm" />
-            <span className="min-w-0 flex-1 truncate">
-              {messages.length === 1
-                ? t("1 queued message restored")
-                : t("{p0} queued messages restored", { p0: messages.length })}
-            </span>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={
-                !!pendingAction ||
-                pendingDelivery ||
-                messages.some((message) => message.deliveryUnknown) ||
-                delivery?.stage === "unknown" ||
-                hasMissingAttachment(messages[0]) ||
-                (!onResume && !canSend(messages[0]))
-              }
-              loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
-              onClick={() =>
-                void perform(
-                  "resume",
-                  onResume ?? (onSteer ? () => onSteer(messages[0].id) : undefined),
-                )
-              }
-              className="shrink-0"
-            >
-              <Play className="icon-sm" />
-              {pendingAction === "resume" ? t("Sending…") : t("Send next")}
-            </Button>
-          </div>
-        ) : null}
-        {!paused && !restored && !leaseHeld ? (
-          <div className="flex min-h-7 items-center gap-2 px-1 text-ui-caption" data-queue-summary>
-            <ListEnd className="icon-sm shrink-0" />
-            <span className="shrink-0">
-              {t("Queue")} · {messages.length}
-            </span>
-            {!delivery && busy && !activeFeedback ? (
-              <span className="min-w-0 truncate text-(--ui-text-muted)">
-                {t("Waiting for the running response to finish")}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-        <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
-        {holdDetail && !delivery && (holdDetail.length > 180 || holdDetail.includes("\n")) ? (
-          <details className="px-1 pb-1 text-ui-caption text-(--ui-text-muted)">
-            <summary className="w-fit cursor-pointer">{t("Details")}</summary>
-            <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{holdDetail}</p>
-          </details>
-        ) : null}
-        <div
-          className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
-          data-message-queue-rows
-        >
-          {messages.map((message, index) => {
-            const attachmentGone = hasMissingAttachment(message);
-            const route = attachmentGone ? "join" : steerRoute(message);
-            const target = message.modelTarget;
-            const summary = target ? targetSummary(target) : undefined;
-            const targetLabel =
-              target && summary
-                ? [
-                    HARNESS_TITLE[target.harness],
-                    summary.model,
-                    summary.effort && t(summary.effort),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-                : undefined;
-            const routeNote =
-              route === "switch"
-                ? t("Steer switches provider")
-                : route === "restart"
-                  ? t("Steer restarts with this model")
-                  : undefined;
-            const label =
-              message.text.trim() ||
-              `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
-            return (
-              <div
-                key={message.id}
-                ref={(node) => sortable.setItemRef(message.id, node)}
-                className="reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-ui-caption data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg"
-              >
-                {messages.length > 1 ? (
-                  <Button
-                    iconOnly
-                    label={t("Reorder queued message")}
-                    disabled={queueClosed || !!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    data-queue-handle={message.id}
-                    tooltip={t("Drag to reorder")}
-                    shortcut="Alt+↑ / Alt+↓"
-                    aria-label={t("Reorder queued message")}
-                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    onPointerDown={(event) => {
-                      if (event.button !== 0) return;
-                      if (dragAdmission.current && !dragAdmission.current.ended) return;
-                      const admitted = queueOwner.admit();
-                      if (!admitted) return;
-                      // This may synchronously finish the previous settling
-                      // drag. Its callback must still see its original ticket.
-                      if (sortable.onItemPointerDown(message.id, event) !== true) {
-                        admitted.finish();
-                        return;
-                      }
-                      dragAdmission.current = {
-                        admission: admitted,
-                        identity: queueOwner.identity(),
-                        committed: false,
-                        ended: false,
-                      };
-                    }}
-                    onKeyDown={(event) => moveByKey(event, message.id, index)}
-                    className="shrink-0"
-                  >
-                    <GripVertical className="icon-sm" />
-                  </Button>
-                ) : (
-                  <ListEnd className="icon-sm shrink-0" />
-                )}
-                <div className="min-w-0 py-1">
-                  <OverflowTooltip label={label}>
-                    <div className="truncate text-(--ui-text-secondary)">{label}</div>
-                  </OverflowTooltip>
-                  {attachmentGone ? (
-                    <span
-                      className="block [overflow-wrap:anywhere] text-(--ui-tone-warning-fg)"
-                      title={t(
-                        "An attached file is gone. Edit this message to drop it, or remove the message.",
-                      )}
-                    >
-                      {t("Attachment missing")}
-                    </span>
-                  ) : null}
-                  {target && targetLabel ? (
-                    <span
-                      className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)"
-                      data-queue-target
-                    >
-                      <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
-                      <span className="truncate" title={t("Queued for {p0}", { p0: targetLabel })}>
-                        {targetLabel}
-                      </span>
-                      {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {remote ? null : (
-                    <Button
-                      iconOnly
-                      size="sm"
-                      label={
-                        pendingAction === message.id ||
-                        (pendingDelivery && delivery?.messageId === message.id)
-                          ? t("Sending…")
-                          : t("Steer")
-                      }
-                      variant="ghost"
-                      type="button"
-                      disabled={!canSend(message)}
-                      tooltip={
-                        busy && (message.intent === "plan" || message.intent === "orchestrate")
-                          ? t("New messages wait until this turn finishes. Stop pauses the queue.")
-                          : route === "switch"
-                            ? t(
-                                "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
-                              )
-                            : route === "restart"
-                              ? t(
-                                  "Steer stops the running turn, including its background work, and starts this message as a new turn with its saved model.",
-                                )
-                              : undefined
-                      }
-                      loading={
-                        pendingAction === message.id ||
-                        (pendingDelivery && delivery?.messageId === message.id)
-                      }
-                      loadingLabel={t("Sending…")}
-                      onClick={() =>
-                        void perform(message.id, onSteer ? () => onSteer(message.id) : undefined)
-                      }
-                      className="shrink-0"
-                    >
-                      <CornerDownRight className="icon-sm" />
-                    </Button>
-                  )}
-                  <Button
-                    iconOnly
-                    label={t("Edit queued message")}
-                    disabled={queueClosed || !!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    tooltip={t("Edit queued message")}
-                    aria-label={t("Edit queued message")}
-                    onClick={() => startEdit(message)}
-                    className="shrink-0"
-                  >
-                    <Pencil className="icon-sm" />
-                  </Button>
-                  <Tooltip label={t("Remove queued message")}>
-                    <ConfirmMorph
-                      label={<span className="sr-only">{t("Remove")}</span>}
-                      icon={<Trash2 className="icon-sm" />}
-                      prompt={t("Remove queued message")}
-                      disabled={queueClosed || !!pendingAction || pendingDelivery}
-                      onConfirm={() => {
-                        mutateParentInput(queueOwner, () => onDelete?.(message.id));
-                      }}
-                    />
-                  </Tooltip>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {!delivery && (pendingAction || activeFeedback) ? (
-          <div
-            role={activeFeedback?.error ? "alert" : "status"}
-            aria-live="polite"
-            className="py-1 text-ui-caption [overflow-wrap:anywhere]"
-            data-queue-feedback
-          >
-            {pendingAction
-              ? t("Waiting for confirmation…")
-              : (activeFeedback?.text ?? t("Queue is waiting for the current turn to finish."))}
-          </div>
-        ) : null}
-        {remote ? (
-          <div className="pt-1 text-ui-micro text-(--ui-text-secondary)">
-            {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
-              p0: PRODUCT_IDENTITY.displayName,
-            })}
-          </div>
-        ) : null}
-      </div>
-      {editingMessage ? (
-        <QueuedMessageEditDialog
-          key={editingMessage.id}
-          parentSessionId={parentSessionId}
-          message={editingMessage}
-          canAttach={canAttach}
-          onSave={(text, attachments) => {
-            if (!queueOwner.canMutate()) return;
-            onEdit?.(editingMessage.id, text, attachments);
-            setEditingId(undefined);
-          }}
-          onRemove={() => mutateParentInput(queueOwner, () => onDelete?.(editingMessage.id))}
-          onCancel={cancelEdit}
-        />
-      ) : null}
-    </div>
-  );
-}
 export const Composer = memo(function Composer({
   enabled = true,
   focused,
@@ -1800,12 +1195,14 @@ export const Composer = memo(function Composer({
     setPasteError,
   });
 
-  // The text as it was just before a user edit. Only a native `beforeinput`
-  // sets it, so programmatic text changes never count as the user deleting a
-  // token. Backspace/Delete against a token takes the whole token.
+  // Only native edits remove attachments; programmatic draft replacement does not.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const removeSelectionPolicy = installAttachmentSelectionPolicy(
+      el,
+      () => attachmentsRef.current,
+    );
     const onBeforeInput = (event: InputEvent) => {
       userEditBeforeRef.current = el.value;
       const back = event.inputType === "deleteContentBackward";
@@ -1827,7 +1224,10 @@ export const Composer = memo(function Composer({
       applyTextareaEdit(el, edit.text, edit.caret);
     };
     el.addEventListener("beforeinput", onBeforeInput);
-    return () => el.removeEventListener("beforeinput", onBeforeInput);
+    return () => {
+      removeSelectionPolicy();
+      el.removeEventListener("beforeinput", onBeforeInput);
+    };
   }, []);
 
   // An accepted external draft takes the same projection path as a native edit:
@@ -4035,6 +3435,9 @@ export const Composer = memo(function Composer({
           </div>
 
           <div className="composer-controls flex items-center gap-1 px-2 pb-2">
+            {queuedMessages.length === 0 ? (
+              <DeliveryProgressIndicator sessionId={sessionId} />
+            ) : null}
             <div
               data-composer-model-controls
               data-usage-guide="model-controls"

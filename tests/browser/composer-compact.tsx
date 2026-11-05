@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionPane, type SessionPaneProps } from "../../src/features/sessions/ui/SessionPane";
+import { hydrateComposerDrafts } from "../../src/features/sessions/data/composerDraftStore";
+import { hydrateHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
 import { newSession, type Block, type Session } from "../../src/features/sessions/model/session";
 import {
@@ -90,21 +92,31 @@ const initial: Session = {
   ...newSession("claude", "/fixture", modelId),
   id: sessionId,
   title: "Composer reading mode",
-  blocks: baseBlocks,
+  ...(params.has("backgroundOnly")
+    ? { busy: true, backgroundTasks: ["Wait for test runs to finish"], backgroundAgents: 0 }
+    : {}),
+  blocks: params.has("savedDraft")
+    ? [
+        ...baseBlocks,
+        { id: "saved-draft", role: "user", text: "Saved draft for editing", draft: true },
+      ]
+    : baseBlocks,
   context: { used: 64000, window: 128000 },
 };
-setComposerDraft(sessionId, DRAFTS[params.get("draft") ?? "none"] ?? "");
-if (params.has("attach")) {
-  setComposerAttachments(sessionId, [
-    {
-      id: "draft-file",
-      kind: "file",
-      name: "draft-context.txt",
-      mimeType: "text/plain",
-      size: 7,
-      data: btoa("context"),
-    },
-  ]);
+function seedComposer() {
+  setComposerDraft(sessionId, DRAFTS[params.get("draft") ?? "none"] ?? "");
+  if (params.has("attach")) {
+    setComposerAttachments(sessionId, [
+      {
+        id: "draft-file",
+        kind: "file",
+        name: "draft-context.txt",
+        mimeType: "text/plain",
+        size: 7,
+        data: btoa("context"),
+      },
+    ]);
+  }
 }
 
 const events = { sends: 0, stops: 0 };
@@ -209,12 +221,32 @@ applyAppearancePreferences(
     controlDensity: params.get("density") as "compact" | "comfortable" | "touch",
   }),
 );
-void languageReady.then(() =>
-  createRoot(document.getElementById("root")!).render(
+Object.assign(window, {
+  __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
+  __TAURI_INTERNALS__: {
+    metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+    invoke: async (command: string) => {
+      if (command === "canonical_store_session_guard_ready") return false;
+      if (command === "canonical_store_list") return { entries: [], revision: 0 };
+      if (command === "session_list_drafts") return [];
+      if (command === "plugin:event|listen") return 1;
+      return null;
+    },
+    transformCallback: () => 0,
+    unregisterCallback: () => {},
+    convertFileSrc: (path: string) => path,
+  },
+});
+void Promise.all([
+  languageReady,
+  hydrateHostSessionBindings().then(() => hydrateComposerDrafts()),
+]).then(() => {
+  seedComposer();
+  return createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
       <Fixture />
     </QueryClientProvider>,
-  ),
-);
+  );
+});

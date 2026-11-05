@@ -805,3 +805,37 @@ it("opens with configuration discovery only and never starts a health helper", a
     container.querySelector('[data-capability-axis="readiness"]')?.getAttribute("data-state"),
   ).toBe("unknown");
 });
+
+it("dismisses the displayed login error without retrying or hiding a later failure", async () => {
+  let attempt = 0;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_discover")
+      return [
+        {
+          provider: "codex",
+          name: "docs",
+          scope: "user",
+          configPath: "/config/codex",
+          transport: "http",
+        },
+      ];
+    if (command === "mcp_provider_login")
+      throw new Error(`failure ${++attempt}: ${"long-server-name-".repeat(20)}`);
+    return "";
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const signIn = () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Sign in",
+    )!;
+  await act(async () => signIn().click());
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain("failure 1:");
+  const dismiss = alert.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!;
+  expect(dismiss).toBeTruthy();
+  await act(async () => dismiss.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
+  await act(async () => signIn().click());
+  expect(container.textContent).toContain("failure 2:");
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(2);
+});

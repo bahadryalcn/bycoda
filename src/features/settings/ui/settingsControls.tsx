@@ -18,7 +18,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Badge } from "../../../shared/ui/Badge";
 import { useTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ChevronRight, RotateCcw } from "../../../shared/ui/icons";
 
@@ -118,55 +118,20 @@ type SettingDetails = {
   feedback?: ReactNode;
 };
 
-export function SettingsFeedback({
-  state,
-  children,
-  action,
-  presentation = "quiet",
-}: {
-  state: "loading" | "success" | "error" | "empty" | "warning";
-  children: ReactNode;
-  action?: ReactNode;
-  /**
-   * `quiet` (default): one inline line, tone glyph plus neutral text and the recovery action,
-   * with no fill or border. Role and live-region semantics are unchanged, so errors stay
-   * announced and visible. `surface`: the filled, bordered notice for blocking states.
-   * `inset`: quiet empty information inside an already framed Group (errors still use Alert).
-   */
-  presentation?: "quiet" | "surface" | "inset";
-}) {
+export function SettingsFeedback(props: SettingsFeedbackProps) {
+  if (props.state !== "empty" || props.presentation !== "inset")
+    return <SettingsOperationFeedback {...props} />;
   return (
-    <div className="settings-feedback" data-state={state} data-presentation={presentation}>
-      {state === "empty" && presentation === "inset" ? (
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          className="text-ui-caption text-(--ui-text-secondary)"
-        >
-          {children}
-        </div>
-      ) : (
-        <Alert
-          tone={
-            state === "error"
-              ? "danger"
-              : state === "warning"
-                ? "warning"
-                : state === "success"
-                  ? "success"
-                  : "info"
-          }
-          role={state === "error" ? "alert" : "status"}
-          aria-live={state === "error" ? "assertive" : "polite"}
-          aria-atomic="true"
-          inline={presentation !== "surface"}
-          action={action}
-        >
-          {children}
-        </Alert>
-      )}
-      {state === "empty" && presentation === "inset" ? action : null}
+    <div className="settings-feedback" data-state="empty" data-presentation="inset">
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="text-ui-caption text-(--ui-text-secondary)"
+      >
+        {props.children}
+      </div>
+      {props.action}
     </div>
   );
 }

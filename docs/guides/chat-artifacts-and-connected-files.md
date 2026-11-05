@@ -46,6 +46,12 @@ These details describe the tool call at that point in the conversation. They do 
 
 ## Working and follow-up messages
 
+While a turn is open, **Queue message** or **Shift+Tab** saves your message for
+after that turn finishes, including while the AI waits for background commands.
+**Steer** sends a follow-up to the current turn instead. If a server or watcher
+keeps the turn open, queued messages keep waiting; use the queued row's **Steer**
+action to send one immediately.
+
 When the AI asks a question with a free-text answer, use **Attach files**, paste copied files or images, or drop files onto the question card. Attached items appear below the answer; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
 
 Question attachments are saved as files on the computer running the conversation. The AI receives file references and reads them with its tools. Structured forms that require exact typed values do not accept attachments in those fields.
@@ -66,6 +72,11 @@ step does not mean the whole agent failed: running agents keep their active stat
 completed agents use green, and stopped or interrupted agents use warning colors.
 
 ## Earlier conversation after a provider or model change
+
+Claude advisor menus in chat and provider Settings show compatible versions from
+the enabled model catalog, such as **Opus 5.5** and **Fable 5.1**. Moving aliases
+use their catalog-reported target version. Saved advisor choices remain visible
+when unavailable; changing the main model does not silently replace them.
 
 With decorative motion enabled, selecting a provider or model briefly shows its
 provider icon beside “Ready to work together”. Reduced motion hides this acknowledgment.
@@ -90,7 +101,9 @@ Pasted and selected attachments show their filename, type and size in a bordered
 card. Images include a thumbnail; audio, video, PDF, Markdown and other files use
 their own icons. Reference labels connect each card to the highlighted reference
 in your draft and message. Removing a card retains the existing reference-removal
-behavior. A missing or unavailable preview never removes the attachment.
+behavior. In the composer and queue editor, caret movement and selections treat a
+resolved reference as a whole. A missing or unavailable preview never removes the
+attachment.
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 

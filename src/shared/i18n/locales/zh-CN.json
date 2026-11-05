@@ -1,4 +1,7 @@
 {
+  "Enable": "启用",
+  "Disable": "禁用",
+  "Applies to this project for Claude Code.": "适用于 Claude Code 的此项目。",
   "Too many attachments": "附件过多",
   "Cannot attach {p0}: no file data is available.": "无法附加 {p0}：没有可用的文件数据。",
   "Could not save attachment {p0}.": "无法保存附件 {p0}。",

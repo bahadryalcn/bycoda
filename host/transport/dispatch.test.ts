@@ -3,6 +3,7 @@ import { createEnvironmentService } from "../domains/environment/service";
 import { createProjectsService } from "../domains/projects/service";
 import { HostDomainOutcomeError, HostDomainRefusalError } from "../domains/context";
 import { RpcErrorSchema } from "../../src/shared/model/host-contracts";
+import { SessionReadError, type SessionReadErrorKind } from "../sessions/read-errors";
 import {
   createHostReadDispatcher,
   HostDispatchError,
@@ -52,6 +53,75 @@ function fixture() {
 }
 
 describe("effectful domain failure outcomes", () => {
+  it.each([
+    ["overloaded", "overloaded", true],
+    ["source-changed", "service-unavailable", true],
+    ["unavailable", "service-unavailable", true],
+    ["snapshot-budget", "service-unavailable", false],
+  ] as const)("maps %s reads without exposing private causes", async (kind, code, retryable) => {
+    const { context } = fixture();
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "sessions.sync": async () => {
+          throw new SessionReadError(kind as SessionReadErrorKind, { cause: new Error("private") });
+        },
+      },
+    });
+    const error = await dispatch
+      .dispatch("sessions.sync", { sessionId: "session" }, context)
+      .catch((error: unknown) => error);
+    expect(error).toMatchObject({ code, details: { retryable } });
+    expect(JSON.stringify(error)).not.toContain("private");
+  });
+
+  it("never reclassifies an effect's read failure as safe to retry", async () => {
+    const { context } = fixture();
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw new SessionReadError("overloaded");
+        },
+      },
+    });
+    await expect(
+      dispatch.dispatch("notes.delete", { id: "note", expectedUpdatedAt: 1 }, context),
+    ).rejects.toMatchObject({
+      code: "service-unavailable",
+      details: { delivery: "unknown", retryable: false },
+    });
+  });
+
+  it("rechecks authority before returning a typed read failure", async () => {
+    const { context } = fixture();
+    let permitted = true;
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "sessions.sync": async () => {
+          permitted = false;
+          throw new SessionReadError("source-changed");
+        },
+      },
+    });
+    await expect(
+      dispatch.dispatch(
+        "sessions.sync",
+        { sessionId: "session" },
+        {
+          ...context,
+          authorized: async () => permitted,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "unauthorized" });
+  });
   it("carries a verified committed domain outcome without exposing private causes", async () => {
     const { context } = fixture();
     const dispatch = createHostReadDispatcher({

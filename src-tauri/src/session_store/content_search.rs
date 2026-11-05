@@ -1,8 +1,7 @@
 //! Full-text search over the message content of every stored session.
 //!
-//! Transcripts live as one JSON blob per session, so a `LIKE` over the blobs
-//! reads every byte of every session on each keystroke. This module keeps a
-//! separate index instead:
+//! Transcripts are JSON blobs; `LIKE` scans read every byte on each keystroke.
+//! This module maintains separate indexes:
 //!
 //! * `session_search_blocks` holds the searchable text of each message block
 //!   (what the snippet is cut from), keyed by `session key << 20 | block index`.
@@ -637,7 +636,7 @@ fn with_index_reader<T>(
         .lock()
         .map_err(|_| "Session search reader is locked")?;
     if let Some(reader) = reader.as_ref() {
-        read(reader)
+        super::reader::run(reader, read)
     } else {
         let conn = store.lock_conn()?;
         read(&conn)
@@ -1074,7 +1073,7 @@ pub(super) fn search_content(
         .lock()
         .map_err(|_| "Session read store is locked")?;
     let result = if let Some(conn) = read_conn.as_ref() {
-        run_search(conn, options, &terms, token.as_ref())
+        super::reader::run(conn, |db| run_search(db, options, &terms, token.as_ref()))
     } else {
         let conn = store.lock_conn()?;
         run_search(&conn, options, &terms, token.as_ref())

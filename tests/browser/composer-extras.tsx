@@ -6,6 +6,7 @@ import { Composer } from "../../src/features/sessions/ui/Composer";
 import { SessionAgentIdentity } from "../../src/features/sessions/ui/SessionAgentIdentity";
 import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
+import { applyHarnessEvent } from "../../src/integrations/harness/core/apply";
 import { EmptySession } from "../../src/features/sessions/ui/EmptySession";
 import { Shimmer } from "../../src/shared/ui/Shimmer";
 import { UsageFooter } from "../../src/app/shell/UsageFooter";
@@ -19,6 +20,7 @@ import {
 } from "../../src/features/sessions/model/models";
 import {
   setHarnessAttachmentsSupported,
+  newSession,
   type HarnessId,
   type RuntimeMode,
 } from "../../src/features/sessions/model/session";
@@ -134,6 +136,14 @@ import {
 
 function Fixture() {
   const queueVisual = new URLSearchParams(location.search).get("queue-state");
+  const visualBackground = new URLSearchParams(location.search).has("queue-background");
+  const [fixtureRows, setFixtureRows] = useState(() =>
+    queueVisual === "empty" || queueVisual === "last-success"
+      ? []
+      : queueVisual === "one"
+        ? ["queued"]
+        : ["queued", "queued-next"],
+  );
   useEffect(() => {
     const theme = new URLSearchParams(location.search).get("theme");
     if (theme) document.documentElement.classList.toggle("theme-light", theme === "light");
@@ -141,9 +151,16 @@ function Fixture() {
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
   const [queueStatus, setQueueStatus] = useState<"paused" | "active">(
-    queueVisual === "active" ? "active" : "paused",
+    ["active", "busy", "one", "empty", "last-success"].includes(queueVisual ?? "")
+      ? "active"
+      : "paused",
   );
   useEffect(() => {
+    if (queueVisual === "last-success") {
+      const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+      updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
+      return () => clearDeliveryProgress("composer-layout-fixture", progress);
+    }
     if (queueVisual !== "rejected") return;
     const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
     updateDeliveryProgress(
@@ -162,11 +179,18 @@ function Fixture() {
   );
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("supervised");
-  const [busy, setBusy] = useState(queueVisual === "active");
+  const [busy, setBusy] = useState(
+    queueVisual === "active" || queueVisual === "busy" || queueVisual === "one",
+  );
   const [disabled, setDisabled] = useState(false);
   const [accountId, setAccountId] = useState("default");
   const [terminalOpened, setTerminalOpened] = useState(false);
   const [compacted, setCompacted] = useState(0);
+  const compactReading = new URLSearchParams(location.search).get("compact-context");
+  const [contextSession, setContextSession] = useState<ReturnType<typeof newSession>>(() => ({
+    ...newSession("claude", fixtureCwd),
+    context: { used: 64000, window: 128000 },
+  }));
   const composer = (
     <>
       <div
@@ -197,7 +221,7 @@ function Fixture() {
                   text: "Configure the Cloudflare DNS records",
                   attachments: [],
                 },
-              ]
+              ].filter((row) => fixtureRows.includes(row.id))
             : queueFeedback || deliveryProgress
               ? [
                   {
@@ -261,7 +285,7 @@ function Fixture() {
         hideTopBar={!chatLayout}
         remoteSession={remoteLayout}
         remoteFeatures={remoteLayout ? { attachments: true, plan: true, draft: true } : undefined}
-        context={chatLayout ? { used: 64000, window: 128000 } : undefined}
+        context={chatLayout ? contextSession.context : undefined}
         contextBlocks={
           new URLSearchParams(location.search).has("response-speed")
             ? [
@@ -278,6 +302,16 @@ function Fixture() {
         compactSupported={chatLayout}
         onCompactContext={() => {
           setCompacted((count) => count + 1);
+          if (compactReading) {
+            setContextSession((session) =>
+              applyHarnessEvent(
+                session,
+                compactReading === "known"
+                  ? { type: "context.compacted", used: 16000, window: 128000 }
+                  : { type: "context.compacted" },
+              ),
+            );
+          }
           return true;
         }}
         initialDraft="Keep this chat draft"
@@ -322,6 +356,15 @@ function Fixture() {
   return (
     <ModelSourceContext.Provider value={source}>
       <main
+        style={
+          visualBackground
+            ? {
+                backgroundImage: "url('/crew/star-wars/r2-d2.svg')",
+                backgroundRepeat: "repeat",
+                backgroundSize: "240px",
+              }
+            : undefined
+        }
         className={
           welcome
             ? "flex h-screen min-w-0 flex-col bg-background-base text-content"
@@ -330,6 +373,23 @@ function Fixture() {
       >
         {!welcome ? (
           <div className="flex flex-wrap gap-2 text-xs">
+            {queueVisual ? (
+              <button
+                onClick={() => {
+                  const progress = beginDeliveryProgress(
+                    "composer-layout-fixture",
+                    "queued",
+                    "preparing",
+                  );
+                  setTimeout(() => {
+                    updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
+                    setFixtureRows((rows) => rows.filter((row) => row !== "queued"));
+                  }, 100);
+                }}
+              >
+                Confirm queued
+              </button>
+            ) : null}
             {["claude", "codex", "grok", "gemini"].map((provider) => (
               <button
                 key={provider}

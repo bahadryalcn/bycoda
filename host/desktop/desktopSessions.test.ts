@@ -630,7 +630,7 @@ describe("desktop sessions on the host", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(() => desktop.listSnapshot(s.projectDir, s.project.id, ["codex"])).toThrow(
-        "Desktop session metadata is temporarily unavailable",
+        "Conversation data is temporarily unavailable. Retrying shortly.",
       );
       writeFileSync(broken, readFileSync(s.dbPath));
       expect(

@@ -1,4 +1,7 @@
 {
+  "Enable": "Etkinleştir",
+  "Disable": "Devre dışı bırak",
+  "Applies to this project for Claude Code.": "Claude Code için bu projede geçerlidir.",
   "Too many attachments": "Çok fazla ek var",
   "Cannot attach {p0}: no file data is available.": "{p0} eklenemedi: dosya verisi bulunamadı.",
   "Could not save attachment {p0}.": "{p0} eki kaydedilemedi.",

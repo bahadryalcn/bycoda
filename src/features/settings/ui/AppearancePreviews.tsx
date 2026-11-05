@@ -36,6 +36,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Check } from "../../../shared/ui/icons";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Combobox } from "../../../shared/ui/Combobox";
+import { AppearanceContrast } from "./AppearanceContrast";
 import { RadioTiles } from "./RadioTiles";
 import "./AppearancePreviews.css";
 import "./AppearanceSettings.css";
@@ -411,22 +412,7 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
           }
         />
       </Row>
-      <Row
-        id="interface-contrast"
-        label={t("Contrast")}
-        description={t("Make structural borders and secondary text softer or stronger.")}
-        modified={p.contrast !== APPEARANCE_DEFAULTS.contrast}
-        onReset={() => a.onPreferences({ ...p, contrast: APPEARANCE_DEFAULTS.contrast })}
-      >
-        <Slider
-          label={t("Contrast")}
-          value={p.contrast}
-          display={`${p.contrast}%`}
-          min={75}
-          max={150}
-          onChange={(contrast) => a.onPreferences({ ...p, contrast })}
-        />
-      </Row>
+      <AppearanceContrast appearance={a} />
       <Row
         id="diff-colors"
         label={t("Diff colors")}

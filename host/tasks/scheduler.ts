@@ -265,6 +265,19 @@ export async function work(context: TaskContext): Promise<void> {
       if (!task || context.jobs.has(task.id)) continue;
       if (assistantRecoveryHoldsTask(await readAssistantRecovery(context.store, task.id), task))
         continue;
+      // Keep instruction errors visible, but avoid expensive admission reads
+      // for work whose dependency is already known to be unfinished.
+      if (
+        task.status !== "queued" &&
+        !(takeoverCandidates.has(task.id) && canTakeOverBlockedTask(task))
+      )
+        continue;
+      if (
+        ((task.status === "queued" && !taskRequiresInstructions(task)) ||
+          (takeoverCandidates.has(task.id) && canTakeOverBlockedTask(task))) &&
+        (await hasUnfinishedDependencies(task))
+      )
+        continue;
       if (
         (task.crewDefinitionId ? teams : active).length +
           (task.crewDefinitionId

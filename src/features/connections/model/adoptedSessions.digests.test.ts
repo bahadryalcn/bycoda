@@ -59,6 +59,12 @@ const entry = (over: Partial<AdoptedEntry> = {}): AdoptedEntry => ({
 });
 
 describe("merging with digests", () => {
+  it("clears an old context reading when the Host snapshot omits invalidated usage", () => {
+    const blocks = [user("u"), reply("r")];
+    const current = session(blocks, { context: { used: 900, window: 1000 } });
+    const remote = JSON.parse(JSON.stringify(hostOf(blocks))) as HostSession;
+    expect(mergeAdoptedSession(current, remote)?.context).toBeUndefined();
+  });
   const big: Block = {
     id: "t",
     role: "tool",

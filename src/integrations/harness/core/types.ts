@@ -207,6 +207,8 @@ export type HarnessEvent =
     }
   /** Context-window level after the harness's latest request. */
   | { type: "context"; used?: number; window?: number }
+  /** Authoritative post-compaction reading, or unknown when omitted. */
+  | { type: "context.compacted"; used?: number; window?: number }
   | ({ type: "usage" } & TurnUsage)
   /** Provider token accounting for the active user turn. */
   | ({ type: "turn.metrics" } & TurnMetrics);

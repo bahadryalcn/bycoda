@@ -25,6 +25,8 @@ const drafts = new Map<string, string>();
 const mcpTags = new Map<string, McpTag[]>();
 const attachments = new Map<string, Attachment[]>();
 const modes = new Map<string, "save">();
+const sourceDraftIds = new Map<string, string>();
+const sourceDraftDigests = new Map<string, string>();
 const notices = new Map<string, string>();
 const listeners = new Set<(sessionId: string, work?: PersistenceWork) => void>();
 let revision = 0;
@@ -137,6 +139,8 @@ export function restoreComposerDraft(
     mcpTags: McpTag[];
     attachments: Attachment[];
     mode?: "save";
+    sourceDraftId?: string;
+    sourceDraftDigest?: string;
     notice?: string;
   },
   startedAt = revision,
@@ -147,6 +151,7 @@ export function restoreComposerDraft(
     !canRestoreOver({
       text: drafts.get(sessionId),
       attachments: attachments.get(sessionId),
+      sourceDraftId: sourceDraftIds.get(sessionId),
     })
   ) {
     return false;
@@ -156,6 +161,9 @@ export function restoreComposerDraft(
   if (saved.mcpTags.length > 0) mcpTags.set(sessionId, saved.mcpTags);
   if (saved.attachments.length > 0) attachments.set(sessionId, saved.attachments);
   if (saved.mode) modes.set(sessionId, saved.mode);
+  if (saved.sourceDraftId) sourceDraftIds.set(sessionId, saved.sourceDraftId);
+  if (saved.sourceDraftId && saved.sourceDraftDigest)
+    sourceDraftDigests.set(sessionId, saved.sourceDraftDigest);
   if (saved.notice) notices.set(sessionId, saved.notice);
   notifyPresence();
   return true;
@@ -167,12 +175,18 @@ export function composerDraftOf(sessionId: string): {
   mcpTags: McpTag[];
   attachments: Attachment[];
   mode?: "save";
+  sourceDraftId?: string;
+  sourceDraftDigest?: string;
 } {
   return {
     text: drafts.get(sessionId) ?? "",
     mcpTags: mcpTags.get(sessionId) ?? [],
     attachments: attachments.get(sessionId) ?? [],
     ...(modes.has(sessionId) ? { mode: modes.get(sessionId) } : {}),
+    ...(sourceDraftIds.has(sessionId) ? { sourceDraftId: sourceDraftIds.get(sessionId) } : {}),
+    ...(sourceDraftDigests.has(sessionId)
+      ? { sourceDraftDigest: sourceDraftDigests.get(sessionId) }
+      : {}),
   };
 }
 
@@ -183,9 +197,23 @@ export function setComposerDraftSnapshot(
   work?: PersistenceWork,
 ): void {
   const before = composerDraftOf(sessionId);
+  // Mounted captures predating the lineage field must preserve an active edit.
+  // Explicit undefined or clearComposerDraft ends that association.
+  const sourceDraftId = Object.prototype.hasOwnProperty.call(snapshot, "sourceDraftId")
+    ? snapshot.sourceDraftId
+    : before.sourceDraftId;
+  const sourceDraftDigest = !sourceDraftId
+    ? undefined
+    : Object.prototype.hasOwnProperty.call(snapshot, "sourceDraftDigest")
+      ? snapshot.sourceDraftDigest
+      : sourceDraftId === before.sourceDraftId
+        ? before.sourceDraftDigest
+        : undefined;
   if (
     before.text === snapshot.text &&
     before.mode === snapshot.mode &&
+    before.sourceDraftId === sourceDraftId &&
+    before.sourceDraftDigest === sourceDraftDigest &&
     before.mcpTags === snapshot.mcpTags &&
     before.attachments === snapshot.attachments
   )
@@ -198,6 +226,10 @@ export function setComposerDraftSnapshot(
   else attachments.delete(sessionId);
   if (snapshot.mode) modes.set(sessionId, snapshot.mode);
   else modes.delete(sessionId);
+  if (sourceDraftId) sourceDraftIds.set(sessionId, sourceDraftId);
+  else sourceDraftIds.delete(sessionId);
+  if (sourceDraftDigest) sourceDraftDigests.set(sessionId, sourceDraftDigest);
+  else sourceDraftDigests.delete(sessionId);
   changed(sessionId, work);
 }
 
@@ -212,6 +244,8 @@ export function clearComposerDraft(sessionId: string, work?: PersistenceWork): v
   mcpTags.delete(sessionId);
   attachments.delete(sessionId);
   modes.delete(sessionId);
+  sourceDraftIds.delete(sessionId);
+  sourceDraftDigests.delete(sessionId);
   notices.delete(sessionId);
   changed(sessionId, work);
 }

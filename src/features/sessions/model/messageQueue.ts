@@ -276,9 +276,9 @@ export type FollowUpRoute = "dispatch" | "queue" | "steer";
  * queued message would be parked behind them), and otherwise follows
  * `requested` (an explicit per-send choice), defaulting to steer.
  *
- * An explicit "queue" beats the background-task steer unless the agent has
- * truly yielded (`backgroundOnly`), because with the agent still working the
- * queued message is sent when that turn ends.
+ * An explicit "queue" always waits for the turn to finish, including when
+ * only background commands remain. The user can steer a queued row instead
+ * if a long-running command keeps the turn open.
  */
 export function resolveFollowUpRoute(input: {
   busy: boolean;
@@ -298,7 +298,7 @@ export function resolveFollowUpRoute(input: {
   ) {
     return "queue";
   }
-  if (input.requested === "queue" && !input.backgroundOnly) return "queue";
+  if (input.requested === "queue") return "queue";
   if (input.backgroundTaskCount > 0) return "steer";
   return input.requested ?? "steer";
 }

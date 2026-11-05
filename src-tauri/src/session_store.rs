@@ -26,6 +26,7 @@ pub(crate) mod native_raw_capture;
 pub(crate) mod pin_receipts;
 mod provenance;
 mod provider_history;
+mod reader;
 pub(crate) mod references;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
@@ -34,7 +35,6 @@ pub mod usage;
 pub(crate) mod window_barrier;
 pub(crate) mod write_receipts;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
-
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
@@ -191,10 +191,8 @@ impl SessionStore {
         })
     }
 
-    /// Runs a pure read on the dedicated read connection so it does not queue
-    /// behind a long write on `conn` (WAL lets readers run alongside it). An
-    /// in-memory store has no second connection, so it reads on `conn`.
-    /// Only for commands that never write, even lazily.
+    /// Runs write-free queries on the WAL reader, away from long writes.
+    /// In-memory stores use `conn`; callbacks must never write, even lazily.
     pub(crate) fn with_read_conn<T>(
         &self,
         read: impl FnOnce(&Connection) -> Result<T, String>,
@@ -204,7 +202,7 @@ impl SessionStore {
             .lock()
             .map_err(|_| "Session read store is locked")?;
         if let Some(conn) = list_conn.as_ref() {
-            read(conn)
+            reader::run(conn, read)
         } else {
             let conn = self.conn.lock().map_err(|_| "Session store is locked")?;
             read(&conn)
@@ -222,7 +220,7 @@ impl SessionStore {
             .lock()
             .map_err(|_| "Session background reader is locked")?;
         match background_conn.as_ref() {
-            Some(conn) => read(conn),
+            Some(conn) => reader::run(conn, read),
             None => {
                 drop(background_conn);
                 self.with_read_conn(read)
@@ -1381,7 +1379,9 @@ fn search_store(
             .lock()
             .map_err(|_| "Session read store is locked")?;
         if let Some(conn) = read_conn.as_ref() {
-            search_sessions_with_connection(conn, options, token.as_ref())?
+            reader::run(conn, |db| {
+                search_sessions_with_connection(db, options, token.as_ref())
+            })?
         } else {
             let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
             search_sessions_with_connection(&conn, options, token.as_ref())?

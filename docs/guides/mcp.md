@@ -18,6 +18,18 @@ personal Claude configuration. Filters can narrow the list by provider and scope
 **Add MCP server** starts with the Global scope. Credentials saved by one provider are not evidence that another
 provider is signed in; complete that provider's authorization when needed.
 
+Use a connection's action menu to **Enable** a disabled server or **Disable** an
+enabled server for Codex, OpenCode or Claude Code. Codex and OpenCode changes apply
+to that exact provider, scope and configuration file. Claude Code changes apply to
+every scope with that server name in the selected project. Cursor and Claude Desktop
+connections require their own client controls and do not support this action here.
+A disabled connection stays
+listed so it can be enabled again. **Disabled** describes saved configuration,
+not connection health. Start a new conversation in the provider to load the changed
+tool configuration; an existing running conversation can retain its current tools.
+If saving fails, the row retains its last confirmed state. Refresh and inspect the
+configuration before retrying an uncertain write.
+
 For enabled HTTP/SSE connections managed by Claude Code, Codex, Cursor or OpenCode, choose
 **Sign in** on the row and complete the authorization in your browser. bycoda runs
 the provider's own CLI and refreshes the list after it finishes. Keep the app open
@@ -53,3 +65,5 @@ configuration before submitting the same change again.
 **External MCP access** is separate: its tokens allow another client to access
 bycoda's local Host. Creating one does not sign in to Cloudflare, Hostinger or any
 other outgoing MCP service.
+
+MCP operation errors can be dismissed using the close control beside the message. Dismissing an error does not retry the operation.
