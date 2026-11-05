@@ -160,11 +160,7 @@ export function InboxPrChangesGlance({
           </Button>
         ) : null}
       </div>
-      {error ? (
-        <Alert tone="info" role="alert">
-          {error}
-        </Alert>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
       {diff && files.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No file changes")} />
       ) : shown.length > 0 ? (

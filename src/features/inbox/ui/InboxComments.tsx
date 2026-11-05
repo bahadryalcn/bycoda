@@ -142,11 +142,7 @@ export function InboxComments({
   }
   if (!thread) {
     if (error) {
-      return (
-        <Alert tone="info" role="alert">
-          {error}
-        </Alert>
-      );
+      return <Alert tone="danger">{error}</Alert>;
     }
     if (loading) return <CommentsPending />;
     return null;
@@ -183,11 +179,7 @@ export function InboxComments({
         ) : null}
         {loading ? <Spinner size="xs" className="text-(--ui-text-secondary)" /> : null}
       </div>
-      {error ? (
-        <Alert tone="info" role="alert">
-          {error}
-        </Alert>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
       {thread.commits ? (
         <ol className="flex flex-col">
           {timelineItems(activityTimeline(thread)).map((item, index, items) =>

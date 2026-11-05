@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { fetchCheckDetails } from "../model/prChecks";
@@ -224,19 +225,12 @@ export function CheckRepairForm({
       }
       footer={
         <>
-          {error ? (
-            <Alert tone="danger" role="alert">
-              {error}
-            </Alert>
-          ) : null}
-          {blocked && !busy ? (
-            <p
-              role="status"
-              className="px-3.5 pb-3 text-ui-caption leading-4 text-(--ui-text-secondary)"
-            >
-              {t("Wait for the latest checks before starting a fix.")}
-            </p>
-          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {/* Always mounted so the message is announced when the fix becomes blocked. */}
+          <LiveText
+            className="block px-3.5 pb-3 text-ui-caption leading-4 text-(--ui-text-secondary) empty:hidden"
+            text={blocked && !busy ? t("Wait for the latest checks before starting a fix.") : ""}
+          />
           <PickerFooter align="between" className="gap-3 px-3 py-2.5">
             <div className="min-w-0 text-ui-micro leading-4">
               <p className="break-words text-(--ui-text-secondary)">{selectedTitle}</p>

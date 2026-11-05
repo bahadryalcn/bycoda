@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
@@ -137,12 +138,16 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       header={
         <div className="space-y-1 px-2 py-1.5">
           <p className="text-ui-caption font-medium text-(--ui-tone-neutral-fg)">{t("Inbox")}</p>
-          <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
-            {t(allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted", {
-              p0: allIds.length,
-              p2: mutedIds.length,
-            })}
-          </p>
+          <LiveText
+            className="block text-ui-caption text-(--ui-text-secondary)"
+            text={t(
+              allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted",
+              {
+                p0: allIds.length,
+                p2: mutedIds.length,
+              },
+            )}
+          />
           {seenStatus.state === "loading" ? (
             <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
           ) : seenStatus.state === "error" ? (

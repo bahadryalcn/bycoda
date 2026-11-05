@@ -1,5 +1,6 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -447,7 +448,7 @@ function PrCheckRow({
             <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
           ) : null}
           {error ? (
-            <Alert tone="info" role="alert">
+            <Alert tone="danger">
               <p>{t("Could not load job details.")}</p>
               <p className="break-words text-ui-micro">{error}</p>
               <Button
@@ -524,11 +525,11 @@ function PrCheckRow({
                   </pre>
                 </details>
               ) : null}
-              {details.notice ? (
-                <p role="status" className="mt-3 text-(--ui-text-secondary)">
-                  {details.notice}
-                </p>
-              ) : null}
+              {/* Always mounted so a notice is announced when it first appears. */}
+              <LiveText
+                className="mt-3 block text-(--ui-text-secondary) empty:hidden"
+                text={details.notice ?? ""}
+              />
             </>
           ) : null}
         </div>
@@ -587,9 +588,7 @@ export function InboxPrChecks({
   if (!checks && error) {
     return (
       <div className="flex flex-col items-start gap-2" data-inbox-pr-checks>
-        <Alert tone="info" role="alert">
-          {error}
-        </Alert>
+        <Alert tone="danger">{error}</Alert>
         <Button
           variant="ghost"
           type="button"
@@ -703,7 +702,7 @@ export function InboxPrChecks({
         </div>
       </div>
       {stale ? (
-        <Alert tone="warning" role={error ? "alert" : "status"}>
+        <Alert tone={error ? "danger" : "warning"}>
           <p className="text-ui-caption font-medium">
             {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
           </p>
