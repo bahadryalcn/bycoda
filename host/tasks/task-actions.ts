@@ -151,7 +151,13 @@ export async function move(
   if (context.delivering.has(id)) throw new Error("This task is being merged.");
   const { task, generation } = await context.transaction(async () => ({
     task: await context.find(id),
-    generation: Number((await context.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0),
+    generation: Number(
+      (
+        await context.store.db
+          .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
+          .get(id)
+      )?.generation ?? 0,
+    ),
   }));
   if (!task) throw new Error("Task not found.");
   if (expectedGeneration !== undefined && generation !== expectedGeneration)

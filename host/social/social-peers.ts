@@ -128,11 +128,15 @@ export class SocialPeers {
         method,
         params,
       }),
-    }).catch(() => { throw new SocialPeerUnavailable(); });
+    }).catch(() => {
+      throw new SocialPeerUnavailable();
+    });
     if ([502, 503, 504].includes(response.status)) throw new SocialPeerUnavailable();
     const result = (await response.json()) as { result?: T; error?: string };
     if (!response.ok || result.error || result.result === undefined)
-      throw new Error("Trusted source session unavailable or verification denied. Reconnect the trusted peer.");
+      throw new Error(
+        "Trusted source session unavailable or verification denied. Reconnect the trusted peer.",
+      );
     return result.result;
   }
   async register(input: Record<string, unknown>, deviceHash: string) {
@@ -285,10 +289,16 @@ export class SocialPeers {
       if (identity.sessionId !== sessionId || !projectId || typeof identity.provider !== "string")
         throw new Error("Source session/project identity changed.");
       await this.service.store.project(projectId);
-      const saved = await this.service.store.db.prepare("SELECT value FROM social_peer_identities WHERE id=?").get(id);
+      const saved = await this.service.store.db
+        .prepare("SELECT value FROM social_peer_identities WHERE id=?")
+        .get(id);
       if (saved) {
         const previous = JSON.parse(String(saved.value)) as HostSession;
-        if (previous.projectId !== projectId || previous.session.id !== id || previous.session.harness !== identity.provider)
+        if (
+          previous.projectId !== projectId ||
+          previous.session.id !== id ||
+          previous.session.harness !== identity.provider
+        )
           throw new Error("Source session/project identity changed.");
       }
       // Persist only the exact freshly verified mapping. Yielded verification may

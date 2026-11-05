@@ -136,7 +136,6 @@ This command route cannot approve proxy credential use.
 Commands use the saved remote shell setting (POSIX by default, PowerShell when
 configured). Timeout defaults to 60 seconds and can be set up to 300 seconds.
 
-
 ## Terminal log capture
 
 Terminal logs continue in the background by default. To capture only while a

@@ -15,7 +15,17 @@ async function fixture() {
   const engine = new HostEngine(store, {});
   const tasks = new HostTasks(store, engine);
   await tasks.ready;
-  await tasks.save({ id: "task", projectId: project.id, title: "Task", prompt: "Do work", harness: "claude", model: "test", modelSettings: {}, runtimeMode: "auto", status: "todo" });
+  await tasks.save({
+    id: "task",
+    projectId: project.id,
+    title: "Task",
+    prompt: "Do work",
+    harness: "claude",
+    model: "test",
+    modelSettings: {},
+    runtimeMode: "auto",
+    status: "todo",
+  });
   vi.spyOn(tasks, "tick").mockResolvedValue(undefined);
   const retry = tasks as unknown as { retryFeedback(task: unknown): Promise<string | undefined> };
   return { dir, store, engine, tasks, retry };
@@ -25,7 +35,9 @@ it("preserves an unrelated update during queue preparation", async () => {
   const f = await fixture();
   try {
     vi.spyOn(f.retry, "retryFeedback").mockImplementationOnce(async () => {
-      await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.ownerNotices',json(?)) WHERE id=?").run(JSON.stringify([{ id: "notice", text: "kept" }]), "task");
+      await f.store.db
+        .prepare("UPDATE tasks SET value=json_set(value,'$.ownerNotices',json(?)) WHERE id=?")
+        .run(JSON.stringify([{ id: "notice", text: "kept" }]), "task");
       return undefined;
     });
     const accepted = await f.tasks.startTask("task");
@@ -43,8 +55,12 @@ it("rejects status ABA during queue preparation", async () => {
   const f = await fixture();
   try {
     vi.spyOn(f.retry, "retryFeedback").mockImplementationOnce(async () => {
-      await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','queued') WHERE id=?").run("task");
-      await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','todo') WHERE id=?").run("task");
+      await f.store.db
+        .prepare("UPDATE tasks SET value=json_set(value,'$.status','queued') WHERE id=?")
+        .run("task");
+      await f.store.db
+        .prepare("UPDATE tasks SET value=json_set(value,'$.status','todo') WHERE id=?")
+        .run("task");
       return undefined;
     });
     await expect(f.tasks.startTask("task")).rejects.toThrow("before queue admission");

@@ -25,8 +25,7 @@ export function createRecyclingLifecycle<I extends Input, L extends Live>(policy
     if (!epoch) policy.epochs.set(input.sessionId, (epoch = {}));
     const previous = policy.queue.get(input.sessionId) ?? Promise.resolve();
     const next = previous.then(async () => {
-      if (policy.epochs.get(input.sessionId) !== epoch)
-        throw new Error(policy.supersededMessage);
+      if (policy.epochs.get(input.sessionId) !== epoch) throw new Error(policy.supersededMessage);
       const live = policy.live.get(input.sessionId);
       if (live && (!recycle || (!live.stale && live.cwd === input.cwd))) return live;
       // Transport admission is synchronous and precedes any mutation of A.

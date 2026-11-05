@@ -5,7 +5,7 @@ import { workspacePathKey } from "../workspaces/workspace-paths";
 export class TerminalWorkspaceIndex {
   private readonly byRoot = new Map<string, Set<string>>();
   add(id: string, cwd: string): void {
-    for (let path = workspacePathKey(cwd); ; ) {
+    for (let path = workspacePathKey(cwd); ;) {
       const ids = this.byRoot.get(path) ?? new Set<string>();
       ids.add(id);
       this.byRoot.set(path, ids);
@@ -15,7 +15,7 @@ export class TerminalWorkspaceIndex {
     }
   }
   delete(id: string, cwd: string): void {
-    for (let path = workspacePathKey(cwd); ; ) {
+    for (let path = workspacePathKey(cwd); ;) {
       const ids = this.byRoot.get(path);
       ids?.delete(id);
       if (ids?.size === 0) this.byRoot.delete(path);

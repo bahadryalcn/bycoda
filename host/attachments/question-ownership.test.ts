@@ -15,10 +15,18 @@ it("binds the uploaded UUID to the original principal and question occurrence", 
     await ownership.bindQuestion("principal", id, "session", "run", 1, "occurrence");
     await writeAttachmentChunk(store, { id, offset: 0, size: 1, data: "YQ==" });
     await ownership.assertQuestion("principal", [id], "session", "run", 1, "occurrence");
-    await expect(ownership.assertQuestion("other", [id], "session", "run", 1, "occurrence")).rejects.toThrow();
-    await expect(ownership.assertQuestion("principal", [id], "other", "run", 1, "occurrence")).rejects.toThrow();
-    await expect(ownership.assertQuestion("principal", [id], "session", "run", 1, "new-occurrence")).rejects.toThrow();
-    await expect(ownership.bindQuestion("other", id, "session", "run", 1, "occurrence")).rejects.toThrow();
+    await expect(
+      ownership.assertQuestion("other", [id], "session", "run", 1, "occurrence"),
+    ).rejects.toThrow();
+    await expect(
+      ownership.assertQuestion("principal", [id], "other", "run", 1, "occurrence"),
+    ).rejects.toThrow();
+    await expect(
+      ownership.assertQuestion("principal", [id], "session", "run", 1, "new-occurrence"),
+    ).rejects.toThrow();
+    await expect(
+      ownership.bindQuestion("other", id, "session", "run", 1, "occurrence"),
+    ).rejects.toThrow();
   } finally {
     await ownership.close();
     await store.close();

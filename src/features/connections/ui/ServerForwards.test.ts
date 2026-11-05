@@ -4,12 +4,21 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { ServerRecord } from "../model/serverInventory";
-const events = vi.hoisted(() => ({ callback: null as null | ((event: { payload: unknown }) => void) }));
-vi.mock("@tauri-apps/api/core", async (original) => ({ ...(await original<typeof import("@tauri-apps/api/core")>()), isTauri: () => true }));
-vi.mock("../../../platform/tauri/listenWindow", () => ({ listenWindow: (_name: string, callback: typeof events.callback) => {
-  events.callback = callback;
-  return () => { if (events.callback === callback) events.callback = null; };
-} }));
+const events = vi.hoisted(() => ({
+  callback: null as null | ((event: { payload: unknown }) => void),
+}));
+vi.mock("@tauri-apps/api/core", async (original) => ({
+  ...(await original<typeof import("@tauri-apps/api/core")>()),
+  isTauri: () => true,
+}));
+vi.mock("../../../platform/tauri/listenWindow", () => ({
+  listenWindow: (_name: string, callback: typeof events.callback) => {
+    events.callback = callback;
+    return () => {
+      if (events.callback === callback) events.callback = null;
+    };
+  },
+}));
 const approval = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("./useSshHttpProxyApproval", () => ({
   useSshHttpProxyApproval: () => ({ request: approval.request, dialog: null }),
@@ -251,20 +260,28 @@ it("reviews the effective proxy route once for explicit forward start and never 
   expect(mocks.stop).toHaveBeenCalledWith("s1:r1");
 });
 
-
 it("refreshes only matching native source events, with visible bounded fallback", async () => {
   vi.useFakeTimers();
   await render();
   expect(mocks.list).toHaveBeenCalledTimes(1);
-  const emit = async (connectionId: string, machine = "local") => act(async () => {
-    events.callback?.({ payload: { machine, connectionId, forwardId: "r1", generation: "g1", revision: 1 } });
-  });
-  await emit("other"); await emit("s1", "remote");
+  const emit = async (connectionId: string, machine = "local") =>
+    act(async () => {
+      events.callback?.({
+        payload: { machine, connectionId, forwardId: "r1", generation: "g1", revision: 1 },
+      });
+    });
+  await emit("other");
+  await emit("s1", "remote");
   expect(mocks.list).toHaveBeenCalledTimes(1);
-  await emit("s1"); expect(mocks.list).toHaveBeenCalledTimes(2);
+  await emit("s1");
+  expect(mocks.list).toHaveBeenCalledTimes(2);
   Object.defineProperty(document, "hidden", { configurable: true, value: true });
-  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(30_000); });
-  await emit("s1"); expect(mocks.list).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  await emit("s1");
+  expect(mocks.list).toHaveBeenCalledTimes(2);
   Object.defineProperty(document, "hidden", { configurable: true, value: false });
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
   expect(mocks.list).toHaveBeenCalledTimes(3);
@@ -272,9 +289,16 @@ it("refreshes only matching native source events, with visible bounded fallback"
 
 it("discards a late status result after switching the selected profile", async () => {
   let resolve!: (value: unknown[]) => void;
-  mocks.list.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  mocks.list.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
   await render();
-  await act(async () => root.render(createElement(ServerForwards, { server: { ...server, id: "s2" } })));
+  await act(async () =>
+    root.render(createElement(ServerForwards, { server: { ...server, id: "s2" } })),
+  );
   await act(async () => resolve([{ id: "s1:r1", connectionId: "s1", state: "running" }]));
   expect(container.textContent).not.toContain("Running");
   expect(mocks.list).toHaveBeenCalledTimes(2);
@@ -282,11 +306,32 @@ it("discards a late status result after switching the selected profile", async (
 
 it("coalesces events while a read is pending and rejects its stale result", async () => {
   let resolve!: (value: unknown[]) => void;
-  mocks.list.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  mocks.list.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
   await render();
   await act(async () => {
-    events.callback?.({ payload: { machine: "local", connectionId: "s1", forwardId: "s1:r1", generation: "old", revision: 1 } });
-    events.callback?.({ payload: { machine: "local", connectionId: "s1", forwardId: "s1:r1", generation: "new", revision: 2 } });
+    events.callback?.({
+      payload: {
+        machine: "local",
+        connectionId: "s1",
+        forwardId: "s1:r1",
+        generation: "old",
+        revision: 1,
+      },
+    });
+    events.callback?.({
+      payload: {
+        machine: "local",
+        connectionId: "s1",
+        forwardId: "s1:r1",
+        generation: "new",
+        revision: 2,
+      },
+    });
   });
   expect(mocks.list).toHaveBeenCalledTimes(1);
   await act(async () => resolve([{ id: "s1:r1", connectionId: "s1", state: "running" }]));

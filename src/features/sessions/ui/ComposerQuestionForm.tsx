@@ -28,7 +28,9 @@ export function ComposerQuestionForm({
       sessionId={sessionId}
       draftScope={draftScope ?? sessionId}
       remote={remote}
-      attachmentsSupported={attachmentsSupported && (!remote || !!remoteFeatures?.questionAttachments)}
+      attachmentsSupported={
+        attachmentsSupported && (!remote || !!remoteFeatures?.questionAttachments)
+      }
     />
   );
 }

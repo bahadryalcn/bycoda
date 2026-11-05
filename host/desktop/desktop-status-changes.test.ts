@@ -20,16 +20,18 @@ describe("desktop status invalidation", () => {
       const wait = owner.wait(initial, 60_000);
       await vi.advanceTimersByTimeAsync(30_000);
       expect(await wait).toBe(initial);
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
-  it("ends a detached wait and preserves later revisions", async () => {
-    const owner = new DesktopStatusChanges();
-    const initial = owner.current();
-    const abort = new AbortController();
-    const wait = owner.wait(initial, 25_000, abort.signal);
-    abort.abort();
-    expect(await wait).toBe(initial);
-    owner.changed();
-    expect(await owner.wait(initial, 25_000)).toBe(owner.current());
-  });
+it("ends a detached wait and preserves later revisions", async () => {
+  const owner = new DesktopStatusChanges();
+  const initial = owner.current();
+  const abort = new AbortController();
+  const wait = owner.wait(initial, 25_000, abort.signal);
+  abort.abort();
+  expect(await wait).toBe(initial);
+  owner.changed();
+  expect(await owner.wait(initial, 25_000)).toBe(owner.current());
+});

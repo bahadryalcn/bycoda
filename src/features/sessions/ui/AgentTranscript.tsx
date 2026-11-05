@@ -1,4 +1,7 @@
-import { captureCodeDisclosure, stableCodeDisclosureIdentity } from "./stableCodeDisclosureIdentity";
+import {
+  captureCodeDisclosure,
+  stableCodeDisclosureIdentity,
+} from "./stableCodeDisclosureIdentity";
 import { flushSync } from "react-dom";
 import { TranscriptVirtualRows, type TranscriptVirtualRow } from "./TranscriptVirtualRows";
 import {
@@ -570,7 +573,8 @@ function AgentTranscriptComponent({
   const stableHandoff = useStableCallback(onHandoff);
   const stableEditLastTurn = useStableCallback(onEditLastTurn);
   const stableRewindMessage = useStableCallback(onRewindMessage);
-  const stableAddToChat = useStableCallback(onAddToChat), stableSaveSelectionNote = useStableCallback(onSaveSelectionNote);
+  const stableAddToChat = useStableCallback(onAddToChat),
+    stableSaveSelectionNote = useStableCallback(onSaveSelectionNote);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -581,7 +585,9 @@ function AgentTranscriptComponent({
       const disclosures = retention.read().disclosures;
       if (!disclosures) return;
       for (const turn of el.querySelectorAll<HTMLElement>("[data-transcript-turn]")) {
-        stableCodeDisclosureIdentity([...turn.querySelectorAll<HTMLElement>(".markdown-code-shell")]).forEach((identity, shell) => {
+        stableCodeDisclosureIdentity([
+          ...turn.querySelectorAll<HTMLElement>(".markdown-code-shell"),
+        ]).forEach((identity, shell) => {
           const collapsed = disclosures[`code:${turn.dataset.transcriptTurn}:${identity}`];
           if (typeof collapsed === "boolean" && collapsed !== (shell.dataset.collapsed === "true"))
             shell.querySelector<HTMLButtonElement>(".markdown-code-toggle")?.click();

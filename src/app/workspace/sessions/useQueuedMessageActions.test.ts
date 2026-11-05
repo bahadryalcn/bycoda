@@ -416,13 +416,19 @@ it("pauses repeated safe deferrals without removing or replaying the head", asyn
   const harness = await queueHarness("active", false, submit);
   try {
     for (const delay of [1, 2_001, 4_001, 8_001]) {
-      await act(async () => { await vi.advanceTimersByTimeAsync(delay); });
-      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
     }
     expect(submit).toHaveBeenCalledTimes(4);
     expect(getSessions()[0].queueStatus).toBe("paused");
     expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
-    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
     expect(submit).toHaveBeenCalledTimes(4);
   } finally {
     await harness.cleanup();

@@ -17,8 +17,13 @@ export function briefingChunks(text: string, limit = 3000): string[] {
 
 /** Playback remains sequential; cancellation never starts a later chunk. */
 export async function previewBriefing(
-  settings: VoiceSettings, language: string, name: string, signal: AbortSignal,
-  played: () => void, text: string, playback: (active: boolean) => void,
+  settings: VoiceSettings,
+  language: string,
+  name: string,
+  signal: AbortSignal,
+  played: () => void,
+  text: string,
+  playback: (active: boolean) => void,
   options: { complete?: boolean; languageHint?: string },
 ) {
   for (const chunk of briefingChunks(text)) {

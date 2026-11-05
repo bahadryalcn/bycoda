@@ -6,7 +6,12 @@ export function ownerDay(at: number, timeZone: string): string | undefined {
   try {
     let formatter = formatters.get(timeZone);
     if (!formatter) {
-      formatter = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+      formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
       if (formatters.size >= 64) formatters.delete(formatters.keys().next().value!);
       formatters.set(timeZone, formatter);
     }
@@ -28,7 +33,10 @@ export function addCivilDays(day: string, offset: number): string | undefined {
 }
 
 /** UTC instants enclosing the owner's current civil date, including DST transitions. */
-export function ownerDayBounds(at: number, timeZone: string): { start: number; end: number } | undefined {
+export function ownerDayBounds(
+  at: number,
+  timeZone: string,
+): { start: number; end: number } | undefined {
   const day = ownerDay(at, timeZone);
   if (!day) return undefined;
   const seek = (low: number, high: number, predicate: (value: string) => boolean) => {
@@ -43,7 +51,7 @@ export function ownerDayBounds(at: number, timeZone: string): { start: number; e
   };
   const span = 72 * 60 * 60 * 1000;
   const center = Math.floor(at);
-  const start = seek(center - span, center, value => value >= day);
-  const end = seek(center, center + span, value => value > day);
+  const start = seek(center - span, center, (value) => value >= day);
+  const end = seek(center, center + span, (value) => value > day);
   return start === undefined || end === undefined ? undefined : { start, end };
 }

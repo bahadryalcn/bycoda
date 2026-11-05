@@ -7,7 +7,8 @@ import {
   ownsOperation,
   type HarnessOperationContext,
   acpTurnWriter,
-  holdProviderEpoch, retireProviderEpochs,
+  holdProviderEpoch,
+  retireProviderEpochs,
   type AcpWriterView,
 } from "../turnWriter";
 
@@ -60,11 +61,7 @@ import {
   sessionIdFromResult,
   type SessionConfigOption,
 } from "./antigravityProtocol";
-import type {
-  ApprovalDecision,
-  HarnessEvent,
-  SendTurnInput,
-} from "../../core/types";
+import type { ApprovalDecision, HarnessEvent, SendTurnInput } from "../../core/types";
 
 type SessionSetupResult = {
   sessionId?: string;
@@ -201,7 +198,9 @@ export async function sendAntigravityTurn(input: SendTurnInput): Promise<void> {
   const releaseEpoch = holdProviderEpoch([cancelEpoch, sessionEpoch], input.sessionId);
 
   try {
-    const epoch = cancelEpoch.get(input.sessionId) ?? cancelEpoch.set(input.sessionId, {}).get(input.sessionId)!;
+    const epoch =
+      cancelEpoch.get(input.sessionId) ??
+      cancelEpoch.set(input.sessionId, {}).get(input.sessionId)!;
     const cancelled = () => cancelEpoch.get(input.sessionId) !== epoch;
     try {
       // Eager prewarm only starts a child when none exists — it never tears down

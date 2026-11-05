@@ -5738,28 +5738,31 @@ describe("headless session ownership", () => {
         ],
       });
       await expect(
-        engine.command({
-          type: "answer",
-          commandId: "question-invalid-file-answer",
-          sessionId: id,
-          runId: receipt.runId,
-          requestId: 9,
-          reply: {
-            kind: "answered",
-            answers: {},
-            attachments: {
-              [target === "unknown" ? "missing" : "q1"]: [
-                {
-                  id: "fd546e23-7950-4213-97c5-385b9ce041fe",
-                  name: "report.txt",
-                  mimeType: "text/plain",
-                  kind: "file",
-                  size: 3,
-                },
-              ],
+        engine.command(
+          {
+            type: "answer",
+            commandId: "question-invalid-file-answer",
+            sessionId: id,
+            runId: receipt.runId,
+            requestId: 9,
+            reply: {
+              kind: "answered",
+              answers: {},
+              attachments: {
+                [target === "unknown" ? "missing" : "q1"]: [
+                  {
+                    id: "fd546e23-7950-4213-97c5-385b9ce041fe",
+                    name: "report.txt",
+                    mimeType: "text/plain",
+                    kind: "file",
+                    size: 3,
+                  },
+                ],
+              },
             },
           },
-        }, async () => {}),
+          async () => {},
+        ),
       ).rejects.toThrow("This question cannot accept attachments");
       expect(provider.answer).not.toHaveBeenCalled();
     },
@@ -5789,18 +5792,21 @@ describe("headless session ownership", () => {
         { id: "q1", prompt: "Attach report", allowCustom: true, multiSelect: false, options: [] },
       ],
     });
-    await engine.command({
-      type: "answer",
-      commandId: "question-file-answer",
-      sessionId: id,
-      runId: receipt.runId,
-      requestId: 9,
-      reply: {
-        kind: "answered",
-        answers: {},
-        attachments: { q1: [{ ...file, path: "C:\\wrong-machine\\report.txt" }] },
+    await engine.command(
+      {
+        type: "answer",
+        commandId: "question-file-answer",
+        sessionId: id,
+        runId: receipt.runId,
+        requestId: 9,
+        reply: {
+          kind: "answered",
+          answers: {},
+          attachments: { q1: [{ ...file, path: "C:\\wrong-machine\\report.txt" }] },
+        },
       },
-    }, async () => {});
+      async () => {},
+    );
     await vi.waitFor(() => expect(provider.answer).toHaveBeenCalledTimes(1));
     const sent = vi.mocked(provider.answer).mock.calls.at(-1)![2];
     expect(sent.kind).toBe("answered");

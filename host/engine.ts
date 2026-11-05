@@ -5,7 +5,10 @@ import {
   recordDeferredAssistantTurn,
 } from "./assistant/core/assistant-turn-policy";
 import { hostQuestionToken } from "./sessions/question-source";
-import { parseQuestionReply, resolveAuthorizedQuestionAttachments } from "./sessions/question-reply";
+import {
+  parseQuestionReply,
+  resolveAuthorizedQuestionAttachments,
+} from "./sessions/question-reply";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { executionUserIndex } from "../src/features/sessions/model/executionTurn";
@@ -101,10 +104,7 @@ import {
 } from "./providers/provider-activity-retirement";
 import { HostStore } from "./store";
 import { isSessionRunActivity } from "./sessions/session-run-activity";
-import {
-  parseRemoteAttachments,
-  resolveAttachments,
-} from "./attachments/attachments";
+import { parseRemoteAttachments, resolveAttachments } from "./attachments/attachments";
 import { runHostShell } from "./execution/shell";
 import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
@@ -2391,7 +2391,10 @@ export class HostEngine {
     return early ? early.value : await this.prepareCreation(command);
   }
 
-  async command(raw: unknown, validateQuestionAttachments?: () => Promise<void>): Promise<CommandReceipt> {
+  async command(
+    raw: unknown,
+    validateQuestionAttachments?: () => Promise<void>,
+  ): Promise<CommandReceipt> {
     const admission = this.commandAdmissions.getStore();
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
@@ -3382,7 +3385,10 @@ export class HostEngine {
                 let answerReply = command.reply;
                 if (command.reply.kind === "answered" && command.reply.attachments) {
                   const attachments = await resolveAuthorizedQuestionAttachments(
-                    this.store, value.session.pendingQuestion.questions, command.reply.attachments, validateQuestionAttachments,
+                    this.store,
+                    value.session.pendingQuestion.questions,
+                    command.reply.attachments,
+                    validateQuestionAttachments,
                   );
                   answerReply = { ...command.reply, attachments };
                   if (

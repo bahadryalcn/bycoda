@@ -918,11 +918,26 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   );
   const presenceRef = useRef(capturePresence);
   presenceRef.current = capturePresence;
-  const briefingRetry = useVoiceBriefing({ snapshot: assistantSnapshot, owner: ownerKey,
-    session: JSON.stringify([props.activeId, props.assistantSession?.id]), presence, status, phase, muted, speakerMuted,
-    hold: settings.holdAnnouncements === true, playback: playbackRef, pendingChoice, pendingJobs,
-    abort: briefingAbort, generation, setPlayback, setMessage, setError,
-    formatError: (cause) => voiceError(cause, "Voice could not connect.") });
+  const briefingRetry = useVoiceBriefing({
+    snapshot: assistantSnapshot,
+    owner: ownerKey,
+    session: JSON.stringify([props.activeId, props.assistantSession?.id]),
+    presence,
+    status,
+    phase,
+    muted,
+    speakerMuted,
+    hold: settings.holdAnnouncements === true,
+    playback: playbackRef,
+    pendingChoice,
+    pendingJobs,
+    abort: briefingAbort,
+    generation,
+    setPlayback,
+    setMessage,
+    setError,
+    formatError: (cause) => voiceError(cause, "Voice could not connect."),
+  });
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -3272,7 +3287,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       </header>
       <LiveText
         className={styles.srOnly}
-        text={compact ? `${shownError || statusText}${target?.busy ? ` | ${sessionStatusText}` : ""}` : jobReview && !detached && !jobReviewVisible ? t("The selected project is no longer visible.") : shownMessage}
+        text={
+          compact
+            ? `${shownError || statusText}${target?.busy ? ` | ${sessionStatusText}` : ""}`
+            : jobReview && !detached && !jobReviewVisible
+              ? t("The selected project is no longer visible.")
+              : shownMessage
+        }
       />
       <div className={styles.body} hidden={compact}>
         {bodyVisible && (
@@ -3420,9 +3441,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               </details>
             </>
           ))}
-        {briefingRetry.retryable && <Button disabled={!briefingRetry.canRetry} onClick={briefingRetry.retry}>{t("Retry briefing")}</Button>}
+        {briefingRetry.retryable && (
+          <Button disabled={!briefingRetry.canRetry} onClick={briefingRetry.retry}>
+            {t("Retry briefing")}
+          </Button>
+        )}
         {shownError ? <MicrophoneRecoveryAction message={shownError} /> : null}
-        <LiveText className={styles.caption} text={historyNotice !== shownError ? historyNotice : ""} />
+        <LiveText
+          className={styles.caption}
+          text={historyNotice !== shownError ? historyNotice : ""}
+        />
         <LiveText className={styles.caption} text={ruleNotice} />
         {ownerRuleWrites.current.hasPending && (
           <Button loading={savingRule} onClick={() => void saveOwnerRule()}>

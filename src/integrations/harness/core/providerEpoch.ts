@@ -37,7 +37,10 @@ export function retireProviderEpoch<T>(
 }
 
 /** Release only discovery owned before the original physical retirement. */
-export async function retireProviderOwnerAndCommands(sessionId: string, retire: () => Promise<void>): Promise<void> {
+export async function retireProviderOwnerAndCommands(
+  sessionId: string,
+  retire: () => Promise<void>,
+): Promise<void> {
   const commands = getReportedCommands(sessionId);
   await retire();
   await retireProviderOwner(sessionId);

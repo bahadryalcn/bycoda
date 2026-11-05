@@ -27,14 +27,36 @@ export function createCommandsRuntime(
     | "crews"
   >,
 ) {
-  const commandServiceValidation = async (command: import("../../src/shared/model/host-contracts/session-commands").SessionCommand, context: import("../domains/context").HostDomainContext) => {
-    if (command.type !== "answer" || command.reply.kind !== "answered" || !command.reply.attachments) return;
+  const commandServiceValidation = async (
+    command: import("../../src/shared/model/host-contracts/session-commands").SessionCommand,
+    context: import("../domains/context").HostDomainContext,
+  ) => {
+    if (
+      command.type !== "answer" ||
+      command.reply.kind !== "answered" ||
+      !command.reply.attachments
+    )
+      return;
     if (!(await context.authorized())) throw new HostDomainAuthorizationError();
-    if (!context.principalId || !command.runId) throw new Error("Question attachment identity is unavailable");
-    const ids = Object.values(command.reply.attachments).flat().map((file) => file.id);
+    if (!context.principalId || !command.runId)
+      throw new Error("Question attachment identity is unavailable");
+    const ids = Object.values(command.reply.attachments)
+      .flat()
+      .map((file) => file.id);
     if (!ids.length) return;
-    const occurrence = await dependencies.questionBinding(command.sessionId, command.runId, command.requestId);
-    await dependencies.attachmentOwnership.assertQuestion(context.principalId, ids, command.sessionId, command.runId, command.requestId, occurrence);
+    const occurrence = await dependencies.questionBinding(
+      command.sessionId,
+      command.runId,
+      command.requestId,
+    );
+    await dependencies.attachmentOwnership.assertQuestion(
+      context.principalId,
+      ids,
+      command.sessionId,
+      command.runId,
+      command.requestId,
+      occurrence,
+    );
     if (!(await context.authorized())) throw new HostDomainAuthorizationError();
   };
   const commandService = createCommandService<HostSession>({

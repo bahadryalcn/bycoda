@@ -356,7 +356,12 @@ function MeasuredRow({
       if (shells.length)
         owner?.codeFolds.set(
           key,
-          Object.fromEntries([...stableCodeDisclosureIdentity(shells)].map(([shell, identity]) => [identity, shell.dataset.collapsed === "true"])),
+          Object.fromEntries(
+            [...stableCodeDisclosureIdentity(shells)].map(([shell, identity]) => [
+              identity,
+              shell.dataset.collapsed === "true",
+            ]),
+          ),
         );
     };
   }, [owner, key]);

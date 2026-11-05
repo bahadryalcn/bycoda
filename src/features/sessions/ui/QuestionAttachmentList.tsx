@@ -3,7 +3,15 @@ import type { QuestionDraft } from "../model/questionDrafts";
 import { runQuestionAttachmentEffect } from "../model/questionAttachments";
 import { AttachmentChip } from "./AttachmentChip";
 
-export function QuestionAttachmentList({ files, held, questionId, update, busy, error, flight }: {
+export function QuestionAttachmentList({
+  files,
+  held,
+  questionId,
+  update,
+  busy,
+  error,
+  flight,
+}: {
   files: QuestionDraftAttachment[];
   held: boolean;
   questionId: string;
@@ -16,15 +24,28 @@ export function QuestionAttachmentList({ files, held, questionId, update, busy, 
     <AttachmentChip
       key={file.id}
       attachment={file}
-      onRemove={held ? undefined : () => runQuestionAttachmentEffect(
-        [file], "release", () => update((current) => ({
-          ...current,
-          attachments: {
-            ...current.attachments,
-            [questionId]: (current.attachments?.[questionId] ?? []).filter((item) => item.id !== file.id),
-          },
-        })), busy, error, flight,
-      )}
+      onRemove={
+        held
+          ? undefined
+          : () =>
+              runQuestionAttachmentEffect(
+                [file],
+                "release",
+                () =>
+                  update((current) => ({
+                    ...current,
+                    attachments: {
+                      ...current.attachments,
+                      [questionId]: (current.attachments?.[questionId] ?? []).filter(
+                        (item) => item.id !== file.id,
+                      ),
+                    },
+                  })),
+                busy,
+                error,
+                flight,
+              )
+      }
     />
   ));
 }
