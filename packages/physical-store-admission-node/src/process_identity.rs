@@ -10,7 +10,7 @@ pub struct WindowsProcessBirth {
 
 #[napi]
 pub fn windows_process_births(pids: Vec<u32>) -> napi::Result<Vec<WindowsProcessBirth>> {
-    if pids.len() > 4096 || pids.iter().any(|pid| *pid == 0) {
+    if pids.len() > 4096 || pids.contains(&0) {
         return Err(napi::Error::from_reason("Invalid Windows process identity batch"));
     }
     #[cfg(windows)]

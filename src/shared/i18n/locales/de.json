@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "Die Sitzungsidentität des Frage-Anhangs ist nicht verfügbar",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "Die Zugehörigkeit des Frage-Anhangs kann nicht überprüft werden. Der ursprüngliche Entwurf bleibt zur Wiederherstellung verfügbar.",
   "Unable to retain media for this draft.": "Medien für diesen Entwurf können nicht beibehalten werden.",
-  "Unable to release media for this draft.": "Medien für diesen Entwurf können nicht freigegeben werden."
+  "Unable to release media for this draft.": "Medien für diesen Entwurf können nicht freigegeben werden.",
+  "Clipboard write failed.": "Schreiben in die Zwischenablage fehlgeschlagen."
 }

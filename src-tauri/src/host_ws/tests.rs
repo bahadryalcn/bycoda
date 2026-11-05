@@ -969,6 +969,50 @@ fn union_snapshot(receiver: &mpsc::Receiver<NativeEvent>, logical: &str, sequenc
     }
 }
 
+/// Collects this logical subscription's events until `kind` at `sequence`.
+/// A restart or resync on the way is a failure: a running registration must
+/// keep delivering through a late join.
+fn union_events_until(
+    receiver: &mpsc::Receiver<NativeEvent>,
+    logical: &str,
+    kind: &str,
+    sequence: u64,
+) -> Vec<(String, u64)> {
+    let mut seen = Vec::new();
+    loop {
+        if let NativeEvent::Subscription { event, .. } =
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap()
+        {
+            assert_eq!(event["params"]["subscriptionId"], logical);
+            let event_kind = event["params"]["kind"].as_str().unwrap().to_owned();
+            assert_ne!(
+                event_kind, "resync-required",
+                "running registration restarted"
+            );
+            assert_ne!(event_kind, "closed", "running registration closed");
+            let event_sequence = event["params"]["cursor"]["sequence"].as_u64().unwrap();
+            seen.push((event_kind.clone(), event_sequence));
+            if event_kind == kind && event_sequence == sequence {
+                return seen;
+            }
+        }
+    }
+}
+
+async fn union_event(socket: &mut ServerSocket, open: &Value, kind: &str, sequence: u64) {
+    socket
+        .send(Message::Text(
+            json!({"jsonrpc":"2.0","method":"subscription.event","params":{
+                "subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream",
+                "cursor":{"epoch":"union-epoch","sequence":sequence},"kind":kind,
+                "data":{"version":sequence}}})
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+}
+
 #[test]
 fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() {
     let (ack_tx, ack_rx) = mpsc::sync_channel(1);
@@ -994,65 +1038,56 @@ fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() 
             json!({"subscriptionId":initial["params"]["subscriptionId"],"streamId":"host-stream"}),
         )
         .await;
-        socket.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{
-            "subscriptionId":initial["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"union-epoch","sequence":1},"kind":"snapshot","data":{"version":1}}}).to_string().into())).await.unwrap();
-        // Late B reuses the target, closes its previous Host demand, then opens
-        // one fresh baseline. A keeps its logical registration and projection.
-        let close = next(&mut socket).await;
-        assert_eq!(close["method"], "subscriptions.close");
-        assert_eq!(
-            close["params"]["subscriptionId"],
-            initial["params"]["subscriptionId"]
-        );
-        result(&mut socket, &close, json!({"accepted":true})).await;
-        let fresh = next(&mut socket).await;
-        assert_eq!(fresh["method"], "subscriptions.open");
-        assert_eq!(fresh["params"]["target"], initial["params"]["target"]);
+        union_event(&mut socket, &initial, "snapshot", 1).await;
+        // Late B joins the running registration: it gets a sidecar open on the
+        // same Host stream, and A's wire is never closed or reopened.
+        let sidecar = next(&mut socket).await;
+        assert_eq!(sidecar["method"], "subscriptions.open");
         assert_ne!(
-            fresh["params"]["subscriptionId"],
+            sidecar["params"]["subscriptionId"],
             initial["params"]["subscriptionId"]
         );
-        assert!(fresh["params"].get("cursor").is_none());
-        result(&mut socket, &fresh, json!({"subscriptionId":fresh["params"]["subscriptionId"],"streamId":"host-stream-new"})).await;
-        socket.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{
-            "subscriptionId":fresh["params"]["subscriptionId"],"streamId":"host-stream-new","cursor":{"epoch":"union-epoch","sequence":2},"kind":"snapshot","data":{"version":2}}}).to_string().into())).await.unwrap();
-        // A has applied cursor 2. The next wire packet must still be the probe,
-        // because B has not acknowledged its own baseline.
-        let probe = next(&mut socket).await;
-        assert_eq!(probe["method"], "connection.probe");
+        assert_eq!(sidecar["params"]["target"], initial["params"]["target"]);
+        assert!(sidecar["params"].get("cursor").is_none());
         result(
             &mut socket,
-            &probe,
-            json!({"environmentId":"host.1","connectionId":"union-connection"}),
+            &sidecar,
+            json!({"subscriptionId":sidecar["params"]["subscriptionId"],"streamId":"host-stream"}),
         )
         .await;
-        let ack = next(&mut socket).await;
-        assert_eq!(ack["method"], "subscriptions.ack");
-        assert_eq!(
-            ack["params"]["cursor"],
-            json!({"epoch":"union-epoch","sequence":2})
-        );
-        assert_eq!(
-            ack["params"]["subscriptionId"],
-            fresh["params"]["subscriptionId"]
-        );
-        result(&mut socket, &ack, json!({"accepted":true})).await;
-        ack_tx.send(()).unwrap();
-        let remaining_probe = next(&mut socket).await;
-        assert_eq!(remaining_probe["method"], "connection.probe");
-        result(
-            &mut socket,
-            &remaining_probe,
-            json!({"environmentId":"host.1","connectionId":"union-connection"}),
-        )
-        .await;
-        let last_close = next(&mut socket).await;
-        assert_eq!(last_close["method"], "subscriptions.close");
-        assert_eq!(
-            last_close["params"]["subscriptionId"],
-            fresh["params"]["subscriptionId"]
-        );
-        result(&mut socket, &last_close, json!({"accepted":true})).await;
+        union_event(&mut socket, &sidecar, "snapshot", 2).await;
+        let mut acked_sidecar = false;
+        let mut closed = Vec::new();
+        while closed.len() < 2 {
+            let message = next(&mut socket).await;
+            match message["method"].as_str().unwrap() {
+                "connection.probe" => {
+                    result(
+                        &mut socket,
+                        &message,
+                        json!({"environmentId":"host.1","connectionId":"union-connection"}),
+                    )
+                    .await
+                }
+                "subscriptions.ack" => {
+                    result(&mut socket, &message, json!({"accepted":true})).await;
+                    if message["params"]["subscriptionId"] == sidecar["params"]["subscriptionId"]
+                        && message["params"]["cursor"]["sequence"] == 2
+                        && !acked_sidecar
+                    {
+                        acked_sidecar = true;
+                        ack_tx.send(()).unwrap();
+                    }
+                }
+                "subscriptions.close" => {
+                    result(&mut socket, &message, json!({"accepted":true})).await;
+                    closed.push(message["params"]["subscriptionId"].clone());
+                }
+                other => panic!("unexpected fixture request {other}"),
+            }
+        }
+        assert!(closed.contains(&initial["params"]["subscriptionId"]));
+        assert!(closed.contains(&sidecar["params"]["subscriptionId"]));
         done_tx.send(()).unwrap();
     });
     let broker = HostWsBroker::default();
@@ -1096,27 +1131,15 @@ fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() 
             RequestOptions::default(),
         )
         .unwrap();
-    let a_snapshot = union_snapshot(&a_rx, "logical-a", 2);
     let b_snapshot = union_snapshot(&b_rx, "logical-b", 2);
     assert_eq!(first.result["streamId"], second.result["streamId"]);
-    assert_eq!(a_snapshot["params"]["streamId"], first.result["streamId"]);
     assert_eq!(b_snapshot["params"]["streamId"], second.result["streamId"]);
-    let ack = json!({"epoch":"union-epoch","sequence":2});
     broker
         .request(
             &route,
             "window-a",
             "subscriptions.ack",
-            json!({"subscriptionId":"logical-a","cursor":ack}),
-            RequestOptions::default(),
-        )
-        .unwrap();
-    broker
-        .request(
-            &route,
-            "window-a",
-            "connection.probe",
-            json!({}),
+            json!({"subscriptionId":"logical-a","cursor":{"epoch":"union-epoch","sequence":1}}),
             RequestOptions::default(),
         )
         .unwrap();
@@ -1125,12 +1148,11 @@ fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() 
             &route,
             "window-b",
             "subscriptions.ack",
-            json!({"subscriptionId":"logical-b","cursor":ack}),
+            json!({"subscriptionId":"logical-b","cursor":{"epoch":"union-epoch","sequence":2}}),
             RequestOptions::default(),
         )
         .unwrap();
     ack_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-    broker.detach("window-a");
     broker
         .request(
             &route,
@@ -1140,6 +1162,8 @@ fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() 
             RequestOptions::default(),
         )
         .unwrap();
+    // A leaves first: its own registration closes, and B keeps its sidecar.
+    broker.detach("window-a");
     broker
         .request(
             &route,
@@ -1149,7 +1173,8 @@ fn shared_host_demand_waits_for_both_windows_and_releases_only_the_last_owner() 
             RequestOptions::default(),
         )
         .unwrap();
-    done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    drop(server);
     broker.shutdown();
 }
 
@@ -1255,14 +1280,12 @@ fn single_committed_consumer_resumes_replay_after_reconnect() {
 }
 
 #[test]
-fn two_consumers_resume_at_proven_minimum_without_duplicate_delivery() {
-    let (drop_tx, drop_rx) = mpsc::sync_channel::<()>(1);
-    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+fn late_window_join_keeps_the_running_registration_without_duplicate_delivery() {
     let (finish_tx, finish_rx) = mpsc::sync_channel::<()>(1);
     let server = Server::spawn(move |listener| async move {
-        let mut first = accept(&listener).await;
+        let mut socket = accept(&listener).await;
         hello(
-            &mut first,
+            &mut socket,
             &[
                 "subscriptions.open",
                 "subscriptions.close",
@@ -1271,57 +1294,40 @@ fn two_consumers_resume_at_proven_minimum_without_duplicate_delivery() {
             "host.1",
         )
         .await;
-        let initial = next(&mut first).await;
+        let running = next(&mut socket).await;
+        assert_eq!(running["method"], "subscriptions.open");
         result(
-            &mut first,
-            &initial,
-            json!({"subscriptionId":initial["params"]["subscriptionId"],"streamId":"host-stream"}),
+            &mut socket,
+            &running,
+            json!({"subscriptionId":running["params"]["subscriptionId"],"streamId":"host-stream"}),
         )
         .await;
-        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":initial["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":1},"kind":"snapshot","data":{}}}).to_string().into())).await.unwrap();
-        let close = next(&mut first).await;
-        result(&mut first, &close, json!({"accepted":true})).await;
-        let open = next(&mut first).await;
-        result(
-            &mut first,
-            &open,
-            json!({"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream"}),
-        )
-        .await;
-        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":2},"kind":"snapshot","data":{}}}).to_string().into())).await.unwrap();
-        let ack = next(&mut first).await;
-        assert_eq!(ack["params"]["cursor"]["sequence"], 2);
-        result(&mut first, &ack, json!({"accepted":true})).await;
-        first.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":open["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":3},"kind":"delta","data":{}}}).to_string().into())).await.unwrap();
-        drop_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-        drop(first);
-        let mut second = accept(&listener).await;
-        hello(
-            &mut second,
-            &[
-                "subscriptions.open",
-                "subscriptions.close",
-                "subscriptions.ack",
-            ],
-            "host.1",
-        )
-        .await;
-        ready_tx.send(()).unwrap();
-        let resumed = next(&mut second).await;
-        assert_eq!(
-            resumed["params"]["cursor"],
-            json!({"epoch":"epoch.1","sequence":2})
+        union_event(&mut socket, &running, "snapshot", 1).await;
+        // Deltas wait for the member's baseline ack, so the union acks first.
+        let ack = next(&mut socket).await;
+        assert_eq!(ack["method"], "subscriptions.ack");
+        assert_eq!(ack["params"]["cursor"]["sequence"], 1);
+        result(&mut socket, &ack, json!({"accepted":true})).await;
+        union_event(&mut socket, &running, "delta", 2).await;
+        let joined = next(&mut socket).await;
+        assert_eq!(joined["method"], "subscriptions.open");
+        assert_ne!(
+            joined["params"]["subscriptionId"],
+            running["params"]["subscriptionId"]
         );
+        assert!(joined["params"].get("cursor").is_none());
         result(
-            &mut second,
-            &resumed,
-            json!({"subscriptionId":resumed["params"]["subscriptionId"],"streamId":"host-stream"}),
+            &mut socket,
+            &joined,
+            json!({"subscriptionId":joined["params"]["subscriptionId"],"streamId":"host-stream"}),
         )
         .await;
-        for sequence in [3, 4] {
-            second.send(Message::Text(json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":resumed["params"]["subscriptionId"],"streamId":"host-stream","cursor":{"epoch":"epoch.1","sequence":sequence},"kind":"delta","data":{}}}).to_string().into())).await.unwrap();
-        }
-        finish_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        // The newcomer gets its own baseline; the running wire just continues.
+        union_event(&mut socket, &joined, "snapshot", 2).await;
+        union_event(&mut socket, &running, "delta", 3).await;
+        tokio::task::spawn_blocking(move || finish_rx.recv().unwrap())
+            .await
+            .unwrap();
     });
     let broker = HostWsBroker::default();
     let route = server.route();
@@ -1345,110 +1351,50 @@ fn two_consumers_resume_at_proven_minimum_without_duplicate_delivery() {
             }),
         )
         .unwrap();
-    let a_issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
-    let b_issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
-    let call = |owner: &str,
-                issuer: &Arc<crate::control::receipts::WindowIssuer>,
-                method: &str,
-                params: Value| {
-        broker
-            .request(
-                &route,
-                owner,
-                method,
-                params,
-                RequestOptions {
-                    issuer: Some(issuer.clone()),
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-    };
     let target = json!({"kind":"session","sessionId":"session"});
-    call(
-        "window-a",
-        &a_issuer,
-        "subscriptions.open",
-        json!({"subscriptionId":"a","target":target}),
+    broker
+        .request(
+            &route,
+            "window-a",
+            "subscriptions.open",
+            json!({"subscriptionId":"a","target":target}),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        union_events_until(&a_rx, "a", "snapshot", 1),
+        vec![("snapshot".to_owned(), 1)]
     );
-    union_snapshot(&a_rx, "a", 1);
-    call(
-        "window-b",
-        &b_issuer,
-        "subscriptions.open",
-        json!({"subscriptionId":"b","target":target}),
-    );
-    union_snapshot(&a_rx, "a", 2);
-    union_snapshot(&b_rx, "b", 2);
-    for (owner, issuer, id) in [("window-a", &a_issuer, "a"), ("window-b", &b_issuer, "b")] {
-        call(
-            owner,
-            issuer,
+    broker
+        .request(
+            &route,
+            "window-a",
             "subscriptions.ack",
-            json!({"subscriptionId":id,"cursor":{"epoch":"epoch.1","sequence":2}}),
-        );
-    }
-    loop {
-        if let NativeEvent::Subscription { event, .. } =
-            a_rx.recv_timeout(Duration::from_secs(3)).unwrap()
-        {
-            if event["params"]["kind"] == "delta" {
-                assert_eq!(event["params"]["cursor"]["sequence"], 3);
-                break;
-            }
-        }
-    }
-    loop {
-        if let NativeEvent::Subscription { event, .. } =
-            b_rx.recv_timeout(Duration::from_secs(3)).unwrap()
-        {
-            if event["params"]["kind"] == "delta" {
-                assert_eq!(event["params"]["cursor"]["sequence"], 3);
-                break;
-            }
-        }
-    }
-    call(
-        "window-a",
-        &a_issuer,
-        "subscriptions.ack",
-        json!({"subscriptionId":"a","cursor":{"epoch":"epoch.1","sequence":3}}),
+            json!({"subscriptionId":"a","cursor":{"epoch":"union-epoch","sequence":1}}),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        union_events_until(&a_rx, "a", "delta", 2),
+        vec![("delta".to_owned(), 2)]
     );
-    drop_tx.send(()).unwrap();
-    ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-    call(
-        "window-a",
-        &a_issuer,
-        "subscriptions.open",
-        json!({"subscriptionId":"a","target":target,"cursor":{"epoch":"epoch.1","sequence":3}}),
+    broker
+        .request(
+            &route,
+            "window-b",
+            "subscriptions.open",
+            json!({"subscriptionId":"b","target":target}),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        union_events_until(&b_rx, "b", "snapshot", 2),
+        vec![("snapshot".to_owned(), 2)]
     );
-    loop {
-        if let NativeEvent::Subscription { event, .. } =
-            a_rx.recv_timeout(Duration::from_secs(3)).unwrap()
-        {
-            if event["params"]["kind"] == "delta" {
-                assert_eq!(event["params"]["cursor"]["sequence"], 4);
-                break;
-            }
-        }
-    }
-    call(
-        "window-b",
-        &b_issuer,
-        "subscriptions.open",
-        json!({"subscriptionId":"b","target":target,"cursor":{"epoch":"epoch.1","sequence":2}}),
+    assert_eq!(
+        union_events_until(&a_rx, "a", "delta", 3),
+        vec![("delta".to_owned(), 3)]
     );
-    let mut replayed = Vec::new();
-    while replayed.len() < 2 {
-        if let NativeEvent::Subscription { event, .. } =
-            b_rx.recv_timeout(Duration::from_secs(3)).unwrap()
-        {
-            if event["params"]["kind"] == "delta" {
-                replayed.push(event["params"]["cursor"]["sequence"].as_u64().unwrap());
-            }
-        }
-    }
-    assert_eq!(replayed, vec![3, 4]);
     finish_tx.send(()).unwrap();
     broker.shutdown();
 }

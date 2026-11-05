@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "質問の添付ファイルのセッション識別情報を取得できません",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "質問の添付ファイルの所有者を確認できません。元の下書きは復旧用に引き続き利用できます。",
   "Unable to retain media for this draft.": "この下書きのメディアを保持できません。",
-  "Unable to release media for this draft.": "この下書きのメディアを解放できません。"
+  "Unable to release media for this draft.": "この下書きのメディアを解放できません。",
+  "Clipboard write failed.": "クリップボードへの書き込みに失敗しました。"
 }

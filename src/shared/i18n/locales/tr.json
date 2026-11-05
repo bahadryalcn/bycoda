@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "Soru ekinin oturum kimliği kullanılamıyor",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "Soru ekinin sahipliği doğrulanamıyor. Özgün taslak kurtarma için kullanılabilir durumda kalır.",
   "Unable to retain media for this draft.": "Bu taslak için medya saklanamıyor.",
-  "Unable to release media for this draft.": "Bu taslak için medya serbest bırakılamıyor."
+  "Unable to release media for this draft.": "Bu taslak için medya serbest bırakılamıyor.",
+  "Clipboard write failed.": "Panoya yazılamadı."
 }

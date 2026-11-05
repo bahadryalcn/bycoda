@@ -88,6 +88,9 @@ enum Phase {
 }
 struct Demand {
     shape: Value,
+    // A late member's own registration beside a running demand. Sidecars never
+    // publish a resume cut, because cuts are keyed by shape and the primary owns it.
+    sidecar: bool,
     wire: String,
     stream: Option<String>,
     virtual_stream: Option<String>,
@@ -167,7 +170,7 @@ impl DemandUnion {
         self.demands
             .values()
             .filter_map(|demand| {
-                if demand.members.is_empty() {
+                if demand.members.is_empty() || demand.sidecar {
                     return None;
                 }
                 if demand.phase != Phase::Active
@@ -472,7 +475,20 @@ impl DemandUnion {
             return Err("limit");
         }
         let shape = Self::shape(params);
-        let key = shape.to_string();
+        let shape_key = shape.to_string();
+        // A member joining a running registration must not restart it for
+        // everyone. The newcomer gets a sidecar registration on the same Host
+        // stream, which replays only its own snapshot; the primary keeps its
+        // wire, acknowledgements and members untouched.
+        let sidecar = self
+            .demands
+            .get(&shape_key)
+            .is_some_and(|demand| demand.phase == Phase::Active && demand.first.is_some());
+        let key = if sidecar {
+            format!("{shape_key}#join.{}", uuid::Uuid::new_v4())
+        } else {
+            shape_key
+        };
         if !self.demands.contains_key(&key) {
             if self.demands.len() >= self.max_groups {
                 return Err("limit");
@@ -485,6 +501,7 @@ impl DemandUnion {
                 key.clone(),
                 Demand {
                     shape,
+                    sidecar,
                     wire,
                     stream: None,
                     virtual_stream: None,
@@ -944,24 +961,53 @@ impl DemandUnion {
         // Once retained history reaches half its budget, detach only members
         // whose own applied cursor is behind a proven progressing peer. They
         // receive resync and must reopen through the normal snapshot/proof path.
-        if demand.phase == Phase::Active && demand.members.len() > 1
+        if demand.phase == Phase::Active
+            && demand.members.len() > 1
             && (demand.events.len() >= (self.max_events / 2).max(1)
-                || demand.bytes >= (self.max_group_bytes / 2).max(1)) {
-            let maximum = demand.members.values().filter_map(|member| member.applied.as_ref())
-                .filter(|cursor| demand.first.as_ref().is_some_and(|first| first.epoch == cursor.epoch))
-                .map(|cursor| cursor.sequence).max();
+                || demand.bytes >= (self.max_group_bytes / 2).max(1))
+        {
+            let maximum = demand
+                .members
+                .values()
+                .filter_map(|member| member.applied.as_ref())
+                .filter(|cursor| {
+                    demand
+                        .first
+                        .as_ref()
+                        .is_some_and(|first| first.epoch == cursor.epoch)
+                })
+                .map(|cursor| cursor.sequence)
+                .max();
             if let Some(maximum) = maximum {
-                let slow: Vec<_> = demand.members.iter().filter(|(_, member)| {
-                    member.applied.as_ref().is_none_or(|cursor| demand.first.as_ref().is_none_or(|first| cursor.epoch != first.epoch) || cursor.sequence < maximum)
-                }).map(|(id, _)| id.clone()).collect();
+                // A member still waiting for its first snapshot has nothing to
+                // acknowledge yet; evicting it for lagging would only churn it.
+                let slow: Vec<_> = demand
+                    .members
+                    .iter()
+                    .filter(|(_, member)| {
+                        member.baseline.is_some()
+                            && member.applied.as_ref().is_none_or(|cursor| {
+                                demand
+                                    .first
+                                    .as_ref()
+                                    .is_none_or(|first| cursor.epoch != first.epoch)
+                                    || cursor.sequence < maximum
+                            })
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
                 let cursor = demand.first.clone().unwrap();
                 let resync = json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":demand.wire,"streamId":demand.virtual_stream.clone().unwrap_or_else(|| "native-resync".into()),"cursor":cursor.value(),"kind":"resync-required"}});
                 for id in slow {
                     if let Some(member) = demand.members.remove(&id) {
                         self.members.remove(&id);
-                        if member.waiting { effects.notices.push(Notice::Rejected { member: id }); }
-                        else {
-                            effects.notices.push(Notice::Event { event: Self::rewrite(demand, &id, &resync), member: id.clone() });
+                        if member.waiting {
+                            effects.notices.push(Notice::Rejected { member: id });
+                        } else {
+                            effects.notices.push(Notice::Event {
+                                event: Self::rewrite(demand, &id, &resync),
+                                member: id.clone(),
+                            });
                             effects.notices.push(Notice::Rejected { member: id });
                         }
                     }
