@@ -6,10 +6,13 @@ async function compactAccentCounter(counter: Locator) {
     const style = getComputedStyle(element);
     const probe = document.createElement("span");
     probe.style.color = "var(--ui-tone-accent-fg)";
+    probe.style.lineHeight = "var(--ui-leading-caption)";
     element.append(probe);
     const accent = getComputedStyle(probe).color;
+    const captionLeading = parseFloat(getComputedStyle(probe).lineHeight);
     probe.remove();
     return {
+      captionLeading,
       height: element.getBoundingClientRect().height,
       color: style.color,
       accent,
@@ -20,8 +23,11 @@ async function compactAccentCounter(counter: Locator) {
       overflow: element.scrollWidth > element.clientWidth,
     };
   });
-  expect(presentation.height).toBeGreaterThanOrEqual(16);
-  expect(presentation.height).toBeLessThanOrEqual(18);
+  // Counters carry no minimum box of their own: they take the surrounding text's line
+  // (DESIGN.md "Badges and status tones"), so they never exceed the caption leading
+  // and never shrink below their own glyphs.
+  expect(presentation.height).toBeGreaterThanOrEqual(parseFloat(presentation.fontSize));
+  expect(presentation.height).toBeLessThanOrEqual(presentation.captionLeading);
   expect(presentation.color).toBe(presentation.accent);
   expect(parseFloat(presentation.lineHeight)).toBeLessThanOrEqual(18);
   expect(presentation.border).toBe("0px");

@@ -22,7 +22,10 @@ export default defineConfig({
   optimizeDeps: {
     entries: ["tests/browser/attachment-cards.html", "tests/browser/composer-extras.html"],
     noDiscovery: true,
-    include: ["react", "react-dom/client", "@tanstack/react-query"],
+    // Discovery is off, so CommonJS dependencies reached by the real Composer
+    // graph (streamdown pulls style-to-js through the activity dock) must be
+    // pre-bundled here or the browser cannot import their default export.
+    include: ["react", "react-dom/client", "@tanstack/react-query", "streamdown"],
   },
   server: {
     host: "127.0.0.1",

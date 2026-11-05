@@ -1,5 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
+import {
+  flushHostSessionBindings,
+  saveHostSessionBinding,
+} from "../../src/features/connections/public/sessionExecutionBinding";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QuestionForm } from "../../src/features/sessions/ui/QuestionForm";
@@ -43,8 +46,56 @@ import "../../src/styles/index.css";
 const query = new URLSearchParams(location.search);
 if (query.has("attachments")) {
   mockWindows("main");
+  // In-memory stand-in for the native question-attachment custody store: dropped and
+  // pasted files are reserved, created and retained under the question occurrence.
+  const custody = new Map<
+    string,
+    Record<string, unknown> & { sessionId: unknown; questionId: unknown; path?: string }
+  >();
   mockIPC((command, args) => {
     const input = args as Record<string, unknown>;
+    const operation = String(input.operationId);
+    if (command === "reserve_question_attachment") {
+      custody.set(operation, {
+        sessionId: input.sessionId,
+        questionId: input.questionId,
+        fileId: input.fileId,
+        name: input.name,
+        mimeType: input.mimeType,
+        kind: input.kind,
+        size: input.size,
+        operationId: input.operationId,
+        claimId: input.claimId,
+        retained: false,
+      });
+      return null;
+    }
+    if (command === "create_question_attachment") {
+      const record = custody.get(operation);
+      if (!record) throw new Error("Question attachment was not reserved");
+      record.path = `C:/fixture-attachments/${input.name}`;
+      return { state: "created", path: record.path };
+    }
+    if (command === "read_question_attachment") {
+      const record = custody.get(operation);
+      return record?.path ? { state: "created", path: record.path } : { state: "released" };
+    }
+    if (command === "retain_question_attachment") {
+      const record = custody.get(operation);
+      if (record) record.retained = true;
+      return null;
+    }
+    if (command === "release_question_attachment") {
+      custody.delete(operation);
+      return { state: "released" };
+    }
+    if (command === "list_question_attachment_drafts")
+      return [...custody.values()]
+        .filter(
+          (record) =>
+            record.sessionId === input.sessionId && record.questionId === input.questionId,
+        )
+        .map(({ sessionId: _session, questionId: _question, path: _path, ...record }) => record);
     if (command === "write_attachment") return `C:/fixture-attachments/${input.name}`;
     if (command === "plugin:dialog|open") return ["C:/fixture-attachments/picked.txt"];
     if (command === "inspect_paths")
@@ -618,6 +669,9 @@ function Fixture() {
           <QuestionForm
             prompt={prompt}
             draftScope={scope}
+            // Attachment custody is owned by the session, as ComposerQuestionForm passes
+            // it; only the attachments mode installs the native custody stand-in.
+            sessionId={query.has("attachments") ? scope : undefined}
             onReply={(_, value) => {
               setReply(value);
               setCalls((count) => count + 1);
@@ -636,6 +690,13 @@ function Fixture() {
 // The app resolves durable session owners at boot before any pane renders;
 // the fixture mounts it directly, so it hydrates the same store first.
 await flushHostSessionBindings();
+if (query.has("approval")) {
+  // The synthetic approval conversation is Host-owned; a real Host create writes
+  // its durable owner record before the conversation can answer approvals.
+  const owned = approvalSession();
+  saveHostSessionBinding(owned, owned.hostBinding!);
+  await flushHostSessionBindings(owned.id);
+}
 createRoot(document.getElementById("root")!).render(
   query.has("capacity") ? (
     <CapacityFixture />
