@@ -962,8 +962,19 @@ impl CheckpointStore {
                 // Compare raw Git path bytes before decoding: unrelated Unix names
                 // need not be UTF-8 and must never alias a captured name.
                 .filter(|path| turn_paths::includes(path, &turn.captured, ambiguous))
-                .map(|p| String::from_utf8(p.to_vec()).map_err(|e| e.to_string()))
-                .collect::<Result<Vec<_>, _>>()?;
+                // The manifest keys paths by String. A non-UTF-8 name cannot be
+                // represented there (and lossy decoding could alias another file),
+                // so skip it with a warning instead of failing the whole finalize.
+                .filter_map(|p| match String::from_utf8(p.to_vec()) {
+                    Ok(path) => Some(path),
+                    Err(_) => {
+                        eprintln!(
+                            "Checkpoint skipped a changed path that is not valid UTF-8 for session {session_id}"
+                        );
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
             if paths.len() > MAX_SNAPSHOT_FILES {
                 return Err("Too many changed files for workspace checkpoint".into());
             }

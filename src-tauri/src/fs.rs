@@ -4601,11 +4601,17 @@ fn github_pr_action_refresh_failed(
         "close" => "closed",
         _ => "open",
     };
+    // The command only knows the repository slug and number, not the title, so the
+    // canonical URL is derived from them. The title stays empty here; the caller
+    // keeps the title it already has for this pull request.
+    let url = split_github_repo(repo)
+        .map(|(owner, name)| format!("https://github.com/{owner}/{name}/pull/{number}"))
+        .unwrap_or_default();
     GitHubWorkItem {
         kind: "pr".to_string(),
         number,
         title: String::new(),
-        url: String::new(),
+        url,
         state: state.to_string(),
         state_reason: String::new(),
         created_at: String::new(),
@@ -6028,7 +6034,8 @@ fn gh_run_with_token(root: &Path, args: &[&str], allow_empty: bool, token: Optio
         if error.kind() == ErrorKind::NotFound {
             "GitHub CLI (`gh`) is not installed.".to_string()
         } else if error.kind() == ErrorKind::TimedOut {
-            "GitHub CLI (`gh`) did not finish in time and was stopped.".to_string()
+            // A stopped mutation may already have completed remotely: tell the user to refresh.
+            "GitHub CLI (`gh`) did not finish in time and was stopped; the operation may still have completed. Refresh before retrying.".to_string()
         } else {
             error.to_string()
         }
@@ -6622,13 +6629,21 @@ fn git_stream_command(
                     }
                     Ok(None) => {}
                 }
-                if Instant::now() >= deadline || stop_rx.try_recv().is_ok() {
+                // The reader thread enforces the same deadline. Both paths report the
+                // same timeout message, so the outcome does not depend on which fires first.
+                let timed_out = Instant::now() >= deadline;
+                if timed_out || stop_rx.try_recv().is_ok() {
                     let _ = child.kill();
                     if child.wait().is_err() {
                         std::mem::forget(lease);
                         break Err("Git process retirement is unknown".into());
                     }
-                    break Err("Git command timed out or was cancelled".into());
+                    break Err(if timed_out {
+                        "Git output timed out"
+                    } else {
+                        "Git command was cancelled"
+                    }
+                    .to_string());
                 }
                 thread::sleep(Duration::from_millis(25));
             };
@@ -6739,7 +6754,7 @@ mod git_stream_process_tests {
             |chunk| { observed.extend_from_slice(chunk); Ok(()) },
         );
         let error = result.unwrap_err();
-        assert!(matches!(error.as_str(), "Git output timed out" | "Git command timed out or was cancelled"));
+        assert_eq!(error, "Git output timed out");
         assert!(observed.windows(b"SILENT_CHILD_READY".len()).any(|window| window == b"SILENT_CHILD_READY"));
         let deadline = Instant::now() + Duration::from_secs(2);
         while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
@@ -6807,7 +6822,19 @@ pub(crate) fn git_output_capped(
     max_bytes: usize,
     cancel: Option<&AtomicBool>,
 ) -> Option<(Vec<u8>, bool)> {
-    git_output_capped_with_timeout(root, args, max_bytes, cancel, GIT_LOCAL_TIMEOUT)
+    git_output_capped_with_timeout(root, args, max_bytes, cancel, GIT_LOCAL_TIMEOUT, &[])
+}
+
+/// Like `git_output_capped`, with extra environment variables for the git child
+/// (for example a UTF-8 `LC_ALL` so case folding of non-ASCII text works).
+pub(crate) fn git_output_capped_with_env(
+    root: &Path,
+    args: &[&str],
+    max_bytes: usize,
+    cancel: Option<&AtomicBool>,
+    env: &[(&str, &str)],
+) -> Option<(Vec<u8>, bool)> {
+    git_output_capped_with_timeout(root, args, max_bytes, cancel, GIT_LOCAL_TIMEOUT, env)
 }
 
 fn git_output_capped_with_timeout(
@@ -6816,6 +6843,7 @@ fn git_output_capped_with_timeout(
     max_bytes: usize,
     cancel: Option<&AtomicBool>,
     timeout: Duration,
+    env: &[(&str, &str)],
 ) -> Option<(Vec<u8>, bool)> {
     let deadline = Instant::now() + timeout;
     let mut child = git_cmd();
@@ -6824,6 +6852,7 @@ fn git_output_capped_with_timeout(
         .arg("-C")
         .arg(root)
         .args(args)
+        .envs(env.iter().copied())
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
@@ -8273,7 +8302,11 @@ fn read_file_preview_sync(
     max_lines: usize,
     start_line: Option<usize>,
 ) -> Result<Vec<String>, String> {
-    use std::io::{BufRead, BufReader};
+    use std::io::BufReader;
+
+    /// Bytes kept per line. Longer lines are cut here, so one huge line cannot
+    /// allocate unbounded memory; the display cut below is 200 characters.
+    const PREVIEW_LINE_BYTES: usize = 4096;
 
     let path = expand_home(path);
     let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -8282,22 +8315,32 @@ fn read_file_preview_sync(
     }
 
     let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
     let limit = max_lines.clamp(1, 12);
     let start = start_line.unwrap_or(1).max(1);
     let mut lines = Vec::new();
-    for (i, line) in reader.lines().enumerate() {
-        let line_no = i + 1;
-        if line_no < start {
-            continue;
-        }
+    let mut raw = Vec::new();
+    let mut line_no = 0usize;
+    loop {
         if lines.len() >= limit {
             break;
         }
-        let mut line = line.map_err(|e| e.to_string())?;
-        if line.contains('\0') {
+        let (has_nul, at_eof) = read_capped_line(&mut reader, &mut raw, PREVIEW_LINE_BYTES)
+            .map_err(|e| e.to_string())?;
+        if at_eof {
+            break;
+        }
+        line_no += 1;
+        if line_no < start {
+            continue;
+        }
+        if has_nul {
             return Err("Binary file".into());
         }
+        // Invalid UTF-8 is shown with replacement characters instead of failing.
+        let decoded = String::from_utf8_lossy(&raw);
+        let text = decoded.strip_suffix('\n').unwrap_or(&*decoded);
+        let mut line = text.strip_suffix('\r').unwrap_or(text).to_string();
         if line.len() > 200 {
             let mut end = 199;
             while !line.is_char_boundary(end) {
@@ -8309,6 +8352,37 @@ fn read_file_preview_sync(
         lines.push(line);
     }
     Ok(lines)
+}
+
+/// Reads one line into `out` keeping at most `cap` bytes; the rest of the line is
+/// consumed without being stored. Returns `(line contains NUL, input is exhausted)`.
+fn read_capped_line<R: std::io::BufRead>(
+    reader: &mut R,
+    out: &mut Vec<u8>,
+    cap: usize,
+) -> std::io::Result<(bool, bool)> {
+    out.clear();
+    let mut has_nul = false;
+    let mut read_any = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok((has_nul, !read_any));
+        }
+        read_any = true;
+        let (take, done) = match available.iter().position(|byte| *byte == b'\n') {
+            Some(pos) => (pos + 1, true),
+            None => (available.len(), false),
+        };
+        let chunk = &available[..take];
+        has_nul |= chunk.contains(&0);
+        let room = cap.saturating_sub(out.len());
+        out.extend_from_slice(&chunk[..room.min(take)]);
+        reader.consume(take);
+        if done {
+            return Ok((has_nul, false));
+        }
+    }
 }
 
 const MAX_STAT_FILES: usize = 64;
@@ -8939,16 +9013,32 @@ fn rename_atomic_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     unreachable!()
 }
 
+/// True when `a` and `b` name the same directory entry (for a case-only rename on a
+/// case-insensitive volume). Symbolic links are never followed: a link is the same
+/// entry only as itself, so renaming a link to its target's name cannot replace the
+/// target.
 fn same_entry(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
     }
-    let Ok(a_meta) = std::fs::metadata(a) else {
+    let Ok(a_meta) = std::fs::symlink_metadata(a) else {
         return false;
     };
-    let Ok(b_meta) = std::fs::metadata(b) else {
+    let Ok(b_meta) = std::fs::symlink_metadata(b) else {
         return false;
     };
+    if a_meta.file_type().is_symlink() || b_meta.file_type().is_symlink() {
+        // Links compare by their own identity; a link and its target never match.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            return a_meta.dev() == b_meta.dev() && a_meta.ino() == b_meta.ino();
+        }
+        #[cfg(not(unix))]
+        {
+            return false;
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -8956,7 +9046,6 @@ fn same_entry(a: &Path, b: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        let _ = (a_meta, b_meta);
         match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
             (Ok(left), Ok(right)) => left == right,
             _ => false,

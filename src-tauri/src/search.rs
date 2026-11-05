@@ -142,6 +142,13 @@ fn search_project_sync(
     scan_files(root, options, query, cancel)
 }
 
+/// UTF-8 locale for `git grep`. macOS always ships `en_US.UTF-8`; `C.UTF-8` is
+/// the common choice elsewhere. An unknown locale makes libc fall back to C.
+#[cfg(target_os = "macos")]
+const GREP_UTF8_LOCALE: &str = "en_US.UTF-8";
+#[cfg(not(target_os = "macos"))]
+const GREP_UTF8_LOCALE: &str = "C.UTF-8";
+
 fn git_grep(
     root: &Path,
     options: &SearchOptions,
@@ -182,17 +189,25 @@ fn git_grep_capped(
     args.extend(pathspecs(&options.include, &options.exclude));
 
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let (mut raw, mut truncated) =
-        match crate::fs::git_output_capped(root, &args, max_bytes, Some(cancel)) {
-            Some(output) => output,
-            None if cancel.load(Ordering::Acquire) => {
-                return Some(SearchResult {
-                    matches: Vec::new(),
-                    truncated: false,
-                });
-            }
-            None => return None,
-        };
+    // Case-insensitive matching of non-ASCII text needs a UTF-8 locale; a GUI
+    // launch on macOS inherits the C locale otherwise.
+    let locale_env = [("LC_ALL", GREP_UTF8_LOCALE)];
+    let (mut raw, mut truncated) = match crate::fs::git_output_capped_with_env(
+        root,
+        &args,
+        max_bytes,
+        Some(cancel),
+        &locale_env,
+    ) {
+        Some(output) => output,
+        None if cancel.load(Ordering::Acquire) => {
+            return Some(SearchResult {
+                matches: Vec::new(),
+                truncated: false,
+            });
+        }
+        None => return None,
+    };
     if truncated {
         // The cap can land inside a match record. Keep only complete lines so the
         // parser never invents a match from a partial path, number, or preview.
