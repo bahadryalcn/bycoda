@@ -11,6 +11,7 @@ import type { ProjectsReadOptions } from "../domains/projects/service";
 import {
   HostDomainAuthorizationError,
   HostDomainOutcomeError,
+  HostDomainRefusalError,
   type HostDomainContext,
 } from "../domains/context";
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
@@ -241,6 +242,25 @@ export function createHostDispatcher(services: HostServices) {
             "unauthorized",
             "Device authorization is invalid or revoked.",
             { cause },
+          );
+        // A refusal raised before execution: nothing ran, so delivery is known and
+        // clients keep its message and code. The category ("conflict" or
+        // "validation") tells them whether to wait or fix the request; the numeric
+        // RPC code stays invalid-params for both.
+        if (cause instanceof HostDomainRefusalError)
+          throw new HostDispatchError(
+            "invalid-params",
+            cause.message,
+            { cause },
+            {
+              category: cause.category,
+              retryable: cause.retryable,
+              delivery: "not-sent",
+              code: cause.code,
+              ...(definition.kind === "command" && typeof params.commandId === "string"
+                ? { commandId: params.commandId }
+                : {}),
+            },
           );
         // Admission refused an expired request id: nothing ran, so delivery is known.
         if (

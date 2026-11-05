@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createEnvironmentService } from "../domains/environment/service";
 import { createProjectsService } from "../domains/projects/service";
-import { HostDomainOutcomeError } from "../domains/context";
+import { HostDomainOutcomeError, HostDomainRefusalError } from "../domains/context";
 import { RpcErrorSchema } from "../../src/shared/model/host-contracts";
 import {
   createHostReadDispatcher,
@@ -129,6 +129,69 @@ describe("effectful domain failure outcomes", () => {
     expect(error.message).not.toContain("private");
     expect(error.details).not.toHaveProperty("commandId");
     expect(error.details).not.toHaveProperty("operationId");
+  });
+});
+
+describe("pre-execution refusals keep their message and code", () => {
+  const params = { id: "note", expectedUpdatedAt: 1 };
+  function refusing(error: unknown) {
+    const { context } = fixture();
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw error;
+        },
+      },
+    });
+    return dispatch.dispatch("notes.delete", params, context).catch((cause) => cause);
+  }
+
+  it.each([
+    {
+      code: "QUEUE_CHANGED",
+      category: "conflict",
+      retryable: false,
+      message: "The shared queue changed. Refresh it before sending.",
+    },
+    {
+      code: "QUEUE_ROW_CHANGED",
+      category: "validation",
+      retryable: false,
+      message: "Queued message content changed.",
+    },
+    {
+      code: "LEASE_HELD",
+      category: "conflict",
+      retryable: true,
+      message: "LEASE_HELD: This session is running in bycoda on that computer.",
+    },
+  ] as const)(
+    "reports $code as not-sent with its original message",
+    async ({ code, category, retryable, message }) => {
+      const error = await refusing(
+        new HostDomainRefusalError(code, category, retryable, message, {
+          cause: new Error("private queue diagnostic"),
+        }),
+      );
+      expect(error).toBeInstanceOf(HostDispatchError);
+      expect(error).toMatchObject({
+        code: "invalid-params",
+        message,
+        details: { category, retryable, delivery: "not-sent", code },
+      });
+      expect(JSON.stringify(error.details)).not.toMatch(/private/);
+    },
+  );
+
+  it("does not let a plain error thrown after execution pass as not-sent", async () => {
+    const error = await refusing(new Error("write committed, reply failed"));
+    expect(error).toMatchObject({
+      code: "service-unavailable",
+      details: { category: "unavailable", retryable: false, delivery: "unknown" },
+    });
   });
 });
 

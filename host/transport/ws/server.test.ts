@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
 import { HostBulkTransfers } from "../http/bulk";
 import { HostDispatchError, createHostDispatcher } from "../dispatch";
-import { HostDomainOutcomeError } from "../../domains/context";
+import { HostDomainOutcomeError, HostDomainRefusalError } from "../../domains/context";
 import {
   HOST_SCHEMA_VERSION,
   RPC_ERROR_CODES,
@@ -1121,6 +1121,67 @@ describe("WS framing and orderly disposal", () => {
     finish.resolve([]);
     await finish.promise;
   });
+  it("answers a pre-execution refusal over WS with its message, code and not-sent delivery", async () => {
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw new HostDomainRefusalError(
+            "QUEUE_CHANGED",
+            "conflict",
+            false,
+            "The shared queue changed. Refresh it before sending.",
+            { cause: new Error("private queue revision 7") },
+          );
+        },
+      },
+    });
+    const host = await fixture({ methods: ["notes.delete"], dispatch: dispatcher.dispatch });
+    const client = await host.ready();
+    const response = await client.request("refused", "notes.delete", {
+      id: "note",
+      expectedUpdatedAt: 1,
+    });
+    expect(response).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.invalidParams,
+        message: "The shared queue changed. Refresh it before sending.",
+        data: {
+          category: "conflict",
+          retryable: false,
+          delivery: "not-sent",
+          code: "QUEUE_CHANGED",
+        },
+      },
+    });
+    expect(JSON.stringify(response)).not.toMatch(/private/);
+  });
+
+  it("keeps an error after a mutation started as an unknown outcome over WS", async () => {
+    let effects = 0;
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          effects++;
+          throw new Error("committed, then the reply path failed");
+        },
+      },
+    });
+    const host = await fixture({ methods: ["notes.delete"], dispatch: dispatcher.dispatch });
+    const client = await host.ready();
+    expect(
+      await client.request("after-effect", "notes.delete", { id: "note", expectedUpdatedAt: 1 }),
+    ).toMatchObject({
+      error: { data: { category: "unavailable", retryable: false, delivery: "unknown" } },
+    });
+    expect(effects).toBe(1);
+  });
+
   it.each(["not-sent", "unknown"] as const)(
     "preserves trusted actual device admission outcome %s",
     async (delivery) => {

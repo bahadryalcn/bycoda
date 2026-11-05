@@ -94,6 +94,25 @@ export const REQUEST_EXPIRED_ERROR_CODE = "REQUEST_EXPIRED" as const;
 export const REQUEST_EXPIRED_MESSAGE =
   "This request is older than 30 days and was not run. Check whether it already happened and send it again.";
 
+/**
+ * Machine codes for a Host refusal made before any effect started. Each one is
+ * sent with delivery "not-sent": nothing ran, so the same command may be sent
+ * again once its category and `retryable` flag allow it. Messages stay stable.
+ */
+export const HOST_REFUSAL_ERROR_CODES = [
+  "LEASE_HELD",
+  "QUEUE_DRAIN_HELD",
+  "QUEUE_LEASE_CHANGED",
+  "QUEUE_CHANGED",
+  "QUEUE_FULL",
+  "QUEUE_ROW_CHANGED",
+  "QUEUE_AUTHORITY",
+  "COMMAND_BUSY",
+  "COMMAND_INVALID",
+  "CONTEXT_CHANGED",
+] as const;
+export type HostRefusalErrorCode = (typeof HOST_REFUSAL_ERROR_CODES)[number];
+
 export const SafeTypedErrorSchema = z.strictObject({
   category: z.enum([
     "validation",
@@ -104,13 +123,14 @@ export const SafeTypedErrorSchema = z.strictObject({
     "deadline",
     "cancelled",
     "unavailable",
+    "conflict",
     "internal",
   ]),
   retryable: z.boolean().optional(),
   operationId: IdentifierSchema.optional(),
   commandId: IdentifierSchema.optional(),
   delivery: z.enum(["not-sent", "unknown", "accepted"]).optional(),
-  code: z.literal(REQUEST_EXPIRED_ERROR_CODE).optional(),
+  code: z.enum([REQUEST_EXPIRED_ERROR_CODE, ...HOST_REFUSAL_ERROR_CODES]).optional(),
 });
 export const RpcErrorSchema = z.strictObject({
   code: SignedSafeIntegerSchema,

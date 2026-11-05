@@ -648,3 +648,64 @@ it("gives a lease back on request of its holder and epoch only, and refuses an o
     (async () => await queues.serve("release", "chat", "desktop:a", {}))(),
   ).rejects.toThrow(/desktop/);
 });
+
+it("raises typed, not-sent refusals with stable codes before any queue change", async () => {
+  clock.at = 1000000;
+  const { queues } = leased();
+  const owned = await enqueue(queues, "desktop:a");
+  // A live drain lease held by another window: a wait the client can retry.
+  await expect((async () => await queues.acquire("chat", "desktop:b"))()).rejects.toMatchObject({
+    code: "QUEUE_DRAIN_HELD",
+    category: "conflict",
+    retryable: true,
+    delivery: "not-sent",
+    message: "Another window holds this queue's drain lease.",
+  });
+  // A stale claim against a changed revision: refresh before sending again.
+  await expect(
+    (async () => await queues.claim("chat", "a", "desktop:a", owned.revision + 1, false, {}))(),
+  ).rejects.toMatchObject({
+    code: "QUEUE_CHANGED",
+    category: "conflict",
+    retryable: false,
+    delivery: "not-sent",
+    message: "The shared queue changed. Refresh it before sending.",
+  });
+  // A client that cannot hold a lease is refused as an authority mismatch.
+  await expect(
+    (async () => await queues.serve("lease", "chat", "mobile:one", {}, undefined))(),
+  ).rejects.toMatchObject({
+    code: "QUEUE_AUTHORITY",
+    category: "validation",
+    retryable: false,
+    delivery: "not-sent",
+  });
+  // A stale holder keeps the lease error's message and becomes a retryable conflict.
+  const taken = await queues.acquire("chat", "desktop:b", true);
+  await expect(
+    (async () =>
+      await queues.claim("chat", "a", "desktop:a", taken.revision, false, { epoch: 1 }))(),
+  ).rejects.toMatchObject({
+    code: "QUEUE_LEASE_CHANGED",
+    category: "conflict",
+    retryable: true,
+    delivery: "not-sent",
+  });
+});
+
+it("refuses a full shared queue before it stores anything", async () => {
+  const { queues } = setup();
+  // Within the row count, but past the 3 MB budget once merged.
+  const bulk = "x".repeat(40_000);
+  const rows = Array.from({ length: 100 }, (_, index) => message(`row-${index}`, bulk));
+  await expect(
+    (async () =>
+      await queues.change("chat", { messages: [] }, { messages: rows, status: "active" }))(),
+  ).rejects.toMatchObject({
+    code: "QUEUE_FULL",
+    category: "validation",
+    retryable: false,
+    delivery: "not-sent",
+  });
+  expect((await queues.get("chat")).messages).toEqual([]);
+});

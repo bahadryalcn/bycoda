@@ -4597,7 +4597,7 @@
       "scope": "device"
     },
     "commands.dispatch": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": ["cancel", "stopItem", "approve", "answer"],
       "cost": "read",
@@ -6423,7 +6423,7 @@
       "scope": "device"
     },
     "commands.status": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "query",
       "controlTypes": [],
       "cost": "control",
@@ -31417,7 +31417,7 @@
       "scope": "device"
     },
     "sessions.queue.change": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": [],
       "cost": "read",
@@ -32386,7 +32386,7 @@
       "scope": "device"
     },
     "sessions.queue.claim": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": [],
       "cost": "read",
@@ -32731,7 +32731,7 @@
       "scope": "device"
     },
     "sessions.queue.finish": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": [],
       "cost": "control",
@@ -33078,7 +33078,7 @@
       "scope": "device"
     },
     "sessions.queue.get": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": [],
       "cost": "read",
@@ -33420,7 +33420,7 @@
       "scope": "device"
     },
     "sessions.queue.lease": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": [],
       "cost": "read",
@@ -33763,7 +33763,7 @@
       "scope": "device"
     },
     "sessions.queue.release": {
-      "admissionTimeoutMs": 5000,
+      "admissionTimeoutMs": 90000,
       "cancellation": "wait-only",
       "controlTypes": [],
       "cost": "control",
@@ -61151,11 +61151,27 @@
                         "deadline",
                         "cancelled",
                         "unavailable",
+                        "conflict",
                         "internal"
                       ],
                       "type": "string"
                     },
-                    "code": { "const": "REQUEST_EXPIRED", "type": "string" },
+                    "code": {
+                      "enum": [
+                        "REQUEST_EXPIRED",
+                        "LEASE_HELD",
+                        "QUEUE_DRAIN_HELD",
+                        "QUEUE_LEASE_CHANGED",
+                        "QUEUE_CHANGED",
+                        "QUEUE_FULL",
+                        "QUEUE_ROW_CHANGED",
+                        "QUEUE_AUTHORITY",
+                        "COMMAND_BUSY",
+                        "COMMAND_INVALID",
+                        "CONTEXT_CHANGED"
+                      ],
+                      "type": "string"
+                    },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -61864,5 +61880,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "b1d3c0c149c73cbc3bed0c99d84e852f32ada924462c2aa7c1c512142831ff87"
+  "schemaHash": "3d9f6f8e0c40d2e581bcad3c3fcd928f78417901f23e05ea85581d767bdea1b9"
 }

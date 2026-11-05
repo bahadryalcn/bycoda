@@ -132,6 +132,9 @@ export type HostRpcMethodDefinition = {
   readonly resultSchema: z.ZodType;
 };
 
+/** Queue and command admission waits behind a reconnecting socket. Five seconds
+ * drops work that the Host would accept once the connection is back. */
+const QUEUE_COMMAND_ADMISSION_TIMEOUT_MS = 90_000;
 const read = (
   paramsSchema: z.ZodType,
   resultSchema: z.ZodType = JsonValueSchema,
@@ -164,6 +167,7 @@ const control = (
 });
 const queueOperation = (paramsSchema: z.ZodType): HostRpcMethodDefinition => ({
   ...control(paramsSchema, SharedSessionQueueSchema),
+  admissionTimeoutMs: QUEUE_COMMAND_ADMISSION_TIMEOUT_MS,
   // Polling get also mutates leases. It must not exhaust Stop/receipt capacity.
   cost: "read",
   requiredCapability: "transport.ws.queue.v2",
@@ -946,6 +950,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "commands.status": {
     ...sessionRead(CommandsStatusParamsSchema, CommandsStatusResultSchema),
     cost: "control",
+    admissionTimeoutMs: QUEUE_COMMAND_ADMISSION_TIMEOUT_MS,
   } satisfies HostRpcMethodDefinition,
   // Even legacy get can renew a drain lease and establish attachment exposure.
   // Queue actions have no command receipt; reconcile the queue before another attempt.
@@ -955,11 +960,13 @@ export const HOST_RPC_METHODS = Object.freeze({
   "sessions.queue.finish": {
     ...control(SessionsQueueFinishParamsSchema, SharedSessionQueueSchema),
     requiredCapability: "transport.ws.queue.v2",
+    admissionTimeoutMs: QUEUE_COMMAND_ADMISSION_TIMEOUT_MS,
   },
   "sessions.queue.lease": queueOperation(SessionsQueueLeaseParamsSchema),
   "sessions.queue.release": {
     ...control(SessionsQueueReleaseParamsSchema, SharedSessionQueueSchema),
     requiredCapability: "transport.ws.queue.v2",
+    admissionTimeoutMs: QUEUE_COMMAND_ADMISSION_TIMEOUT_MS,
   },
   "commands.dispatch": {
     ...control(CommandDispatchParamsSchema, CommandReceiptSchema),
@@ -968,6 +975,7 @@ export const HOST_RPC_METHODS = Object.freeze({
     cost: "read",
     controlTypes: ["cancel", "stopItem", "approve", "answer"],
     requiredCapability: "transport.ws.sessions.v2",
+    admissionTimeoutMs: QUEUE_COMMAND_ADMISSION_TIMEOUT_MS,
   } satisfies HostRpcMethodDefinition,
 });
 export type HostRpcMethod = keyof typeof HOST_RPC_METHODS;
