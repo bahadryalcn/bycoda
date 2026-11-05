@@ -73,11 +73,26 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   localStorage.clear();
 });
 
 async function render() {
   await act(async () => root.render(createElement(Sidebar, { ...props })));
+}
+
+// TanStack Virtual's default `isScrollingResetDelay`: rows mounted while it reports
+// scrolling are measured only once this debounce ends.
+const VIRTUAL_SCROLL_SETTLE_MS = 150;
+
+/** Delivers the scroll event a browser sends after a scrollTop write and lets the
+ * virtualizer finish measuring (and anchor-correcting) the rows it mounted. */
+async function settleScroll(viewport: HTMLElement) {
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  await act(async () => vi.advanceTimersByTime(VIRTUAL_SCROLL_SETTLE_MS));
+  // An anchor correction writes scrollTop; report that position too, as a browser would.
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  await act(async () => vi.advanceTimersByTime(VIRTUAL_SCROLL_SETTLE_MS));
 }
 
 function rowCount() {
@@ -169,17 +184,27 @@ it("keeps select-all state while the large session window stays bounded", async 
 });
 
 it("restores scroll within a list scope and resets it for another project", async () => {
+  // happy-dom has no ResizeObserver callbacks and fires no scroll event for scrollTop
+  // writes, so the virtualizer's scroll-end debounce must run on a controlled clock.
+  // With real timers it lands before or after the project switch at random.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   await render();
   const viewport = container.querySelector<HTMLElement>("[data-session-list-panel]")!;
   viewport.scrollTop = 1_200;
-  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  await settleScroll(viewport);
+  const left = viewport.scrollTop;
+  expect(left).toBeGreaterThanOrEqual(1_200);
   const originalSessions = props.sessions;
   props.cwd = "/workspace/other";
   props.sessions = originalSessions.map((session) => ({ ...session, cwd: props.cwd }));
   await render();
   expect(viewport.scrollTop).toBe(0);
+  await settleScroll(viewport);
+  expect(viewport.scrollTop).toBe(0);
   props.cwd = "/workspace/project";
   props.sessions = originalSessions;
   await render();
-  expect(viewport.scrollTop).toBe(1_200);
+  expect(viewport.scrollTop).toBe(left);
+  await settleScroll(viewport);
+  expect(viewport.scrollTop).toBe(left);
 });

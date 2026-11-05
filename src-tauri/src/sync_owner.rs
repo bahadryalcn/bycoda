@@ -360,6 +360,27 @@ pub async fn sync_cycle_complete(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Closing the lease file does not release its lock at once for another opener:
+    /// a child that another test is spawning shares the open file description between
+    /// fork and exec (close-on-exec takes effect at exec), and Windows releases a
+    /// closed handle's lock asynchronously. Release is eventual, so wait for it with a deadline.
+    fn retired_within_deadline(
+        store: &crate::session_store::SessionStore,
+        instance_id: &str,
+    ) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if prior_instance_retired(&store.lock_conn().unwrap(), instance_id).unwrap() {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 
     #[test]
     fn sync_restart_requires_the_exact_previous_instance_lease_to_be_unleased() {
@@ -382,7 +403,7 @@ mod tests {
         assert!(!prior_instance_retired(&second.lock_conn().unwrap(), &second_id).unwrap());
         assert!(!prior_instance_retired(&first.lock_conn().unwrap(), &first_id).unwrap());
         drop(first);
-        assert!(prior_instance_retired(&second.lock_conn().unwrap(), &second_id).unwrap());
+        assert!(retired_within_deadline(&second, &second_id));
         // An identity without an existing kernel lease is unknown, not retired.
         second
             .lock_conn()
