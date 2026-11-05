@@ -221,25 +221,6 @@ fn focused_workspace_index(states: &[(bool, bool)]) -> Option<usize> {
         .or_else(|| (!states.is_empty()).then_some(0))
 }
 
-#[cfg(test)]
-mod dispatch_tests {
-    use super::focused_workspace_index;
-
-    #[test]
-    fn actions_choose_one_focused_workspace_then_visible_fallback() {
-        assert_eq!(
-            focused_workspace_index(&[(false, true), (true, true)]),
-            Some(1)
-        );
-        assert_eq!(
-            focused_workspace_index(&[(false, false), (false, true)]),
-            Some(1)
-        );
-        assert_eq!(focused_workspace_index(&[(false, false)]), Some(0));
-        assert_eq!(focused_workspace_index(&[]), None);
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn build(
     app: &AppHandle,
@@ -615,4 +596,23 @@ fn build(
 
     #[allow(unreachable_code)]
     Menu::with_items(app, &[&file, &edit, &view])
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::focused_workspace_index;
+
+    #[test]
+    fn actions_choose_one_focused_workspace_then_visible_fallback() {
+        assert_eq!(
+            focused_workspace_index(&[(false, true), (true, true)]),
+            Some(1)
+        );
+        assert_eq!(
+            focused_workspace_index(&[(false, false), (false, true)]),
+            Some(1)
+        );
+        assert_eq!(focused_workspace_index(&[(false, false)]), Some(0));
+        assert_eq!(focused_workspace_index(&[]), None);
+    }
 }

@@ -187,11 +187,19 @@ fn validate_public_target(url: &Url) -> Result<(), String> {
 fn resolve_public_target(netloc: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static ACTIVE: AtomicUsize = AtomicUsize::new(0);
-    ACTIVE
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-            (n < 8).then_some(n + 1)
-        })
-        .map_err(|_| std::io::Error::other("Link preview DNS capacity reached"))?;
+    // A plain compare-exchange loop: `fetch_update` is deprecated on newer toolchains
+    // (renamed `try_update`), which older toolchains do not have yet.
+    let mut active = ACTIVE.load(Ordering::Acquire);
+    loop {
+        if active >= 8 {
+            return Err(std::io::Error::other("Link preview DNS capacity reached"));
+        }
+        match ACTIVE.compare_exchange_weak(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => break,
+            Err(current) => active = current,
+        }
+    }
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let name = netloc.to_owned();
     if let Err(error) = std::thread::Builder::new().spawn(move || {

@@ -385,7 +385,8 @@ pub async fn quick_composer_submit(
         };
         let persistence = handle.state::<QuickComposerState>().persistence.clone();
         // The actual worker, not the detachable IPC waiter, owns admission.
-        let _ = tauri::async_runtime::spawn_blocking(move || {
+        // The worker is detached on purpose; its handle is not awaited.
+        let _worker = tauri::async_runtime::spawn_blocking(move || {
             let prepared = (|| -> Result<(), String> {
                 let _persistence = persistence.lock().map_err(|err| err.to_string())?;
                 current_launch_scope(&window, &owner, &scope, instance)?;
@@ -541,7 +542,8 @@ pub async fn quick_composer_submit_intent(
             Err(error) => { let _ = tx.try_send(Err(error)); return; }
         };
         let persistence = handle.state::<QuickComposerState>().persistence.clone();
-        let _ = tauri::async_runtime::spawn_blocking(move || {
+        // The worker is detached on purpose; its handle is not awaited.
+        let _worker = tauri::async_runtime::spawn_blocking(move || {
             let prepared = (|| -> Result<(), String> {
                 let _persistence = persistence.lock().map_err(|err| err.to_string())?;
                 current_launch_scope(&window, &owner, work.scope(), instance)?;
