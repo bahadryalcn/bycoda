@@ -119,7 +119,10 @@ export function DeleteWorktreeDialog({
         if (result) callbacks.current.onDeleted();
         else callbacks.current.onClose();
       },
-      () => callbacks.current.onClose(),
+      (error: unknown) => {
+        console.error("Delete worktree confirmation failed", error);
+        callbacks.current.onClose();
+      },
     );
     // The dialog is opened once; renderDialog below supplies live request data.
     // eslint-disable-next-line react-hooks/exhaustive-deps

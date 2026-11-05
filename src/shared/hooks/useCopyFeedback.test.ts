@@ -97,7 +97,9 @@ it("returns the settled result and rejects a second concurrent operation", async
   await act(async () => work.resolve());
   expect(await first).toBe(true);
   let failure!: Promise<boolean>;
-  await act(async () => { failure = latest.copyAsync(() => Promise.reject(new Error("denied"))); });
+  await act(async () => {
+    failure = latest.copyAsync(() => Promise.reject(new Error("denied")));
+  });
   expect(await failure).toBe(false);
   expect(latest.error).toBe("denied");
 });

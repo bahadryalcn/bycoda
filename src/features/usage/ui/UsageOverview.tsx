@@ -973,9 +973,7 @@ export function UsageOverview({
           <UsageDataNotes
             unpriced={unpriced}
             pricedCoverage={
-              totals.tokens
-                ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
-                : "—"
+              totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"
             }
             pricesUnavailable={prices === null}
             sessionDurationUnavailable={load.turns === null}
