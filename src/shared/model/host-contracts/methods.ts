@@ -17,6 +17,7 @@ import { AssistantRequestSchema, AssistantResponseSchema } from "./assistant";
 import { DesktopControlRequestSchema, DesktopControlResponseSchema } from "./desktop-control";
 import { DesktopHelperRequestSchema, DesktopHelperResponseSchema } from "./desktop-helper";
 import { hostRpcWireMethod } from "./aliases";
+import { QUEUE_COMMAND_ADMISSION_TIMEOUT_MS } from "./method-timeouts";
 import { ModelsListParamsSchema, ModelsListResultSchema } from "./models";
 import {
   NATIVE_SERVICES_RPC_SCHEMAS,
@@ -132,9 +133,6 @@ export type HostRpcMethodDefinition = {
   readonly resultSchema: z.ZodType;
 };
 
-/** Queue and command admission waits behind a reconnecting socket. Five seconds
- * drops work that the Host would accept once the connection is back. */
-const QUEUE_COMMAND_ADMISSION_TIMEOUT_MS = 90_000;
 const read = (
   paramsSchema: z.ZodType,
   resultSchema: z.ZodType = JsonValueSchema,

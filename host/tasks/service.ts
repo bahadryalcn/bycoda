@@ -38,6 +38,13 @@ import * as launch from "./launch";
 import * as review from "./review";
 import { initialize, createTaskEngine } from "./initialize";
 import type { TaskContext } from "./context";
+import type {
+  TaskAssistantMetadataCache,
+  TaskEtagCache,
+  TaskListCache,
+  TaskPointIndex,
+  TaskProjectListCache,
+} from "./cache-state";
 export {
   MAX_RUNNING_TASKS,
   VERIFY_TIMEOUT_MS,
@@ -344,45 +351,18 @@ export class HostTasks {
   /** Published only for an actual committed removal, never a failed/absent delete. */
   onDelete?: (task: { id: string; projectId: string }) => void;
 
-  protected etagCache?: {
-    revision: number;
-    sourceStamp: string;
-    etag: string;
-  };
+  protected etagCache?: TaskEtagCache;
 
-  protected listCache?: {
-    revision: number;
-    byId: Map<string, HostTask>;
-    tasks: HostTask[];
-  };
+  protected listCache?: TaskListCache;
 
-  protected projectListCache = new Map<
-    string,
-    {
-      revision: number;
-      tasks: HostTask[];
-    }
-  >();
+  protected projectListCache = new Map<string, TaskProjectListCache>();
 
-  protected assistantMetadataCache = new Map<
-    string | undefined,
-    { revision: number; sourceStamp: string; tasks: HostTask[] }
-  >();
+  protected assistantMetadataCache = new Map<string | undefined, TaskAssistantMetadataCache>();
 
   /** Live task state for one scheduler pass, maintained by write/delete. */
   protected schedulerTasks?: Map<string, HostTask>;
 
-  protected pointIndex?: {
-    revision: number;
-    entries: Map<
-      string,
-      {
-        value?: HostTask;
-        bytes: number;
-      }
-    >;
-    bytes: number;
-  };
+  protected pointIndex?: TaskPointIndex;
 
   revision(): Promise<number> {
     return storage.revision(this.context);

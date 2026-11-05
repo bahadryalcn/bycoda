@@ -72,16 +72,13 @@ import {
   type AssistantQuickAutomationService,
 } from "./work/assistant-quick-automations";
 import { normalizeAssistantQuickAutomationAction } from "../../src/shared/model/assistantQuickAutomation";
+import { validWorkerContextSettings } from "../../src/shared/model/assistantContext";
 import {
-  DEFAULT_WORKER_CONTEXT_SETTINGS,
-  validWorkerContextSettings,
-} from "../../src/shared/model/assistantContext";
-import {
-  DEFAULT_ASSISTANT_POLICY,
   assistantPolicy,
   assistantActiveHours,
   validAssistantPolicy,
 } from "../../src/shared/model/assistantPolicy";
+import { assistantProfileDefaults } from "./profile-defaults";
 import type { HostAssistantJobDeletion } from "./work/assistant-job-deletion";
 import type { AsyncHostNotes } from "../host-notes-async";
 import {
@@ -396,37 +393,6 @@ type ChiefIntent = {
   estimated?: boolean;
 };
 const DAY = 86400000;
-const defaults: AssistantProfile = {
-  name: "",
-  showTitle: true,
-  avatar: "",
-  addressAs: "",
-  language: "auto",
-  autonomy: "report",
-  allowRoutineQuestions: false,
-  planApproval: "large",
-  dailyTokenBudget: 0,
-  perWakeTokenCap: 8000,
-  enabled: false,
-  keepAwakeWhileWorking: false,
-  setupComplete: false,
-  voiceSetupComplete: false,
-  voiceNarration: false,
-  proactiveSpeech: "return",
-  quietStart: 22,
-  quietEnd: 8,
-  chiefSoftContext: 150000,
-  chiefHardContext: 250000,
-  ...DEFAULT_WORKER_CONTEXT_SETTINGS,
-  ...DEFAULT_ASSISTANT_POLICY,
-  stallMinutes: 15,
-  execution: null,
-  chiefExecution: null,
-  replyExecution: null,
-  planningExecution: null,
-  version: 0,
-  updatedAt: 0,
-};
 const terminal = new Set<AssistantJobStatus>(["done", "failed", "cancelled"]);
 
 /** One Host-owned supervisor. All requests and ticks share admission. SQLite
@@ -2768,11 +2734,12 @@ export class HostAssistant {
   }
   private async profile(): Promise<AssistantProfile> {
     const row = await this.repository.get<AssistantProfile>("profile", "profile");
-    if (!row) return { ...defaults };
+    if (!row) return { ...assistantProfileDefaults };
     return Object.fromEntries(
-      Object.keys(defaults).map((key) => [
+      Object.keys(assistantProfileDefaults).map((key) => [
         key,
-        row[key as keyof AssistantProfile] ?? defaults[key as keyof AssistantProfile],
+        row[key as keyof AssistantProfile] ??
+          assistantProfileDefaults[key as keyof AssistantProfile],
       ]),
     ) as AssistantProfile;
   }
