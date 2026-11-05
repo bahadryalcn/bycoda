@@ -11275,5 +11275,15 @@
   "now": "jetzt",
   "{p0}h {p1}m": "{p0}h {p1}m",
   "{p0}m {p1}s": "{p0}m {p1}s",
-  "{p0}s": "{p0}s"
+  "{p0}s": "{p0}s",
+  "A rewind is in progress. Your message is kept.": "Zurücksetzen läuft. Ihre Nachricht bleibt erhalten.",
+  "The previous message is still being sent. Your message is kept.": "Die vorherige Nachricht wird noch gesendet. Ihre Nachricht bleibt erhalten.",
+  "This conversation was deleted on the machine. Your message is kept.": "Diese Unterhaltung wurde auf dem Rechner gelöscht. Ihre Nachricht bleibt erhalten.",
+  "The latest messages have not loaded from the machine yet. Your message is kept.": "Die neuesten Nachrichten wurden noch nicht vom Rechner geladen. Ihre Nachricht bleibt erhalten.",
+  "Queued messages could not be read, so sending is held. Your message is kept.": "Wartende Nachrichten konnten nicht gelesen werden, daher ist das Senden angehalten. Ihre Nachricht bleibt erhalten.",
+  "This queued message is no longer available.": "Diese wartende Nachricht ist nicht mehr verfügbar.",
+  "This follow-up is already being delivered. Your message is kept.": "Diese Folgenachricht wird bereits zugestellt. Ihre Nachricht bleibt erhalten.",
+  "This conversation is busy. Your message is kept.": "Diese Unterhaltung ist beschäftigt. Ihre Nachricht bleibt erhalten.",
+  "Reconnecting — will send automatically.": "Verbindung wird wiederhergestellt — wird automatisch gesendet.",
+  "The conversation changed before this message was sent. Your message is kept.": "Die Unterhaltung hat sich geändert, bevor diese Nachricht gesendet wurde. Ihre Nachricht bleibt erhalten."
 }

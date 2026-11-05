@@ -15,6 +15,7 @@ import {
   needsSignIn,
   sanitizeConnectionError,
   shouldAutoRetry,
+  shouldRetryBlocked,
   type ReconnectOutcome,
 } from "./remoteConnection";
 import { remoteErrorText } from "./remoteFailure";
@@ -183,16 +184,29 @@ export function cancelRemoteReconnect(environmentId: string) {
 
 const retries = new Map<string, ReturnType<typeof setTimeout>>();
 const retryCounts = new Map<string, number>();
+/** Quiet attempts at a `connection-blocked` machine since it last answered. */
+const blockedRetryCounts = new Map<string, number>();
 const paused = new Set<string>();
 let hiddenSince: number | undefined;
 let stopRecovery: (() => void) | undefined;
 
+/** A blocked machine gets a few quiet attempts (fresh describes) before the user
+ * must press Reconnect. Other machines keep the open-ended schedule. */
+function blockedAttempts(environmentId: string, status: string) {
+  if (status !== "connection-blocked") blockedRetryCounts.delete(environmentId);
+  return status === "connection-blocked" ? (blockedRetryCounts.get(environmentId) ?? 0) : 0;
+}
+
 function schedule() {
   const now = Date.now();
+  const enabled = loadRemoteAutoReconnect();
   for (const [environmentId, state] of listRemoteConnections()) {
+    const blocked = blockedAttempts(environmentId, state.status);
     const wanted =
       !paused.has(environmentId) &&
-      shouldAutoRetry(state.status, hiddenSince, now, loadRemoteAutoReconnect());
+      (state.status === "connection-blocked"
+        ? shouldRetryBlocked(blocked, hiddenSince, now, enabled)
+        : shouldAutoRetry(state.status, hiddenSince, now, enabled));
     const pending = retries.get(environmentId);
     if (!wanted) {
       if (pending) clearTimeout(pending);
@@ -202,7 +216,8 @@ function schedule() {
       continue;
     }
     if (pending || attempts.has(environmentId)) continue;
-    const count = retryCounts.get(environmentId) ?? 0;
+    const count =
+      state.status === "connection-blocked" ? blocked : (retryCounts.get(environmentId) ?? 0);
     setConnectionRetry(environmentId, now + autoRetryDelay(count));
     retries.set(
       environmentId,
@@ -216,15 +231,22 @@ async function retry(environmentId: string, force: boolean) {
   retries.delete(environmentId);
   setConnectionRetry(environmentId);
   const status = readRemoteConnection(environmentId).status;
+  const blocked = status === "connection-blocked";
   // Focus and network changes also re-check a machine waiting for sign-in: the
   // key may have been fixed outside the app. They never open a prompt. With
-  // automatic reconnecting off, nothing here runs.
+  // automatic reconnecting off, nothing here runs. A blocked machine is limited
+  // to its quiet attempts, even when the window regains focus.
   const allowed =
     !paused.has(environmentId) &&
     loadRemoteAutoReconnect() &&
     status !== "identity-mismatch" &&
-    (force ? blocksSending(status) : shouldAutoRetry(status, hiddenSince, Date.now()));
+    (blocked
+      ? shouldRetryBlocked(blockedAttempts(environmentId, status), hiddenSince, Date.now())
+      : force
+        ? blocksSending(status)
+        : shouldAutoRetry(status, hiddenSince, Date.now()));
   if (!allowed || attempts.has(environmentId)) return;
+  if (blocked) blockedRetryCounts.set(environmentId, blockedAttempts(environmentId, status) + 1);
   retryCounts.set(environmentId, (retryCounts.get(environmentId) ?? 0) + 1);
   // Only this coalesced coordinator bypasses the native failure cache. Ordinary
   // pollers retain that cache, so early scheduled retries actually dial once.
@@ -253,6 +275,7 @@ export function startRemoteAutoRecovery(): () => void {
     clearTimeout(retries.get(environmentId));
     retries.delete(environmentId);
     retryCounts.delete(environmentId);
+    blockedRetryCounts.delete(environmentId);
     paused.delete(environmentId);
     attempts.delete(environmentId);
     setReconnecting(environmentId, false);
@@ -281,6 +304,7 @@ export function startRemoteAutoRecovery(): () => void {
     retries.forEach((timer) => clearTimeout(timer));
     retries.clear();
     retryCounts.clear();
+    blockedRetryCounts.clear();
     paused.clear();
     for (const environmentId of attempts.keys()) invalidateConnection(environmentId);
     attempts.clear();

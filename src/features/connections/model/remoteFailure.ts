@@ -8,6 +8,8 @@ export type RemoteFailureKind =
   | "outdated"
   /** This app does not offer the command for projects on another machine. */
   | "unsupported"
+  /** The machine is busy or a request timed out; the same request can be sent again. */
+  | "temporary"
   /** The machine answered with an error of its own (a git failure, a bad path). */
   | "other";
 
@@ -40,6 +42,8 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   const code = nativeConnectionFailureCode(error);
   if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
   if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
+  if (code && ["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"].includes(code))
+    return { kind: "temporary", message };
   if (
     code &&
     [

@@ -11275,5 +11275,15 @@
   "now": "今",
   "{p0}h {p1}m": "{p0}時{p1}分",
   "{p0}m {p1}s": "{p0}分 {p1}秒",
-  "{p0}s": "{p0} さん"
+  "{p0}s": "{p0} さん",
+  "A rewind is in progress. Your message is kept.": "取り消し中です。メッセージは保持されています。",
+  "The previous message is still being sent. Your message is kept.": "前のメッセージを送信中です。メッセージは保持されています。",
+  "This conversation was deleted on the machine. Your message is kept.": "この会話はマシン上で削除されました。メッセージは保持されています。",
+  "The latest messages have not loaded from the machine yet. Your message is kept.": "最新のメッセージはまだマシンから読み込まれていません。メッセージは保持されています。",
+  "Queued messages could not be read, so sending is held. Your message is kept.": "キューのメッセージを読み込めないため、送信を保留しています。メッセージは保持されています。",
+  "This queued message is no longer available.": "このキューのメッセージはもう利用できません。",
+  "This follow-up is already being delivered. Your message is kept.": "このフォローアップは既に送信中です。メッセージは保持されています。",
+  "This conversation is busy. Your message is kept.": "この会話は使用中です。メッセージは保持されています。",
+  "Reconnecting — will send automatically.": "再接続中です。自動的に送信されます。",
+  "The conversation changed before this message was sent. Your message is kept.": "このメッセージを送信する前に会話が変わりました。メッセージは保持されています。"
 }

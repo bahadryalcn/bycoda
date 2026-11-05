@@ -11275,5 +11275,15 @@
   "now": "şimdi",
   "{p0}h {p1}m": "{p0}s {p1}dk",
   "{p0}m {p1}s": "{p0}m {p1}s",
-  "{p0}s": "{p0}'lar"
+  "{p0}s": "{p0}'lar",
+  "A rewind is in progress. Your message is kept.": "Geri alma işlemi sürüyor. Mesajınız korunuyor.",
+  "The previous message is still being sent. Your message is kept.": "Önceki mesaj hâlâ gönderiliyor. Mesajınız korunuyor.",
+  "This conversation was deleted on the machine. Your message is kept.": "Bu konuşma makinede silindi. Mesajınız korunuyor.",
+  "The latest messages have not loaded from the machine yet. Your message is kept.": "En son mesajlar makineden henüz yüklenmedi. Mesajınız korunuyor.",
+  "Queued messages could not be read, so sending is held. Your message is kept.": "Kuyruktaki mesajlar okunamadı, bu yüzden gönderim beklemede. Mesajınız korunuyor.",
+  "This queued message is no longer available.": "Bu kuyruktaki mesaj artık kullanılamıyor.",
+  "This follow-up is already being delivered. Your message is kept.": "Bu takip mesajı zaten iletiliyor. Mesajınız korunuyor.",
+  "This conversation is busy. Your message is kept.": "Bu konuşma meşgul. Mesajınız korunuyor.",
+  "Reconnecting — will send automatically.": "Yeniden bağlanılıyor — otomatik olarak gönderilecek.",
+  "The conversation changed before this message was sent. Your message is kept.": "Bu mesaj gönderilmeden önce konuşma değişti. Mesajınız korunuyor."
 }

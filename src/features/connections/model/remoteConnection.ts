@@ -204,6 +204,23 @@ export function shouldAutoRetry(
   return hiddenSince === undefined || now - hiddenSince <= HIDDEN_RETRY_LIMIT_MS;
 }
 
+/** How many quiet attempts a machine whose admission was blocked gets before the
+ * user must press Reconnect. A Host that restarts can refuse one attempt. */
+export const BLOCKED_RETRY_LIMIT = 3;
+
+/** Whether to make another quiet attempt at a `connection-blocked` machine, given
+ * the attempts already made since it last answered. It stays within the same
+ * hidden-window and automatic-reconnecting rules as other retries. */
+export function shouldRetryBlocked(
+  attempts: number,
+  hiddenSince: number | undefined,
+  now: number,
+  enabled = true,
+): boolean {
+  if (!enabled || attempts >= BLOCKED_RETRY_LIMIT) return false;
+  return hiddenSince === undefined || now - hiddenSince <= HIDDEN_RETRY_LIMIT_MS;
+}
+
 /** Whether a message cannot reach the machine right now. */
 export const blocksSending = (status: RemoteConnectionStatus) =>
   status === "unreachable" ||
@@ -238,21 +255,35 @@ export function connectionIndicator(
 
 export type ReconnectOutcome = { ok: true } | { ok: false; error: string };
 
-/** Sends a message through a connection that may have dropped. A message
- * never leaves the composer for good unless `send` accepts it: when
- * reconnecting fails, nothing is sent and the reason comes back for display.
- * `ready` resolves once the view has caught up with the machine again. */
+/** Sends a message through a connection that may have dropped. The message is
+ * saved by `send` as soon as the view can start a turn (`ready`), so it never
+ * leaves the composer for good. When the machine is down, a reconnect runs in the
+ * background and the poll is woken when it answers; the saved request then goes
+ * out without the user acting again. Only a machine that needs the user (a
+ * sign-in, a changed identity) is awaited first: when that reconnect fails,
+ * nothing is sent and the reason comes back for display. */
 export async function sendAfterReconnect(options: {
   status: RemoteConnectionStatus;
   reconnect: () => Promise<ReconnectOutcome>;
-  ready: () => Promise<boolean>;
+  /** Resolves once the view can start a turn; not a time limit. */
+  ready?: () => Promise<boolean> | boolean;
   send: () => boolean;
-}): Promise<{ sent: boolean; failure?: "reconnect" | "offline"; error?: string }> {
-  if (blocksSending(options.status)) {
+  /** Starts the view's poll now, because the machine may just have answered. */
+  wake?: () => void;
+}): Promise<{ sent: boolean; failure?: "reconnect"; error?: string }> {
+  const { status } = options;
+  if (needsSignIn(status) || status === "identity-mismatch") {
     const result = await options.reconnect();
     if (!result.ok) return { sent: false, failure: "reconnect", error: result.error };
+    options.wake?.();
+  } else if (blocksSending(status)) {
+    options.reconnect().then(
+      (result) => {
+        if (result.ok) options.wake?.();
+      },
+      () => undefined,
+    );
   }
-  if (!(await options.ready()))
-    return { sent: false, failure: "offline", error: "The machine is still not answering." };
+  await options.ready?.();
   return { sent: options.send() };
 }

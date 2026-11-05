@@ -11275,5 +11275,15 @@
   "now": "现在",
   "{p0}h {p1}m": "{p0}小时 {p1}分钟",
   "{p0}m {p1}s": "{p0}分 {p1}秒",
-  "{p0}s": "{p0}s"
+  "{p0}s": "{p0}s",
+  "A rewind is in progress. Your message is kept.": "正在撤回。您的消息已保留。",
+  "The previous message is still being sent. Your message is kept.": "上一条消息仍在发送。您的消息已保留。",
+  "This conversation was deleted on the machine. Your message is kept.": "此对话已在该设备上删除。您的消息已保留。",
+  "The latest messages have not loaded from the machine yet. Your message is kept.": "最新消息尚未从该设备加载。您的消息已保留。",
+  "Queued messages could not be read, so sending is held. Your message is kept.": "无法读取排队的消息，因此发送已暂停。您的消息已保留。",
+  "This queued message is no longer available.": "该排队消息已不可用。",
+  "This follow-up is already being delivered. Your message is kept.": "此跟进消息已在投递中。您的消息已保留。",
+  "This conversation is busy. Your message is kept.": "此对话正忙。您的消息已保留。",
+  "Reconnecting — will send automatically.": "正在重新连接，将自动发送。",
+  "The conversation changed before this message was sent. Your message is kept.": "发送此消息前对话已变更。您的消息已保留。"
 }

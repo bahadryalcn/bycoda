@@ -17,6 +17,19 @@ describe("classifyRemoteError", () => {
     expect(isConnectionFailure(classifyRemoteError(error))).toBe(true);
   });
 
+  it.each(["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"])(
+    "classifies native %s as temporary, not a lost connection",
+    (code) => {
+      const error = Object.assign(new Error("Host request was not sent"), { code });
+      expect(classifyRemoteError(error)).toEqual({
+        kind: "temporary",
+        message: "Host request was not sent",
+      });
+      expect(classifyRemoteError(`${code}: Host request was not sent`).kind).toBe("temporary");
+      expect(isConnectionFailure(classifyRemoteError(error))).toBe(false);
+    },
+  );
+
   it("keeps workspace containment and request-specific Native failures local to the operation", () => {
     for (const message of [
       "Host rejected request: Path is outside this machine’s projects",

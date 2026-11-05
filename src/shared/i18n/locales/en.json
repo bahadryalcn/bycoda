@@ -11275,5 +11275,15 @@
   "now": "now",
   "{p0}h {p1}m": "{p0}h {p1}m",
   "{p0}m {p1}s": "{p0}m {p1}s",
-  "{p0}s": "{p0}s"
+  "{p0}s": "{p0}s",
+  "A rewind is in progress. Your message is kept.": "A rewind is in progress. Your message is kept.",
+  "The previous message is still being sent. Your message is kept.": "The previous message is still being sent. Your message is kept.",
+  "This conversation was deleted on the machine. Your message is kept.": "This conversation was deleted on the machine. Your message is kept.",
+  "The latest messages have not loaded from the machine yet. Your message is kept.": "The latest messages have not loaded from the machine yet. Your message is kept.",
+  "Queued messages could not be read, so sending is held. Your message is kept.": "Queued messages could not be read, so sending is held. Your message is kept.",
+  "This queued message is no longer available.": "This queued message is no longer available.",
+  "This follow-up is already being delivered. Your message is kept.": "This follow-up is already being delivered. Your message is kept.",
+  "This conversation is busy. Your message is kept.": "This conversation is busy. Your message is kept.",
+  "Reconnecting — will send automatically.": "Reconnecting — will send automatically.",
+  "The conversation changed before this message was sent. Your message is kept.": "The conversation changed before this message was sent. Your message is kept."
 }

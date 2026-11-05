@@ -11275,5 +11275,15 @@
   "now": "maintenant",
   "{p0}h {p1}m": "{p0}heures {p1}heures",
   "{p0}m {p1}s": "{p0}mois {p1}s",
-  "{p0}s": "{p0}s"
+  "{p0}s": "{p0}s",
+  "A rewind is in progress. Your message is kept.": "Un retour en arrière est en cours. Votre message est conservé.",
+  "The previous message is still being sent. Your message is kept.": "Le message précédent est encore en cours d’envoi. Votre message est conservé.",
+  "This conversation was deleted on the machine. Your message is kept.": "Cette conversation a été supprimée sur la machine. Votre message est conservé.",
+  "The latest messages have not loaded from the machine yet. Your message is kept.": "Les derniers messages n’ont pas encore été chargés depuis la machine. Votre message est conservé.",
+  "Queued messages could not be read, so sending is held. Your message is kept.": "Les messages en file d’attente n’ont pas pu être lus, l’envoi est donc suspendu. Votre message est conservé.",
+  "This queued message is no longer available.": "Ce message en file d’attente n’est plus disponible.",
+  "This follow-up is already being delivered. Your message is kept.": "Ce message de suivi est déjà en cours de remise. Votre message est conservé.",
+  "This conversation is busy. Your message is kept.": "Cette conversation est occupée. Votre message est conservé.",
+  "Reconnecting — will send automatically.": "Reconnexion en cours — envoi automatique.",
+  "The conversation changed before this message was sent. Your message is kept.": "La conversation a changé avant l’envoi de ce message. Votre message est conservé."
 }
