@@ -422,11 +422,9 @@ export class HostChildBackend implements ChildBackend {
           return (await writers.runWork(hostRun, async () => {
             started = true;
             const workspace = await create(async (cwd) => {
-              // Reclaim requires a path free of symlinked components; tmpdir() itself
-              // may be one (macOS /var -> /private/var, Windows 8.3 names).
-              slot.cwd = await canonicalWorkspacePath(cwd);
-              const identity = await lstat(slot.cwd);
-              slot.identity = { dev: identity.dev, ino: identity.ino };
+              slot.cwd = await canonicalWorkspacePath(cwd); // reclaim needs a symlink-free path
+              const { dev, ino } = await lstat(slot.cwd);
+              slot.identity = { dev, ino };
             });
             const grant = await writers.grantCwd(hostRun, workspace.cwd, "text-sandbox");
             slot.grant = grant;

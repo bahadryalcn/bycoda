@@ -441,8 +441,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
     let effectStarted = false;
     let settled = false;
     let cleanedUp = false;
-    // An owner releases its sentinel after its last witness, so a reader holding the
-    // witness can see it disappear between reads. Missing is a state, not an error.
+    // A sentinel can vanish between reads once its owner releases; missing is a state.
     const readSentinel = async () => {
       try {
         return await readFile(path, "utf8");
