@@ -1012,31 +1012,28 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
   },
 );
 
-it("offers to keep or delete the last session's worktree", async () => {
-  const onClose = vi.fn();
-  await act(async () =>
-    root.render(
-      createElement(DeleteSessionDialog, {
-        title: "Feature",
-        unusedWorktree: tree.path,
-        onClose,
-      }),
-    ),
-  );
-  const checkbox = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-  expect(checkbox.checked).toBe(false);
-  await act(async () => button("Delete session").click());
-  expect(onClose).toHaveBeenLastCalledWith({
-    confirmed: true,
-    deleteWorktree: false,
-  });
-  await act(async () => checkbox.click());
-  await act(async () => button("Delete session").click());
-  expect(onClose).toHaveBeenLastCalledWith({
-    confirmed: true,
-    deleteWorktree: true,
-  });
-});
+it.each([false, true])(
+  "offers to keep or delete the last session's worktree (delete worktree: %s)",
+  async (deleteWorktree) => {
+    // The dialog is one-shot: it confirms once and the owner unmounts it.
+    const onClose = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(DeleteSessionDialog, {
+          title: "Feature",
+          unusedWorktree: tree.path,
+          onClose,
+        }),
+      ),
+    );
+    const checkbox = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(false);
+    if (deleteWorktree) await act(async () => checkbox.click());
+    await act(async () => button("Delete session").click());
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenLastCalledWith({ confirmed: true, deleteWorktree });
+  },
+);
 
 it("uses searchable custom selects in the create worktree dialog", async () => {
   vi.mocked(useProjectBranchesState).mockReturnValue({
