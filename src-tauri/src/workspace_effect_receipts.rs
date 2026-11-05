@@ -39,6 +39,7 @@ fn begin_at(path: &Path, key: &str, fingerprint: &str) -> Result<(), String> {
     db.execute("INSERT INTO receipts(id,fingerprint,state) VALUES(?1,?2,'pending')", params![key,fingerprint]).map_err(|_| "Workspace receipt storage unavailable")?;
     Ok(())
 }
+#[allow(clippy::too_many_arguments)] // Crate-internal receipt call; each identity field is a separate key input.
 pub(crate) fn begin(app: &AppHandle, pending_id: &str, environment: &str, thread: &str, project: &str, cwd: &str, action: &str, input: &Value) -> Result<(), String> {
     let request_id = input["requestId"].as_str().ok_or("Workspace request identity required")?;
     let key = key(environment,thread,project,request_id)?;
@@ -76,10 +77,12 @@ pub(super) fn accept_owner(pending_id: &str) -> Result<(), String> {
 pub(crate) fn mark_unknown(pending_id: &str) {
     if let Ok(mut pending) = entries().lock() { pending.remove(pending_id); }
 }
+#[allow(clippy::too_many_arguments)] // Crate-internal receipt call; each identity field is a separate key input.
 pub(crate) fn status(app: &AppHandle, environment: &str, thread: &str, project: &str, cwd: &str, request_id: &str, action: &str, original_input: &Value) -> Result<Value, String> {
     let path = file(app)?;
     status_at(&path, environment, thread, project, cwd, request_id, action, original_input)
 }
+#[allow(clippy::too_many_arguments)] // Crate-internal receipt call; each identity field is a separate key input.
 fn status_at(path: &Path, environment: &str, thread: &str, project: &str, cwd: &str, request_id: &str, action: &str, original_input: &Value) -> Result<Value, String> {
     let db = open(path)?;
     let expected = digest(&json!([action,cwd,original_input]))?;

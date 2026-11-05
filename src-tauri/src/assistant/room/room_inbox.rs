@@ -237,9 +237,9 @@ mod tests {
     fn discovery_matches_full_record_identity() {
         let record = json!({"provider":"jira","kind":"jira","number":4,"repo":"","id":"71","identifier":"ABC-4","projectPath":"/p","title":"Untrusted title"});
         let mut item = record.clone();
-        assert!(listed_record(&[record.clone()], &item));
+        assert!(listed_record(std::slice::from_ref(&record), &item));
         item["identifier"] = json!("ABC-5");
-        assert!(!listed_record(&[record.clone()], &item));
+        assert!(!listed_record(std::slice::from_ref(&record), &item));
         item["identifier"] = json!("ABC-4"); item["projectPath"] = json!("/other");
         assert!(!listed_record(&[record], &item));
     }

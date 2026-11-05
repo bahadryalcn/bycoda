@@ -7210,7 +7210,7 @@ mod tests {
             session_id: "same".into(),
             cwd: "/repo".into(),
         };
-        replace_window_in_flight(&mut conn, "process", "main", "old", &[item.clone()]).unwrap();
+        replace_window_in_flight(&mut conn, "process", "main", "old", std::slice::from_ref(&item)).unwrap();
         let rows = vec![RecoveryReceiptRow {
             process: Some("process".into()),
             page: Some("old".into()),
@@ -7248,7 +7248,7 @@ mod tests {
             session_id: "same".into(),
             cwd: "/repo".into(),
         };
-        replace_window_in_flight(&mut conn, "process", "main", "old", &[item.clone()]).unwrap();
+        replace_window_in_flight(&mut conn, "process", "main", "old", std::slice::from_ref(&item)).unwrap();
         let rows = vec![RecoveryReceiptRow {
             process: Some("process".into()),
             page: Some("old".into()),

@@ -84,6 +84,7 @@ pub(crate) fn mark_gap(path: &Path) -> Result<(), String> {
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(false)
         .open(gap_marker(path))
         .map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
