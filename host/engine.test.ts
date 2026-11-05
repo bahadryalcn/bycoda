@@ -1906,8 +1906,29 @@ describe("Host writer transfer after settled task review", () => {
     await waitForTurnStart();
     const grant = vi.fn(async () => "unsafe");
     await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("LEASE_HELD");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toMatchObject({
+      code: "LEASE_HELD",
+      category: "conflict",
+      retryable: true,
+      delivery: "not-sent",
+    });
     expect(provider.stop).not.toHaveBeenCalled();
     expect(grant).not.toHaveBeenCalled();
+  });
+
+  it("refuses adoption of a desktop-running session as a not-sent conflict before any write", async () => {
+    const { engine, store, id, provider } = await setup();
+    const before = await store.session(id);
+    const running = { ...before, status: "running" as const };
+    await expect(engine.adoptSession(running)).rejects.toMatchObject({
+      message: expect.stringMatching(/^LEASE_HELD: /),
+      code: "LEASE_HELD",
+      category: "conflict",
+      retryable: true,
+      delivery: "not-sent",
+    });
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(await store.session(id)).toEqual(before);
   });
 
   it("keeps a timed-out retirement guarded and joins its original completion on owner retry", async () => {
@@ -5171,12 +5192,17 @@ describe("headless session ownership", () => {
         modelSettings: {},
         runtimeMode: "supervised",
       });
+      // The command path may read the clock more than once (request ids embed their
+      // issue time), so updatedAt is checked as one value at or after the new clock.
+      const updated = await store.session(id);
+      expect(updated.updatedAt).toBeGreaterThanOrEqual(initial.updatedAt + 1_000);
+      expect(updated.updatedAt).toBeLessThan(initial.updatedAt + 1_100);
       const updatedTimestamps = {
         createdAt: initial.createdAt,
-        updatedAt: initial.updatedAt + 1_000,
+        updatedAt: updated.updatedAt,
         revision: 2,
       };
-      expect(await store.session(id)).toMatchObject(updatedTimestamps);
+      expect(updated).toMatchObject(updatedTimestamps);
       expect((await store.sessions(project.id))[0]).toMatchObject(updatedTimestamps);
       expect((await store.summaries(project.id))[0]).toMatchObject(updatedTimestamps);
     } finally {

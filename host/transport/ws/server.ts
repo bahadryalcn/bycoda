@@ -48,6 +48,17 @@ const DISPATCH_ERROR_CODES: Record<HostDispatchError["code"], number> = {
   "service-unavailable": RPC_ERROR_CODES.internalError,
 };
 
+/**
+ * A dispatch refusal keeps "invalid-params" as its transport class for old
+ * clients, but a refusal with category "conflict" (a busy lease, a changed queue)
+ * gets its own code so clients can wait instead of fixing the request.
+ */
+function dispatchErrorCode(error: HostDispatchError): number {
+  if (error.code === "invalid-params" && error.details?.category === "conflict")
+    return RPC_ERROR_CODES.conflict;
+  return DISPATCH_ERROR_CODES[error.code];
+}
+
 export type HostWsPrincipal = {
   id: string;
   /** A device token is checked again at admission and before result delivery. */
@@ -121,7 +132,13 @@ class RequestExpired extends Error {}
 function rejectUpgrade(socket: Duplex, status: number): void {
   if (socket.destroyed) return;
   const phrase =
-    status === 401 ? "Unauthorized" : status === 429 ? "Too Many Requests" : "Bad Request";
+    status === 401
+      ? "Unauthorized"
+      : status === 429
+        ? "Too Many Requests"
+        : status === 503
+          ? "Service Unavailable"
+          : "Bad Request";
   socket.end(`HTTP/1.1 ${status} ${phrase}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`, () =>
     socket.destroy(),
   );
@@ -296,7 +313,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         )
           throw error;
         peer.initializing = false;
-        failure(peer, request.id, DISPATCH_ERROR_CODES[error.code], error.message, error.details);
+        failure(peer, request.id, dispatchErrorCode(error), error.message, error.details);
         return;
       }
       if (!permitted) {
@@ -546,7 +563,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         failure(
           peer,
           request.id,
-          DISPATCH_ERROR_CODES[error.code],
+          dispatchErrorCode(error),
           error.message,
           error.code === "overloaded" || error.code === "service-unavailable"
             ? {
@@ -853,7 +870,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         }
         sockets.handleUpgrade(request, socket, head, (ws) => connected(ws, principal));
       } catch {
-        rejectUpgrade(socket, 401);
+        // Only a missing, revoked or unknown credential is 401 (clients treat it
+        // as permanent). A failed verifier, store or admission is temporary.
+        rejectUpgrade(socket, 503);
       } finally {
         releaseUpgrade();
       }

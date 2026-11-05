@@ -225,6 +225,59 @@ describe("native WebSocket upgrade and negotiation", () => {
     expect(host.authenticate).not.toHaveBeenCalled();
   });
 
+  it("answers 503, not 401, when the credential verifier fails internally", async () => {
+    const host = await fixture({
+      authenticate: async () => {
+        throw new Error("store not ready");
+      },
+    });
+    await expect(host.connect().opened).rejects.toThrow(/503/);
+  });
+
+  it("answers 503 when grant re-verification throws, and 401 when it reports revoked", async () => {
+    const host = await fixture({
+      authenticate: async () => ({
+        id: "device-a",
+        authorized: async () => {
+          throw new Error("database busy");
+        },
+      }),
+    });
+    await expect(host.connect().opened).rejects.toThrow(/503/);
+    const revoked = await fixture({
+      authenticate: async () => ({ id: "device-a", authorized: async () => false }),
+    });
+    await expect(revoked.connect().opened).rejects.toThrow(/401/);
+  });
+
+  it("keeps invalid-params for a non-conflict dispatch refusal", async () => {
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw new HostDomainRefusalError(
+            "COMMAND_INVALID",
+            "validation",
+            false,
+            "Invalid queued command",
+          );
+        },
+      },
+    });
+    const host = await fixture({ methods: ["notes.delete"], dispatch: dispatcher.dispatch });
+    const client = await host.ready();
+    expect(
+      await client.request("invalid", "notes.delete", { id: "note", expectedUpdatedAt: 1 }),
+    ).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.invalidParams,
+        data: { category: "validation", delivery: "not-sent", code: "COMMAND_INVALID" },
+      },
+    });
+  });
+
   it("rejects a revoked grant at upgrade", async () => {
     const host = await fixture();
     host.revoke();
@@ -1121,7 +1174,7 @@ describe("WS framing and orderly disposal", () => {
     finish.resolve([]);
     await finish.promise;
   });
-  it("answers a pre-execution refusal over WS with its message, code and not-sent delivery", async () => {
+  it("answers a pre-execution refusal over WS with a conflict code, its message and not-sent delivery", async () => {
     const dispatcher = createHostDispatcher({
       environmentId: ENVIRONMENT,
       environment: { describe: async () => ({}) },
@@ -1146,7 +1199,7 @@ describe("WS framing and orderly disposal", () => {
     });
     expect(response).toMatchObject({
       error: {
-        code: RPC_ERROR_CODES.invalidParams,
+        code: RPC_ERROR_CODES.conflict,
         message: "The shared queue changed. Refresh it before sending.",
         data: {
           category: "conflict",

@@ -65,6 +65,7 @@ import { isSessionErrorBlock } from "../src/features/sessions/model/sessionIssue
 import { adoptedTranscriptLead } from "../src/features/connections/model/adoptedSessions";
 import { transcriptDigests } from "../src/features/sync/model/conversationDigest";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
+import { refuseHost } from "./domains/context";
 import {
   atHead,
   chooseBase,
@@ -740,7 +741,8 @@ export class HostEngine {
     await this.ready;
     return this.operations.run(id, async () => {
       await admitted?.();
-      if (this.closing || this.hasActiveRun(id)) throw new LeaseHeldError("host");
+      if (this.closing || this.hasActiveRun(id))
+        throw refuseHost(new LeaseHeldError("host"), "LEASE_HELD", "conflict", true);
       const original = this.retainedWriterTurns.get(id);
       if (original) {
         if (!original.cleanup) {
@@ -1688,7 +1690,8 @@ export class HostEngine {
             ...snapshot,
             session: { ...snapshot.session, cwd: managed.path, worktreeCwd: managed.path },
           };
-        if (snapshot.status === "running") throw new LeaseHeldError("desktop");
+        if (snapshot.status === "running")
+          throw refuseHost(new LeaseHeldError("desktop"), "LEASE_HELD", "conflict", true);
         const provider = this.provider(snapshot.session.harness);
         const saved = await this.store.transaction(async () => {
           try {
