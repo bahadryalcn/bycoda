@@ -17,7 +17,8 @@ import {
 // descriptor. Paths are data on stdin, never PowerShell source or arguments.
 //
 // `protect` gives the staged file the target's DACL before any content is
-// written. A protected DACL is copied and compared in full. An unprotected DACL
+// written (.NET writes only the sections marked modified, so the DACL is always
+// marked). A protected DACL is copied and compared in full. An unprotected DACL
 // is copied as its explicit ACEs only: Windows recomputes the inherited ACEs from
 // the shared parent directory, so the target's inherited ACEs and the
 // auto-inheritance bookkeeping flags (AI, AR, which grant nothing) can
@@ -50,7 +51,12 @@ try {
       $flags + '|' + [string]::Join('|', $rules)
     }
     $expected = Get-BycodaDacl $acl
-    if (!$protected) {
+    # SetAccessControl persists only the sections modified on this object, so
+    # the DACL is always marked modified; otherwise a protected DACL is never
+    # written and the staged file keeps its inherited one.
+    if ($protected) {
+      $acl.SetAccessRuleProtection($true, $true)
+    } else {
       $acl.SetAccessRuleProtection($true, $false)
       $acl.SetAccessRuleProtection($false, $true)
     }

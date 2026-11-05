@@ -1125,12 +1125,20 @@ it("drains a real owned command on Host close without signalling an unrelated ch
     projects,
   )) as DevServerStartResult;
   expect(result.server?.process?.startedAt).toBeTruthy();
-  const details = (await service.handle(
-    "devServers.details",
-    { id: result.server!.id },
-    projects,
-  )) as { descendants: DevProcess[] };
-  expect(details.descendants.length).toBeGreaterThan(0);
+  // The shell forks the command after start returns, and the discovery's
+  // process snapshot is cached briefly, so poll with a deadline.
+  const details = await vi.waitFor(
+    async () => {
+      const current = (await service.handle(
+        "devServers.details",
+        { id: result.server!.id },
+        projects,
+      )) as { descendants: DevProcess[] };
+      expect(current.descendants.length).toBeGreaterThan(0);
+      return current;
+    },
+    { timeout: 10_000, interval: 100 },
+  );
   await service.close();
   for (const child of details.descendants) {
     const current = await discovery.identity(child.pid);

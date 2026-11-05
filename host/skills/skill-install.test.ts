@@ -1,5 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, symlink, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+  symlink,
+  stat,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installCatalogSkill, skillInstallStatus, runSkillInstallerCommand } from "./skill-install";
@@ -15,7 +25,9 @@ afterEach(async () => {
   for (const path of temporary.splice(0)) await rm(path, { recursive: true, force: true });
 });
 async function home() {
-  const path = await mkdtemp(join(tmpdir(), "bycoda-catalog-test-"));
+  // The installer reports canonical destinations; on Windows the temp directory
+  // is an 8.3 short path (RUNNER~1) that realpath expands.
+  const path = await realpath(await mkdtemp(join(tmpdir(), "bycoda-catalog-test-")));
   temporary.push(path);
   return path;
 }
