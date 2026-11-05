@@ -24,6 +24,8 @@ export type SectionLabelClassNames = {
 };
 
 export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
+  /** Compact standalone caption inside a menu; section actions and disclosure do not apply. */
+  variant?: "section" | "menu";
   /** The group name, in sentence case (no uppercase eyebrow). */
   children: ReactNode;
   /** Heading element for the label. Default `h3`; use `div`/`span` when it is not a heading. */
@@ -82,6 +84,7 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
  */
 export function SectionLabel({
   children,
+  variant = "section",
   as: Heading = "h3",
   labelId,
   count,
@@ -102,6 +105,21 @@ export function SectionLabel({
   className,
   ...props
 }: SectionLabelProps) {
+  if (variant === "menu") {
+    return (
+      <div
+        {...props}
+        className={[
+          "px-2 pb-0.5 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)",
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </div>
+    );
+  }
   const hasCount = count !== null && count !== undefined;
   const swap = collapsible && icon != null && chevron === "hover";
   const mark = (extra?: string) => (

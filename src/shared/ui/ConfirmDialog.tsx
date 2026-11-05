@@ -368,6 +368,8 @@ export function useConfirm(): {
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   confirmWith: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
   dialog: ReactNode;
+  /** Render the active dialog with current caller-owned content and callbacks. */
+  renderDialog: (request: ConfirmRequest) => ReactNode;
 } {
   const [live, setLive] = useState<Live | null>(null);
   const ref = useRef<Live | null>(null);
@@ -400,18 +402,21 @@ export function useConfirm(): {
     current?.resolve(value ? result.current : null);
     result.current = { acknowledged: false };
   }, []);
-  return {
-    confirm,
-    confirmWith,
-    dialog: live ? (
+  const renderDialog = (request: ConfirmRequest) =>
+    live ? (
       <ConfirmDialog
         key={live.request.title}
-        request={live.request}
+        request={request}
         onSettle={settle}
         onResult={(value) => {
           result.current = value;
         }}
       />
-    ) : null,
+    ) : null;
+  return {
+    confirm,
+    confirmWith,
+    dialog: live ? renderDialog(live.request) : null,
+    renderDialog,
   };
 }

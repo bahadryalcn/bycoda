@@ -1,4 +1,8 @@
 import { themePalette } from "../../../shared/theme/palette";
+export {
+  formatGitGraphAbsoluteTime as formatAbsoluteTime,
+  formatGitGraphRelativeTime as formatRelativeTime,
+} from "../../../shared/i18n/format";
 import type { GraphRef } from "./gitGraph";
 
 /** Colour of the avatar for an author with no name. */
@@ -37,36 +41,6 @@ export function authorColor(name: string): string {
   const normalized = normalizeName(name).toLocaleLowerCase();
   if (!normalized) return ANONYMOUS_COLOR;
   return `hsl(${hashName(normalized) % 360} 55% 55%)`;
-}
-
-const MINUTE = 60;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** "now", "3m", "2h", "5d", "3w", "8mo", "2y"; timestamps in the future read as "now". */
-export function formatRelativeTime(timestampSeconds: number, nowMs: number): string {
-  const age = Math.max(0, Math.floor(nowMs / 1000 - timestampSeconds));
-  if (age < MINUTE) return "now";
-  if (age < HOUR) return `${Math.floor(age / MINUTE)}m`;
-  if (age < DAY) return `${Math.floor(age / HOUR)}h`;
-  const days = Math.floor(age / DAY);
-  if (days < 7) return `${days}d`;
-  if (days < 30) return `${Math.floor(days / 7)}w`;
-  if (days < 365) return `${Math.max(1, Math.floor(days / 30.44))}mo`;
-  return `${Math.floor(days / 365)}y`;
-}
-
-/** Local date and time for tooltips. */
-export function formatAbsoluteTime(
-  timestampSeconds: number,
-  locale?: string,
-  timeZone?: string,
-): string {
-  return new Date(timestampSeconds * 1000).toLocaleString(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone,
-  });
 }
 
 export function isMergeCommit(commit: { parents: readonly string[] }): boolean {

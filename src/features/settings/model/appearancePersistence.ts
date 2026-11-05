@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 /** Appearance keeps an applied window fallback while reporting an unsuccessful durable write. */
 export type AppearanceSaveIssue = {
   key: string;
@@ -12,7 +13,7 @@ type PendingSave = AppearanceSaveIssue & {
 };
 const pending = new Map<string, PendingSave>();
 let snapshot: readonly AppearanceSaveIssue[] = [];
-const listeners = new Set<() => void>();
+const listeners = createStore();
 
 function changed() {
   snapshot = [...pending.values()].map(({ key, settingId, applied }) => ({
@@ -20,7 +21,7 @@ function changed() {
     settingId,
     applied,
   }));
-  listeners.forEach((listener) => listener());
+  listeners.notify();
 }
 
 export function readAppearanceValue(key: string): string | null {
@@ -73,8 +74,5 @@ export function acceptAppearanceStorageChange(key: string | null) {
 
 export const readAppearanceSaveIssues = () => snapshot;
 export function subscribeAppearanceSaveIssues(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }

@@ -1,4 +1,4 @@
-import { getLocale, t } from "../../../shared/i18n";
+import { dateTimeFormat, getLocale, t } from "../../../shared/i18n";
 import type { SocialPublishingPlan } from "./social";
 
 export type PublishingScheduleFields = {
@@ -37,7 +37,7 @@ export function publishingSchedule(fields: PublishingScheduleFields): {
     return { error: t("Enter a start and end time.") };
   const timeZone = fields.timeZone.trim();
   try {
-    new Intl.DateTimeFormat(getLocale(), { timeZone }).format(0);
+    dateTimeFormat(getLocale(), { timeZone }).format(0);
   } catch {
     return { error: t("Enter a valid time zone, for example Europe/Istanbul.") };
   }
@@ -95,7 +95,7 @@ export function publishingScheduleSummary(schedule: SocialPublishingPlan["schedu
 export function publishingPlanTime(value: number | undefined, timeZone: string) {
   if (value === undefined || !Number.isFinite(value)) return "—";
   try {
-    return new Intl.DateTimeFormat(getLocale(), {
+    return dateTimeFormat(getLocale(), {
       dateStyle: "medium",
       timeStyle: "short",
       timeZone,

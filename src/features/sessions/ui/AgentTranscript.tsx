@@ -34,6 +34,7 @@ import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import { useLocale, useT } from "../../../shared/i18n";
+import { formatCompactCount as formatMetricCount } from "../../../shared/i18n/format";
 import {
   ArrowUp,
   Check,
@@ -85,6 +86,7 @@ import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import type {
   FloatingButtonGroupAction,
@@ -744,16 +746,20 @@ function AgentTranscriptComponent({
           {pagingError ? <Alert tone="danger">{pagingError}</Alert> : null}
           {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
             <div className="flex justify-center px-4 py-3">
-              <Button
-                motion="none"
-                variant="ghost"
-                type="button"
-                disabled={remoteHistoryLoading || pagingLoading}
-
-                onClick={() => void loadEarlier()}
-              >
-                {remoteHistoryLoading ? t("Loading earlier messages…") : t("Load earlier messages")}
-              </Button>
+              <CollectionFooter
+                standalone
+                hasMore
+                onLoadMore={() => void loadEarlier()}
+                loadMoreLabel={
+                  remoteHistoryLoading ? t("Loading earlier messages…") : t("Load earlier messages")
+                }
+                loadMoreButtonProps={{
+                  motion: "none",
+                  variant: "ghost",
+                  type: "button",
+                  disabled: remoteHistoryLoading || pagingLoading,
+                }}
+              />
             </div>
           ) : null}
           {renderedTurns.map(({ turn, index }, turnIndex) => {
@@ -1774,13 +1780,6 @@ function hasTurnMetrics(metrics: TurnMetrics): boolean {
     (metrics.cacheReadTokens ?? 0) > 0 ||
     (metrics.cacheWriteTokens ?? 0) > 0
   );
-}
-
-function formatMetricCount(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: "compact",
-    maximumFractionDigits: value >= 1000 ? 1 : 0,
-  }).format(Math.max(0, Math.round(value)));
 }
 
 function CopyTurnButton({

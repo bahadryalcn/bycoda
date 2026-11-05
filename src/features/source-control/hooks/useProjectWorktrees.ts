@@ -1,5 +1,6 @@
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
 import { listWorktrees, type Worktrees } from "../model/worktrees";
@@ -8,7 +9,7 @@ type Snapshot = { data?: Worktrees; error?: string; loading?: boolean };
 type Entry = {
   cwd: string;
   snapshot: Snapshot;
-  listeners: Set<() => void>;
+  listeners: ReturnType<typeof createStore<[]>>;
   inFlight?: Promise<boolean>;
   invalidated: boolean;
   stop?: () => void;
@@ -27,7 +28,7 @@ function entryFor(cwd: string): Entry {
     entry = {
       cwd,
       snapshot: EMPTY,
-      listeners: new Set(),
+      listeners: createStore(),
       invalidated: false,
     };
     entries.set(key, entry);
@@ -40,7 +41,7 @@ function publish(entry: Entry, snapshot: Snapshot) {
   entry.snapshot = snapshot;
   if (previous.data !== snapshot.data || previous.error !== snapshot.error)
     entries.refresh(pathKey(entry.cwd));
-  for (const listener of entry.listeners) listener();
+  entry.listeners.notify();
 }
 
 function load(entry: Entry, invalidated = false): Promise<boolean> {
@@ -108,10 +109,10 @@ export function useProjectWorktrees(cwd: string, enabled = true) {
     (listener: () => void) => {
       if (!active) return () => {};
       const entry = entryFor(cwd);
-      entry.listeners.add(listener);
+      const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
       return () => {
-        entry.listeners.delete(listener);
+        unsubscribe();
         if (entry.listeners.size === 0) {
           entry.stop?.();
           entry.stop = undefined;

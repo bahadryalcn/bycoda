@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 import { normalizeProjectPath } from "../../projects/model/recents";
 
@@ -83,11 +84,6 @@ function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
   cache.delete(key);
   cache.set(key, value);
   return value;
-}
-function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
 }
 
 /** Patches can be megabytes, so the diff cache is also bounded by their total size. */
@@ -205,7 +201,8 @@ export async function azureDevOpsWorkItemDetails(
     .then((details) => {
       // A cache clear (e.g. org change) supersedes this request: skip the
       // write so a stale completion cannot repopulate the cache.
-      if (detailsInflight.get(key) === pending) boundedSet(detailsByKey, key, details);
+      if (detailsInflight.get(key) === pending)
+        boundedSet(detailsByKey, key, details, DETAILS_CACHE_LIMIT);
       return details;
     })
     .finally(() => {
@@ -288,7 +285,7 @@ export async function azureDevOpsMrDiff(repo: string, number: number): Promise<A
     .then((diff) => {
       // Same staleness guard as the thread cache above.
       if (diffInflight.get(key) === pending) {
-        boundedSet(diffByKey, key, diff);
+        boundedSet(diffByKey, key, diff, DETAILS_CACHE_LIMIT);
         trimDiffCache(diffByKey);
       }
       return diff;

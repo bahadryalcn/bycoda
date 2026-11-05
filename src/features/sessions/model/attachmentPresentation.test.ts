@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachmentPresentation } from "./attachmentPresentation";
+import { attachmentPresentation, formatAttachmentSize } from "./attachmentPresentation";
 import type { Attachment } from "./session";
 
 const file = (
@@ -9,6 +9,16 @@ const file = (
 ) => ({ name, mimeType, kind });
 
 describe("attachmentPresentation", () => {
+  it.each([
+    [0, null],
+    [512, "512 B"],
+    [1_153, "1 KB"],
+    [1_572_864, "1.5 MB"],
+    [Number.NaN, null],
+  ])("keeps attachment size presentation for %s bytes", (size, expected) => {
+    expect(formatAttachmentSize(size)).toBe(expected);
+  });
+
   it.each([
     ["photo.PNG", "image"],
     ["voice.M4A", "audio"],

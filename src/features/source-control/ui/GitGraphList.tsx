@@ -1,5 +1,6 @@
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   useCallback,
@@ -285,17 +286,18 @@ export function GitGraphList({
             })}
             {range.padBottom > 0 ? <li aria-hidden style={{ height: range.padBottom }} /> : null}
           </ul>
-          {hasMore ? (
-            <Button
-              variant="item"
-              motion="none"
-              type="button"
-              onClick={onLoadMore}
-              className={LOAD_MORE_CLASS}
-            >
-              {t("Load more commits")}
-            </Button>
-          ) : null}
+          <CollectionFooter
+            standalone
+            hasMore={hasMore}
+            onLoadMore={onLoadMore}
+            loadMoreLabel={t("Load more commits")}
+            loadMoreButtonProps={{
+              variant: "item",
+              motion: "none",
+              type: "button",
+              className: LOAD_MORE_CLASS,
+            }}
+          />
         </>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 
 export type LinearTeam = {
@@ -121,11 +122,6 @@ function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
   cache.set(key, value);
   return value;
 }
-function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
-}
 
 export function peekLinearIssueDetails(id: string): LinearIssueDetails | null {
   return boundedGet(detailsById, id);
@@ -135,7 +131,7 @@ export async function linearIssueDetails(id: string): Promise<LinearIssueDetails
   const details = await invoke<LinearIssueDetails>("linear_issue_details", {
     id,
   });
-  boundedSet(detailsById, id, details);
+  boundedSet(detailsById, id, details, DETAILS_CACHE_LIMIT);
   return details;
 }
 

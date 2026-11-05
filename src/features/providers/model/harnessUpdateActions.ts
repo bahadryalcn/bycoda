@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import {
   isHarnessAvailable,
   probeHarnessAvailability,
@@ -46,11 +47,11 @@ let snapshot: HarnessUpdateSnapshot = {
   checking: false,
   runs: {},
 };
-const listeners = new Set<() => void>();
+const listeners = createStore();
 
 function setSnapshot(next: Partial<HarnessUpdateSnapshot>) {
   snapshot = { ...snapshot, ...next };
-  listeners.forEach((listener) => listener());
+  listeners.notify();
 }
 
 export function getHarnessUpdateSnapshot(): HarnessUpdateSnapshot {
@@ -58,10 +59,7 @@ export function getHarnessUpdateSnapshot(): HarnessUpdateSnapshot {
 }
 
 export function subscribeHarnessUpdates(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }
 
 async function installedVersion(harness: HarnessId): Promise<string> {

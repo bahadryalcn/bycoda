@@ -59,7 +59,8 @@ import {
   type ToolPreview,
 } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
+import { formatElapsed } from "../../../shared/i18n/format";
+import { useElapsedFrom } from "./useElapsedFrom";
 import { consumeOpenSubagent, OPEN_SUBAGENT_EVENT, requestViewSubagent } from "./subagentFocus";
 import { AgentMarkdown } from "./AgentMarkdown";
 import {
@@ -85,7 +86,6 @@ import { bycodaToolCall, bycodaWorkSummary, type BycodaToolCall } from "../model
 import { NEAR_BOTTOM_PX } from "./transcriptScroll";
 import { useClampOverflow } from "./useClampOverflow";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
-
 /*
  * Tool calls often land in a burst. Each arrival waits for the one before it
  * to finish its whole entrance — rail, branch, row — before starting its own.

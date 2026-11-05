@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
 import { normalizeProjectMascotName } from "../../projects/model/projectMascots";
+import { createWindowStore } from "../../../shared/lib/store";
 
 // The host keeps only what runs a crew; how it looks on this device lives here,
 // like project group icons and colors.
@@ -16,6 +17,13 @@ export type CrewAppearance = {
 };
 
 let cache: { raw: string | null; value: Record<string, CrewAppearance> } | null = null;
+const appearanceStore = createWindowStore({
+  event: CHANGED,
+  storageKeys: [APPEARANCE_KEY, RAIL_KEY],
+  onStorage: () => {
+    cache = null;
+  },
+});
 
 function read(key: string): string | null {
   try {
@@ -84,20 +92,7 @@ export function saveCrewsOnRail(shown: boolean) {
   write(RAIL_KEY, String(shown));
 }
 
-function subscribe(onChange: () => void) {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === APPEARANCE_KEY || event.key === RAIL_KEY) {
-      cache = null;
-      onChange();
-    }
-  };
-  window.addEventListener(CHANGED, onChange);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(CHANGED, onChange);
-    window.removeEventListener("storage", onStorage);
-  };
-}
+const subscribe = appearanceStore.subscribe;
 
 export function useCrewAppearances() {
   return useSyncExternalStore(subscribe, loadCrewAppearances, loadCrewAppearances);

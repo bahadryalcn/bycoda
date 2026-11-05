@@ -1,5 +1,6 @@
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import { subscribeGitChanged, type GitDiffIndex } from "../../../platform/tauri/fs";
 import { fetchGitIndex } from "../model/gitIndexStore";
 import { subscribeDirsChanged } from "../../files/public/fileTree";
@@ -46,7 +47,7 @@ const EMPTY: GitStatusMap = { files: new Map(), dirs: new Map() };
 type Entry = {
   cwd: string;
   data: GitStatusMap;
-  listeners: Set<() => void>;
+  listeners: ReturnType<typeof createStore<[]>>;
   inFlight: boolean;
   pending: boolean;
   unsubscribeGit: (() => void) | null;
@@ -65,7 +66,7 @@ function entryFor(cwd: string): Entry {
   const entry: Entry = {
     cwd,
     data: EMPTY,
-    listeners: new Set(),
+    listeners: createStore(),
     inFlight: false,
     pending: false,
     unsubscribeGit: null,
@@ -114,7 +115,7 @@ function publish(entry: Entry, data: GitStatusMap) {
   if (sameData(entry.data, data)) return;
   entry.data = data;
   entries.refresh(entry.cwd);
-  for (const listener of entry.listeners) listener();
+  entry.listeners.notify();
 }
 
 async function load(entry: Entry, force = false) {
@@ -178,10 +179,10 @@ export function useGitFileStatuses(cwd: string, enabled: boolean): GitStatusMap 
     (listener: () => void) => {
       if (!active) return () => undefined;
       const entry = entryFor(cwd);
-      entry.listeners.add(listener);
+      const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
       return () => {
-        entry.listeners.delete(listener);
+        unsubscribe();
         if (entry.listeners.size === 0) stop(entry);
         entries.prune();
       };

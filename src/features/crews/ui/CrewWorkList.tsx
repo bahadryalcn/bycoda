@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { Search } from "../../../shared/ui/icons";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -140,18 +141,19 @@ export function CrewWorkList({
           </p>
         ) : null}
         {view === "finished" && hasMoreHistory ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={disabled || historyLoading}
-            onClick={onLoadMore}
-          >
-            {historyLoading
-              ? t("Loading…")
-              : historyError
-                ? t("Retry loading older work")
-                : t("Load older work")}
-          </Button>
+          <CollectionFooter
+            standalone
+            hasMore
+            onLoadMore={onLoadMore}
+            loadMoreButtonProps={{ disabled: disabled || historyLoading }}
+            loadMoreLabel={
+              historyLoading
+                ? t("Loading…")
+                : historyError
+                  ? t("Retry loading older work")
+                  : t("Load older work")
+            }
+          />
         ) : null}
       </div>
     </nav>

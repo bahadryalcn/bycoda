@@ -3,7 +3,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Badge } from "../../../shared/ui/Badge";
-import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -28,6 +28,7 @@ import {
   jiraBoardConfiguration,
   jiraBoardIssues,
   jiraIssueTransitions,
+  jiraErrorMessage,
   jiraMoveIssue,
   jiraTransitionIssue,
   listJiraBoards,
@@ -62,7 +63,6 @@ type TransitionPick = {
   choices: JiraTransition[];
   anchor: Pick<JiraMove, "beforeKey" | "afterKey">;
 };
-const message = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
 
 export function JiraBoardView({
   revision,
@@ -218,7 +218,7 @@ export function JiraBoardView({
       })
       .catch((reason) => {
         if (!cancelled) {
-          setError(message(reason));
+          setError(jiraErrorMessage(reason));
           setLoading(false);
         }
       });
@@ -303,8 +303,7 @@ export function JiraBoardView({
               },
             ];
       const next: Group[] = [];
-      // Refresh only already expanded groups, serially. Replay their existing
-      // page depth rather than collapsing later-page selection to page one.
+      // Refresh expanded groups serially, replaying page depth to preserve later-page selection.
       for (const [index, definition] of definitions.entries()) {
         const old = previous.find((group) => group.id === definition.id);
         const open =
@@ -330,7 +329,7 @@ export function JiraBoardView({
           if (request !== generation.current) return;
           if (
             definition.id === "backlog" &&
-            /backlogs? (?:are|is) not supported/i.test(message(reason))
+            /backlogs? (?:are|is) not supported/i.test(jiraErrorMessage(reason))
           ) {
             setBacklogUnavailable(true);
             if (definitions.length === 1) {
@@ -350,7 +349,7 @@ export function JiraBoardView({
               pages: old?.pages ?? 0,
               cursors: old?.cursors,
               stale: !!old?.loaded,
-              error: message(reason),
+              error: jiraErrorMessage(reason),
             });
           }
         }
@@ -361,7 +360,7 @@ export function JiraBoardView({
       commitGroups(next);
     })()
       .catch((reason) => {
-        if (request === generation.current) setError(message(reason));
+        if (request === generation.current) setError(jiraErrorMessage(reason));
       })
       .finally(() => {
         if (request !== generation.current) return;
@@ -452,7 +451,7 @@ export function JiraBoardView({
     } catch (reason) {
       if (generation.current === request) {
         writeFailed.current = true;
-        setError(message(reason));
+        setError(jiraErrorMessage(reason));
       }
     } finally {
       operation.current = false;
@@ -475,7 +474,7 @@ export function JiraBoardView({
         try {
           await jiraMoveIssue(boardId, issue.identifier, { target: "rank", ...anchor });
         } catch (reason) {
-          throw new Error(`${t("Status changed, but ranking failed.")} ${message(reason)}`);
+          throw new Error(`${t("Status changed, but ranking failed.")} ${jiraErrorMessage(reason)}`);
         }
       }
     });
@@ -511,7 +510,7 @@ export function JiraBoardView({
         await transition(issue, available[0].id, anchor);
       else setPick({ issue, choices, anchor });
     } catch (reason) {
-      if (request === generation.current) setError(message(reason));
+      if (request === generation.current) setError(jiraErrorMessage(reason));
     } finally {
       operation.current = false;
       if (mounted.current) {
@@ -535,11 +534,7 @@ export function JiraBoardView({
     );
   }
 
-  /**
-   * What releasing over `zone` would do: the badge sentence, and which element carries the mark.
-   * It mirrors the rules dropColumn / dropGroup apply (same column or sprint ranks, anything
-   * else moves; a column without statuses and an unranked same-place drop do nothing).
-   */
+  /** Release effect and mark target, matching dropColumn/dropGroup rules including no-op drops. */
   function dropPreview(
     issue: JiraBoardIssue,
     zone: HTMLElement,
@@ -854,7 +849,7 @@ export function JiraBoardView({
       if (request === generation.current) {
         // A board without backlog support is a capability note, not a failed read.
         const backlogUnsupported =
-          group.id === "backlog" && /backlogs? (?:are|is) not supported/i.test(message(reason));
+          group.id === "backlog" && /backlogs? (?:are|is) not supported/i.test(jiraErrorMessage(reason));
         if (backlogUnsupported) setBacklogUnavailable(true);
         commitGroups((old) =>
           old.map((g) =>
@@ -862,7 +857,7 @@ export function JiraBoardView({
               ? g
               : backlogUnsupported
                 ? { ...g, issues: [], token: null, loaded: true, stale: false, error: undefined }
-                : { ...g, error: message(reason), autoPaused: true },
+                : { ...g, error: jiraErrorMessage(reason), autoPaused: true },
           ),
         );
       }
@@ -886,14 +881,18 @@ export function JiraBoardView({
           </Alert>
         ) : null}
         {group.token || !group.loaded || group.stale || group.error ? (
-          <Button
-            variant="ghost"
-            loading={readingGroup === group.id}
-            disabled={locked && readingGroup !== group.id}
-            onClick={() => void loadMore(group, !group.loaded || !!group.stale)}
-          >
-            {group.error ? t("Retry") : group.loaded ? t("Load more issues") : t("Load issues")}
-          </Button>
+          <CollectionFooter
+            standalone
+            hasMore
+            loadMoreButtonProps={{
+              loading: readingGroup === group.id,
+              disabled: locked && readingGroup !== group.id,
+            }}
+            onLoadMore={() => void loadMore(group, !group.loaded || !!group.stale)}
+            loadMoreLabel={
+              group.error ? t("Retry") : group.loaded ? t("Load more issues") : t("Load issues")
+            }
+          />
         ) : null}
       </div>
     );
@@ -1076,7 +1075,7 @@ export function JiraBoardView({
             variant="ghost"
             type="button"
             onClick={() =>
-              void openUrl(pick.issue.url).catch((reason) => setError(message(reason)))
+              void openUrl(pick.issue.url).catch((reason) => setError(jiraErrorMessage(reason)))
             }
           >
             {t("Open in Jira")}

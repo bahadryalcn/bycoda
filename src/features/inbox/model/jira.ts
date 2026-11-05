@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 
 export type JiraProject = {
@@ -175,11 +176,6 @@ function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
   cache.set(key, value);
   return value;
 }
-function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
-}
 
 export function peekJiraIssueDetails(key: string): JiraIssueDetails | null {
   return boundedGet(detailsByKey, key);
@@ -190,7 +186,7 @@ export async function jiraIssueDetails(key: string): Promise<JiraIssueDetails> {
   const details = await invoke<JiraIssueDetails>("jira_issue_details", {
     key,
   });
-  if (generation === cacheGeneration) boundedSet(detailsByKey, key, details);
+  if (generation === cacheGeneration) boundedSet(detailsByKey, key, details, DETAILS_CACHE_LIMIT);
   return details;
 }
 

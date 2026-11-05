@@ -4,6 +4,7 @@ import {
   writeAppearanceValue,
 } from "./appearancePersistence";
 import { useSyncExternalStore } from "react";
+import { createWindowStore } from "../../../shared/lib/store";
 import { clamp } from "../../../shared/lib/numbers";
 import { t } from "../../../shared/i18n";
 
@@ -197,25 +198,12 @@ export function saveLiveBackgroundIntensity(value: number) {
 }
 
 /** Other windows follow through storage events. */
-function subscribe(listener: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (
-      event.key === null ||
-      event.key === LIVE_BACKGROUND_KEY ||
-      event.key === LIVE_BACKGROUND_INTENSITY_KEY
-    ) {
-      acceptAppearanceStorageChange(event.key);
-      listener();
-    }
-  };
-  window.addEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
+const subscribe = createWindowStore({
+  event: LIVE_BACKGROUND_CHANGE_EVENT,
+  storageKeys: [LIVE_BACKGROUND_KEY, LIVE_BACKGROUND_INTENSITY_KEY],
+  onStorage: (event) => acceptAppearanceStorageChange(event.key),
+  guardWindow: true,
+}).subscribe;
 
 export function useLiveBackground(): LiveBackground {
   return useSyncExternalStore(subscribe, loadLiveBackground, () => LIVE_BACKGROUND_DEFAULT);

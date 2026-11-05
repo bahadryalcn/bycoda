@@ -46,6 +46,7 @@ export function useCopyFeedback({
   const mounted = useRef(false);
   const epoch = useRef(view.epoch);
   const inFlight = useRef(false);
+  const operation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // A new epoch abandons the previous operation: release the lock and drop its confirmation timer.
@@ -62,18 +63,18 @@ export function useCopyFeedback({
     };
   }, []);
 
-  /** Starts `run` unless a copy is already in flight. Returns whether it started. */
-  const copy = useCallback(
-    (run: () => Promise<unknown> | void): boolean => {
-      if (inFlight.current || !mounted.current) return false;
+  const start = useCallback(
+    (run: () => Promise<unknown> | void, parallel = false): Promise<boolean> | null => {
+      if ((!parallel && inFlight.current) || !mounted.current) return null;
       inFlight.current = true;
       const owner = epoch.current;
+      const currentOperation = ++operation.current;
       clearTimeout(timer.current);
       setView((prev) =>
         prev.epoch === owner ? { ...prev, status: "pending", error: undefined } : prev,
       );
       const settle = (status: "copied" | "failed", reason?: unknown) => {
-        if (!mounted.current || epoch.current !== owner) return;
+        if (!mounted.current || epoch.current !== owner || operation.current !== currentOperation) return;
         inFlight.current = false;
         const error =
           status === "failed"
@@ -96,13 +97,27 @@ export function useCopyFeedback({
       } catch (reason) {
         result = Promise.reject(reason);
       }
-      void result.then(
-        () => settle("copied"),
-        (reason: unknown) => settle("failed", reason),
+      return result.then(
+        () => { settle("copied"); return true; },
+        (reason: unknown) => { settle("failed", reason); return false; },
       );
-      return true;
     },
     [successMs],
+  );
+
+  /** Starts a copy and returns whether it started, as before. */
+  const copy = useCallback((run: () => Promise<unknown> | void): boolean => {
+    const result = start(run);
+    if (!result) return false;
+    void result;
+    return true;
+  }, [start]);
+
+  /** Returns the actual operation result; false also means no operation was started. */
+  const copyAsync = useCallback(
+    (run: () => Promise<unknown> | void, options?: { parallel?: boolean }): Promise<boolean> =>
+      start(run, options?.parallel) ?? Promise.resolve(false),
+    [start],
   );
 
   /** Clears any outcome and abandons a copy in flight. */
@@ -118,6 +133,7 @@ export function useCopyFeedback({
     /** Message of the last failure; cleared when a new copy starts. */
     error: view.error,
     copy,
+    copyAsync,
     reset,
   };
 }

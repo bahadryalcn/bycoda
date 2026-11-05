@@ -105,6 +105,7 @@ import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
 import { subscribeRemoteMachineChannel } from "../model/remoteMachineChannel";
 import { ModelSourceContext, type ModelSource } from "../../sessions/public/modelSource";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
+import { boundedSet } from "../../../shared/lib/store";
 import type { Worktree } from "../../source-control";
 import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
@@ -248,11 +249,6 @@ type OptimisticTurn = {
 const noop = () => {};
 const cachedSessionSnapshots = new Map<string, HostSession>();
 const cachedDescriptors = new Map<string, HostDescriptor>();
-function boundedSet<K, V>(cache: Map<K, V>, key: K, value: V, limit = 64) {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > limit) cache.delete(cache.keys().next().value!);
-}
 const snapshotKey = (machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
 function rememberSessionSnapshot(key: string, snapshot: HostSession, environmentId?: string) {
   const existing = cachedSessionSnapshots.get(key);

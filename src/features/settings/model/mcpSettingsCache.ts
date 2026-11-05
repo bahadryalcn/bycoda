@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { createStore } from "../../../shared/lib/store";
 import { parseClaudeMcpList, type McpConnection } from "./mcp";
 
 export type McpServerRow = McpConnection & {
@@ -33,7 +34,7 @@ export const MCP_LOCAL_ONLY_ERROR =
 const requests = new Map<string, Promise<McpSettingsSnapshot>>();
 const healthRequests = new Map<string, Promise<void>>();
 const codexRequests = new Map<string, Promise<void>>();
-const listeners = new Map<string, Set<(snapshot: McpSettingsSnapshot) => void>>();
+const listeners = new Map<string, ReturnType<typeof createStore<[McpSettingsSnapshot]>>>();
 
 export function getCachedMcpSettings(cwd: string) {
   return snapshots.get(cwd);
@@ -43,18 +44,21 @@ export function subscribeMcpSettings(
   cwd: string,
   listener: (snapshot: McpSettingsSnapshot) => void,
 ) {
-  const subscribers = listeners.get(cwd) ?? new Set();
-  subscribers.add(listener);
-  listeners.set(cwd, subscribers);
+  let subscribers = listeners.get(cwd);
+  if (!subscribers) {
+    subscribers = createStore<[McpSettingsSnapshot]>();
+    listeners.set(cwd, subscribers);
+  }
+  const unsubscribe = subscribers.subscribe(listener);
   return () => {
-    subscribers.delete(listener);
+    unsubscribe();
     if (subscribers.size === 0) listeners.delete(cwd);
   };
 }
 
 function publish(cwd: string, snapshot: McpSettingsSnapshot) {
   snapshots.set(cwd, snapshot);
-  listeners.get(cwd)?.forEach((listener) => listener(snapshot));
+  listeners.get(cwd)?.notify(snapshot);
 }
 
 /** Discovery is shared across settings and pickers; health never delays the list. */

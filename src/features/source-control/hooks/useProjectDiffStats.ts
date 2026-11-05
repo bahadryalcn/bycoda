@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import { gitDiffStats, subscribeGitChanged, type GitDiffStats } from "../../../platform/tauri/fs";
 import { currentGitChangeHint, peekFullGitIndex } from "../model/gitIndexStore";
 import {
@@ -9,7 +10,7 @@ import {
 type Entry = {
   cwd: string;
   stats: GitDiffStats | null;
-  listeners: Set<() => void>;
+  listeners: ReturnType<typeof createStore<[]>>;
   activeListeners: Set<() => void>;
   inFlight: boolean;
   pending: boolean;
@@ -42,7 +43,7 @@ function entryFor(cwd: string): Entry {
   const entry: Entry = {
     cwd,
     stats: null,
-    listeners: new Set(),
+    listeners: createStore(),
     activeListeners: new Set(),
     inFlight: false,
     pending: false,
@@ -67,7 +68,7 @@ function publish(entry: Entry, stats: GitDiffStats | null) {
     return;
   }
   entry.stats = stats;
-  for (const listener of entry.listeners) listener();
+  entry.listeners.notify();
 }
 
 async function load(entry: Entry, force = false) {
@@ -173,12 +174,12 @@ function stop(entry: Entry) {
 
 function subscribeEntry(cwd: string, listener: () => void, foreground = false): () => void {
   const entry = entryFor(cwd);
-  entry.listeners.add(listener);
+  const unsubscribe = entry.listeners.subscribe(listener);
   if (foreground) entry.activeListeners.add(listener);
   if (entry.listeners.size === 1) start(entry);
   else void load(entry);
   return () => {
-    entry.listeners.delete(listener);
+    unsubscribe();
     entry.activeListeners.delete(listener);
     if (entry.listeners.size === 0) stop(entry);
     else schedule(entry);

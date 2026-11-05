@@ -10,10 +10,11 @@ import {
 } from "../host-tools/toolsDraftTransfer";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
-import { getLocale, t, useLocale } from "../../shared/i18n/technical";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import * as technicalI18n from "../../shared/i18n/technical";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Alert } from "../../shared/ui/Alert";
+import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Progress } from "../../shared/ui/Progress";
@@ -66,7 +67,7 @@ import type {
   DeviceControlLease,
   DeviceInspection,
 } from "./types";
-
+const { dateTimeFormat, getLocale, relativeTimeFormat, t, useLocale } = technicalI18n;
 type DeviceOperation =
   | "status"
   | "connect"
@@ -83,7 +84,6 @@ type DeviceOperation =
   | "release"
   | "inspect"
   | DeviceAction["type"];
-
 type AnnotationDraft = {
   frame: DeviceFrame;
   document: ImageAnnotationDocument;
@@ -104,12 +104,12 @@ function capturedLabel(capturedAt: string, now: number): string | undefined {
   let locale: string | undefined;
   try {
     locale = getLocale();
-    new Intl.DateTimeFormat(locale);
+    dateTimeFormat(locale);
   } catch {
     locale = undefined;
   }
   const seconds = Math.max(0, Math.round((now - at) / 1000));
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
+  const relative = relativeTimeFormat(locale, { numeric: "auto", style: "short" });
   const age =
     seconds < 2
       ? relative.format(0, "second")
@@ -1062,9 +1062,9 @@ function DevicePanelSurface({
         </details>
       )}
       {!status && !error && (
-        <p role="status" className="device-panel-state">
+        <LoadingText presentation="text" className="device-panel-state">
           {t("Checking device support…")}
-        </p>
+        </LoadingText>
       )}
       {!status && (error || operation === "status") && (
         <Button

@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { lockCooldownMs, type VerifyResult } from "../model/groupLock";
-import { PasswordField } from "./PasswordField";
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 
@@ -159,8 +159,12 @@ export function PasswordPromptDialog({
           label={t("Lock password")}
           ref={input}
           autoFocus
-          invalid={message != null}
-          describedBy={message ? "lock-password-error" : undefined}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          aria-invalid={message != null || undefined}
+          aria-describedby={message ? "lock-password-error" : undefined}
         />
         {message ? (
           <Alert id="lock-password-error" tone="danger">

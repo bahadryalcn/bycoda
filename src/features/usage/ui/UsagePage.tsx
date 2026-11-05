@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
-import { t, useLocale } from "../../../shared/i18n";
+import { relativeTimeFormat, t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import "./UsagePage.css";
 import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
@@ -264,7 +264,7 @@ function AccountLimits({
             dateTime={new Date(limits.updatedAt).toISOString()}
             title={new Date(limits.updatedAt).toLocaleString(locale)}
           >
-            {new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+            {relativeTimeFormat(locale, { numeric: "auto" }).format(
               -Math.round(observationAge / observationStep),
               observationUnit,
             )}

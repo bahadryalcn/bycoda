@@ -1,4 +1,5 @@
 import type { CiRepairRequest } from "./ciRepair";
+import { createStore } from "../../../shared/lib/store";
 import { sameProjectPath } from "../../projects/model/recents";
 
 export type CiRepairOutcome = "completed" | "failed" | "cancelled";
@@ -13,7 +14,7 @@ export type TrackedCiRepair = CiRepairRequest["target"] & {
 
 const KEY = "bycoda.ciRepairs.v1";
 const ENTRY_PREFIX = `${KEY}.`;
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let repairs: readonly TrackedCiRepair[] | undefined;
 const interrupted = new Set<string>();
 const pendingWrites = new Map<string, TrackedCiRepair | null>();
@@ -120,7 +121,7 @@ function save(repair: TrackedCiRepair, remove = false) {
         ? { ...item, phase: "interrupted" }
         : item,
     );
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 export function getCiRepairs(): readonly TrackedCiRepair[] {
@@ -138,9 +139,9 @@ export function getCiRepairs(): readonly TrackedCiRepair[] {
 
 export function subscribeCiRepairs(listener: () => void): () => void {
   if (listeners.size === 0) window.addEventListener("storage", onStorage);
-  listeners.add(listener);
+  const unsubscribe = listeners.subscribe(listener);
   return () => {
-    listeners.delete(listener);
+    unsubscribe();
     if (listeners.size === 0) window.removeEventListener("storage", onStorage);
   };
 }
@@ -155,7 +156,7 @@ function onStorage(event: StorageEvent) {
         ? { ...item, phase: "interrupted" }
         : item,
     );
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 export function trackCiRepair(

@@ -11,7 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { BadgeList } from "../../../shared/ui/BadgeList";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -59,7 +59,13 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { formatMetric, formatUsagePercent, metricNames, ContinuousUsageTable } from "./UsageCharts";
-import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
+import {
+  Contribution,
+  TimeDistribution,
+  UsageDataNotes,
+  UsageShare,
+  UsageTrend,
+} from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
@@ -674,9 +680,9 @@ export function UsageOverview({
         </p>
       ) : null}
       {view !== "limits" && firstLoad && (
-        <p role="status" className="usage-empty">
+        <LoadingText presentation="text" className="usage-empty">
           {t("Loading usage…")}
-        </p>
+        </LoadingText>
       )}
       {view !== "limits" && unavailable && (
         <Alert tone="danger" role="alert">
@@ -719,9 +725,9 @@ export function UsageOverview({
       {view !== "limits" && showAnalytics && (
         <>
           {refreshing && load.refreshedAt > 0 && (
-            <p role="status" className="usage-muted">
+            <LoadingText presentation="text" className="usage-muted">
               {t("Refreshing usage… Previous results remain visible.")}
-            </p>
+            </LoadingText>
           )}
           {view === "overview" && (
             <>
@@ -959,62 +965,19 @@ export function UsageOverview({
               )}
             </>
           )}
-          <details className="usage-data-notes">
-            <summary>
-              {t("Data sources and coverage")}
-              {unpriced.length ? ` · ${unpriced.length} ${t("Models without prices")}` : ""}
-            </summary>
-            <p>
-              {t(
-                "API-equivalent estimates from local session logs, not what a subscription plan bills.",
-              )}{" "}
-              {t("Priced token coverage")}:{" "}
-              {totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"}.
-            </p>
-            {unpriced.length > 0 && (
-              <>
-                <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
-                  <span className="shrink-0">{t("Models without prices")}:</span>
-                  <BadgeList
-                    label={t("Models without prices")}
-                    size="xs"
-                    className="min-w-0 flex-1"
-                    items={unpriced.map((model, index) => ({
-                      id: `${index}:${model}`,
-                      label: model,
-                    }))}
-                  />
-                </div>
-                <p>{t("Their tokens are included; their cost is unavailable.")}</p>
-              </>
-            )}
-            {prices === null && (
-              <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
-            )}
-            {load.turns === null ? (
-              <p>
-                {t(
-                  "Session duration data is unavailable on this app version or could not be read.",
-                )}
-              </p>
-            ) : (
-              <p>
-                {t(
-                  "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
-                )}{" "}
-                {sessions.reduce((n, s) => n + s.timedTurns, 0)}/
-                {sessions.reduce((n, s) => n + s.turns, 0)} {t("turns with duration")}.
-              </p>
-            )}
-            {load.turns?.truncated && (
-              <p>
-                {t(
-                  "Session data is limited to the latest 50,000 turns. Select a shorter interval.",
-                )}
-              </p>
-            )}
-            <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
-          </details>
+          <UsageDataNotes
+            unpriced={unpriced}
+            pricedCoverage={
+              totals.tokens
+                ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
+                : "—"
+            }
+            pricesUnavailable={prices === null}
+            sessionDurationUnavailable={load.turns === null}
+            timedTurns={sessions.reduce((n, s) => n + s.timedTurns, 0)}
+            turns={sessions.reduce((n, s) => n + s.turns, 0)}
+            truncated={Boolean(load.turns?.truncated)}
+          />
         </>
       )}
       <div hidden={view !== "limits"}>

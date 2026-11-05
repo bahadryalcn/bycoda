@@ -1,0 +1,52 @@
+id: ts-feature-local-format
+language: tsx
+severity: error
+message: "K-FORMAT: Define date, number, byte and duration formatters only in src/shared/i18n. Import the shared formatter instead of defining a local format helper or constructing Intl.RelativeTimeFormat, Intl.NumberFormat or Intl.DateTimeFormat. Preserve existing output through shared options."
+note: Rule K-FORMAT in docs/reference/code-invariants.md; zero baseline findings.
+files:
+  - "src/features/**"
+  - "src/app/**"
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/test-support/**"
+rule:
+  any:
+    - all:
+        - any:
+            - kind: function_declaration
+            - kind: generator_function_declaration
+            - kind: function_expression
+            - kind: generator_function
+            - kind: method_definition
+        - has:
+            field: name
+            regex: ^format(Bytes|FileSize|Relative|RelativeTime|Duration|Elapsed|Date|Compact).*
+    - all:
+        - kind: variable_declarator
+        - has:
+            field: name
+            regex: ^format(Bytes|FileSize|Relative|RelativeTime|Duration|Elapsed|Date|Compact).*
+        - has:
+            field: value
+            any:
+              - kind: arrow_function
+              - kind: function_expression
+              - kind: generator_function
+    - all:
+        - kind: pair
+        - has:
+            field: key
+            regex: ^format(Bytes|FileSize|Relative|RelativeTime|Duration|Elapsed|Date|Compact).*
+        - has:
+            field: value
+            any:
+              - kind: arrow_function
+              - kind: function_expression
+              - kind: generator_function
+    - pattern: new Intl.RelativeTimeFormat($$$)
+    - pattern: new Intl.NumberFormat($$$)
+    - pattern: new Intl.DateTimeFormat($$$)
+    - pattern: new Intl.RelativeTimeFormat
+    - pattern: new Intl.NumberFormat
+    - pattern: new Intl.DateTimeFormat

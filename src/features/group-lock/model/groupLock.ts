@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import { queueRoomPrivacyProjection, withRoomPrivacyMutation } from "./roomPrivacyProjection";
 import {
   loadProjectGroupAssignments,
@@ -103,7 +104,7 @@ let temporarilyVisible = new Set<string>();
 const optimisticLocks = new Set<string>();
 let hiddenGroupsAuthorized = false;
 let previousLock: LockSnapshot | null = null;
-const listeners = new Set<() => void>();
+const listeners = createStore({ snapshot: true });
 let channel: BroadcastChannel | null = null;
 let lastActivityAt = Date.now();
 let privacyRevision = 0;
@@ -159,12 +160,11 @@ function invalidate(qualify = true) {
   privacyRevision += 1;
   if (qualify) queueRoomPrivacyProjection();
   view = null;
-  for (const listener of [...listeners]) listener();
+  listeners.notify();
 }
 
 export function subscribeGroupLock(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return listeners.subscribe(listener);
 }
 
 export function getGroupPrivacyRevision(): number {
@@ -238,19 +238,18 @@ function saveSettings(next: GroupLockSettings, requirePersistence = false): bool
   persistUnlocked();
   invalidate();
   if (recordChanged && !applyingRemoteLock) {
-    for (const listener of lockRecordListeners) listener(next.record);
+    lockRecordListeners.notify(next.record);
   }
   return persisted;
 }
 
-const lockRecordListeners = new Set<(record: PasswordRecord | null) => void>();
+const lockRecordListeners = createStore<[PasswordRecord | null]>();
 let applyingRemoteLock = false;
 
 export function subscribeLockRecordChanges(
   listener: (record: PasswordRecord | null) => void,
 ): () => void {
-  lockRecordListeners.add(listener);
-  return () => lockRecordListeners.delete(listener);
+  return lockRecordListeners.subscribe(listener);
 }
 
 /** Applies a password record (or its absence) learned from a peer, without

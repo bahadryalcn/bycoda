@@ -9,7 +9,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { relativeTimeFormat, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
@@ -321,7 +321,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   dateTime={new Date(now).toISOString()}
                   title={new Date(now).toLocaleString(locale)}
                 >
-                  {new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+                  {relativeTimeFormat(locale, { numeric: "auto" }).format(
                     -Math.round((Date.now() - now) / 60_000),
                     "minute",
                   )}

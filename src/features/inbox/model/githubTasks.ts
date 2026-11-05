@@ -1,5 +1,6 @@
-import { relativeTimeFormat } from "../../../shared/lib/intl";
+import { formatGithubRelativeTime as formatRelativeTime } from "../../../shared/i18n/format";
 import { invoke } from "@tauri-apps/api/core";
+import { createStore } from "../../../shared/lib/store";
 import { githubRead } from "./githubReadGate";
 import { INBOX_VISIBLE_POLL_MS } from "./inboxPolling";
 import { clearKnownInboxItems } from "./inboxSeen";
@@ -45,6 +46,8 @@ import {
   type RecentProject,
 } from "../../projects/model/recents";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
+
+export { formatRelativeTime };
 
 export type GithubTaskKind = "issue" | "pr";
 export type GithubPrAction = "merge" | "squash" | "rebase" | "draft" | "ready" | "close" | "reopen";
@@ -249,7 +252,7 @@ type GithubInboxSource = { items: InboxItem[]; error?: string; limited?: boolean
 type InboxFetchResult = InboxListResult & { githubSources?: Map<string, GithubInboxSource> };
 let inboxCacheGeneration = 0;
 const inboxListInflight = new Map<string, Promise<InboxListResult>>();
-const inboxProgressListeners = new Map<string, Set<(result: InboxListResult) => void>>();
+const inboxProgressStores = new Map<string, ReturnType<typeof createStore<[InboxListResult]>>>();
 const inboxProgressLatest = new Map<string, InboxListResult>();
 const githubLists = new Map<string, { items: GithubWorkItem[]; at: number }>();
 const githubListsInflight = new Map<string, Promise<GithubWorkItem[]>>();
@@ -349,7 +352,7 @@ export function clearInboxCache() {
   clearKnownInboxItems();
   inboxListCaches.clear();
   inboxListInflight.clear();
-  inboxProgressListeners.clear();
+  inboxProgressStores.clear();
   inboxProgressLatest.clear();
   githubLists.clear();
   githubListsInflight.clear();
@@ -590,36 +593,6 @@ export function inboxPersonAvatarUrl(
   if (explicit) return explicit;
   if (provider === "github") return githubAvatarUrl(login);
   return "";
-}
-
-export function formatRelativeTime(iso: string, now = Date.now(), locale?: string): string {
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  const delta = Math.round((then - now) / 1000);
-  const abs = Math.abs(delta);
-  const divisions: [number, Intl.RelativeTimeFormatUnit][] = [
-    [60, "second"],
-    [60, "minute"],
-    [24, "hour"],
-    [7, "day"],
-    [4.34524, "week"],
-    [12, "month"],
-    [Number.POSITIVE_INFINITY, "year"],
-  ];
-  let value = delta;
-  let unit: Intl.RelativeTimeFormatUnit = "second";
-  let amount = abs;
-  for (const [step, next] of divisions) {
-    unit = next;
-    if (amount < step) break;
-    value = Math.round(value / step);
-    amount = Math.abs(value);
-  }
-  try {
-    return relativeTimeFormat(locale, { numeric: "auto" }).format(value, unit);
-  } catch {
-    return "";
-  }
 }
 
 export function detailsCacheKey(repo: string, kind: GithubTaskKind, number: number): string {
@@ -1008,9 +981,18 @@ export async function listInboxItems(
     return peekInboxList(projects, query) ?? { items: [], errors: {} };
   }
   const pending = inboxListInflight.get(key);
-  const listeners = inboxProgressListeners.get(key) ?? new Set<(result: InboxListResult) => void>();
-  inboxProgressListeners.set(key, listeners);
-  if (options?.onProgress) listeners.add(options.onProgress);
+  let progressStore = inboxProgressStores.get(key);
+  if (!progressStore) {
+    progressStore = createStore<[InboxListResult]>({
+      onError: () => {
+        /* A view cannot fail provider discovery. */
+      },
+    });
+    inboxProgressStores.set(key, progressStore);
+  }
+  const unsubscribeProgress = options?.onProgress
+    ? progressStore.subscribe(options.onProgress)
+    : undefined;
   const latest = inboxProgressLatest.get(key);
   if (pending && latest && options?.onProgress) {
     try {
@@ -1020,9 +1002,9 @@ export async function listInboxItems(
     }
   }
   const unsubscribe = () => {
-    if (options?.onProgress) listeners.delete(options.onProgress);
-    if (!listeners.size && inboxProgressListeners.get(key) === listeners)
-      inboxProgressListeners.delete(key);
+    unsubscribeProgress?.();
+    if (!progressStore!.size && inboxProgressStores.get(key) === progressStore)
+      inboxProgressStores.delete(key);
   };
   if (pending) return pending.finally(unsubscribe);
   const generation = inboxCacheGeneration;
@@ -1031,13 +1013,7 @@ export async function listInboxItems(
     onProgress: (result) => {
       if (generation !== inboxCacheGeneration) return;
       inboxProgressLatest.set(key, result);
-      for (const listener of listeners) {
-        try {
-          listener(result);
-        } catch {
-          /* A view cannot fail provider discovery. */
-        }
-      }
+      progressStore!.notify(result);
     },
   })
     .then(({ githubSources, ...publicResult }) => {

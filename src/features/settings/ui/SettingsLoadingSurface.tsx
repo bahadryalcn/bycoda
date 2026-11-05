@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { settingsSectionLabel, type SettingsSectionId } from "../model/settings";
 import "./SettingsLoadingSurface.css";
 
@@ -35,11 +36,11 @@ export function SettingsLoadingSurface({ section }: { section: SettingsSectionId
             <Skeleton label={t("Loading Settings…")} lines={6} />
           </div>
           {slow ? (
-            <p role="status" className="settings-loading-note">
+            <LoadingText presentation="text" className="settings-loading-note">
               {t("{p0} is taking longer to load. You can return to the workspace.", {
                 p0: t("Settings"),
               })}
-            </p>
+            </LoadingText>
           ) : null}
         </div>
       </div>

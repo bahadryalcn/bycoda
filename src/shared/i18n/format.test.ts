@@ -1,7 +1,118 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, formatRelativeTime } from "./format";
+import {
+  formatAttachmentSize,
+  formatBytes,
+  formatCompactCount,
+  formatDuration,
+  formatElapsed,
+  formatFileSize,
+  formatGitGraphRelativeTime,
+  formatImportBytes,
+  formatImportDate,
+  formatArchiveDate,
+  formatChatDate,
+  formatRecentRelative,
+  formatGitGraphAbsoluteTime,
+  formatRelativeTime,
+  formatTokens,
+  formatUsageTokens,
+} from "./format";
+import { LANGUAGES } from "./languages";
+import { getLanguagePreference, setLanguagePreference } from "./core";
 
 const NOW = Date.UTC(2026, 10, 3, 12, 0, 0);
+
+describe("legacy date labels", () => {
+  it.each(LANGUAGES)("preserves import dates in $value", async ({ value }) => {
+    const previous = getLanguagePreference();
+    try {
+      await setLanguagePreference(value);
+      expect(formatElapsed(65_000)).toBe("1m 5s");
+      expect(formatElapsed(3_600_000)).toBe("60m");
+      expect(formatElapsed(null)).toBeNull();
+      expect(formatImportDate(0)).toBe("unknown date");
+      expect(formatImportDate(NOW)).toBe(
+        new Date(NOW).toLocaleDateString(value, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        }),
+      );
+    } finally {
+      await setLanguagePreference(previous);
+    }
+  });
+
+  it("keeps runtime locale fallback, invalid values and calendar-year selection", () => {
+    for (const at of [NOW, Date.UTC(2024, 0, 2, 12)]) {
+      expect(formatArchiveDate(at)).toBe(
+        new Intl.DateTimeFormat(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }).format(new Date(at)),
+      );
+      expect(formatChatDate(at, NOW)).toBe(
+        new Date(at).toLocaleDateString(undefined, {
+          day: "numeric",
+          month: "short",
+          ...(new Date(at).getFullYear() === new Date(NOW).getFullYear()
+            ? {}
+            : { year: "numeric" }),
+        }),
+      );
+    }
+    for (const at of [Number.NaN, 0, -1, Infinity]) expect(formatArchiveDate(at)).toBe("");
+    expect(formatRecentRelative(NOW - 8 * 86_400_000, NOW)).toBe(
+      new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(
+        new Date(NOW - 8 * 86_400_000),
+      ),
+    );
+    expect(formatGitGraphAbsoluteTime(NOW / 1000, "tr", "UTC")).toBe(
+      new Date(NOW).toLocaleString("tr", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "UTC",
+      }),
+    );
+  });
+});
+
+describe("legacy compact labels", () => {
+  it("preserves byte and count rounding at unit boundaries", () => {
+    expect([formatImportBytes(1536), formatAttachmentSize(1536), formatFileSize(1536)]).toEqual([
+      "2 KB",
+      "2 KB",
+      "1.5 KB",
+    ]);
+    expect([formatTokens(1500), formatUsageTokens(1500)]).toEqual(["1.5K", "1.5K"]);
+    expect([formatTokens(10_000), formatUsageTokens(10_000)]).toEqual(["10K", "10.0K"]);
+    expect(formatAttachmentSize(0)).toBeNull();
+  });
+  it("keeps git graph ages in seconds", () => {
+    expect(formatGitGraphRelativeTime(0, 59_000)).toBe("now");
+    expect(formatGitGraphRelativeTime(0, 60_000)).toBe("1m");
+    expect(formatGitGraphRelativeTime(0, 3_600_000)).toBe("1h");
+    expect(formatGitGraphRelativeTime(0, 86_400_000)).toBe("1d");
+  });
+  it("preserves elapsed rounding and minute labels", () => {
+    expect(formatElapsed(null)).toBeNull();
+    expect(formatElapsed(0)).toBe("1s");
+    expect(formatElapsed(59_500)).toBe("1m");
+    expect(formatElapsed(3_661_000)).toBe("61m 1s");
+  });
+
+  it.each(LANGUAGES)("matches runtime compact formatting in $value", ({ value }) => {
+    for (const count of [-1, 0, 999, 999.5, 1_234, 1_000_000, Number.NaN, Infinity]) {
+      expect(formatCompactCount(count, value)).toBe(
+        new Intl.NumberFormat(value, {
+          notation: "compact",
+          maximumFractionDigits: count >= 1000 ? 1 : 0,
+        }).format(Math.max(0, Math.round(count))),
+      );
+    }
+  });
+});
 
 describe("formatRelativeTime", () => {
   it("reads as now within a minute and picks the largest fitting unit", () => {

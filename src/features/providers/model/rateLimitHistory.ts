@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import { useSyncExternalStore } from "react";
 import type { ProviderRateLimits } from "./rateLimits";
 
@@ -12,7 +13,7 @@ export type QuotaSample = {
 const KEY = "bycoda.quotaHistory.v1";
 const RETENTION = 90 * 86_400_000;
 const MAX_SAMPLES = 16000;
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let snapshot: QuotaSample[] | undefined;
 let cachedRaw: string | null | undefined;
 let hasUnwrittenSamples = false;
@@ -76,7 +77,7 @@ function read(): QuotaSample[] {
 }
 function publish(next: QuotaSample[]) {
   snapshot = next;
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 export function recordRateLimitHistory(account: string, limits: ProviderRateLimits): void {
   if (limits.status !== "ok" || !Number.isFinite(limits.updatedAt) || limits.updatedAt <= 0) return;
@@ -142,13 +143,13 @@ function getSnapshot() {
   return (snapshot ??= read());
 }
 function subscribe(listener: () => void) {
-  listeners.add(listener);
+  const unsubscribe = listeners.subscribe(listener);
   if (listeners.size === 1) {
     snapshot = read();
     window.addEventListener("storage", onStorage);
   }
   return () => {
-    listeners.delete(listener);
+    unsubscribe();
     if (listeners.size === 0) window.removeEventListener("storage", onStorage);
   };
 }

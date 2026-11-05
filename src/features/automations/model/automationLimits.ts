@@ -1,3 +1,4 @@
+import { formatMinutes } from "../../../shared/i18n/format";
 import type { Automation, AutomationRun } from "./automations";
 import { elapsedSince } from "../../../shared/lib/time/timestamps";
 
@@ -108,10 +109,6 @@ export function dailyRunLimitSkip(
   return `Skipped: reached the limit of ${limits.maxRunsPerDay} ${
     limits.maxRunsPerDay === 1 ? "run" : "runs"
   } per day.`;
-}
-
-function formatMinutes(minutes: number): string {
-  return minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes}-minute`;
 }
 
 function wholePositive(value: number | undefined): number {
