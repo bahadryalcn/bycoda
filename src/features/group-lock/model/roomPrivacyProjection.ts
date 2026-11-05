@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 declare const privacyMutationBrand: unique symbol;
 export type PrivacyMutationToken = { readonly [privacyMutationBrand]: true };
@@ -121,7 +122,7 @@ export function withRoomPrivacyMutation<T>(
     if (!ready || status.error)
       throw new Error(status.error ?? "Privacy protection is unavailable.");
     const { readRoomPrivacyScope } = await import("./roomPrivacyScope");
-    const operationId = crypto.randomUUID();
+    const operationId = newRequestId();
     running = true;
     try {
       uncertainBegin = operationId;
@@ -255,7 +256,7 @@ export async function rebuildClosedRoomPrivacyProjection(): Promise<void> {
         if (!sameSnapshot(live, prior.snapshot)) {
           operation = {
             expected: current.revision,
-            operationId: crypto.randomUUID(),
+            operationId: newRequestId(),
             snapshot: live,
             recoverClosed: true,
             rebaseFrom: prior.operationId,
@@ -274,7 +275,7 @@ export async function rebuildClosedRoomPrivacyProjection(): Promise<void> {
       ) {
         operation = {
           expected: current?.revision ?? null,
-          operationId: crypto.randomUUID(),
+          operationId: newRequestId(),
           snapshot: readRoomPrivacyScope().stableStorageKeys,
           recoverClosed: true,
           rebaseFrom: operation.operationId,

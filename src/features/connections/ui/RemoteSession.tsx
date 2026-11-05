@@ -51,6 +51,8 @@ import {
   readDurableRemoteCommand,
   admitDurableRemoteCommand,
   readDurableRemoteEntry,
+  remoteOutcomeUnknownMessage,
+  remoteRequestPastRetryLimit,
   markDurableRemoteCommandStopped,
   settleDurableRemoteCommand,
   subscribeOutbox,
@@ -186,6 +188,7 @@ import {
   type RemoteMachine,
   type RemoteProvider,
 } from "../model/protocol";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSession: boolean;
@@ -1475,7 +1478,7 @@ function ConnectedRemoteSession({
     planBlockId?: string,
   ): OptimisticTurn => ({
     ...remoteIntentAuthority(hostSession ? snapshot : undefined),
-    commandId: crypto.randomUUID(),
+    commandId: newRequestId(),
     text,
     attachments,
     intent,
@@ -1634,7 +1637,7 @@ function ConnectedRemoteSession({
           // accepted, never whichever run happens to be in the latest snapshot.
           await executionClient.dispatchCommand({
             type: "cancel",
-            commandId: crypto.randomUUID(),
+            commandId: newRequestId(),
             sessionId: receipt.sessionId,
             runId: receipt.runId,
             ...remoteIntentAuthority(receipt),
@@ -1930,7 +1933,7 @@ function ConnectedRemoteSession({
     void run({
       type: "configure",
       ...remoteIntentAuthority(changes),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       sessionId: hostSession.id,
       ...(descriptor?.capabilities.includes("sessions.harnessSwitch")
         ? { harness: changes.harness }
@@ -2359,7 +2362,7 @@ function ConnectedRemoteSession({
     authorityGeneration?: number,
     optimistic?: OptimisticTurn,
   ) => {
-    const commandId = crypto.randomUUID();
+    const commandId = newRequestId();
     return run(
       {
         type: "shell",
@@ -2546,7 +2549,7 @@ function ConnectedRemoteSession({
       const runId = snapshot.runId;
       const unsent = {
         ...authority,
-        id: queuedId ?? crypto.randomUUID(),
+        id: queuedId ?? newRequestId(),
         text,
         attachments,
         intent: options?.intent,
@@ -2597,7 +2600,7 @@ function ConnectedRemoteSession({
       preparingRef.current = true;
       setFollowUpPreparing(true);
       void (async () => {
-        const commandId = crypto.randomUUID();
+        const commandId = newRequestId();
         let accepted = false;
         try {
           const files = await uploadRemoteAttachments(machine.id, attachments, {
@@ -2979,6 +2982,10 @@ function ConnectedRemoteSession({
         return;
       }
     }
+    if (!recovered && remoteRequestPastRetryLimit(pending.commandId)) {
+      setError(remoteOutcomeUnknownMessage());
+      return;
+    }
     if (!recovered && hostSession && !remoteIntentAuthorityMatches(pending, snapshot)) {
       setError(
         t(
@@ -3192,7 +3199,7 @@ function ConnectedRemoteSession({
       // Stop must reach the host even while a follow-up is being acknowledged.
       const command = {
         type: "cancel",
-        commandId: crypto.randomUUID(),
+        commandId: newRequestId(),
         ...target,
       } as const;
       try {
@@ -3222,7 +3229,7 @@ function ConnectedRemoteSession({
     return run({
       type: "approve",
       ...remoteIntentAuthority(snapshot),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       sessionId: hostSession.id,
       runId: snapshot.runId,
       requestId,
@@ -3236,7 +3243,7 @@ function ConnectedRemoteSession({
     void run({
       type: "usageLimit",
       ...remoteIntentAuthority(snapshot),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       sessionId: hostSession.id,
       action,
     });
@@ -3248,7 +3255,7 @@ function ConnectedRemoteSession({
     if (!hostSession || !snapshot?.runId) return;
     const sessionId = hostSession.id;
     const runId = snapshot.runId;
-    const commandId = crypto.randomUUID();
+    const commandId = newRequestId();
     const updateDelivery = (delivery: UserQuestionDelivery, error?: string) => {
       const current = snapshotRef.current;
       if (
@@ -3508,7 +3515,7 @@ function ConnectedRemoteSession({
       const receipt = await executionClient.dispatchCommand({
         type: "rewind",
         ...remoteIntentAuthority(known),
-        commandId: crypto.randomUUID(),
+        commandId: newRequestId(),
         sessionId: targetSessionId,
         blockId,
         expectedRevision: known.revision,
@@ -3599,7 +3606,7 @@ function ConnectedRemoteSession({
       void run({
         type: "removeDraft",
         ...remoteIntentAuthority(snapshot),
-        commandId: crypto.randomUUID(),
+        commandId: newRequestId(),
         sessionId: hostSession.id,
         draftBlockId,
       }).then((receipt) => {

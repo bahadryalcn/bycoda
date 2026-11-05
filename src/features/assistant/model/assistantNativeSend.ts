@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const SCOPE = "assistant-thread-sends.v2";
 const LEGACY = "bycoda.assistant.send-intents";
@@ -61,7 +62,7 @@ export async function readAssistantNativeDraft(
     const saved = await invoke<Outcome>("canonical_store_transaction", {
       scope: DRAFT_SCOPE,
       pageToken: await pageToken(),
-      operationId: crypto.randomUUID(),
+      operationId: newRequestId(),
       // Legacy drafts lack Host identity. Keep nonempty text as recoverable
       // evidence instead of silently assigning it to the current Host.
       checks: [{ key: storageKey, version: null }],
@@ -103,7 +104,7 @@ export async function writeAssistantNativeDraft(
   const result = await invoke<Outcome>("canonical_store_transaction", {
     scope: DRAFT_SCOPE,
     pageToken: await pageToken(),
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     checks: [{ key: storageKey, version: expected }],
     writes: [{ key: storageKey, value: text }],
     // The rejected draft is retained even when its compare-and-swap conflicts.
@@ -190,7 +191,7 @@ export async function preserveAssistantDraft(
   await invoke<Outcome>("canonical_store_transaction", {
     scope: DRAFT_SCOPE,
     pageToken: await pageToken(),
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     checks: [{ key, version: current?.version ?? null }],
     writes: [],
     legacy: [{ key, raw: JSON.stringify({ kind: "assistant-thread-draft", text }) }],
@@ -231,7 +232,7 @@ export async function sendAssistantNative<T>(
   const acquired = await invoke<Outcome>("canonical_store_transaction", {
     scope: SCOPE,
     pageToken: page,
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     checks: [{ key: storageKey, version: current?.version ?? null }],
     writes: current ? [] : [{ key: storageKey, value: previous }],
     legacy: source === null ? [] : [{ key: storageKey, raw: source }],
@@ -269,7 +270,7 @@ export async function sendAssistantNative<T>(
   const saved = await invoke<Outcome>("canonical_store_transaction", {
     scope: SCOPE,
     pageToken: page,
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     checks: [{ key: storageKey, version }],
     writes: [{ key: storageKey, value: intent }],
     legacy: [],

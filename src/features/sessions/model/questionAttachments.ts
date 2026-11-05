@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import type { Attachment } from "./session";
 import type { UserQuestionPrompt } from "./userQuestion";
 import { MAX_ATTACHMENTS, persistableAttachment } from "./attachments";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 type Custody = {
   scope: string;
@@ -132,7 +133,7 @@ export function pendingQuestionAttachment(
       scope,
       sessionId,
       questionId,
-      operationId: crypto.randomUUID(),
+      operationId: newRequestId(),
       claimId: crypto.randomUUID(),
     },
   };

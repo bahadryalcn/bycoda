@@ -14,6 +14,10 @@ import {
   type HostDomainContext,
 } from "../domains/context";
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
+import {
+  REQUEST_EXPIRED_ERROR_CODE,
+  REQUEST_EXPIRED_MESSAGE,
+} from "../../src/shared/model/host-contracts/schemas";
 
 export type HostDispatchErrorCode =
   | "unauthorized"
@@ -237,6 +241,25 @@ export function createHostDispatcher(services: HostServices) {
             "unauthorized",
             "Device authorization is invalid or revoked.",
             { cause },
+          );
+        // Admission refused an expired request id: nothing ran, so delivery is known.
+        if (
+          typeof cause === "object" &&
+          cause !== null &&
+          "code" in cause &&
+          cause.code === REQUEST_EXPIRED_ERROR_CODE
+        )
+          throw new HostDispatchError(
+            "invalid-params",
+            REQUEST_EXPIRED_MESSAGE,
+            { cause },
+            {
+              category: "validation",
+              retryable: false,
+              delivery: "not-sent",
+              code: REQUEST_EXPIRED_ERROR_CODE,
+              ...(typeof params.commandId === "string" ? { commandId: params.commandId } : {}),
+            },
           );
         if (
           method === "commands.dispatch" &&

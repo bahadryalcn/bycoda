@@ -9,6 +9,7 @@ import {
 import type { HostEngine } from "../engine";
 import type { HostStore } from "../store";
 import { confirmedRunProgress } from "../execution/run-duration";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 
 export const STOPPED_BY_USER = "Stopped by you.";
 export const HOST_INTERRUPTED = "The host stopped during this run.";
@@ -168,7 +169,7 @@ export async function cancelSessionRun(
 ): Promise<void> {
   await engine.command({
     type: "cancel",
-    commandId: randomUUID(),
+    commandId: newRequestId(),
     sessionId: run.sessionId ?? "",
     runId: run.runId,
   });

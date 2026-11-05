@@ -115,6 +115,7 @@ import {
   type RoomManagementTurnResult,
   type RoomManagementTurnState,
 } from "./management/assistant-management-turn";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 
 /** UTC calendar day (YYYY-MM-DD) of a timestamp; empty when it cannot be parsed. */
 const utcDay = (at: TimestampInput): string => isoTimestamp(at)?.slice(0, 10) ?? "";
@@ -5949,7 +5950,7 @@ export class HostAssistant {
         );
         if (wakes >= assistantPolicy(profile).chiefWakeLimit || tokenCap < 1000) return;
         intent = {
-          operationId: randomUUID(),
+          operationId: newRequestId(),
           day: usage.day,
           tokenCap,
           eventIds: events.map((event) => event.id),

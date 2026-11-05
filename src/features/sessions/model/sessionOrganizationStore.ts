@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 // Both keys share one revision so a move can update folders and order atomically.
 const SCOPE = "session-organization.v1";
@@ -219,7 +220,7 @@ async function hydrateOnce(): Promise<SessionOrganizationState> {
     const missing = KEYS.filter((key) => !snapshot.entries.some((entry) => entry.key === key));
     if (!missing.length) return publish(fromSnapshot(snapshot));
     const raw = missing.map((key) => ({ key, raw: localStorage.getItem(key) ?? "{}" }));
-    const operationId = crypto.randomUUID();
+    const operationId = newRequestId();
     const args = {
       scope: SCOPE,
       pageToken: await token(),

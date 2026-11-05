@@ -5,6 +5,7 @@ import { isRemoteProvider, type HostCommand } from "./protocol";
 import { RUNTIME_MODES } from "../../sessions/public/session";
 import { t } from "../../../shared/i18n/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
+import { requestIssuedAt } from "../../../shared/lib/id/requestId";
 import {
   changeOutboxDatabase,
   readOutboxDatabasePage,
@@ -696,6 +697,25 @@ export function savePendingRemoteCommand(
   changed();
 }
 
+/**
+ * The Host refuses a request id older than its 30-day replay horizon, and deletes that
+ * fence a day later. A request this old is never retried automatically: its outcome is
+ * unknown until the Host confirms it, and only an explicit check may send it again.
+ */
+export const REMOTE_REQUEST_RETRY_LIMIT_MS = 29 * 24 * 60 * 60 * 1000;
+
+/** Legacy UUIDv4 ids carry no issue time, so they keep their existing retry behaviour. */
+export function remoteRequestPastRetryLimit(requestId: string, now = Date.now()): boolean {
+  const issuedAt = requestIssuedAt(requestId);
+  return issuedAt !== undefined && now - issuedAt > REMOTE_REQUEST_RETRY_LIMIT_MS;
+}
+
+export function remoteOutcomeUnknownMessage(): string {
+  return t(
+    "This request is older than 29 days, so it will not be sent automatically. Its outcome is unknown: check the conversation before sending it again.",
+  );
+}
+
 /** Legacy entries have no retry age; a missing receipt is not proof that their
  * external effect never happened. Keep them for explicit recovery. */
 export function remoteCommandNeedsVerification(
@@ -707,7 +727,7 @@ export function remoteCommandNeedsVerification(
     localStorage.getItem(`${pendingPrefix(project, environment)}${commandId}`) ?? "",
     commandId,
   );
-  return !entry?.savedAt;
+  return !entry?.savedAt || remoteRequestPastRetryLimit(commandId);
 }
 /** Persist Stop until the accepted command's exact run can be reconciled. */
 export function markRemoteCommandStopped(

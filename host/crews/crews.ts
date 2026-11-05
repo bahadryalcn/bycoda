@@ -41,6 +41,7 @@ import type { HostModelCatalog, HostSession } from "../../src/features/connectio
 import type { RuntimeMode } from "../../src/features/sessions/model/session";
 import { createDefaultCrew } from "../../src/features/crews/model/crewDefaults";
 import { applyCrewDefaults, crewDefaultsCurrent, type CrewDefaultsState } from "./crew-defaults";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 type Principal = {
   projectId: string;
   sessionId: string;
@@ -1015,7 +1016,7 @@ export class HostCrews {
       if (session.status === "running" && session.runId)
         await this.command({
           type: "cancel",
-          commandId: randomUUID(),
+          commandId: newRequestId(),
           sessionId: launched.sessionId,
           runId: session.runId,
         });
@@ -1567,7 +1568,7 @@ export class HostCrews {
             throw new Error("Crew coordinator changed. Read it again.");
           if (coordinator.status !== "running")
             current.pendingDelivery = {
-              commandId: randomUUID(),
+              commandId: newRequestId(),
               text: `Resume crew work for ${current.id}. Review the current assignments and owner requests with crews.get, then continue coordinating the unfinished work. Do not repeat completed assignments.`,
               notifications: { ...current.notifications },
             };
@@ -1616,7 +1617,7 @@ export class HostCrews {
             await this.command(
               {
                 type: "cancel",
-                commandId: randomUUID(),
+                commandId: newRequestId(),
                 sessionId: run.coordinatorSessionId,
                 runId: session.runId,
               },
@@ -1809,7 +1810,7 @@ export class HostCrews {
         if (!run.pendingDelivery && !notices.length) continue;
         if (!run.pendingDelivery) {
           run.pendingDelivery = {
-            commandId: randomUUID(),
+            commandId: newRequestId(),
             text: header + notices.join("\n"),
             notifications,
           };

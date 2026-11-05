@@ -89,6 +89,11 @@ export const SubscriptionCloseParamsSchema = z.strictObject({ subscriptionId: Id
 export const RequestCancelParamsSchema = z.strictObject({ requestId: IdentifierSchema });
 export const ControlAcceptedSchema = z.strictObject({ accepted: z.boolean() });
 
+/** Machine code for a request id older than the Host replay horizon: it was not run. */
+export const REQUEST_EXPIRED_ERROR_CODE = "REQUEST_EXPIRED" as const;
+export const REQUEST_EXPIRED_MESSAGE =
+  "This request is older than 30 days and was not run. Check whether it already happened and send it again.";
+
 export const SafeTypedErrorSchema = z.strictObject({
   category: z.enum([
     "validation",
@@ -105,6 +110,7 @@ export const SafeTypedErrorSchema = z.strictObject({
   operationId: IdentifierSchema.optional(),
   commandId: IdentifierSchema.optional(),
   delivery: z.enum(["not-sent", "unknown", "accepted"]).optional(),
+  code: z.literal(REQUEST_EXPIRED_ERROR_CODE).optional(),
 });
 export const RpcErrorSchema = z.strictObject({
   code: SignedSafeIntegerSchema,

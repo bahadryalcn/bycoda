@@ -140,6 +140,7 @@ import {
   withShellContext,
   type ShellResult,
 } from "../src/features/sessions/model/shellRun";
+import { newRequestId } from "../src/shared/lib/id/requestId";
 
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
@@ -2409,7 +2410,7 @@ export class HostEngine {
     const operationKey =
       typeof raw === "object" && raw !== null && "sessionId" in raw
         ? String(raw.sessionId)
-        : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : randomUUID()}`;
+        : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : newRequestId()}`;
     // Internal guarded work waits outside SQLite admission so an owner can
     // revoke its durable grant while an earlier session operation is pending.
     // Nested same-session calls remain reentrant inside their existing owner.

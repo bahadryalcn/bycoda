@@ -9,6 +9,7 @@ import {
   skipImportedNativeBindingLegacy,
   type StoredBindingEvidence,
 } from "./hostSessionBindingDatabase";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 export type HostSessionBinding = {
   kind: "local-host";
@@ -88,7 +89,7 @@ async function finishBindingEpoch(claim: {
   const result = await invoke<{ applied: boolean }>("canonical_store_transaction", {
     scope: MIGRATION_SCOPE,
     pageToken: claim.pageToken,
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     checks: [{ key: MIGRATION_KEY, version: null }],
     writes: [{ key: MIGRATION_KEY, value: true }],
     legacy: [],

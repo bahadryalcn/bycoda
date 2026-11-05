@@ -9,6 +9,7 @@ import { desktopQueueClientId } from "./sharedQueueClient";
 import type { SharedQueue } from "./sharedQueue";
 import { noteAdoptedBeat } from "./hostWake";
 import { remoteIntentAuthority } from "./remoteOutbox";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const submitting = new Set<string>();
 export const adoptedFollowUpPending = (sessionId: string): boolean => submitting.has(sessionId);
@@ -77,7 +78,7 @@ export async function sendAdoptedFollowUp(input: {
       ...(snapshot.status === "running"
         ? { type: "steer" as const, runId: snapshot.runId! }
         : { type: "send" as const }),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       ...authority,
       sessionId: input.sessionId,
       text: input.text,
@@ -119,7 +120,7 @@ export async function cancelAdoptedTurn(
   if (expectedRunId && snapshot.runId !== expectedRunId) return;
   await remoteRequest(machine.id, "commands.dispatch", {
     type: "cancel",
-    commandId: crypto.randomUUID(),
+    commandId: newRequestId(),
     ...authority,
     sessionId,
     runId: snapshot.runId,

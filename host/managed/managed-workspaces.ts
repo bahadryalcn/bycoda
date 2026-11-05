@@ -227,6 +227,7 @@ export function createManagedWorkspaceRegistry(
           scope,
           request.idempotencyKey,
           request,
+          { admit: true },
         );
         if (existing) {
           const op = await store.workspaceOperation(existing.operationId);
@@ -389,6 +390,7 @@ export function createManagedWorkspaceRegistry(
           scope,
           request.idempotencyKey,
           request,
+          { admit: true },
         );
         if (prior) return prior;
         await options.assertWritable?.(workspace.id);
@@ -502,6 +504,7 @@ export function createManagedWorkspaceRegistry(
         `workspace.update:${request.workspaceId}`,
         request.idempotencyKey,
         request,
+        { admit: true },
       );
       if (original) return original;
       if (!options.verifyReservation) throw new Error("Workspace reservation service required");
@@ -512,6 +515,7 @@ export function createManagedWorkspaceRegistry(
           scope,
           request.idempotencyKey,
           request,
+          { admit: true },
         );
         if (prior) return prior;
         const current = await required(request.workspaceId);
@@ -577,6 +581,7 @@ export function createManagedWorkspaceRegistry(
       `workspace.${state}:${request.workspaceId}`,
       request.idempotencyKey,
       request,
+      { admit: true },
     );
     if (original) return original;
     await options.assertWritable?.(request.workspaceId);
@@ -587,6 +592,7 @@ export function createManagedWorkspaceRegistry(
         scope,
         request.idempotencyKey,
         request,
+        { admit: true },
       );
       if (prior) return prior;
       const current = await required(request.workspaceId);
@@ -634,6 +640,7 @@ export function createManagedWorkspaceRegistry(
         scope,
         request.idempotencyKey,
         request,
+        { admit: true },
       );
       if (previous) return previous;
       await options.assertWritable?.(request.workspaceId);

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { HostStore } from "../../store";
 import type { HostTasks } from "../../tasks/tasks";
 import type { HostGoals } from "../../goals/goals";
@@ -14,6 +14,7 @@ import type {
 } from "../../../src/shared/model/host-contracts/assistant";
 import { assertAssistantGoalProjects } from "./assistant-job-scope";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
+import { newRequestId } from "../../../src/shared/lib/id/requestId";
 
 type Source = {
   sessionId: string;
@@ -242,7 +243,7 @@ export class HostAssistantJobDeletion {
         if (record) await this.archive(record);
         record = {
           jobId: job.id,
-          operationId: randomUUID(),
+          operationId: newRequestId(),
           state: "stopping",
           reviewToken: token,
           selection: current,

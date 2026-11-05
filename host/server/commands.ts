@@ -61,7 +61,7 @@ export function createCommandsRuntime(
   };
   const commandService = createCommandService<HostSession>({
     repository: {
-      receiptStatus: (id) => dependencies.engine.store.receiptStatus(id),
+      receiptStatus: (id, options) => dependencies.engine.store.receiptStatus(id, options),
       desktopCommandStatus: (id, principalId, signature) =>
         dependencies.engine.store.desktopCommandStatus(id, principalId, signature),
       acceptDesktopCommand: (input, revalidate) =>

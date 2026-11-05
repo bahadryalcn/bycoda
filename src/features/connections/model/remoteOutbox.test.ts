@@ -11,6 +11,7 @@ import {
   remoteCommandWasStopped,
   pendingRemoteAttachmentIds,
   pendingRemoteEnvironmentAttachmentIds,
+  remoteRequestPastRetryLimit,
 } from "./remoteOutbox";
 
 beforeEach(() => localStorage.clear());
@@ -100,4 +101,18 @@ it("can recover commands saved by the earlier desktop", () => {
     JSON.stringify(create),
   );
   expect(pendingRemoteCommand("project", "env", null, "first-tab")).toEqual(create);
+});
+
+it("treats only a request id older than the retry limit as unknown, never a legacy or future id", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const issuedAt = Date.parse("2026-01-01T00:00:00.000Z");
+  const id = (ms: number) =>
+    `${ms.toString(16).padStart(12, "0")}`.replace(/^(.{8})(.{4})/, "$1-$2") +
+    "-7000-8000-000000000000";
+  expect(remoteRequestPastRetryLimit(id(issuedAt), issuedAt + 29 * day)).toBe(false);
+  expect(remoteRequestPastRetryLimit(id(issuedAt), issuedAt + 30 * day)).toBe(true);
+  expect(remoteRequestPastRetryLimit(id(issuedAt + day), issuedAt)).toBe(false);
+  expect(
+    remoteRequestPastRetryLimit("3f2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d", issuedAt + 400 * day),
+  ).toBe(false);
 });

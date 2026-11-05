@@ -32,6 +32,7 @@ import { completionNotices } from "./review-outcomes";
 import { runtimeRetryCount } from "./review-outcomes";
 import { questionContinuationCount } from "./review-outcomes";
 import type { TaskContext } from "./context";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 export async function takeoverGoalActive(context: TaskContext, task: HostTask): Promise<boolean> {
   if (!task.goalId) return true;
   if (context.pausedGoals.has(task.goalId)) return false;
@@ -362,7 +363,7 @@ export async function resumeInterrupted(
     const receipt = await context.taskMessage(task, "recovery", () =>
       context.engine.command({
         type: "send",
-        commandId: randomUUID(),
+        commandId: newRequestId(),
         sessionId: task.sessionId!,
         text: [
           "The host stopped before this task finished. Continue this task from the existing conversation and working copy. Inspect the current changes and the last tool results first; keep completed work and do not start over. Completion still requires the original task's checks and review.",
@@ -455,7 +456,7 @@ export async function continueUnansweredQuestion(
     await context.taskMessage(task, "question-continuation", () =>
       context.engine.command({
         type: "answer",
-        commandId: randomUUID(),
+        commandId: newRequestId(),
         sessionId: task.sessionId!,
         runId: session.runId,
         requestId: question.requestId,

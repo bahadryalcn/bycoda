@@ -334,6 +334,7 @@ import {
   remotePath,
   remoteProjectFor,
 } from "../../features/connections/model/remoteProjects";
+import { newRequestId } from "../../shared/lib/id/requestId";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_REMINDERS: SessionReminder[] = [];
@@ -2319,7 +2320,7 @@ function SidebarComponent({
             viewCwd: remoteProject ? cwd : summaryById.get(sessionId)!.cwd,
             viewKind: remoteProject ? "remote" : "local",
             target,
-            operationId: crypto.randomUUID(),
+            operationId: newRequestId(),
             desiredPinned,
             expectedVersion: current.version,
             expectedAuthority: current.authority ?? null,
@@ -2378,7 +2379,7 @@ function SidebarComponent({
         const undo = sessionDropUndo(previous, result.organization.value);
         const reverse = result.saga.steps.map((step) => ({
           ...step,
-          operationId: crypto.randomUUID(),
+          operationId: newRequestId(),
           desiredPinned: step.previousPinned,
           previousPinned: step.desiredPinned,
           expectedVersion: step.receipt!.version,

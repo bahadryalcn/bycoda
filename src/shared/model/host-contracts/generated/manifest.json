@@ -61155,6 +61155,7 @@
                       ],
                       "type": "string"
                     },
+                    "code": { "const": "REQUEST_EXPIRED", "type": "string" },
                     "commandId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
@@ -61863,5 +61864,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "eecc3c40027cbd1d5e1906782664135dc9ca9ed00e399349b4f3de4c3098bc5f"
+  "schemaHash": "b1d3c0c149c73cbc3bed0c99d84e852f32ada924462c2aa7c1c512142831ff87"
 }

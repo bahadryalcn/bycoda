@@ -51,7 +51,10 @@ export interface CommandQueueSnapshot {
 }
 export interface CommandServicePorts<View> {
   repository: {
-    receiptStatus(commandId: string): Promise<CommandReceipt | null | undefined>;
+    receiptStatus(
+      commandId: string,
+      options?: { admit?: boolean },
+    ): Promise<CommandReceipt | null | undefined>;
     desktopCommandStatus(
       commandId: string,
       principalId: string | undefined,
@@ -164,7 +167,8 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         await assertDomainAuthority(context);
         return desktopReceipt;
       }
-      const accepted = () => ports.repository.receiptStatus(command.commandId);
+      // Admission: an expired id with no receipt is refused before the command runs.
+      const accepted = () => ports.repository.receiptStatus(command.commandId, { admit: true });
 
       if (command.type === "contextual") {
         if (await accepted()) {

@@ -1,6 +1,7 @@
 /** Durable remote-command evidence. No entry is evicted on capacity pressure. */
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const DATABASE = "bycoda-remote-outbox";
 const ENTRIES = "entries";
@@ -72,7 +73,7 @@ async function nativeChange(
 ): Promise<void> {
   const outcome = await invoke<NativeOutcome>("canonical_store_transaction", {
     scope: NATIVE_SCOPE,
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     pageToken: await nativePageToken(),
     checks,
     writes,
@@ -201,7 +202,7 @@ async function ensureNativeOutbox(): Promise<void> {
       const current = marker.entries.find((entry) => entry.key === NATIVE_MARKER);
       const result = await invoke<NativeOutcome>("canonical_store_transaction", {
         scope: NATIVE_SCOPE,
-        operationId: crypto.randomUUID(),
+        operationId: newRequestId(),
         pageToken: await nativePageToken(),
         checks: [{ key: NATIVE_MARKER, version: current?.version ?? null }],
         writes: [{ key: NATIVE_MARKER, value: true }],
