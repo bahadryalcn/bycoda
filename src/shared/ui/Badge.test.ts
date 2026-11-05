@@ -46,6 +46,20 @@ it("uses an accessible shared accent dot for running work", async () => {
   }
 });
 
+it("renders a decorative compact dot without adding a status name", async () => {
+  const { container, done } = await render(
+    createElement(StatusDot, { size: "compact", tone: "secondary", preserveColors: true }),
+  );
+  try {
+    const dot = container.firstElementChild!;
+    expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(dot.getAttribute("role")).toBeNull();
+    expect(dot.getAttribute("data-size")).toBe("compact");
+  } finally {
+    done();
+  }
+});
+
 it("defaults counters to accent while preserving explicit attention tones", async () => {
   const counter = await render(createElement(Badge, { variant: "count" }, 128));
   try {

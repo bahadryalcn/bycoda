@@ -5,6 +5,7 @@ import { SocialFilters } from "./SocialFilters";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Progress } from "../../../shared/ui/Progress";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -174,10 +175,10 @@ export function Inbox({
                 })
               }
             >
-              <span
-                className="social-status-dot"
-                data-online={!!snapshot.pollingEnabled}
-                aria-hidden="true"
+              <StatusDot
+                size="compact"
+                tone={snapshot.pollingEnabled ? "success" : "secondary"}
+                preserveColors
               />
               {snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")}
             </Button>

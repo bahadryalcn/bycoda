@@ -58,11 +58,16 @@ import {
   type UsageTurnReport,
   type UsageWindow,
 } from "../model/usageAnalytics";
-import { formatMetric, formatUsagePercent, metricNames, ContinuousUsageTable } from "./UsageCharts";
+import {
+  ContinuousUsageTable,
+  formatMetric,
+  formatUsagePercent,
+  metricNames,
+  UsageDataNotes,
+} from "./UsageCharts";
 import {
   Contribution,
   TimeDistribution,
-  UsageDataNotes,
   UsageShare,
   UsageTrend,
 } from "./UsageVisualizations";

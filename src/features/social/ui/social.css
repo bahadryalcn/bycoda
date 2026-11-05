@@ -138,16 +138,6 @@
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }
-.social-status-dot {
-  flex: none;
-  inline-size: 0.45rem;
-  block-size: 0.45rem;
-  border-radius: 50%;
-  background: var(--ui-text-secondary);
-}
-.social-status-dot[data-online="true"] {
-  background: var(--ui-tone-success-fg);
-}
 .social-scheduling-help {
   margin-inline-start: auto;
 }

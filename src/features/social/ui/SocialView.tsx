@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
@@ -720,7 +721,11 @@ function HostStatus({
         aria-label={label}
         onClick={() => setOpen(!open)}
       >
-        <span className="social-status-dot" data-online={online} aria-hidden="true" />
+        <StatusDot
+          size="compact"
+          tone={online ? "success" : "secondary"}
+          preserveColors
+        />
         <span className="social-host-label">{label}</span>
       </Button>
       {open ? (
