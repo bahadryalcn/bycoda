@@ -86,18 +86,16 @@ export class ExternalTunnels {
     this.initialization ??= (async () => {
       try {
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
-        const state = await readStateFile(join(this.directory, "state.json"), (text) =>
-          this.parseRecords(text),
+        // Unreadable or foreign state is not overwritten and never starts an empty control
+        // lane: the file stays in place and the service refuses to launch until it is repaired.
+        const state = await readStateFile(
+          join(this.directory, "state.json"),
+          (text) => this.parseRecords(text),
+          { quarantine: false },
         );
         if (state.status === "missing") return;
-        if (state.status === "corrupt") {
-          // Owned processes never survive a Host restart, so unreadable records carry no
-          // authority. Keep the bytes as evidence and start with an empty control lane.
-          console.warn(
-            `Tunnel state was unreadable; retained evidence at ${state.quarantined ?? "an unavailable path"} and starting with no saved tunnels.`,
-          );
-          this.records = [];
-        } else this.records = state.value;
+        if (state.status === "corrupt") throw new Error("Tunnel state is unreadable");
+        this.records = state.value;
         await this.persist();
       } catch {
         throw new TunnelError("storage-unavailable");

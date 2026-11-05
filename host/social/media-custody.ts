@@ -42,13 +42,23 @@ export class SocialMediaCustody {
     await this.store.db.exec(
       "CREATE TABLE IF NOT EXISTS social_media_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
     );
-    // Trigger definitions and the reference backfill are versioned: once the marker matches,
-    // a Host start performs no table scan and no trigger DDL.
+    // Trigger definitions are versioned: once the marker matches, a Host start skips the
+    // trigger DDL. The durable reference backfill is idempotent and runs on every start so
+    // a missing or older claim is always rebuilt before media can be purged.
     const marker = await this.store.db
       .prepare("SELECT value FROM social_media_meta WHERE key='triggers'")
       .get();
-    if (marker && String(marker.value) === MEDIA_TRIGGER_VERSION) return;
+    const triggersCurrent = Boolean(marker && String(marker.value) === MEDIA_TRIGGER_VERSION);
     await this.store.transaction(async () => {
+      for (const [table, kind] of MEDIA_TABLES) {
+        const existingKind = kind.replaceAll("NEW.", "r.");
+        await this.store.db
+          .exec(`INSERT OR IGNORE INTO social_media_claims(media_id,owner_kind,owner_id,claim_id,state)
+        SELECT DISTINCT f.id,${existingKind},r.id,'durable','active'
+        FROM ${table} r, json_tree(r.value) j JOIN social_media_files f ON f.id=j.value
+        WHERE j.key='uploadId';`);
+      }
+      if (triggersCurrent) return;
       // Database triggers cover every writer, including program generation and recovery.
       for (const [table] of MEDIA_TABLES)
         for (const suffix of [
@@ -61,12 +71,6 @@ export class SocialMediaCustody {
           await this.store.db.exec(`DROP TRIGGER IF EXISTS ${table}_${suffix};`);
       for (const [table, kind] of MEDIA_TABLES) {
         const oldKind = kind.replaceAll("NEW.", "OLD.");
-        const existingKind = kind.replaceAll("NEW.", "r.");
-        await this.store.db
-          .exec(`INSERT OR IGNORE INTO social_media_claims(media_id,owner_kind,owner_id,claim_id,state)
-        SELECT DISTINCT f.id,${existingKind},r.id,'durable','active'
-        FROM ${table} r, json_tree(r.value) j JOIN social_media_files f ON f.id=j.value
-        WHERE j.key='uploadId';`);
         // Archival moves an already accepted row to the cold table: it is never refused by media state.
         if (table !== "social_jobs_cold") {
           await this.store.db.exec(`CREATE TRIGGER ${table}_media_insert BEFORE INSERT ON ${table}

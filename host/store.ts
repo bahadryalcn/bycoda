@@ -2,7 +2,6 @@ import { SessionReadProcesses } from "./session-read-process";
 import {
   compactCommandReceipts,
   initializeCommandReceiptRetention,
-  pruneCompactReceipts,
   readCommandReceipt,
   readWorkspaceReceipt,
 } from "./storage/command-receipt-retention";
@@ -63,9 +62,8 @@ import type { DesktopCommandAcceptance } from "./domains/commands/service";
 export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./sessions/block-revisions";
 const CACHED_SESSIONS = 32;
-// Original request signatures compact after a week; compact replay answers are deleted after 30 days.
+// Original request signatures compact after a week; replay answers never expire.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const COMPACT_RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
 const MAX_DESKTOP_COMMAND_RECEIPTS = 4096;
 /** Sync replay needs only a recent suffix of a session's events: a client further behind
@@ -2721,10 +2719,10 @@ export class HostStore {
   }
   async pruneReceipts(now = Date.now()): Promise<void> {
     return this.db.storeScope(() =>
-      this.transaction(async () => {
-        await compactCommandReceipts(this.db, now - RECEIPT_RETENTION_MS);
-        await pruneCompactReceipts(this.db, now - COMPACT_RECEIPT_RETENTION_MS);
-      }, "critical"),
+      this.transaction(
+        () => compactCommandReceipts(this.db, now - RECEIPT_RETENTION_MS),
+        "critical",
+      ),
     );
   }
   async events(

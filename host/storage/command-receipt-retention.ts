@@ -125,24 +125,3 @@ export async function compactCommandReceipts(db: StoreDatabase, cutoff: number):
       .run(String(row.scope), String(row.idempotency_key));
   }
 }
-
-/**
- * Replay answers are kept for the compact retention window, then deleted. Only compacted
- * (already settled) rows are eligible; pending effects and full receipts are never touched.
- * Caller holds the critical writer transaction.
- */
-export async function pruneCompactReceipts(db: StoreDatabase, cutoff: number): Promise<void> {
-  db.assertCriticalScope();
-  await db
-    .prepare(
-      `DELETE FROM compact_command_receipts WHERE rowid IN (
-        SELECT rowid FROM compact_command_receipts WHERE created_at < ? ORDER BY created_at LIMIT 512)`,
-    )
-    .run(cutoff);
-  await db
-    .prepare(
-      `DELETE FROM compact_workspace_receipts WHERE rowid IN (
-        SELECT rowid FROM compact_workspace_receipts WHERE created_at < ? ORDER BY created_at LIMIT 512)`,
-    )
-    .run(cutoff);
-}
