@@ -2,19 +2,31 @@ use super::*;
 use std::sync::Condvar;
 
 // A permit follows physical work through reply I/O, even if its observer times out.
-struct PhysicalSlots { available: Mutex<usize>, wake: Condvar }
+struct PhysicalSlots {
+    available: Mutex<usize>,
+    wake: Condvar,
+}
 struct Permit(Arc<PhysicalSlots>);
 impl PhysicalSlots {
-    fn new(limit: usize) -> Self { Self { available: Mutex::new(limit), wake: Condvar::new() } }
+    fn new(limit: usize) -> Self {
+        Self {
+            available: Mutex::new(limit),
+            wake: Condvar::new(),
+        }
+    }
     fn try_acquire(self: &Arc<Self>) -> Option<Permit> {
         let mut available = self.available.lock().unwrap_or_else(|e| e.into_inner());
-        if *available == 0 { return None; }
+        if *available == 0 {
+            return None;
+        }
         *available -= 1;
         Some(Permit(self.clone()))
     }
     fn acquire(self: &Arc<Self>) -> Permit {
         let mut available = self.available.lock().unwrap_or_else(|e| e.into_inner());
-        while *available == 0 { available = self.wake.wait(available).unwrap_or_else(|e| e.into_inner()); }
+        while *available == 0 {
+            available = self.wake.wait(available).unwrap_or_else(|e| e.into_inner());
+        }
         *available -= 1;
         Permit(self.clone())
     }
@@ -31,7 +43,10 @@ impl Drop for Permit {
 /// idle polling slows down in steps to 15 s (the caller keeps 2 s while a
 /// provider session holds a conversation grant), and an unreachable or
 /// unpaired host backs off to 30 s.
-pub(super) fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::time::Duration {
+pub(super) fn next_poll_delay(
+    failures: u32,
+    since_request: std::time::Duration,
+) -> std::time::Duration {
     use std::time::Duration;
     if failures > 0 {
         return Duration::from_secs(1u64 << failures.min(5)).min(Duration::from_secs(30));
@@ -59,7 +74,9 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
             std::thread::spawn(move || {
                 let _permit = permit;
                 if let Ok(channel) = crate::remote::NativeServiceChannel::connect(&app) {
-                    let _ = assistant_observation_publisher::publish_from_primary_window(&app, &channel);
+                    let _ = assistant_observation_publisher::publish_from_primary_window(
+                        &app, &channel,
+                    );
                 }
             });
         }
@@ -67,7 +84,9 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
     });
     std::thread::spawn(move || {
         static SLOTS: OnceLock<Arc<PhysicalSlots>> = OnceLock::new();
-        let slots = SLOTS.get_or_init(|| Arc::new(PhysicalSlots::new(8))).clone();
+        let slots = SLOTS
+            .get_or_init(|| Arc::new(PhysicalSlots::new(8)))
+            .clone();
         let mut channel: Option<Arc<crate::remote::NativeServiceChannel>> = None;
         loop {
             if channel
@@ -146,10 +165,15 @@ mod tests {
         assert!(slots.try_acquire().is_none());
         let clone = slots.clone();
         let (sent, received) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || { let _permit = clone.acquire(); sent.send(()).unwrap(); });
+        let thread = std::thread::spawn(move || {
+            let _permit = clone.acquire();
+            sent.send(()).unwrap();
+        });
         assert!(received.try_recv().is_err());
         drop(permit);
-        received.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        received
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
         thread.join().unwrap();
     }
 }

@@ -368,7 +368,8 @@ pub fn quick_composer_dismiss(app: AppHandle, window: WebviewWindow) -> Result<(
     let presentation = super::presentation_stamp(&app);
     app.run_on_main_thread(move || {
         if !caller.matches(&window.as_ref().window().resources_table())
-            || !super::presentation_matches(&handle, presentation) {
+            || !super::presentation_matches(&handle, presentation)
+        {
             return;
         }
         super::advance_presentation(&handle);

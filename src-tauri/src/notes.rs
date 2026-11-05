@@ -93,7 +93,9 @@ pub fn ensure_notes_table(conn: &Connection) -> rusqlite::Result<()> {
     match result {
         Ok(()) => conn.execute_batch("RELEASE notes_schema_migration"),
         Err(error) => {
-            let _ = conn.execute_batch("ROLLBACK TO notes_schema_migration; RELEASE notes_schema_migration");
+            let _ = conn.execute_batch(
+                "ROLLBACK TO notes_schema_migration; RELEASE notes_schema_migration",
+            );
             Err(error)
         }
     }
@@ -917,7 +919,9 @@ fn slug_words(title: &str) -> String {
 fn slugify(title: &str) -> String {
     let words = slug_words(title);
     let mut end = words.len().min(48);
-    while !words.is_char_boundary(end) { end -= 1; }
+    while !words.is_char_boundary(end) {
+        end -= 1;
+    }
     let slug = words[..end].trim_end_matches('-');
     if slug.is_empty() {
         "note".into()
@@ -932,7 +936,10 @@ fn slugify(title: &str) -> String {
 /// whole title so text past the slug length cutoff still counts.
 fn is_placeholder_title(title: &str) -> bool {
     // Do not discard non-ASCII letters when deciding whether a title is real.
-    if title.chars().any(|ch| !ch.is_ascii() && ch.is_alphanumeric()) {
+    if title
+        .chars()
+        .any(|ch| !ch.is_ascii() && ch.is_alphanumeric())
+    {
         return false;
     }
     let words = slug_words(title);

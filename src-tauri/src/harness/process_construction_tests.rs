@@ -153,7 +153,7 @@ impl ProcessFixture {
             management_input_policy: None,
             management_route_id: None,
             utility_executable: None,
-        utility_endpoint: None,
+            utility_endpoint: None,
             account: None,
             owners: Arc::new(Owners::default()),
             output: Some(Arc::clone(&output)),

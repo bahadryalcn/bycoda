@@ -227,15 +227,8 @@ fn watch_plan(git_dir: &Path, common_dir: &Path) -> Vec<Planned> {
 /// The checkout's gitdir and common dir, absolute.
 fn resolve(cwd: &str) -> Result<(PathBuf, PathBuf), String> {
     let root = Path::new(cwd);
-    let text = crate::fs::git_run(
-        root,
-        &[
-            "rev-parse",
-            "--git-dir",
-            "--git-common-dir",
-        ],
-    )
-    .ok_or_else(|| format!("{cwd} is not a Git checkout"))?;
+    let text = crate::fs::git_run(root, &["rev-parse", "--git-dir", "--git-common-dir"])
+        .ok_or_else(|| format!("{cwd} is not a Git checkout"))?;
     let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
     let mut next = || {
         lines

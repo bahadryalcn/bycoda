@@ -4,7 +4,9 @@ use super::*;
 // inspected, not silently replayed or collected by a new process.
 struct QuestionAttachmentLock(PathBuf);
 fn check_caller(window: &tauri::Window, webview: &tauri::WebviewWindow) -> Result<(), String> {
-    if window.label() != webview.label() { return Err("Question attachment page changed".into()); }
+    if window.label() != webview.label() {
+        return Err("Question attachment page changed".into());
+    }
     Ok(())
 }
 fn definitely_absent(path: &Path) -> Result<bool, String> {
@@ -16,25 +18,36 @@ fn definitely_absent(path: &Path) -> Result<bool, String> {
 }
 impl QuestionAttachmentLock {
     fn acquire(dir: &Path) -> Result<Self, String> {
-        let parent = dir.parent().ok_or("Invalid question attachment directory")?;
+        let parent = dir
+            .parent()
+            .ok_or("Invalid question attachment directory")?;
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         let lock = dir.with_extension("lock");
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
-        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
-        let file = options.open(&lock)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options
+            .open(&lock)
             .map_err(|_| "Question attachment operation is busy or needs recovery".to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
         Ok(Self(lock))
     }
 }
 impl Drop for QuestionAttachmentLock {
-    fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 #[cfg(test)]
 mod lock_tests {
-    use super::{add_claim, directory_identity, release_confirmed, verify_claim, QuestionAttachmentLock};
+    use super::{
+        add_claim, directory_identity, release_confirmed, verify_claim, QuestionAttachmentLock,
+    };
 
     #[test]
     fn operation_lock_is_exclusive_and_stale_lock_is_not_retired() {
@@ -74,7 +87,11 @@ mod lock_tests {
         let base = std::env::temp_dir().join(format!("question-release-{}", uuid::Uuid::new_v4()));
         let claim = uuid::Uuid::new_v4().to_string();
         std::fs::create_dir_all(base.join("released-claims")).unwrap();
-        std::fs::write(base.join("released-claims").join(&claim), serde_json::to_vec(&("page-a", "session-a", claim.as_str())).unwrap()).unwrap();
+        std::fs::write(
+            base.join("released-claims").join(&claim),
+            serde_json::to_vec(&("page-a", "session-a", claim.as_str())).unwrap(),
+        )
+        .unwrap();
         assert!(release_confirmed(&base, &claim, "page-a", "session-a").unwrap());
         assert!(release_confirmed(&base, &claim, "page-b", "session-a").is_err());
         assert!(release_confirmed(&base, &claim, "page-a", "session-b").is_err());
@@ -99,53 +116,89 @@ mod lock_tests {
 /// Persist a pasted blob so non-image attachments have a real path.
 /// Receipt-backed question attachments are kept separately from generic pasted
 /// files. An incomplete operation is never retried automatically or deleted.
-fn question_attachment_dir(app: &AppHandle, scope: &str, question_id: &str, operation_id: &str) -> Result<PathBuf, String> {
+fn question_attachment_dir(
+    app: &AppHandle,
+    scope: &str,
+    question_id: &str,
+    operation_id: &str,
+) -> Result<PathBuf, String> {
     use sha2::{Digest, Sha256};
-    if scope.is_empty() || scope.len() > 65536 || question_id.is_empty() || question_id.len() > 4096 {
+    if scope.is_empty() || scope.len() > 65536 || question_id.is_empty() || question_id.len() > 4096
+    {
         return Err("Invalid question attachment identity".into());
     }
     let id = Uuid::parse_str(operation_id).map_err(|_| "Invalid question attachment operation")?;
-    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&(scope, question_id)).map_err(|e| e.to_string())?));
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&(scope, question_id)).map_err(|e| e.to_string())?)
+    );
     let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-    let dir = base.join("question-attachments").join(digest).join(id.to_string());
+    let dir = base
+        .join("question-attachments")
+        .join(digest)
+        .join(id.to_string());
     crate::file_access::produced_target(&dir, &base, "question-attachments")?;
     Ok(dir)
 }
 
 fn add_claim(dir: &Path, claim_id: &str, issuer: &str, session_id: &str) -> Result<(), String> {
-    let claim = Uuid::parse_str(claim_id).map_err(|_| "Invalid question attachment claim")?.to_string();
+    let claim = Uuid::parse_str(claim_id)
+        .map_err(|_| "Invalid question attachment claim")?
+        .to_string();
     let claims = dir.join("claims");
     std::fs::create_dir_all(&claims).map_err(|e| e.to_string())?;
-    if !std::fs::symlink_metadata(&claims).map_err(|e| e.to_string())?.is_dir() {
+    if !std::fs::symlink_metadata(&claims)
+        .map_err(|e| e.to_string())?
+        .is_dir()
+    {
         return Err("Question attachment claims directory is unknown".into());
     }
     let expected = serde_json::to_vec(&(issuer, session_id)).map_err(|e| e.to_string())?;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
     match options.open(claims.join(claim)) {
-        Ok(mut file) => file.write_all(&expected).and_then(|_| file.sync_all()).map_err(|e| e.to_string()),
+        Ok(mut file) => file
+            .write_all(&expected)
+            .and_then(|_| file.sync_all())
+            .map_err(|e| e.to_string()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            let path = claims.join(Uuid::parse_str(claim_id).map_err(|_| "Invalid question attachment claim")?.to_string());
+            let path = claims.join(
+                Uuid::parse_str(claim_id)
+                    .map_err(|_| "Invalid question attachment claim")?
+                    .to_string(),
+            );
             let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
             if !metadata.is_file() || std::fs::read(path).map_err(|e| e.to_string())? != expected {
                 return Err("Question attachment claim is corrupt".into());
             }
             Ok(())
-        },
+        }
         Err(error) => Err(error.to_string()),
     }
 }
 
 fn verify_claim(dir: &Path, claim_id: &str, issuer: &str, session_id: &str) -> Result<(), String> {
-    let id = Uuid::parse_str(claim_id).map_err(|_| "Invalid question attachment claim")?.to_string();
+    let id = Uuid::parse_str(claim_id)
+        .map_err(|_| "Invalid question attachment claim")?
+        .to_string();
     let claims = dir.join("claims");
-    if !std::fs::symlink_metadata(&claims).map_err(|e| e.to_string())?.is_dir() {
+    if !std::fs::symlink_metadata(&claims)
+        .map_err(|e| e.to_string())?
+        .is_dir()
+    {
         return Err("Question attachment claims directory is unknown".into());
     }
     let path = claims.join(id);
-    if !std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?.is_file() {
+    if !std::fs::symlink_metadata(&path)
+        .map_err(|e| e.to_string())?
+        .is_file()
+    {
         return Err("Question attachment claim is unknown".into());
     }
     let expected = serde_json::to_vec(&(issuer, session_id)).map_err(|e| e.to_string())?;
@@ -155,42 +208,84 @@ fn verify_claim(dir: &Path, claim_id: &str, issuer: &str, session_id: &str) -> R
     Ok(())
 }
 
-fn release_confirmed(dir: &Path, claim_id: &str, issuer: &str, session_id: &str) -> Result<bool, String> {
-    let id = Uuid::parse_str(claim_id).map_err(|_| "Invalid question attachment claim")?.to_string();
-    let expected = serde_json::to_vec(&(issuer, session_id, claim_id)).map_err(|e| e.to_string())?;
+fn release_confirmed(
+    dir: &Path,
+    claim_id: &str,
+    issuer: &str,
+    session_id: &str,
+) -> Result<bool, String> {
+    let id = Uuid::parse_str(claim_id)
+        .map_err(|_| "Invalid question attachment claim")?
+        .to_string();
+    let expected =
+        serde_json::to_vec(&(issuer, session_id, claim_id)).map_err(|e| e.to_string())?;
     let shared = dir.join("released-claims").join(&id);
     if !definitely_absent(&shared)? {
-        if !std::fs::symlink_metadata(dir.join("released-claims")).map_err(|e| e.to_string())?.is_dir() || !std::fs::symlink_metadata(&shared).map_err(|e| e.to_string())?.is_file() || std::fs::read(&shared).map_err(|e| e.to_string())? != expected {
+        if !std::fs::symlink_metadata(dir.join("released-claims"))
+            .map_err(|e| e.to_string())?
+            .is_dir()
+            || !std::fs::symlink_metadata(&shared)
+                .map_err(|e| e.to_string())?
+                .is_file()
+            || std::fs::read(&shared).map_err(|e| e.to_string())? != expected
+        {
             return Err("Question attachment release belongs to another owner".into());
         }
         return definitely_absent(&dir.join("claims").join(id));
     }
     let released = dir.join("released");
-    if definitely_absent(&released)? { return Ok(false); }
-    if !std::fs::symlink_metadata(&released).map_err(|e| e.to_string())?.is_file() || std::fs::read(&released).map_err(|e| e.to_string())? != expected {
+    if definitely_absent(&released)? {
+        return Ok(false);
+    }
+    if !std::fs::symlink_metadata(&released)
+        .map_err(|e| e.to_string())?
+        .is_file()
+        || std::fs::read(&released).map_err(|e| e.to_string())? != expected
+    {
         return Err("Question attachment release belongs to another owner".into());
     }
-    let record: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("created")).map_err(|e| e.to_string())?).map_err(|_| "Question attachment receipt is corrupt")?;
-    let name = record["name"].as_str().ok_or("Question attachment receipt is corrupt")?;
-    if safe_attachment_name(name) != name { return Err("Question attachment receipt is corrupt".into()); }
-    Ok(definitely_absent(&dir.join("content").join(name))? && definitely_absent(&dir.join("releasing"))?)
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("created")).map_err(|e| e.to_string())?)
+            .map_err(|_| "Question attachment receipt is corrupt")?;
+    let name = record["name"]
+        .as_str()
+        .ok_or("Question attachment receipt is corrupt")?;
+    if safe_attachment_name(name) != name {
+        return Err("Question attachment receipt is corrupt".into());
+    }
+    Ok(definitely_absent(&dir.join("content").join(name))?
+        && definitely_absent(&dir.join("releasing"))?)
 }
 
 fn validate_claimable(dir: &Path, record: &serde_json::Value) -> Result<(), String> {
-    if record["claim_format"].as_u64() != Some(1) { return Err("Legacy question attachment ownership is unknown".into()); }
+    if record["claim_format"].as_u64() != Some(1) {
+        return Err("Legacy question attachment ownership is unknown".into());
+    }
     match std::fs::symlink_metadata(dir.join("released")) {
         Ok(_) => return Err("Question attachment was released".into()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.to_string()),
     }
-    let name = record["name"].as_str().ok_or("Question attachment receipt is corrupt")?;
-    if safe_attachment_name(name) != name { return Err("Question attachment receipt is corrupt".into()); }
-    if !std::fs::symlink_metadata(dir.join("content")).map_err(|e| e.to_string())?.is_dir() {
+    let name = record["name"]
+        .as_str()
+        .ok_or("Question attachment receipt is corrupt")?;
+    if safe_attachment_name(name) != name {
+        return Err("Question attachment receipt is corrupt".into());
+    }
+    if !std::fs::symlink_metadata(dir.join("content"))
+        .map_err(|e| e.to_string())?
+        .is_dir()
+    {
         return Err("Question attachment content directory is unknown".into());
     }
-    let info = std::fs::symlink_metadata(dir.join("content").join(name)).map_err(|e| e.to_string())?;
-    if !info.is_file() || info.len() > MAX_ATTACHMENT_EMBED_BYTES { return Err("Question attachment file identity is unknown".into()); }
-    if record["file_identity"].as_str() != Some(directory_identity(&dir.join("content").join(name))?.as_str()) {
+    let info =
+        std::fs::symlink_metadata(dir.join("content").join(name)).map_err(|e| e.to_string())?;
+    if !info.is_file() || info.len() > MAX_ATTACHMENT_EMBED_BYTES {
+        return Err("Question attachment file identity is unknown".into());
+    }
+    if record["file_identity"].as_str()
+        != Some(directory_identity(&dir.join("content").join(name))?.as_str())
+    {
         return Err("Question attachment file identity changed".into());
     }
     use sha2::{Digest, Sha256};
@@ -204,7 +299,21 @@ fn validate_claimable(dir: &Path, record: &serde_json::Value) -> Result<(), Stri
 /// Persist the exact draft operation before accepting its file bytes.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn reserve_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, operation_id: String, claim_id: String, file_id: String, name: String, mime_type: String, kind: String, size: u64) -> Result<(), String> {
+pub async fn reserve_question_attachment(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    scope: String,
+    question_id: String,
+    operation_id: String,
+    claim_id: String,
+    file_id: String,
+    name: String,
+    mime_type: String,
+    kind: String,
+    size: u64,
+) -> Result<(), String> {
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
     let issuer = crate::control::receipts::capture(&webview)?;
@@ -242,7 +351,13 @@ const QUESTION_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from
 
 /// Read-only inspection of one operation dir for the recovery list. `Ok(None)`
 /// means nothing to recover; `Err` skips only this dir.
-fn list_draft_in_dir(dir: &Path, operation_name: &std::ffi::OsStr, session_id: &str, question_id: &str, issuer: &str) -> Result<Option<serde_json::Value>, String> {
+fn list_draft_in_dir(
+    dir: &Path,
+    operation_name: &std::ffi::OsStr,
+    session_id: &str,
+    question_id: &str,
+    issuer: &str,
+) -> Result<Option<serde_json::Value>, String> {
     let _lock = match QuestionAttachmentLock::acquire(dir) {
         Ok(lock) => Some(lock),
         Err(reason) => {
@@ -251,7 +366,9 @@ fn list_draft_in_dir(dir: &Path, operation_name: &std::ffi::OsStr, session_id: &
                 .ok()
                 .and_then(|modified| modified.elapsed().ok())
                 .is_some_and(|age| age > QUESTION_LOCK_STALE_AFTER);
-            if !stale { return Err(reason); }
+            if !stale {
+                return Err(reason);
+            }
             None
         }
     };
@@ -261,32 +378,66 @@ fn list_draft_in_dir(dir: &Path, operation_name: &std::ffi::OsStr, session_id: &
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),
     };
-    if !metadata.is_file() || metadata.len() > 16 * 1024 { return Err("Question attachment draft is too large or unknown".into()); }
+    if !metadata.is_file() || metadata.len() > 16 * 1024 {
+        return Err("Question attachment draft is too large or unknown".into());
+    }
     let mut bytes = Vec::new();
-    std::fs::File::open(&marker).map_err(|e| e.to_string())?.take(16 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    if bytes.len() > 16 * 1024 { return Err("Question attachment draft is too large".into()); }
-    let mut record: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "Question attachment draft is corrupt")?;
-    if record["sessionId"].as_str() != Some(session_id) || record["questionId"].as_str() != Some(question_id) { return Err("Question attachment draft identity changed".into()); }
-    let original_issuer = record["issuer"].as_str().ok_or("Question attachment draft is corrupt")?;
-    let original_claim = record["claimId"].as_str().ok_or("Question attachment draft is corrupt")?;
-    if release_confirmed(dir, original_claim, original_issuer, session_id)? { return Ok(None); }
-    if record["issuer"].as_str() != Some(issuer) { return Err("Question attachment belongs to a previous page and requires recovery".into()); }
-    if record["operationId"].as_str() != operation_name.to_str() { return Err("Question attachment draft identity changed".into()); }
-    let claim = record["claimId"].as_str().ok_or("Question attachment draft is corrupt")?;
+    std::fs::File::open(&marker)
+        .map_err(|e| e.to_string())?
+        .take(16 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 16 * 1024 {
+        return Err("Question attachment draft is too large".into());
+    }
+    let mut record: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Question attachment draft is corrupt")?;
+    if record["sessionId"].as_str() != Some(session_id)
+        || record["questionId"].as_str() != Some(question_id)
+    {
+        return Err("Question attachment draft identity changed".into());
+    }
+    let original_issuer = record["issuer"]
+        .as_str()
+        .ok_or("Question attachment draft is corrupt")?;
+    let original_claim = record["claimId"]
+        .as_str()
+        .ok_or("Question attachment draft is corrupt")?;
+    if release_confirmed(dir, original_claim, original_issuer, session_id)? {
+        return Ok(None);
+    }
+    if record["issuer"].as_str() != Some(issuer) {
+        return Err("Question attachment belongs to a previous page and requires recovery".into());
+    }
+    if record["operationId"].as_str() != operation_name.to_str() {
+        return Err("Question attachment draft identity changed".into());
+    }
+    let claim = record["claimId"]
+        .as_str()
+        .ok_or("Question attachment draft is corrupt")?;
     verify_claim(dir, claim, issuer, session_id)?;
     record["retained"] = serde_json::Value::Bool(!definitely_absent(&dir.join("retained"))?);
     Ok(Some(record))
 }
 
 #[tauri::command]
-pub async fn list_question_attachment_drafts(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, question_id: String) -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_question_attachment_drafts(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    question_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
     let issuer = crate::control::receipts::capture(&webview)?;
     run_admitted_blocking(admission, move || {
         crate::session_window_ownership::with_session_window_owner(&issuer, &session_id, || {
-            let sample = question_attachment_dir(&app, &session_id, &question_id, &Uuid::nil().to_string())?;
-            let parent = sample.parent().ok_or("Invalid question attachment directory")?;
+            let sample =
+                question_attachment_dir(&app, &session_id, &question_id, &Uuid::nil().to_string())?;
+            let parent = sample
+                .parent()
+                .ok_or("Invalid question attachment directory")?;
             let entries = match std::fs::read_dir(parent) {
                 Ok(entries) => entries,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -296,25 +447,51 @@ pub async fn list_question_attachment_drafts(app: AppHandle, window: tauri::Wind
             let mut examined = 0usize;
             for entry in entries {
                 let entry = entry.map_err(|e| e.to_string())?;
-                if !entry.file_type().map_err(|e| e.to_string())?.is_dir() || Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err() { continue; }
+                if !entry.file_type().map_err(|e| e.to_string())?.is_dir()
+                    || Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err()
+                {
+                    continue;
+                }
                 examined += 1;
-                if examined > 100 { return Err("Question attachment recovery capacity exceeded".into()); }
+                if examined > 100 {
+                    return Err("Question attachment recovery capacity exceeded".into());
+                }
                 let dir = entry.path();
                 // One busy, foreign or damaged operation must not hide the other drafts.
-                match list_draft_in_dir(&dir, &entry.file_name(), &session_id, &question_id, issuer.identity()) {
+                match list_draft_in_dir(
+                    &dir,
+                    &entry.file_name(),
+                    &session_id,
+                    &question_id,
+                    issuer.identity(),
+                ) {
                     Ok(Some(record)) => result.push(record),
                     Ok(None) => {}
-                    Err(reason) => eprintln!("Question attachment operation skipped during listing: {reason}"),
+                    Err(reason) => {
+                        eprintln!("Question attachment operation skipped during listing: {reason}")
+                    }
                 }
             }
             Ok(result)
         })
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn create_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, operation_id: String, claim_id: String, name: String, data: String) -> Result<serde_json::Value, String> {
+pub async fn create_question_attachment(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    scope: String,
+    question_id: String,
+    operation_id: String,
+    claim_id: String,
+    name: String,
+    data: String,
+) -> Result<serde_json::Value, String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
@@ -377,27 +554,49 @@ pub async fn create_question_attachment(app: AppHandle, window: tauri::Window, w
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn claim_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, receipt: String, claim_id: String, source_claim_id: String) -> Result<(), String> {
+pub async fn claim_question_attachment(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    scope: String,
+    question_id: String,
+    receipt: String,
+    claim_id: String,
+    source_claim_id: String,
+) -> Result<(), String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
     let issuer = crate::control::receipts::capture(&webview)?;
     run_admitted_blocking(admission, move || {
         crate::session_window_ownership::with_session_window_owner(&issuer, &session_id, || {
-        let dir = question_attachment_dir(&app, &session_id, &question_id, &receipt)?;
-        let _lock = QuestionAttachmentLock::acquire(&dir)?;
-        let record: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("created")).map_err(|e| e.to_string())?)
+            let dir = question_attachment_dir(&app, &session_id, &question_id, &receipt)?;
+            let _lock = QuestionAttachmentLock::acquire(&dir)?;
+            let record: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(dir.join("created")).map_err(|e| e.to_string())?,
+            )
             .map_err(|_| "Question attachment receipt is corrupt")?;
-        validate_claimable(&dir, &record)?;
-        verify_claim(&dir, &source_claim_id, issuer.identity(), &session_id)?;
-        add_claim(&dir, &claim_id, issuer.identity(), &session_id)
+            validate_claimable(&dir, &record)?;
+            verify_claim(&dir, &source_claim_id, issuer.identity(), &session_id)?;
+            add_claim(&dir, &claim_id, issuer.identity(), &session_id)
         })
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn read_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, operation_id: String, claim_id: String) -> Result<serde_json::Value, String> {
+pub async fn read_question_attachment(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    scope: String,
+    question_id: String,
+    operation_id: String,
+    claim_id: String,
+) -> Result<serde_json::Value, String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
@@ -429,30 +628,56 @@ pub async fn read_question_attachment(app: AppHandle, window: tauri::Window, web
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn retain_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, receipt: String, claim_id: String) -> Result<(), String> {
+pub async fn retain_question_attachment(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    scope: String,
+    question_id: String,
+    receipt: String,
+    claim_id: String,
+) -> Result<(), String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
     let issuer = crate::control::receipts::capture(&webview)?;
     run_admitted_blocking(admission, move || {
         crate::session_window_ownership::with_session_window_owner(&issuer, &session_id, || {
-        let dir = question_attachment_dir(&app, &session_id, &question_id, &receipt)?;
-        let _lock = QuestionAttachmentLock::acquire(&dir)?;
-        verify_claim(&dir, &claim_id, issuer.identity(), &session_id)?;
-        let record: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("created")).map_err(|e| e.to_string())?).map_err(|_| "Question attachment receipt is corrupt")?;
-        validate_claimable(&dir, &record)?;
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(dir.join("retained")) {
-            Ok(file) => file.sync_all().map_err(|e| e.to_string()),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-            Err(error) => Err(error.to_string()),
-        }
+            let dir = question_attachment_dir(&app, &session_id, &question_id, &receipt)?;
+            let _lock = QuestionAttachmentLock::acquire(&dir)?;
+            verify_claim(&dir, &claim_id, issuer.identity(), &session_id)?;
+            let record: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(dir.join("created")).map_err(|e| e.to_string())?,
+            )
+            .map_err(|_| "Question attachment receipt is corrupt")?;
+            validate_claimable(&dir, &record)?;
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(dir.join("retained"))
+            {
+                Ok(file) => file.sync_all().map_err(|e| e.to_string()),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+                Err(error) => Err(error.to_string()),
+            }
         })
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn release_question_attachment(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, scope: String, question_id: String, receipt: String, claim_id: String) -> Result<serde_json::Value, String> {
+pub async fn release_question_attachment(
+    app: AppHandle,
+    window: tauri::Window,
+    webview: tauri::WebviewWindow,
+    session_id: String,
+    scope: String,
+    question_id: String,
+    receipt: String,
+    claim_id: String,
+) -> Result<serde_json::Value, String> {
     let _ = &scope;
     check_caller(&window, &webview)?;
     let admission = admit_window_buffers(&window)?;
@@ -561,4 +786,3 @@ pub async fn release_question_attachment(app: AppHandle, window: tauri::Window, 
         })
     }).await
 }
-

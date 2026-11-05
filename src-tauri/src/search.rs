@@ -418,17 +418,30 @@ fn bounded_preview(line: &str, column: u32) -> String {
     let mut units = 0usize;
     let mut match_byte = line.len();
     for (index, ch) in line.char_indices() {
-        if units >= target { match_byte = index; break; }
+        if units >= target {
+            match_byte = index;
+            break;
+        }
         units += ch.len_utf16();
     }
-    let start = line[..match_byte].char_indices().rev().nth(LIMIT / 4)
+    let start = line[..match_byte]
+        .char_indices()
+        .rev()
+        .nth(LIMIT / 4)
         .map_or(0, |(index, _)| index);
     let mut preview = String::new();
-    if start > 0 { preview.push('…'); }
+    if start > 0 {
+        preview.push('…');
+    }
     let tail = &line[start..];
-    let end = tail.char_indices().nth(LIMIT).map_or(tail.len(), |(index, _)| index);
+    let end = tail
+        .char_indices()
+        .nth(LIMIT)
+        .map_or(tail.len(), |(index, _)| index);
     preview.push_str(&tail[..end]);
-    if end < tail.len() { preview.push('…'); }
+    if end < tail.len() {
+        preview.push('…');
+    }
     preview
 }
 

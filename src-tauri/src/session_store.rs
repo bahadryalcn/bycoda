@@ -10,9 +10,8 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub(crate) mod authority;
-pub(crate) mod cohort;
 pub(crate) mod canonical_store;
-pub(crate) mod pin_receipts;
+pub(crate) mod cohort;
 mod content_search;
 mod delete_with_images;
 mod deletions;
@@ -24,6 +23,7 @@ pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
+pub(crate) mod pin_receipts;
 mod provenance;
 mod provider_history;
 pub(crate) mod references;
@@ -7210,7 +7210,14 @@ mod tests {
             session_id: "same".into(),
             cwd: "/repo".into(),
         };
-        replace_window_in_flight(&mut conn, "process", "main", "old", std::slice::from_ref(&item)).unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old",
+            std::slice::from_ref(&item),
+        )
+        .unwrap();
         let rows = vec![RecoveryReceiptRow {
             process: Some("process".into()),
             page: Some("old".into()),
@@ -7248,7 +7255,14 @@ mod tests {
             session_id: "same".into(),
             cwd: "/repo".into(),
         };
-        replace_window_in_flight(&mut conn, "process", "main", "old", std::slice::from_ref(&item)).unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old",
+            std::slice::from_ref(&item),
+        )
+        .unwrap();
         let rows = vec![RecoveryReceiptRow {
             process: Some("process".into()),
             page: Some("old".into()),

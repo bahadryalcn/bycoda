@@ -8,7 +8,9 @@ pub(super) fn run(
     deadline: Instant,
 ) -> Option<(Vec<u8>, bool)> {
     let turn = GIT_SPAWN_GATE.enter_until(cancel, deadline)?;
-    if Instant::now() >= deadline { return None; }
+    if Instant::now() >= deadline {
+        return None;
+    }
     let mut child = command.spawn().ok()?;
     drop(turn);
     let Some(mut stdout) = child.stdout.take() else {

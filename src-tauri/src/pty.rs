@@ -351,9 +351,17 @@ impl PtyHost {
     }
 
     #[cfg(unix)]
-    fn remove_if_child(&self, id: &str, child: &Arc<unix_child::UnixChild>) -> Option<Arc<LivePty>> {
+    fn remove_if_child(
+        &self,
+        id: &str,
+        child: &Arc<unix_child::UnixChild>,
+    ) -> Option<Arc<LivePty>> {
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        if !sessions.get(id).and_then(|live| live.child.as_ref()).is_some_and(|live| Arc::ptr_eq(live, child)) {
+        if !sessions
+            .get(id)
+            .and_then(|live| live.child.as_ref())
+            .is_some_and(|live| Arc::ptr_eq(live, child))
+        {
             return None;
         }
         sessions.remove(id)
@@ -780,7 +788,15 @@ fn reattach(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     {
         resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols, rows)?;
         let mut pgrp: libc::pid_t = 0;
-        if unsafe { libc::ioctl(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), libc::TIOCGPGRP, &mut pgrp) } == 0 && pgrp > 1 {
+        if unsafe {
+            libc::ioctl(
+                std::os::fd::AsRawFd::as_raw_fd(&live.master_fd),
+                libc::TIOCGPGRP,
+                &mut pgrp,
+            )
+        } == 0
+            && pgrp > 1
+        {
             unsafe {
                 libc::kill(-pgrp, libc::SIGWINCH);
             }
@@ -899,7 +915,11 @@ pub async fn pty_resize(
 fn resize_live(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols.max(2), rows.max(2))
+        resize_fd(
+            std::os::fd::AsRawFd::as_raw_fd(&live.master_fd),
+            cols.max(2),
+            rows.max(2),
+        )
     }
     #[cfg(windows)]
     {
@@ -945,7 +965,8 @@ pub fn pty_status(
     }
     #[cfg(unix)]
     {
-        let foreground = foreground_label(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), live.pid);
+        let foreground =
+            foreground_label(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), live.pid);
         Ok(PtyStatus {
             foreground,
             supported: true,

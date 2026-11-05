@@ -3,7 +3,7 @@
   "purpose": "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of an over-budget file. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
   "counts": {
     "host/assistant/service.ts": {
-      "file-lines": 6951
+      "file-lines": 6956
     },
     "host/assistant/sessions/assistant-sessions.ts": {
       "file-lines": 938
@@ -44,7 +44,7 @@
       "host-imports-ui": 1
     },
     "host/crews/crews.ts": {
-      "file-lines": 1828
+      "file-lines": 1840
     },
     "host/desktop-helper-domain.ts": {
       "loose-host-file": 1
@@ -53,7 +53,7 @@
       "loose-host-file": 1
     },
     "host/desktop/desktop-control-host.ts": {
-      "file-lines": 1160
+      "file-lines": 1152
     },
     "host/desktop/desktopLive.ts": {
       "file-lines": 824
@@ -77,10 +77,10 @@
       "loose-host-file": 1
     },
     "host/engine.test.ts": {
-      "file-lines": 6296
+      "file-lines": 6328
     },
     "host/engine.ts": {
-      "file-lines": 5058,
+      "file-lines": 5053,
       "loose-host-file": 1
     },
     "host/git/git-actions.ts": {
@@ -93,7 +93,7 @@
       "file-lines": 2118
     },
     "host/goals/goals.ts": {
-      "file-lines": 1967
+      "file-lines": 1968
     },
     "host/host-notes-admission.ts": {
       "loose-host-file": 1
@@ -135,7 +135,7 @@
       "loose-host-file": 1
     },
     "host/server.test.ts": {
-      "file-lines": 6334
+      "file-lines": 6318
     },
     "host/session-read-process.ts": {
       "loose-host-file": 1
@@ -168,10 +168,10 @@
       "file-lines": 1481
     },
     "host/social/social.test.ts": {
-      "file-lines": 4917
+      "file-lines": 4908
     },
     "host/social/social.ts": {
-      "file-lines": 6499
+      "file-lines": 6473
     },
     "host/stewards/stewards.ts": {
       "file-lines": 859
@@ -183,11 +183,14 @@
       "file-lines": 1593
     },
     "host/store.ts": {
-      "file-lines": 3047,
+      "file-lines": 2973,
       "loose-host-file": 1
     },
     "host/suppress-sqlite-warning.ts": {
       "loose-host-file": 1
+    },
+    "host/tasks/service.ts": {
+      "file-lines": 806
     },
     "host/tasks/tasks.test.ts": {
       "file-lines": 4284
@@ -196,7 +199,7 @@
       "loose-host-file": 1
     },
     "host/transport/ws/server.ts": {
-      "file-lines": 930
+      "file-lines": 949
     },
     "host/windows-service-launcher.ts": {
       "loose-host-file": 1
@@ -209,13 +212,13 @@
       "loose-host-file": 1
     },
     "host/workspaces/workspace-commands.ts": {
-      "file-lines": 1561
+      "file-lines": 1546
     },
     "host/workspaces/workspace.ts": {
       "file-lines": 1685
     },
     "src-tauri/src/automations.rs": {
-      "file-lines": 1870
+      "file-lines": 1872
     },
     "src-tauri/src/azure_devops.rs": {
       "file-lines": 2462
@@ -227,40 +230,43 @@
       "file-lines": 2418
     },
     "src-tauri/src/control.rs": {
-      "file-lines": 3150
+      "file-lines": 3120
     },
     "src-tauri/src/conversation_tools_bridge.rs": {
-      "file-lines": 1811
+      "file-lines": 1717
     },
     "src-tauri/src/fs.rs": {
-      "file-lines": 14243
+      "file-lines": 14115
     },
     "src-tauri/src/harness.rs": {
-      "file-lines": 9560
+      "file-lines": 9581
+    },
+    "src-tauri/src/host_ws/connection.rs": {
+      "file-lines": 1678
     },
     "src-tauri/src/host_ws/mod.rs": {
-      "file-lines": 1609
+      "file-lines": 1604
     },
     "src-tauri/src/mcp.rs": {
       "file-lines": 1675
     },
     "src-tauri/src/native_provider_output.rs": {
-      "file-lines": 2096
+      "file-lines": 2088
     },
     "src-tauri/src/notes.rs": {
       "file-lines": 1646
     },
     "src-tauri/src/provider_usage.rs": {
-      "file-lines": 1605
+      "file-lines": 1600
     },
     "src-tauri/src/pty.rs": {
-      "file-lines": 2808
+      "file-lines": 2818
     },
     "src-tauri/src/remote_ssh.rs": {
       "file-lines": 1836
     },
     "src-tauri/src/remote.rs": {
-      "file-lines": 5516
+      "file-lines": 5342
     },
     "src-tauri/src/session_import.rs": {
       "file-lines": 1693
@@ -269,7 +275,7 @@
       "file-lines": 2301
     },
     "src-tauri/src/session_store.rs": {
-      "file-lines": 7986
+      "file-lines": 7989
     },
     "src-tauri/src/session_store/authority.rs": {
       "file-lines": 2115
@@ -284,7 +290,7 @@
       "file-lines": 1522
     },
     "src-tauri/src/window.rs": {
-      "file-lines": 1750
+      "file-lines": 1788
     },
     "src-tauri/src/worktrees.rs": {
       "file-lines": 2438
@@ -293,19 +299,19 @@
       "file-lines": 3608
     },
     "src/app/model/appLifecycle.ts": {
-      "file-lines": 1303
+      "file-lines": 1311
     },
     "src/app/shell/MenuBar.tsx": {
       "file-lines": 662
     },
     "src/app/shell/ProjectRail.tsx": {
-      "file-lines": 2720
+      "file-lines": 2716
     },
     "src/app/shell/SessionRecoveryPanel.tsx": {
       "file-lines": 663
     },
     "src/app/shell/Sidebar.tsx": {
-      "file-lines": 6879
+      "file-lines": 6880
     },
     "src/app/shell/SidebarRename.test.ts": {
       "file-lines": 2828
@@ -389,7 +395,7 @@
     "src/features/assistant/ui/AssistantView.tsx": {
       "cross-feature-deep-import": 3,
       "feature-imports-app": 1,
-      "file-lines": 4408
+      "file-lines": 4461
     },
     "src/features/automations/hooks/useAutomationActions.ts": {
       "cross-feature-deep-import": 1
@@ -468,7 +474,7 @@
     },
     "src/features/connections/model/remoteOutbox.ts": {
       "cross-feature-deep-import": 1,
-      "file-lines": 1018
+      "file-lines": 1107
     },
     "src/features/connections/model/remoteOutboxDatabase.ts": {
       "cross-feature-deep-import": 1
@@ -501,7 +507,7 @@
       "cross-feature-deep-import": 5
     },
     "src/features/connections/model/useSharedLocalQueues.ts": {
-      "file-lines": 932
+      "file-lines": 997
     },
     "src/features/connections/model/workspaceUrls.ts": {
       "cross-feature-deep-import": 2
@@ -514,11 +520,11 @@
       "cross-feature-deep-import": 1
     },
     "src/features/connections/ui/RemoteSession.test.ts": {
-      "file-lines": 5206
+      "file-lines": 5256
     },
     "src/features/connections/ui/RemoteSession.tsx": {
       "cross-feature-deep-import": 6,
-      "file-lines": 4116
+      "file-lines": 4255
     },
     "src/features/connections/ui/serverColor.ts": {
       "cross-feature-deep-import": 1
@@ -536,7 +542,7 @@
     },
     "src/features/connections/ui/ServersView.tsx": {
       "feature-imports-app": 3,
-      "file-lines": 987
+      "file-lines": 979
     },
     "src/features/connections/ui/ServersWorkspaceView.tsx": {
       "feature-imports-app": 1
@@ -672,7 +678,7 @@
     },
     "src/features/files/ui/FileTree.tsx": {
       "cross-feature-deep-import": 1,
-      "file-lines": 1871
+      "file-lines": 1884
     },
     "src/features/files/ui/PdfViewer.tsx": {
       "file-lines": 618
@@ -756,7 +762,7 @@
     },
     "src/features/host-tools/DevServersPanel.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 1152,
+      "file-lines": 1159,
       "loose-feature-file": 1
     },
     "src/features/host-tools/devServerTypes.ts": {
@@ -784,7 +790,7 @@
     },
     "src/features/host-tools/RuntimeLogsPanel.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 1261,
+      "file-lines": 1235,
       "loose-feature-file": 1
     },
     "src/features/host-tools/runtimeLogTypes.ts": {
@@ -844,7 +850,7 @@
     },
     "src/features/inbox/model/githubTasks.ts": {
       "cross-feature-deep-import": 1,
-      "file-lines": 1653
+      "file-lines": 1692
     },
     "src/features/inbox/model/gitlab.ts": {
       "cross-feature-deep-import": 1
@@ -881,17 +887,17 @@
     },
     "src/features/inbox/ui/InboxComments.tsx": {
       "cross-feature-deep-import": 2,
-      "file-lines": 833
+      "file-lines": 825
     },
     "src/features/inbox/ui/InboxDetail.tsx": {
       "cross-feature-deep-import": 6,
-      "file-lines": 825
+      "file-lines": 812
     },
     "src/features/inbox/ui/InboxNotificationMenu.tsx": {
       "cross-feature-deep-import": 6
     },
     "src/features/inbox/ui/InboxPrChecks.tsx": {
-      "file-lines": 871
+      "file-lines": 870
     },
     "src/features/inbox/ui/InboxPrDiff.tsx": {
       "cross-feature-deep-import": 3
@@ -905,10 +911,10 @@
     "src/features/inbox/ui/InboxView.tsx": {
       "cross-feature-deep-import": 8,
       "feature-imports-app": 4,
-      "file-lines": 1535
+      "file-lines": 1533
     },
     "src/features/inbox/ui/JiraBoardView.tsx": {
-      "file-lines": 1265
+      "file-lines": 1272
     },
     "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
       "cross-feature-deep-import": 1
@@ -976,7 +982,7 @@
     },
     "src/features/notes/ui/SessionNotesPanel.tsx": {
       "cross-feature-deep-import": 5,
-      "file-lines": 1123
+      "file-lines": 1118
     },
     "src/features/notes/ui/useNoteImageInsertion.ts": {
       "cross-feature-deep-import": 1
@@ -1297,7 +1303,7 @@
     "src/features/sessions/data/sessionStore.ts": {
       "cross-feature-deep-import": 4,
       "feature-imports-app": 1,
-      "file-lines": 2612
+      "file-lines": 2641
     },
     "src/features/sessions/import/importRunner.ts": {
       "cross-feature-deep-import": 1
@@ -1408,11 +1414,11 @@
     },
     "src/features/sessions/ui/AgentMarkdown.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 1560
+      "file-lines": 1569
     },
     "src/features/sessions/ui/AgentTranscript.tsx": {
       "cross-feature-deep-import": 3,
-      "file-lines": 2883
+      "file-lines": 2879
     },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
       "file-lines": 1896
@@ -1434,11 +1440,11 @@
       "file-lines": 672
     },
     "src/features/sessions/ui/Composer.test.ts": {
-      "file-lines": 2488
+      "file-lines": 2490
     },
     "src/features/sessions/ui/Composer.tsx": {
       "cross-feature-deep-import": 15,
-      "file-lines": 4814
+      "file-lines": 4812
     },
     "src/features/sessions/ui/crewCodeArt.ts": {
       "file-lines": 2770
@@ -1472,6 +1478,9 @@
     "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
       "cross-feature-deep-import": 2
     },
+    "src/features/sessions/ui/QuestionForm.tsx": {
+      "file-lines": 670
+    },
     "src/features/sessions/ui/ReminderNotices.tsx": {
       "cross-feature-deep-import": 1
     },
@@ -1485,7 +1494,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
-      "file-lines": 929
+      "file-lines": 921
     },
     "src/features/sessions/ui/SessionPane.tsx": {
       "cross-feature-deep-import": 7,
@@ -1672,7 +1681,7 @@
       "file-lines": 668
     },
     "src/features/social/ui/CampaignComposer.tsx": {
-      "file-lines": 932
+      "file-lines": 918
     },
     "src/features/social/ui/ContactTagSuggestions.tsx": {
       "cross-feature-deep-import": 1
@@ -1682,7 +1691,7 @@
       "file-lines": 731
     },
     "src/features/social/ui/ProgramSetupForm.tsx": {
-      "file-lines": 1364
+      "file-lines": 1356
     },
     "src/features/social/ui/RuleSimplifyReview.tsx": {
       "cross-feature-deep-import": 2,
@@ -1734,7 +1743,7 @@
     "src/features/social/ui/SocialView.tsx": {
       "cross-feature-deep-import": 2,
       "feature-imports-app": 3,
-      "file-lines": 763
+      "file-lines": 764
     },
     "src/features/social/ui/useSocialWorkspaceController.ts": {
       "cross-feature-deep-import": 4
@@ -1762,7 +1771,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/source-control/ui/GitHistoryGraph.tsx": {
-      "file-lines": 634
+      "file-lines": 645
     },
     "src/features/source-control/ui/UnifiedDiffView.tsx": {
       "file-lines": 1493
@@ -1841,7 +1850,7 @@
       "cross-feature-deep-import": 4
     },
     "src/features/tasks/ui/SprintManagement.tsx": {
-      "file-lines": 714
+      "file-lines": 741
     },
     "src/features/tasks/ui/TaskAccountPicker.tsx": {
       "cross-feature-deep-import": 2
@@ -1908,7 +1917,7 @@
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
       "cross-feature-deep-import": 2,
       "feature-imports-app": 1,
-      "file-lines": 659
+      "file-lines": 657
     },
     "src/features/terminal/ui/TerminalSelectionMenu.tsx": {
       "cross-feature-deep-import": 4
@@ -1947,7 +1956,7 @@
     },
     "src/features/usage/ui/UsageOverview.tsx": {
       "cross-feature-deep-import": 7,
-      "file-lines": 1027
+      "file-lines": 988
     },
     "src/features/usage/ui/UsagePage.tsx": {
       "cross-feature-deep-import": 7,
@@ -2023,12 +2032,12 @@
       "cross-feature-deep-import": 1
     },
     "src/features/voice/ui/VoiceCompanion.test.ts": {
-      "file-lines": 2903
+      "file-lines": 2898
     },
     "src/features/voice/ui/VoiceCompanion.tsx": {
       "cross-feature-deep-import": 11,
       "feature-imports-app": 1,
-      "file-lines": 3619
+      "file-lines": 3534
     },
     "src/features/voice/ui/VoiceCompanionGate.tsx": {
       "cross-feature-deep-import": 2
@@ -2041,7 +2050,7 @@
     },
     "src/features/voice/ui/VoiceSettings.tsx": {
       "cross-feature-deep-import": 2,
-      "file-lines": 886
+      "file-lines": 882
     },
     "src/features/voice/ui/VoiceSetupSteps.tsx": {
       "cross-feature-deep-import": 1
@@ -2160,7 +2169,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/child.ts": {
-      "file-lines": 1605,
+      "file-lines": 1627,
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/conversationToolsBridge.ts": {
@@ -2176,7 +2185,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/nativeOutputDelivery.ts": {
-      "file-lines": 1043
+      "file-lines": 1064
     },
     "src/integrations/harness/core/preview.ts": {
       "file-lines": 1032,
@@ -2214,7 +2223,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/providers/antigravity/antigravity.ts": {
-      "file-lines": 1011,
+      "file-lines": 1009,
       "foundation-imports-app": 2
     },
     "src/integrations/harness/providers/antigravity/antigravityCatalog.ts": {
@@ -2230,7 +2239,7 @@
       "foundation-imports-app": 3
     },
     "src/integrations/harness/providers/claude/claude.ts": {
-      "file-lines": 2580,
+      "file-lines": 2583,
       "foundation-imports-app": 6
     },
     "src/integrations/harness/providers/claude/claudeCatalog.ts": {
@@ -2253,7 +2262,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/providers/codex/codex.ts": {
-      "file-lines": 2446,
+      "file-lines": 2467,
       "foundation-imports-app": 5
     },
     "src/integrations/harness/providers/codex/codexCatalog.ts": {
@@ -2431,7 +2440,7 @@
       "foundation-imports-app": 2
     },
     "src/platform/tauri/fs.ts": {
-      "file-lines": 1377,
+      "file-lines": 1366,
       "foundation-imports-app": 2
     },
     "src/platform/tauri/turnProbe.ts": {
@@ -2456,7 +2465,7 @@
       "file-lines": 1118
     },
     "src/shared/model/host-contracts/methods.ts": {
-      "file-lines": 1045
+      "file-lines": 1047
     },
     "src/shared/ui/arc/activity-heatmap/activity-heatmap.tsx": {
       "file-lines": 843

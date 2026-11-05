@@ -27,6 +27,7 @@
     "test:updater": "node scripts/checks/test-updater.mjs",
     "check:plan": "node scripts/checks/check-local.mjs",
     "check:changed": "node scripts/checks/check-local.mjs --run",
+    "check:preflight": "node scripts/checks/check-preflight.mjs",
     "check:repository-graph": "node scripts/checks/repository-graph.mjs",
     "check:packages": "node scripts/checks/check-package-boundaries.mjs",
     "test:packages": "pnpm --filter @bycoda/core test",

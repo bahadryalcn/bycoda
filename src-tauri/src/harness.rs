@@ -24,13 +24,13 @@ use crate::native_provider_output::{
 };
 use crate::passwd_identity;
 
+pub(crate) mod management_authority;
 #[cfg(windows)]
 mod mcp_auth;
+pub(crate) mod owned_opencode;
 pub(crate) mod process_lifecycle;
 mod process_receipts;
 pub(crate) mod turn_writes;
-pub(crate) mod management_authority;
-pub(crate) mod owned_opencode;
 use process_lifecycle::{OwnedChild, WriteGate};
 
 const STDOUT_EVENT: &str = "harness-stdout-lines";
@@ -177,7 +177,8 @@ struct LiveChild {
     issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
     /// Original Native turn/output association; warm per-turn control is separate.
     _control_turn: Option<Arc<crate::control::ChildControlTurn>>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability:
+        Option<crate::session_store::canonical_store::NativeSessionCapability>,
     native_process_purpose: Option<crate::session_store::canonical_store::NativeProcessPurpose>,
     management_input_policy: Option<management_authority::InputPolicy>,
     management_route_id: Option<String>,
@@ -454,7 +455,8 @@ struct LiveSse {
     issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
     owners: Arc<Owners>,
     output: Option<Arc<NativeOutputStream>>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability:
+        Option<crate::session_store::canonical_store::NativeSessionCapability>,
 }
 
 /// Where a child's events go: only the windows that consume them, instead of
@@ -718,10 +720,16 @@ struct ManagedProviderExit {
     result: Mutex<Option<Result<(), String>>>,
     changed: Condvar,
 }
-struct OwnedHttpCompletion { exit: Arc<ManagedProviderExit>, complete: bool }
+struct OwnedHttpCompletion {
+    exit: Arc<ManagedProviderExit>,
+    complete: bool,
+}
 impl Drop for OwnedHttpCompletion {
     fn drop(&mut self) {
-        if !self.complete { self.exit.finish(Err("OWNED_OPENCODE_HTTP_OUTCOME_UNKNOWN".into())); }
+        if !self.complete {
+            self.exit
+                .finish(Err("OWNED_OPENCODE_HTTP_OUTCOME_UNKNOWN".into()));
+        }
     }
 }
 
@@ -1028,7 +1036,10 @@ pub(crate) fn with_quiescent_sessions<T>(
                     .output
                     .as_ref()
                     .is_some_and(|output| output.target() == id)
-                || child.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == id)
+                || child
+                    .native_session_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.shell_id() == id)
         })
     }) {
         return Err("A conversation is still running; stop it before moving".into());
@@ -1054,7 +1065,10 @@ pub(crate) fn with_quiescent_sessions<T>(
                     .output
                     .as_ref()
                     .is_some_and(|output| output.target() == id)
-                || stream.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == id)
+                || stream
+                    .native_session_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.shell_id() == id)
         })
     }) {
         return Err("A conversation is still running; stop it before moving".into());
@@ -1105,7 +1119,10 @@ impl HarnessHost {
                     .output
                     .as_ref()
                     .is_some_and(|output| output.target() == session_id)
-                || child.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == session_id)
+                || child
+                    .native_session_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.shell_id() == session_id)
         }) {
             return Err("NATIVE_AUTHORITY_PROVIDER_ACTIVE".into());
         }
@@ -1126,7 +1143,10 @@ impl HarnessHost {
             .iter()
             .any(|(route, live)| {
                 route == session_id
-                    || live.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == session_id)
+                    || live
+                        .native_session_capability
+                        .as_ref()
+                        .is_some_and(|capability| capability.shell_id() == session_id)
                     || live
                         .output
                         .as_ref()
@@ -1501,7 +1521,11 @@ impl HarnessHost {
         };
         let inner = self.lock_inner();
         if inner.children.iter().any(|(route, child)| {
-            (same_target(route, child.output.as_ref()) || child.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == target))
+            (same_target(route, child.output.as_ref())
+                || child
+                    .native_session_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.shell_id() == target))
                 && !child
                     .issuer
                     .as_ref()
@@ -1515,7 +1539,11 @@ impl HarnessHost {
             .lock()
             .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?;
         if streams.iter().any(|(route, stream)| {
-            (same_target(route, stream.output.as_ref()) || stream.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == target))
+            (same_target(route, stream.output.as_ref())
+                || stream
+                    .native_session_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.shell_id() == target))
                 && !stream
                     .issuer
                     .as_ref()
@@ -1547,7 +1575,10 @@ impl HarnessHost {
                                 .output
                                 .as_ref()
                                 .is_some_and(|output| output.target() == session_id)
-                            || live.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == session_id)
+                            || live
+                                .native_session_capability
+                                .as_ref()
+                                .is_some_and(|capability| capability.shell_id() == session_id)
                     })
                     .map(|(route, _)| route.clone()),
             );
@@ -1562,7 +1593,10 @@ impl HarnessHost {
                                 .output
                                 .as_ref()
                                 .is_some_and(|output| output.target() == session_id)
-                            || live.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == session_id)
+                            || live
+                                .native_session_capability
+                                .as_ref()
+                                .is_some_and(|capability| capability.shell_id() == session_id)
                     })
                     .map(|(route, _)| route.clone()),
             );
@@ -1573,7 +1607,9 @@ impl HarnessHost {
                 self.stop_sse(&route);
                 if let Some(live) = self.kill_session(&route) {
                     let _ = live.request_stop();
-                    if let Some(exit) = &live.exit { exact_exits.push(exit.clone()); }
+                    if let Some(exit) = &live.exit {
+                        exact_exits.push(exit.clone());
+                    }
                 }
             }
             let retained = self
@@ -1583,7 +1619,12 @@ impl HarnessHost {
                 .cloned()
                 .unwrap_or_default();
             for exit in retained {
-                if !exact_exits.iter().any(|existing| Arc::ptr_eq(existing, &exit)) { exact_exits.push(exit); }
+                if !exact_exits
+                    .iter()
+                    .any(|existing| Arc::ptr_eq(existing, &exit))
+                {
+                    exact_exits.push(exit);
+                }
             }
             Ok(exact_exits)
         };
@@ -1616,7 +1657,10 @@ impl HarnessHost {
                     .output
                     .as_ref()
                     .is_some_and(|output| output.target() == session_id)
-                || child.native_session_capability.as_ref().is_some_and(|capability| capability.shell_id() == session_id)
+                || child
+                    .native_session_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.shell_id() == session_id)
         }) {
             return Err("A different managed provider started during turn retirement".into());
         }
@@ -2710,7 +2754,9 @@ pub async fn harness_spawn(
     authority_generation: Option<u64>,
     logical_session_id: Option<String>,
     control_turn: Option<crate::control::ControlTurnReceipt>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability: Option<
+        crate::session_store::canonical_store::NativeSessionCapability,
+    >,
     native_process_purpose: Option<crate::session_store::canonical_store::NativeProcessPurpose>,
     native_management_token: Option<String>,
     native_management_route_id: Option<String>,
@@ -2769,7 +2815,9 @@ fn harness_spawn_blocking(
     authority_generation: Option<u64>,
     logical_session_id: Option<String>,
     control_turn: Option<crate::control::ControlTurnReceipt>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability: Option<
+        crate::session_store::canonical_store::NativeSessionCapability,
+    >,
     native_process_purpose: Option<crate::session_store::canonical_store::NativeProcessPurpose>,
     native_management_token: Option<String>,
     native_management_route_id: Option<String>,
@@ -2797,11 +2845,21 @@ fn harness_spawn_blocking(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
     let management_input_policy = management_authority::spawn_input_policy(
-        &window.as_ref().window(), native_management_token.as_deref(), native_management_route_id.as_deref(), native_management_purpose.as_deref(),
-        &session_id, &command, &args, &cwd, account.as_ref(), binary_provider.as_deref(), binary_path.as_deref(),
+        &window.as_ref().window(),
+        native_management_token.as_deref(),
+        native_management_route_id.as_deref(),
+        native_management_purpose.as_deref(),
+        &session_id,
+        &command,
+        &args,
+        &cwd,
+        account.as_ref(),
+        binary_provider.as_deref(),
+        binary_path.as_deref(),
     )?;
     if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
-        && native_session_capability.is_none() && management_input_policy.is_none()
+        && native_session_capability.is_none()
+        && management_input_policy.is_none()
     {
         return Err("NATIVE_SESSION_CAPABILITY_REQUIRED".into());
     }
@@ -2813,7 +2871,10 @@ fn harness_spawn_blocking(
         logical_session_id.as_deref(),
     )?;
     let source_target = source.target().to_owned();
-    let authority_target = native_session_capability.as_ref().map_or_else(|| source_target.clone(), |capability| capability.shell_id().to_owned());
+    let authority_target = native_session_capability.as_ref().map_or_else(
+        || source_target.clone(),
+        |capability| capability.shell_id().to_owned(),
+    );
     if authority_target != source_target && control_turn.is_none() {
         return Err("NATIVE_DERIVED_SESSION_CONTROL_REQUIRED".into());
     }
@@ -2839,12 +2900,28 @@ fn harness_spawn_blocking(
     };
     // Optional until every management and conversation route carries an
     // explicit purpose/capability. Existing callers remain unchanged.
-    let _session_admission = native_session_capability.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|capability| {
-        crate::session_store::canonical_store::admit_session_effect(&app, &window.as_ref().window(), &authority_target, capability)
-    }).transpose()?;
-    let _purpose_admission = native_process_purpose.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|purpose| {
-        crate::session_store::canonical_store::admit_process_purpose(&window.as_ref().window(), purpose)
-    }).transpose()?;
+    let _session_admission = native_session_capability
+        .as_ref()
+        .filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED)
+        .map(|capability| {
+            crate::session_store::canonical_store::admit_session_effect(
+                &app,
+                &window.as_ref().window(),
+                &authority_target,
+                capability,
+            )
+        })
+        .transpose()?;
+    let _purpose_admission = native_process_purpose
+        .as_ref()
+        .filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED)
+        .map(|purpose| {
+            crate::session_store::canonical_store::admit_process_purpose(
+                &window.as_ref().window(),
+                purpose,
+            )
+        })
+        .transpose()?;
     let mut window_claim = issuer.with_live(|| {
         crate::session_window_ownership::reserve_spawn(&authority_target, &issuer, window.label())
     })?;
@@ -2916,7 +2993,8 @@ fn harness_spawn_blocking(
             })
     });
 
-    let mut scratch = crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
+    let mut scratch =
+        crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
     configure_optional_tool_grants(&app, &session_id, &mut cmd, (epoch, kill_all));
 
     // Hold this child's redaction values through its final output drain, even
@@ -2945,7 +3023,9 @@ fn harness_spawn_blocking(
     })?;
     // Registration happens before the pending start is settled, including the
     // interval before the physical child is installed in the live map.
-    if let Some(scratch) = scratch.as_mut() { scratch.started(); }
+    if let Some(scratch) = scratch.as_mut() {
+        scratch.started();
+    }
     let _ = page_start.attach(managed_exit.clone());
     let pid = child.id();
     if let Some(activity) = workspace_activity.as_mut() {
@@ -2981,9 +3061,17 @@ fn harness_spawn_blocking(
         management_input_policy,
         management_route_id: management_input_policy.and(native_management_route_id.clone()),
         utility_executable: Some(command.clone()),
-        utility_endpoint: if binary_provider.as_deref() == Some("opencode") && args.len() == 3 && args[0] == "serve" && args[1] == "--hostname=127.0.0.1" {
-            args[2].strip_prefix("--port=").map(|port| format!("http://127.0.0.1:{port}"))
-        } else { None },
+        utility_endpoint: if binary_provider.as_deref() == Some("opencode")
+            && args.len() == 3
+            && args[0] == "serve"
+            && args[1] == "--hostname=127.0.0.1"
+        {
+            args[2]
+                .strip_prefix("--port=")
+                .map(|port| format!("http://127.0.0.1:{port}"))
+        } else {
+            None
+        },
         account,
         owners: Arc::clone(&owners),
         output: Some(output.clone()),
@@ -3031,7 +3119,11 @@ fn harness_spawn_blocking(
                 Err("Provider wait failed; admission retained".into())
             };
             let settlement = result.and(finished);
-            if settlement.is_ok() && child.retirement().require_verified().is_ok() { if let Some(scratch) = scratch.as_mut() { scratch.settled(); } }
+            if settlement.is_ok() && child.retirement().require_verified().is_ok() {
+                if let Some(scratch) = scratch.as_mut() {
+                    scratch.settled();
+                }
+            }
             managed_exit.finish(settlement);
         });
         return Err(SPAWN_CANCELLED.to_string());
@@ -3147,7 +3239,11 @@ fn harness_spawn_blocking(
         output.terminal_delivery(terminal_sent);
         // Final native callback belongs to this same original owner too.
         let confirmed = settlement.is_ok();
-        if confirmed && writers.is_ok() && child.retirement().require_verified().is_ok() { if let Some(scratch) = scratch.as_mut() { scratch.settled(); } }
+        if confirmed && writers.is_ok() && child.retirement().require_verified().is_ok() {
+            if let Some(scratch) = scratch.as_mut() {
+                scratch.settled();
+            }
+        }
         managed_exit.finish(settlement);
         if confirmed {
             if let Some(lifetime) = window_lifetime {
@@ -3615,17 +3711,24 @@ pub async fn harness_write(
     construction_id: Option<String>,
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability: Option<
+        crate::session_store::canonical_store::NativeSessionCapability,
+    >,
     native_process_purpose: Option<crate::session_store::canonical_store::NativeProcessPurpose>,
 ) -> Result<(), String> {
     let live = host.get_original(&session_id, construction_id.as_deref())?;
-    if live.management_input_policy.is_some() != live.management_route_id.is_some() { return Err("NATIVE_MANAGEMENT_ROUTE_INVALID".into()); }
+    if live.management_input_policy.is_some() != live.management_route_id.is_some() {
+        return Err("NATIVE_MANAGEMENT_ROUTE_INVALID".into());
+    }
     if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
-        && live.native_session_capability.is_none() && live.management_input_policy.is_none()
+        && live.native_session_capability.is_none()
+        && live.management_input_policy.is_none()
     {
         return Err("NATIVE_SESSION_CAPABILITY_REQUIRED".into());
     }
-    if let Some(policy) = live.management_input_policy { management_authority::validate_input(policy, &line, &live.cwd)?; }
+    if let Some(policy) = live.management_input_policy {
+        management_authority::validate_input(policy, &line, &live.cwd)?;
+    }
     let mut admission = live.admit_write()?;
     let gate = if let Some(output) = &live.output {
         output.control_gate(&app)?
@@ -3635,7 +3738,12 @@ pub async fn harness_write(
             .authority_execution_gate()
     };
     let target = live.native_session_capability.as_ref().map_or_else(
-        || live.output.as_ref().map_or(session_id.as_str(), |output| output.target()).to_owned(),
+        || {
+            live.output
+                .as_ref()
+                .map_or(session_id.as_str(), |output| output.target())
+                .to_owned()
+        },
         |capability| capability.shell_id().to_owned(),
     );
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;
@@ -3645,18 +3753,32 @@ pub async fn harness_write(
     // Lease SQL (store mutex + write transaction) must not run on the async
     // command thread: reserve inside the blocking task together with the write.
     let result = tauri::async_runtime::spawn_blocking(move || {
-        if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED && live.native_session_capability != native_session_capability {
+        if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
+            && live.native_session_capability != native_session_capability
+        {
             return Err("CANONICAL_SESSION_CONSTRUCTION_MISMATCH".into());
         }
-        if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED && live.native_process_purpose != native_process_purpose {
+        if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
+            && live.native_process_purpose != native_process_purpose
+        {
             return Err("NATIVE_PROCESS_PURPOSE_MISMATCH".into());
         }
-        let _purpose_admission = native_process_purpose.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|purpose| {
-            crate::session_store::canonical_store::admit_process_purpose(&window, purpose)
-        }).transpose()?;
-        let _session_admission = native_session_capability.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|capability| {
-            crate::session_store::canonical_store::admit_session_effect(&app, &window, &target, capability)
-        }).transpose()?;
+        let _purpose_admission = native_process_purpose
+            .as_ref()
+            .filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED)
+            .map(|purpose| {
+                crate::session_store::canonical_store::admit_process_purpose(&window, purpose)
+            })
+            .transpose()?;
+        let _session_admission = native_session_capability
+            .as_ref()
+            .filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED)
+            .map(|capability| {
+                crate::session_store::canonical_store::admit_session_effect(
+                    &app, &window, &target, capability,
+                )
+            })
+            .transpose()?;
         // The write deadline starts before the lease wait.
         let deadline = Instant::now() + PROVIDER_WRITE_BUDGET;
         // Queue behind earlier writes to this child (FIFO) before taking a lease.
@@ -4216,28 +4338,76 @@ pub async fn harness_http(
     session_id: Option<String>,
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability: Option<
+        crate::session_store::canonical_store::NativeSessionCapability,
+    >,
     native_owned_service: Option<owned_opencode::ServiceHandle>,
 ) -> Result<HarnessHttpResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         assert_loopback(&url)?;
-        let _legacy_utility_pin = if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED && native_owned_service.is_none() {
-            let route = session_id.as_deref().ok_or("NATIVE_SESSION_CAPABILITY_REQUIRED")?;
-            let child = app.state::<HarnessHost>().get(route).ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
-            let webview = app.get_webview_window(window.label()).ok_or("NATIVE_CONTROL_WINDOW_UNKNOWN")?;
-            let issuer = crate::control::receipts::capture(&webview)?;
-            let endpoint = child.utility_endpoint.as_ref().ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
-            let parsed = url::Url::parse(&url).map_err(|_| "NATIVE_UTILITY_ENDPOINT_INVALID")?;
-            if !child.issuer.as_ref().is_some_and(|owner| Arc::ptr_eq(owner, &issuer)) || child.native_session_capability != native_session_capability || parsed.origin().ascii_serialization() != *endpoint { return Err("NATIVE_UTILITY_ENDPOINT_INVALID".into()); }
-            Some(child.process.as_ref().ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?.pin().map_err(|e| e.to_string())?)
-        } else { None };
-        let parent = native_owned_service.as_ref().and_then(|_| native_session_capability.as_ref().map(|capability| capability.shell_id().to_owned()));
+        let _legacy_utility_pin =
+            if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
+                && native_owned_service.is_none()
+            {
+                let route = session_id
+                    .as_deref()
+                    .ok_or("NATIVE_SESSION_CAPABILITY_REQUIRED")?;
+                let child = app
+                    .state::<HarnessHost>()
+                    .get(route)
+                    .ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
+                let webview = app
+                    .get_webview_window(window.label())
+                    .ok_or("NATIVE_CONTROL_WINDOW_UNKNOWN")?;
+                let issuer = crate::control::receipts::capture(&webview)?;
+                let endpoint = child
+                    .utility_endpoint
+                    .as_ref()
+                    .ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
+                let parsed =
+                    url::Url::parse(&url).map_err(|_| "NATIVE_UTILITY_ENDPOINT_INVALID")?;
+                if !child
+                    .issuer
+                    .as_ref()
+                    .is_some_and(|owner| Arc::ptr_eq(owner, &issuer))
+                    || child.native_session_capability != native_session_capability
+                    || parsed.origin().ascii_serialization() != *endpoint
+                {
+                    return Err("NATIVE_UTILITY_ENDPOINT_INVALID".into());
+                }
+                Some(
+                    child
+                        .process
+                        .as_ref()
+                        .ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?
+                        .pin()
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                None
+            };
+        let parent = native_owned_service.as_ref().and_then(|_| {
+            native_session_capability
+                .as_ref()
+                .map(|capability| capability.shell_id().to_owned())
+        });
         let parent_gate = parent.as_deref().map(session_spawn_gate);
-        let gate_guard = parent_gate.as_ref().map(|gate| gate.lock().map_err(|_| "OWNED_OPENCODE_GATE_UNAVAILABLE")).transpose()?;
+        let gate_guard = parent_gate
+            .as_ref()
+            .map(|gate| gate.lock().map_err(|_| "OWNED_OPENCODE_GATE_UNAVAILABLE"))
+            .transpose()?;
         let mut owned = match &native_owned_service {
             Some(handle) => Some(match native_session_capability.as_ref() {
-                Some(capability) => owned_opencode::capture_endpoint(&app, &window, handle, capability, &url)?,
-                None => owned_opencode::capture_unscoped_endpoint(&window, handle, &method, &url, body.as_deref())?,
+                Some(capability) => {
+                    owned_opencode::capture_endpoint(&app, &window, handle, capability, &url)?
+                }
+                None => owned_opencode::capture_unscoped_endpoint(
+                    &window,
+                    handle,
+                    &method,
+                    &url,
+                    body.as_deref(),
+                )?,
             }),
             None => None,
         };
@@ -4248,16 +4418,30 @@ pub async fn harness_http(
             let exits = inner.managed_exits.entry(parent).or_default();
             exits.retain(|entry| !entry.succeeded());
             exits.push(exit.clone());
-            Some(OwnedHttpCompletion { exit, complete: false })
-        } else { None };
+            Some(OwnedHttpCompletion {
+                exit,
+                complete: false,
+            })
+        } else {
+            None
+        };
         drop(gate_guard);
-        let _session_admission = if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED {
-            if let Some(capability) = native_session_capability.as_ref() {
-                session_id.as_deref().ok_or("CANONICAL_SESSION_SCOPE_REQUIRED")?;
-                let target = capability.shell_id();
-                Some(crate::session_store::canonical_store::admit_session_effect(&app, &window, target, capability)?)
-            } else { None }
-        } else { None };
+        let _session_admission =
+            if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED {
+                if let Some(capability) = native_session_capability.as_ref() {
+                    session_id
+                        .as_deref()
+                        .ok_or("CANONICAL_SESSION_SCOPE_REQUIRED")?;
+                    let target = capability.shell_id();
+                    Some(crate::session_store::canonical_store::admit_session_effect(
+                        &app, &window, target, capability,
+                    )?)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
         let mut authority = if !matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
             if let Some(session_id) = session_id.as_deref() {
                 let source = app
@@ -4307,12 +4491,16 @@ pub async fn harness_http(
         let mut request = http_agent().request(&method, &url).timeout(timeout);
         if let Some(headers) = &headers {
             for (key, value) in headers {
-                if owned.is_some() && key.eq_ignore_ascii_case("authorization") { return Err("OWNED_OPENCODE_AUTH_HEADER_FORBIDDEN".into()); }
+                if owned.is_some() && key.eq_ignore_ascii_case("authorization") {
+                    return Err("OWNED_OPENCODE_AUTH_HEADER_FORBIDDEN".into());
+                }
                 request = request.set(key, value);
             }
         }
         let authorization = owned.as_ref().map(|service| service.authorization());
-        if let Some(value) = authorization.as_ref() { request = request.set("Authorization", value.as_str()); }
+        if let Some(value) = authorization.as_ref() {
+            request = request.set("Authorization", value.as_str());
+        }
         let result = match body {
             Some(payload) => request.send_string(&payload),
             None => request.call(),
@@ -4325,13 +4513,18 @@ pub async fn harness_http(
             }
             Err(error) => Err(format!("OpenCode HTTP failed: {error}")),
         }?;
-        if let Some(service) = owned.as_mut() { service.settle_utility(response.status, &response.body)?; }
+        if let Some(service) = owned.as_mut() {
+            service.settle_utility(response.status, &response.body)?;
+        }
         if let Some(lease) = authority {
             lease.finish()?;
         }
         drop(authorization);
         drop(owned);
-        if let Some(completion) = owned_completion.as_mut() { completion.exit.finish(Ok(())); completion.complete = true; }
+        if let Some(completion) = owned_completion.as_mut() {
+            completion.exit.finish(Ok(()));
+            completion.complete = true;
+        }
         Ok(response)
     })
     .await
@@ -4377,7 +4570,9 @@ pub async fn harness_sse_open(
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
     logical_session_id: Option<String>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability: Option<
+        crate::session_store::canonical_store::NativeSessionCapability,
+    >,
     native_owned_service: Option<owned_opencode::ServiceHandle>,
 ) -> Result<(), String> {
     let issuer = crate::control::receipts::capture(&window)?;
@@ -4413,39 +4608,97 @@ fn harness_sse_open_blocking(
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
     logical_session_id: Option<String>,
-    native_session_capability: Option<crate::session_store::canonical_store::NativeSessionCapability>,
+    native_session_capability: Option<
+        crate::session_store::canonical_store::NativeSessionCapability,
+    >,
     native_owned_service: Option<owned_opencode::ServiceHandle>,
 ) -> Result<(), String> {
     assert_loopback(&url)?;
-    let _legacy_utility_pin = if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED && native_owned_service.is_none() {
-        let child = host.get(&session_id).ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
-        let endpoint = child.utility_endpoint.as_ref().ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
+    let _legacy_utility_pin = if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
+        && native_owned_service.is_none()
+    {
+        let child = host
+            .get(&session_id)
+            .ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
+        let endpoint = child
+            .utility_endpoint
+            .as_ref()
+            .ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?;
         let parsed = url::Url::parse(&url).map_err(|_| "NATIVE_UTILITY_ENDPOINT_INVALID")?;
-        if !child.issuer.as_ref().is_some_and(|owner| Arc::ptr_eq(owner, &issuer)) || child.native_session_capability != native_session_capability || parsed.origin().ascii_serialization() != *endpoint { return Err("NATIVE_UTILITY_ENDPOINT_INVALID".into()); }
-        Some(child.process.as_ref().ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?.pin().map_err(|e| e.to_string())?)
-    } else { None };
+        if !child
+            .issuer
+            .as_ref()
+            .is_some_and(|owner| Arc::ptr_eq(owner, &issuer))
+            || child.native_session_capability != native_session_capability
+            || parsed.origin().ascii_serialization() != *endpoint
+        {
+            return Err("NATIVE_UTILITY_ENDPOINT_INVALID".into());
+        }
+        Some(
+            child
+                .process
+                .as_ref()
+                .ok_or("NATIVE_UTILITY_PROCESS_REQUIRED")?
+                .pin()
+                .map_err(|e| e.to_string())?,
+        )
+    } else {
+        None
+    };
     let (source, explicit) = OutputSource::capture_or_unbound(
         &app,
         &window,
         &session_id,
         logical_session_id.as_deref(),
     )?;
-    let target = native_session_capability.as_ref().map_or_else(|| source.target().to_owned(), |capability| capability.shell_id().to_owned());
+    let target = native_session_capability.as_ref().map_or_else(
+        || source.target().to_owned(),
+        |capability| capability.shell_id().to_owned(),
+    );
     let spawn_gate = session_spawn_gate(&target);
     let _spawn_guard = spawn_gate
         .try_lock()
         .map_err(|_| "Conversation is still starting; retry")?;
     let owned = match &native_owned_service {
         Some(handle) => Some(match native_session_capability.as_ref() {
-            Some(capability) => owned_opencode::capture_endpoint(&app, &window.as_ref().window(), handle, capability, &url)?,
-            None => owned_opencode::capture_utility_endpoint(&window.as_ref().window(), handle, "GET", &url, None)?,
+            Some(capability) => owned_opencode::capture_endpoint(
+                &app,
+                &window.as_ref().window(),
+                handle,
+                capability,
+                &url,
+            )?,
+            None => owned_opencode::capture_utility_endpoint(
+                &window.as_ref().window(),
+                handle,
+                "GET",
+                &url,
+                None,
+            )?,
         }),
         None => None,
     };
-    if owned.is_some() && headers.as_ref().is_some_and(|values| values.keys().any(|key| key.eq_ignore_ascii_case("authorization"))) { return Err("OWNED_OPENCODE_AUTH_HEADER_FORBIDDEN".into()); }
-    let _session_admission = native_session_capability.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|capability| {
-        crate::session_store::canonical_store::admit_session_effect(&app, &window.as_ref().window(), &target, capability)
-    }).transpose()?;
+    if owned.is_some()
+        && headers.as_ref().is_some_and(|values| {
+            values
+                .keys()
+                .any(|key| key.eq_ignore_ascii_case("authorization"))
+        })
+    {
+        return Err("OWNED_OPENCODE_AUTH_HEADER_FORBIDDEN".into());
+    }
+    let _session_admission = native_session_capability
+        .as_ref()
+        .filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED)
+        .map(|capability| {
+            crate::session_store::canonical_store::admit_session_effect(
+                &app,
+                &window.as_ref().window(),
+                &target,
+                capability,
+            )
+        })
+        .transpose()?;
     let mut window_claim = issuer.with_live(|| {
         crate::session_window_ownership::reserve_spawn(&target, &issuer, window.label())
     })?;
@@ -4462,7 +4715,9 @@ fn harness_sse_open_blocking(
     )?;
     source.check_target_before_start(explicit)?;
     let stop = Arc::new(AtomicBool::new(false));
-    let owned_stream_exit = owned.as_ref().map(|_| Arc::new(ManagedProviderExit::default()));
+    let owned_stream_exit = owned
+        .as_ref()
+        .map(|_| Arc::new(ManagedProviderExit::default()));
     let owners = Arc::new(Owners::for_source(&window, &source));
     let (current, notice) = output_callbacks(&app, &owners);
     let output = issuer.with_live(|| {
@@ -4509,12 +4764,16 @@ fn harness_sse_open_blocking(
         let mut request = agent.get(&url).set("Accept", "text/event-stream");
         if let Some(headers) = &headers {
             for (key, value) in headers {
-                if owned.is_some() && key.eq_ignore_ascii_case("authorization") { continue; }
+                if owned.is_some() && key.eq_ignore_ascii_case("authorization") {
+                    continue;
+                }
                 request = request.set(key, value);
             }
         }
         let authorization = owned.as_ref().map(|service| service.authorization());
-        if let Some(value) = authorization.as_ref() { request = request.set("Authorization", value.as_str()); }
+        if let Some(value) = authorization.as_ref() {
+            request = request.set("Authorization", value.as_str());
+        }
         let result = request.call();
         if stop.load(Ordering::SeqCst) {
             drop(result);
@@ -4529,13 +4788,29 @@ fn harness_sse_open_blocking(
             emit_sse_end(&app, &owners, &session_id, None, &output);
             drop(authorization);
             drop(owned);
-            if let Some(exit) = &owned_stream_exit { exit.finish(if confirmed { Ok(()) } else { Err("OWNED_OPENCODE_SSE_RETIREMENT_UNKNOWN".into()) }); }
+            if let Some(exit) = &owned_stream_exit {
+                exit.finish(if confirmed {
+                    Ok(())
+                } else {
+                    Err("OWNED_OPENCODE_SSE_RETIREMENT_UNKNOWN".into())
+                });
+            }
             return;
         }
         let success = match result {
             Ok(response) => {
                 let reader = BufReader::new(response.into_reader());
-                let success = read_sse(reader, &app, &owners, &session_id, &stop, output.clone(), owned.as_ref().and_then(|service| service.utility_session.as_deref()));
+                let success = read_sse(
+                    reader,
+                    &app,
+                    &owners,
+                    &session_id,
+                    &stop,
+                    output.clone(),
+                    owned
+                        .as_ref()
+                        .and_then(|service| service.utility_session.as_deref()),
+                );
                 output_reader.finish(success, stop.load(Ordering::Acquire));
                 output.terminal_complete(success, stop.load(Ordering::Acquire));
                 emit_sse_end(&app, &owners, &session_id, None, &output);
@@ -4565,7 +4840,13 @@ fn harness_sse_open_blocking(
         }
         drop(authorization);
         drop(owned);
-        if let Some(exit) = &owned_stream_exit { exit.finish(if confirmed { Ok(()) } else { Err("OWNED_OPENCODE_SSE_RETIREMENT_UNKNOWN".into()) }); }
+        if let Some(exit) = &owned_stream_exit {
+            exit.finish(if confirmed {
+                Ok(())
+            } else {
+                Err("OWNED_OPENCODE_SSE_RETIREMENT_UNKNOWN".into())
+            });
+        }
     });
 
     Ok(())
@@ -4795,10 +5076,20 @@ fn read_sse<R: BufRead>(
     let utility_session = utility_session.map(str::to_owned);
     read_sse_batches(reader, stop, move |mut data| {
         if let Some(session) = &utility_session {
-            data.retain(|raw| serde_json::from_str::<serde_json::Value>(raw).ok().is_some_and(|event| {
-                event.pointer("/data/sessionID").or_else(|| event.pointer("/properties/sessionID")).and_then(|value| value.as_str()) == Some(session.as_str())
-            }));
-            if data.is_empty() { return; }
+            data.retain(|raw| {
+                serde_json::from_str::<serde_json::Value>(raw)
+                    .ok()
+                    .is_some_and(|event| {
+                        event
+                            .pointer("/data/sessionID")
+                            .or_else(|| event.pointer("/properties/sessionID"))
+                            .and_then(|value| value.as_str())
+                            == Some(session.as_str())
+                    })
+            });
+            if data.is_empty() {
+                return;
+            }
         }
         emit_output_batch(
             &emit_app,
@@ -4993,21 +5284,40 @@ pub async fn harness_exec(
         return Err("harness_exec: unsupported arguments".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        match (native_management_token.as_deref(), native_management_route_id.as_deref()) {
-            (Some(token), Some(route)) => management_authority::consume(&window, token, route, &command, &args, cwd.as_deref(), binary_provider.as_deref(), binary_path.as_deref())?,
-            (None, None) => {},
+        match (
+            native_management_token.as_deref(),
+            native_management_route_id.as_deref(),
+        ) {
+            (Some(token), Some(route)) => management_authority::consume(
+                &window,
+                token,
+                route,
+                &command,
+                &args,
+                cwd.as_deref(),
+                binary_provider.as_deref(),
+                binary_path.as_deref(),
+            )?,
+            (None, None) => {}
             _ => return Err("NATIVE_MANAGEMENT_GRANT_INVALID".into()),
         }
-        let _purpose_admission = native_process_purpose.as_ref().filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED).map(|purpose| {
-            crate::session_store::canonical_store::admit_process_purpose(&window, purpose)
-        }).transpose()?;
+        let _purpose_admission = native_process_purpose
+            .as_ref()
+            .filter(|_| crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED)
+            .map(|purpose| {
+                crate::session_store::canonical_store::admit_process_purpose(&window, purpose)
+            })
+            .transpose()?;
         if !is_resolved_harness_binary(&command, binary_provider.as_deref(), binary_path.as_deref())
         {
             return Err("harness_exec: not a resolved harness CLI".to_string());
         }
         let mutating = exec_requires_session_provenance(binary_provider.as_deref(), &args);
         if crate::session_store::canonical_store::SESSION_EFFECT_GUARD_ENABLED
-            && (mutating || (binary_provider.as_deref() == Some("grok") && args.get(1).is_some_and(|arg| arg == "sessions"))) && native_management_token.is_none()
+            && (mutating
+                || (binary_provider.as_deref() == Some("grok")
+                    && args.get(1).is_some_and(|arg| arg == "sessions")))
+            && native_management_token.is_none()
         {
             return Err("NATIVE_MANAGEMENT_GRANT_REQUIRED".into());
         }
@@ -5648,7 +5958,7 @@ mod managed_retirement_tests {
             management_input_policy: None,
             management_route_id: None,
             utility_executable: None,
-        utility_endpoint: None,
+            utility_endpoint: None,
             account: None,
             owners: Arc::new(Owners::default()),
             output: Some(output.clone()),
@@ -5756,7 +6066,7 @@ mod managed_retirement_tests {
             management_input_policy: None,
             management_route_id: None,
             utility_executable: None,
-        utility_endpoint: None,
+            utility_endpoint: None,
             account: None,
             owners: Arc::new(Owners::default()),
             output: Some(output.clone()),
@@ -6062,7 +6372,10 @@ fn proc_group_running(pid: i32) -> bool {
         return unsafe { libc::kill(pid, 0) == 0 || libc::kill(-pid, 0) == 0 };
     };
     entries.flatten().any(|entry| {
-        let Some(member) = entry.file_name().to_str().and_then(|name| name.parse::<i32>().ok())
+        let Some(member) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
         else {
             return false;
         };

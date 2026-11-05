@@ -491,15 +491,22 @@ function ProjectDevServersPanel({
         await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address }),
       );
     });
-  const copyUrl = (server: DevServer, address: DevServerEndpoint) => void action(`${server.id}:copy`, async () => {
-      const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
-      if (!alive.current) return;
-      const copied = await copyAsync(() => navigator.clipboard.writeText(url).catch((cause) => {
-        if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
-        throw cause;
-      }));
-      if (copied && alive.current) setNotice(t("URL copied."));
-    }, false);
+  const copyUrl = (server: DevServer, address: DevServerEndpoint) =>
+    void action(
+      `${server.id}:copy`,
+      async () => {
+        const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
+        if (!alive.current) return;
+        const copied = await copyAsync(() =>
+          navigator.clipboard.writeText(url).catch((cause) => {
+            if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+            throw cause;
+          }),
+        );
+        if (copied && alive.current) setNotice(t("URL copied."));
+      },
+      false,
+    );
   const pickMenu = (id: string) => {
     setMenu(null);
     if (!selected) return;

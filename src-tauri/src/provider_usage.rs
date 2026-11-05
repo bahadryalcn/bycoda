@@ -338,13 +338,13 @@ fn keep_cache(path: &Path, cache: ScanCache, saved_at: Option<Instant>, unsaved:
         }
     }
     caches.insert(
-            path.to_path_buf(),
-            MemoryCache {
-                cache,
-                saved_at,
-                unsaved,
-            },
-        );
+        path.to_path_buf(),
+        MemoryCache {
+            cache,
+            saved_at,
+            unsaved,
+        },
+    );
 }
 
 fn load_cache(path: &Path) -> ScanCache {
@@ -365,8 +365,12 @@ fn save_cache(path: &Path, cache: &ScanCache) -> bool {
         return false;
     };
     let temp = path.with_extension("tmp");
-    let saved = std::fs::write(&temp, bytes).and_then(|_| std::fs::rename(&temp, path)).is_ok();
-    if !saved { let _ = std::fs::remove_file(&temp); }
+    let saved = std::fs::write(&temp, bytes)
+        .and_then(|_| std::fs::rename(&temp, path))
+        .is_ok();
+    if !saved {
+        let _ = std::fs::remove_file(&temp);
+    }
     saved
 }
 

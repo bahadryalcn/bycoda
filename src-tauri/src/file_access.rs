@@ -1022,7 +1022,10 @@ mod tests {
             })
             .is_ok()
         );
-        assert!(visited.borrow().iter().all(|path| path.starts_with(&folder)));
+        assert!(visited
+            .borrow()
+            .iter()
+            .all(|path| path.starts_with(&folder)));
         assert!(!destination.exists());
     }
 

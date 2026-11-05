@@ -1,33 +1,19 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
-import {
-  useConfirm,
-  type ConfirmRequest,
-} from "../../../shared/ui/ConfirmDialog";
+import { createElement, useRef, type ReactNode } from "react";
+import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 
-export function useProjectConfirmDialog(
-  request: ConfirmRequest,
-  onCancel: () => void,
-): ReactNode {
-  const confirmation = useConfirm();
+/**
+ * Renders the shared confirmation for a dialog-style component whose parent owns open/close
+ * state. The dialog mounts in tree order (not after a deferred open), so a dialog stacked on
+ * top of it keeps Escape, and dismissal reaches the owner synchronously. Confirmation work
+ * runs through `request.onConfirm`; the owner closes the dialog afterwards as before.
+ */
+export function useProjectConfirmDialog(request: ConfirmRequest, onCancel: () => void): ReactNode {
   const cancel = useRef(onCancel);
   cancel.current = onCancel;
-
-  useLayoutEffect(() => {
-    let active = true;
-    void confirmation.confirmWith(request).then(
-      (result) => {
-        if (active && !result) cancel.current();
-      },
-      () => {
-        if (active) cancel.current();
-      },
-    );
-    return () => {
-      active = false;
-    };
-    // Open once; renderDialog supplies current request content.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return confirmation.renderDialog(request);
+  return createElement(ConfirmDialog, {
+    request,
+    onSettle: (value: boolean) => {
+      if (!value) cancel.current();
+    },
+  });
 }

@@ -62,6 +62,21 @@ are evidence for a finished change set, not a progress bar. Order one task like 
 | 5. Evidence            | Screenshots per tier, saved under `temp/verification/<id>/` and opened                                                                                                    |                                                                     |
 | 6. Review              | A capable model reads the diff and the phase 2–5 results; fixes go back to phase 1 for the touched files only                                                             |                                                                     |
 
+`check:changed` also runs `cargo fmt --all --check` when a Rust file changed, the
+evaluation harness types when application TypeScript changed, and the browser
+manifest/type checks when `tests/browser/` changed, because CI runs them for the
+whole repository.
+
+Before pushing `main` or a release tag, run `pnpm check:preflight`. It mirrors the
+cheap whole-repository CI gates (repository hygiene, formatting, lint/structure/UI
+ratchets, Host contracts, Rust formatting, fast types, script fixtures, evaluation
+types and graders, browser manifest and types) in about two minutes. Every gate runs
+even after a failure, so one run lists everything CI would otherwise reveal one push
+at a time. `--only <job>[,<job>]` limits it to the named CI jobs, `--skip-slow` skips
+the lint baseline, and `--list` prints the commands. It does not replace the full
+vitest, browser, clippy/test or package jobs. A local, uncommitted pre-push hook may
+call it for `main` and tag pushes.
+
 Rules that keep the order honest:
 
 - Never start phase 4 to find out what to fix. Phases 1–3 find defects; phase 4

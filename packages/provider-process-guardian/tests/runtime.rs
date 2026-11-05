@@ -619,14 +619,25 @@ fn guardian_crash_retires_its_actual_provider() {
     let provider = {
         use std::os::fd::FromRawFd;
         let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
-        assert!(fd >= 0, "pidfd required for identity-bound crash observation");
+        assert!(
+            fd >= 0,
+            "pidfd required for identity-bound crash observation"
+        );
         unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) }
     };
     #[cfg(windows)]
     let provider = {
         use std::os::windows::io::FromRawHandle;
-        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE};
-        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid) };
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+        };
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                0,
+                pid,
+            )
+        };
         assert!(!handle.is_null());
         unsafe { std::os::windows::io::OwnedHandle::from_raw_handle(handle) }
     };
@@ -635,7 +646,11 @@ fn guardian_crash_retires_its_actual_provider() {
     #[cfg(target_os = "linux")]
     {
         use std::os::fd::AsRawFd;
-        let mut descriptor = libc::pollfd { fd: provider.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        let mut descriptor = libc::pollfd {
+            fd: provider.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
         assert_eq!(unsafe { libc::poll(&mut descriptor, 1, 10_000) }, 1);
         assert_ne!(descriptor.revents & libc::POLLIN, 0);
     }
@@ -643,6 +658,9 @@ fn guardian_crash_retires_its_actual_provider() {
     {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::System::Threading::WaitForSingleObject;
-        assert_eq!(unsafe { WaitForSingleObject(provider.as_raw_handle(), 10_000) }, 0);
+        assert_eq!(
+            unsafe { WaitForSingleObject(provider.as_raw_handle(), 10_000) },
+            0
+        );
     }
 }

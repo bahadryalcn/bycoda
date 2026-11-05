@@ -161,3 +161,40 @@ test("argument mistakes are rejected instead of silently narrowing coverage", ()
     json: true,
   });
 });
+
+test("changed Rust, application and browser files select the matching cheap CI gates", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "bycoda-local-gates-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const changed = [
+    "src-tauri/src/lib.rs",
+    "src/features/voice/model/parser.ts",
+    "tests/browser/notes.spec.ts",
+  ];
+  for (const [file, content] of Object.entries({
+    ...Object.fromEntries(changed.map((file) => [file, "// fixture"])),
+    "node_modules/oxlint/package.json": JSON.stringify({ bin: { oxlint: "bin/oxlint" } }),
+    "node_modules/oxfmt/package.json": JSON.stringify({ bin: { oxfmt: "bin/oxfmt" } }),
+    "node_modules/tsc-rs/package.json": JSON.stringify({ bin: { "tsc-rs": "./bin/tsc-rs" } }),
+    "node_modules/vitest/package.json": JSON.stringify({ bin: { vitest: "./vitest.mjs" } }),
+  })) {
+    mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    writeFileSync(path.join(root, file), content);
+  }
+  const names = (files) =>
+    localPlan({ root, decision: classifyChanges(files) }).steps.map((step) => step.name);
+  const all = names(changed);
+  for (const expected of [
+    "Rust formatting (CI preflight)",
+    "Evaluation harness types (CI scripts)",
+    "Browser manifest ownership (CI browser)",
+    "Browser fixture types (CI browser)",
+  ])
+    assert(all.includes(expected), expected);
+  const rust = localPlan({ root, decision: classifyChanges(["src-tauri/src/lib.rs"]) }).steps.find(
+    (step) => step.name === "Rust formatting (CI preflight)",
+  );
+  assert.deepEqual([rust.command, ...rust.args], ["cargo", "fmt", "--all", "--check"]);
+  const rustOnly = names(["src-tauri/src/lib.rs"]);
+  assert(!rustOnly.includes("Evaluation harness types (CI scripts)"));
+  assert(!rustOnly.includes("Browser manifest ownership (CI browser)"));
+});

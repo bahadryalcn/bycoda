@@ -7,7 +7,7 @@
     "checkJs": false,
     "noUnusedLocals": true
   },
-  "include": ["./**/*.ts"],
+  "include": ["./**/*.ts", "../src/mammoth-browser.d.ts"],
   "exclude": [],
   "references": []
 }

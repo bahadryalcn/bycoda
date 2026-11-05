@@ -48,7 +48,21 @@ pub(crate) struct NativeServiceReply {
 }
 
 fn legacy_method<'a>(method: &'a str, wire: &'a str) -> &'a str {
-    if ["assistant.presence.", "assistant.visibility.", "assistant.delegation.", "assistant.browser.", "assistant.workspace.", "assistant.notification."].iter().any(|prefix| method.starts_with(prefix)) { wire } else { method }
+    if [
+        "assistant.presence.",
+        "assistant.visibility.",
+        "assistant.delegation.",
+        "assistant.browser.",
+        "assistant.workspace.",
+        "assistant.notification.",
+    ]
+    .iter()
+    .any(|prefix| method.starts_with(prefix))
+    {
+        wire
+    } else {
+        method
+    }
 }
 
 fn wire_method(method: &str) -> Option<String> {
@@ -1090,13 +1104,31 @@ mod tests {
             wire_method("assistant.presence.set").as_deref(),
             Some("native.services.assistant.presence.set")
         );
-        assert_eq!(wire_method("assistant.notification.authorize").as_deref(), Some("native.services.assistant.notification.authorize"));
-        assert_eq!(wire_method("assistant.workspace.authorize").as_deref(), Some("native.services.assistant.workspace.authorize"));
-        assert_eq!(wire_method("assistant.browser.panel").as_deref(), Some("native.services.assistant.browser.panel"));
-        for method in ["assistant.browser.panel", "assistant.workspace.authorize", "assistant.notification.authorize"] {
+        assert_eq!(
+            wire_method("assistant.notification.authorize").as_deref(),
+            Some("native.services.assistant.notification.authorize")
+        );
+        assert_eq!(
+            wire_method("assistant.workspace.authorize").as_deref(),
+            Some("native.services.assistant.workspace.authorize")
+        );
+        assert_eq!(
+            wire_method("assistant.browser.panel").as_deref(),
+            Some("native.services.assistant.browser.panel")
+        );
+        for method in [
+            "assistant.browser.panel",
+            "assistant.workspace.authorize",
+            "assistant.notification.authorize",
+        ] {
             let wire = wire_method(method).unwrap();
             assert_eq!(legacy_method(method, &wire), wire);
-            assert!(!crate::host_ws::native_profile::NativeProfileBroker::supports_service_params(&wire, &serde_json::json!({})));
+            assert!(
+                !crate::host_ws::native_profile::NativeProfileBroker::supports_service_params(
+                    &wire,
+                    &serde_json::json!({})
+                )
+            );
         }
         assert!(wire_method("assistant.notification.deliver").is_none());
         assert!(wire_method("assistant.request").is_none());

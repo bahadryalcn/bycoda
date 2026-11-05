@@ -227,15 +227,27 @@ fn inventory_revision(records: &[Value]) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     static SALT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let mut hash = Sha256::new();
-    hash.update(SALT.get_or_init(|| uuid::Uuid::new_v4().to_string()).as_bytes());
+    hash.update(
+        SALT.get_or_init(|| uuid::Uuid::new_v4().to_string())
+            .as_bytes(),
+    );
     hash.update(serde_json::to_vec(records).map_err(|_| "Invalid server inventory")?);
     Ok(format!("{:x}", hash.finalize()))
 }
-pub(crate) fn reviewed_inventory(app: &AppHandle, state: &remote::RemoteConnections) -> Result<(Vec<ServerRecord>, String), String> {
-    let _guard = state.store.lock().map_err(|_| "Connection store is locked")?;
+pub(crate) fn reviewed_inventory(
+    app: &AppHandle,
+    state: &remote::RemoteConnections,
+) -> Result<(Vec<ServerRecord>, String), String> {
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
     let records = remote::read_store_values(&remote::store_path(app)?)?;
     let revision = inventory_revision(&records)?;
-    let values = records.iter().map(|record| project_with_effective(app, record)).collect::<Result<Vec<_>, _>>()?;
+    let values = records
+        .iter()
+        .map(|record| project_with_effective(app, record))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok((values, revision))
 }
 
@@ -251,8 +263,13 @@ pub fn server_ssh_save(
     server_ssh_save_reviewed(app, state, id, name, endpoint, import_only, None)
 }
 pub(crate) fn server_ssh_save_reviewed(
-    app: AppHandle, state: State<'_, remote::RemoteConnections>, id: Option<String>, name: String,
-    endpoint: SshEndpoint, import_only: Option<bool>, expected: Option<&str>,
+    app: AppHandle,
+    state: State<'_, remote::RemoteConnections>,
+    id: Option<String>,
+    name: String,
+    endpoint: SshEndpoint,
+    import_only: Option<bool>,
+    expected: Option<&str>,
 ) -> Result<ServerRecord, String> {
     ssh_security::validate_endpoint(&endpoint)?;
     if name.trim().is_empty() || name.len() > 200 || name.chars().any(char::is_control) {
@@ -265,7 +282,9 @@ pub(crate) fn server_ssh_save_reviewed(
     let path = remote::store_path(&app)?;
     let mut records = remote::read_store_values(&path)?;
     if let Some(expected) = expected {
-        if inventory_revision(&records)? != expected { return Err("Server inventory changed; review again".into()); }
+        if inventory_revision(&records)? != expected {
+            return Err("Server inventory changed; review again".into());
+        }
     }
     if import_only.unwrap_or(false) {
         for record in records
@@ -512,7 +531,12 @@ pub fn server_ssh_remove(
 ) -> Result<(), String> {
     server_ssh_remove_reviewed(app, state, id, None)
 }
-pub(crate) fn server_ssh_remove_reviewed(app: AppHandle, state: State<'_, remote::RemoteConnections>, id: String, expected: Option<&str>) -> Result<(), String> {
+pub(crate) fn server_ssh_remove_reviewed(
+    app: AppHandle,
+    state: State<'_, remote::RemoteConnections>,
+    id: String,
+    expected: Option<&str>,
+) -> Result<(), String> {
     let _guard = state
         .store
         .lock()
@@ -520,7 +544,9 @@ pub(crate) fn server_ssh_remove_reviewed(app: AppHandle, state: State<'_, remote
     let path = remote::store_path(&app)?;
     let mut records = remote::read_store_values(&path)?;
     if let Some(expected) = expected {
-        if inventory_revision(&records)? != expected { return Err("Server inventory changed; review again".into()); }
+        if inventory_revision(&records)? != expected {
+            return Err("Server inventory changed; review again".into());
+        }
     }
     let record = records
         .iter()

@@ -1,5 +1,5 @@
-pub mod question_attachment;
 pub mod entry_spelling;
+pub mod question_attachment;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -992,7 +992,11 @@ pub(crate) fn list_project_files_sync_cancellable(
     list_project_files_inner(cwd, cancel, &AtomicBool::new(false))
 }
 
-fn list_project_files_inner(cwd: &str, cancel: Option<&AtomicBool>, truncated: &AtomicBool) -> Result<Vec<ProjectFile>, String> {
+fn list_project_files_inner(
+    cwd: &str,
+    cancel: Option<&AtomicBool>,
+    truncated: &AtomicBool,
+) -> Result<Vec<ProjectFile>, String> {
     let root = expand_home(cwd);
     if !root.is_dir() {
         return Err(format!("{}: Not a directory", root.display()));
@@ -1125,7 +1129,11 @@ fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectF
     git_ls_files_inner(root, cancel, &AtomicBool::new(false))
 }
 
-fn git_ls_files_inner(root: &Path, cancel: Option<&AtomicBool>, incomplete: &AtomicBool) -> Option<Vec<ProjectFile>> {
+fn git_ls_files_inner(
+    root: &Path,
+    cancel: Option<&AtomicBool>,
+    incomplete: &AtomicBool,
+) -> Option<Vec<ProjectFile>> {
     // Routed through the bounded reader rather than `Command::output()`: this
     // is the path a cancelled search actually takes, because a repository with
     // a git index never reaches the walk. `output()` buffers the whole listing
@@ -4456,8 +4464,14 @@ fn git_github_work_items_for(
 
 #[allow(clippy::too_many_arguments)] // GitHub query fields map one-to-one onto the work-item filter; a struct would only rename them.
 pub(crate) fn git_github_work_items_for_token(
-    root: &Path, repo: &str, kind: &str, assigned_to_me: bool, state: &str,
-    search: &str, limit: u32, token: Option<&str>,
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    assigned_to_me: bool,
+    state: &str,
+    search: &str,
+    limit: u32,
+    token: Option<&str>,
 ) -> Result<Vec<GitHubWorkItem>, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
@@ -4498,7 +4512,10 @@ pub(crate) fn git_github_work_items_for_token(
         args.push(search.to_string());
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let json = match token { Some(token) => gh_checked_with_token(root, &refs, token)?, None => gh_checked(root, &refs)? };
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, &refs, token)?,
+        None => gh_checked(root, &refs)?,
+    };
     parse_github_work_items(&json, kind, &repo)
 }
 
@@ -4510,7 +4527,13 @@ fn git_github_work_item_for(
 ) -> Result<GitHubWorkItem, String> {
     git_github_work_item_for_token(root, repo, kind, number, None)
 }
-fn git_github_work_item_for_token(root: &Path, repo: &str, kind: &str, number: i64, token: Option<&str>) -> Result<GitHubWorkItem, String> {
+fn git_github_work_item_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    token: Option<&str>,
+) -> Result<GitHubWorkItem, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4527,7 +4550,10 @@ fn git_github_work_item_for_token(root: &Path, repo: &str, kind: &str, number: i
         "number,title,url,state,stateReason,createdAt,updatedAt,labels,assignees"
     };
     let args = &[kind, "view", &number, "--repo", &repo, "--json", fields];
-    let json = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, args, token)?,
+        None => gh_checked(root, args)?,
+    };
     parse_github_work_item(&json, kind, &repo)
 }
 
@@ -4580,15 +4606,28 @@ fn git_github_pr_action_for(
 ) -> Result<GitHubWorkItem, String> {
     git_github_pr_action_for_token(root, repo, number, action, expected_head_oid, None)
 }
-pub(crate) fn git_github_pr_action_for_token(root: &Path, repo: &str, number: i64, action: &str, expected_head_oid: &str, token: Option<&str>) -> Result<GitHubWorkItem, String> {
+pub(crate) fn git_github_pr_action_for_token(
+    root: &Path,
+    repo: &str,
+    number: i64,
+    action: &str,
+    expected_head_oid: &str,
+    token: Option<&str>,
+) -> Result<GitHubWorkItem, String> {
     let args = github_pr_action_args(repo, number, action, expected_head_oid)?;
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // Successful mutation commands do not always write to stdout. Their exit
     // status confirms the action ran; the follow-up view fetches the new state.
-    match token { Some(token) => gh_run_with_token(root, &refs, true, Some(token)).map_err(|error| error.replace(token, "[redacted]"))?, None => gh_run(root, &refs, true)? };
+    match token {
+        Some(token) => gh_run_with_token(root, &refs, true, Some(token))
+            .map_err(|error| error.replace(token, "[redacted]"))?,
+        None => gh_run(root, &refs, true)?,
+    };
     // The mutation already happened: a failed refresh must not be reported as a failed action.
-    Ok(git_github_work_item_for_token(root, repo, "pr", number, token)
-        .unwrap_or_else(|error| github_pr_action_refresh_failed(repo, number, action, &error)))
+    Ok(
+        git_github_work_item_for_token(root, repo, "pr", number, token)
+            .unwrap_or_else(|error| github_pr_action_refresh_failed(repo, number, action, &error)),
+    )
 }
 
 /// Placeholder result for an action that succeeded when re-reading the pull request failed.
@@ -4637,7 +4676,13 @@ fn git_github_work_item_details_for(
 ) -> Result<GitHubWorkItemDetails, String> {
     git_github_work_item_details_for_token(root, repo, kind, number, None)
 }
-pub(crate) fn git_github_work_item_details_for_token(root: &Path, repo: &str, kind: &str, number: i64, token: Option<&str>) -> Result<GitHubWorkItemDetails, String> {
+pub(crate) fn git_github_work_item_details_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    token: Option<&str>,
+) -> Result<GitHubWorkItemDetails, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4654,7 +4699,10 @@ pub(crate) fn git_github_work_item_details_for_token(root: &Path, repo: &str, ki
         "body,author"
     };
     let args = &[kind, "view", &number, "--repo", &repo, "--json", fields];
-    let json = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, args, token)?,
+        None => gh_checked(root, args)?,
+    };
     parse_github_work_item_details(&json)
 }
 
@@ -4804,7 +4852,13 @@ fn git_github_work_item_thread_for(
 ) -> Result<GitHubWorkItemThread, String> {
     git_github_work_item_thread_for_token(root, repo, kind, number, None)
 }
-pub(crate) fn git_github_work_item_thread_for_token(root: &Path, repo: &str, kind: &str, number: i64, token: Option<&str>) -> Result<GitHubWorkItemThread, String> {
+pub(crate) fn git_github_work_item_thread_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    token: Option<&str>,
+) -> Result<GitHubWorkItemThread, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4822,18 +4876,21 @@ pub(crate) fn git_github_work_item_thread_for_token(root: &Path, repo: &str, kin
     let name_field = format!("name={name}");
     let number_field = format!("number={number}");
     let args = &[
-            "api",
-            "graphql",
-            "-f",
-            &format!("query={query}"),
-            "-F",
-            &owner_field,
-            "-F",
-            &name_field,
-            "-F",
-            &number_field,
-        ];
-    let json = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
+        "api",
+        "graphql",
+        "-f",
+        &format!("query={query}"),
+        "-F",
+        &owner_field,
+        "-F",
+        &name_field,
+        "-F",
+        &number_field,
+    ];
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, args, token)?,
+        None => gh_checked(root, args)?,
+    };
     parse_github_work_item_thread(&json, kind)
 }
 
@@ -4866,13 +4923,23 @@ fn git_github_work_item_comment_for(
 ) -> Result<String, String> {
     git_github_work_item_comment_for_token(root, repo, kind, number, body, in_reply_to, None)
 }
-pub(crate) fn git_github_work_item_comment_for_token(root: &Path, repo: &str, kind: &str, number: i64, body: &str, in_reply_to: &str, token: Option<&str>) -> Result<String, String> {
+pub(crate) fn git_github_work_item_comment_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    body: &str,
+    in_reply_to: &str,
+    token: Option<&str>,
+) -> Result<String, String> {
     let (kind, body) = github_comment_input(kind, number, body)?;
     let (owner, name) = split_github_repo(repo)?;
     let repo = format!("{owner}/{name}");
     let reply = in_reply_to.trim();
     if !reply.is_empty() {
-        if token.is_some() { return Err("Room threaded replies are unavailable".into()); }
+        if token.is_some() {
+            return Err("Room threaded replies are unavailable".into());
+        }
         if kind != "pr" {
             return Err("Review replies require a pull request".into());
         }
@@ -4882,15 +4949,18 @@ pub(crate) fn git_github_work_item_comment_for_token(root: &Path, repo: &str, ki
     let number = number.to_string();
     with_temp_markdown(body, |path| {
         let args = &[
-                kind,
-                "comment",
-                &number,
-                "--repo",
-                &repo,
-                "--body-file",
-                path,
-            ];
-        let output = match token { Some(token) => gh_checked_with_token(root, args, token)?, None => gh_checked(root, args)? };
+            kind,
+            "comment",
+            &number,
+            "--repo",
+            &repo,
+            "--body-file",
+            path,
+        ];
+        let output = match token {
+            Some(token) => gh_checked_with_token(root, args, token)?,
+            None => gh_checked(root, args)?,
+        };
         github_url_from_output(&output, "GitHub did not return a comment URL")
     })
 }
@@ -5464,11 +5534,24 @@ pub(crate) fn git_github_pr_diff_for(
 ) -> Result<GitHubPrDiff, String> {
     git_github_pr_diff_for_token(root, repo, number, full_context, None, || Ok(()))
 }
-pub(crate) fn git_github_pr_diff_for_token(root: &Path, repo: &str, number: i64, full_context: bool, token: Option<&str>, guard: impl Fn() -> Result<(), String>) -> Result<GitHubPrDiff, String> {
-    if token.is_some() && full_context { return Err("Room full-context diff unavailable".into()); }
+pub(crate) fn git_github_pr_diff_for_token(
+    root: &Path,
+    repo: &str,
+    number: i64,
+    full_context: bool,
+    token: Option<&str>,
+    guard: impl Fn() -> Result<(), String>,
+) -> Result<GitHubPrDiff, String> {
+    if token.is_some() && full_context {
+        return Err("Room full-context diff unavailable".into());
+    }
     let run = |args: &[&str], empty: bool| -> Result<String, String> {
         guard()?;
-        match token { Some(token) => gh_run_with_token(root, args, empty, Some(token)).map_err(|error| error.replace(token, "[redacted]")), None => gh_run(root, args, empty) }
+        match token {
+            Some(token) => gh_run_with_token(root, args, empty, Some(token))
+                .map_err(|error| error.replace(token, "[redacted]")),
+            None => gh_run(root, args, empty),
+        }
     };
     if number <= 0 {
         return Err("Invalid pull request number".into());
@@ -5496,10 +5579,7 @@ pub(crate) fn git_github_pr_diff_for_token(root: &Path, repo: &str, number: i64,
         let (base, head) = parse_github_pr_oids(&json)?;
         git_diff_full_context(root, &base, &head)?
     } else {
-        (
-            run(&["pr", "diff", &number, "--repo", &repo], true)?,
-            false,
-        )
+        (run(&["pr", "diff", &number, "--repo", &repo], true)?, false)
     };
     if !full_context {
         let current = run(
@@ -5511,7 +5591,8 @@ pub(crate) fn git_github_pr_diff_for_token(root: &Path, repo: &str, number: i64,
                 &repo,
                 "--json",
                 "headRefOid",
-            ], false,
+            ],
+            false,
         )?;
         let current: serde_json::Value =
             serde_json::from_str(&current).map_err(|error| error.to_string())?;
@@ -6010,15 +6091,25 @@ pub(crate) fn gh_checked(root: &Path, args: &[&str]) -> Result<String, String> {
 
 /// Run the existing GitHub CLI owner with an explicitly captured credential.
 /// The token stays in the child environment and is redacted from all errors.
-pub(crate) fn gh_checked_with_token(root: &Path, args: &[&str], token: &str) -> Result<String, String> {
-    gh_run_with_token(root, args, false, Some(token)).map_err(|error| error.replace(token, "[redacted]"))
+pub(crate) fn gh_checked_with_token(
+    root: &Path,
+    args: &[&str],
+    token: &str,
+) -> Result<String, String> {
+    gh_run_with_token(root, args, false, Some(token))
+        .map_err(|error| error.replace(token, "[redacted]"))
 }
 
 fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, String> {
     gh_run_with_token(root, args, allow_empty, None)
 }
 
-fn gh_run_with_token(root: &Path, args: &[&str], allow_empty: bool, token: Option<&str>) -> Result<String, String> {
+fn gh_run_with_token(
+    root: &Path,
+    args: &[&str],
+    allow_empty: bool,
+    token: Option<&str>,
+) -> Result<String, String> {
     let program = crate::harness::resolve_gui_binary("gh")
         .ok_or_else(|| "GitHub CLI (`gh`) is not installed.".to_string())?;
     let mut cmd = Command::new(&program);
@@ -6030,7 +6121,10 @@ fn gh_run_with_token(root: &Path, args: &[&str], allow_empty: bool, token: Optio
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
     if let Some(token) = token {
-        cmd.env("GH_TOKEN", token).env_remove("GITHUB_TOKEN").env_remove("GH_ENTERPRISE_TOKEN").env_remove("GITHUB_ENTERPRISE_TOKEN");
+        cmd.env("GH_TOKEN", token)
+            .env_remove("GITHUB_TOKEN")
+            .env_remove("GH_ENTERPRISE_TOKEN")
+            .env_remove("GITHUB_ENTERPRISE_TOKEN");
     }
     crate::hide_window_console(&mut cmd);
     let output = output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT).map_err(|error| {
@@ -6338,31 +6432,55 @@ impl GitSpawnGate {
             .unwrap_or(GitSpawnTurn(None))
     }
 
-    fn enter_until(&'static self, cancel: Option<&AtomicBool>, deadline: Instant) -> Option<GitSpawnTurn> {
-        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) { return None; }
-        if cfg!(windows) { self.wait_turn_cancellable(cancel, Some(deadline)) } else { Some(GitSpawnTurn(None)) }
+    fn enter_until(
+        &'static self,
+        cancel: Option<&AtomicBool>,
+        deadline: Instant,
+    ) -> Option<GitSpawnTurn> {
+        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+            return None;
+        }
+        if cfg!(windows) {
+            self.wait_turn_cancellable(cancel, Some(deadline))
+        } else {
+            Some(GitSpawnTurn(None))
+        }
     }
 
-    fn wait_turn_cancellable(&'static self, cancel: Option<&AtomicBool>, deadline: Option<Instant>) -> Option<GitSpawnTurn> {
+    fn wait_turn_cancellable(
+        &'static self,
+        cancel: Option<&AtomicBool>,
+        deadline: Option<Instant>,
+    ) -> Option<GitSpawnTurn> {
         let Ok(mut holder) = self.holder.lock() else {
             return Some(GitSpawnTurn(None));
         };
         while let Some((_, since)) = *holder {
-            if deadline.is_some_and(|deadline| Instant::now() >= deadline) || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline)
+                || cancel.is_some_and(|token| token.load(Ordering::Acquire))
+            {
                 return None;
             }
             let Some(left) = GIT_STARTUP_WINDOW.checked_sub(since.elapsed()) else {
                 break;
             };
             // A busy gate must not hide cancellation behind other Git callers.
-            let wait = deadline.map_or(left, |deadline| left.min(deadline.saturating_duration_since(Instant::now())));
-            let wait = if cancel.is_some() { wait.min(Duration::from_millis(50)) } else { wait };
+            let wait = deadline.map_or(left, |deadline| {
+                left.min(deadline.saturating_duration_since(Instant::now()))
+            });
+            let wait = if cancel.is_some() {
+                wait.min(Duration::from_millis(50))
+            } else {
+                wait
+            };
             holder = match self.freed.wait_timeout(holder, wait) {
                 Ok((holder, _)) => holder,
                 Err(_) => return Some(GitSpawnTurn(None)),
             };
         }
-        if deadline.is_some_and(|deadline| Instant::now() >= deadline) || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline)
+            || cancel.is_some_and(|token| token.load(Ordering::Acquire))
+        {
             return None;
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed);
@@ -6756,11 +6874,16 @@ mod git_stream_process_tests {
             child("fs::git_stream_process_tests::silent_child"),
             Instant::now() + Duration::from_secs(5),
             false,
-            |chunk| { observed.extend_from_slice(chunk); Ok(()) },
+            |chunk| {
+                observed.extend_from_slice(chunk);
+                Ok(())
+            },
         );
         let error = result.unwrap_err();
         assert_eq!(error, "Git output timed out");
-        assert!(observed.windows(b"SILENT_CHILD_READY".len()).any(|window| window == b"SILENT_CHILD_READY"));
+        assert!(observed
+            .windows(b"SILENT_CHILD_READY".len())
+            .any(|window| window == b"SILENT_CHILD_READY"));
         let deadline = Instant::now() + Duration::from_secs(2);
         while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
             std::thread::yield_now();
@@ -7883,7 +8006,11 @@ fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
     walk_project_files_inner(root, stop, &AtomicBool::new(false))
 }
 
-fn walk_project_files_inner(root: &Path, stop: WalkStop<'_>, incomplete: &AtomicBool) -> Vec<ProjectFile> {
+fn walk_project_files_inner(
+    root: &Path,
+    stop: WalkStop<'_>,
+    incomplete: &AtomicBool,
+) -> Vec<ProjectFile> {
     let ignore = Ignore::load(root);
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
@@ -9011,7 +9138,9 @@ fn rename_atomic_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
                 let transient = matches!(error.raw_os_error(), Some(5 | 32 | 33));
                 #[cfg(not(windows))]
                 let transient = false;
-                if !transient || attempt == 4 { return Err(error); }
+                if !transient || attempt == 4 {
+                    return Err(error);
+                }
                 std::thread::sleep(Duration::from_millis(25 * (attempt + 1)));
             }
         }
@@ -9094,7 +9223,8 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
     if meta.file_type().is_symlink() {
         let target = std::fs::read_link(from).map_err(|e| format!("{}: {e}", from.display()))?;
         #[cfg(unix)]
-        return std::os::unix::fs::symlink(target, to).map_err(|e| format!("{}: {e}", to.display()));
+        return std::os::unix::fs::symlink(target, to)
+            .map_err(|e| format!("{}: {e}", to.display()));
         #[cfg(windows)]
         {
             use std::os::windows::fs::MetadataExt;
@@ -9248,7 +9378,10 @@ fn copy_path_checked(
     if !dest_parent.is_dir() {
         return Err(format!("{} is not a folder", dest_parent.display()));
     }
-    if std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.is_dir() && !meta.file_type().is_symlink()) && dir_contains(&from, &dest_parent) {
+    if std::fs::symlink_metadata(&from)
+        .is_ok_and(|meta| meta.is_dir() && !meta.file_type().is_symlink())
+        && dir_contains(&from, &dest_parent)
+    {
         return Err("Cannot paste a folder into itself.".into());
     }
     let name = unique_name_in(
@@ -13216,7 +13349,9 @@ mod tests {
             next: std::sync::atomic::AtomicU64::new(0),
         };
         let _held = GATE.wait_turn();
-        assert!(GATE.wait_turn_cancellable(None, Some(Instant::now())).is_none());
+        assert!(GATE
+            .wait_turn_cancellable(None, Some(Instant::now()))
+            .is_none());
         assert_eq!(GATE.holder.lock().unwrap().as_ref().unwrap().0, 0);
     }
 
@@ -13252,12 +13387,29 @@ mod tests {
         let marker = dir.0.join("child-ready");
         let mut command = Command::new(std::env::current_exe().unwrap());
         crate::hide_window_console(&mut command);
-        command.args(["--exact", "fs::git_stream_process_tests::silent_child", "--ignored", "--nocapture"])
+        command
+            .args([
+                "--exact",
+                "fs::git_stream_process_tests::silent_child",
+                "--ignored",
+                "--nocapture",
+            ])
             .env("BYCODA_GIT_SILENT_READY", &marker)
-            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-        let result = git_bounded_output::run(&mut command, &[], 1024, None, Instant::now() + Duration::from_secs(5));
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let result = git_bounded_output::run(
+            &mut command,
+            &[],
+            1024,
+            None,
+            Instant::now() + Duration::from_secs(5),
+        );
         assert!(result.is_none());
-        assert!(marker.is_file(), "the actual child must reach its silent wait before the deadline");
+        assert!(
+            marker.is_file(),
+            "the actual child must reach its silent wait before the deadline"
+        );
     }
 
     #[test]

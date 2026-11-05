@@ -154,3 +154,20 @@ it("closes through Escape when nothing is pending", async () => {
   await escape();
   expect(settle).toHaveBeenCalledWith(false);
 });
+
+it("calls onCancel synchronously on Cancel and Escape before settling", async () => {
+  const onCancel = vi.fn();
+  const request: ConfirmRequest = {
+    title: "Delete?",
+    message: "Gone.",
+    confirmLabel: "Delete",
+    onCancel,
+  };
+  const settle = await render(request);
+  await click(button("Cancel"));
+  expect(onCancel).toHaveBeenCalledTimes(1);
+  expect(settle).toHaveBeenLastCalledWith(false);
+  await render(request);
+  await escape();
+  expect(onCancel).toHaveBeenCalledTimes(2);
+});

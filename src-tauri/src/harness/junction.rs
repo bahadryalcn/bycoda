@@ -28,7 +28,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "bycoda-junction-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir(&root).unwrap();
         let source = root.join("source & ^ % folder");

@@ -336,15 +336,27 @@ pub(crate) fn github_auth_token() -> TokenResult {
 pub(crate) fn github_auth_token_fresh() -> TokenResult {
     static ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     use std::sync::atomic::Ordering;
-    if ACTIVE.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+    if ACTIVE
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
         return Err("GitHub account verification is already running".into());
     }
     let registry: TokenRegistry = Arc::new(Mutex::new(None));
-    let flight = Arc::new(TokenFlight { result: Mutex::new(None), ready: Condvar::new() });
+    let flight = Arc::new(TokenFlight {
+        result: Mutex::new(None),
+        ready: Condvar::new(),
+    });
     *registry.lock().unwrap_or_else(|e| e.into_inner()) = Some(flight.clone());
     let worker = flight.clone();
-    if thread::Builder::new().name("room-inbox-auth".into())
-        .spawn(move || { token_worker(registry, worker); ACTIVE.store(false, Ordering::Release); }).is_err() {
+    if thread::Builder::new()
+        .name("room-inbox-auth".into())
+        .spawn(move || {
+            token_worker(registry, worker);
+            ACTIVE.store(false, Ordering::Release);
+        })
+        .is_err()
+    {
         ACTIVE.store(false, Ordering::Release);
         return Err("GitHub authentication unavailable".into());
     }

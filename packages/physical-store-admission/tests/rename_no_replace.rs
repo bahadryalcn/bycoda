@@ -1,9 +1,19 @@
 use bycoda_physical_store_admission::rename_no_replace;
-use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[test]
 fn never_replaces_existing_file_or_directory() {
-    let root = std::env::temp_dir().join(format!("bycoda-no-replace-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+    let root = std::env::temp_dir().join(format!(
+        "bycoda-no-replace-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     fs::create_dir(&root).unwrap();
     let source = root.join("source");
     let destination = root.join("destination");

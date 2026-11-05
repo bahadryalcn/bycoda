@@ -103,7 +103,11 @@ impl Job {
     }
     fn append(&mut self, bytes: &[u8], stderr: bool) {
         self.total = self.total.saturating_add(bytes.len() as u64);
-        let pending = if stderr { &mut self.pending_stderr } else { &mut self.pending_stdout };
+        let pending = if stderr {
+            &mut self.pending_stderr
+        } else {
+            &mut self.pending_stdout
+        };
         pending.extend_from_slice(bytes);
         let mut remaining_bytes = pending.as_slice();
         let complete = loop {
@@ -119,17 +123,19 @@ impl Job {
         self.retain_output(&ready, stderr);
     }
     fn retain_output(&mut self, bytes: &[u8], stderr: bool) {
-        if self.output_full { return; }
+        if self.output_full {
+            return;
+        }
         let remaining = OUTPUT_LIMIT.saturating_sub(self.output.len());
         let mut take = bytes.len().min(remaining);
         if take < bytes.len() {
             self.output_full = true;
-            while take > 0 && !complete_utf8_prefix(&bytes[..take]) { take -= 1; }
+            while take > 0 && !complete_utf8_prefix(&bytes[..take]) {
+                take -= 1;
+            }
         }
-        self.output
-            .extend_from_slice(&bytes[..take]);
-        self.stderr
-            .extend(std::iter::repeat_n(stderr, take));
+        self.output.extend_from_slice(&bytes[..take]);
+        self.stderr.extend(std::iter::repeat_n(stderr, take));
     }
     fn flush_pending(&mut self) {
         let stdout = std::mem::take(&mut self.pending_stdout);
@@ -270,8 +276,15 @@ fn number(input: &Value, key: &str, default: u64, min: u64, max: u64) -> Result<
 }
 fn key(request: &Value) -> Result<Key, String> {
     let source = match (request.get("sessionId"), request.get("threadId")) {
-        (Some(_), None) => SshSource::Session { project: text(request, "cwd", 32768)?, session: text(request, "sessionId", 300)? },
-        (None, Some(_)) if request.get("cwd").is_none() && request.get("projectId").is_none() => SshSource::AssistantThread { thread: text(request, "threadId", 300)? },
+        (Some(_), None) => SshSource::Session {
+            project: text(request, "cwd", 32768)?,
+            session: text(request, "sessionId", 300)?,
+        },
+        (None, Some(_)) if request.get("cwd").is_none() && request.get("projectId").is_none() => {
+            SshSource::AssistantThread {
+                thread: text(request, "threadId", 300)?,
+            }
+        }
         _ => return Err("Exactly one SSH source is required".into()),
     };
     Ok(Key {
@@ -419,22 +432,35 @@ fn nonblocking<T: std::os::fd::AsRawFd>(pipe: &T) -> bool {
     }
 }
 #[cfg(windows)]
-fn nonblocking<T>(_pipe: &T) -> bool { true }
+fn nonblocking<T>(_pipe: &T) -> bool {
+    true
+}
 
-fn drain(mut source: impl Read, job: Arc<Mutex<Job>>, stderr: bool, stop: Arc<std::sync::atomic::AtomicBool>) -> bool {
+fn drain(
+    mut source: impl Read,
+    job: Arc<Mutex<Job>>,
+    stderr: bool,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) -> bool {
     let mut buffer = [0; 8192];
     loop {
-        if stop.load(std::sync::atomic::Ordering::Acquire) { return false; }
+        if stop.load(std::sync::atomic::Ordering::Acquire) {
+            return false;
+        }
         match source.read(&mut buffer) {
             Ok(0) => return true,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if stop.load(std::sync::atomic::Ordering::Acquire) { return false; }
+                if stop.load(std::sync::atomic::Ordering::Acquire) {
+                    return false;
+                }
                 std::thread::sleep(Duration::from_millis(20));
             }
             Err(_) => return false,
             Ok(n) => {
                 if let Ok(mut job) = job.lock() {
-                    if !job.active() { return false; }
+                    if !job.active() {
+                        return false;
+                    }
                     job.append(&buffer[..n], stderr);
                 } else {
                     return false;
@@ -457,7 +483,8 @@ fn supervise_owned(
     let input = child.stdin.take();
     if output.as_ref().is_some_and(|pipe| !nonblocking(pipe))
         || error.as_ref().is_some_and(|pipe| !nonblocking(pipe))
-        || input.as_ref().is_some_and(|pipe| !nonblocking(pipe)) {
+        || input.as_ref().is_some_and(|pipe| !nonblocking(pipe))
+    {
         if let Ok(mut job) = job.lock() {
             job.state = "unknown";
             job.reason = Some("command_io_remote_outcome_unknown");
@@ -469,28 +496,37 @@ fn supervise_owned(
     let stop_io = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let out_job = job.clone();
     let out_stop = stop_io.clone();
-    let out =
-        std::thread::spawn(move || output.is_some_and(|source| drain(source, out_job, false, out_stop)));
+    let out = std::thread::spawn(move || {
+        output.is_some_and(|source| drain(source, out_job, false, out_stop))
+    });
     let err_job = job.clone();
     let err_stop = stop_io.clone();
-    let err = std::thread::spawn(move || error.is_some_and(|source| drain(source, err_job, true, err_stop)));
+    let err = std::thread::spawn(move || {
+        error.is_some_and(|source| drain(source, err_job, true, err_stop))
+    });
     let write_stop = stop_io.clone();
-    let write = std::thread::spawn(move || input.is_some_and(|mut input| {
-        let mut bytes = stdin.as_slice();
-        while !bytes.is_empty() {
-            if write_stop.load(std::sync::atomic::Ordering::Acquire) { return false; }
-            match input.write(bytes) {
-                Ok(0) => return false,
-                Ok(n) => bytes = &bytes[n..],
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    if write_stop.load(std::sync::atomic::Ordering::Acquire) { return false; }
-                    std::thread::sleep(Duration::from_millis(20));
+    let write = std::thread::spawn(move || {
+        input.is_some_and(|mut input| {
+            let mut bytes = stdin.as_slice();
+            while !bytes.is_empty() {
+                if write_stop.load(std::sync::atomic::Ordering::Acquire) {
+                    return false;
                 }
-                Err(_) => return false,
+                match input.write(bytes) {
+                    Ok(0) => return false,
+                    Ok(n) => bytes = &bytes[n..],
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if write_stop.load(std::sync::atomic::Ordering::Acquire) {
+                            return false;
+                        }
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(_) => return false,
+                }
             }
-        }
-        true
-    }));
+            true
+        })
+    });
     let started = Instant::now();
     let (mut state, code, mut reason, mut unknown) = loop {
         let cancelled = job.lock().map(|j| j.cancel).unwrap_or(true);
@@ -553,11 +589,15 @@ fn supervise_owned(
             use std::os::windows::io::AsRawHandle;
             for handle in [&out, &err, &write] {
                 // SAFETY: the join handle owns a live thread handle for this call.
-                unsafe { windows_sys::Win32::System::IO::CancelSynchronousIo(handle.as_raw_handle() as _); }
+                unsafe {
+                    windows_sys::Win32::System::IO::CancelSynchronousIo(handle.as_raw_handle() as _);
+                }
             }
         }
         let cancel_until = Instant::now() + Duration::from_secs(1);
-        while Instant::now() < cancel_until && (!out.is_finished() || !err.is_finished() || !write.is_finished()) {
+        while Instant::now() < cancel_until
+            && (!out.is_finished() || !err.is_finished() || !write.is_finished())
+        {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -600,7 +640,13 @@ fn supervise_owned(
 }
 
 #[cfg(test)]
-fn supervise(child: OwnedChild, job: Arc<Mutex<Job>>, stdin: Vec<u8>, timeout: Duration, current: impl Fn() -> bool) {
+fn supervise(
+    child: OwnedChild,
+    job: Arc<Mutex<Job>>,
+    stdin: Vec<u8>,
+    timeout: Duration,
+    current: impl Fn() -> bool,
+) {
     supervise_owned(child, job, stdin, timeout, current, None);
 }
 
@@ -613,14 +659,21 @@ pub(super) fn call(
     check(request, issuer, taken)?;
     let input = &request["input"];
     let key = key(request)?;
-    let room = match &key.source {
-        SshSource::AssistantThread { thread } => Some(crate::control::validate_assistant_source(app, thread, &key.environment)?),
-        _ => None,
-    };
+    let room =
+        match &key.source {
+            SshSource::AssistantThread { thread } => Some(
+                crate::control::validate_assistant_source(app, thread, &key.environment)?,
+            ),
+            _ => None,
+        };
     let check_room = || -> Result<(), String> {
-        if let (Some((window, owner)), SshSource::AssistantThread { thread }) = (&room, &key.source) {
-            let (current, issuer) = crate::control::validate_assistant_source(app, thread, &key.environment)?;
-            if current != *window || !Arc::ptr_eq(owner, &issuer) { return Err("Assistant Room source changed".into()); }
+        if let (Some((window, owner)), SshSource::AssistantThread { thread }) = (&room, &key.source)
+        {
+            let (current, issuer) =
+                crate::control::validate_assistant_source(app, thread, &key.environment)?;
+            if current != *window || !Arc::ptr_eq(owner, &issuer) {
+                return Err("Assistant Room source changed".into());
+            }
         }
         Ok(())
     };
@@ -629,7 +682,9 @@ pub(super) fn call(
         authorize(request, issuer, taken)?;
         check_room()
     };
-    if room.is_some() { authorize_current()?; }
+    if room.is_some() {
+        authorize_current()?;
+    }
     let action = request["action"].as_str().ok_or("SSH action required")?;
     if action != "servers.ssh.execute" {
         exact(
@@ -730,7 +785,14 @@ pub(super) fn call(
             .as_ref()
             .and_then(|c| c.shell_kind)
             .unwrap_or(RemoteShellKind::Posix);
-        let source = match &key.source { SshSource::Session { project, session } => format!("Project: {}\nSession: {}", literal(project), literal(session)), SshSource::AssistantThread { thread } => format!("Assistant Room: {}", literal(thread)) };
+        let source = match &key.source {
+            SshSource::Session { project, session } => format!(
+                "Project: {}\nSession: {}",
+                literal(project),
+                literal(session)
+            ),
+            SshSource::AssistantThread { thread } => format!("Assistant Room: {}", literal(thread)),
+        };
         let message=format!("Run this exact command on saved SSH server?\n\nServer ID: {}\nTarget: {}@{}:{}\n{}\nShell: {:?}\nTimeout: {} seconds\n\nCommand (escaped literal):\n{}\n\nThis can change remote files and services. Command output will be disclosed to the calling AI conversation. Cancellation stops local SSH; remote work may continue.",literal(&server),literal(endpoint.user.as_deref().unwrap_or("(default)")),literal(&endpoint.host),endpoint.port,source,shell,timeout,literal(&script));
         // At most one open approval dialog per conversation; others queue here.
         let slot = loop {
@@ -748,8 +810,7 @@ pub(super) fn call(
             None => false,
             Some(slot) => {
                 let (approval_tx, approval_rx) = std::sync::mpsc::sync_channel(1);
-                app
-                    .dialog()
+                app.dialog()
                     .message(message)
                     .title("bycoda — SSH command approval")
                     .buttons(MessageDialogButtons::OkCancelCustom(
@@ -770,7 +831,9 @@ pub(super) fn call(
                     match approval_rx.recv_timeout(Duration::from_millis(100)) {
                         Ok(approved) => break approved,
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err("SSH approval unavailable".into()),
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            return Err("SSH approval unavailable".into())
+                        }
                     }
                 }
             }
@@ -778,7 +841,11 @@ pub(super) fn call(
         if !approved {
             let mut j = job.lock().map_err(|_| "SSH execution unavailable")?;
             j.state = "cancelled";
-            j.reason = Some(if j.cancel { "cancelled_before_start" } else { "owner_declined" });
+            j.reason = Some(if j.cancel {
+                "cancelled_before_start"
+            } else {
+                "owner_declined"
+            });
             j.settled_at = Some(Instant::now());
             return Ok(());
         }
@@ -827,9 +894,14 @@ pub(super) fn call(
         let issuer = issuer.clone();
         // Supervisor owns process, endpoint temporary jump config, and all drains until settlement.
         let supervisor = std::thread::spawn(move || {
-            supervise_owned(child, job, stdin, Duration::from_secs(timeout), || {
-                !STOPPED.load(std::sync::atomic::Ordering::Acquire) && issuer.is_current()
-            }, Some(Box::new((endpoint, proxy))));
+            supervise_owned(
+                child,
+                job,
+                stdin,
+                Duration::from_secs(timeout),
+                || !STOPPED.load(std::sync::atomic::Ordering::Acquire) && issuer.is_current(),
+                Some(Box::new((endpoint, proxy))),
+            );
         });
         host.track_reaper(supervisor);
         Ok(())
@@ -889,7 +961,10 @@ mod tests {
         let now = Instant::now();
         let make_key = |request: &str| Key {
             environment: "host".into(),
-            source: SshSource::Session { project: "project".into(), session: "session".into() },
+            source: SshSource::Session {
+                project: "project".into(),
+                session: "session".into(),
+            },
             request: request.into(),
         };
         let mut settled = fixture_job();

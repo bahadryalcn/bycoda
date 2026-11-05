@@ -122,6 +122,37 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     (batch) => tool("oxlint", ["--config", ".oxlint-hooks.json", ...batch]),
     hooks,
   );
+  // CI's preflight runs `cargo fmt --all --check`; it takes about a second, so run
+  // the same whole-workspace check whenever any Rust source changed.
+  if (files.some((file) => file.endsWith(".rs")))
+    steps.push({
+      name: "Rust formatting (CI preflight)",
+      command: "cargo",
+      args: ["fmt", "--all", "--check"],
+    });
+  // The evaluation harness imports application modules, so application type changes
+  // can break `pnpm eval:check` in the CI scripts job without touching evals/.
+  if (files.some((file) => /^(?:evals|src|host|packages)\/.*\.[cm]?tsx?$/.test(file)))
+    steps.push(
+      node(
+        "Evaluation harness types (CI scripts)",
+        tool("tsc-rs", ["--noEmit", "-p", "evals/tsconfig.json"]),
+      ),
+    );
+  if (files.some((file) => file.startsWith("tests/browser/"))) {
+    steps.push(
+      node("Browser manifest ownership (CI browser)", [
+        path.join(root, "scripts/checks/browser-test-inventory.mjs"),
+        "--check",
+      ]),
+    );
+    steps.push(
+      node(
+        "Browser fixture types (CI browser)",
+        tool("tsc-rs", ["--noEmit", "-p", "tests/browser/tsconfig.json"]),
+      ),
+    );
+  }
 
   const tests = new Set();
   for (const file of files) {

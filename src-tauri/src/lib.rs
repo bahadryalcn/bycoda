@@ -1,8 +1,14 @@
 use tauri::{Emitter, Manager};
 
 mod account_identity;
+#[path = "assistant/assistant_observation_outbox.rs"]
+mod assistant_observation_outbox;
 #[path = "assistant/assistant_presence.rs"]
 mod assistant_presence;
+#[path = "assistant/assistant_server_observation.rs"]
+mod assistant_server_observation;
+#[path = "assistant/assistant_session_observation.rs"]
+pub(crate) mod assistant_session_observation;
 mod automations;
 mod azure_devops;
 pub mod build_info;
@@ -63,12 +69,6 @@ mod native_provider_output;
 mod native_window_lifecycle;
 mod native_workspace;
 mod notes;
-#[path = "assistant/assistant_observation_outbox.rs"]
-mod assistant_observation_outbox;
-#[path = "assistant/assistant_server_observation.rs"]
-mod assistant_server_observation;
-#[path = "assistant/assistant_session_observation.rs"]
-pub(crate) mod assistant_session_observation;
 mod notifications;
 #[cfg(windows)]
 mod owned_process_job;
@@ -76,12 +76,8 @@ mod package_smoke;
 mod pasteboard;
 mod pi_usage;
 mod presence;
-mod privacy_settings;
 mod privacy_projection;
-#[path = "assistant/room/room_organization_owner.rs"]
-mod room_organization_owner;
-#[path = "assistant/room/room_browser_panel.rs"]
-mod room_browser_panel;
+mod privacy_settings;
 mod project_logo;
 mod provider_terminal_profiles;
 mod provider_usage;
@@ -96,12 +92,15 @@ mod reminders;
 mod remote;
 mod remote_files;
 mod remote_ssh;
+#[path = "assistant/room/room_browser_panel.rs"]
+mod room_browser_panel;
+#[path = "assistant/room/room_organization_owner.rs"]
+mod room_organization_owner;
 mod runtime_logs_bridge;
 mod search;
 mod server_inventory;
 mod session_import;
 mod session_store;
-mod sync_owner;
 mod session_tools_bridge;
 mod session_transfer;
 mod session_window_ownership;
@@ -125,6 +124,7 @@ mod ssh_sftp;
 mod ssh_shell_integration;
 mod ssh_terminal;
 mod ssh_window_lifecycle;
+mod sync_owner;
 mod terminal_completion;
 mod terminal_profiles;
 mod termius_import;

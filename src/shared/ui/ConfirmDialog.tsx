@@ -95,6 +95,12 @@ export type ConfirmRequest = {
    * button and Cancel do nothing while the work is pending.
    */
   onConfirm?: (result: ConfirmResult) => void | Promise<void>;
+  /**
+   * Called synchronously when the owner dismisses (Escape, close, backdrop, Cancel), before
+   * the promise from `confirmWith` resolves. Owners that must react in the same tick, such as
+   * a dialog wrapper that restores focus or unmounts, use this instead of the promise.
+   */
+  onCancel?: () => void;
 };
 
 type Live = {
@@ -198,6 +204,10 @@ export function ConfirmDialog({
   onResult?: (result: ConfirmResult) => void;
 }) {
   const t = useT();
+  const dismiss = () => {
+    request.onCancel?.();
+    onSettle(false);
+  };
   const uid = useId();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,17 +268,12 @@ export function ConfirmDialog({
         phrase ? "[data-confirm-text] input" : danger ? "[data-confirm-cancel]" : undefined
       }
       onClose={() => {
-        if (!pending) onSettle(false);
+        if (!pending) dismiss();
       }}
       footer={
         <ModalActions>
           {request.extraActions}
-          <Button
-            variant="ghost"
-            data-confirm-cancel=""
-            disabled={pending}
-            onClick={() => onSettle(false)}
-          >
+          <Button variant="ghost" data-confirm-cancel="" disabled={pending} onClick={dismiss}>
             {request.cancelLabel ?? t("Cancel")}
           </Button>
           <Button

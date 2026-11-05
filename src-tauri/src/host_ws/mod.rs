@@ -9,8 +9,8 @@ mod bulk;
 mod commit;
 mod connection;
 mod demand;
-mod native_status;
 pub(crate) mod native_profile;
+mod native_status;
 mod permits;
 mod schema;
 
@@ -128,7 +128,8 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.delivery.status"
             | "native.services.delivery.ack"
             | "native.services.delivery.result.read"
-    ) || native_delivery_epoch_method(method) || native_status::is_status(method)
+    ) || native_delivery_epoch_method(method)
+        || native_status::is_status(method)
 }
 
 #[cfg(test)]
@@ -138,7 +139,9 @@ mod desktop_stop_scope_tests {
     fn emergency_stop_is_a_local_native_service_only() {
         // Room browser panel disclosure is fenced by the HTTP response owner;
         // WebSocket must reject before dispatch so only authenticated fallback runs.
-        assert!(!native_service_method("native.services.assistant.browser.panel"));
+        assert!(!native_service_method(
+            "native.services.assistant.browser.panel"
+        ));
         assert!(native_service_method("native.services.desktop.stop"));
         assert!(native_service_method("native.services.desktop.status"));
         assert!(!native_peer_service_method(

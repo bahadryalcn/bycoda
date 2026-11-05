@@ -12,14 +12,35 @@ fn readiness_pair() -> (TcpStream, TcpStream) {
 fn readiness_wait_blocks_idle_tcp_and_accepts_either_original_direction() {
     let (mut local, mut local_peer) = readiness_pair();
     let (mut remote, mut remote_peer) = readiness_pair();
-    assert_eq!(wait_tcp_ready(&[(&local, true, false), (&remote, true, false)], Duration::from_millis(20)).unwrap(), 0);
+    assert_eq!(
+        wait_tcp_ready(
+            &[(&local, true, false), (&remote, true, false)],
+            Duration::from_millis(20)
+        )
+        .unwrap(),
+        0
+    );
     remote_peer.write_all(b"r").unwrap();
-    assert!(wait_tcp_ready(&[(&local, true, false), (&remote, true, false)], TLS_READY_SLICE).unwrap() > 0);
+    assert!(
+        wait_tcp_ready(
+            &[(&local, true, false), (&remote, true, false)],
+            TLS_READY_SLICE
+        )
+        .unwrap()
+            > 0
+    );
     let mut byte = [0];
     remote.read_exact(&mut byte).unwrap();
     assert_eq!(byte, [b'r']);
     local_peer.write_all(b"l").unwrap();
-    assert!(wait_tcp_ready(&[(&local, true, false), (&remote, true, false)], TLS_READY_SLICE).unwrap() > 0);
+    assert!(
+        wait_tcp_ready(
+            &[(&local, true, false), (&remote, true, false)],
+            TLS_READY_SLICE
+        )
+        .unwrap()
+            > 0
+    );
     local.read_exact(&mut byte).unwrap();
     assert_eq!(byte, [b'l']);
     assert!(wait_tcp_ready(&[(&local, false, true)], TLS_READY_SLICE).unwrap() > 0);
@@ -29,8 +50,10 @@ fn readiness_wait_blocks_idle_tcp_and_accepts_either_original_direction() {
 fn readiness_wait_observes_original_lease_shutdown() {
     let (socket, _peer) = readiness_pair();
     let state = Arc::new(State {
-        stopped: AtomicBool::new(false), streams: Mutex::new(Vec::new()),
-        failure: Mutex::new(None), credentials: Mutex::new(None),
+        stopped: AtomicBool::new(false),
+        streams: Mutex::new(Vec::new()),
+        failure: Mutex::new(None),
+        credentials: Mutex::new(None),
     });
     state.track(&socket).unwrap();
     let (entered, waiting) = mpsc::channel();
@@ -53,7 +76,12 @@ fn readiness_wait_observes_original_lease_shutdown() {
 #[test]
 fn readiness_wait_rejects_missing_interest() {
     let (socket, _peer) = readiness_pair();
-    assert_eq!(wait_tcp_ready(&[(&socket, false, false)], TLS_READY_SLICE).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(
+        wait_tcp_ready(&[(&socket, false, false)], TLS_READY_SLICE)
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::InvalidInput
+    );
 }
 
 fn fixture(

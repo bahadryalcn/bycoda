@@ -145,12 +145,21 @@ mod tests {
         assert_eq!(report.turns[0].duration_ms, Some(500));
         // Date indexing must retain turns that started before the interval but
         // overlap it, and must exclude future turns and drafts.
-        conn.execute("INSERT INTO session_blocks VALUES ('s', 1, 'long', ?1, 1)",
-            [serde_json::json!({"role":"user","startedAt":100,"durationMs":2500}).to_string()]).unwrap();
-        conn.execute("INSERT INTO session_blocks VALUES ('s', 2, 'future', ?1, 1)",
-            [serde_json::json!({"role":"user","startedAt":5000}).to_string()]).unwrap();
-        conn.execute("INSERT INTO session_blocks VALUES ('s', 3, 'draft', ?1, 1)",
-            [serde_json::json!({"role":"user","startedAt":2300,"draft":true}).to_string()]).unwrap();
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 1, 'long', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":100,"durationMs":2500}).to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 2, 'future', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":5000}).to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 3, 'draft', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":2300,"draft":true}).to_string()],
+        )
+        .unwrap();
         let report = query(&conn, 2000, 5000).unwrap();
         assert_eq!(report.turns.len(), 2);
         assert_eq!(report.turns[1].started_at, 100);

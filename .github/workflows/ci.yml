@@ -64,14 +64,16 @@ jobs:
       - run: node scripts/checks/check-repository-hygiene.mjs
       - run: node --test .github/scripts/issue-labels.test.cjs
       - name: Repository quality gates (format, lint baseline, locales, feature skills, theme colors, UI drift, code structure)
+        # Run every gate and fail once at the end, so one push reports all of them
+        # instead of hiding later failures behind the first one.
         run: |
-          pnpm format:check
-          pnpm lint:baseline
-          pnpm check:locales
-          pnpm check:feature-skills
-          pnpm check:colors
-          pnpm check:ui-drift
-          pnpm check:structure
+          status=0
+          for gate in format:check lint:baseline check:locales check:feature-skills check:colors check:ui-drift check:structure; do
+            echo "::group::pnpm $gate"
+            if ! pnpm "$gate"; then echo "::error title=Repository quality gate::pnpm $gate failed"; status=1; fi
+            echo "::endgroup::"
+          done
+          exit "$status"
 
   preflight:
     # Deterministic contract/format failures stop expensive VM builds and browser
@@ -478,6 +480,8 @@ jobs:
       - name: Typecheck the offline evaluation harness
         run: pnpm run eval:check
       - name: Check offline model behavior graders (no provider calls)
+        # Still runs after a type failure above so one push reports both results.
+        if: ${{ !cancelled() }}
         run: >-
           pnpm run eval:offline --reporter=default --reporter=json
           --outputFile.json=temp/test-results/scripts-ci/evals.json

@@ -120,10 +120,13 @@ fn persist_snapshot(
 ) -> Result<(), String> {
     let snapshot = {
         let owned = owned.lock().map_err(|err| err.to_string())?;
-        files.iter().filter_map(|file| {
-            let path = PathBuf::from(&file.path);
-            owned.contains(&path).then_some(path)
-        }).collect()
+        files
+            .iter()
+            .filter_map(|file| {
+                let path = PathBuf::from(&file.path);
+                owned.contains(&path).then_some(path)
+            })
+            .collect()
     };
     // Copy/fsync never holds the shared capture lock: explicit release and new
     // captures remain responsive while this original request persists its bytes.
@@ -137,12 +140,7 @@ pub(crate) fn persist(app: &AppHandle, files: &mut [QuickAttachment]) -> Result<
         .app_data_dir()
         .map_err(|err| err.to_string())?
         .join("attachments/quick-captures");
-    persist_snapshot(
-        &app.state::<Captures>().0,
-        files,
-        &destination,
-        persist_to,
-    )
+    persist_snapshot(&app.state::<Captures>().0, files, &destination, persist_to)
 }
 
 #[cfg(target_os = "macos")]
@@ -275,15 +273,24 @@ mod tests {
             let mut file = attachment(&input);
             file.size = 8;
             let mut files = vec![file];
-            persist_snapshot(&original, &mut files, &destination, |snapshot, files, destination| {
-                entered_tx.send(()).unwrap();
-                release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
-                persist_to(snapshot, files, destination)
-            }).unwrap();
+            persist_snapshot(
+                &original,
+                &mut files,
+                &destination,
+                |snapshot, files, destination| {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                    persist_to(snapshot, files, destination)
+                },
+            )
+            .unwrap();
             files
         });
         entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        assert!(owned.try_lock().is_ok(), "copy/fsync must not hold the UI capture mutex");
+        assert!(
+            owned.try_lock().is_ok(),
+            "copy/fsync must not hold the UI capture mutex"
+        );
         release_tx.send(()).unwrap();
         let files = work.join().unwrap();
         assert_eq!(std::fs::read(&files[0].path).unwrap(), bytes);
@@ -300,10 +307,18 @@ mod tests {
         std::fs::write(&capture, b"test").unwrap();
         let owned = Mutex::new(HashSet::from([capture.clone()]));
         let mut files = vec![attachment(&capture)];
-        let result = persist_snapshot(&owned, &mut files, &root.join("persistent"), |snapshot, files, destination| {
-            release(&mut owned.lock().unwrap(), &[capture.to_string_lossy().into_owned()]);
-            persist_to(snapshot, files, destination)
-        });
+        let result = persist_snapshot(
+            &owned,
+            &mut files,
+            &root.join("persistent"),
+            |snapshot, files, destination| {
+                release(
+                    &mut owned.lock().unwrap(),
+                    &[capture.to_string_lossy().into_owned()],
+                );
+                persist_to(snapshot, files, destination)
+            },
+        );
         assert!(result.is_err());
         assert_eq!(files[0].path, capture.to_string_lossy());
         assert!(!capture.exists());

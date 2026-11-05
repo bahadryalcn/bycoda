@@ -42,4 +42,3 @@ mod tests {
         assert!(!begin_finalization(&finalizing));
     }
 }
-

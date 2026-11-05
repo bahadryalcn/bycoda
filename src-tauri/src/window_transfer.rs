@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
@@ -263,7 +263,10 @@ impl WindowTransferState {
                 .ok_or("Transfer ownership is unavailable")?;
             let ids = ownership.tokens.keys().cloned().collect::<Vec<_>>();
             crate::harness::with_quiescent_sessions(window.app_handle(), &ids, || {
-                pending.gate.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire).map_err(|_| "This transfer has expired.")?;
+                pending
+                    .gate
+                    .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                    .map_err(|_| "This transfer has expired.")?;
                 let moved = crate::session_window_ownership::transfer_claims(
                     &ownership.source,
                     &destination,
@@ -523,7 +526,10 @@ fn finish_drag_preview(window: &WebviewWindow, state: &WindowTransferState) {
 /// Retire only the previous page's visual drag hint. Transfer reservations and
 /// ownership have independent lifetimes and must not be discarded on reload.
 pub(crate) fn page_reloaded(app: &AppHandle, label: &str) {
-    if let (Some(window), Some(state)) = (app.get_webview_window(label), app.try_state::<WindowTransferState>()) {
+    if let (Some(window), Some(state)) = (
+        app.get_webview_window(label),
+        app.try_state::<WindowTransferState>(),
+    ) {
         finish_drag_preview(&window, &state);
     }
 }
@@ -853,10 +859,19 @@ fn with_drop_point(
 }
 
 #[tauri::command]
-pub fn window_transfer_probe_reply(window: WebviewWindow, state: State<'_, WindowTransferState>, probe_id: String) -> Result<(), String> {
+pub fn window_transfer_probe_reply(
+    window: WebviewWindow,
+    state: State<'_, WindowTransferState>,
+    probe_id: String,
+) -> Result<(), String> {
     let mut probes = state.probes.lock().map_err(|e| e.to_string())?;
-    if probes.get(&probe_id).is_some_and(|(label, _)| label == window.label()) {
-        if let Some((_, sender)) = probes.remove(&probe_id) { let _ = sender.send(()); }
+    if probes
+        .get(&probe_id)
+        .is_some_and(|(label, _)| label == window.label())
+    {
+        if let Some((_, sender)) = probes.remove(&probe_id) {
+            let _ = sender.send(());
+        }
     }
     Ok(())
 }
@@ -886,11 +901,19 @@ mod tests {
     #[test]
     fn timed_out_transfer_cannot_enter_commit_and_committing_is_unknown() {
         let gate = AtomicU8::new(0);
-        assert!(gate.compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire).is_ok());
-        assert!(gate.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire).is_err());
+        assert!(gate
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok());
+        assert!(gate
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_err());
         let committing = AtomicU8::new(0);
-        assert!(committing.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire).is_ok());
-        assert!(committing.compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire).is_err());
+        assert!(committing
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok());
+        assert!(committing
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+            .is_err());
     }
 
     #[test]

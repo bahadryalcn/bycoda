@@ -26,12 +26,12 @@ pub(crate) use native_commit::NativeProjection;
 #[path = "remote_native_upload.rs"]
 mod native_upload;
 
-#[path = "remote_native_service.rs"]
-mod native_service;
-#[path = "assistant/assistant_room_delegation.rs"]
-pub(crate) mod assistant_room_delegation;
 #[path = "assistant/assistant_native_signer.rs"]
 pub(crate) mod assistant_native_signer;
+#[path = "assistant/assistant_room_delegation.rs"]
+pub(crate) mod assistant_room_delegation;
+#[path = "remote_native_service.rs"]
+mod native_service;
 pub(crate) use native_service::{NativeServiceChannel, NativeServiceReply};
 
 #[path = "remote_native_gateway.rs"]
@@ -444,14 +444,21 @@ pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), S
     let before = read_store_values(path)?;
     let prepared = match crate::assistant_server_observation::prepare(path, &before, records) {
         Ok(()) => true,
-        Err(_) => { crate::assistant_server_observation::mark_gap(path)?; false }
+        Err(_) => {
+            crate::assistant_server_observation::mark_gap(path)?;
+            false
+        }
     };
     let result = write_store_values_inner(path, records);
     // The file is authoritative even when replacement reports an error.
     if prepared {
-        match read_store_values(path).and_then(|actual| crate::assistant_server_observation::reconcile(path, &actual)) {
-            Ok(()) => {},
-            Err(_) => { crate::assistant_server_observation::mark_gap(path)?; }
+        match read_store_values(path)
+            .and_then(|actual| crate::assistant_server_observation::reconcile(path, &actual))
+        {
+            Ok(()) => {}
+            Err(_) => {
+                crate::assistant_server_observation::mark_gap(path)?;
+            }
         }
     }
     result
@@ -552,7 +559,13 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         }
         // One 512 KiB chunk per call; allow slow SSH links.
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
-        "sessions.update" | "sessions.pin.state" | "sessions.pin.apply" | "sessions.pin.receipt" | "browser.status" | "browser.claim" | "browser.frame"
+        "sessions.update"
+        | "sessions.pin.state"
+        | "sessions.pin.apply"
+        | "sessions.pin.receipt"
+        | "browser.status"
+        | "browser.claim"
+        | "browser.frame"
         | "browser.input" => INTERACTIVE_ACTION_RPC_TIMEOUT,
         "browser.resize" => INTERACTIVE_ACTION_RPC_TIMEOUT,
         // Cheap status reads for the Git panel. History, blame, PR status and
@@ -1475,7 +1488,9 @@ pub async fn remote_request(
     let sync_effect = if matches!(method.as_str(), "sync.push" | "sync.pull") {
         let id = sync_cycle_id.as_deref().ok_or("SYNC_OWNER_REQUIRED")?;
         Some(crate::sync_owner::admit(&window, &machine_id, id)?)
-    } else { None };
+    } else {
+        None
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let state: State<'_, RemoteConnections> = app.state();
         let result = remote_request_blocking(
@@ -1491,22 +1506,42 @@ pub async fn remote_request(
             None,
             None,
         );
-        if let Some(effect) = sync_effect { effect.finish(result.is_ok()); }
+        if let Some(effect) = sync_effect {
+            effect.finish(result.is_ok());
+        }
         result
     })
     .await
     .map_err(|e| format!("Remote request task failed: {e}"))?
 }
 
-fn assistant_route_request(route: &crate::session_store::canonical_store::AssistantNativeRoute, op: &str) -> Result<Value, String> {
-    let parts: Vec<String> = serde_json::from_str(&route.key).map_err(|_| "Invalid assistant route")?;
-    if parts.len() != 2 || parts[0] != route.environment_id { return Err("Invalid assistant route".into()); }
-    let text = route.intent.get("text").and_then(Value::as_str).ok_or("Assistant text is unavailable")?;
-    let id = route.intent.get("key").and_then(Value::as_str).ok_or("Assistant request identity is unavailable")?;
+fn assistant_route_request(
+    route: &crate::session_store::canonical_store::AssistantNativeRoute,
+    op: &str,
+) -> Result<Value, String> {
+    let parts: Vec<String> =
+        serde_json::from_str(&route.key).map_err(|_| "Invalid assistant route")?;
+    if parts.len() != 2 || parts[0] != route.environment_id {
+        return Err("Invalid assistant route".into());
+    }
+    let text = route
+        .intent
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or("Assistant text is unavailable")?;
+    let id = route
+        .intent
+        .get("key")
+        .and_then(Value::as_str)
+        .ok_or("Assistant request identity is unavailable")?;
     let mut params = json!({"op":op,"threadId":parts[1].as_str(),"text":text,"idempotencyKey":id});
     params["expectedHostInstance"] = json!(&route.host_instance);
-    if op == "threads.send" { params["via"] = json!("text"); }
-    if let Some(session) = route.intent.get("sessionId") { params["sessionId"] = session.clone(); }
+    if op == "threads.send" {
+        params["via"] = json!("text");
+    }
+    if let Some(session) = route.intent.get("sessionId") {
+        params["sessionId"] = session.clone();
+    }
     Ok(params)
 }
 
@@ -1516,35 +1551,92 @@ fn assistant_route_generation(state: &RemoteConnections) -> Result<String, Strin
     Ok(format!("{}:{}", process, state.recovery_routes.capture()?))
 }
 
-fn with_assistant_route_current<T>(app: &AppHandle, route: &crate::session_store::canonical_store::AssistantNativeRoute, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+fn with_assistant_route_current<T>(
+    app: &AppHandle,
+    route: &crate::session_store::canonical_store::AssistantNativeRoute,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     let state: State<'_, RemoteConnections> = app.state();
-    let _guard = state.store.lock().map_err(|_| "Connection store is locked")?;
-    let _route_guard = state.recovery_routes.commit.lock().map_err(|_| "Connection retirement is unavailable")?;
-    if assistant_route_generation(&state)? != route.generation || !read_uncached(&store_path(app)?)?.iter().any(|machine|
-        machine.id == route.machine_id && machine.environment_id == route.environment_id && machine.local_host && ws_fingerprint(machine) == route.fingerprint
-    ) { return Err("The original Host connection changed; the send remains held".into()); }
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let _route_guard = state
+        .recovery_routes
+        .commit
+        .lock()
+        .map_err(|_| "Connection retirement is unavailable")?;
+    if assistant_route_generation(&state)? != route.generation
+        || !read_uncached(&store_path(app)?)?.iter().any(|machine| {
+            machine.id == route.machine_id
+                && machine.environment_id == route.environment_id
+                && machine.local_host
+                && ws_fingerprint(machine) == route.fingerprint
+        })
+    {
+        return Err("The original Host connection changed; the send remains held".into());
+    }
     work()
 }
 
-fn assistant_reply_proof(route: &crate::session_store::canonical_store::AssistantNativeRoute, response: &Value, status: bool) -> Result<Value, String> {
-    if status && response.pointer("/sendReceipt/status").and_then(Value::as_str) != Some("settled") {
+fn assistant_reply_proof(
+    route: &crate::session_store::canonical_store::AssistantNativeRoute,
+    response: &Value,
+    status: bool,
+) -> Result<Value, String> {
+    if status
+        && response
+            .pointer("/sendReceipt/status")
+            .and_then(Value::as_str)
+            != Some("settled")
+    {
         return Err("The original Host has not confirmed this reply".into());
     }
-    let parts: Vec<String> = serde_json::from_str(&route.key).map_err(|_| "Invalid assistant route")?;
-    let message = response.get("messages").and_then(Value::as_array).and_then(|messages| messages.iter().find(|message|
-        message.get("role").and_then(Value::as_str) == Some("assistant") &&
-        message.get("threadId").and_then(Value::as_str) == parts.get(1).map(String::as_str)
-    )).ok_or("The original Host reply is not confirmed")?;
-    let id = message.get("id").and_then(Value::as_str).filter(|id| !id.is_empty() && id.len() <= 512).ok_or("The original Host reply is not confirmed")?;
+    let parts: Vec<String> =
+        serde_json::from_str(&route.key).map_err(|_| "Invalid assistant route")?;
+    let message = response
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages.iter().find(|message| {
+                message.get("role").and_then(Value::as_str) == Some("assistant")
+                    && message.get("threadId").and_then(Value::as_str)
+                        == parts.get(1).map(String::as_str)
+            })
+        })
+        .ok_or("The original Host reply is not confirmed")?;
+    let id = message
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty() && id.len() <= 512)
+        .ok_or("The original Host reply is not confirmed")?;
     Ok(json!({"messageId":id}))
 }
 
-fn verify_assistant_instance(app: &AppHandle, window: &tauri::Window, route: &crate::session_store::canonical_store::AssistantNativeRoute) -> Result<(), String> {
+fn verify_assistant_instance(
+    app: &AppHandle,
+    window: &tauri::Window,
+    route: &crate::session_store::canonical_store::AssistantNativeRoute,
+) -> Result<(), String> {
     let state: State<'_, RemoteConnections> = app.state();
-    let response = remote_request_blocking(app, window, &state, route.machine_id.clone(), "assistant.request".into(),
-        json!({"op":"threads.sendIdentity"}), None, Some(true), Some(route.environment_id.clone()),
-        Some(route.fingerprint.clone()), Some(route.generation.clone()))?;
-    if response.pointer("/sendIdentity/instanceId").and_then(Value::as_str) != Some(route.host_instance.as_str()) {
+    let response = remote_request_blocking(
+        app,
+        window,
+        &state,
+        route.machine_id.clone(),
+        "assistant.request".into(),
+        json!({"op":"threads.sendIdentity"}),
+        None,
+        Some(true),
+        Some(route.environment_id.clone()),
+        Some(route.fingerprint.clone()),
+        Some(route.generation.clone()),
+    )?;
+    if response
+        .pointer("/sendIdentity/instanceId")
+        .and_then(Value::as_str)
+        != Some(route.host_instance.as_str())
+    {
         return Err("The original Host instance changed; the send remains held".into());
     }
     Ok(())
@@ -1553,83 +1645,207 @@ fn verify_assistant_instance(app: &AppHandle, window: &tauri::Window, route: &cr
 /// Native captures the local Host route and persists it with the claim before sending.
 #[tauri::command]
 pub async fn assistant_native_send(
-    app: AppHandle, window: tauri::Window, page_token: String, key: String,
-    operation_id: String, intent_version: i64, environment_id: String,
+    app: AppHandle,
+    window: tauri::Window,
+    page_token: String,
+    key: String,
+    operation_id: String,
+    intent_version: i64,
+    environment_id: String,
 ) -> Result<Value, String> {
     let admission = crate::session_store::canonical_store::admit(&window, &page_token)?;
     crate::harness::run_blocking("assistant_native_send", move || {
         let _admission = admission;
-        crate::session_store::canonical_store::register_assistant_preparation(&window, &page_token, &key, &operation_id, intent_version)?;
-        let public = crate::local_host::local_host_connect_blocking(app.clone())?.ok_or("The original Host is unavailable")?;
-        if !public.local_host || public.environment_id != environment_id { return Err("The original Host identity changed".into()); }
+        crate::session_store::canonical_store::register_assistant_preparation(
+            &window,
+            &page_token,
+            &key,
+            &operation_id,
+            intent_version,
+        )?;
+        let public = crate::local_host::local_host_connect_blocking(app.clone())?
+            .ok_or("The original Host is unavailable")?;
+        if !public.local_host || public.environment_id != environment_id {
+            return Err("The original Host identity changed".into());
+        }
         let state: State<'_, RemoteConnections> = app.state();
         let (machine, generation) = {
-            let _guard = state.store.lock().map_err(|_| "Connection store is locked")?;
-            let machine = read_uncached(&store_path(&app)?)?.into_iter().find(|machine|
-                machine.id == public.id && machine.environment_id == environment_id && machine.local_host
-            ).ok_or("The original Host is unavailable")?;
+            let _guard = state
+                .store
+                .lock()
+                .map_err(|_| "Connection store is locked")?;
+            let machine = read_uncached(&store_path(&app)?)?
+                .into_iter()
+                .find(|machine| {
+                    machine.id == public.id
+                        && machine.environment_id == environment_id
+                        && machine.local_host
+                })
+                .ok_or("The original Host is unavailable")?;
             (machine, assistant_route_generation(&state)?)
         };
         let fingerprint = ws_fingerprint(&machine);
-        let identity = remote_request_blocking(&app, &window, &state, machine.id.clone(), "assistant.request".into(),
-            json!({"op":"threads.sendIdentity"}), None, Some(true), Some(environment_id.clone()),
-            Some(fingerprint.clone()), Some(generation.clone()))?;
-        let host_instance = identity.pointer("/sendIdentity/instanceId").and_then(Value::as_str)
-            .filter(|value| !value.is_empty() && value.len() <= 512).ok_or("The original Host instance is unavailable")?.to_owned();
+        let identity = remote_request_blocking(
+            &app,
+            &window,
+            &state,
+            machine.id.clone(),
+            "assistant.request".into(),
+            json!({"op":"threads.sendIdentity"}),
+            None,
+            Some(true),
+            Some(environment_id.clone()),
+            Some(fingerprint.clone()),
+            Some(generation.clone()),
+        )?;
+        let host_instance = identity
+            .pointer("/sendIdentity/instanceId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 512)
+            .ok_or("The original Host instance is unavailable")?
+            .to_owned();
         let route = crate::session_store::canonical_store::prepare_assistant_send(
-            &window, &page_token, &key, &operation_id, intent_version, &machine.id, &environment_id, &fingerprint, &generation, &host_instance,
+            &window,
+            &page_token,
+            &key,
+            &operation_id,
+            intent_version,
+            &machine.id,
+            &environment_id,
+            &fingerprint,
+            &generation,
+            &host_instance,
         )?;
         let params = assistant_route_request(&route, "threads.send")?;
-        let response = remote_request_blocking(&app, &window, &state, route.machine_id.clone(), "assistant.request".into(), params,
-            None, Some(true), Some(route.environment_id.clone()), Some(route.fingerprint.clone()), Some(route.generation.clone()))?;
-        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("The original page changed; the result remains held".into()); }
+        let response = remote_request_blocking(
+            &app,
+            &window,
+            &state,
+            route.machine_id.clone(),
+            "assistant.request".into(),
+            params,
+            None,
+            Some(true),
+            Some(route.environment_id.clone()),
+            Some(route.fingerprint.clone()),
+            Some(route.generation.clone()),
+        )?;
+        if crate::session_store::canonical_store::page(&window)? != page_token {
+            return Err("The original page changed; the result remains held".into());
+        }
         let proof = assistant_reply_proof(&route, &response, false)?;
-        with_assistant_route_current(&app, &route, || crate::session_store::canonical_store::record_assistant_proof(&window, &page_token, &route, &proof))?;
+        with_assistant_route_current(&app, &route, || {
+            crate::session_store::canonical_store::record_assistant_proof(
+                &window,
+                &page_token,
+                &route,
+                &proof,
+            )
+        })?;
         Ok(response)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn assistant_native_finish(window: tauri::Window, page_token: String, key: String, operation_id: String) -> Result<(), String> {
+pub async fn assistant_native_finish(
+    window: tauri::Window,
+    page_token: String,
+    key: String,
+    operation_id: String,
+) -> Result<(), String> {
     let admission = crate::session_store::canonical_store::admit(&window, &page_token)?;
     crate::harness::run_blocking("assistant_native_finish", move || {
         let _admission = admission;
-        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
-        if crate::session_store::canonical_store::assistant_send_settled(&window, &key, &operation_id, None)? { return Ok(()); }
+        if crate::session_store::canonical_store::page(&window)? != page_token {
+            return Err("CANONICAL_PAGE_STALE".into());
+        }
+        if crate::session_store::canonical_store::assistant_send_settled(
+            &window,
+            &key,
+            &operation_id,
+            None,
+        )? {
+            return Ok(());
+        }
         let route = crate::session_store::canonical_store::assistant_send_route(&window, &key)?;
-        if route.operation_id != operation_id || route.proof.is_none() { return Err("The original Host receipt is unavailable".into()); }
+        if route.operation_id != operation_id || route.proof.is_none() {
+            return Err("The original Host receipt is unavailable".into());
+        }
         verify_assistant_instance(window.app_handle(), &window, &route)?;
-        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
-        with_assistant_route_current(window.app_handle(), &route, || crate::session_store::canonical_store::complete_assistant_send(&window, &page_token, &route))
-    }).await
+        if crate::session_store::canonical_store::page(&window)? != page_token {
+            return Err("CANONICAL_PAGE_STALE".into());
+        }
+        with_assistant_route_current(window.app_handle(), &route, || {
+            crate::session_store::canonical_store::complete_assistant_send(
+                &window,
+                &page_token,
+                &route,
+            )
+        })
+    })
+    .await
 }
 
 /// A successor may settle only after Native verifies the captured Host receipt.
 #[tauri::command]
-pub async fn assistant_native_reconcile(app: AppHandle, window: tauri::Window, page_token: String, key: String, request_key: String, operation_id: Option<String>) -> Result<Value, String> {
+pub async fn assistant_native_reconcile(
+    app: AppHandle,
+    window: tauri::Window,
+    page_token: String,
+    key: String,
+    request_key: String,
+    operation_id: Option<String>,
+) -> Result<Value, String> {
     let admission = crate::session_store::canonical_store::admit(&window, &page_token)?;
     crate::harness::run_blocking("assistant_native_reconcile", move || {
         let _admission = admission;
-        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
+        if crate::session_store::canonical_store::page(&window)? != page_token {
+            return Err("CANONICAL_PAGE_STALE".into());
+        }
         if let Some(ref operation_id) = operation_id {
-            if crate::session_store::canonical_store::assistant_send_settled(&window, &key, operation_id, Some(&request_key))? {
+            if crate::session_store::canonical_store::assistant_send_settled(
+                &window,
+                &key,
+                operation_id,
+                Some(&request_key),
+            )? {
                 return Ok(json!({"sendReceipt":{"status":"settled"}}));
             }
-            if crate::session_store::canonical_store::assistant_send_not_sent(&window, &key, operation_id, &request_key)? {
+            if crate::session_store::canonical_store::assistant_send_not_sent(
+                &window,
+                &key,
+                operation_id,
+                &request_key,
+            )? {
                 return Ok(json!({"sendReceipt":{"status":"notSent"}}));
             }
         }
-        let route = match crate::session_store::canonical_store::assistant_send_route(&window, &key) {
+        let route = match crate::session_store::canonical_store::assistant_send_route(&window, &key)
+        {
             Ok(route) => route,
             Err(error) => {
-                if crate::session_store::canonical_store::release_prepared_assistant(&window, &page_token, &key, &request_key, operation_id.as_deref())? {
+                if crate::session_store::canonical_store::release_prepared_assistant(
+                    &window,
+                    &page_token,
+                    &key,
+                    &request_key,
+                    operation_id.as_deref(),
+                )? {
                     return Ok(json!({"sendReceipt":{"status":"notSent"}}));
                 }
                 return Err(error);
             }
         };
-        if route.intent.get("key").and_then(Value::as_str) != Some(request_key.as_str()) { return Err("The original send identity changed".into()); }
-        if operation_id.as_ref().is_some_and(|operation_id| operation_id != &route.operation_id) { return Err("The original send identity changed".into()); }
+        if route.intent.get("key").and_then(Value::as_str) != Some(request_key.as_str()) {
+            return Err("The original send identity changed".into());
+        }
+        if operation_id
+            .as_ref()
+            .is_some_and(|operation_id| operation_id != &route.operation_id)
+        {
+            return Err("The original send identity changed".into());
+        }
         with_assistant_route_current(&app, &route, || Ok(()))?;
         verify_assistant_instance(&app, &window, &route)?;
         let response = if route.proof.is_some() {
@@ -1637,16 +1853,43 @@ pub async fn assistant_native_reconcile(app: AppHandle, window: tauri::Window, p
         } else {
             let state: State<'_, RemoteConnections> = app.state();
             let params = assistant_route_request(&route, "threads.sendStatus")?;
-            let result = remote_request_blocking(&app, &window, &state, route.machine_id.clone(), "assistant.request".into(), params,
-                None, Some(true), Some(route.environment_id.clone()), Some(route.fingerprint.clone()), Some(route.generation.clone()))?;
+            let result = remote_request_blocking(
+                &app,
+                &window,
+                &state,
+                route.machine_id.clone(),
+                "assistant.request".into(),
+                params,
+                None,
+                Some(true),
+                Some(route.environment_id.clone()),
+                Some(route.fingerprint.clone()),
+                Some(route.generation.clone()),
+            )?;
             let proof = assistant_reply_proof(&route, &result, true)?;
-            with_assistant_route_current(&app, &route, || crate::session_store::canonical_store::record_assistant_proof(&window, &page_token, &route, &proof))?;
+            with_assistant_route_current(&app, &route, || {
+                crate::session_store::canonical_store::record_assistant_proof(
+                    &window,
+                    &page_token,
+                    &route,
+                    &proof,
+                )
+            })?;
             result
         };
-        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
-        with_assistant_route_current(&app, &route, || crate::session_store::canonical_store::complete_assistant_send(&window, &page_token, &route))?;
+        if crate::session_store::canonical_store::page(&window)? != page_token {
+            return Err("CANONICAL_PAGE_STALE".into());
+        }
+        with_assistant_route_current(&app, &route, || {
+            crate::session_store::canonical_store::complete_assistant_send(
+                &window,
+                &page_token,
+                &route,
+            )
+        })?;
         Ok(response)
-    }).await
+    })
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1681,10 +1924,16 @@ fn remote_request_blocking(
         &machine_id,
         expected_environment_id.as_deref(),
     )?;
-    if expected_fingerprint.as_deref().is_some_and(|expected| ws_fingerprint(&machine) != expected) {
+    if expected_fingerprint
+        .as_deref()
+        .is_some_and(|expected| ws_fingerprint(&machine) != expected)
+    {
         return Err("The original Host connection changed. The outcome remains unknown.".into());
     }
-    if expected_generation.as_deref().is_some_and(|expected| assistant_route_generation(state).ok().as_deref() != Some(expected)) {
+    if expected_generation
+        .as_deref()
+        .is_some_and(|expected| assistant_route_generation(state).ok().as_deref() != Some(expected))
+    {
         return Err("The original Host connection retired. The outcome remains unknown.".into());
     }
     if fresh == Some(true) && machine.ssh.is_some() {
@@ -1746,8 +1995,12 @@ fn remote_request_blocking(
             state.invalidate_ws(&machine.id);
             return Err("Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.".into());
         }
-        if expected_generation.as_deref().is_some_and(|expected| assistant_route_generation(state).ok().as_deref() != Some(expected)) {
-            return Err("The original Host connection retired. The outcome remains unknown.".into());
+        if expected_generation.as_deref().is_some_and(|expected| {
+            assistant_route_generation(state).ok().as_deref() != Some(expected)
+        }) {
+            return Err(
+                "The original Host connection retired. The outcome remains unknown.".into(),
+            );
         }
         if let Some(guard) = disclosure
             .lock()

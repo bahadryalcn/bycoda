@@ -335,14 +335,32 @@ pub(crate) fn start_prepared(
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 fn start_for_owner(
-    state: &SshForwards, owner: &ForwardOwner, id: String, connection_id: String,
-    local_port: u16, target_host: String, target_port: u16, args: Vec<String>,
+    state: &SshForwards,
+    owner: &ForwardOwner,
+    id: String,
+    connection_id: String,
+    local_port: u16,
+    target_host: String,
+    target_port: u16,
+    args: Vec<String>,
     identity_args: Option<Vec<String>>,
     jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
     http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<ForwardStatus, String> {
-    start_for_owner_notifying(state, owner, id, connection_id, local_port, target_host,
-        target_port, args, identity_args, jump_config, http_proxy, &|_| {})
+    start_for_owner_notifying(
+        state,
+        owner,
+        id,
+        connection_id,
+        local_port,
+        target_host,
+        target_port,
+        args,
+        identity_args,
+        jump_config,
+        http_proxy,
+        &|_| {},
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -570,14 +588,44 @@ pub fn ssh_forward_start(
         crate::ssh_security::start_http_proxy_authorized(&endpoint, proxy_grant.as_ref())?,
         &|generation| {
             created.set(Some(generation));
-            events::publish(&app, window.label(), &connection_id, &id, generation, &owner);
+            events::publish(
+                &app,
+                window.label(),
+                &connection_id,
+                &id,
+                generation,
+                &owner,
+            );
         },
     );
-    let generation = created.get().or_else(|| state.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&id)
-        .filter(|live| live.owner_lease.same_generation(&owner)).map(|live| live.generation));
+    let generation = created.get().or_else(|| {
+        state
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&id)
+            .filter(|live| live.owner_lease.same_generation(&owner))
+            .map(|live| live.generation)
+    });
     if let Some(generation) = generation {
-        events::publish(&app, window.label(), &connection_id, &id, generation, &owner);
-        if result.is_ok() { events::watch(app.clone(), window.label().into(), connection_id, id, generation, owner); }
+        events::publish(
+            &app,
+            window.label(),
+            &connection_id,
+            &id,
+            generation,
+            &owner,
+        );
+        if result.is_ok() {
+            events::watch(
+                app.clone(),
+                window.label().into(),
+                connection_id,
+                id,
+                generation,
+                owner,
+            );
+        }
     }
     result
 }
@@ -588,12 +636,23 @@ pub fn ssh_forward_stop(
     id: String,
 ) -> Result<(), String> {
     let owner = state.owner(window.label())?;
-    let original = state.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&id)
+    let original = state
+        .sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&id)
         .filter(|live| live.owner_lease.same_generation(&owner))
         .map(|live| (live.status.connection_id.clone(), live.generation));
     let result = stop_owned(&state, window.label(), &id);
     if let Some((connection_id, generation)) = original {
-        events::publish(window.app_handle(), window.label(), &connection_id, &id, generation, &owner);
+        events::publish(
+            window.app_handle(),
+            window.label(),
+            &connection_id,
+            &id,
+            generation,
+            &owner,
+        );
     }
     result
 }
@@ -634,10 +693,24 @@ pub fn ssh_forward_list(
     let result = list_window(&state, window.label())?;
     let owner = state.owner(window.label())?;
     for status in result.iter().filter(|status| status.state == "stopping") {
-        let generation = state.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&status.id)
-            .filter(|live| live.owner_lease.same_generation(&owner) && live.status.state == "failed").map(|live| live.generation);
+        let generation = state
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&status.id)
+            .filter(|live| {
+                live.owner_lease.same_generation(&owner) && live.status.state == "failed"
+            })
+            .map(|live| live.generation);
         if let Some(generation) = generation {
-            events::publish(window.app_handle(), window.label(), &status.connection_id, &status.id, generation, &owner);
+            events::publish(
+                window.app_handle(),
+                window.label(),
+                &status.connection_id,
+                &status.id,
+                generation,
+                &owner,
+            );
         }
     }
     Ok(result)
@@ -752,10 +825,7 @@ mod tests {
             release_tx.send(()).unwrap();
             let result = worker.join().unwrap();
             checker.join().unwrap();
-            assert!(
-                unlocked.unwrap(),
-                "cleanup held the shared lifecycle lock"
-            );
+            assert!(unlocked.unwrap(), "cleanup held the shared lifecycle lock");
             assert_eq!(result.is_ok(), reused);
         }
     }
