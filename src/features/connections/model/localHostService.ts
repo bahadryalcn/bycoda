@@ -60,8 +60,10 @@ function syncLocalHostPolling() {
     return;
   }
   if (localHostTimer !== undefined) return;
-  void loadLocalHost();
-  localHostTimer = window.setInterval(() => void loadLocalHost(), POLL_MS);
+  const load = () =>
+    void loadLocalHost().catch((error: unknown) => console.warn("Local host poll failed", error));
+  load();
+  localHostTimer = window.setInterval(load, POLL_MS);
 }
 
 function subscribeLocalHost(listener: LocalHostListener): () => void {

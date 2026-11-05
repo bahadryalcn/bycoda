@@ -33,7 +33,7 @@ export function useWorkspaceAutomationActivity({
     const resume = () => {
       if (document.hidden || disposed) return;
       clearTimeout(timer);
-      void poll();
+      void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
     };
     const poll = async () => {
       if (running || disposed || document.hidden) return;
@@ -110,7 +110,7 @@ export function useWorkspaceAutomationActivity({
       }
     };
     document.addEventListener("visibilitychange", resume);
-    void poll();
+    void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
     return () => {
       disposed = true;
       document.removeEventListener("visibilitychange", resume);

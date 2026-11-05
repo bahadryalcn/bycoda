@@ -8,9 +8,6 @@
     "host/assistant/core/assistant-keep-awake.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/assistant/service.ts": {
-      "ts-date-toisostring-unguarded": 2
-    },
     "host/attachments/attachments.ts": {
       "ts-void-promise-without-catch": 1
     },
@@ -422,9 +419,6 @@
     "src/app/workspace/bridges/useRunningOnHostLoader.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "src/app/workspace/bridges/useWorkspaceAutomationActivity.ts": {
-      "ts-void-promise-without-catch": 1
-    },
     "src/app/workspace/control/useGuideActions.ts": {
       "ts-void-promise-without-catch": 1
     },
@@ -658,9 +652,6 @@
     },
     "src/features/connections/model/connections.ts": {
       "ts-void-promise-without-catch": 3
-    },
-    "src/features/connections/model/localHostService.ts": {
-      "ts-void-promise-without-catch": 1
     },
     "src/features/connections/model/remoteConnection.ts": {
       "ts-text-truncate-utf16": 1

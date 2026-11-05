@@ -1909,7 +1909,9 @@ export function isPrimaryWorkspaceWindow(): boolean {
   }
 }
 
-void trackPrimaryWorkspaceWindow();
+void trackPrimaryWorkspaceWindow().catch((error: unknown) =>
+  console.warn("Primary workspace window tracking failed", error),
+);
 
 export async function saveWorkspaceSnapshot(
   snapshot: unknown,
