@@ -721,11 +721,7 @@ function HostStatus({
         aria-label={label}
         onClick={() => setOpen(!open)}
       >
-        <StatusDot
-          size="compact"
-          tone={online ? "success" : "secondary"}
-          preserveColors
-        />
+        <StatusDot size="compact" tone={online ? "success" : "secondary"} preserveColors />
         <span className="social-host-label">{label}</span>
       </Button>
       {open ? (

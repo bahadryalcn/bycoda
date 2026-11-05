@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "问题附件的会话身份不可用",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "无法验证问题附件的归属。原始草稿仍可用于恢复。",
   "Unable to retain media for this draft.": "无法保留此草稿的媒体。",
-  "Unable to release media for this draft.": "无法释放此草稿的媒体。"
+  "Unable to release media for this draft.": "无法释放此草稿的媒体。",
+  "Clipboard write failed.": "写入剪贴板失败。"
 }

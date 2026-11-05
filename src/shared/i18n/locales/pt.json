@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "A identidade de sessão do anexo da pergunta não está disponível",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "Não é possível verificar a propriedade do anexo da pergunta. O rascunho original continua disponível para recuperação.",
   "Unable to retain media for this draft.": "Não foi possível manter a mídia deste rascunho.",
-  "Unable to release media for this draft.": "Não foi possível liberar a mídia deste rascunho."
+  "Unable to release media for this draft.": "Não foi possível liberar a mídia deste rascunho.",
+  "Clipboard write failed.": "Falha ao gravar na área de transferência."
 }

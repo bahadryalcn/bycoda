@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "Question attachment session identity is unavailable",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "Question attachment ownership cannot be verified. The original draft remains available for recovery.",
   "Unable to retain media for this draft.": "Unable to retain media for this draft.",
-  "Unable to release media for this draft.": "Unable to release media for this draft."
+  "Unable to release media for this draft.": "Unable to release media for this draft.",
+  "Clipboard write failed.": "Clipboard write failed."
 }

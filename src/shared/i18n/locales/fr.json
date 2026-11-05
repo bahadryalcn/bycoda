@@ -11299,5 +11299,6 @@
   "Question attachment session identity is unavailable": "L'identité de session de la pièce jointe de la question est indisponible",
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "La propriété de la pièce jointe de la question ne peut pas être vérifiée. Le brouillon d'origine reste disponible pour la récupération.",
   "Unable to retain media for this draft.": "Impossible de conserver les médias de ce brouillon.",
-  "Unable to release media for this draft.": "Impossible de libérer les médias de ce brouillon."
+  "Unable to release media for this draft.": "Impossible de libérer les médias de ce brouillon.",
+  "Clipboard write failed.": "Échec de l'écriture dans le presse-papiers."
 }
