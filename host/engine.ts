@@ -1326,13 +1326,13 @@ export class HostEngine {
       if (managedOnly && !state.workspaceId) continue;
       // An idle managed conversation needs no provider until an explicit operation.
       // Its exact workspace and authority are validated when that operation loads it.
+      // Authority heads persist across restarts, so they must not force a parse here.
       if (
         this.managedTurns &&
         state.workspaceId &&
         state.status === "idle" &&
         state.hasDesktop &&
-        !state.shellRunning &&
-        !state.hasAuthority
+        !state.shellRunning
       ) {
         this.deferredManagedBindings.set(state.id, {
           projectId: state.projectId,

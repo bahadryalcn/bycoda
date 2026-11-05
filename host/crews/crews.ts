@@ -348,6 +348,17 @@ export class HostCrews {
   }
   private async update(run: CrewRun) {
     return this.store.transaction(async () => {
+      // Patch only this run's row; a full state rewrite re-reads every run payload.
+      const current = await readCrewSchedulerRun(this.store, run.id);
+      if (current) {
+        await this.checkOperationAuthority();
+        await this.patchSchedulerRun(
+          current.ordinal,
+          { ...run, updatedAt: Math.max(this.now(), current.run.updatedAt + 1) },
+          ["updatedAt"],
+        );
+        return;
+      }
       const state = await this.read();
       state.runs = state.runs.map((r) =>
         r.id === run.id ? { ...run, updatedAt: Math.max(this.now(), r.updatedAt + 1) } : r,

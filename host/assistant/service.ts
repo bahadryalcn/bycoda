@@ -52,7 +52,12 @@ import {
 import { compareAssistantJobPriority } from "../../src/shared/model/assistantJobPriority";
 import { assistantRoleExecution } from "../../src/shared/model/assistantRoles";
 import { assistantDetailedBriefingText, assistantUpdateFallback } from "./briefing";
-import { readBriefingApprovals, recentBriefingNotes, briefingNoteLines } from "./briefing-sources";
+import {
+  readBriefingApprovals,
+  recentBriefingNotes,
+  briefingNoteLines,
+  ownerLocalDay,
+} from "./briefing-sources";
 import type { HostAssistantManualSessions } from "./sessions/assistant-manual-sessions";
 import type {
   ManualSupervisionGrant,
@@ -2713,7 +2718,7 @@ export class HostAssistant {
         if (activity)
           await this.appendDailyNote(await this.profile(), [activity], {
             strict: true,
-            day: new Date(event.at).toISOString().slice(0, 10),
+            day: ownerLocalDay(event.at),
           });
         await this.store.transaction(
           () => this.setRuntime(key, { ...recorded!, noteDelivered: true }),
@@ -5483,7 +5488,7 @@ export class HostAssistant {
     }, "critical");
   }
   private async usage(profile: AssistantProfile, includeCache = false): Promise<AssistantUsage> {
-    const day = new Date(this.now()).toISOString().slice(0, 10);
+    const day = ownerLocalDay(this.now());
     const old = await this.runtime<AssistantUsage>(`usage:${day}`, {
       day,
       chiefTokens: 0,
@@ -5691,7 +5696,7 @@ export class HostAssistant {
         cacheTimeKnown?: boolean;
       } | null>(key, null);
       const timestamp = turn.at === undefined ? this.now() : turn.at;
-      const day = previous?.day ?? new Date(timestamp).toISOString().slice(0, 10);
+      const day = previous?.day ?? ownerLocalDay(timestamp);
       const observed = Math.max(previous?.tokens ?? 0, turn.tokens);
       const delta = observed - (previous?.tokens ?? 0);
       const cacheMetrics = assistantCacheMeasurement(turn.cacheMetrics) ?? previous?.cacheMetrics;
@@ -5701,7 +5706,7 @@ export class HostAssistant {
           Number.isSafeInteger(turn.at) &&
           turn.at >= 0 &&
           turn.at <= this.now() &&
-          new Date(turn.at).toISOString().slice(0, 10) === day);
+          ownerLocalDay(turn.at) === day);
       if (
         previous &&
         delta === 0 &&
@@ -6786,7 +6791,7 @@ export class HostAssistant {
       if (options.strict) throw new Error("Global assistant notes are unavailable on this Host.");
       return;
     }
-    const title = `${profile.name || "Computer use"} · ${options.day ?? new Date(this.now()).toISOString().slice(0, 10)}`;
+    const title = `${profile.name || "Computer use"} · ${options.day ?? ownerLocalDay(this.now())}`;
     if (await this.runtime(`notebookSuppressed:${title}`, false)) return;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
