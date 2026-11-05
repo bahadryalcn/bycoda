@@ -8,8 +8,8 @@
 //! the WinRT toast API via `tauri-winrt-notification`, which likewise has no
 //! runtime permission prompt: toasts are controlled from Windows Settings.
 
-use serde::Serialize;
 use rusqlite::OptionalExtension;
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 /// Emitted to every window when the user clicks a notification. Payload is
@@ -90,28 +90,60 @@ pub async fn show_notification(
 /// same canonical ID and scope never produce a second OS enqueue after an
 /// unknown outcome. This owner reports OS queue acceptance, not presentation.
 pub(crate) fn assistant_notification_once(
-    app: &AppHandle, key: &str, scope_hash: &str,
+    app: &AppHandle,
+    key: &str,
+    scope_hash: &str,
     work: impl FnOnce() -> Result<bool, String> + Send + 'static,
 ) -> Result<&'static str, String> {
-    let dir = app.path().app_data_dir().map_err(|_| "Notification storage unavailable")?;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "Notification storage unavailable")?;
     std::fs::create_dir_all(&dir).map_err(|_| "Notification storage unavailable")?;
-    assistant_notification_once_at(dir.join("assistant-notification-receipts-v1.db"), key, scope_hash, work)
+    assistant_notification_once_at(
+        dir.join("assistant-notification-receipts-v1.db"),
+        key,
+        scope_hash,
+        work,
+    )
 }
 fn assistant_notification_once_at(
-    file: std::path::PathBuf, key: &str, scope_hash: &str,
+    file: std::path::PathBuf,
+    key: &str,
+    scope_hash: &str,
     work: impl FnOnce() -> Result<bool, String> + Send + 'static,
 ) -> Result<&'static str, String> {
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = SERIAL.lock().map_err(|_| "Notification owner unavailable")?;
+    let _guard = SERIAL
+        .lock()
+        .map_err(|_| "Notification owner unavailable")?;
     let conn = rusqlite::Connection::open(&file).map_err(|_| "Notification storage unavailable")?;
     conn.execute_batch("PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, scope_hash TEXT NOT NULL, state TEXT NOT NULL)").map_err(|_| "Notification storage unavailable")?;
-    let previous: Option<(String, String)> = conn.query_row("SELECT scope_hash,state FROM receipts WHERE id=?1", [key], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(|_| "Notification storage unavailable")?;
+    let previous: Option<(String, String)> = conn
+        .query_row(
+            "SELECT scope_hash,state FROM receipts WHERE id=?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| "Notification storage unavailable")?;
     if let Some((existing, state)) = previous {
-        if existing != scope_hash { return Err("Notification identity was reused with changed scope".into()); }
-        return match state.as_str() { "accepted" => Ok("accepted"), "pending" => Ok("unknown"), "suppressed" => Ok("suppressed"), _ => Err("Invalid notification receipt".into()) };
+        if existing != scope_hash {
+            return Err("Notification identity was reused with changed scope".into());
+        }
+        return match state.as_str() {
+            "accepted" => Ok("accepted"),
+            "pending" => Ok("unknown"),
+            "suppressed" => Ok("suppressed"),
+            _ => Err("Invalid notification receipt".into()),
+        };
     }
     // A crash after this commit is unknown and is never replayed automatically.
-    conn.execute("INSERT INTO receipts(id,scope_hash,state) VALUES(?1,?2,'pending')", rusqlite::params![key,scope_hash]).map_err(|_| "Notification storage unavailable")?;
+    conn.execute(
+        "INSERT INTO receipts(id,scope_hash,state) VALUES(?1,?2,'pending')",
+        rusqlite::params![key, scope_hash],
+    )
+    .map_err(|_| "Notification storage unavailable")?;
     let key = key.to_owned();
     let hash = scope_hash.to_owned();
     std::thread::Builder::new().name("assistant-notification".into()).spawn(move || {
@@ -126,13 +158,40 @@ fn assistant_notification_once_at(
     // Native has accepted ownership; this is not OS delivery or display.
     Ok("accepted")
 }
-pub(crate) fn assistant_notification_status(app: &AppHandle, key: &str, scope_hash: &str) -> Result<&'static str, String> {
-    let dir = app.path().app_data_dir().map_err(|_| "Notification storage unavailable")?;
+pub(crate) fn assistant_notification_status(
+    app: &AppHandle,
+    key: &str,
+    scope_hash: &str,
+) -> Result<&'static str, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "Notification storage unavailable")?;
     let file = dir.join("assistant-notification-receipts-v1.db");
-    if !file.exists() { return Ok("unknown"); }
-    let conn = rusqlite::Connection::open_with_flags(file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|_| "Notification storage unavailable")?;
-    let value: Option<(String, String)> = conn.query_row("SELECT scope_hash,state FROM receipts WHERE id=?1", [key], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(|_| "Notification storage unavailable")?;
-    match value { None => Ok("unknown"), Some((hash, _)) if hash != scope_hash => Err("Notification identity was reused with changed scope".into()), Some((_, state)) if state == "accepted" => Ok("accepted"), Some((_, state)) if state == "suppressed" => Ok("suppressed"), Some((_, state)) if state == "pending" => Ok("unknown"), _ => Err("Invalid notification receipt".into()) }
+    if !file.exists() {
+        return Ok("unknown");
+    }
+    let conn =
+        rusqlite::Connection::open_with_flags(file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| "Notification storage unavailable")?;
+    let value: Option<(String, String)> = conn
+        .query_row(
+            "SELECT scope_hash,state FROM receipts WHERE id=?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| "Notification storage unavailable")?;
+    match value {
+        None => Ok("unknown"),
+        Some((hash, _)) if hash != scope_hash => {
+            Err("Notification identity was reused with changed scope".into())
+        }
+        Some((_, state)) if state == "accepted" => Ok("accepted"),
+        Some((_, state)) if state == "suppressed" => Ok("suppressed"),
+        Some((_, state)) if state == "pending" => Ok("unknown"),
+        _ => Err("Invalid notification receipt".into()),
+    }
 }
 
 /// Opens the app's page in the OS notification settings, where the user can
@@ -448,7 +507,9 @@ mod platform {
             .arg(url)
             .spawn()
             .map(|mut child| {
-                std::thread::spawn(move || { let _ = child.wait(); });
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
             })
             .map_err(|err| err.to_string())
     }
@@ -625,15 +686,20 @@ mod platform {
         if sound {
             notification.sound_name("message-new-instant");
         }
-        let handle = notification.show_async().await.map_err(|err| err.to_string())?;
+        let handle = notification
+            .show_async()
+            .await
+            .map_err(|err| err.to_string())?;
         let app = app.clone();
         let session_id = session_id.to_string();
         tauri::async_runtime::spawn(async move {
-            handle.wait_for_action_async(|action| {
-                if action.is_default_action() {
-                    super::handle_click(&app, &session_id);
-                }
-            }).await;
+            handle
+                .wait_for_action_async(|action| {
+                    if action.is_default_action() {
+                        super::handle_click(&app, &session_id);
+                    }
+                })
+                .await;
         });
         Ok(())
     }
@@ -842,9 +908,13 @@ mod platform {
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/C", "start", "", "ms-settings:notifications"]);
         crate::hide_window_console(&mut cmd);
-        cmd.spawn().map(|mut child| {
-            std::thread::spawn(move || { let _ = child.wait(); });
-        }).map_err(|err| err.to_string())
+        cmd.spawn()
+            .map(|mut child| {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            })
+            .map_err(|err| err.to_string())
     }
 
     #[cfg(test)]
@@ -927,35 +997,78 @@ mod assistant_receipt_tests {
     use super::*;
     #[test]
     fn pending_receipt_never_replays_and_final_acceptance_is_durable() {
-        let directory = std::env::temp_dir().join(format!("bycoda-notification-{}", uuid::Uuid::new_v4()));
+        let directory =
+            std::env::temp_dir().join(format!("bycoda-notification-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let file = directory.join("receipts.db");
         let (release, wait) = std::sync::mpsc::channel();
         let (started, entered) = std::sync::mpsc::channel();
-        assert_eq!(assistant_notification_once_at(file.clone(), "event", "scope", move || { started.send(()).unwrap(); wait.recv().unwrap(); Ok(true) }).unwrap(), "accepted");
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "event", "scope", move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+                Ok(true)
+            })
+            .unwrap(),
+            "accepted"
+        );
         entered.recv().unwrap();
-        assert_eq!(assistant_notification_once_at(file.clone(), "event", "scope", || panic!("replayed")).unwrap(), "unknown");
-        assert!(assistant_notification_once_at(file.clone(), "event", "changed", || Ok(true)).is_err());
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "event", "scope", || panic!("replayed"))
+                .unwrap(),
+            "unknown"
+        );
+        assert!(
+            assistant_notification_once_at(file.clone(), "event", "changed", || Ok(true)).is_err()
+        );
         release.send(()).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             let db = rusqlite::Connection::open(&file).unwrap();
-            let state: String = db.query_row("SELECT state FROM receipts WHERE id='event'", [], |row| row.get(0)).unwrap();
-            if state == "accepted" { break; }
+            let state: String = db
+                .query_row("SELECT state FROM receipts WHERE id='event'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            if state == "accepted" {
+                break;
+            }
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
-        assert_eq!(assistant_notification_once_at(file.clone(), "event", "scope", || panic!("replayed")).unwrap(), "accepted");
-        assert_eq!(assistant_notification_once_at(file.clone(), "suppressed", "scope", || Ok(false)).unwrap(), "accepted");
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "event", "scope", || panic!("replayed"))
+                .unwrap(),
+            "accepted"
+        );
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "suppressed", "scope", || Ok(false))
+                .unwrap(),
+            "accepted"
+        );
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             let db = rusqlite::Connection::open(&file).unwrap();
-            let state: String = db.query_row("SELECT state FROM receipts WHERE id='suppressed'", [], |row| row.get(0)).unwrap();
-            if state == "suppressed" { break; }
+            let state: String = db
+                .query_row(
+                    "SELECT state FROM receipts WHERE id='suppressed'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            if state == "suppressed" {
+                break;
+            }
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
-        assert_eq!(assistant_notification_once_at(file.clone(), "suppressed", "scope", || panic!("replayed")).unwrap(), "suppressed");
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "suppressed", "scope", || panic!(
+                "replayed"
+            ))
+            .unwrap(),
+            "suppressed"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

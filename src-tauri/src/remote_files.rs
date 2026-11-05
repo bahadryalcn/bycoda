@@ -196,10 +196,16 @@ fn begin(base: &Path, name: &str, size: u64, key: &str) -> Result<String, String
     // Serialize admissions and capacity accounting without blocking append,
     // finish, or cancel on filesystem scans.
     static ADMISSION: Mutex<()> = Mutex::new(());
-    let _admission = ADMISSION.lock().map_err(|_| "File transfers are unavailable")?;
+    let _admission = ADMISSION
+        .lock()
+        .map_err(|_| "File transfers are unavailable")?;
     expire_idle(Instant::now())?;
-    let active: Vec<_> = transfers().lock().map_err(|_| "File transfers are unavailable")?
-        .values().cloned().collect();
+    let active: Vec<_> = transfers()
+        .lock()
+        .map_err(|_| "File transfers are unavailable")?
+        .values()
+        .cloned()
+        .collect();
     if active.len() >= 4 {
         return Err("Too many file downloads are active. Wait for one to finish.".into());
     }
@@ -209,7 +215,9 @@ fn begin(base: &Path, name: &str, size: u64, key: &str) -> Result<String, String
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let mut used = 0u64;
     for transfer in active {
-        let transfer = transfer.lock().map_err(|_| "File transfers are unavailable")?;
+        let transfer = transfer
+            .lock()
+            .map_err(|_| "File transfers are unavailable")?;
         used = used.saturating_add(transfer.expected - transfer.received);
     }
     for (index, directory) in std::fs::read_dir(&root)
@@ -285,7 +293,9 @@ fn begin(base: &Path, name: &str, size: u64, key: &str) -> Result<String, String
             .open(&transfer.path)
             .map_err(|error| error.to_string())?,
     );
-    transfers().lock().map_err(|_| "File transfers are unavailable")?
+    transfers()
+        .lock()
+        .map_err(|_| "File transfers are unavailable")?
         .insert(id.clone(), Arc::new(Mutex::new(transfer)));
     Ok(id)
 }
@@ -303,18 +313,25 @@ fn append(id: &str, offset: u64, data: &str) -> Result<(), String> {
     let transfer = transfers()
         .lock()
         .map_err(|_| "File transfers are unavailable")?
-        .get(id).cloned()
+        .get(id)
+        .cloned()
         .ok_or("File download is no longer active")?;
-    let mut transfer = transfer.lock().map_err(|_| "File transfers are unavailable")?;
+    let mut transfer = transfer
+        .lock()
+        .map_err(|_| "File transfers are unavailable")?;
     if offset < transfer.received {
-        let end = offset.checked_add(bytes.len() as u64).ok_or("Invalid file chunk offset")?;
+        let end = offset
+            .checked_add(bytes.len() as u64)
+            .ok_or("Invalid file chunk offset")?;
         if end > transfer.received {
             return Err("File chunk is out of order or exceeds the expected size".into());
         }
         let file = transfer.file.as_mut().ok_or("File download is closed")?;
-        file.seek(SeekFrom::Start(offset)).map_err(|error| error.to_string())?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|error| error.to_string())?;
         let mut accepted = vec![0; bytes.len()];
-        file.read_exact(&mut accepted).map_err(|error| error.to_string())?;
+        file.read_exact(&mut accepted)
+            .map_err(|error| error.to_string())?;
         if accepted != bytes {
             return Err("File chunk does not match the accepted data".into());
         }
@@ -327,7 +344,8 @@ fn append(id: &str, offset: u64, data: &str) -> Result<(), String> {
     let file = transfer.file.as_mut().ok_or("File download is closed")?;
     // A failed write_all may have advanced the cursor after writing a prefix.
     // Retry from the accepted offset, replacing any partial bytes.
-    file.seek(SeekFrom::Start(offset)).map_err(|error| error.to_string())?;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
     if let Err(error) = file.write_all(&bytes) {
         if file.set_len(offset).is_err() {
             transfer.file.take();
@@ -393,7 +411,9 @@ pub async fn finish_remote_file_copy(app: AppHandle, id: String) -> Result<Strin
             .map_err(|_| "File transfers are unavailable")?
             .remove(&id)
             .ok_or("File download is no longer active")?;
-        let mut transfer = transfer.lock().map_err(|_| "File transfers are unavailable")?;
+        let mut transfer = transfer
+            .lock()
+            .map_err(|_| "File transfers are unavailable")?;
         if transfer.received != transfer.expected {
             return Err("File download is incomplete".into());
         }
@@ -497,7 +517,11 @@ mod tests {
     fn transfer_rejects_out_of_order_and_oversized_chunks_and_cleans_partial_files() {
         let base = std::env::temp_dir().join(format!("bycoda-copy-test-{}", uuid::Uuid::new_v4()));
         let id = begin(&base, "video.mp4", 3, "remote://mac/video.mp4:version").unwrap();
-        let path = transfers().lock().unwrap()[&id].lock().unwrap().path.clone();
+        let path = transfers().lock().unwrap()[&id]
+            .lock()
+            .unwrap()
+            .path
+            .clone();
         assert!(append(&id, 1, "YQ==").is_err());
         assert!(append(&id, 0, "YWJjZA==").is_err());
         append(&id, 0, "YWJj").unwrap();

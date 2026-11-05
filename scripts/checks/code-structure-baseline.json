@@ -224,19 +224,19 @@
       "file-lines": 2418
     },
     "src-tauri/src/control.rs": {
-      "file-lines": 3120
+      "file-lines": 3794
     },
     "src-tauri/src/conversation_tools_bridge.rs": {
-      "file-lines": 1717
+      "file-lines": 1982
     },
     "src-tauri/src/fs.rs": {
-      "file-lines": 14115
+      "file-lines": 14267
     },
     "src-tauri/src/harness.rs": {
-      "file-lines": 9336
+      "file-lines": 9649
     },
     "src-tauri/src/host_ws/mod.rs": {
-      "file-lines": 1604
+      "file-lines": 1607
     },
     "src-tauri/src/mcp.rs": {
       "file-lines": 1675
@@ -245,28 +245,28 @@
       "file-lines": 2088
     },
     "src-tauri/src/notes.rs": {
-      "file-lines": 1646
+      "file-lines": 1653
     },
     "src-tauri/src/provider_usage.rs": {
-      "file-lines": 1600
+      "file-lines": 1604
     },
     "src-tauri/src/pty.rs": {
-      "file-lines": 2629
+      "file-lines": 2650
     },
     "src-tauri/src/remote_ssh.rs": {
       "file-lines": 1836
     },
     "src-tauri/src/remote.rs": {
-      "file-lines": 5342
+      "file-lines": 5595
     },
     "src-tauri/src/session_import.rs": {
-      "file-lines": 1693
+      "file-lines": 1695
     },
     "src-tauri/src/session_rewind.rs": {
       "file-lines": 2301
     },
     "src-tauri/src/session_store.rs": {
-      "file-lines": 7964
+      "file-lines": 7978
     },
     "src-tauri/src/session_store/authority.rs": {
       "file-lines": 2115
@@ -753,7 +753,7 @@
     },
     "src/features/host-tools/DevServersPanel.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 1152,
+      "file-lines": 1159,
       "loose-feature-file": 1
     },
     "src/features/host-tools/devServerTypes.ts": {

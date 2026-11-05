@@ -265,13 +265,7 @@ fn tree(root: &Path, dir: &Path, id: &str, phase: &str, protect: bool) -> Result
         // The real index's path and HEAD in one call; it fails without a commit.
         let located = git_output(
             root,
-            &[
-                "rev-parse",
-                "--git-path",
-                "index",
-                "--verify",
-                "HEAD",
-            ],
+            &["rev-parse", "--git-path", "index", "--verify", "HEAD"],
         )
         .and_then(|v| {
             let text = String::from_utf8_lossy(&v).into_owned();

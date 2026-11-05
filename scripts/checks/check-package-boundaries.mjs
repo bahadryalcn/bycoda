@@ -77,6 +77,9 @@ export function checkPackageBoundaries(root = rootDirectory) {
       if (!entry.isDirectory()) continue;
       const directory = path.join(root, family, entry.name);
       const file = path.join(directory, "package.json");
+      // Git cannot track an empty directory, so CI never sees one; ignoring it keeps
+      // local results equal to CI. A directory with any content still needs a manifest.
+      if (!fs.existsSync(file) && fs.readdirSync(directory).length === 0) continue;
       if (!fs.existsSync(file)) {
         report(file, 1, "Workspace directory has no package manifest");
         continue;

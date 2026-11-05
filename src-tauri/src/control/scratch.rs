@@ -5,21 +5,39 @@ use std::sync::Arc;
 fn identity(path: &Path) -> Result<String, String> {
     use std::os::unix::fs::MetadataExt;
     let metadata = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() { return Err("scratch directory changed".into()); }
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("scratch directory changed".into());
+    }
     Ok(format!("{}:{}", metadata.dev(), metadata.ino()))
 }
 #[cfg(windows)]
 fn identity(path: &Path) -> Result<String, String> {
     use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
-    use windows_sys::Win32::Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ATTRIBUTE_REPARSE_POINT};
-    let file = std::fs::OpenOptions::new().read(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT).open(path).map_err(|e| e.to_string())?;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|e| e.to_string())?;
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut info) } == 0 { return Err(std::io::Error::last_os_error().to_string()); }
-    if info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 { return Err("scratch directory changed".into()); }
-    Ok(format!("{}:{}:{}", info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow))
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut info) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    if info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err("scratch directory changed".into());
+    }
+    Ok(format!(
+        "{}:{}:{}",
+        info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow
+    ))
 }
 #[cfg(not(any(unix, windows)))]
-fn identity(_: &Path) -> Result<String, String> { Err("scratch identity unavailable".into()) }
+fn identity(_: &Path) -> Result<String, String> {
+    Err("scratch identity unavailable".into())
+}
 
 pub(super) struct Scratch {
     path: PathBuf,
@@ -30,22 +48,50 @@ impl Scratch {
     pub(super) fn capture(path: PathBuf) -> Result<Arc<Self>, String> {
         let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
         let root = std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
-        if !path.starts_with(&root) || path == root || !path.file_name().is_some_and(|n| n.to_string_lossy().starts_with("bycoda-worker-")) { return Err("scratch root changed".into()); }
+        if !path.starts_with(&root)
+            || path == root
+            || !path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("bycoda-worker-"))
+        {
+            return Err("scratch root changed".into());
+        }
         let identity = identity(&path)?;
-        Ok(Arc::new(Self { path, root, identity }))
+        Ok(Arc::new(Self {
+            path,
+            root,
+            identity,
+        }))
     }
-    pub(super) fn path(&self) -> &Path { &self.path }
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
     fn cleanup(&self) -> Result<(), String> {
         self.cleanup_with(|path| std::fs::remove_dir_all(path))
     }
-    fn cleanup_with(&self, remove: impl FnOnce(&Path) -> std::io::Result<()>) -> Result<(), String> {
-        if std::fs::canonicalize(&self.root).map_err(|e| e.to_string())? != self.root || std::fs::canonicalize(&self.path).map_err(|e| e.to_string())? != self.path || identity(&self.path)? != self.identity { return Err("scratch identity changed".into()); }
-        let quarantine = self.root.join(format!("bycoda-retired-{}", uuid::Uuid::new_v4()));
-        bycoda_physical_store_admission::rename_no_replace(&self.path, &quarantine).map_err(|e| e.to_string())?;
-        if identity(&quarantine).ok().as_ref() != Some(&self.identity) {
-            return Err(format!("scratch identity changed during retirement; directory retained at {}", quarantine.display()));
+    fn cleanup_with(
+        &self,
+        remove: impl FnOnce(&Path) -> std::io::Result<()>,
+    ) -> Result<(), String> {
+        if std::fs::canonicalize(&self.root).map_err(|e| e.to_string())? != self.root
+            || std::fs::canonicalize(&self.path).map_err(|e| e.to_string())? != self.path
+            || identity(&self.path)? != self.identity
+        {
+            return Err("scratch identity changed".into());
         }
-        remove(&quarantine).map_err(|e| format!("scratch retained at {}: {e}", quarantine.display()))
+        let quarantine = self
+            .root
+            .join(format!("bycoda-retired-{}", uuid::Uuid::new_v4()));
+        bycoda_physical_store_admission::rename_no_replace(&self.path, &quarantine)
+            .map_err(|e| e.to_string())?;
+        if identity(&quarantine).ok().as_ref() != Some(&self.identity) {
+            return Err(format!(
+                "scratch identity changed during retirement; directory retained at {}",
+                quarantine.display()
+            ));
+        }
+        remove(&quarantine)
+            .map_err(|e| format!("scratch retained at {}: {e}", quarantine.display()))
     }
 }
 impl Drop for Scratch {
@@ -53,25 +99,50 @@ impl Drop for Scratch {
         let path = self.path.clone();
         let root = self.root.clone();
         let identity = self.identity.clone();
-        if let Err(error) = std::thread::Builder::new().name("scratch-retirement".into()).spawn(move || {
-            let record = Self { path, root, identity };
-            if let Err(error) = record.cleanup() { eprintln!("[control] scratch retirement: {error}"); }
-            std::mem::forget(record);
-        }) {
+        if let Err(error) = std::thread::Builder::new()
+            .name("scratch-retirement".into())
+            .spawn(move || {
+                let record = Self {
+                    path,
+                    root,
+                    identity,
+                };
+                if let Err(error) = record.cleanup() {
+                    eprintln!("[control] scratch retirement: {error}");
+                }
+                std::mem::forget(record);
+            })
+        {
             eprintln!("[control] scratch retirement worker unavailable: {error}");
         }
     }
 }
 
-pub(crate) struct ProcessScratch { scratch: Option<Arc<Scratch>>, settled: bool }
+pub(crate) struct ProcessScratch {
+    scratch: Option<Arc<Scratch>>,
+    settled: bool,
+}
 impl ProcessScratch {
-    pub(super) fn new(scratch: Arc<Scratch>) -> Self { Self { scratch: Some(scratch), settled: true } }
-    pub(crate) fn started(&mut self) { self.settled = false; }
-    pub(crate) fn settled(&mut self) { self.settled = true; }
+    pub(super) fn new(scratch: Arc<Scratch>) -> Self {
+        Self {
+            scratch: Some(scratch),
+            settled: true,
+        }
+    }
+    pub(crate) fn started(&mut self) {
+        self.settled = false;
+    }
+    pub(crate) fn settled(&mut self) {
+        self.settled = true;
+    }
 }
 impl Drop for ProcessScratch {
     fn drop(&mut self) {
-        if !self.settled { if let Some(scratch) = self.scratch.take() { std::mem::forget(scratch); } }
+        if !self.settled {
+            if let Some(scratch) = self.scratch.take() {
+                std::mem::forget(scratch);
+            }
+        }
     }
 }
 
@@ -119,10 +190,12 @@ mod tests {
         let (path, scratch) = fixture();
         std::fs::write(path.join("recovery"), b"keep").unwrap();
         let mut retained = PathBuf::new();
-        assert!(scratch.cleanup_with(|target| {
-            retained = target.to_owned();
-            Err(std::io::Error::other("injected failure"))
-        }).is_err());
+        assert!(scratch
+            .cleanup_with(|target| {
+                retained = target.to_owned();
+                Err(std::io::Error::other("injected failure"))
+            })
+            .is_err());
         assert_eq!(std::fs::read(retained.join("recovery")).unwrap(), b"keep");
         std::mem::forget(scratch);
         std::fs::remove_dir_all(retained).unwrap();

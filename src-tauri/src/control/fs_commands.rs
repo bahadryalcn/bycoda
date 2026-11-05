@@ -79,7 +79,9 @@ mod tests {
         let result = tauri::async_runtime::block_on(async {
             tauri::async_runtime::spawn_blocking(|| {
                 control_scopes_inner(".".into(), vec!["../escape".into()])
-            }).await.unwrap()
+            })
+            .await
+            .unwrap()
         });
         assert_eq!(result.unwrap_err(), "Invalid write scope \"../escape\": Write scopes must be project-relative paths without '..'");
     }

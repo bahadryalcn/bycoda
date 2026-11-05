@@ -305,7 +305,10 @@ fn attach_preserves_actual_lead_window_check_private_scope_and_same_worker_retry
         Some("lead")
     );
     assert!(!inner.app_grants.contains_key("worker"));
-    assert_eq!(inner.scratch.get("worker").map(|entry| entry.path()), Some(scratch.as_path()));
+    assert_eq!(
+        inner.scratch.get("worker").map(|entry| entry.path()),
+        Some(scratch.as_path())
+    );
     assert!(!inner.workers.contains_key("foreign-worker"));
     drop(inner);
     assert!(barrier.try_close_idle_target_admission("cut").is_ok());

@@ -313,7 +313,9 @@ fn launch_editor_sync(editor_id: &str, cwd: &str) -> Result<(), String> {
         .stderr(Stdio::null())
         .spawn()
         .map(|mut child| {
-            std::thread::spawn(move || { let _ = child.wait(); });
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
         })
         .map_err(|error| format!("Could not open {}: {error}", editor.name))
 }

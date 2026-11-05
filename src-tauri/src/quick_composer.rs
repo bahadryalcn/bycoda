@@ -94,7 +94,9 @@ fn same_presentation(original: Option<uuid::Uuid>, current: Option<uuid::Uuid>) 
 
 fn advance_presentation(app: &AppHandle) {
     let state = app.state::<QuickComposerState>();
-    let Ok(mut stamp) = state.presentation.lock() else { return; };
+    let Ok(mut stamp) = state.presentation.lock() else {
+        return;
+    };
     *stamp = uuid::Uuid::new_v4();
 }
 
@@ -259,22 +261,39 @@ pub fn quick_composer_fit(window: WebviewWindow, height: f64) -> Result<(), Stri
         .map_err(|err| err.to_string())
 }
 
-fn if_launch_capacity<T>(available: bool, prepare: impl FnOnce() -> Result<T, String>) -> Result<Option<T>, String> {
-    if available { prepare().map(Some) } else { Ok(None) }
+fn if_launch_capacity<T>(
+    available: bool,
+    prepare: impl FnOnce() -> Result<T, String>,
+) -> Result<Option<T>, String> {
+    if available {
+        prepare().map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 /// Main-thread-only UI preflight. Preserve the original recipient before I/O.
 fn prepare_launch_target(
-    app: &AppHandle, window: &WebviewWindow, owner: &QuickWindowOwner,
-    scope: &crate::quick_native::LaunchScope, instance: uuid::Uuid,
-    presentation: Option<uuid::Uuid>, reveal: bool,
+    app: &AppHandle,
+    window: &WebviewWindow,
+    owner: &QuickWindowOwner,
+    scope: &crate::quick_native::LaunchScope,
+    instance: uuid::Uuid,
+    presentation: Option<uuid::Uuid>,
+    reveal: bool,
 ) -> Result<Option<(WebviewWindow, QuickWindowOwner, bool)>, String> {
     current_launch_scope(window, owner, scope, instance)?;
-    let available = app.state::<QuickComposerState>().pending.lock()
-        .map_err(|err| err.to_string())?.has_capacity();
+    let available = app
+        .state::<QuickComposerState>()
+        .pending
+        .lock()
+        .map_err(|err| err.to_string())?
+        .has_capacity();
     if_launch_capacity(available, || {
         let reveal = reveal && presentation_matches(app, presentation);
-        let target = target_or_create(launch_target(app), reveal, |reveal| crate::window::open_session_window(app, reveal))?;
+        let target = target_or_create(launch_target(app), reveal, |reveal| {
+            crate::window::open_session_window(app, reveal)
+        })?;
         let recipient = launch_recipient_owner(&target)?;
         Ok((target, recipient, reveal))
     })
@@ -293,21 +312,34 @@ fn launch_recipient_owner(target: &WebviewWindow) -> Result<QuickWindowOwner, St
     if installed {
         let retirement = owner.clone();
         target.on_window_event(move |event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) { retirement.retire(); }
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                retirement.retire();
+            }
         });
     }
     Ok(owner)
 }
 
-fn finish_launch_presentation(app: &AppHandle, window: &WebviewWindow, target: &WebviewWindow,
-    presentation: Option<uuid::Uuid>, reveal: bool) {
-    if !presentation_matches(app, presentation) { return; }
+fn finish_launch_presentation(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    target: &WebviewWindow,
+    presentation: Option<uuid::Uuid>,
+    reveal: bool,
+) {
+    if !presentation_matches(app, presentation) {
+        return;
+    }
     git_popup::dismiss(app, false);
     let _ = window.hide();
     if reveal && presentation_matches(app, presentation) {
-        let _ = target.unminimize(); let _ = target.show(); let _ = target.set_focus();
+        let _ = target.unminimize();
+        let _ = target.show();
+        let _ = target.set_focus();
     }
-    if presentation_matches(app, presentation) { advance_presentation(app); }
+    if presentation_matches(app, presentation) {
+        advance_presentation(app);
+    }
 }
 
 #[tauri::command]
@@ -332,7 +364,9 @@ pub async fn quick_composer_submit(
     validate_workspace(&request)?;
     validate_attachments(&request.attachments, &request.harness)?;
     let owner = launch_owner(&window)?;
-    let instance = app.state::<crate::session_store::SessionStore>().native_instance_id();
+    let instance = app
+        .state::<crate::session_store::SessionStore>()
+        .native_instance_id();
     let scope = owner.scope(instance)?.scope;
     let presentation = presentation_stamp(&app);
     let admission =
@@ -380,7 +414,9 @@ pub async fn quick_composer_submit(
             });
         });
     }).map_err(|err| err.to_string())?;
-    rx.recv().await.ok_or_else(|| "Session submission was interrupted.".to_string())?
+    rx.recv()
+        .await
+        .ok_or_else(|| "Session submission was interrupted.".to_string())?
 }
 
 fn launch_owner(window: &WebviewWindow) -> Result<QuickWindowOwner, String> {
@@ -540,7 +576,9 @@ pub async fn quick_composer_submit_intent(
             });
         });
     }).map_err(|err| err.to_string())?;
-    rx.recv().await.ok_or_else(|| "Quick launch outcome is unknown.".to_string())?
+    rx.recv()
+        .await
+        .ok_or_else(|| "Quick launch outcome is unknown.".to_string())?
 }
 
 fn validate_workspace(request: &QuickLaunch) -> Result<(), String> {
@@ -1002,8 +1040,8 @@ fn make_panel(window: &WebviewWindow) {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_shortcut, if_launch_capacity, same_presentation, target_or_create, validate_attachments, validate_workspace, QuickLaunch,
-        DEFAULT_SHORTCUT,
+        if_launch_capacity, parse_shortcut, same_presentation, target_or_create,
+        validate_attachments, validate_workspace, QuickLaunch, DEFAULT_SHORTCUT,
     };
     use tauri_plugin_global_shortcut::{Code, Modifiers};
 
@@ -1019,7 +1057,10 @@ mod tests {
 
     #[test]
     fn full_queue_preflight_cannot_start_screenshot_io_or_report_prepared() {
-        assert_eq!(if_launch_capacity::<()>(false, || panic!("no copy when queue is full")), Ok(None));
+        assert_eq!(
+            if_launch_capacity::<()>(false, || panic!("no copy when queue is full")),
+            Ok(None)
+        );
         assert!(if_launch_capacity::<()>(true, || Err("copy failed".into())).is_err());
         assert_eq!(if_launch_capacity(true, || Ok(())), Ok(Some(())));
     }

@@ -38,17 +38,33 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 fn validate(value: &str) -> Result<(), String> {
-    if value.trim().is_empty() || value.len() > 4096 { Err("Invalid pin operation identity".into()) } else { Ok(()) }
+    if value.trim().is_empty() || value.len() > 4096 {
+        Err("Invalid pin operation identity".into())
+    } else {
+        Ok(())
+    }
 }
 
 fn path_key(path: &str) -> String {
     let slash = path.replace('\\', "/");
     let trimmed = slash.trim_end_matches('/');
     let value = if trimmed.is_empty() { "/" } else { trimmed };
-    if cfg!(windows) { value.to_lowercase() } else { value.to_owned() }
+    if cfg!(windows) {
+        value.to_lowercase()
+    } else {
+        value.to_owned()
+    }
 }
 
-type CurrentRow = (String, i64, i64, Option<String>, Option<i64>, Option<String>, Option<i64>);
+type CurrentRow = (
+    String,
+    i64,
+    i64,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+    Option<i64>,
+);
 
 fn current(conn: &Connection, id: &str, cwd: &str) -> Result<PinOutcome, String> {
     let row: Option<CurrentRow> = conn.query_row(
@@ -56,47 +72,102 @@ fn current(conn: &Connection, id: &str, cwd: &str) -> Result<PinOutcome, String>
         [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?)),
     ).optional().map_err(|e| e.to_string())?;
     Ok(match row {
-        Some((stored_cwd, pinned, version, environment, generation, phase, protocol)) if path_key(&stored_cwd) == path_key(cwd) => {
-            if !(0..=9_007_199_254_740_991).contains(&version) { return Err("Invalid pin version".into()); }
+        Some((stored_cwd, pinned, version, environment, generation, phase, protocol))
+            if path_key(&stored_cwd) == path_key(cwd) =>
+        {
+            if !(0..=9_007_199_254_740_991).contains(&version) {
+                return Err("Invalid pin version".into());
+            }
             let authority = match (environment, generation, phase, protocol) {
                 (None, None, None, None) => None,
-                (Some(environment_id), Some(generation), Some(phase), Some(min_writer_protocol))
-                    if (0..=9_007_199_254_740_991).contains(&generation) => Some(NativePinAuthority { environment_id, generation, phase, min_writer_protocol }),
+                (
+                    Some(environment_id),
+                    Some(generation),
+                    Some(phase),
+                    Some(min_writer_protocol),
+                ) if (0..=9_007_199_254_740_991).contains(&generation) => {
+                    Some(NativePinAuthority {
+                        environment_id,
+                        generation,
+                        phase,
+                        min_writer_protocol,
+                    })
+                }
                 _ => return Err("Invalid native pin authority".into()),
             };
-            let allowed = authority.as_ref().is_none_or(|a| a.phase == "NATIVE" && a.min_writer_protocol == super::authority::WRITER_PROTOCOL as i64);
-            PinOutcome { state: if allowed { "current" } else { "refused" }.into(), version, pinned: Some(pinned != 0), authority }
+            let allowed = authority.as_ref().is_none_or(|a| {
+                a.phase == "NATIVE"
+                    && a.min_writer_protocol == super::authority::WRITER_PROTOCOL as i64
+            });
+            PinOutcome {
+                state: if allowed { "current" } else { "refused" }.into(),
+                version,
+                pinned: Some(pinned != 0),
+                authority,
+            }
+        }
+        _ => PinOutcome {
+            state: "refused".into(),
+            version: 0,
+            pinned: None,
+            authority: None,
         },
-        _ => PinOutcome { state: "refused".into(), version: 0, pinned: None, authority: None },
     })
 }
 
 fn durable<T>(conn: &Connection, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    let prior: i64 = conn.query_row("PRAGMA synchronous", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if !(0..=3).contains(&prior) { return Err("Invalid SQLite synchronous setting".into()); }
-    conn.execute_batch("PRAGMA synchronous=FULL").map_err(|e| e.to_string())?;
+    let prior: i64 = conn
+        .query_row("PRAGMA synchronous", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if !(0..=3).contains(&prior) {
+        return Err("Invalid SQLite synchronous setting".into());
+    }
+    conn.execute_batch("PRAGMA synchronous=FULL")
+        .map_err(|e| e.to_string())?;
     let result = work();
-    conn.execute_batch(&format!("PRAGMA synchronous={prior}")).map_err(|e| format!("Pin durability restore failed: {e}"))?;
-    let restored: i64 = conn.query_row("PRAGMA synchronous", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if restored != prior { return Err("Pin durability restore mismatch".into()); }
+    conn.execute_batch(&format!("PRAGMA synchronous={prior}"))
+        .map_err(|e| format!("Pin durability restore failed: {e}"))?;
+    let restored: i64 = conn
+        .query_row("PRAGMA synchronous", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if restored != prior {
+        return Err("Pin durability restore mismatch".into());
+    }
     result
 }
 
 #[tauri::command]
-pub async fn session_pin_state(app: tauri::AppHandle, window: tauri::Window, session_id: String, cwd: String) -> Result<PinOutcome, String> {
-    validate(&session_id)?; validate(&cwd)?;
+pub async fn session_pin_state(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    session_id: String,
+    cwd: String,
+) -> Result<PinOutcome, String> {
+    validate(&session_id)?;
+    validate(&cwd)?;
     let captured_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_pin_state", move || {
         let store = app.state::<super::SessionStore>();
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        if crate::harness::page_incarnation(&window)? != captured_page { return Err("PIN_PAGE_STALE".into()); }
+        if crate::harness::page_incarnation(&window)? != captured_page {
+            return Err("PIN_PAGE_STALE".into());
+        }
         current(&conn, &session_id, &cwd)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn session_pin_receipt(app: tauri::AppHandle, window: tauri::Window, operation_id: String, session_id: String, cwd: String) -> Result<Option<PinOutcome>, String> {
-    validate(&operation_id)?; validate(&session_id)?; validate(&cwd)?;
+pub async fn session_pin_receipt(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    operation_id: String,
+    session_id: String,
+    cwd: String,
+) -> Result<Option<PinOutcome>, String> {
+    validate(&operation_id)?;
+    validate(&session_id)?;
+    validate(&cwd)?;
     let captured_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_pin_receipt", move || {
         let store = app.state::<super::SessionStore>();
@@ -109,14 +180,30 @@ pub async fn session_pin_receipt(app: tauri::AppHandle, window: tauri::Window, o
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
-pub async fn session_pin_apply(app: tauri::AppHandle, window: tauri::Window, operation_id: String,
-    session_id: String, cwd: String, desired_pinned: bool, expected_version: i64, expected_authority: Option<NativePinAuthority>) -> Result<PinOutcome, String> {
-    validate(&operation_id)?; validate(&session_id)?; validate(&cwd)?;
-    if !(0..=9_007_199_254_740_991).contains(&expected_version) { return Err("Invalid pin version".into()); }
+pub async fn session_pin_apply(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    operation_id: String,
+    session_id: String,
+    cwd: String,
+    desired_pinned: bool,
+    expected_version: i64,
+    expected_authority: Option<NativePinAuthority>,
+) -> Result<PinOutcome, String> {
+    validate(&operation_id)?;
+    validate(&session_id)?;
+    validate(&cwd)?;
+    if !(0..=9_007_199_254_740_991).contains(&expected_version) {
+        return Err("Invalid pin version".into());
+    }
     let captured_page = crate::harness::page_incarnation(&window)?;
-    let view = app.get_webview_window(window.label()).ok_or("PIN_PAGE_STALE")?;
+    let view = app
+        .get_webview_window(window.label())
+        .ok_or("PIN_PAGE_STALE")?;
     let captured_issuer = crate::control::receipts::capture(&view)?;
-    if crate::harness::page_incarnation(&window)? != captured_page { return Err("PIN_PAGE_STALE".into()); }
+    if crate::harness::page_incarnation(&window)? != captured_page {
+        return Err("PIN_PAGE_STALE".into());
+    }
     crate::harness::run_blocking("session_pin_apply", move || {
         let store = app.state::<super::SessionStore>();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {

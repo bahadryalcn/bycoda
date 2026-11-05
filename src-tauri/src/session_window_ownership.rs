@@ -178,8 +178,14 @@ pub(crate) fn with_session_window_owner<T>(
     work: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     issuer.with_live(|| {
-        let registry = registry().lock().map_err(|_| "Conversation ownership unavailable".to_string())?;
-        if !registry.claims.get(session_id).is_some_and(|claim| Arc::ptr_eq(&claim.issuer, issuer)) {
+        let registry = registry()
+            .lock()
+            .map_err(|_| "Conversation ownership unavailable".to_string())?;
+        if !registry
+            .claims
+            .get(session_id)
+            .is_some_and(|claim| Arc::ptr_eq(&claim.issuer, issuer))
+        {
             return Err("Conversation ownership changed".into());
         }
         work()

@@ -31,7 +31,11 @@ impl AltScreenFilter {
     /// The bytes outside the alternate screen, and whether any were dropped.
     fn filter(&mut self, bytes: &[u8]) -> (Vec<u8>, bool) {
         if self.pending.is_empty() && !bytes.contains(&0x1b) {
-            return if self.inside { (Vec::new(), !bytes.is_empty()) } else { (bytes.to_vec(), false) };
+            return if self.inside {
+                (Vec::new(), !bytes.is_empty())
+            } else {
+                (bytes.to_vec(), false)
+            };
         }
         let mut data = std::mem::take(&mut self.pending);
         data.extend_from_slice(bytes);
@@ -79,7 +83,9 @@ pub(crate) struct TerminalLogSender {
 trait LogService {
     fn is_current(&self) -> bool;
     fn append(&self, params: serde_json::Value) -> Result<(), String>;
-    fn demand(&self, _cwd: &str, _terminal_id: &str) -> Result<bool, String> { Ok(true) }
+    fn demand(&self, _cwd: &str, _terminal_id: &str) -> Result<bool, String> {
+        Ok(true)
+    }
 }
 impl LogService for Arc<crate::remote::NativeServiceChannel> {
     fn is_current(&self) -> bool {
@@ -89,11 +95,24 @@ impl LogService for Arc<crate::remote::NativeServiceChannel> {
         self.project("runtimeLogs.terminals.append", params, |_| Ok(()))
     }
     fn demand(&self, cwd: &str, terminal_id: &str) -> Result<bool, String> {
-        self.project_until("runtimeLogs.terminals.demand", serde_json::json!({ "cwd": cwd, "terminalId": terminal_id }), Instant::now() + Duration::from_secs(5), |value| {
-            value.get("enabled").and_then(|v| v.as_bool()).ok_or_else(|| "Invalid terminal log demand".to_string())
-        }).or_else(|error| {
+        self.project_until(
+            "runtimeLogs.terminals.demand",
+            serde_json::json!({ "cwd": cwd, "terminalId": terminal_id }),
+            Instant::now() + Duration::from_secs(5),
+            |value| {
+                value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| "Invalid terminal log demand".to_string())
+            },
+        )
+        .or_else(|error| {
             // Older Hosts expose only the documented always-on capture mode.
-            if error.contains("Unsupported host method") { Ok(true) } else { Err(error) }
+            if error.contains("Unsupported host method") {
+                Ok(true)
+            } else {
+                Err(error)
+            }
         })
     }
 }
@@ -113,14 +132,20 @@ impl<S: LogService, F: Fn() -> Result<S, String>> LogService for PinnedLogServic
             let selected = (self.select)()?;
             let _ = self.selected.set(selected);
         }
-        self.selected.get().ok_or("Terminal log issuer is unavailable")?.append(params)
+        self.selected
+            .get()
+            .ok_or("Terminal log issuer is unavailable")?
+            .append(params)
     }
     fn demand(&self, cwd: &str, terminal_id: &str) -> Result<bool, String> {
         if self.selected.get().is_none() {
             let selected = (self.select)()?;
             let _ = self.selected.set(selected);
         }
-        self.selected.get().ok_or("Terminal log issuer is unavailable")?.demand(cwd, terminal_id)
+        self.selected
+            .get()
+            .ok_or("Terminal log issuer is unavailable")?
+            .demand(cwd, terminal_id)
     }
 }
 
@@ -134,7 +159,11 @@ fn forward_logs(
 ) {
     struct ClearCapture<'a>(Option<&'a AtomicBool>);
     impl Drop for ClearCapture<'_> {
-        fn drop(&mut self) { if let Some(value) = self.0 { value.store(false, Ordering::Release); } }
+        fn drop(&mut self) {
+            if let Some(value) = self.0 {
+                value.store(false, Ordering::Release);
+            }
+        }
     }
     let _clear_capture = ClearCapture(capture);
     let mut packet_sequence = 0_u64;
@@ -156,7 +185,9 @@ fn forward_logs(
         if !service.is_current() {
             return;
         }
-        if capture.is_some_and(|value| !value.load(Ordering::Acquire)) { continue; }
+        if capture.is_some_and(|value| !value.load(Ordering::Acquire)) {
+            continue;
+        }
         let mut size = first.1.len();
         let mut packets = vec![first];
         let deadline = Instant::now() + LOG_FLUSH;
@@ -189,7 +220,8 @@ fn forward_logs(
         }
     }
     // The close uses this same pinned service; an unknown append is not replayed.
-    let interrupted = observed_chunks.is_some_and(|count| count.load(Ordering::Acquire) != expected_chunk);
+    let interrupted =
+        observed_chunks.is_some_and(|count| count.load(Ordering::Acquire) != expected_chunk);
     send(&[], interrupted, true);
 }
 
@@ -268,7 +300,14 @@ impl TerminalLogSender {
                 selected: OnceLock::new(),
                 select: || crate::remote::NativeServiceChannel::connect(&app),
             };
-            forward_logs(&service, receiver, &cwd, &terminal_id, Some(&worker_capture), Some(&worker_sequence));
+            forward_logs(
+                &service,
+                receiver,
+                &cwd,
+                &terminal_id,
+                Some(&worker_capture),
+                Some(&worker_sequence),
+            );
         });
         Self {
             sender,
@@ -282,7 +321,9 @@ impl TerminalLogSender {
             return;
         }
         let sequence = self.sequence.fetch_add(1, Ordering::AcqRel);
-        if !self.capture.load(Ordering::Acquire) { return; }
+        if !self.capture.load(Ordering::Acquire) {
+            return;
+        }
         // A gap lets the host discard partial lines instead of joining fragments.
         let _ = self.sender.try_send((sequence, bytes.to_vec()));
     }
@@ -317,7 +358,11 @@ mod tests {
     fn capture_gate_skips_chunks_without_allocating_and_preserves_gap_sequence() {
         let (sender, receiver) = sync_channel(4);
         let capture = Arc::new(AtomicBool::new(false));
-        let logs = TerminalLogSender { sender, sequence: Arc::new(AtomicU64::new(0)), capture: capture.clone() };
+        let logs = TerminalLogSender {
+            sender,
+            sequence: Arc::new(AtomicU64::new(0)),
+            capture: capture.clone(),
+        };
         logs.push(b"missed\n");
         assert!(receiver.try_recv().is_err());
         capture.store(true, Ordering::Release);

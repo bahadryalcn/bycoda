@@ -169,7 +169,9 @@ pub async fn import_placeholder_dir(app: AppHandle, original: String) -> Result<
         let dir = root.join(placeholder_name(&original));
         std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
         Ok(path_to_js(&dir))
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn placeholder_name(original: &str) -> String {

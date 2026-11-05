@@ -267,3 +267,19 @@ test("legacy paths may re-export canonical code but cannot retain a second imple
       checkPackageBoundaries(root).findings.some((item) => /only re-export/.test(item.message)),
     );
   }));
+
+test("an empty workspace directory matches CI, but any content still needs a manifest", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "bycoda-workspace-empty-"));
+  try {
+    mkdirSync(path.join(root, "apps", "scratch"), { recursive: true });
+    assert.deepEqual(checkPackageBoundaries(root).findings, []);
+    writeFileSync(path.join(root, "apps", "scratch", "main.ts"), "export {};");
+    assert.ok(
+      checkPackageBoundaries(root).findings.some((item) =>
+        /no package manifest/.test(item.message),
+      ),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

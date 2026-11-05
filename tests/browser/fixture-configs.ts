@@ -58,6 +58,14 @@ import generatedFileLinks from "./generated-file-links.playwright.config.ts";
 import inlineVisuals from "./playwright.inline-visuals.config.ts";
 import chatCitations from "./playwright.chat-citations.config.ts";
 import workingProjectSummary from "./working-project-summary.playwright.config.ts";
+import assistantRoomRemote from "./playwright.assistant-room-remote.config.ts";
+import devices from "./playwright.devices.config.ts";
+import dictationPermissions from "./playwright.dictation-permissions.config.ts";
+import inboxSeenStorage from "./playwright.inbox-seen-storage.config.ts";
+import s31OutboxStorage from "./playwright.s31-outbox-storage.config.ts";
+import sessionTools from "./playwright.session-tools.config.ts";
+import skillCatalog from "./playwright.skill-catalog.config.ts";
+import titleSettings from "./playwright.title-settings.config.ts";
 
 export const fixtureConfigs = {
   "tests/browser/playwright.inline-visuals.config.ts": inlineVisuals,
@@ -120,4 +128,12 @@ export const fixtureConfigs = {
   "tests/browser/playwright.field-message.config.ts": c49,
   "tests/browser/tooltip-policy.playwright.config.ts": c50,
   "tests/browser/playwright.global-voice.config.ts": c51,
+  "tests/browser/playwright.assistant-room-remote.config.ts": assistantRoomRemote,
+  "tests/browser/playwright.devices.config.ts": devices,
+  "tests/browser/playwright.dictation-permissions.config.ts": dictationPermissions,
+  "tests/browser/playwright.inbox-seen-storage.config.ts": inboxSeenStorage,
+  "tests/browser/playwright.s31-outbox-storage.config.ts": s31OutboxStorage,
+  "tests/browser/playwright.session-tools.config.ts": sessionTools,
+  "tests/browser/playwright.skill-catalog.config.ts": skillCatalog,
+  "tests/browser/playwright.title-settings.config.ts": titleSettings,
 };

@@ -78,7 +78,7 @@
       "webkit": 89
     },
     "host-tools": {
-      "chromium": 32
+      "chromium": 40
     },
     "jira-board": {
       "chromium": 11,
@@ -174,7 +174,7 @@
       "webkit": 15
     },
     "voice-visual-styles": {
-      "chromium": 11
+      "chromium": 65
     },
     "global-voice": {
       "chromium": 4
@@ -215,6 +215,30 @@
       "webkit": 1
     },
     "field-message": {
+      "chromium": 4
+    },
+    "assistant-room-remote": {
+      "chromium": 24
+    },
+    "devices": {
+      "chromium": 7
+    },
+    "dictation-permissions": {
+      "chromium": 20
+    },
+    "inbox-seen-storage": {
+      "chromium": 10
+    },
+    "s31-outbox-storage": {
+      "chromium": 8
+    },
+    "session-tools": {
+      "chromium": 2
+    },
+    "skill-catalog": {
+      "chromium": 11
+    },
+    "title-settings": {
       "chromium": 4
     }
   }

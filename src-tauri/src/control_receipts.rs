@@ -52,7 +52,11 @@ pub(crate) struct WindowIssuer {
 
 impl Default for WindowIssuer {
     fn default() -> Self {
-        Self { closed: AtomicBool::new(false), admission: Mutex::new(()), identity: uuid::Uuid::new_v4().to_string() }
+        Self {
+            closed: AtomicBool::new(false),
+            admission: Mutex::new(()),
+            identity: uuid::Uuid::new_v4().to_string(),
+        }
     }
 }
 
@@ -67,7 +71,9 @@ impl Resource for WindowIssuer {
 }
 
 impl WindowIssuer {
-    pub(crate) fn identity(&self) -> &str { &self.identity }
+    pub(crate) fn identity(&self) -> &str {
+        &self.identity
+    }
     /// Queries under ControlHost's lock must not invert the issuer→host
     /// admission order. This snapshot grants no new effect admission.
     pub(crate) fn is_live(&self) -> bool {
@@ -92,9 +98,17 @@ impl WindowIssuer {
 
     /// Avoid waiting for a page admission while holding a database writer
     /// lock. The short commit itself remains serialized with page retirement.
-    pub(crate) fn try_with_live<T>(&self, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-        let _guard = self.admission.try_lock().map_err(|_| "NATIVE_CONTROL_WINDOW_BUSY")?;
-        if !self.is_live() { return Err("NATIVE_CONTROL_WINDOW_CLOSED".into()); }
+    pub(crate) fn try_with_live<T>(
+        &self,
+        work: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let _guard = self
+            .admission
+            .try_lock()
+            .map_err(|_| "NATIVE_CONTROL_WINDOW_BUSY")?;
+        if !self.is_live() {
+            return Err("NATIVE_CONTROL_WINDOW_CLOSED".into());
+        }
         work()
     }
 }
@@ -176,7 +190,10 @@ mod tests {
         let b = capture_resources(&mut second).unwrap();
         assert!(!Arc::ptr_eq(&a, &b));
         assert_ne!(a.identity(), b.identity());
-        assert_eq!(a.identity(), capture_resources(&mut first).unwrap().identity());
+        assert_eq!(
+            a.identity(),
+            capture_resources(&mut first).unwrap().identity()
+        );
         Resource::close(a.clone());
         assert!(a.with_live(|| Ok(())).is_err());
         assert!(capture_resources(&mut first).is_err());
@@ -191,14 +208,26 @@ mod tests {
         let second = capture_resources(&mut replacement).unwrap();
         let (reply, _receive) = std::sync::mpsc::channel();
         let pending = super::super::Pending {
-            window: "same-label".into(), reply, authority: None,
-            assistant_source: None, window_issuer: Some(first.clone()),
+            window: "same-label".into(),
+            reply,
+            authority: None,
+            assistant_source: None,
+            window_issuer: Some(first.clone()),
             effect_started: false,
         };
-        assert!(super::super::pending_window_issuer_matches(pending.window_issuer.as_ref(), &first));
-        assert!(!super::super::pending_window_issuer_matches(pending.window_issuer.as_ref(), &second));
+        assert!(super::super::pending_window_issuer_matches(
+            pending.window_issuer.as_ref(),
+            &first
+        ));
+        assert!(!super::super::pending_window_issuer_matches(
+            pending.window_issuer.as_ref(),
+            &second
+        ));
         Resource::close(first.clone());
-        assert!(!super::super::pending_window_issuer_matches(pending.window_issuer.as_ref(), &first));
+        assert!(!super::super::pending_window_issuer_matches(
+            pending.window_issuer.as_ref(),
+            &first
+        ));
         assert!(second.with_live(|| Ok(())).is_ok());
     }
 

@@ -144,7 +144,10 @@ impl Changes {
         if !state.windows.contains_key(window) && state.windows.len() >= 32 {
             return Err("Too many remote window subscriptions".into());
         }
-        let window_instance = params.get("instanceId").and_then(Value::as_str).map(str::to_owned);
+        let window_instance = params
+            .get("instanceId")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let immediate = params.get("waitMs").and_then(Value::as_u64) == Some(0);
         let interest = |value: &Value| {
             let mut value = value.clone();
@@ -183,7 +186,11 @@ impl Changes {
             let demand_generation = state.demand_generation;
             if joined_refresh && state.refresh_generation == Some(demand_generation) {
                 if let Some(result) = &state.refresh_result {
-                    return window_result(result.clone(), window_instance.as_deref(), state.instance.as_deref());
+                    return window_result(
+                        result.clone(),
+                        window_instance.as_deref(),
+                        state.instance.as_deref(),
+                    );
                 }
             }
             let mut request = scheduled_request(
@@ -192,7 +199,9 @@ impl Changes {
             )?;
             request["waitMs"] = json!(0);
             request["demandChanged"] = json!(true);
-            if let Some(instance) = &state.instance { request["instanceId"] = json!(instance); }
+            if let Some(instance) = &state.instance {
+                request["instanceId"] = json!(instance);
+            }
             let instance_generation = state.instance_generation;
             state.refresh_running = true;
             drop(state);
@@ -204,7 +213,11 @@ impl Changes {
             state.refresh_generation = Some(demand_generation);
             state.refresh_result = Some(result.clone());
             entry.changed.notify_all();
-            return window_result(result, window_instance.as_deref(), state.instance.as_deref());
+            return window_result(
+                result,
+                window_instance.as_deref(),
+                state.instance.as_deref(),
+            );
         }
         if state.running {
             let generation = state.generation;
@@ -227,7 +240,9 @@ impl Changes {
             union(state.windows.values().map(|(value, _)| value))?,
             state.generation,
         )?;
-        if let Some(instance) = &state.instance { request["instanceId"] = json!(instance); }
+        if let Some(instance) = &state.instance {
+            request["instanceId"] = json!(instance);
+        }
         let instance_generation = state.instance_generation;
         state.running = true;
         drop(state);
@@ -239,13 +254,24 @@ impl Changes {
         state.generation += 1;
         state.result = Some(result.clone());
         entry.changed.notify_all();
-        window_result(result, window_instance.as_deref(), state.instance.as_deref())
+        window_result(
+            result,
+            window_instance.as_deref(),
+            state.instance.as_deref(),
+        )
     }
 }
 
-fn accept_instance(state: &mut Shared, generation: u64, result: Result<Value, String>) -> Result<Value, String> {
+fn accept_instance(
+    state: &mut Shared,
+    generation: u64,
+    result: Result<Value, String>,
+) -> Result<Value, String> {
     let response = result?;
-    let instance = response.get("instanceId").and_then(Value::as_str).ok_or("Invalid machine changes instance")?;
+    let instance = response
+        .get("instanceId")
+        .and_then(Value::as_str)
+        .ok_or("Invalid machine changes instance")?;
     if generation != state.instance_generation && state.instance.as_deref() != Some(instance) {
         return Err("Remote control response belongs to a retired instance".into());
     }
@@ -256,12 +282,20 @@ fn accept_instance(state: &mut Shared, generation: u64, result: Result<Value, St
     Ok(response)
 }
 
-fn window_result(result: Result<Value, String>, requested: Option<&str>, current: Option<&str>) -> Result<Value, String> {
+fn window_result(
+    result: Result<Value, String>,
+    requested: Option<&str>,
+    current: Option<&str>,
+) -> Result<Value, String> {
     let mut response = result?;
-    if current.is_some_and(|instance| response.get("instanceId").and_then(Value::as_str) != Some(instance)) {
+    if current.is_some_and(|instance| {
+        response.get("instanceId").and_then(Value::as_str) != Some(instance)
+    }) {
         return Err("Remote control response belongs to a retired instance".into());
     }
-    if requested.is_some_and(|instance| response.get("instanceId").and_then(Value::as_str) != Some(instance)) {
+    if requested.is_some_and(|instance| {
+        response.get("instanceId").and_then(Value::as_str) != Some(instance)
+    }) {
         response["reset"] = json!(true);
     }
     Ok(response)
@@ -647,7 +681,9 @@ mod tests {
             })
             .unwrap();
         changes
-            .request("m", "w", request("new"), |_| Ok(json!({"instanceId":"host.1"})))
+            .request("m", "w", request("new"), |_| {
+                Ok(json!({"instanceId":"host.1"}))
+            })
             .unwrap();
         changes
             .request(
@@ -787,10 +823,14 @@ mod tests {
         let request =
             |id, cwd| json!({"subscriptionId":id,"sessions":[],"projects":[],"git":[{"cwd":cwd}]});
         changes
-            .request("m", "a", request("a", "/a"), |_| Ok(json!({"instanceId":"host.1"})))
+            .request("m", "a", request("a", "/a"), |_| {
+                Ok(json!({"instanceId":"host.1"}))
+            })
             .unwrap();
         changes
-            .request("m", "b", request("b", "/b"), |_| Ok(json!({"instanceId":"host.1"})))
+            .request("m", "b", request("b", "/b"), |_| {
+                Ok(json!({"instanceId":"host.1"}))
+            })
             .unwrap();
         changes
             .request(

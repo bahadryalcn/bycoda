@@ -1261,8 +1261,10 @@ fn sql_metadata_and_corrupt_transcript_are_revalidated_without_view_materializat
         // auxiliary index for the corrupt-row fixture. Identity corruption also
         // explicitly bypasses only its new immutable source-identity SQL guard.
         let conn = f.store.lock_conn().unwrap();
-        conn.execute_batch("DROP INDEX session_blocks_roles; DROP INDEX session_blocks_usage_started")
-            .unwrap();
+        conn.execute_batch(
+            "DROP INDEX session_blocks_roles; DROP INDEX session_blocks_usage_started",
+        )
+        .unwrap();
         if sql.starts_with("UPDATE native_authority_identity ") {
             conn.execute_batch("DROP TRIGGER native_raw_identity_immutable")
                 .unwrap();

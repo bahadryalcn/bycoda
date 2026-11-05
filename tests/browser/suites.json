@@ -40,7 +40,11 @@
         "path": "/tests/browser/inline-visuals.html"
       },
       "projects": [
-        { "name": "chromium", "browser": "chromium", "files": ["inline-visuals.spec.ts"] }
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["inline-visuals.spec.ts"]
+        }
       ]
     },
     {
@@ -84,7 +88,8 @@
         "assistant-room.e2e.ts",
         "assistant-history.e2e.ts",
         "assistant-memory.e2e.ts",
-        "assistant-room-dialogs.e2e.ts"
+        "assistant-room-dialogs.e2e.ts",
+        "assistant-room-global.e2e.ts"
       ],
       "fixture": {
         "config": "tests/browser/vite.assistant-room.config.ts",
@@ -99,7 +104,8 @@
             "assistant-room.e2e.ts",
             "assistant-history.e2e.ts",
             "assistant-memory.e2e.ts",
-            "assistant-room-dialogs.e2e.ts"
+            "assistant-room-dialogs.e2e.ts",
+            "assistant-room-global.e2e.ts"
           ]
         }
       ]
@@ -607,7 +613,7 @@
     {
       "id": "host-tools",
       "config": "tests/browser/playwright.host-tools.config.ts",
-      "files": ["host-tools.e2e.ts", "tools-workspace-resize.e2e.ts"],
+      "files": ["host-tools.e2e.ts", "tools-workspace-resize.e2e.ts", "host-tools-session.e2e.ts"],
       "fixture": {
         "config": "tests/browser/vite.host-tools.config.ts",
         "mode": "preview",
@@ -617,7 +623,11 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["host-tools.e2e.ts", "tools-workspace-resize.e2e.ts"]
+          "files": [
+            "host-tools.e2e.ts",
+            "tools-workspace-resize.e2e.ts",
+            "host-tools-session.e2e.ts"
+          ]
         }
       ]
     },
@@ -1207,7 +1217,12 @@
     {
       "id": "voice-visual-styles",
       "config": "tests/browser/playwright.voice-visual-styles.config.ts",
-      "files": ["voice-visual-styles.e2e.ts", "voice-overlay.e2e.ts", "voice-persona.e2e.ts"],
+      "files": [
+        "voice-visual-styles.e2e.ts",
+        "voice-overlay.e2e.ts",
+        "voice-persona.e2e.ts",
+        "voice-companion-controls.e2e.ts"
+      ],
       "fixture": {
         "config": "tests/browser/vite.voice-visual-styles.config.ts",
         "mode": "preview",
@@ -1217,7 +1232,12 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["voice-visual-styles.e2e.ts", "voice-overlay.e2e.ts", "voice-persona.e2e.ts"]
+          "files": [
+            "voice-visual-styles.e2e.ts",
+            "voice-overlay.e2e.ts",
+            "voice-persona.e2e.ts",
+            "voice-companion-controls.e2e.ts"
+          ]
         }
       ]
     },
@@ -1491,6 +1511,142 @@
           "name": "chromium",
           "browser": "chromium",
           "files": ["field-message.spec.ts"]
+        }
+      ]
+    },
+    {
+      "id": "assistant-room-remote",
+      "config": "tests/browser/playwright.assistant-room-remote.config.ts",
+      "files": ["assistant-room-remote.e2e.ts", "assistant-account-grants.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.assistant-room-remote.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/assistant-room.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["assistant-room-remote.e2e.ts", "assistant-account-grants.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "devices",
+      "config": "tests/browser/playwright.devices.config.ts",
+      "files": ["devices.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.devices.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/host-tools.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["devices.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "dictation-permissions",
+      "config": "tests/browser/playwright.dictation-permissions.config.ts",
+      "files": ["dictation-permissions.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.dictation-permissions.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/dictation-permissions.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["dictation-permissions.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "inbox-seen-storage",
+      "config": "tests/browser/playwright.inbox-seen-storage.config.ts",
+      "files": ["inbox-seen-storage.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.inbox-seen-storage.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/inbox-seen-storage.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["inbox-seen-storage.spec.ts"]
+        }
+      ]
+    },
+    {
+      "id": "s31-outbox-storage",
+      "config": "tests/browser/playwright.s31-outbox-storage.config.ts",
+      "files": ["s31-outbox-storage.spec.ts", "s31-session-bindings.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.s31-outbox-storage.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/s31-outbox-storage.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["s31-outbox-storage.spec.ts", "s31-session-bindings.spec.ts"]
+        }
+      ]
+    },
+    {
+      "id": "session-tools",
+      "config": "tests/browser/playwright.session-tools.config.ts",
+      "files": ["session-tools.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.session-tools.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/session-tools.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["session-tools.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "skill-catalog",
+      "config": "tests/browser/playwright.skill-catalog.config.ts",
+      "files": ["skill-catalog.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.skill-catalog.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/skill-catalog.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["skill-catalog.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "title-settings",
+      "config": "tests/browser/playwright.title-settings.config.ts",
+      "files": ["title-settings.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.title-settings.config.ts",
+        "mode": "preview",
+        "path": "/title-settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["title-settings.e2e.ts"]
         }
       ]
     }

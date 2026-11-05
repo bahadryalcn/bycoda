@@ -57,7 +57,11 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         DELETE FROM session_usage_legacy WHERE session_id=OLD.id;
         DELETE FROM session_usage_invalid WHERE session_id=OLD.id;
         END;")?;
-    let version: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM session_usage_projection_version WHERE version=1)", [], |row| row.get(0))?;
+    let version: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM session_usage_projection_version WHERE version=1)",
+        [],
+        |row| row.get(0),
+    )?;
     if !version {
         tx.execute_batch("DELETE FROM session_usage_legacy;
           DELETE FROM session_usage_invalid;

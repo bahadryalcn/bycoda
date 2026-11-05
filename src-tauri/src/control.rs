@@ -5,8 +5,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -15,9 +15,9 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 #[path = "control_receipts.rs"]
 pub(crate) mod receipts;
+mod scratch;
 #[path = "control_writes.rs"]
 pub(crate) mod writes;
-mod scratch;
 pub use receipts::ControlTurnReceipt;
 use receipts::WindowIssuer;
 #[path = "workspace_effect_receipts.rs"]
@@ -115,7 +115,8 @@ pub(crate) fn desktop_effect_action(action: &str) -> bool {
             | "ui.tools.open"
             | "ui.tools.status"
             | "voice.generation.retire"
-            | "voice.generation.status" | "voice.generation.source"
+            | "voice.generation.status"
+            | "voice.generation.source"
             | "inbox.room.scope"
             | "preferences.patch"
             | "providerManagement.patch"
@@ -157,7 +158,10 @@ struct HistoryWindow {
 }
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum AssistantSourceRole { Interactive, Background }
+pub enum AssistantSourceRole {
+    Interactive,
+    Background,
+}
 struct AssistantWindow {
     window: String,
     environment: String,
@@ -168,43 +172,116 @@ struct AssistantWindow {
     active: bool,
     role: AssistantSourceRole,
 }
-fn assistant_source_update_allowed(previous: Option<&AssistantWindow>, issuer: &Arc<WindowIssuer>, sequence: u64) -> bool {
-    sequence > 0 && !previous.is_some_and(|source| Arc::ptr_eq(&source.issuer, issuer) && source.sequence >= sequence)
+fn assistant_source_update_allowed(
+    previous: Option<&AssistantWindow>,
+    issuer: &Arc<WindowIssuer>,
+    sequence: u64,
+) -> bool {
+    sequence > 0
+        && !previous.is_some_and(|source| {
+            Arc::ptr_eq(&source.issuer, issuer) && source.sequence >= sequence
+        })
 }
-fn assistant_source_window(host: &Inner, thread: &str, environment: &str) -> Result<String, String> {
-    let live = |source: &&AssistantWindow| source.active && source.thread == thread && source.environment == environment
-        && source.seen.elapsed() < Duration::from_secs(45) && source.issuer.is_live();
-    let mut interactive = host.assistant_sources.values().filter(live).filter(|source| source.role == AssistantSourceRole::Interactive);
+fn assistant_source_window(
+    host: &Inner,
+    thread: &str,
+    environment: &str,
+) -> Result<String, String> {
+    let live = |source: &&AssistantWindow| {
+        source.active
+            && source.thread == thread
+            && source.environment == environment
+            && source.seen.elapsed() < Duration::from_secs(45)
+            && source.issuer.is_live()
+    };
+    let mut interactive = host
+        .assistant_sources
+        .values()
+        .filter(live)
+        .filter(|source| source.role == AssistantSourceRole::Interactive);
     if let Some(source) = interactive.next() {
-        if interactive.next().is_some() { return Err("Assistant Room is open in multiple desktop windows".into()); }
+        if interactive.next().is_some() {
+            return Err("Assistant Room is open in multiple desktop windows".into());
+        }
         return Ok(source.window.clone());
     }
-    let mut background = host.assistant_sources.values().filter(live).filter(|source| source.role == AssistantSourceRole::Background && source.window == "main");
-    let source = background.next().ok_or("Open the Assistant Room on this Host")?;
-    if background.next().is_some() { return Err("Assistant Room background source is ambiguous".into()); }
+    let mut background = host
+        .assistant_sources
+        .values()
+        .filter(live)
+        .filter(|source| source.role == AssistantSourceRole::Background && source.window == "main");
+    let source = background
+        .next()
+        .ok_or("Open the Assistant Room on this Host")?;
+    if background.next().is_some() {
+        return Err("Assistant Room background source is ambiguous".into());
+    }
     Ok(source.window.clone())
 }
-pub(crate) fn validate_assistant_source(app: &AppHandle, thread: &str, environment: &str) -> Result<(String, Arc<WindowIssuer>), String> {
+pub(crate) fn validate_assistant_source(
+    app: &AppHandle,
+    thread: &str,
+    environment: &str,
+) -> Result<(String, Arc<WindowIssuer>), String> {
     let state = app.state::<ControlHost>();
-    let host = state.inner.lock().map_err(|_| "Control service unavailable")?;
+    let host = state
+        .inner
+        .lock()
+        .map_err(|_| "Control service unavailable")?;
     let window = assistant_source_window(&host, thread, environment)?;
     let key = format!("{}\0{}\0{}", window, environment, thread);
-    let issuer = host.assistant_sources.get(&key).ok_or("Assistant Room source unavailable")?.issuer.clone();
+    let issuer = host
+        .assistant_sources
+        .get(&key)
+        .ok_or("Assistant Room source unavailable")?
+        .issuer
+        .clone();
     Ok((window, issuer))
 }
-fn retirement_source_current(host: &Inner, window: &str, thread: &str, environment: &str, issuer: &Arc<WindowIssuer>) -> bool {
-    if !issuer.is_live() { return false; }
-    !host.assistant_sources.values().any(|source| source.active && source.thread == thread && source.environment == environment && source.seen.elapsed() < Duration::from_secs(45) && source.issuer.is_live() && source.role == AssistantSourceRole::Interactive && (source.window != window || !Arc::ptr_eq(&source.issuer, issuer)))
+fn retirement_source_current(
+    host: &Inner,
+    window: &str,
+    thread: &str,
+    environment: &str,
+    issuer: &Arc<WindowIssuer>,
+) -> bool {
+    if !issuer.is_live() {
+        return false;
+    }
+    !host.assistant_sources.values().any(|source| {
+        source.active
+            && source.thread == thread
+            && source.environment == environment
+            && source.seen.elapsed() < Duration::from_secs(45)
+            && source.issuer.is_live()
+            && source.role == AssistantSourceRole::Interactive
+            && (source.window != window || !Arc::ptr_eq(&source.issuer, issuer))
+    })
 }
 /// Retirement itself can unregister its Room source. Physical window identity
 /// remains mandatory, and any replacement Room owner invalidates the proof.
-pub(crate) fn validate_retirement_source(app: &AppHandle, window: &str, thread: &str, environment: &str, issuer: &Arc<WindowIssuer>) -> Result<(), String> {
-    let webview = app.get_webview_window(window).ok_or("Voice Room window unavailable")?;
+pub(crate) fn validate_retirement_source(
+    app: &AppHandle,
+    window: &str,
+    thread: &str,
+    environment: &str,
+    issuer: &Arc<WindowIssuer>,
+) -> Result<(), String> {
+    let webview = app
+        .get_webview_window(window)
+        .ok_or("Voice Room window unavailable")?;
     let current = receipts::existing(&webview)?;
-    if !Arc::ptr_eq(issuer, &current) || !issuer.is_live() { return Err("Voice Room window issuer changed".into()); }
+    if !Arc::ptr_eq(issuer, &current) || !issuer.is_live() {
+        return Err("Voice Room window issuer changed".into());
+    }
     let state = app.state::<ControlHost>();
-    let host = state.inner.lock().map_err(|_| "Control service unavailable")?;
-    if !retirement_source_current(&host, window, thread, environment, issuer) { return Err("Voice Room source changed".into()); }
+    let host = state
+        .inner
+        .lock()
+        .map_err(|_| "Control service unavailable")?;
+    if !retirement_source_current(&host, window, thread, environment, issuer) {
+        return Err("Voice Room source changed".into());
+    }
     Ok(())
 }
 #[derive(Default)]
@@ -447,7 +524,8 @@ impl Inner {
         // label cleanup supplies neither byte completion nor physical proof.
         self.turn_writes.close_window(label);
         self.history_sources.remove(label);
-        self.assistant_sources.retain(|_, source| source.window != label);
+        self.assistant_sources
+            .retain(|_, source| source.window != label);
         let ids = self.window_sessions(label);
         self.grants.retain(|id, _| !ids.contains(id));
         self.app_grants.retain(|id, _| !ids.contains(id));
@@ -960,7 +1038,10 @@ pub fn control_assistant_visibility(
     };
     let channel = crate::remote::NativeServiceChannel::connect(&app)?;
     let result = channel.project(method, params, |value| {
-        value.get("epoch").and_then(Value::as_u64).ok_or_else(|| "Invalid Room visibility response".into())
+        value
+            .get("epoch")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "Invalid Room visibility response".into())
     })?;
     issuer.with_live(|| Ok(result))
 }
@@ -968,10 +1049,24 @@ pub fn control_assistant_visibility(
 /// Advertise the open Room thread for its local Host. This does not grant access.
 #[tauri::command(async)]
 pub fn control_assistant_source(
-    app: AppHandle, window: WebviewWindow, host: State<'_, ControlHost>,
-    thread_id: String, environment_id: String, active: bool, sequence: u64,
+    app: AppHandle,
+    window: WebviewWindow,
+    host: State<'_, ControlHost>,
+    thread_id: String,
+    environment_id: String,
+    active: bool,
+    sequence: u64,
 ) -> Result<(), String> {
-    control_assistant_source_v2(app, window, host, thread_id, environment_id, active, sequence, AssistantSourceRole::Interactive)
+    control_assistant_source_v2(
+        app,
+        window,
+        host,
+        thread_id,
+        environment_id,
+        active,
+        sequence,
+        AssistantSourceRole::Interactive,
+    )
 }
 
 #[tauri::command(async)]
@@ -987,12 +1082,19 @@ pub fn control_assistant_source_v2(
     role: AssistantSourceRole,
 ) -> Result<(), String> {
     let issuer = receipts::capture(&window)?;
-    if role == AssistantSourceRole::Background && window.label() != "main" { return Err("Background Room source requires the primary window".into()); }
+    if role == AssistantSourceRole::Background && window.label() != "main" {
+        return Err("Background Room source requires the primary window".into());
+    }
     let local_environment = if active {
         Some(crate::remote::local_conversation_environment(&app)?)
-    } else { None };
+    } else {
+        None
+    };
     issuer.with_live(|| {
-        let mut inner = host.inner.lock().map_err(|_| "Control service unavailable")?;
+        let mut inner = host
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
         let key = format!("{}\0{}\0{}", window.label(), environment_id, thread_id);
         if !assistant_source_update_allowed(inner.assistant_sources.get(&key), &issuer, sequence) {
             return Err("Stale assistant Room source update".into());
@@ -1002,67 +1104,181 @@ pub fn control_assistant_source_v2(
         }
         let thread = thread_id;
         let environment = environment_id;
-                if thread.is_empty() || thread.len() > 200 || thread.contains('\0')
-                    || environment.is_empty() || environment.len() > 200 || environment.contains('\0')
-                    || (active && Some(&environment) != local_environment.as_ref()) {
-                    return Err("Invalid assistant Room source".into());
-                }
-                inner.assistant_sources.insert(key, AssistantWindow {
-                    window: window.label().into(), environment, thread, seen: std::time::Instant::now(), issuer: issuer.clone(), sequence, active, role,
-                });
-                Ok(())
+        if thread.is_empty()
+            || thread.len() > 200
+            || thread.contains('\0')
+            || environment.is_empty()
+            || environment.len() > 200
+            || environment.contains('\0')
+            || (active && Some(&environment) != local_environment.as_ref())
+        {
+            return Err("Invalid assistant Room source".into());
+        }
+        inner.assistant_sources.insert(
+            key,
+            AssistantWindow {
+                window: window.label().into(),
+                environment,
+                thread,
+                seen: std::time::Instant::now(),
+                issuer: issuer.clone(),
+                sequence,
+                active,
+                role,
+            },
+        );
+        Ok(())
     })
 }
 
 /// Read-only Room dispatch. Its exact Host request and Room window stay pinned.
 #[allow(clippy::too_many_arguments)] // The pinned Host request and Room window are passed as explicit fields so each stays visible at the call site.
 pub(crate) fn assistant_ui_request_pinned(
-    app: &AppHandle, thread: &str, environment: &str, action: &str, input: Value,
-    project_id: Option<&str>, target_cwd: Option<&str>,
-    relay_id: &str, deadline: u64, issuer: &Arc<crate::remote::NativeServiceChannel>,
+    app: &AppHandle,
+    thread: &str,
+    environment: &str,
+    action: &str,
+    input: Value,
+    project_id: Option<&str>,
+    target_cwd: Option<&str>,
+    relay_id: &str,
+    deadline: u64,
+    issuer: &Arc<crate::remote::NativeServiceChannel>,
     source: &crate::remote::NativeServiceReply,
 ) -> Result<Value, String> {
-    if !matches!(action, "preferences.read" | "preferences.templateRead" | "preferences.patch" | "preferences.status" | "providerManagement.read" | "providerManagement.patch" | "providerManagement.status" | "providerManagement.quotaRefresh" | "organization.read" | "organization.patch" | "organization.status" | "workspace.projects.select" | "workspace.sessions.create" | "workspace.sessions.open" | "workspace.sessions.submit" | "workspace.sessions.submit.status" | "workspace.sessions.stop" | "voice.generation.retire" | "voice.generation.status" | "voice.generation.source" | "inbox.room.scope" | "ui.tools.open" | "ui.tools.status")
-        || !input.is_object() || thread.is_empty() || thread.len() > 200
-        || issuer.environment_id() != environment || !issuer.is_current() {
+    if !matches!(
+        action,
+        "preferences.read"
+            | "preferences.templateRead"
+            | "preferences.patch"
+            | "preferences.status"
+            | "providerManagement.read"
+            | "providerManagement.patch"
+            | "providerManagement.status"
+            | "providerManagement.quotaRefresh"
+            | "organization.read"
+            | "organization.patch"
+            | "organization.status"
+            | "workspace.projects.select"
+            | "workspace.sessions.create"
+            | "workspace.sessions.open"
+            | "workspace.sessions.submit"
+            | "workspace.sessions.submit.status"
+            | "workspace.sessions.stop"
+            | "voice.generation.retire"
+            | "voice.generation.status"
+            | "voice.generation.source"
+            | "inbox.room.scope"
+            | "ui.tools.open"
+            | "ui.tools.status"
+    ) || !input.is_object()
+        || thread.is_empty()
+        || thread.len() > 200
+        || issuer.environment_id() != environment
+        || !issuer.is_current()
+    {
         return Err("Invalid Assistant Room request".into());
     }
-    if action == "ui.tools.open" && (input["tab"] != "browser" || input["projectHost"] != true || input.as_object().is_none_or(|fields| fields.keys().any(|key| !["tab", "projectHost", "placement"].contains(&key.as_str()))) || input.get("placement").is_some_and(|value| !matches!(value.as_str(), Some("left" | "right" | "top" | "bottom")))) { return Err("Room can open only its project Host browser".into()); }
-    if action == "ui.tools.status" && input.as_object().is_none_or(|fields| !fields.is_empty()) { return Err("Invalid Room browser panel status".into()); }
+    if action == "ui.tools.open"
+        && (input["tab"] != "browser"
+            || input["projectHost"] != true
+            || input.as_object().is_none_or(|fields| {
+                fields
+                    .keys()
+                    .any(|key| !["tab", "projectHost", "placement"].contains(&key.as_str()))
+            })
+            || input.get("placement").is_some_and(|value| {
+                !matches!(value.as_str(), Some("left" | "right" | "top" | "bottom"))
+            }))
+    {
+        return Err("Room can open only its project Host browser".into());
+    }
+    if action == "ui.tools.status" && input.as_object().is_none_or(|fields| !fields.is_empty()) {
+        return Err("Invalid Room browser panel status".into());
+    }
     let state = app.state::<ControlHost>();
     let check_authority = || -> Result<(), String> {
         source.check()?;
-        if !issuer.is_current() || deadline <= clock_millis()? { return Err("Assistant Room request expired".into()); }
-        let allowed = issuer.project("conversation.desktop.authorize", json!({"id":relay_id,"action":action}),
-            |result| Ok(result.as_object().is_some_and(|value| value.len() == 1 && value.get("authorized") == Some(&Value::Bool(true)))))?;
-        if !allowed { return Err("Assistant Room authority revoked".into()); }
+        if !issuer.is_current() || deadline <= clock_millis()? {
+            return Err("Assistant Room request expired".into());
+        }
+        let allowed = issuer.project(
+            "conversation.desktop.authorize",
+            json!({"id":relay_id,"action":action}),
+            |result| {
+                Ok(result.as_object().is_some_and(|value| {
+                    value.len() == 1 && value.get("authorized") == Some(&Value::Bool(true))
+                }))
+            },
+        )?;
+        if !allowed {
+            return Err("Assistant Room authority revoked".into());
+        }
         source.check()
     };
     check_authority()?;
     let id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel();
     let (window, window_issuer) = {
-        let mut host = state.inner.lock().map_err(|_| "Control service unavailable")?;
+        let mut host = state
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
         let window = assistant_source_window(&host, thread, environment)?;
         let key = format!("{}\0{}\0{}", window, environment, thread);
-        let window_issuer = host.assistant_sources.get(&key).ok_or("Assistant Room source unavailable")?.issuer.clone();
-        if host.pending.len() >= 24 { return Err("Too many pending control requests".into()); }
-        let authority = desktop_effect_action(action).then(|| DesktopAuthority { relay_id: relay_id.into(), action: action.into(), deadline, issuer: issuer.clone(), workspace_owner: None, workspace_admitted: false });
-        host.pending.insert(id.clone(), Pending { window: window.clone(), reply: tx, authority, window_issuer: Some(window_issuer.clone()), assistant_source: Some((thread.into(), environment.into(), window_issuer.clone())), effect_started: false });
+        let window_issuer = host
+            .assistant_sources
+            .get(&key)
+            .ok_or("Assistant Room source unavailable")?
+            .issuer
+            .clone();
+        if host.pending.len() >= 24 {
+            return Err("Too many pending control requests".into());
+        }
+        let authority = desktop_effect_action(action).then(|| DesktopAuthority {
+            relay_id: relay_id.into(),
+            action: action.into(),
+            deadline,
+            issuer: issuer.clone(),
+            workspace_owner: None,
+            workspace_admitted: false,
+        });
+        host.pending.insert(
+            id.clone(),
+            Pending {
+                window: window.clone(),
+                reply: tx,
+                authority,
+                window_issuer: Some(window_issuer.clone()),
+                assistant_source: Some((thread.into(), environment.into(), window_issuer.clone())),
+                effect_started: false,
+            },
+        );
         (window, window_issuer)
     };
     let check_window = |after_effect: bool| -> Result<(), String> {
         if after_effect && action == "voice.generation.retire" {
             return validate_retirement_source(app, &window, thread, environment, &window_issuer);
         }
-        let host = state.inner.lock().map_err(|_| "Control service unavailable")?;
+        let host = state
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
         if assistant_source_window(&host, thread, environment)? != window
-            || !host.assistant_sources.get(&format!("{}\0{}\0{}", window, environment, thread)).is_some_and(|entry| Arc::ptr_eq(&entry.issuer, &window_issuer)) {
+            || !host
+                .assistant_sources
+                .get(&format!("{}\0{}\0{}", window, environment, thread))
+                .is_some_and(|entry| Arc::ptr_eq(&entry.issuer, &window_issuer))
+        {
             return Err("Assistant Room source changed".into());
         }
         Ok(())
     };
-    let qualified = action.starts_with("workspace.") || matches!(action, "ui.tools.open" | "ui.tools.status" | "inbox.room.scope");
+    let qualified = action.starts_with("workspace.")
+        || matches!(
+            action,
+            "ui.tools.open" | "ui.tools.status" | "inbox.room.scope"
+        );
     let mut emitted = false;
     let result = (|| {
         check_authority()?;
@@ -1070,16 +1286,31 @@ pub(crate) fn assistant_ui_request_pinned(
         if qualified {
             let permit = crate::conversation_tools_bridge::privacy_scope_capture::begin_effect()?;
             let target = target_cwd.ok_or("A native project target is required")?;
-            let webview = app.get_webview_window(&window).ok_or("Room window unavailable")?;
+            let webview = app
+                .get_webview_window(&window)
+                .ok_or("Room window unavailable")?;
             let snapshot = privacy_scope_admission_pinned(app, &webview, &window_issuer)?;
             crate::privacy_projection::scope_projection_metadata(app, &window_issuer, &snapshot)?;
-            if !snapshot["visibleProjects"].as_array().is_some_and(|items| items.iter().any(|item| item["cwd"].as_str() == Some(target))) {
+            if !snapshot["visibleProjects"].as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item["cwd"].as_str() == Some(target))
+            }) {
                 return Err("Target project is unavailable or private".into());
             }
             check_authority()?;
             check_window(false)?;
             if action.starts_with("workspace.") && action != "workspace.sessions.submit.status" {
-                workspace_effect_receipts::begin(app, &id, environment, thread, project_id.ok_or("Workspace project identity required")?, target, action, &input)?;
+                workspace_effect_receipts::begin(
+                    app,
+                    &id,
+                    environment,
+                    thread,
+                    project_id.ok_or("Workspace project identity required")?,
+                    target,
+                    action,
+                    &input,
+                )?;
             }
             crate::conversation_tools_bridge::privacy_scope_capture::retain_effect(&id, permit)?;
         }
@@ -1088,22 +1319,40 @@ pub(crate) fn assistant_ui_request_pinned(
             "action":action, "input":input, "projectId": project_id, "targetProjectCwd": target_cwd,
         })).map_err(|_| "Assistant Room window unavailable")?;
         emitted = true;
-        let value = rx.recv_timeout(Duration::from_secs(15)).map_err(|_| "Assistant Room request timed out")?;
+        let value = rx
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(|_| "Assistant Room request timed out")?;
         check_authority()?;
         check_window(true)?;
-        if value["ok"] != true { return Err(value["error"].as_str().unwrap_or("Assistant Room action failed").into()); }
+        if value["ok"] != true {
+            return Err(value["error"]
+                .as_str()
+                .unwrap_or("Assistant Room action failed")
+                .into());
+        }
         let mut result = value["result"].clone();
         if action == "organization.read" {
             let sequence = ASSISTANT_VISIBILITY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            if sequence == 0 || sequence >= 9_007_199_254_740_991 { return Err("Room visibility sequence exhausted".into()); }
-            let object = result.as_object_mut().ok_or("Invalid Room organization snapshot")?;
-            object.insert("_roomVisibility".into(), json!({ "issuer": window_issuer.identity(), "sequence": sequence }));
+            if sequence == 0 || sequence >= 9_007_199_254_740_991 {
+                return Err("Room visibility sequence exhausted".into());
+            }
+            let object = result
+                .as_object_mut()
+                .ok_or("Invalid Room organization snapshot")?;
+            object.insert(
+                "_roomVisibility".into(),
+                json!({ "issuer": window_issuer.identity(), "sequence": sequence }),
+            );
         }
         Ok(result)
     })();
     if !qualified || !emitted {
-        if let Ok(mut host) = state.inner.lock() { host.pending.remove(&id); }
-        if qualified { crate::conversation_tools_bridge::privacy_scope_capture::settle_effect(&id); }
+        if let Ok(mut host) = state.inner.lock() {
+            host.pending.remove(&id);
+        }
+        if qualified {
+            crate::conversation_tools_bridge::privacy_scope_capture::settle_effect(&id);
+        }
     }
     result
 }
@@ -1112,46 +1361,134 @@ pub(crate) fn assistant_ui_request_pinned(
 /// cannot emit the request until Host has durably accepted its signed receipt.
 #[allow(clippy::too_many_arguments)] // The native owner tuple is passed as explicit fields so each stays visible at the call site.
 pub(crate) fn start_workspace_owner(
-    app: &AppHandle, thread: &str, environment: &str, project: &str, cwd: &str,
-    action: &str, input: Value, operation_hash: &str, issuer: &Arc<crate::remote::NativeServiceChannel>,
+    app: &AppHandle,
+    thread: &str,
+    environment: &str,
+    project: &str,
+    cwd: &str,
+    action: &str,
+    input: Value,
+    operation_hash: &str,
+    issuer: &Arc<crate::remote::NativeServiceChannel>,
 ) -> Result<String, String> {
-    let request = input["requestId"].as_str().filter(|s| !s.is_empty() && s.len() <= 300).ok_or("Workspace request identity required")?.to_owned();
+    let request = input["requestId"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 300)
+        .ok_or("Workspace request identity required")?
+        .to_owned();
     let (window, window_issuer) = validate_assistant_source(app, thread, environment)?;
-    let view = app.get_webview_window(&window).ok_or("Room window unavailable")?;
+    let view = app
+        .get_webview_window(&window)
+        .ok_or("Room window unavailable")?;
     let permit = crate::conversation_tools_bridge::privacy_scope_capture::begin_effect()?;
     let snapshot = privacy_scope_admission_pinned(app, &view, &window_issuer)?;
     crate::privacy_projection::scope_projection_metadata(app, &window_issuer, &snapshot)?;
-    if !snapshot["visibleProjects"].as_array().is_some_and(|items| items.iter().any(|item| item["cwd"].as_str() == Some(cwd))) { return Err("Target project is unavailable or private".into()); }
+    if !snapshot["visibleProjects"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["cwd"].as_str() == Some(cwd)))
+    {
+        return Err("Target project is unavailable or private".into());
+    }
     let id = uuid::Uuid::new_v4().to_string();
     let (tx, _rx) = mpsc::channel();
     let state = app.state::<ControlHost>();
     {
-        let mut host = state.inner.lock().map_err(|_| "Control service unavailable")?;
-        if host.pending.len() >= 24 || assistant_source_window(&host, thread, environment)? != window { return Err("Room source unavailable".into()); }
-        let source = host.assistant_sources.get(&format!("{}\0{}\0{}", window, environment, thread)).ok_or("Room source unavailable")?;
-        if !Arc::ptr_eq(&source.issuer, &window_issuer) { return Err("Room source changed".into()); }
-        workspace_effect_receipts::begin(app, &id, environment, thread, project, cwd, action, &input)?;
+        let mut host = state
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
+        if host.pending.len() >= 24
+            || assistant_source_window(&host, thread, environment)? != window
+        {
+            return Err("Room source unavailable".into());
+        }
+        let source = host
+            .assistant_sources
+            .get(&format!("{}\0{}\0{}", window, environment, thread))
+            .ok_or("Room source unavailable")?;
+        if !Arc::ptr_eq(&source.issuer, &window_issuer) {
+            return Err("Room source changed".into());
+        }
+        workspace_effect_receipts::begin(
+            app,
+            &id,
+            environment,
+            thread,
+            project,
+            cwd,
+            action,
+            &input,
+        )?;
         crate::conversation_tools_bridge::privacy_scope_capture::retain_effect(&id, permit)?;
-        host.pending.insert(id.clone(), Pending { window: window.clone(), reply: tx, window_issuer: Some(window_issuer.clone()), assistant_source: Some((thread.into(), environment.into(), window_issuer.clone())), authority: Some(DesktopAuthority { relay_id: id.clone(), action: action.into(), deadline: clock_millis()?.saturating_add(120_000), issuer: issuer.clone(), workspace_owner: Some((thread.into(), request.clone(), operation_hash.into())), workspace_admitted: false }), effect_started: false });
+        host.pending.insert(
+            id.clone(),
+            Pending {
+                window: window.clone(),
+                reply: tx,
+                window_issuer: Some(window_issuer.clone()),
+                assistant_source: Some((thread.into(), environment.into(), window_issuer.clone())),
+                authority: Some(DesktopAuthority {
+                    relay_id: id.clone(),
+                    action: action.into(),
+                    deadline: clock_millis()?.saturating_add(120_000),
+                    issuer: issuer.clone(),
+                    workspace_owner: Some((thread.into(), request.clone(), operation_hash.into())),
+                    workspace_admitted: false,
+                }),
+                effect_started: false,
+            },
+        );
         workspace_effect_receipts::accept_owner(&id)?;
     }
-    let worker_app = app.clone(); let worker_id = id.clone(); let worker_window = window.clone();
-    let worker_thread = thread.to_owned(); let worker_environment = environment.to_owned();
-    let worker_project = project.to_owned(); let worker_cwd = cwd.to_owned(); let worker_action = action.to_owned();
-    let worker_hash = operation_hash.to_owned(); let worker_issuer = issuer.clone();
+    let worker_app = app.clone();
+    let worker_id = id.clone();
+    let worker_window = window.clone();
+    let worker_thread = thread.to_owned();
+    let worker_environment = environment.to_owned();
+    let worker_project = project.to_owned();
+    let worker_cwd = cwd.to_owned();
+    let worker_action = action.to_owned();
+    let worker_hash = operation_hash.to_owned();
+    let worker_issuer = issuer.clone();
     std::thread::spawn(move || {
-        let allowed = crate::conversation_tools_bridge::workspace_operation_owner::wait_for_authority(
-            || crate::conversation_tools_bridge::workspace_operation_owner::authorized(&worker_issuer, &worker_thread, &request, &worker_hash).unwrap_or(false),
-            || std::thread::sleep(Duration::from_millis(100)), 300,
-        );
+        let allowed =
+            crate::conversation_tools_bridge::workspace_operation_owner::wait_for_authority(
+                || {
+                    crate::conversation_tools_bridge::workspace_operation_owner::authorized(
+                        &worker_issuer,
+                        &worker_thread,
+                        &request,
+                        &worker_hash,
+                    )
+                    .unwrap_or(false)
+                },
+                || std::thread::sleep(Duration::from_millis(100)),
+                300,
+            );
         let current = validate_assistant_source(&worker_app, &worker_thread, &worker_environment);
-        let same_source = current.is_ok_and(|(label, owner)| label == worker_window && Arc::ptr_eq(&owner, &window_issuer));
+        let same_source = current.is_ok_and(|(label, owner)| {
+            label == worker_window && Arc::ptr_eq(&owner, &window_issuer)
+        });
         if allowed && same_source {
             let state = worker_app.state::<ControlHost>();
-            let admitted = state.inner.lock().ok().and_then(|mut host| host.pending.get_mut(&worker_id).and_then(|pending| pending.authority.as_mut()).map(|authority| { authority.workspace_admitted = true; })).is_some();
+            let admitted = state
+                .inner
+                .lock()
+                .ok()
+                .and_then(|mut host| {
+                    host.pending
+                        .get_mut(&worker_id)
+                        .and_then(|pending| pending.authority.as_mut())
+                        .map(|authority| {
+                            authority.workspace_admitted = true;
+                        })
+                })
+                .is_some();
             if admitted && worker_app.emit_to(worker_window.as_str(), "bycoda-control-request", json!({"id":worker_id,"namespace":"assistant-ui","threadId":worker_thread,"environmentId":worker_environment,"action":worker_action,"input":input,"projectId":worker_project,"targetProjectCwd":worker_cwd})).is_ok() { return; }
         }
-        if let Ok(mut host) = worker_app.state::<ControlHost>().inner.lock() { host.pending.remove(&worker_id); }
+        if let Ok(mut host) = worker_app.state::<ControlHost>().inner.lock() {
+            host.pending.remove(&worker_id);
+        }
         workspace_effect_receipts::mark_unknown(&worker_id);
         crate::conversation_tools_bridge::privacy_scope_capture::settle_effect(&worker_id);
     });
@@ -1185,20 +1522,35 @@ fn privacy_scope_pinned(
 ) -> Result<Value, String> {
     let check = || {
         let current = receipts::capture(window)?;
-        if pending_window_issuer_matches(Some(expected), &current) { Ok(()) }
-        else { Err("Privacy source window changed".to_string()) }
+        if pending_window_issuer_matches(Some(expected), &current) {
+            Ok(())
+        } else {
+            Err("Privacy source window changed".to_string())
+        }
     };
     check()?;
     let state = app.state::<ControlHost>();
     let id = uuid::Uuid::new_v4().to_string();
     let (reply, receive) = mpsc::channel();
     expected.with_live(|| {
-        let mut host = state.inner.lock().map_err(|_| "Control service unavailable")?;
-        if host.pending.len() >= 24 { return Err("Too many pending control requests".into()); }
-        host.pending.insert(id.clone(), Pending {
-            window: window.label().to_owned(), reply, authority: None,
-            assistant_source: None, window_issuer: Some(expected.clone()), effect_started: false,
-        });
+        let mut host = state
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
+        if host.pending.len() >= 24 {
+            return Err("Too many pending control requests".into());
+        }
+        host.pending.insert(
+            id.clone(),
+            Pending {
+                window: window.label().to_owned(),
+                reply,
+                authority: None,
+                assistant_source: None,
+                window_issuer: Some(expected.clone()),
+                effect_started: false,
+            },
+        );
         Ok(())
     })?;
     let result = (|| {
@@ -1206,19 +1558,34 @@ fn privacy_scope_pinned(
         app.emit_to(window.label(), "bycoda-control-request", json!({
             "id": id, "namespace": "privacy-scope", "action": "privacy.scope.snapshot", "input": { "purpose": purpose },
         })).map_err(|_| "Privacy source window unavailable")?;
-        let response = receive.recv_timeout(Duration::from_secs(10)).map_err(|_| "Privacy scope request timed out")?;
+        let response = receive
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|_| "Privacy scope request timed out")?;
         check()?;
-        if response["ok"] != true { return Err("Privacy scope request was refused".into()); }
+        if response["ok"] != true {
+            return Err("Privacy scope request was refused".into());
+        }
         let snapshot = response["result"].clone();
-        if !snapshot.is_object() || snapshot["privacyRevision"].as_u64().is_none_or(|revision| revision > 9_007_199_254_740_991)
+        if !snapshot.is_object()
+            || snapshot["privacyRevision"]
+                .as_u64()
+                .is_none_or(|revision| revision > 9_007_199_254_740_991)
             || !snapshot["stableStorageKeys"].is_object()
-            || snapshot["visibleProjects"].as_array().is_none_or(|projects| projects.len() > 1000)
-            || serde_json::to_vec(&snapshot).map_err(|_| "Invalid privacy scope snapshot")?.len() > 1024 * 1024 {
+            || snapshot["visibleProjects"]
+                .as_array()
+                .is_none_or(|projects| projects.len() > 1000)
+            || serde_json::to_vec(&snapshot)
+                .map_err(|_| "Invalid privacy scope snapshot")?
+                .len()
+                > 1024 * 1024
+        {
             return Err("Invalid privacy scope snapshot".into());
         }
         Ok(snapshot)
     })();
-    if let Ok(mut host) = state.inner.lock() { host.pending.remove(&id); }
+    if let Ok(mut host) = state.inner.lock() {
+        host.pending.remove(&id);
+    }
     result
 }
 
@@ -1388,7 +1755,7 @@ fn conversation_ui_request_inner(
                 reply: tx,
                 authority,
                 assistant_source: None,
-                    window_issuer: None,
+                window_issuer: None,
                 effect_started: false,
             },
         );
@@ -1476,7 +1843,7 @@ pub async fn control_enable(
     window: WebviewWindow,
     session_id: String,
     cwd: String,
-) -> Result<String, String>  {
+) -> Result<String, String> {
     let app = window.app_handle().clone();
     let issuer = receipts::capture(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -1637,21 +2004,22 @@ pub async fn control_attach_worker(
     window: tauri::Window,
     lead_id: String,
     session_id: String,
-) -> Result<String, String>  {
+) -> Result<String, String> {
     let app = window.app_handle().clone();
     let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         let host = app.state::<ControlHost>();
 
-    admission.finish(control_attach_worker_with(
-        &host,
-        window.label(),
-        lead_id,
-        session_id,
-        create_worker_scratch,
-    ))
-
-    }).await.map_err(|error| error.to_string())?
+        admission.finish(control_attach_worker_with(
+            &host,
+            window.label(),
+            lead_id,
+            session_id,
+            create_worker_scratch,
+        ))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn control_attach_worker_with(
@@ -1713,7 +2081,7 @@ pub async fn control_authorize_turn(
     session_id: String,
     cwd: String,
     app_access: bool,
-) -> Result<ControlTurnReceipt, String>  {
+) -> Result<ControlTurnReceipt, String> {
     let app = window.app_handle().clone();
     let issuer = receipts::capture(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -1903,7 +2271,11 @@ pub(crate) fn configure_child(
     let host = app.try_state::<ControlHost>()?;
     let inner = host.inner.lock().ok()?;
     configure_child_grants(&inner, &host.endpoint, session_id, cmd, turn);
-    inner.scratch.get(session_id).cloned().map(scratch::ProcessScratch::new)
+    inner
+        .scratch
+        .get(session_id)
+        .cloned()
+        .map(scratch::ProcessScratch::new)
 }
 
 fn configure_child_grants(
@@ -1931,10 +2303,13 @@ fn configure_child_grants(
 
 #[tauri::command]
 pub async fn app_cli_path() -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(|| std::env::current_exe()
-        .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|error| error.to_string()))
-        .await.map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(|| {
+        std::env::current_exe()
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -1949,47 +2324,123 @@ pub fn control_reply(
         .inner
         .lock()
         .map_err(|_| "Control service unavailable")?;
-    if inner
-        .pending
-        .get(&id)
-        .is_some_and(|p| p.window == window.label() && pending_window_issuer_matches(p.window_issuer.as_ref(), &replying_issuer))
-    {
+    if inner.pending.get(&id).is_some_and(|p| {
+        p.window == window.label()
+            && pending_window_issuer_matches(p.window_issuer.as_ref(), &replying_issuer)
+    }) {
         if let Some(pending) = inner.pending.remove(&id) {
             // Errors can represent an uncertain physical effect. Keep its privacy
             // permit held until an explicit owner recovery establishes settlement.
-            let action = pending.authority.as_ref().map(|authority| authority.action.as_str());
-            let read_only = matches!(action, Some("workspace.sessions.submit.status" | "ui.tools.status" | "voice.generation.status" | "voice.generation.source" | "inbox.room.scope"));
-            let workspace_effect = action.is_some_and(|value| value.starts_with("workspace.") || value == "organization.patch") && !read_only;
+            let action = pending
+                .authority
+                .as_ref()
+                .map(|authority| authority.action.as_str());
+            let read_only = matches!(
+                action,
+                Some(
+                    "workspace.sessions.submit.status"
+                        | "ui.tools.status"
+                        | "voice.generation.status"
+                        | "voice.generation.source"
+                        | "inbox.room.scope"
+                )
+            );
+            let workspace_effect = action.is_some_and(|value| {
+                value.starts_with("workspace.") || value == "organization.patch"
+            }) && !read_only;
             let guarded_effect = workspace_effect || action == Some("ui.tools.open");
-            let receipt_saved = if workspace_effect && response["ok"] == true && pending.effect_started { workspace_effect_receipts::complete(&id, &response).is_ok() } else if guarded_effect && !pending.effect_started { false } else { !workspace_effect };
-            if workspace_effect && !receipt_saved { workspace_effect_receipts::mark_unknown(&id); }
-            if workspace_effect_settled(read_only, guarded_effect, pending.effect_started, response["ok"] == true, receipt_saved) {
+            let receipt_saved =
+                if workspace_effect && response["ok"] == true && pending.effect_started {
+                    workspace_effect_receipts::complete(&id, &response).is_ok()
+                } else if guarded_effect && !pending.effect_started {
+                    false
+                } else {
+                    !workspace_effect
+                };
+            if workspace_effect && !receipt_saved {
+                workspace_effect_receipts::mark_unknown(&id);
+            }
+            if workspace_effect_settled(
+                read_only,
+                guarded_effect,
+                pending.effect_started,
+                response["ok"] == true,
+                receipt_saved,
+            ) {
                 crate::conversation_tools_bridge::privacy_scope_capture::settle_effect(&id);
             }
-            let reply = if response["ok"] == true && !receipt_saved { json!({"ok":false,"error":"Room effect receipt outcome is uncertain"}) } else { response };
+            let reply = if response["ok"] == true && !receipt_saved {
+                json!({"ok":false,"error":"Room effect receipt outcome is uncertain"})
+            } else {
+                response
+            };
             let _ = pending.reply.send(reply);
         }
     }
     Ok(())
 }
 
-fn workspace_effect_settled(read_only: bool, workspace_effect: bool, effect_started: bool, ok: bool, receipt_saved: bool) -> bool {
+fn workspace_effect_settled(
+    read_only: bool,
+    workspace_effect: bool,
+    effect_started: bool,
+    ok: bool,
+    receipt_saved: bool,
+) -> bool {
     read_only || (workspace_effect && !effect_started) || (ok && receipt_saved)
 }
 
-fn pending_window_issuer_matches(expected: Option<&Arc<WindowIssuer>>, current: &Arc<WindowIssuer>) -> bool {
-    expected.is_none_or(|expected| Arc::ptr_eq(expected, current) && expected.is_live() && current.is_live())
+fn pending_window_issuer_matches(
+    expected: Option<&Arc<WindowIssuer>>,
+    current: &Arc<WindowIssuer>,
+) -> bool {
+    expected.is_none_or(|expected| {
+        Arc::ptr_eq(expected, current) && expected.is_live() && current.is_live()
+    })
 }
 
-pub(crate) fn validate_workspace_privacy_upgrade(app: &AppHandle, window: &WebviewWindow, issuer: &Arc<WindowIssuer>, id: &str) -> Result<(), String> {
+pub(crate) fn validate_workspace_privacy_upgrade(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    issuer: &Arc<WindowIssuer>,
+    id: &str,
+) -> Result<(), String> {
     let state = app.state::<ControlHost>();
-    let host = state.inner.lock().map_err(|_| "Control service unavailable")?;
-    let pending = host.pending.get(id).filter(|pending| pending.window == window.label()).ok_or("Workspace request is unavailable")?;
-    if !pending.window_issuer.as_ref().is_some_and(|expected| Arc::ptr_eq(expected, issuer) && expected.is_live() && issuer.is_live()) { return Err("Workspace window issuer changed".into()); }
-    let authority = pending.authority.as_ref().filter(|authority| authority.workspace_owner.is_some() && (authority.action.starts_with("workspace.") || authority.action == "organization.patch")).ok_or("Workspace owner is unavailable")?;
-    if !authority.workspace_admitted { return Err("Workspace owner is not admitted".into()); }
-    let (thread, environment, source) = pending.assistant_source.as_ref().ok_or("Workspace source unavailable")?;
-    if !Arc::ptr_eq(source, issuer) || assistant_source_window(&host, thread, environment)? != window.label() { return Err("Workspace source changed".into()); }
+    let host = state
+        .inner
+        .lock()
+        .map_err(|_| "Control service unavailable")?;
+    let pending = host
+        .pending
+        .get(id)
+        .filter(|pending| pending.window == window.label())
+        .ok_or("Workspace request is unavailable")?;
+    if !pending.window_issuer.as_ref().is_some_and(|expected| {
+        Arc::ptr_eq(expected, issuer) && expected.is_live() && issuer.is_live()
+    }) {
+        return Err("Workspace window issuer changed".into());
+    }
+    let authority = pending
+        .authority
+        .as_ref()
+        .filter(|authority| {
+            authority.workspace_owner.is_some()
+                && (authority.action.starts_with("workspace.")
+                    || authority.action == "organization.patch")
+        })
+        .ok_or("Workspace owner is unavailable")?;
+    if !authority.workspace_admitted {
+        return Err("Workspace owner is not admitted".into());
+    }
+    let (thread, environment, source) = pending
+        .assistant_source
+        .as_ref()
+        .ok_or("Workspace source unavailable")?;
+    if !Arc::ptr_eq(source, issuer)
+        || assistant_source_window(&host, thread, environment)? != window.label()
+    {
+        return Err("Workspace source changed".into());
+    }
     Ok(())
 }
 
@@ -2007,10 +2458,15 @@ fn pending_desktop_authority(
         .ok_or("Desktop effect request is no longer pending in this window")?;
     if let Some((thread, environment, issuer)) = &pending.assistant_source {
         if action == "voice.generation.retire" {
-            if !retirement_source_current(inner, window, thread, environment, issuer) { return Err("Voice Room source changed".into()); }
+            if !retirement_source_current(inner, window, thread, environment, issuer) {
+                return Err("Voice Room source changed".into());
+            }
         } else if assistant_source_window(inner, thread, environment)? != window
-            || !inner.assistant_sources.get(&format!("{}\0{}\0{}", window, environment, thread))
-                .is_some_and(|source| Arc::ptr_eq(&source.issuer, issuer)) {
+            || !inner
+                .assistant_sources
+                .get(&format!("{}\0{}\0{}", window, environment, thread))
+                .is_some_and(|source| Arc::ptr_eq(&source.issuer, issuer))
+        {
             return Err("Assistant Room source changed".into());
         }
     }
@@ -2064,11 +2520,30 @@ pub fn control_desktop_authorize_effect(
     id: String,
     action: String,
 ) -> Result<bool, String> {
-    if matches!(action.as_str(), "voice.generation.retire" | "voice.generation.status" | "voice.generation.source" | "inbox.room.scope") || action.starts_with("workspace.") || matches!(action.as_str(), "organization.patch" | "ui.tools.open" | "ui.tools.status") {
+    if matches!(
+        action.as_str(),
+        "voice.generation.retire"
+            | "voice.generation.status"
+            | "voice.generation.source"
+            | "inbox.room.scope"
+    ) || action.starts_with("workspace.")
+        || matches!(
+            action.as_str(),
+            "organization.patch" | "ui.tools.open" | "ui.tools.status"
+        )
+    {
         let current = receipts::capture(&window)?;
-        let inner = host.inner.lock().map_err(|_| "Control service unavailable")?;
-        let pending = inner.pending.get(&id).ok_or("Room effect request unavailable")?;
-        if !pending_window_issuer_matches(pending.window_issuer.as_ref(), &current) { return Err("Room window issuer changed".into()); }
+        let inner = host
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
+        let pending = inner
+            .pending
+            .get(&id)
+            .ok_or("Room effect request unavailable")?;
+        if !pending_window_issuer_matches(pending.window_issuer.as_ref(), &current) {
+            return Err("Room window issuer changed".into());
+        }
     }
     let allowed = authorize_desktop_effect_with(
         &host.inner,
@@ -2078,8 +2553,15 @@ pub fn control_desktop_authorize_effect(
         clock_millis,
         |authority| {
             if let Some((thread, request, hash)) = &authority.workspace_owner {
-                if authority.workspace_admitted { return Ok(true); }
-                return crate::conversation_tools_bridge::workspace_operation_owner::authorized(&authority.issuer, thread, request, hash);
+                if authority.workspace_admitted {
+                    return Ok(true);
+                }
+                return crate::conversation_tools_bridge::workspace_operation_owner::authorized(
+                    &authority.issuer,
+                    thread,
+                    request,
+                    hash,
+                );
             }
             authority
                 .issuer
@@ -2095,10 +2577,20 @@ pub fn control_desktop_authorize_effect(
                 .map_err(|_| "Desktop effect authorization is unavailable".to_string())
         },
     )?;
-    if allowed && (action.starts_with("workspace.") || matches!(action.as_str(), "organization.patch" | "ui.tools.open")) {
-        let mut inner = host.inner.lock().map_err(|_| "Control service unavailable")?;
+    if allowed
+        && (action.starts_with("workspace.")
+            || matches!(action.as_str(), "organization.patch" | "ui.tools.open"))
+    {
+        let mut inner = host
+            .inner
+            .lock()
+            .map_err(|_| "Control service unavailable")?;
         pending_desktop_authority(&inner, window.label(), &id, &action, clock_millis()?)?;
-        inner.pending.get_mut(&id).ok_or("Workspace request is no longer pending")?.effect_started = true;
+        inner
+            .pending
+            .get_mut(&id)
+            .ok_or("Workspace request is no longer pending")?
+            .effect_started = true;
     }
     Ok(allowed)
 }
@@ -2108,14 +2600,15 @@ pub async fn control_save(
     window: tauri::Window,
     lead_id: String,
     state: String,
-) -> Result<(), String>  {
+) -> Result<(), String> {
     let app = window.app_handle().clone();
     let admission = crate::native_window_lifecycle::admit_window_persistence(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         let store = app.state::<crate::session_store::SessionStore>();
         admission.finish(control_save_with(&store, &lead_id, &state))
-
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn control_save_with(
@@ -2134,42 +2627,43 @@ fn control_save_with(
 }
 
 #[tauri::command]
-pub async fn control_load(
-    app: AppHandle,
-    lead_id: String,
-) -> Result<Option<String>, String>  {
+pub async fn control_load(app: AppHandle, lead_id: String) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let store = app.state::<crate::session_store::SessionStore>();
 
-    use rusqlite::OptionalExtension;
-    let result = store
-        .lock_conn()?
-        .query_row(
-            "SELECT state FROM orchestration_runs WHERE lead_id=?1",
-            [lead_id],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string());
-    result
-    }).await.map_err(|error| error.to_string())?
+        use rusqlite::OptionalExtension;
+        let result = store
+            .lock_conn()?
+            .query_row(
+                "SELECT state FROM orchestration_runs WHERE lead_id=?1",
+                [lead_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string());
+        result
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 mod fs_commands;
-use fs_commands::{control_scopes_inner, control_write_path_inner};
 #[cfg(test)]
 use fs_commands::resolve_scope;
+use fs_commands::{control_scopes_inner, control_write_path_inner};
 
 #[tauri::command]
 pub async fn control_write_path(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || control_write_path_inner(path))
-        .await.map_err(|error| error.to_string())?
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 pub async fn control_scopes(cwd: String, files: Vec<String>) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || control_scopes_inner(cwd, files))
-        .await.map_err(|error| error.to_string())?
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]
@@ -2218,7 +2712,7 @@ mod tests {
                 window: "source-window".into(),
                 reply,
                 assistant_source: None,
-                    window_issuer: None,
+                window_issuer: None,
                 effect_started: false,
                 authority: Some(super::DesktopAuthority {
                     relay_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
@@ -2280,25 +2774,55 @@ mod tests {
         let inner = effect_fixture();
         {
             let mut guard = inner.lock().unwrap();
-            let authority = guard.pending.get_mut("native-request").unwrap().authority.as_mut().unwrap();
+            let authority = guard
+                .pending
+                .get_mut("native-request")
+                .unwrap()
+                .authority
+                .as_mut()
+                .unwrap();
             authority.action = "workspace.sessions.stop".into();
             authority.workspace_owner = Some(("room".into(), "original".into(), "hash".into()));
             authority.workspace_admitted = true;
         }
-        assert!(super::authorize_desktop_effect_with(&inner, "source-window", "native-request", "workspace.sessions.stop", || Ok(100), |authority| {
-            assert!(authority.workspace_admitted);
-            assert_eq!(authority.workspace_owner.as_ref().unwrap().1, "original");
-            Ok(true)
-        }).unwrap());
-        assert!(super::authorize_desktop_effect_with(&inner, "source-window", "native-request", "workspace.sessions.create", || Ok(100), |_| panic!("wrong action" )).is_err());
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "workspace.sessions.stop",
+            || Ok(100),
+            |authority| {
+                assert!(authority.workspace_admitted);
+                assert_eq!(authority.workspace_owner.as_ref().unwrap().1, "original");
+                Ok(true)
+            }
+        )
+        .unwrap());
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "workspace.sessions.create",
+            || Ok(100),
+            |_| panic!("wrong action")
+        )
+        .is_err());
     }
 
     #[test]
     fn workspace_preflight_failure_releases_only_before_effect_admission() {
-        assert!(super::workspace_effect_settled(false, true, false, false, false));
-        assert!(!super::workspace_effect_settled(false, true, true, false, false));
-        assert!(!super::workspace_effect_settled(false, true, true, true, false));
-        assert!(super::workspace_effect_settled(false, true, true, true, true));
+        assert!(super::workspace_effect_settled(
+            false, true, false, false, false
+        ));
+        assert!(!super::workspace_effect_settled(
+            false, true, true, false, false
+        ));
+        assert!(!super::workspace_effect_settled(
+            false, true, true, true, false
+        ));
+        assert!(super::workspace_effect_settled(
+            false, true, true, true, true
+        ));
     }
 
     #[test]
@@ -2611,92 +3135,242 @@ mod tests {
         let mut host = Inner::default();
         let issuer = Arc::new(WindowIssuer::default());
         let (reply, _) = std::sync::mpsc::channel();
-        host.pending.insert("retire".into(), Pending {
-            window: "room".into(), reply, window_issuer: Some(issuer.clone()),
-            effect_started: false,
-            assistant_source: Some(("thread".into(), "host".into(), issuer.clone())),
-            authority: Some(DesktopAuthority { relay_id: "relay".into(), action: "voice.generation.retire".into(), deadline: 200, issuer: crate::remote::NativeServiceChannel::for_test(), workspace_owner: None, workspace_admitted: false }),
-        });
-        assert!(pending_desktop_authority(&host, "room", "retire", "voice.generation.retire", 100).is_ok());
-        assert!(pending_desktop_authority(&host, "room", "retire", "organization.patch", 100).is_err());
-        host.assistant_sources.insert("replacement".into(), AssistantWindow {
-            window: "room".into(), environment: "host".into(), thread: "thread".into(),
-            seen: std::time::Instant::now(), issuer: Arc::new(WindowIssuer::default()), sequence: 1, active: true, role: AssistantSourceRole::Interactive,
-        });
-        assert!(pending_desktop_authority(&host, "room", "retire", "voice.generation.retire", 100).is_err());
+        host.pending.insert(
+            "retire".into(),
+            Pending {
+                window: "room".into(),
+                reply,
+                window_issuer: Some(issuer.clone()),
+                effect_started: false,
+                assistant_source: Some(("thread".into(), "host".into(), issuer.clone())),
+                authority: Some(DesktopAuthority {
+                    relay_id: "relay".into(),
+                    action: "voice.generation.retire".into(),
+                    deadline: 200,
+                    issuer: crate::remote::NativeServiceChannel::for_test(),
+                    workspace_owner: None,
+                    workspace_admitted: false,
+                }),
+            },
+        );
+        assert!(
+            pending_desktop_authority(&host, "room", "retire", "voice.generation.retire", 100)
+                .is_ok()
+        );
+        assert!(
+            pending_desktop_authority(&host, "room", "retire", "organization.patch", 100).is_err()
+        );
+        host.assistant_sources.insert(
+            "replacement".into(),
+            AssistantWindow {
+                window: "room".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: Arc::new(WindowIssuer::default()),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
+        assert!(
+            pending_desktop_authority(&host, "room", "retire", "voice.generation.retire", 100)
+                .is_err()
+        );
     }
     #[test]
     fn retirement_allows_source_unregister_but_rejects_replacement_or_dead_window() {
         let mut host = Inner::default();
         let original = Arc::new(WindowIssuer::default());
-        host.assistant_sources.insert("room".into(), AssistantWindow {
-            window: "room".into(), environment: "host".into(), thread: "thread".into(),
-            seen: std::time::Instant::now(), issuer: original.clone(), sequence: 1, active: true, role: AssistantSourceRole::Interactive,
-        });
-        assert!(retirement_source_current(&host, "room", "thread", "host", &original));
+        host.assistant_sources.insert(
+            "room".into(),
+            AssistantWindow {
+                window: "room".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: original.clone(),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
+        assert!(retirement_source_current(
+            &host, "room", "thread", "host", &original
+        ));
         host.assistant_sources.get_mut("room").unwrap().active = false;
-        assert!(retirement_source_current(&host, "room", "thread", "host", &original));
+        assert!(retirement_source_current(
+            &host, "room", "thread", "host", &original
+        ));
         let replacement = Arc::new(WindowIssuer::default());
-        host.assistant_sources.insert("replacement".into(), AssistantWindow {
-            window: "room".into(), environment: "host".into(), thread: "thread".into(),
-            seen: std::time::Instant::now(), issuer: replacement, sequence: 2, active: true, role: AssistantSourceRole::Interactive,
-        });
-        assert!(!retirement_source_current(&host, "room", "thread", "host", &original));
+        host.assistant_sources.insert(
+            "replacement".into(),
+            AssistantWindow {
+                window: "room".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: replacement,
+                sequence: 2,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
+        assert!(!retirement_source_current(
+            &host, "room", "thread", "host", &original
+        ));
         host.assistant_sources.remove("replacement");
         tauri::Resource::close(original.clone());
-        assert!(!retirement_source_current(&host, "room", "thread", "host", &original));
+        assert!(!retirement_source_current(
+            &host, "room", "thread", "host", &original
+        ));
     }
     #[test]
     fn room_interactive_source_wins_only_over_primary_background() {
         let mut host = Inner::default();
         let primary = Arc::new(WindowIssuer::default());
         let secondary = Arc::new(WindowIssuer::default());
-        host.assistant_sources.insert("main".into(), AssistantWindow { window: "main".into(), environment: "host".into(), thread: "thread".into(), seen: std::time::Instant::now(), issuer: primary.clone(), sequence: 1, active: true, role: AssistantSourceRole::Background });
-        assert_eq!(assistant_source_window(&host, "thread", "host").unwrap(), "main");
-        host.assistant_sources.insert("secondary".into(), AssistantWindow { window: "secondary".into(), environment: "host".into(), thread: "thread".into(), seen: std::time::Instant::now(), issuer: secondary.clone(), sequence: 1, active: true, role: AssistantSourceRole::Interactive });
-        assert_eq!(assistant_source_window(&host, "thread", "host").unwrap(), "secondary");
-        host.assistant_sources.insert("third".into(), AssistantWindow { window: "third".into(), environment: "host".into(), thread: "thread".into(), seen: std::time::Instant::now(), issuer: Arc::new(WindowIssuer::default()), sequence: 1, active: true, role: AssistantSourceRole::Interactive });
+        host.assistant_sources.insert(
+            "main".into(),
+            AssistantWindow {
+                window: "main".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: primary.clone(),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Background,
+            },
+        );
+        assert_eq!(
+            assistant_source_window(&host, "thread", "host").unwrap(),
+            "main"
+        );
+        host.assistant_sources.insert(
+            "secondary".into(),
+            AssistantWindow {
+                window: "secondary".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: secondary.clone(),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
+        assert_eq!(
+            assistant_source_window(&host, "thread", "host").unwrap(),
+            "secondary"
+        );
+        host.assistant_sources.insert(
+            "third".into(),
+            AssistantWindow {
+                window: "third".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: Arc::new(WindowIssuer::default()),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
         assert!(assistant_source_window(&host, "thread", "host").is_err());
         host.assistant_sources.remove("third");
         host.assistant_sources.get_mut("secondary").unwrap().active = false;
-        assert_eq!(assistant_source_window(&host, "thread", "host").unwrap(), "main");
-        assert!(!assistant_source_update_allowed(host.assistant_sources.get("secondary"), &secondary, 1));
+        assert_eq!(
+            assistant_source_window(&host, "thread", "host").unwrap(),
+            "main"
+        );
+        assert!(!assistant_source_update_allowed(
+            host.assistant_sources.get("secondary"),
+            &secondary,
+            1
+        ));
         host.assistant_sources.get_mut("main").unwrap().active = false;
-        host.assistant_sources.insert("not-primary".into(), AssistantWindow { window: "not-primary".into(), environment: "host".into(), thread: "thread".into(), seen: std::time::Instant::now(), issuer: Arc::new(WindowIssuer::default()), sequence: 1, active: true, role: AssistantSourceRole::Background });
+        host.assistant_sources.insert(
+            "not-primary".into(),
+            AssistantWindow {
+                window: "not-primary".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: Arc::new(WindowIssuer::default()),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Background,
+            },
+        );
         assert!(assistant_source_window(&host, "thread", "host").is_err());
     }
     #[test]
     fn assistant_room_source_requires_live_exact_unique_owner() {
         let mut host = Inner::default();
         let issuer = Arc::new(WindowIssuer::default());
-        host.assistant_sources.insert("room".into(), AssistantWindow {
-            window: "room".into(),
-            environment: "host".into(), thread: "thread".into(),
-            seen: std::time::Instant::now(), issuer: issuer.clone(),
-            sequence: 1, active: true, role: AssistantSourceRole::Interactive,
-        });
-        assert_eq!(assistant_source_window(&host, "thread", "host").unwrap(), "room");
+        host.assistant_sources.insert(
+            "room".into(),
+            AssistantWindow {
+                window: "room".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: issuer.clone(),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
+        assert_eq!(
+            assistant_source_window(&host, "thread", "host").unwrap(),
+            "room"
+        );
         assert!(assistant_source_window(&host, "other", "host").is_err());
         assert!(assistant_source_window(&host, "thread", "other").is_err());
-        host.assistant_sources.insert("duplicate".into(), AssistantWindow {
-            window: "duplicate".into(),
-            environment: "host".into(), thread: "thread".into(),
-            seen: std::time::Instant::now(), issuer: Arc::new(WindowIssuer::default()),
-            sequence: 1, active: true, role: AssistantSourceRole::Interactive,
-        });
+        host.assistant_sources.insert(
+            "duplicate".into(),
+            AssistantWindow {
+                window: "duplicate".into(),
+                environment: "host".into(),
+                thread: "thread".into(),
+                seen: std::time::Instant::now(),
+                issuer: Arc::new(WindowIssuer::default()),
+                sequence: 1,
+                active: true,
+                role: AssistantSourceRole::Interactive,
+            },
+        );
         assert!(assistant_source_window(&host, "thread", "host").is_err());
         host.assistant_sources.remove("duplicate");
-        host.assistant_sources.get_mut("room").unwrap().seen = std::time::Instant::now() - Duration::from_secs(46);
+        host.assistant_sources.get_mut("room").unwrap().seen =
+            std::time::Instant::now() - Duration::from_secs(46);
         assert!(assistant_source_window(&host, "thread", "host").is_err());
         host.assistant_sources.get_mut("room").unwrap().seen = std::time::Instant::now();
         host.assistant_sources.get_mut("room").unwrap().active = false;
         host.assistant_sources.get_mut("room").unwrap().sequence = 2;
         assert!(assistant_source_window(&host, "thread", "host").is_err());
-        assert!(!assistant_source_update_allowed(host.assistant_sources.get("room"), &issuer, 1));
-        assert!(!assistant_source_update_allowed(host.assistant_sources.get("room"), &issuer, 2));
-        assert!(assistant_source_update_allowed(host.assistant_sources.get("room"), &issuer, 3));
+        assert!(!assistant_source_update_allowed(
+            host.assistant_sources.get("room"),
+            &issuer,
+            1
+        ));
+        assert!(!assistant_source_update_allowed(
+            host.assistant_sources.get("room"),
+            &issuer,
+            2
+        ));
+        assert!(assistant_source_update_allowed(
+            host.assistant_sources.get("room"),
+            &issuer,
+            3
+        ));
         let replacement = Arc::new(WindowIssuer::default());
-        assert!(assistant_source_update_allowed(host.assistant_sources.get("room"), &replacement, 1));
+        assert!(assistant_source_update_allowed(
+            host.assistant_sources.get("room"),
+            &replacement,
+            1
+        ));
         assert!(!assistant_source_update_allowed(None, &replacement, 0));
         host.assistant_sources.get_mut("room").unwrap().active = true;
         tauri::Resource::close(issuer);
@@ -3055,7 +3729,7 @@ mod tests {
                 reply,
                 authority: None,
                 assistant_source: None,
-                    window_issuer: None,
+                window_issuer: None,
                 effect_started: false,
             },
         );
@@ -3067,7 +3741,7 @@ mod tests {
                 reply,
                 authority: None,
                 assistant_source: None,
-                    window_issuer: None,
+                window_issuer: None,
                 effect_started: false,
             },
         );

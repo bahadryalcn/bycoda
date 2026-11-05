@@ -117,8 +117,11 @@ impl Askpass {
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         if crate::ssh_http_proxy::wait_tcp_ready(
-                            &[(&listener, true, false)], Duration::from_secs(1),
-                        ).is_err() {
+                            &[(&listener, true, false)],
+                            Duration::from_secs(1),
+                        )
+                        .is_err()
+                        {
                             break;
                         }
                     }

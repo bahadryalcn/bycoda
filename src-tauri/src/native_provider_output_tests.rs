@@ -1434,10 +1434,17 @@ fn terminal_observation_without_physical_retirement_does_not_evict_source() {
     original.terminal_delivery(true);
     drop(original);
     let _later = registry.begin(
-        OutputSource::fixture("other"), StreamKind::Sse, None, 1,
-        Arc::new(|| true), Arc::new(|_| true),
+        OutputSource::fixture("other"),
+        StreamKind::Sse,
+        None,
+        1,
+        Arc::new(|| true),
+        Arc::new(|_| true),
     );
-    assert!(registry.retained("session").iter().any(|stream| stream.epoch() == original_epoch));
+    assert!(registry
+        .retained("session")
+        .iter()
+        .any(|stream| stream.epoch() == original_epoch));
 }
 
 #[test]
