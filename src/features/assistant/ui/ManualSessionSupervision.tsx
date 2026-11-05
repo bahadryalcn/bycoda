@@ -8,6 +8,7 @@ import type { ManualProject, ManualSupervisionController } from "../model/assist
 import styles from "./AssistantView.module.css";
 import sessionStyles from "./AssistantSessions.module.css";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 
 export function ManualSessionSupervision({
   controller,
@@ -150,17 +151,19 @@ export function ManualSessionSupervision({
           "Only explicitly enrolled conversations in selected projects can be supervised. Existing task, review and automation owners keep control.",
         )}
       </p>
-      {!chief && (
-        <p role="status" className={styles.muted}>
-          {t("Chief autonomy is required for manual session supervision.")}
-        </p>
-      )}
+      <LiveText
+        className={styles.muted}
+        text={!chief ? t("Chief autonomy is required for manual session supervision.") : ""}
+      />
       {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
-      {!data && (
-        <p role="status" className={styles.muted}>
-          {t(pending ? "Loading…" : "Manual supervision state is unavailable. Refresh to retry.")}
-        </p>
-      )}
+      <LiveText
+        className={styles.muted}
+        text={
+          !data
+            ? t(pending ? "Loading…" : "Manual supervision state is unavailable. Refresh to retry.")
+            : ""
+        }
+      />
       {settings ? (
         <>
           <label className={styles.rowHeading}>
@@ -177,11 +180,14 @@ export function ManualSessionSupervision({
               }}
             />
           </label>
-          {!visible.length && (
-            <p role="status" className={styles.muted}>
-              {t("No visible projects are available. Add or unlock a project to select it.")}
-            </p>
-          )}
+          <LiveText
+            className={styles.muted}
+            text={
+              !visible.length
+                ? t("No visible projects are available. Add or unlock a project to select it.")
+                : ""
+            }
+          />
           <SearchableSelect
             multiple
             visibleLabel
@@ -203,9 +209,12 @@ export function ManualSessionSupervision({
               setSelected(projectIds);
             }}
           />
+          <LiveText
+            className={styles.muted}
+            text={scopeChanged ? t("Project scope changed. Your unsaved selection is kept.") : ""}
+          />
           {scopeChanged && (
-            <div className={styles.feedback} role="status">
-              <span>{t("Project scope changed. Your unsaved selection is kept.")}</span>
+            <div className={styles.feedback}>
               <Button
                 onClick={() => {
                   dirty.current = false;
@@ -234,11 +243,10 @@ export function ManualSessionSupervision({
         </>
       ) : (
         <>
-          {data && !enabled && (
-            <p role="status" className={styles.muted}>
-              {t("Manual session supervision is off.")}
-            </p>
-          )}
+          <LiveText
+            className={styles.muted}
+            text={data && !enabled ? t("Manual session supervision is off.") : ""}
+          />
           {grants
             .filter((grant) =>
               matching(
@@ -260,11 +268,14 @@ export function ManualSessionSupervision({
                     <span className={styles.muted}>
                       {t(effective ? "Enrollment saved" : "Supervision paused")}
                     </span>
-                    {candidate?.enrolledSourceChanged && (
-                      <p role="status" className={styles.muted}>
-                        {t("Execution changed. Enroll again to supervise this source.")}
-                      </p>
-                    )}
+                    <LiveText
+                      className={styles.muted}
+                      text={
+                        candidate?.enrolledSourceChanged
+                          ? t("Execution changed. Enroll again to supervise this source.")
+                          : ""
+                      }
+                    />
                     {candidate && !candidate.eligible && (
                       <p className={styles.muted}>
                         {t(

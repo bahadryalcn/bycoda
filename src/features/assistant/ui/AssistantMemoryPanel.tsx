@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
@@ -47,11 +48,7 @@ export function AssistantMemoryPanel(props: Props) {
         value={props.query}
         onChange={(event) => props.onQuery(event.currentTarget.value)}
       />
-      {props.searching && (
-        <p role="status" className={styles.metadata}>
-          {t("Loading...")}
-        </p>
-      )}
+      <LiveText className={styles.metadata} text={props.searching ? t("Loading...") : ""} />
       {props.searchError}
       {!props.searching && !props.entries.length && (
         <Surface variant="outline" padding="lg" className={styles.empty}>

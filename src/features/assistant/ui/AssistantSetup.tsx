@@ -4,6 +4,7 @@ import { t } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Progress } from "../../../shared/ui/Progress";
 import { loadVoicePersona } from "../../voice/model/voicePersona";
@@ -318,16 +319,16 @@ export function AssistantSetup({
     >
       <div className={styles.setup}>
         {loadError && (
-          <div role="alert" className={styles.feedback}>
+          <InlineError
+            className={styles.feedback}
+            retry={{ onRetry: () => void refresh(), pending: loading }}
+          >
             {loadError}
-            <Button loading={loading} onClick={() => void refresh()}>
-              {t("Retry")}
-            </Button>
-          </div>
+          </InlineError>
         )}
-        {!draft ? (
-          <p role="status">{t("Loading...")}</p>
-        ) : (
+        {/* Always mounted so the loading message is announced when it first appears. */}
+        <LiveText className={styles.muted} text={draft ? "" : t("Loading...")} />
+        {!draft ? null : (
           <>
             <Progress
               value={index + 1}

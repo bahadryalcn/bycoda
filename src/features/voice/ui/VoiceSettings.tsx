@@ -9,6 +9,7 @@ import { MoreHorizontal } from "../../../shared/ui/icons";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { TextField } from "../../../shared/ui/TextField";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -458,13 +459,8 @@ export function VoiceSettings() {
               setupError ? <SettingsFeedback state="error">{message}</SettingsFeedback> : undefined
             }
           >
-            <Badge
-              tone={setupError ? "danger" : ready ? "success" : working ? "info" : "warning"}
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {setupError ? t("Needs attention") : message}
+            <Badge tone={setupError ? "danger" : ready ? "success" : working ? "info" : "warning"}>
+              <LiveText text={setupError ? t("Needs attention") : message} />
             </Badge>
             {detail ? (
               <InfoPopover label={t("Technical details")}>

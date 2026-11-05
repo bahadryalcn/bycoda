@@ -682,7 +682,9 @@ export function savePendingRemoteCommand(
     pendingBytes += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2;
   }
   const pendingKey = `${pendingPrefix(project, environment)}${command.commandId}`;
-  if (pendingCount >= 100 || pendingBytes + (pendingKey.length + json.length) * 2 > 8 * 1024 * 1024)
+  // Budget the legacy store below the ~5 MB origin quota so a full outbox is refused here, with
+  // recovery guidance, instead of failing inside setItem.
+  if (pendingCount >= 100 || pendingBytes + (pendingKey.length + json.length) * 2 > 4 * 1024 * 1024)
     throw new Error(t("Remote outbox is full. Recover pending requests before sending more."));
   if (!readPendingEntry(json, command.commandId))
     throw new Error(t("Cannot save an invalid remote request."));
