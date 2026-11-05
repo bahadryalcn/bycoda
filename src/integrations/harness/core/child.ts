@@ -21,6 +21,8 @@ import {
   type NativeOutputItem,
 } from "./nativeOutputDelivery";
 import { socialBridge, socialSpawnArgs } from "./socialBridge";
+import { MAX_BUFFERED, MAX_BUFFERED_BYTES, pushBounded, type Buffered } from "./childBuffers";
+export { MAX_BUFFERED_BYTES, pushBounded } from "./childBuffers";
 import { observeProviderOperation } from "./providerObservation";
 import {
   nativeControlTurnReceipt,
@@ -644,50 +646,13 @@ export function isCurrentChildExit(
   return exitedPid === expectedPid;
 }
 
-/** Output held for a child nobody watches yet. The byte bound is the real
- * limit; the item bound only keeps many tiny lines from piling up. */
-type Buffered = { items: string[]; bytes: number; nativeItems?: (NativeOutputItem | null)[] };
-
-const MAX_BUFFERED = 1000;
-// UTF-16 code units, which is close enough to bytes for a memory bound.
-export const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 let bridge: Promise<UnlistenFn[]> | null = null;
 let bridgeAttempt: symbol | null = null;
 let users = 0;
 let teardownTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Drops the oldest items past either bound; the newest item always stays,
- * even when it alone exceeds the byte bound. */
-export function pushBounded<Key>(
-  map: Map<Key, Buffered>,
-  sessionId: Key,
-  items: readonly string[],
-  maxBytes = MAX_BUFFERED_BYTES,
-  nativeItems?: readonly NativeOutputItem[],
-) {
-  const queued = map.get(sessionId) ?? { items: [], bytes: 0 };
-  if (nativeItems && !queued.nativeItems) queued.nativeItems = queued.items.map(() => null);
-  for (const [index, item] of items.entries()) {
-    queued.items.push(item);
-    queued.nativeItems?.push(nativeItems?.[index] ?? null);
-    queued.bytes += item.length;
-  }
-  let drop = Math.max(0, queued.items.length - MAX_BUFFERED);
-  let kept = queued.bytes;
-  for (let i = 0; i < drop; i += 1) kept -= queued.items[i].length;
-  while (kept > maxBytes && drop < queued.items.length - 1) {
-    kept -= queued.items[drop].length;
-    drop += 1;
-  }
-  if (drop > 0) {
-    if (queued.nativeItems)
-      discardNativeOutputItems(queued.nativeItems.splice(0, drop), "buffer-dropped");
-    queued.items.splice(0, drop);
-    queued.bytes = kept;
-  }
-  map.set(sessionId, queued);
-}
-
+/** Output held for a child nobody watches yet. The byte bound is the real
+ * limit; the item bound only keeps many tiny lines from piling up. */
 function deliverSse(sessionId: string, data: readonly string[], metadata?: unknown) {
   const nativeItems = observeNativeOutputBatch(sessionId, "sse", data, metadata);
   const handler = sseHandlers.get(sessionId);
