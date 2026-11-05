@@ -54,6 +54,8 @@ function diffTokens(
           highlightSource(current, language, scheme),
         ] as const;
       },
+      // The deadline scales with the input, so large files are not timed out as hangs.
+      { size: original.length + current.length },
     ),
   );
   if (cached) cachedChars -= cached.original.length + cached.current.length;

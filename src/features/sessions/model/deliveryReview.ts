@@ -49,8 +49,13 @@ export function useQueueHoldReason(sessionId: string): string | undefined {
  */
 const lateSettlements = new Map<string, Set<symbol>>();
 const openSettlements = (sessionId: string): number => lateSettlements.get(sessionId)?.size ?? 0;
+/**
+ * A provider call that never answers must not hold "Send again" and Continue
+ * until restart. After this long the send stops counting as possibly late.
+ */
+export const LATE_SETTLEMENT_TTL_MS = 10 * 60_000;
 
-/** Follows an unconfirmed send until its provider call finally answers. */
+/** Follows an unconfirmed send until its provider call finally answers, or until the TTL expires. */
 export function trackLateSettlement(
   sessionId: string,
   settlement: Promise<DeliverySettlement>,
@@ -60,12 +65,15 @@ export function trackLateSettlement(
   pending.add(token);
   lateSettlements.set(sessionId, pending);
   notify();
+  let expiry: ReturnType<typeof setTimeout> | undefined;
   const done = () => {
+    if (expiry !== undefined) clearTimeout(expiry);
     const left = lateSettlements.get(sessionId);
     if (!left?.delete(token)) return;
     if (!left.size) lateSettlements.delete(sessionId);
     notify();
   };
+  expiry = setTimeout(done, LATE_SETTLEMENT_TTL_MS);
   void settlement.then(done, done);
 }
 

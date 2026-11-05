@@ -306,18 +306,18 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                 // Nothing was sent. The queue stays as it is and the head is
                 // offered again once the host or the other computer settles.
                 const attempt = scheduleRetry(session.id);
-                if (error instanceof QueueDeferredError && attempt >= MAX_REFUSED_DRAINS) {
-                  retryAfter.current.delete(session.id);
-                  setSessions((entries) => entries.map((entry) =>
-                    entry.id === session.id && entry.queuedMessages?.[0]?.id === head.id
-                      && entry.queueStatus !== "paused" && entry.queueStatus !== "resuming"
-                      && entry.queueStatus !== "restored"
-                      ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "reject") }
-                      : entry,
-                  ));
+                // A safe deferral is a wait, not a failure: the head keeps retrying
+                // with the capped backoff. The reason is shown on the first deferral
+                // and at every MAX_REFUSED_DRAINS-th one, without pausing the queue.
+                if (
+                  error instanceof QueueDeferredError &&
+                  (attempt === 1 || attempt % MAX_REFUSED_DRAINS === 0)
+                ) {
                   enqueueHarnessEvent(session.id, {
                     type: "status",
-                    text: t("The queued message is still waiting. The queue is paused; resume it to try again.") + ` ${error.message}`,
+                    text:
+                      t("The queued message is waiting and will be retried automatically.") +
+                      ` ${error.message}`,
                   });
                   flushHarnessEvents();
                 }
