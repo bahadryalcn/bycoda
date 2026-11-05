@@ -757,6 +757,14 @@ pub(crate) fn on_page_load(webview: &Webview, payload: &tauri::webview::PageLoad
     if !matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
         return;
     }
+    // A reloaded page is a new WS consumer. Retire the old page's grants and
+    // subscriptions here, as window destruction does, so they cannot pile up.
+    if let Some(remote) = webview
+        .app_handle()
+        .try_state::<crate::remote::RemoteConnections>()
+    {
+        remote.detach_window(webview.window().label());
+    }
     if let Some(issuer) = crate::control::receipts::page_reloaded(webview) {
         crate::window_transfer::page_reloaded(webview.app_handle(), webview.window().label());
         crate::control::page_reloaded(webview.app_handle(), &issuer);

@@ -298,7 +298,7 @@ it("revocation while loading prevents delivery of the late protected snapshot", 
   expect(hub.acknowledge("one", "subscription", { epoch: "old", sequence: 0 })).toBe(false);
 });
 
-it("keeps detached backend reads charged until actual completion before admitting another load", async () => {
+it("frees a detached read's slot at abort so another stream loads while the abandoned call runs", async () => {
   const first = deferred<{ data: { revision: number } }>();
   const load = vi.fn(async (selected: HostStreamTarget) =>
     selected.kind === "session" && selected.sessionId === "session"
@@ -312,12 +312,12 @@ it("keeps detached backend reads charged until actual completion before admittin
   hub.detach("one");
   const next = client("two");
   subscribe(hub, next.owner, "other", { kind: "session", sessionId: "other" });
-  await settle();
-  expect(load).toHaveBeenCalledTimes(1);
-  first.resolve({ data: { revision: 1 } });
   await expectSnapshots(next.events, 1);
   expect(load).toHaveBeenCalledTimes(2);
+  first.resolve({ data: { revision: 1 } });
+  await settle();
   expect(detached.events).toEqual([]);
+  expect(snapshots(next.events)).toHaveLength(1);
 });
 
 it("close aborts reads, prevents late delivery and refuses new subscriptions", async () => {
@@ -478,7 +478,7 @@ it("limits one connection without blocking another connection's physical read", 
   pending.resolve({ data: { settled: true } });
 });
 
-it("aborts a detached reader but holds its physical slot until the original work settles", async () => {
+it("aborts a detached reader and lets the next stream read before the original work settles", async () => {
   const pending = deferred<HostStreamSnapshot | null>();
   let originalSignal!: AbortSignal;
   const load = vi.fn(
@@ -502,12 +502,41 @@ it("aborts a detached reader but holds its physical slot until the original work
   subscribe(hub, next.owner, "next", { kind: "session", sessionId: "next" });
   await settle();
   expect(originalSignal.aborted).toBe(true);
-  expect(load).toHaveBeenCalledTimes(1);
+  expect(load).toHaveBeenCalledTimes(2);
   pending.resolve({ data: { stale: true } });
   await settle();
   expect(load).toHaveBeenCalledTimes(2);
   expect(snapshots(first.events)).toHaveLength(0);
   expect(snapshots(next.events)).toHaveLength(1);
+});
+
+it("caps abandoned physical loads at the hard limit until they settle", async () => {
+  const pending: Array<ReturnType<typeof deferred<{ data: { revision: number } }>>> = [];
+  const load = vi.fn(() => {
+    const read = deferred<{ data: { revision: number } }>();
+    pending.push(read);
+    return read.promise;
+  });
+  // One logical slot plus the four-load abandoned allowance.
+  const { hub } = fixture({ load, maxConcurrentReads: 1 });
+  for (let index = 1; index <= 5; index++) {
+    const detached = client(`detached-${index}`);
+    subscribe(hub, detached.owner, `detached-${index}`, {
+      kind: "session",
+      sessionId: `detached-${index}`,
+    });
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(index));
+    hub.detach(`detached-${index}`);
+  }
+  const waiting = client("waiting");
+  subscribe(hub, waiting.owner, "waiting", { kind: "session", sessionId: "waiting" });
+  await settle();
+  expect(load).toHaveBeenCalledTimes(5);
+  // The first abandoned load settling frees one physical slot for the waiter.
+  pending[0].resolve({ data: { revision: 1 } });
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(6));
+  pending[5].resolve({ data: { revision: 2 } });
+  await expectSnapshots(waiting.events, 1);
 });
 
 it("rotates queued streams before rereading an earlier invalidated stream", async () => {

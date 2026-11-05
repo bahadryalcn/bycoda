@@ -433,7 +433,7 @@ fn host_ack_never_outruns_the_slowest_real_applied_window_cursor() {
 }
 
 #[test]
-fn a_late_window_gets_a_fresh_snapshot_before_any_delta_without_discarding_existing_view() {
+fn a_late_window_gets_its_own_snapshot_without_restarting_the_running_registration() {
     let mut union = union();
     let (a, initial) = opened(&mut union, "a", "logical-a", "s");
     union.event(&event(&initial, "snapshot", 1)).unwrap();
@@ -443,46 +443,71 @@ fn a_late_window_gets_a_fresh_snapshot_before_any_delta_without_discarding_exist
     );
     union.complete(&ack, &json!({"accepted":true})).unwrap();
     let (b, join) = union.open("b", &params("logical-b", "s")).unwrap();
-    let close = operation(&join, OperationKind::Close);
+    // The running registration is neither closed nor reopened for A.
     assert!(!join
         .operations
         .iter()
-        .any(|op| op.kind == OperationKind::Open));
-    let reopening = union.complete(&close, &json!({"accepted":true})).unwrap();
-    let fresh = operation(&reopening, OperationKind::Open);
+        .any(|op| op.kind == OperationKind::Close));
+    let fresh = operation(&join, OperationKind::Open);
     assert_ne!(
         fresh.params["subscriptionId"],
         initial.params["subscriptionId"]
     );
     assert!(fresh.params.get("cursor").is_none());
-    assert!(union
-        .event(&event(&initial, "delta", 2))
-        .unwrap()
-        .notices
-        .is_empty());
+    let delta = union.event(&event(&initial, "delta", 2)).unwrap();
+    assert_eq!(delta.notices.len(), 1); // A keeps receiving on its own wire.
     let ready = union
         .complete(
             &fresh,
             &json!({"subscriptionId":fresh.params["subscriptionId"],"streamId":"host-stream"}),
         )
         .unwrap();
-    assert_eq!(ready.notices.len(), 1); // Existing A's registration and UI remain intact.
-    let baseline = union.event(&event(&fresh, "snapshot", 3)).unwrap();
-    assert_eq!(baseline.notices.len(), 2);
-    assert!(union
-        .event(&event(&fresh, "delta", 4))
-        .unwrap()
-        .notices
-        .is_empty());
-    assert!(union
-        .acknowledge(&a, &cursor(3))
-        .unwrap()
-        .operations
-        .is_empty());
-    let minimum = union.acknowledge(&b, &cursor(3)).unwrap();
+    assert_eq!(ready.notices.len(), 1); // B opens on the same Host stream.
+                                        // B's own snapshot is the only thing it is sent for the join.
+    let baseline = union.event(&event(&fresh, "snapshot", 2)).unwrap();
+    assert_eq!(baseline.notices.len(), 1);
+    assert!(matches!(&baseline.notices[0], Notice::Event { member, .. } if *member == b));
+    let ack_b = operation(
+        &union.acknowledge(&b, &cursor(2)).unwrap(),
+        OperationKind::Ack,
+    );
     assert_eq!(
-        operation(&minimum, OperationKind::Ack).params["cursor"],
-        cursor(3)
+        ack_b.params["subscriptionId"],
+        fresh.params["subscriptionId"]
+    );
+    assert!(union.acknowledge(&a, &cursor(2)).is_ok());
+}
+
+#[test]
+fn a_sidecar_registration_closes_alone_without_disturbing_the_primary() {
+    let mut union = union();
+    let (a, initial) = opened(&mut union, "a", "a", "s");
+    union.event(&event(&initial, "snapshot", 1)).unwrap();
+    union.acknowledge(&a, &cursor(1)).unwrap();
+    let (b, join) = union.open("b", &params("b", "s")).unwrap();
+    let fresh = operation(&join, OperationKind::Open);
+    union
+        .complete(
+            &fresh,
+            &json!({"subscriptionId":fresh.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    let leave = union.close(&b).unwrap();
+    let close = operation(&leave, OperationKind::Close);
+    assert_eq!(
+        close.params["subscriptionId"],
+        fresh.params["subscriptionId"]
+    );
+    let done = union.complete(&close, &json!({"accepted":true})).unwrap();
+    assert!(done.operations.is_empty());
+    // The primary registration keeps its wire and its member.
+    assert_eq!(
+        union
+            .event(&event(&initial, "delta", 2))
+            .unwrap()
+            .notices
+            .len(),
+        1
     );
 }
 
@@ -541,21 +566,29 @@ fn window_identity_and_real_delivered_cursor_are_required_for_acknowledgement() 
 }
 
 #[test]
-fn tombstones_fence_all_windows_even_while_the_union_waits_for_close_and_reopen() {
+fn tombstones_fence_the_primary_window_and_leave_a_joined_sidecar_isolated() {
     let mut union = union();
     let (_, initial) = opened(&mut union, "a", "a", "s");
     union.event(&event(&initial, "snapshot", 1)).unwrap();
-    let (_, effects) = union.open("b", &params("b", "s")).unwrap();
-    let close = operation(&effects, OperationKind::Close);
+    let (b, join) = union.open("b", &params("b", "s")).unwrap();
+    let fresh = operation(&join, OperationKind::Open);
+    union
+        .complete(
+            &fresh,
+            &json!({"subscriptionId":fresh.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
     let closed = union.event(&event(&initial, "closed", 2)).unwrap();
-    assert_eq!(closed.notices.len(), 2);
-    let completion = union.complete(&close, &json!({"accepted":true})).unwrap();
-    assert!(completion.operations.is_empty());
+    assert_eq!(closed.notices.len(), 1);
+    assert!(matches!(&closed.notices[0], Notice::Event { member, .. } if member.logical_id == "a"));
     assert!(union
         .event(&event(&initial, "delta", 3))
         .unwrap()
         .notices
         .is_empty());
+    // The sidecar is a separate Host registration: its own events still reach B.
+    let sidecar = union.event(&event(&fresh, "snapshot", 2)).unwrap();
+    assert!(matches!(&sidecar.notices[0], Notice::Event { member, .. } if *member == b));
 }
 
 #[test]
@@ -682,11 +715,21 @@ fn lagging_member_is_resynced_without_fabricating_its_ack() {
     let (fast, opened_effects) = union.open("fast", &params("a", "session")).unwrap();
     let (slow, _) = union.open("slow", &params("b", "session")).unwrap();
     let open = operation(&opened_effects, OperationKind::Open);
-    union.complete(&open, &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"})).unwrap();
+    union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
     union.event(&event(&open, "snapshot", 1)).unwrap();
     union.acknowledge(&fast, &cursor(1)).unwrap();
-    let first_ack = operation(&union.acknowledge(&slow, &cursor(1)).unwrap(), OperationKind::Ack);
-    union.complete(&first_ack, &json!({"accepted":true})).unwrap();
+    let first_ack = operation(
+        &union.acknowledge(&slow, &cursor(1)).unwrap(),
+        OperationKind::Ack,
+    );
+    union
+        .complete(&first_ack, &json!({"accepted":true}))
+        .unwrap();
     for sequence in 2..=5 {
         union.event(&event(&open, "delta", sequence)).unwrap();
         union.acknowledge(&fast, &cursor(sequence)).unwrap();
@@ -697,6 +740,50 @@ fn lagging_member_is_resynced_without_fabricating_its_ack() {
     assert_eq!(ack.params["cursor"], cursor(5));
     assert!(union.acknowledge(&slow, &cursor(6)).is_err());
     assert!(union.acknowledge(&fast, &cursor(6)).is_ok());
+    // A rejoining member gets a sidecar registration; the running one is not restarted.
     let (_, reopening) = union.open("slow", &params("b", "session")).unwrap();
-    assert!(reopening.operations.iter().any(|op| op.kind == OperationKind::Close));
+    assert!(!reopening
+        .operations
+        .iter()
+        .any(|op| op.kind == OperationKind::Close));
+    assert!(reopening
+        .operations
+        .iter()
+        .any(|op| op.kind == OperationKind::Open));
+}
+
+#[test]
+fn member_still_awaiting_its_first_snapshot_is_not_evicted_for_lagging() {
+    let mut union = DemandUnion::new(64, 64, 512, 8, 2_097_152, 8_388_608);
+    let (fast, opened_effects) = union.open("fast", &params("a", "session")).unwrap();
+    let (pending, _) = union.open("pending", &params("b", "session")).unwrap();
+    let open = operation(&opened_effects, OperationKind::Open);
+    union
+        .complete(
+            &open,
+            &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"}),
+        )
+        .unwrap();
+    union.event(&event(&open, "snapshot", 1)).unwrap();
+    union.acknowledge(&fast, &cursor(1)).unwrap();
+    // The joiner has not applied a baseline yet, so it has nothing to acknowledge.
+    let key = union.members.get(&fast).unwrap().clone();
+    union
+        .demands
+        .get_mut(&key)
+        .unwrap()
+        .members
+        .get_mut(&pending)
+        .unwrap()
+        .baseline = None;
+    for sequence in 2..=6 {
+        union.event(&event(&open, "delta", sequence)).unwrap();
+        union.acknowledge(&fast, &cursor(sequence)).unwrap();
+    }
+    let effects = union.event(&event(&open, "delta", 7)).unwrap();
+    assert!(!effects
+        .notices
+        .iter()
+        .any(|notice| matches!(notice, Notice::Rejected { member } if member == &pending)));
+    assert!(union.members.contains_key(&pending));
 }

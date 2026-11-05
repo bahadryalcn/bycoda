@@ -44,6 +44,11 @@ export type HostStreamConsumer = {
 };
 type Event = Omit<SubscriptionEvent["params"], "subscriptionId">;
 type Retained = { event: Event; bytes: number; at: number };
+// One physical load. `held` is its logical read slot. An abandoned load keeps
+// running, but it gives the slot back at abort and only counts toward the hard cap.
+type Read = { connectionId: string; held: boolean; abandoned: boolean; settled: boolean };
+// Physical loads may exceed the logical read cap by this much while abandoned loads drain.
+const abandonedReadAllowance = 4;
 type Consumer = {
   owner: HostStreamConsumer;
   id: string;
@@ -95,6 +100,7 @@ export class HostSubscriptionHub {
   private readonly eventCaptures = new WeakMap<Event, NormalizedJsonWire>();
   private bytes = 0;
   private reads = 0;
+  private abandoned = 0;
   private readonly connectionReads = new Map<string, number>();
   private lastScheduledKey?: string;
   private queued = false;
@@ -428,7 +434,12 @@ export class HostSubscriptionHub {
       const previous = streams.findIndex((stream) => stream.key === this.lastScheduledKey);
       if (previous >= 0) streams.push(...streams.splice(0, previous + 1));
       for (const stream of streams) {
-        if (this.reads >= (this.options.maxConcurrentReads ?? 8)) break;
+        const maxReads = this.options.maxConcurrentReads ?? 8;
+        if (
+          this.reads >= maxReads ||
+          this.reads + this.abandoned >= maxReads + abandonedReadAllowance
+        )
+          break;
         if (
           !stream.dirty ||
           stream.reading ||
@@ -463,7 +474,16 @@ export class HostSubscriptionHub {
         this.lastScheduledKey = stream.key;
         stream.dirty = false;
         const controller = new AbortController();
+        const read: Read = {
+          connectionId: owner.connectionId,
+          held: true,
+          abandoned: false,
+          settled: false,
+        };
         stream.reading = controller;
+        controller.signal.addEventListener("abort", () => this.abandon(stream, controller, read), {
+          once: true,
+        });
         const generation = stream.generation;
         const deadline = setTimeout(() => {
           controller.abort();
@@ -476,17 +496,40 @@ export class HostSubscriptionHub {
         deadline.unref();
         void this.refresh(stream, generation, controller, owner).finally(() => {
           clearTimeout(deadline);
-          // Abort revokes delivery; only settlement releases accepted physical work.
-          this.reads--;
-          const remaining = (this.connectionReads.get(owner.connectionId) ?? 1) - 1;
-          if (remaining) this.connectionReads.set(owner.connectionId, remaining);
-          else this.connectionReads.delete(owner.connectionId);
-          stream.reading = undefined;
-          stream.readingBaseline = undefined;
+          read.settled = true;
+          this.release(read);
+          if (read.abandoned) this.abandoned--;
+          if (stream.reading === controller) {
+            stream.reading = undefined;
+            stream.readingBaseline = undefined;
+          }
           this.schedule();
         });
       }
     });
+  }
+
+  // Abort revokes delivery at once. The load's own slot is released here, so
+  // another stream can read while the abandoned call is still in flight.
+  private abandon(stream: Stream, controller: AbortController, read: Read): void {
+    if (read.settled || read.abandoned) return;
+    read.abandoned = true;
+    this.abandoned++;
+    if (stream.reading === controller) {
+      stream.reading = undefined;
+      stream.readingBaseline = undefined;
+    }
+    this.release(read);
+    this.schedule();
+  }
+
+  private release(read: Read): void {
+    if (!read.held) return;
+    read.held = false;
+    this.reads--;
+    const remaining = (this.connectionReads.get(read.connectionId) ?? 1) - 1;
+    if (remaining) this.connectionReads.set(read.connectionId, remaining);
+    else this.connectionReads.delete(read.connectionId);
   }
 
   private async refresh(
