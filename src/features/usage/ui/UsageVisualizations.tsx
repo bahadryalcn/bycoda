@@ -557,14 +557,10 @@ export function UsageDataNotes({
     <details className="usage-data-notes">
       <summary>
         {t("Data sources and coverage")}
-        {unpriced.length
-          ? ` · ${unpriced.length} ${t("Models without prices")}`
-          : ""}
+        {unpriced.length ? ` · ${unpriced.length} ${t("Models without prices")}` : ""}
       </summary>
       <p>
-        {t(
-          "API-equivalent estimates from local session logs, not what a subscription plan bills.",
-        )}{" "}
+        {t("API-equivalent estimates from local session logs, not what a subscription plan bills.")}{" "}
         {t("Priced token coverage")}: {pricedCoverage}.
       </p>
       {unpriced.length > 0 && (
@@ -588,11 +584,7 @@ export function UsageDataNotes({
         <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
       )}
       {sessionDurationUnavailable ? (
-        <p>
-          {t(
-            "Session duration data is unavailable on this app version or could not be read.",
-          )}
-        </p>
+        <p>{t("Session duration data is unavailable on this app version or could not be read.")}</p>
       ) : (
         <p>
           {t(
@@ -602,9 +594,7 @@ export function UsageDataNotes({
         </p>
       )}
       {truncated && (
-        <p>
-          {t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}
-        </p>
+        <p>{t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}</p>
       )}
       <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
     </details>

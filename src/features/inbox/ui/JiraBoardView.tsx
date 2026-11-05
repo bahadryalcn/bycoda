@@ -474,7 +474,9 @@ export function JiraBoardView({
         try {
           await jiraMoveIssue(boardId, issue.identifier, { target: "rank", ...anchor });
         } catch (reason) {
-          throw new Error(`${t("Status changed, but ranking failed.")} ${jiraErrorMessage(reason)}`);
+          throw new Error(
+            `${t("Status changed, but ranking failed.")} ${jiraErrorMessage(reason)}`,
+          );
         }
       }
     });
@@ -849,7 +851,8 @@ export function JiraBoardView({
       if (request === generation.current) {
         // A board without backlog support is a capability note, not a failed read.
         const backlogUnsupported =
-          group.id === "backlog" && /backlogs? (?:are|is) not supported/i.test(jiraErrorMessage(reason));
+          group.id === "backlog" &&
+          /backlogs? (?:are|is) not supported/i.test(jiraErrorMessage(reason));
         if (backlogUnsupported) setBacklogUnavailable(true);
         commitGroups((old) =>
           old.map((g) =>

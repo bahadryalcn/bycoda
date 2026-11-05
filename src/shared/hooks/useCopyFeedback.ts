@@ -74,7 +74,8 @@ export function useCopyFeedback({
         prev.epoch === owner ? { ...prev, status: "pending", error: undefined } : prev,
       );
       const settle = (status: "copied" | "failed", reason?: unknown) => {
-        if (!mounted.current || epoch.current !== owner || operation.current !== currentOperation) return;
+        if (!mounted.current || epoch.current !== owner || operation.current !== currentOperation)
+          return;
         inFlight.current = false;
         const error =
           status === "failed"
@@ -98,20 +99,29 @@ export function useCopyFeedback({
         result = Promise.reject(reason);
       }
       return result.then(
-        () => { settle("copied"); return true; },
-        (reason: unknown) => { settle("failed", reason); return false; },
+        () => {
+          settle("copied");
+          return true;
+        },
+        (reason: unknown) => {
+          settle("failed", reason);
+          return false;
+        },
       );
     },
     [successMs],
   );
 
   /** Starts a copy and returns whether it started, as before. */
-  const copy = useCallback((run: () => Promise<unknown> | void): boolean => {
-    const result = start(run);
-    if (!result) return false;
-    void result;
-    return true;
-  }, [start]);
+  const copy = useCallback(
+    (run: () => Promise<unknown> | void): boolean => {
+      const result = start(run);
+      if (!result) return false;
+      void result;
+      return true;
+    },
+    [start],
+  );
 
   /** Returns the actual operation result; false also means no operation was started. */
   const copyAsync = useCallback(

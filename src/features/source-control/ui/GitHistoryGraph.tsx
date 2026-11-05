@@ -210,10 +210,9 @@ export function GitHistoryGraph({
         return;
       case "copy-message":
         if (
-          !(await copyAsync(
-            async () => copyText((await gitCommitMessage(cwd, sha)).trimEnd()),
-            { parallel: true },
-          ))
+          !(await copyAsync(async () => copyText((await gitCommitMessage(cwd, sha)).trimEnd()), {
+            parallel: true,
+          }))
         ) {
           throw new Error(t("Clipboard write failed."));
         }

@@ -45,7 +45,10 @@ const click = (el: Element) =>
 it("renders updated caller content without resetting an open confirmation", async () => {
   let open!: () => Promise<boolean>;
   const request = (message: string): ConfirmRequest => ({
-    title: "Delete?", message, confirmLabel: "Delete", acknowledge: { label: "Also remove", control: "switch" },
+    title: "Delete?",
+    message,
+    confirmLabel: "Delete",
+    acknowledge: { label: "Also remove", control: "switch" },
   });
   function Probe({ message }: { message: string }) {
     const confirmation = useConfirm();
@@ -54,7 +57,9 @@ it("renders updated caller content without resetting an open confirmation", asyn
   }
   await act(async () => root.render(createElement(Probe, { message: "First" })));
   let result!: Promise<boolean>;
-  await act(async () => { result = open(); });
+  await act(async () => {
+    result = open();
+  });
   expect(document.body.textContent).toContain("First");
   const toggle = document.querySelector<HTMLButtonElement>('[role="switch"]')!;
   await click(toggle);
