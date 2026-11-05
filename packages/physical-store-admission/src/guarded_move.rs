@@ -18,6 +18,13 @@ impl fmt::Display for MoveFailure {
 }
 impl std::error::Error for MoveFailure {}
 
+/// Flush a directory's entries to disk. Directories opened for capability
+/// lookup are O_PATH on Linux and cannot be fsynced, so reopen `.` for reading.
+#[cfg(unix)]
+pub(crate) fn sync_dir(dir: &Dir) -> io::Result<()> {
+    dir.open(".")?.sync_all()
+}
+
 fn same_copy(source: &[SnapshotEntry], copy: &[SnapshotEntry]) -> bool {
     source.len() == copy.len() && source.iter().zip(copy).all(|(a, b)| {
         let same = a.path == b.path && a.kind == b.kind && a.data == b.data && a.modified == b.modified && (a.kind == 2 || a.permissions == b.permissions) && (a.kind != 1 || a.size == b.size);
@@ -29,11 +36,14 @@ fn same_copy(source: &[SnapshotEntry], copy: &[SnapshotEntry]) -> bool {
 /// On success the original source remains in recovery under `source`. On error,
 /// inspect the returned phase and retain both private directories and receipt.
 /// Receipt bytes must identify original, stage, recovery and destination paths.
+// Each argument is a distinct held handle, name or proof; grouping them would
+// only rename the same eight inputs at both call sites.
+#[allow(clippy::too_many_arguments)]
 pub fn move_with_recovery(
     source: &Dir, source_name: &OsStr,
     destination: &Dir, destination_name: &OsStr,
     recovery: &Dir, stage: &Dir, receipt: &[u8],
-    check_admission: impl Fn() -> io::Result<()>,
+    check_admission: &impl Fn() -> io::Result<()>,
 ) -> Result<(), MoveFailure> {
     let mut quarantined = false;
     let mut published = false;
@@ -55,7 +65,7 @@ pub fn move_with_recovery(
         log.write_all(b"{\"phase\":\"quarantine-intent\"}\n")?;
         log.sync_all()?;
         journal = Some(log);
-        #[cfg(unix)] recovery.try_clone()?.into_std_file().sync_all()?;
+        #[cfg(unix)] sync_dir(recovery)?;
         check_admission()?;
         // Build and validate the private copy before moving the source. Unsupported
         // ACLs, streams or attributes therefore fail without retiring it.
@@ -63,7 +73,7 @@ pub fn move_with_recovery(
         if original != snapshot_child(source, source_name)? {
             return Err(io::Error::other("Source changed during copy"));
         }
-        #[cfg(unix)] stage.try_clone()?.into_std_file().sync_all()?;
+        #[cfg(unix)] sync_dir(stage)?;
         let staged = snapshot_child(stage, OsStr::new("entry"))?;
         if !same_copy(&original, &staged) { return Err(io::Error::other("Staged copy differs from source")); }
         check_admission()?;
@@ -71,8 +81,8 @@ pub fn move_with_recovery(
         quarantined = true;
         if let Some(log) = journal.as_mut() { log.write_all(b"{\"phase\":\"quarantined\"}\n")?; log.sync_all()?; }
         #[cfg(unix)] {
-            recovery.try_clone()?.into_std_file().sync_all()?;
-            source.try_clone()?.into_std_file().sync_all()?;
+            sync_dir(recovery)?;
+            sync_dir(source)?;
         }
         let captured = child_metadata(recovery, OsStr::new("source"))?;
         recovery_identity = Some((captured.dev(), captured.ino()));
@@ -93,7 +103,7 @@ pub fn move_with_recovery(
             return Err(io::Error::other("Published destination identity changed"));
         }
         check_admission()?;
-        #[cfg(unix)] destination.try_clone()?.into_std_file().sync_all()?;
+        #[cfg(unix)] sync_dir(destination)?;
         Ok(())
     })();
     if let Err(error) = operation {

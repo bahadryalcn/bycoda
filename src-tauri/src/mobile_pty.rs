@@ -976,13 +976,17 @@ mod tests {
             );
         }
         registry.prune(now + SETTLED_TTL * 100);
-        assert_eq!(registry.capacity(), (2, 0));
-        assert_eq!(registry.entries.len(), 2);
-        assert_eq!(registry.requests.len(), 2);
-        assert_eq!(registry.expired.set_bits, 0);
+        // An unknown input still blocks expiry; a gap alone no longer does (74b9b117).
+        assert_eq!(registry.capacity(), (1, 0));
+        assert_eq!(registry.entries.len(), 1);
+        assert!(registry.entries.contains_key("unknown-input"));
+        assert_eq!(registry.requests.len(), 1);
+        // The expired gap receipt stays fenced, so a retry cannot be admitted again.
+        assert!(registry.expired.contains("gap"));
+        assert!(!registry.expired.contains("unknown-input"));
     }
     #[test]
-    fn close_and_drain_do_not_prove_exit_and_failed_drain_blocks_retirement() {
+    fn close_and_drain_do_not_prove_exit_and_failed_drain_settles_without_replay() {
         let now = Instant::now();
         let mut value = test_entry("id", now);
         value.closed = true;
@@ -996,7 +1000,17 @@ mod tests {
         failed.record_exit(None, now);
         failed.record_drain(false, now);
         assert!(failed.gap);
-        assert!(failed.settled_at.is_none());
+        assert_eq!(failed.settled_at, Some(now));
+        // A failed drain with a pending input settles it as an error: the same
+        // sequence is never resent, and a stale sequence is refused.
+        let mut pending = test_entry("pending", now);
+        pending.record_exit(None, now);
+        assert!(pending.reserve_input(1, "bytes").unwrap());
+        pending.record_drain(false, now);
+        assert!(!pending.input_unknown);
+        assert!(pending.settled_at.is_some());
+        assert!(pending.reserve_input(1, "bytes").is_err());
+        assert!(pending.reserve_input(1, "bytes").is_err());
     }
     #[test]
     fn native_generation_rejects_replacement_and_stale_callbacks() {

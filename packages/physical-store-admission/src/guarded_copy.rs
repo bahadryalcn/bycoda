@@ -52,8 +52,15 @@ pub fn copy_child_no_follow(source: &Dir, name: &OsStr, dest: &Dir, target: &OsS
         for child in &before { copy_child_no_follow(&input, child, &output, child)?; }
         let after = child_metadata(source, name)?;
         if names(&input)? != before || meta.dev() != after.dev() || meta.ino() != after.ino() || meta.modified().ok() != after.modified().ok() { return Err(io::Error::other("Source directory changed during copy")); }
+        // `open_dir_nofollow` yields an O_PATH handle on Linux, which cannot be
+        // fchmod'ed or fsynced, so reopen the new directory with read access.
         #[cfg(not(windows))]
-        let handle = output.into_std_file();
+        let handle = {
+            use cap_fs_ext::OpenOptionsMaybeDirExt;
+            let mut options = OpenOptions::new();
+            options.read(true).maybe_dir(true).follow(FollowSymlinks::No);
+            dest.open_with(target, &options)?.into_std()
+        };
         #[cfg(windows)]
         let handle = {
             use cap_fs_ext::OpenOptionsMaybeDirExt;

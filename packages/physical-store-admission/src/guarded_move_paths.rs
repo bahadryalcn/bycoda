@@ -3,7 +3,7 @@
 use std::{io, path::{Path, PathBuf}};
 use cap_std::{ambient_authority, fs::{Dir, DirBuilder}};
 use cap_fs_ext::{DirExt, MetadataExt};
-use crate::guarded_move::move_with_recovery;
+use crate::guarded_move::{move_with_recovery, sync_dir};
 
 #[derive(Debug)]
 pub struct RecoveryResult {
@@ -60,8 +60,8 @@ pub fn move_paths(source: &Path, destination: &Path) -> io::Result<RecoveryResul
     source_parent.create_dir_with(&recovery_name, &builder)?;
     destination_parent.create_dir_with(&stage_name, &builder)?;
     #[cfg(unix)] {
-        source_parent.try_clone()?.into_std_file().sync_all()?;
-        destination_parent.try_clone()?.into_std_file().sync_all()?;
+        sync_dir(&source_parent)?;
+        sync_dir(&destination_parent)?;
     }
     let recovery = source_parent.open_dir_nofollow(&recovery_name)?;
     let stage = destination_parent.open_dir_nofollow(&stage_name)?;

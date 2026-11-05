@@ -16,7 +16,7 @@ fn move_publishes_exact_contents_and_retains_recovery_and_receipt() {
     fs::create_dir(root.join("source/tree")).unwrap();
     fs::write(root.join("source/tree/file"), b"payload").unwrap();
     let (source, destination, recovery, stage) = (open(&root, "source"), open(&root, "destination"), open(&root, "recovery"), open(&root, "stage"));
-    move_with_recovery(&source, OsStr::new("tree"), &destination, OsStr::new("tree"), &recovery, &stage, br#"{"version":1}"#, || Ok(())).unwrap();
+    move_with_recovery(&source, OsStr::new("tree"), &destination, OsStr::new("tree"), &recovery, &stage, br#"{"version":1}"#, &|| Ok(())).unwrap();
     assert_eq!(fs::read(root.join("destination/tree/file")).unwrap(), b"payload");
     assert_eq!(fs::read(root.join("recovery/source/file")).unwrap(), b"payload");
     assert!(root.join("recovery/receipt.json").is_file());
@@ -30,7 +30,7 @@ fn occupied_destination_retains_existing_data_and_restores_source() {
     fs::write(root.join("source/file"), b"source").unwrap();
     fs::write(root.join("destination/file"), b"existing").unwrap();
     let (source, destination, recovery, stage) = (open(&root, "source"), open(&root, "destination"), open(&root, "recovery"), open(&root, "stage"));
-    let error = move_with_recovery(&source, OsStr::new("file"), &destination, OsStr::new("file"), &recovery, &stage, b"receipt", || Ok(())).unwrap_err();
+    let error = move_with_recovery(&source, OsStr::new("file"), &destination, OsStr::new("file"), &recovery, &stage, b"receipt", &|| Ok(())).unwrap_err();
     assert!(!error.published);
     assert!(error.source_restored);
     assert_eq!(fs::read(root.join("source/file")).unwrap(), b"source");
@@ -42,15 +42,18 @@ fn occupied_destination_retains_existing_data_and_restores_source() {
 
 #[cfg(unix)]
 #[test]
-fn path_adapter_retains_source_and_exposes_receipt() {
+fn path_adapter_publishes_and_retires_verified_recovery() {
     let root = fixture();
     let from = root.join("source/file");
     let to = root.join("destination/file");
     fs::write(&from, b"payload").unwrap();
     let moved = bycoda_physical_store_admission::guarded_move_paths::move_paths(&from, &to).unwrap();
     assert_eq!(fs::read(&to).unwrap(), b"payload");
-    assert_eq!(fs::read(&moved.recovery_path).unwrap(), b"payload");
-    assert!(moved.receipt_path.is_file());
+    // A verified move retires the quarantined copy and receipt (commit 1dc3d8f0).
+    assert!(!moved.recovery_retained);
+    assert!(fs::symlink_metadata(&moved.recovery_path).is_err());
+    assert!(fs::symlink_metadata(&moved.receipt_path).is_err());
+    assert!(!from.exists());
     assert!(moved.warning.is_none());
     fs::remove_dir_all(root).unwrap();
 }
@@ -66,7 +69,7 @@ fn revoked_admission_before_publication_restores_source_without_publishing() {
     let check = || if calls.fetch_add(1, Ordering::SeqCst) == 2 {
         Err(std::io::Error::other("authority revoked"))
     } else { Ok(()) };
-    let error = move_with_recovery(&source, OsStr::new("file"), &destination, OsStr::new("file"), &recovery, &stage, b"receipt", check).unwrap_err();
+    let error = move_with_recovery(&source, OsStr::new("file"), &destination, OsStr::new("file"), &recovery, &stage, b"receipt", &check).unwrap_err();
     assert!(!error.published);
     assert!(error.source_restored);
     assert_eq!(fs::read(root.join("source/file")).unwrap(), b"source");
