@@ -13,6 +13,10 @@ import { NoteEditablePreview } from "../../src/features/notes/ui/NoteEditablePre
 import { AgentTabView } from "../../src/features/sessions/ui/AgentTabView";
 import { newDefaultSession } from "../../src/features/sessions/model/session";
 import { setFixtureWorkerMode, type WorkerMode } from "./session-references-host-reader";
+import {
+  flushHostSessionBindings,
+  saveHostSessionBinding,
+} from "../../src/features/connections/public/sessionExecutionBinding";
 import { languageReady } from "../../src/shared/i18n";
 import "../../src/styles/index.css";
 
@@ -300,7 +304,15 @@ function Fixture() {
   );
 }
 
-void languageReady.then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts it directly, so it hydrates the same store first.
+// The Host worker is an existing Host-owned conversation, so its durable owner
+// record exists before the pane opens, as it would after a real create.
+const ownersReady = flushHostSessionBindings().then(() => {
+  saveHostSessionBinding(worker, worker.hostBinding);
+  return flushHostSessionBindings(worker.id);
+});
+void Promise.all([languageReady, ownersReady]).then(() =>
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <Fixture />

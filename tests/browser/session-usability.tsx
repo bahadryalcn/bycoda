@@ -19,6 +19,7 @@ import {
   setHarnessModels,
 } from "../../src/features/sessions/model/models";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { languageReady } from "../../src/shared/i18n";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import "../../src/styles/index.css";
@@ -260,7 +261,9 @@ function Fixture() {
   );
 }
 applyThemePreference(new URLSearchParams(location.search).has("light") ? "light" : "dark");
-void languageReady.then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts it directly, so it hydrates the same store first.
+void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QuestionForm } from "../../src/features/sessions/ui/QuestionForm";
@@ -632,6 +633,9 @@ function Fixture() {
   );
 }
 
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts it directly, so it hydrates the same store first.
+await flushHostSessionBindings();
 createRoot(document.getElementById("root")!).render(
   query.has("capacity") ? (
     <CapacityFixture />
