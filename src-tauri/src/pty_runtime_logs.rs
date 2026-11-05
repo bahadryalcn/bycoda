@@ -147,14 +147,7 @@ fn forward_logs(
         packet_sequence += 1;
         let _ = result;
     };
-    let mut next_demand = Instant::now();
     loop {
-        if let Some(capture) = capture {
-            if Instant::now() >= next_demand {
-                capture.store(service.demand(cwd, terminal_id).unwrap_or(false), Ordering::Release);
-                next_demand = Instant::now() + Duration::from_secs(2);
-            }
-        }
         let first = match receiver.recv_timeout(Duration::from_secs(1)) {
             Ok(first) => first,
             Err(RecvTimeoutError::Timeout) => continue,
@@ -200,6 +193,52 @@ fn forward_logs(
     send(&[], interrupted, true);
 }
 
+/// Capture demand is asked on a backoff: a quick first answer, then at most
+/// every ten seconds while it stays steady.
+const DEMAND_RETRY: Duration = Duration::from_secs(2);
+const DEMAND_MAX: Duration = Duration::from_secs(10);
+
+/// Sleeps `span` in one-second steps; false once the terminal's sender is gone.
+fn sleep_while_alive(capture: &std::sync::Weak<AtomicBool>, span: Duration) -> bool {
+    let end = Instant::now() + span;
+    loop {
+        if capture.strong_count() == 0 {
+            return false;
+        }
+        let left = end.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return true;
+        }
+        std::thread::sleep(left.min(Duration::from_secs(1)));
+    }
+}
+
+/// Runs off the forwarding path, so a slow Host answer never stalls output.
+/// An error keeps the previous answer and retries sooner.
+fn poll_demand(
+    service: &impl LogService,
+    capture: std::sync::Weak<AtomicBool>,
+    cwd: &str,
+    terminal_id: &str,
+) {
+    let mut interval = Duration::ZERO;
+    loop {
+        if !sleep_while_alive(&capture, interval) {
+            return;
+        }
+        let Some(value) = capture.upgrade() else {
+            return;
+        };
+        match service.demand(cwd, terminal_id) {
+            Ok(enabled) => {
+                value.store(enabled, Ordering::Release);
+                interval = (interval * 2).clamp(DEMAND_RETRY, DEMAND_MAX);
+            }
+            Err(_) => interval = DEMAND_RETRY,
+        }
+    }
+}
+
 impl TerminalLogSender {
     pub(crate) fn new(app: &AppHandle, cwd: &Path) -> Self {
         let (sender, receiver) = sync_channel::<(u64, Vec<u8>)>(32);
@@ -210,6 +249,17 @@ impl TerminalLogSender {
         let worker_sequence = sequence.clone();
         let cwd = cwd.to_string_lossy().into_owned();
         let terminal_id = uuid::Uuid::new_v4().to_string();
+        let poll_app = app.clone();
+        let poll_cwd = cwd.clone();
+        let poll_terminal_id = terminal_id.clone();
+        let poll_capture = Arc::downgrade(&capture);
+        std::thread::spawn(move || {
+            let service = PinnedLogService {
+                selected: OnceLock::new(),
+                select: || crate::remote::NativeServiceChannel::connect(&poll_app),
+            };
+            poll_demand(&service, poll_capture, &poll_cwd, &poll_terminal_id);
+        });
         std::thread::spawn(move || {
             // Selection stays off the PTY reader and may recover from Host
             // startup. Once selected, later pairing never receives this stream's

@@ -250,7 +250,7 @@ impl Registry {
             .entries
             .iter()
             .filter_map(|(id, entry)| {
-                if entry.input_unknown || entry.gap {
+                if entry.input_unknown {
                     return None;
                 }
                 if self
@@ -295,7 +295,6 @@ impl Registry {
         for (id, entry) in &self.entries {
             if entry.settled_at.is_some()
                 && !entry.input_unknown
-                && !entry.gap
                 && !self
                     .requests
                     .values()
@@ -317,20 +316,23 @@ impl Entry {
         self.code = code;
         self.mark_settled(now);
     }
+    /// The reader has stopped: `complete` is false when it gave up before EOF.
+    /// Either way no more output arrives, so the entry may settle.
     fn record_drain(&mut self, complete: bool, now: Instant) {
-        self.drained = complete;
+        self.drained = true;
         if !complete {
             self.gap = true;
+            // A pending input settles as an error here and is never resent: its
+            // sequence stays spent, since no fingerprint matches it any more.
+            if self.input_unknown {
+                self.input_unknown = false;
+                self.input_fingerprint.clear();
+            }
         }
         self.mark_settled(now);
     }
     fn mark_settled(&mut self, now: Instant) {
-        if self.physical_exit
-            && self.drained
-            && !self.input_unknown
-            && !self.gap
-            && self.settled_at.is_none()
-        {
+        if self.physical_exit && self.drained && !self.input_unknown && self.settled_at.is_none() {
             self.settled_at = Some(now);
         }
     }
@@ -622,16 +624,18 @@ pub async fn mobile_pty_call(
                 .entries
                 .get_mut(&id)
                 .ok_or("Mobile PTY creation interrupted")?;
-            let pending = result.is_err();
             let reply = match result {
                 Ok(()) => value.lease_dto(),
                 Err(_) => {
-                    value.exited = true;
-                    value.detached = true;
+                    // A failed spawn leaves no child or reader to report exit or
+                    // drain, so the entry retires now and its receipt settles.
+                    let now = Instant::now();
+                    value.record_exit(None, now);
+                    value.record_drain(true, now);
                     json!({"state":"unknown","message":"Mobile PTY creation outcome is unknown; never replay"})
                 }
             };
-            registry.requests.insert(key, Receipt { fingerprint: signature, result: reply.clone(), terminal_id: id, pending, close: false });
+            registry.requests.insert(key, Receipt { fingerprint: signature, result: reply.clone(), terminal_id: id, pending: false, close: false });
             return Ok(reply);
         }
         let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());

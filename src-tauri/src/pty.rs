@@ -1197,6 +1197,7 @@ fn spawn_unix(
                     }
                     Ok(n) => {
                         acc.extend_from_slice(&buf[..n]);
+                        unix_child::output_read(&mut exit_deadline);
                         last_emit = Instant::now();
                     }
                     Err(error) => {
@@ -1228,7 +1229,10 @@ fn spawn_unix(
                         complete = true;
                         break;
                     }
-                    Ok(n) => acc.extend_from_slice(&buf[..n]),
+                    Ok(n) => {
+                        acc.extend_from_slice(&buf[..n]);
+                        unix_child::output_read(&mut exit_deadline);
+                    }
                     Err(error) => {
                         complete =
                             cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
@@ -2568,6 +2572,8 @@ mod queued_writer_tests {
             writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
             #[cfg(unix)]
             master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2646,6 +2652,8 @@ mod queued_writer_tests {
             })),
             #[cfg(unix)]
             master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2716,6 +2724,8 @@ mod queued_writer_tests {
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]
                 master_fd: std::fs::File::open("/dev/null").unwrap(),
+                #[cfg(unix)]
+                child: None,
                 #[cfg(windows)]
                 master: Mutex::new(pair.master),
                 pid: 0,
