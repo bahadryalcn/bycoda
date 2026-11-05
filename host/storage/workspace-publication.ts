@@ -5,34 +5,79 @@ import { basename, dirname, join } from "node:path";
 import type { Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
-import { powershell, powershellArgs, powershellEnvironment } from "../windows";
+import {
+  powershell,
+  powershellArgs,
+  powershellEnvironment,
+  powershellErrorText,
+  windowsCoreModulesImport,
+} from "../windows";
 
 // File.Replace calls ReplaceFileW, retaining the destination's Windows security
 // descriptor. Paths are data on stdin, never PowerShell source or arguments.
+//
+// `protect` gives the staged file the target's DACL before any content is
+// written. A protected DACL is copied and compared in full. An unprotected DACL
+// is copied as its explicit ACEs only: Windows recomputes the inherited ACEs from
+// the shared parent directory, so the target's inherited ACEs and the
+// auto-inheritance bookkeeping flags (AI, AR, which grant nothing) can
+// legitimately differ from the staged file's. Explicit ACEs, the protection
+// flag and a null DACL must match exactly.
+//
+// Errors are written as plain text; progress is silenced and the Utility module
+// is imported by path so ConvertFrom-Json triggers no module discovery.
 const REPLACE_SCRIPT = `
 $ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
-[Console]::Out.WriteLine('READY')
-$request = [Console]::In.ReadLine() | ConvertFrom-Json
-if ($request.protect) {
-  $section = [System.Security.AccessControl.AccessControlSections]::Access
-  $acl = [System.IO.File]::GetAccessControl([string]$request.target, $section)
-  $acl.SetAccessRuleProtection($acl.AreAccessRulesProtected, $true)
-  [System.IO.File]::SetAccessControl([string]$request.staged, $acl)
-  $actual = [System.IO.File]::GetAccessControl([string]$request.staged, $section)
-  $expectedSddl = $acl.GetSecurityDescriptorSddlForm($section)
-  $actualSddl = $actual.GetSecurityDescriptorSddlForm($section)
-  [string[]]$expectedRules = foreach ($rule in [regex]::Matches($expectedSddl, '[(][^)]*[)]')) { $rule.Value }
-  [string[]]$actualRules = foreach ($rule in [regex]::Matches($actualSddl, '[(][^)]*[)]')) { $rule.Value }
-  [array]::Sort($expectedRules, [StringComparer]::Ordinal)
-  [array]::Sort($actualRules, [StringComparer]::Ordinal)
-  $expectedFlags = [regex]::Replace($expectedSddl, '[(][^)]*[)]', '')
-  $actualFlags = [regex]::Replace($actualSddl, '[(][^)]*[)]', '')
-  if ($expectedFlags -match '[()]' -or $actualFlags -match '[()]' -or $expectedFlags -cne $actualFlags -or !$acl.AreAccessRulesCanonical -or !$actual.AreAccessRulesCanonical -or $acl.AreAccessRulesProtected -ne $actual.AreAccessRulesProtected -or [string]::Join('|', $expectedRules) -cne [string]::Join('|', $actualRules)) { throw 'Staging DACL differs from original' }
-} else {
-  [System.IO.File]::Replace([string]$request.staged, [string]$request.target, [string]$request.backup)
+$ProgressPreference = 'SilentlyContinue'
+try {
+  ${windowsCoreModulesImport}
+  [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+  [Console]::Out.WriteLine('READY')
+  $request = [Console]::In.ReadLine() | ConvertFrom-Json
+  if ($request.protect) {
+    $section = [System.Security.AccessControl.AccessControlSections]::Access
+    $acl = [System.IO.File]::GetAccessControl([string]$request.target, $section)
+    $protected = $acl.AreAccessRulesProtected
+    function Get-BycodaDacl($security) {
+      if (!$security.AreAccessRulesCanonical) { throw 'Workspace file DACL is not canonical' }
+      $sddl = $security.GetSecurityDescriptorSddlForm($section)
+      [string[]]$rules = @(foreach ($rule in [regex]::Matches($sddl, '[(][^)]*[)]')) {
+        if ($protected -or $rule.Value.Split(';')[1] -cnotmatch '^(?:..)*ID') { $rule.Value }
+      })
+      [array]::Sort($rules, [StringComparer]::Ordinal)
+      $flags = [regex]::Replace($sddl, '[(][^)]*[)]', '') -creplace 'A[IR]', ''
+      if ($flags -match '[()]') { throw 'Workspace file DACL has an unsupported form' }
+      $flags + '|' + [string]::Join('|', $rules)
+    }
+    $expected = Get-BycodaDacl $acl
+    if (!$protected) {
+      $acl.SetAccessRuleProtection($true, $false)
+      $acl.SetAccessRuleProtection($false, $true)
+    }
+    [System.IO.File]::SetAccessControl([string]$request.staged, $acl)
+    $actual = [System.IO.File]::GetAccessControl([string]$request.staged, $section)
+    if ($actual.AreAccessRulesProtected -ne $protected -or (Get-BycodaDacl $actual) -cne $expected) { throw 'Staging DACL differs from original' }
+  } else {
+    [System.IO.File]::Replace([string]$request.staged, [string]$request.target, [string]$request.backup)
+  }
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
 }
 `;
+
+/** The failure text keeps PowerShell's message, never its CLIXML records. */
+export function windowsOperationError(
+  protect: boolean,
+  timedOut: boolean,
+  stderr: string,
+  code: number | null,
+): Error {
+  const detail = powershellErrorText(stderr) || `exit code ${code ?? "unknown"}`;
+  return new Error(
+    `Windows ${protect ? "staging permissions failed" : "replacement outcome is uncertain"}${timedOut ? " (timeout)" : ""}: ${detail}`,
+  );
+}
 
 async function windowsFileOperation(
   staged: string,
@@ -88,18 +133,14 @@ async function windowsFileOperation(
       clearTimeout(timer);
       if (validationError) reject(validationError);
       else if (code === 0 && !timedOut && ready) resolve();
-      else
-        reject(
-          new Error(
-            `Windows ${protect ? "staging permissions failed" : "replacement outcome is uncertain"}${timedOut ? " (timeout)" : ""}: ${diagnostic}`,
-          ),
-        );
+      else reject(windowsOperationError(protect, timedOut, diagnostic, code));
     });
     child.stdin.on("error", () => {});
   });
 }
 
 interface PublicationOperations {
+  platform: NodeJS.Platform;
   write: (handle: FileHandle, content: string) => Promise<void>;
   sync: (handle: FileHandle) => Promise<void>;
   windows: typeof windowsFileOperation;
@@ -108,6 +149,7 @@ interface PublicationOperations {
 }
 
 const publicationOperations: PublicationOperations = {
+  platform: process.platform,
   write: (handle, content) => handle.writeFile(content, "utf8"),
   sync: (handle) => handle.sync(),
   windows: windowsFileOperation,
@@ -126,18 +168,26 @@ export async function publishWorkspaceFile(
   const directory = dirname(target);
   const staged = join(directory, `.${basename(target)}.bycoda-${randomUUID()}.tmp`);
   const backup = join(directory, `.${basename(target)}.bycoda-${randomUUID()}.backup`);
+  const { platform } = operations;
   let publishing = false;
   let handle;
   try {
     handle = await open(staged, "wx", 0o600);
     const created = await handle.stat();
-    if (process.platform === "win32") {
-      await operations.windows(staged, target, true, backup);
+    if (platform === "win32") {
+      try {
+        await operations.windows(staged, target, true, backup);
+      } catch (error) {
+        // A target that was removed or replaced meanwhile is a conflict, not a
+        // permissions defect: report the caller's conflict error instead.
+        await validate();
+        throw error;
+      }
     } else {
       const args =
-        process.platform === "linux"
+        platform === "linux"
           ? ["--attributes-only", "--preserve=mode,ownership,xattr", "--", target, staged]
-          : process.platform === "darwin"
+          : platform === "darwin"
             ? ["-p", "--", target, staged]
             : null;
       if (!args) throw new Error("Workspace save cannot preserve permissions on this platform");
@@ -154,7 +204,7 @@ export async function publishWorkspaceFile(
       await handle.truncate(0);
     }
     await operations.write(handle, content);
-    if (process.platform !== "win32") {
+    if (platform !== "win32") {
       const written = await handle.stat();
       if (
         written.uid !== original.uid ||
@@ -178,14 +228,14 @@ export async function publishWorkspaceFile(
         throw new Error("Workspace staging file changed before publication");
       publishing = true;
     };
-    if (process.platform === "win32") {
+    if (platform === "win32") {
       await operations.windows(staged, target, false, backup, permit);
       await operations.remove(backup, { force: true }).catch(() => {});
     } else {
       await permit();
       await operations.rename(staged, target);
     }
-    if (process.platform !== "win32") {
+    if (platform !== "win32") {
       const parent = await open(directory, "r");
       try {
         await parent.sync();
