@@ -222,7 +222,7 @@ export function bindNativeServicesOwner(
     waitDesktopStatus: async (afterRevision, timeoutMs, signal) => {
       const changes = adapters.desktopControl?.statusChanges;
       if (!changes || !(await authorized())) throw new HostDomainAuthorizationError();
-      const revision = await changes.wait(afterRevision, timeoutMs, signal);
+      const revision = await changes.wait(afterRevision, timeoutMs, signal, deviceHash);
       if (signal?.aborted || !(await authorized())) throw new HostDomainAuthorizationError();
       return { revision };
     },
