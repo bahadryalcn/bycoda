@@ -322,11 +322,7 @@ export function InboxFiltersMenu({
 
       {source === "gitlab" || source === "azuredevops" ? (
         <>
-          {codeHostError ? (
-            <Alert tone="danger" role="alert">
-              {codeHostError}
-            </Alert>
-          ) : null}
+          {codeHostError ? <Alert tone="danger">{codeHostError}</Alert> : null}
           {codeHostProjects.length ? (
             <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
           ) : null}

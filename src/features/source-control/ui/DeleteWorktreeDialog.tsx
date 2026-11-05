@@ -1,7 +1,11 @@
 import { t, useLocale } from "../../../shared/i18n/git";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { type Worktree } from "../model/worktrees";
-import { useConfirm, type ConfirmRequest, type ConfirmState } from "../../../shared/ui/ConfirmDialog";
+import {
+  useConfirm,
+  type ConfirmRequest,
+  type ConfirmState,
+} from "../../../shared/ui/ConfirmDialog";
 import { useEffect, useRef } from "react";
 import {
   CircleAlert,
@@ -54,8 +58,13 @@ export function DeleteWorktreeDialog({
         icon: MessageSquare,
         tone: acknowledged ? "danger" : "neutral",
         content: acknowledged
-          ? t("Sessions using this worktree: {p0}. They will be permanently deleted.", { p0: sessionCount })
-          : t("Sessions using this worktree: {p0}. They will be kept. Select a branch or worktree to continue them.", { p0: sessionCount }),
+          ? t("Sessions using this worktree: {p0}. They will be permanently deleted.", {
+              p0: sessionCount,
+            })
+          : t(
+              "Sessions using this worktree: {p0}. They will be kept. Select a branch or worktree to continue them.",
+              { p0: sessionCount },
+            ),
       },
       tree.dirty && {
         key: "dirty",
@@ -74,21 +83,30 @@ export function DeleteWorktreeDialog({
         icon: GitBranch,
         tone: "neutral",
         content: tree.branch ? (
-          <><span className="font-medium text-content">{tree.branch}</span>{t(" branch and its commits are kept.")}</>
-        ) : t("The branch is kept."),
+          <>
+            <span className="font-medium text-content">{tree.branch}</span>
+            {t(" branch and its commits are kept.")}
+          </>
+        ) : (
+          t("The branch is kept.")
+        ),
       },
       !!tree.unpushed && {
         key: "unpushed",
         icon: CloudUpload,
         tone: "neutral",
-        content: tree.unpushed === 1
-          ? t("One commit has not been pushed. It stays on the branch.")
-          : t("{p0} commits have not been pushed. They stay on the branch.", { p0: tree.unpushed }),
+        content:
+          tree.unpushed === 1
+            ? t("One commit has not been pushed. It stays on the branch.")
+            : t("{p0} commits have not been pushed. They stay on the branch.", {
+                p0: tree.unpushed,
+              }),
       },
     ],
-    acknowledge: sessionCount > 0
-      ? { label: t("Also delete associated sessions"), control: "switch" as const }
-      : undefined,
+    acknowledge:
+      sessionCount > 0
+        ? { label: t("Also delete associated sessions"), control: "switch" as const }
+        : undefined,
     // Confirmation covers the complete destructive action, including changes
     // that appeared after the last status refresh.
     onConfirm: ({ acknowledged }) => onRemove(cwd, tree.path, true, acknowledged),
@@ -96,14 +114,18 @@ export function DeleteWorktreeDialog({
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void confirmWith(request).then((result) => {
-      if (result) callbacks.current.onDeleted();
-      else callbacks.current.onClose();
-    });
+    void confirmWith(request).then(
+      (result) => {
+        if (result) callbacks.current.onDeleted();
+        else callbacks.current.onClose();
+      },
+      (error: unknown) => {
+        console.error("Delete worktree confirmation failed", error);
+        callbacks.current.onClose();
+      },
+    );
     // The dialog is opened once; renderDialog below supplies live request data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return (
-    renderDialog(request)
-  );
+  return renderDialog(request);
 }
