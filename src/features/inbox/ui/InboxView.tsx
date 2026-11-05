@@ -1,6 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
@@ -27,7 +30,8 @@ import { useGithubWorkItem } from "../hooks/useGithubWorkItem";
 import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
 import { visibleInboxItems } from "../model/inboxVisibleItems";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
+import { InlineError } from "../../../shared/ui/InlineError";
 import {
   ChevronsUpDown,
   ChevronLeft,
@@ -94,7 +98,6 @@ import {
 } from "../model/inboxFilters";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { useRetainedScroll } from "../../../shared/hooks/useRetainedScroll";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { type RecentProject } from "../../projects/model/recents";
 import { type LinkedWorkItem } from "../../sessions/model/session";
@@ -105,12 +108,13 @@ import {
 } from "../../sessions/model/sessionWorkItem";
 import {
   inboxHasUnseenItems,
+  inboxSeenStatus,
   markInboxItemSeen,
   markInboxItemsSeen,
-  unseenInboxKeys,
+  retryInboxSeenStorage,
+  useInboxItemUnseen,
   useInboxSeenTick,
 } from "../model/inboxSeen";
-import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
 import { saveHiddenLinearTeamIds } from "../model/linear";
 import { saveHiddenJiraProjectIds } from "../model/jira";
 import {
@@ -226,7 +230,6 @@ export function InboxView({
   const viewStateKey = `inbox:${pullRequestsOnly ? "pull-requests" : "all"}:${projectKey(cwd)}`;
   const listLock = useLockOverscroll<HTMLDivElement>();
   const listScrollRef = useRef<HTMLDivElement>(null);
-  const loadMoreRef = useRef<HTMLLIElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const logos = useTabGroupLogos();
@@ -240,6 +243,7 @@ export function InboxView({
   const refreshActionRef = useRef<"toolbar" | "retry" | null>(null);
   const [readStatusError, setReadStatusError] = useState<string | null>(null);
   const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
+  const seenSaveGeneration = useRef(0);
   const [refresh, setRefresh] = useState(0);
   const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
@@ -338,8 +342,7 @@ export function InboxView({
       ),
     [filters, projects],
   );
-  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope, searchInput])}`;
-  const [listLimit, setListLimit] = useRetainedState(`${listScope}:list-limit`, LIST_PAGE_SIZE);
+  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope])}`;
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -461,12 +464,18 @@ export function InboxView({
   }, [sessions]);
   const selectItem = useStableCallback((item: InboxItem) => {
     const key = inboxItemKey(item);
-    const saved = markInboxItemSeen({ key, updatedAt: item.updatedAt });
-    setFailedReadItem(saved ? null : item);
-    setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+    const generation = ++seenSaveGeneration.current;
     releaseTarget();
     setSelectedKey(key);
     setDetailOpen(true);
+    const applyResult = (saved: boolean) => {
+      if (seenSaveGeneration.current !== generation) return;
+      setFailedReadItem(saved ? null : item);
+      setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+    };
+    const result = markInboxItemSeen({ key, updatedAt: item.updatedAt });
+    if (typeof result === "boolean") applyResult(result);
+    else void result.then(applyResult).catch(() => applyResult(false));
   });
   const {
     provider: codeScopesProvider,
@@ -509,6 +518,7 @@ export function InboxView({
   );
 
   const inboxSeenTick = useInboxSeenTick();
+  const seenStorageStatus = inboxSeenStatus();
   const sourceEntries = useMemo(
     () =>
       sourceAvailable
@@ -532,15 +542,22 @@ export function InboxView({
 
   // Local filters cannot retarget an open public-comment composer. Resolve the
   // selected identity from allowed loaded data before considering a default.
-  const allowedItems = sourceAvailable ? filterCodeHostScopes(
-    items.filter((item) => item.provider === source),
-    codeScopes.provider, codeScopes.scopes, codeScopes.hidden,
-  ) : [];
-  const selectedByKey = allowedItems.find((item) => inboxItemKey(item) === selectedKey)
-    ?? visibleItems.find((item) => inboxItemKey(item) === selectedKey);
+  const allowedItems = sourceAvailable
+    ? filterCodeHostScopes(
+        items.filter((item) => item.provider === source),
+        codeScopes.provider,
+        codeScopes.scopes,
+        codeScopes.hidden,
+      )
+    : [];
+  const selectedByKey =
+    allowedItems.find((item) => inboxItemKey(item) === selectedKey) ??
+    visibleItems.find((item) => inboxItemKey(item) === selectedKey);
   const waitingForTarget = !!targetSelectionKey && selectedKey === targetSelectionKey;
-  const selected = selectedByKey ?? (waitingForTarget || selectedKey ? null : visibleItems[0]) ?? null;
-  const selectedOutsideFilters = !!selected && !visibleItems.some((entry) => inboxItemKey(entry) === inboxItemKey(selected));
+  const selected =
+    selectedByKey ?? (waitingForTarget || selectedKey ? null : visibleItems[0]) ?? null;
+  const selectedOutsideFilters =
+    !!selected && !visibleItems.some((entry) => inboxItemKey(entry) === inboxItemKey(selected));
   const { updateItem } = collection;
   const updateInboxItem = useCallback(
     (next: InboxItem) => {
@@ -549,45 +566,13 @@ export function InboxView({
     },
     [updateItem, patchTargetItem],
   );
-  const shownItemCount = listWindowSize(visibleItems.length, listLimit);
-  const shownItems = useMemo(
-    () => visibleItems.slice(0, shownItemCount),
-    [visibleItems, shownItemCount],
-  );
-  const hasMoreItems = shownItemCount < visibleItems.length;
-  // One read of the seen store per list; rows get a boolean so a mark-read only
-  // re-renders the rows whose state changed.
-  const unseenKeys = useMemo(
-    () =>
-      unseenInboxKeys(
-        shownItems.map((item) => ({ key: inboxItemKey(item), updatedAt: item.updatedAt })),
-      ),
-    [inboxSeenTick, shownItems],
-  );
-  const retainedListScroll = useRetainedScroll<HTMLDivElement>(listScope, { ready: !loading });
   const setListScrollRef = useCallback(
     (element: HTMLDivElement | null) => {
       listLock(element);
-      retainedListScroll(element);
       listScrollRef.current = element;
     },
-    [listLock, retainedListScroll],
+    [listLock],
   );
-  useEffect(() => {
-    if (!hasMoreItems) return;
-    const sentinel = loadMoreRef.current;
-    const root = listScrollRef.current;
-    if (!sentinel || !root) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry?.isIntersecting) return;
-        setListLimit((current) => current + LIST_PAGE_SIZE);
-      },
-      { root, rootMargin: "240px" },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMoreItems, shownItemCount]);
 
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(
@@ -659,114 +644,150 @@ export function InboxView({
   const viewRow =
     source === "jira" ? (
       <div className="flex shrink-0 items-center gap-2 px-2 py-1">
-        <SegmentedControl label={t("Jira view")} selectionRole="pressed" value={jiraView}
+        <SegmentedControl
+          label={t("Jira view")}
+          selectionRole="pressed"
+          value={jiraView}
           onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
-          options={[{ value: "list", label: t("List") }, { value: "board", label: t("Board") }]} />
+          options={[
+            { value: "list", label: t("List") },
+            { value: "board", label: t("Board") },
+          ]}
+        />
       </div>
     ) : !pullRequestsOnly && source === "github" ? (
       <div className="flex shrink-0 items-center px-2 py-1">
-        <SegmentedControl label={t("Type")} value={activeFilters.hiddenKinds.length >= 2 ? "" : activeFilters.hiddenKinds.length === 0 ? "all" : activeFilters.hiddenKinds.includes("issue") ? "pr" : "issue"}
-          onValueChange={(next) => onFiltersChange({ ...activeFilters, hiddenKinds: next === "all" ? [] : next === "pr" ? ["issue"] : ["pr"] })}
-          options={[{ value: "all", label: t("All") }, { value: "pr", label: t("Pull requests") }, { value: "issue", label: t("Issues") }]} />
+        <SegmentedControl
+          label={t("Type")}
+          value={
+            activeFilters.hiddenKinds.length >= 2
+              ? ""
+              : activeFilters.hiddenKinds.length === 0
+                ? "all"
+                : activeFilters.hiddenKinds.includes("issue")
+                  ? "pr"
+                  : "issue"
+          }
+          onValueChange={(next) =>
+            onFiltersChange({
+              ...activeFilters,
+              hiddenKinds: next === "all" ? [] : next === "pr" ? ["issue"] : ["pr"],
+            })
+          }
+          options={[
+            { value: "all", label: t("All") },
+            { value: "pr", label: t("Pull requests") },
+            { value: "issue", label: t("Issues") },
+          ]}
+        />
       </div>
     ) : null;
 
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-surface-panel)"
+      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
     >
       {sourceRow}
       {viewRow}
       {noSourcesConnected ? null : (
         <div className="flex h-9 shrink-0 items-center gap-1 px-2">
           {showCollectionTools ? (
-          <>
-          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-            <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
-            <SearchInput
-              focusOwner="group"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder={t("Filter loaded items")}
-              aria-label={t("Filter loaded items")}
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </SearchInputGroup>
-          {pullRequestsOnly ? (
             <>
+              <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+                <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
+                <SearchInput
+                  focusOwner="group"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder={t("Filter loaded items")}
+                  aria-label={t("Filter loaded items")}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </SearchInputGroup>
+              {pullRequestsOnly ? (
+                <>
+                  <Button
+                    iconOnly
+                    ref={sortButtonRef}
+                    label={t("Sort pull requests")}
+                    variant="ghost"
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={sortMenuOpen}
+                    onClick={() => setSortMenuOpen((open) => !open)}
+                  >
+                    <ChevronsUpDown className="icon-xs" strokeWidth={1.75} />
+                  </Button>
+                  {sortMenuOpen ? (
+                    <DropdownMenu
+                      anchor={sortButtonRef}
+                      label={t("Sort pull requests")}
+                      returnFocusRef={sortButtonRef}
+                      onClose={() => setSortMenuOpen(false)}
+                      items={[
+                        {
+                          kind: "item",
+                          id: "updated",
+                          label: t("Recently updated"),
+                          checked: prSort !== "title",
+                          selectionRole: "radio",
+                        },
+                        {
+                          kind: "item",
+                          id: "title",
+                          label: t("Title"),
+                          checked: prSort === "title",
+                          selectionRole: "radio",
+                        },
+                      ]}
+                      onPick={(id) => {
+                        setPrSort(id);
+                        setSortMenuOpen(false);
+                      }}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              <FilterTrigger
+                label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
+                activeCount={filterCount}
+                onReset={resetFilters}
+                resetLabel={t("Clear filters")}
+                aria-expanded={!!filterMenu}
+                aria-haspopup="menu"
+                onClick={onFilterButtonClick}
+              />
               <Button
                 iconOnly
-                ref={sortButtonRef}
-                label={t("Sort pull requests")}
+                label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
                 variant="ghost"
                 type="button"
-                aria-haspopup="menu"
-                aria-expanded={sortMenuOpen}
-                onClick={() => setSortMenuOpen((open) => !open)}
+                aria-label={t("Mark loaded {p0} items as read", {
+                  p0: INBOX_SOURCE_LABELS[source],
+                })}
+                disabled={!sourceHasUnseen}
+                onClick={() => {
+                  setFailedReadItem(null);
+                  const generation = ++seenSaveGeneration.current;
+                  const applyResult = (saved: boolean) => {
+                    if (seenSaveGeneration.current === generation)
+                      setReadStatusError(
+                        saved
+                          ? null
+                          : "Some read status updates may have saved. Retry to complete.",
+                      );
+                  };
+                  const result = markInboxItemsSeen(sourceEntries);
+                  if (typeof result === "boolean") applyResult(result);
+                  else void result.then(applyResult).catch(() => applyResult(false));
+                }}
+                className="shrink-0"
               >
-                <ChevronsUpDown className="icon-xs" strokeWidth={1.75} />
+                <CheckCheck className="icon-sm" strokeWidth={1.75} />
               </Button>
-              {sortMenuOpen ? (
-                <DropdownMenu
-                  anchor={sortButtonRef}
-                  label={t("Sort pull requests")}
-                  returnFocusRef={sortButtonRef}
-                  onClose={() => setSortMenuOpen(false)}
-                  items={[
-                    {
-                      kind: "item",
-                      id: "updated",
-                      label: t("Recently updated"),
-                      checked: prSort !== "title",
-                      selectionRole: "radio",
-                    },
-                    {
-                      kind: "item",
-                      id: "title",
-                      label: t("Title"),
-                      checked: prSort === "title",
-                      selectionRole: "radio",
-                    },
-                  ]}
-                  onPick={(id) => {
-                    setPrSort(id);
-                    setSortMenuOpen(false);
-                  }}
-                />
-              ) : null}
             </>
-          ) : null}
-          <FilterTrigger
-            label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
-            activeCount={filterCount}
-            onReset={resetFilters}
-            resetLabel={t("Clear filters")}
-            aria-expanded={!!filterMenu}
-            aria-haspopup="menu"
-            onClick={onFilterButtonClick}
-          />
-          <Button
-            iconOnly
-            label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
-            variant="ghost"
-            type="button"
-            aria-label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
-            disabled={!sourceHasUnseen}
-            onClick={() => {
-              setFailedReadItem(null);
-              setReadStatusError(
-                markInboxItemsSeen(sourceEntries)
-                  ? null
-                  : "Could not save read status. Please try again.",
-              );
-            }}
-            className="shrink-0"
-          >
-            <CheckCheck className="icon-sm" strokeWidth={1.75} />
-          </Button>
-          </>
           ) : (
             <span className="min-w-0 flex-1" />
           )}
@@ -786,8 +807,8 @@ export function InboxView({
         </div>
       )}
       {readStatusError ? (
-        <Alert tone="danger" role="alert">
-          {readStatusError}
+        <Alert tone="danger">
+          {t(readStatusError)}
           {failedReadItem ? (
             <Button
               data-inbox-read-retry
@@ -799,14 +820,34 @@ export function InboxView({
           ) : null}
         </Alert>
       ) : null}
+      {seenStorageStatus.state === "loading" ? (
+        <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
+      ) : seenStorageStatus.state === "error" ? (
+        <Alert tone="danger">
+          {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}
+          <Button variant="secondary" onClick={retryInboxSeenStorage}>
+            {t("Retry")}
+          </Button>
+        </Alert>
+      ) : null}
       {sourceError && visibleItems.length > 0 ? (
-        <Alert tone="warning" role="alert" action={
-          <Button loading={refreshAction === "retry"} disabled={refreshAction === "toolbar"} onClick={() => requestRefresh("retry", source === "github")}>{t("Retry")}</Button>
-        }>
+        <Alert
+          tone="warning"
+          role="alert"
+          action={
+            <Button
+              loading={refreshAction === "retry"}
+              disabled={refreshAction === "toolbar"}
+              onClick={() => requestRefresh("retry", source === "github")}
+            >
+              {t("Retry")}
+            </Button>
+          }
+        >
           <span className="whitespace-pre-wrap wrap-anywhere">{sourceError}</span>
         </Alert>
       ) : null}
-      <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
+      <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-hidden flex flex-col">
         {noSourcesConnected ? (
           <EmptyState
             icon={<Inbox aria-hidden="true" />}
@@ -877,17 +918,24 @@ export function InboxView({
             />
           )
         ) : (
-          <ul className="flex flex-col gap-0.5 p-1.5">
-            {shownItems.map((item) => {
+          <ContinuousList
+            fill
+            className="p-1.5 overscroll-none"
+            label={t("Inbox")}
+            items={visibleItems}
+            stateKey={`inbox:${listScope}`}
+            itemKey={inboxItemKey}
+            requiredKey={selected ? inboxItemKey(selected) : null}
+            estimateSize={96}
+            renderItem={(item) => {
               const key = inboxItemKey(item);
               const projectId = projectKey(item.projectPath);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;
               return (
-                <li key={key}>
+                <div role="listitem">
                   <InboxCard
                     item={item}
                     active={selected != null && key === inboxItemKey(selected)}
-                    unseen={unseenKeys.has(key)}
                     logoPath={resolveTabGroupLogo(projectId, logos)}
                     mascotName={resolveTabGroupMascot(projectId, groupMascots)}
                     mascotColor={resolveTabGroupColor(
@@ -899,15 +947,10 @@ export function InboxView({
                     relatedSessionCount={relatedSessionCount}
                     onSelect={selectItem}
                   />
-                </li>
+                </div>
               );
-            })}
-            {hasMoreItems ? (
-              <li ref={loadMoreRef} className="list-none">
-                <Button fullWidth onClick={() => setListLimit((current) => current + LIST_PAGE_SIZE)}>{t("Load more items")}</Button>
-              </li>
-            ) : null}
-          </ul>
+            }}
+          />
         )}
       </div>
       {noSourcesConnected || visibleItems.length === 0 ? null : (
@@ -918,11 +961,12 @@ export function InboxView({
         >
           <span title={t("{p0} loaded", { p0: visibleItems.length })}>
             {t("{p0} loaded", { p0: visibleItems.length })}
-            {hasMoreItems ? ` · ${t("{p0} shown", { p0: shownItems.length })}` : ""}
             {sourceLimited ? (
               <span
                 data-inbox-list-limit
-                title={t("The provider returned a full page. Older items may not be loaded, and no total is available.")}
+                title={t(
+                  "The provider returned a full page. Older items may not be loaded, and no total is available.",
+                )}
               >
                 {` · ${t("Limit reached")}`}
               </span>
@@ -983,7 +1027,9 @@ export function InboxView({
       <PaneHeader
         chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
         dragRegion
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         icon={toolNavigation ? undefined : <Inbox strokeWidth={1.75} />}
         title={toolNavigation ? undefined : pullRequestsOnly ? t("Pull Requests") : t("Inbox")}
         titleAs="h1"
@@ -1005,16 +1051,20 @@ export function InboxView({
 
       {source === "jira" && jiraView === "board" ? (
         <>
-          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-(--ui-surface-panel)">
+          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-transparent">
             <div className="min-w-0 max-w-sm flex-1 basis-72">{sourceRow}</div>
             {viewRow}
           </div>
-          <div className="inbox-jira-layout flex min-h-0 min-w-0 flex-1" data-detail-open={!!boardIssue}>
+          <div
+            className="inbox-jira-layout flex min-h-0 min-w-0 flex-1"
+            data-detail-open={!!boardIssue}
+          >
             <JiraBoardView
               revision={refresh}
               selectedIssueId={boardIssue?.id}
               onSelect={(issue) => {
-                boardIssueOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                boardIssueOrigin.current =
+                  document.activeElement instanceof HTMLElement ? document.activeElement : null;
                 setBoardIssue(issue);
               }}
               onScopeChanged={() => setBoardIssue(null)}
@@ -1026,8 +1076,16 @@ export function InboxView({
               }
             />
             {boardIssue ? (
-              <aside className="jira-board-detail" aria-label={boardIssue.identifier}
-                onKeyDown={(event) => { if (event.key === "Escape" && !hasActiveOverlay()) { event.preventDefault(); closeBoardIssue(); } }}>
+              <aside
+                className="jira-board-detail"
+                aria-label={boardIssue.identifier}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !hasActiveOverlay()) {
+                    event.preventDefault();
+                    closeBoardIssue();
+                  }
+                }}
+              >
                 <Button
                   variant="ghost"
                   type="button"
@@ -1061,7 +1119,20 @@ export function InboxView({
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
             {selectedOutsideFilters ? (
-              <Alert tone="info" role="status" action={<Button onClick={() => { setSearchInput(""); onFiltersChange(DEFAULT_INBOX_FILTERS); }}>{t("Clear filters")}</Button>}>
+              <Alert
+                tone="info"
+                role="status"
+                action={
+                  <Button
+                    onClick={() => {
+                      setSearchInput("");
+                      onFiltersChange(DEFAULT_INBOX_FILTERS);
+                    }}
+                  >
+                    {t("Clear filters")}
+                  </Button>
+                }
+              >
                 {t("Outside current filters")}
               </Alert>
             ) : null}
@@ -1133,6 +1204,10 @@ export function LinkedWorkItemPanel({
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
   const { item, error, loading, setItem } = useGithubWorkItem(target, cwd);
+  const [openError, setOpenError] = useState("");
+  const targetUrlRef = useRef(target.url);
+  targetUrlRef.current = target.url;
+  useEffect(() => setOpenError(""), [target.url]);
   const resize = useDragResize({
     min: LINKED_PANEL_MIN_WIDTH,
     max: () =>
@@ -1219,7 +1294,19 @@ export function LinkedWorkItemPanel({
             <Alert tone="info" role="alert" className="max-w-sm">
               {error}
             </Alert>
-            <Button variant="secondary" type="button" onClick={() => void openUrl(target.url)}>
+            {openError ? <InlineError>{openError}</InlineError> : null}
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                setOpenError("");
+                const url = target.url;
+                openUrlSafely(url, () => {
+                  if (targetUrlRef.current === url)
+                    setOpenError(t("Could not open the link. Try again."));
+                });
+              }}
+            >
               <ExternalLink className="icon-sm" strokeWidth={1.75} />
               {t("Open on GitHub")}
             </Button>
@@ -1288,7 +1375,6 @@ function InboxDetailBody({
 const InboxCard = memo(function InboxCard({
   item,
   active,
-  unseen,
   logoPath,
   mascotName,
   mascotColor,
@@ -1297,7 +1383,6 @@ const InboxCard = memo(function InboxCard({
 }: {
   item: InboxItem;
   active: boolean;
-  unseen: boolean;
   logoPath: string | null;
   mascotName: string | null;
   mascotColor: string;
@@ -1305,6 +1390,32 @@ const InboxCard = memo(function InboxCard({
   onSelect: (item: InboxItem) => void;
 }) {
   useLocale();
+  const visibilityRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const entryKey = inboxItemKey(item);
+  const unseen = useInboxItemUnseen({ key: entryKey, updatedAt: item.updatedAt }, visible);
+  useEffect(() => {
+    const element = visibilityRef.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      const update = () => {
+        const bounds = element.getBoundingClientRect();
+        setVisible(bounds.bottom >= -300 && bounds.top <= window.innerHeight + 300);
+      };
+      update();
+      window.addEventListener("scroll", update, true);
+      window.addEventListener("resize", update);
+      return () => {
+        window.removeEventListener("scroll", update, true);
+        window.removeEventListener("resize", update);
+      };
+    }
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
+      rootMargin: "300px",
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const status = inboxStatusMark(item);
   const kindLabel =
     item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
@@ -1341,75 +1452,83 @@ const InboxCard = memo(function InboxCard({
   );
 
   return (
-    <ActionHost selected={active} className="w-full min-w-0">
-    <Button
-      variant="item"
-      layout="stacked"
-      className="w-full min-w-0"
-      type="button"
-      tooltip={item.title}
-      tooltipWhen="overflow"
-      aria-current={active ? "true" : undefined}
-      selected={active}
-      aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
-        item,
-      )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
-      onClick={() => onSelect(item)}
-      onMouseEnter={() => prefetchInboxItem(item)}
-      onFocus={() => prefetchInboxItem(item)}
-    >
-      <span className={`min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unseen ? "font-medium" : "font-normal"}`}>
-        {item.title}
-      </span>
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <status.Icon className={`icon-xs shrink-0 ${status.className}`} strokeWidth={1.75} />
-          <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
-            {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
-            {attentionLabel ? ` · ${attentionLabel}` : ""}
+    <div ref={visibilityRef}>
+      <ActionHost selected={active} className="w-full min-w-0">
+        <Button
+          variant="item"
+          layout="stacked"
+          className="w-full min-w-0"
+          type="button"
+          tooltip={item.title}
+          tooltipWhen="overflow"
+          aria-current={active ? "true" : undefined}
+          selected={active}
+          aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
+            item,
+          )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
+          onClick={() => onSelect(item)}
+          onMouseEnter={() => prefetchInboxItem(item)}
+          onFocus={() => prefetchInboxItem(item)}
+        >
+          <span
+            className={`min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unseen ? "font-medium" : "font-normal"}`}
+          >
+            {item.title}
           </span>
-        </span>
-        {relatedSessionCount > 0 || time || unseen ? (
-          <span className="flex shrink-0 items-center gap-1.5">
-            {relatedSessionCount > 0 ? (
-              <span
-                title={t(
-                  relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
-                  { p0: relatedSessionCount },
-                )}
-                className="inline-flex items-center gap-0.5 text-ui-micro tabular-nums text-(--ui-tone-accent-fg)"
-              >
-                <MessageMultiple className="icon-xs" strokeWidth={1.75} />
-                {relatedSessionCount}
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <Badge
+                size="xs"
+                tone={status.tone}
+                appearance="subtle"
+                icon={<status.Icon strokeWidth={1.75} />}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+                {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
+                {attentionLabel ? ` · ${attentionLabel}` : ""}
+              </span>
+            </span>
+            {relatedSessionCount > 0 || time || unseen ? (
+              <span className="flex shrink-0 items-center gap-1.5">
+                {relatedSessionCount > 0 ? (
+                  <Badge
+                    variant="count"
+                    size="xs"
+                    icon={<MessageMultiple className="icon-xs" strokeWidth={1.75} />}
+                    title={t(
+                      relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
+                      { p0: relatedSessionCount },
+                    )}
+                    className="shrink-0"
+                  >
+                    {relatedSessionCount}
+                  </Badge>
+                ) : null}
+                {time ? (
+                  <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">
+                    {time}
+                  </span>
+                ) : null}
+                {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
               </span>
             ) : null}
-            {time ? (
-              <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">{time}</span>
-            ) : null}
-            {unseen ? (
-              <span
-                data-inbox-unread
-                aria-hidden
-                className="size-1.5 rounded-full bg-(--ui-tone-accent-fg)"
-              />
-            ) : null}
           </span>
+          {item.labels.length > 0 ? (
+            <span aria-hidden="true" className="mt-1 block h-4" />
+          ) : (
+            <span className="mt-1 flex min-w-0 items-center gap-2">{sourceLine}</span>
+          )}
+        </Button>
+        {item.labels.length > 0 ? (
+          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+            {sourceLine}
+            <span className="pointer-events-auto min-w-0 max-w-[45%] shrink-0 [&>div>ul]:justify-end">
+              <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
+            </span>
+          </div>
         ) : null}
-      </span>
-      {item.labels.length > 0 ? (
-        <span aria-hidden="true" className="mt-1 block h-4" />
-      ) : (
-        <span className="mt-1 flex min-w-0 items-center gap-2">{sourceLine}</span>
-      )}
-    </Button>
-    {item.labels.length > 0 ? (
-      <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-        {sourceLine}
-        <span className="pointer-events-auto min-w-0 max-w-[45%] shrink-0 [&>div>ul]:justify-end">
-          <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
-        </span>
-      </div>
-    ) : null}
-    </ActionHost>
+      </ActionHost>
+    </div>
   );
 });

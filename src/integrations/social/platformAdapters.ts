@@ -15,6 +15,7 @@ import {
   type SocialAdapter,
   type SocialAdapters,
   type SocialInbound,
+  type SocialOwnedPostPage,
 } from "./adapter";
 
 const id = (value: unknown) => {
@@ -24,7 +25,11 @@ const id = (value: unknown) => {
 };
 const text = (job: SocialJob) => [job.payload.text, job.payload.link].filter(Boolean).join("\n");
 type Scan = {
+  /** Pending bounded batch; legacy cursors drain their original IDs without eviction. */
   posts: string[];
+  knownIndex?: number;
+  knownAfter?: string;
+  discoveryStart?: number;
   index: number;
   after: Record<string, string>;
   conversations?: string;
@@ -40,6 +45,36 @@ function scanState(cursor?: string): Scan {
     /* Old/no cursor starts a bounded scan. */
   }
   return { posts: [], index: 0, after: {}, starts: {} };
+}
+/** Retain active work only; paged Host readers advance at the drained-batch boundary. */
+async function enqueueKnownPosts(
+  scan: Scan,
+  posts: string[],
+  source?: SocialOwnedPostPage,
+): Promise<void> {
+  if (source) {
+    const page = await source(scan.knownAfter);
+    if (page.posts.length > 2) throw new SocialPlatformError("unknown");
+    for (const post of page.posts) {
+      if (!scan.posts.includes(post)) scan.posts.push(post);
+    }
+    scan.knownAfter = page.next;
+    return;
+  }
+  if (!posts.length) return;
+  const start = Math.max(0, scan.knownIndex ?? 0) % posts.length;
+  for (let offset = 0; offset < Math.min(2, posts.length); offset++) {
+    const post = posts[(start + offset) % posts.length];
+    if (!scan.posts.includes(post)) scan.posts.push(post);
+  }
+  scan.knownIndex = (start + Math.min(2, posts.length)) % posts.length;
+}
+function completeScanPost(scan: Scan, post: string): void {
+  delete scan.after[post];
+  delete scan.starts[post];
+  scan.posts.splice(scan.index, 1);
+  if (scan.posts.length) scan.index %= scan.posts.length;
+  else scan.index = 0;
 }
 const graphNext = (value: Record<string, any>): string | undefined =>
   value.paging?.next && typeof value.paging?.cursors?.after === "string"
@@ -173,6 +208,7 @@ export function createSocialAdapters(
       platform === "instagram" ? "https://graph.instagram.com" : "https://graph.facebook.com";
     const endpoint = (path: string) => `${origin}/${graphVersion}/${path}`;
     return {
+      ownedPostPages: true,
       async send(account, job, token, _media, checkpoint, beforeSubmit) {
         if (platform !== "facebook" && job.payload.facebook)
           throw new SocialPlatformError("unsupported");
@@ -279,10 +315,9 @@ export function createSocialAdapters(
           ? reels.reconcile!(account, job, token)
           : undefined;
       },
-      async poll(account, token, posts, cursor) {
+      async poll(account, token, posts, cursor, ownedPosts) {
         const events: SocialInbound[] = [];
         const scan = scanState(cursor);
-        const owned = [...scan.posts, ...posts];
         const commentScope =
           platform === "instagram"
             ? "instagram_business_manage_comments"
@@ -290,19 +325,28 @@ export function createSocialAdapters(
         const canReadComments =
           account.scopes.includes(commentScope) &&
           (platform === "instagram" || account.scopes.includes("pages_read_engagement"));
-        if (canReadComments) {
+        if (canReadComments && !scan.posts.length) {
+          await enqueueKnownPosts(scan, posts, ownedPosts);
           const { value: recent } = await http.request(
             endpoint(
               `${id(account.platformId)}/${platform === "instagram" ? "media" : "published_posts"}?fields=id&limit=25${scan.discovery ? `&after=${encodeURIComponent(scan.discovery)}` : ""}`,
             ),
             token,
           );
-          owned.push(...(recent.data ?? []).map((post: { id: string }) => requireId(post.id)));
+          if (!Array.isArray(recent.data) || recent.data.length > 25)
+            throw new SocialPlatformError("unknown");
+          for (const post of recent.data) {
+            const postId = requireId(post.id);
+            if (!scan.posts.includes(postId)) scan.posts.push(postId);
+          }
           scan.discovery = graphNext(recent);
         }
-        scan.posts = [...new Set(owned)];
         if (canReadComments)
-          for (let read = 0; read < Math.min(4, scan.posts.length); read++) {
+          for (
+            let read = 0, limit = Math.min(4, scan.posts.length);
+            read < limit && scan.posts.length;
+            read++
+          ) {
             scan.index %= scan.posts.length;
             const post = scan.posts[scan.index];
             const fields =
@@ -328,8 +372,7 @@ export function createSocialAdapters(
             const next = graphNext(value);
             if (next) scan.after[post] = next;
             else {
-              delete scan.after[post];
-              scan.index = (scan.index + 1) % scan.posts.length;
+              completeScanPost(scan, post);
             }
           }
         const messageScope =
@@ -379,6 +422,7 @@ export function createSocialAdapters(
     };
   };
   const linkedin: SocialAdapter = {
+    ownedPostPages: true,
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       const headers = {
         "LinkedIn-Version": linkedinVersion,
@@ -491,35 +535,48 @@ export function createSocialAdapters(
         url: `https://www.linkedin.com/feed/update/${encodeURIComponent(platformId)}/`,
       };
     },
-    async poll(account, token, posts, cursor) {
+    async poll(account, token, posts, cursor, ownedPosts) {
       const events: SocialInbound[] = [];
       const scan = scanState(cursor);
       const headers = {
         "LinkedIn-Version": linkedinVersion,
         "X-Restli-Protocol-Version": "2.0.0",
       };
-      const owned = [...scan.posts, ...posts];
-      if (
-        account.accountType === "organization" &&
-        account.scopes.includes("r_organization_social")
-      ) {
+      const canDiscover =
+        account.accountType === "organization" && account.scopes.includes("r_organization_social");
+      const needsBatch = !scan.posts.length;
+      if (needsBatch) await enqueueKnownPosts(scan, posts, ownedPosts);
+      if (canDiscover && needsBatch) {
         const { value } = await http.request(
-          `https://api.linkedin.com/rest/posts?q=author&author=${id(account.platformId)}&sortBy=LAST_MODIFIED&count=25`,
+          `https://api.linkedin.com/rest/posts?q=author&author=${id(account.platformId)}&sortBy=LAST_MODIFIED&count=25&start=${scan.discoveryStart ?? 0}`,
           token,
           { headers },
         );
         if (!Array.isArray(value.elements)) throw new SocialPlatformError("unsupported");
-        owned.push(...value.elements.map((post: { id: string }) => requireId(post.id)));
+        if (value.elements.length > 25) throw new SocialPlatformError("unknown");
+        for (const post of value.elements) {
+          const postId = requireId(post.id);
+          if (!scan.posts.includes(postId)) scan.posts.push(postId);
+        }
+        const start = scan.discoveryStart ?? 0;
+        scan.discoveryStart =
+          value.elements.length === 25 &&
+          (!Number.isFinite(value.paging?.total) || start + 25 < value.paging.total)
+            ? start + 25
+            : 0;
       }
       if (
-        !owned.length &&
+        !scan.posts.length &&
         !(
           account.accountType === "organization" && account.scopes.includes("r_organization_social")
         )
       )
         throw new SocialPlatformError("unsupported");
-      scan.posts = [...new Set(owned)];
-      for (let read = 0; read < Math.min(4, scan.posts.length); read++) {
+      for (
+        let read = 0, limit = Math.min(4, scan.posts.length);
+        read < limit && scan.posts.length;
+        read++
+      ) {
         scan.index %= scan.posts.length;
         const post = scan.posts[scan.index];
         const start = scan.starts[post] ?? 0;
@@ -547,8 +604,7 @@ export function createSocialAdapters(
         )
           scan.starts[post] = start + 100;
         else {
-          delete scan.starts[post];
-          scan.index = (scan.index + 1) % scan.posts.length;
+          completeScanPost(scan, post);
         }
       }
       return { events, cursor: JSON.stringify(scan) };

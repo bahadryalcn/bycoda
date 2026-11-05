@@ -13,23 +13,11 @@ import { loadPhysicalStoreAdmission } from "../index.mjs";
 
 const artifact = process.env.BYCODA_PHYSICAL_ADMISSION_ADDON;
 const probe = process.env.BYCODA_PHYSICAL_ADMISSION_PROBE;
-assert.ok(
-  artifact && path.isAbsolute(artifact),
-  "Supply explicit BYCODA_PHYSICAL_ADMISSION_ADDON",
-);
-assert.ok(
-  probe && path.isAbsolute(probe),
-  "Supply explicit BYCODA_PHYSICAL_ADMISSION_PROBE",
-);
-assert.equal(
-  typeof globalThis.gc,
-  "function",
-  "Run actual Node with --expose-gc",
-);
+assert.ok(artifact && path.isAbsolute(artifact), "Supply explicit BYCODA_PHYSICAL_ADMISSION_ADDON");
+assert.ok(probe && path.isAbsolute(probe), "Supply explicit BYCODA_PHYSICAL_ADMISSION_PROBE");
+assert.equal(typeof globalThis.gc, "function", "Run actual Node with --expose-gc");
 const native = loadPhysicalStoreAdmission(artifact);
-const evidence = path.resolve(
-  "temp/verification/2026-10-30-host-notes-writer/node-port",
-);
+const evidence = path.resolve("temp/verification/2026-10-30-host-notes-writer/node-port");
 mkdirSync(evidence, { recursive: true });
 const root = mkdtempSync(path.join(evidence, "actual-"));
 function fixture(name) {
@@ -74,10 +62,7 @@ test("a resolved JavaScript target is rejected before its code executes", () => 
     input === alias ? target : original(input, ...rest);
   syncBuiltinESMExports();
   try {
-    assert.throws(
-      () => loadPhysicalStoreAdmission(alias),
-      /resolved.*\.node extension/,
-    );
+    assert.throws(() => loadPhysicalStoreAdmission(alias), /resolved.*\.node extension/);
     assert.equal(globalThis.__bycodaCanonicalTestExecuted, undefined);
   } finally {
     filesystem.realpathSync = original;
@@ -196,9 +181,7 @@ test("first addon Worker environment EXIT retains the original process registry/
   const result = spawnSync(
     process.execPath,
     [
-      fileURLToPath(
-        new URL("./support/environment-first.mjs", import.meta.url),
-      ),
+      fileURLToPath(new URL("./support/environment-first.mjs", import.meta.url)),
       artifact,
       f.registry,
       f.file,

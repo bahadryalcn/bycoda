@@ -4,6 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@tauri-apps/api/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@tauri-apps/api/core")>();
+  return {
+    ...original,
+    invoke: (command: string, args?: unknown) =>
+      command === "write_attachment"
+        ? Promise.resolve(`/attachments/${(args as { name: string }).name}`)
+        : original.invoke(command, args),
+  };
+});
+
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));
@@ -97,9 +108,7 @@ describe("retained queue-row actions", () => {
         },
         vi.fn(),
       );
-      const steer = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "Steer",
-      )!;
+      const steer = container.querySelector<HTMLButtonElement>('button[aria-label="Steer"]')!;
       expect(steer.disabled).toBe(true);
       await act(async () => {
         steer.click();
@@ -469,7 +478,8 @@ describe("a queue restored after a restart", () => {
       container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
     ).toContain("Waiting for confirmation");
     await act(async () => finish(false));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("It remains queued");
+    // A refused send keeps the message queued without an extra notice line.
+    expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).toContain("first");
     expect(send.disabled).toBe(false);
   });

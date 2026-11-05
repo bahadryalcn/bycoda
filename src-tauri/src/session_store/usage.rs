@@ -28,18 +28,28 @@ pub struct UsageTurnReport {
     truncated: bool,
 }
 
-// Only user blocks carry turn metadata. The normalized branch walks the
-// `session_blocks_roles` expression index to them instead of decoding every
-// block (77k blocks / 305 MB measured: 0.93 s -> 0.07 s plus the session rows).
+// Restrict normalized blocks by their indexed start date before joining sessions.
+// Legacy checkpoints use a transactionally maintained projection with the same
+// date index; malformed checkpoints retain the original error behavior.
 fn query(conn: &Connection, since_ms: i64, until_ms: i64) -> Result<UsageTurnReport, String> {
     let mut statement = conn.prepare(
         "WITH blocks AS (
-          SELECT b.session_id, b.ordinal, b.block_json AS value FROM session_block_state st
-           JOIN session_blocks b INDEXED BY session_blocks_roles
-             ON b.session_id=st.session_id AND json_extract(b.block_json,'$.role')='user'
-           WHERE st.length>=0
+          SELECT b.session_id, b.ordinal, b.block_json AS value FROM session_blocks b INDEXED BY session_blocks_usage_started
+           JOIN session_block_state st ON st.session_id=b.session_id AND st.length>=0
+           WHERE json_extract(b.block_json,'$.role')='user'
+             AND COALESCE(json_extract(b.block_json,'$.draft'),0)=0
+             AND json_type(b.block_json,'$.startedAt') IN ('integer','real')
+             AND json_extract(b.block_json,'$.startedAt') < ?2
           UNION ALL
-          SELECT s.id, CAST(b.key AS INTEGER), b.value FROM sessions s, json_each(NULLIF(s.blocks_json,'')) b
+          SELECT b.session_id, b.ordinal, b.block_json FROM session_usage_legacy b INDEXED BY session_usage_legacy_started
+           WHERE json_extract(b.block_json,'$.role')='user'
+             AND COALESCE(json_extract(b.block_json,'$.draft'),0)=0
+             AND json_type(b.block_json,'$.startedAt') IN ('integer','real')
+             AND json_extract(b.block_json,'$.startedAt') < ?2
+             AND NOT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=b.session_id AND st.length>=0)
+          UNION ALL
+          SELECT s.id, CAST(b.key AS INTEGER), b.value FROM session_usage_invalid invalid
+           JOIN sessions s ON s.id=invalid.session_id, json_each(NULLIF(s.blocks_json,'')) b
            WHERE NOT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=s.id AND st.length>=0)
          ) SELECT s.id, s.title, s.cwd,
           COALESCE(json_extract(b.value, '$.turnModel.harness'), s.harness), s.provider_account_id,
@@ -133,5 +143,16 @@ mod tests {
         assert_eq!(report.turns[0].model, "turn-model");
         assert_eq!(report.turns[0].provider, "claude");
         assert_eq!(report.turns[0].duration_ms, Some(500));
+        // Date indexing must retain turns that started before the interval but
+        // overlap it, and must exclude future turns and drafts.
+        conn.execute("INSERT INTO session_blocks VALUES ('s', 1, 'long', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":100,"durationMs":2500}).to_string()]).unwrap();
+        conn.execute("INSERT INTO session_blocks VALUES ('s', 2, 'future', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":5000}).to_string()]).unwrap();
+        conn.execute("INSERT INTO session_blocks VALUES ('s', 3, 'draft', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":2300,"draft":true}).to_string()]).unwrap();
+        let report = query(&conn, 2000, 5000).unwrap();
+        assert_eq!(report.turns.len(), 2);
+        assert_eq!(report.turns[1].started_at, 100);
     }
 }

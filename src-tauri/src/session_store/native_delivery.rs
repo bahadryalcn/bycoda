@@ -10,6 +10,8 @@ pub(crate) mod epochs;
 
 pub(crate) const MAX_PARAMS_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const MAX_RESULT_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const FORMAT_RESULT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_FORMAT_ACTIVE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ACTIVE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ACTIVE_ROWS: usize = 256;
 const MAX_ROWS: usize = 65_536;
@@ -31,7 +33,7 @@ const SELECT: &str = "SELECT
  CASE WHEN length(CAST(phase AS BLOB)) BETWEEN 1 AND 16 THEN phase END,
  revision,
  CASE WHEN result_sha256 IS NULL OR length(CAST(result_sha256 AS BLOB))=64 THEN result_sha256 END,
- result_bytes,created_at,length(CAST(params_json AS BLOB)),length(CAST(result_json AS BLOB)),rowid FROM native_delivery_originals";
+ result_bytes,created_at,length(CAST(params_json AS BLOB)),length(CAST(result_json AS BLOB)),rowid,result_budget FROM native_delivery_originals";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Phase {
@@ -70,6 +72,7 @@ pub(crate) struct Original {
     revision: i64,
     result_sha256: Option<String>,
     result_bytes: Option<usize>,
+    result_budget: usize,
     created_at: i64,
     runtime: uuid::Uuid,
     connection: usize,
@@ -97,6 +100,9 @@ impl Original {
     }
     pub(crate) fn phase(&self) -> Phase {
         self.phase
+    }
+    pub(crate) fn result_budget(&self) -> usize {
+        self.result_budget
     }
     /// Opaque ACK-outbox continuation metadata. It conveys no operation grant;
     /// ordinary pending originals continue to use their UUID cursor instead.
@@ -184,6 +190,11 @@ fn result_budget(method: &str) -> Result<usize, String> {
         _ => Err("NATIVE_DELIVERY_METHOD: unsupported original request method".into()),
     }
 }
+
+fn valid_budget(method: &str, budget: usize) -> bool {
+    result_budget(method).is_ok_and(|legacy| budget == legacy)
+        || (method == "native.services.workspace.format" && budget == FORMAT_RESULT_BYTES)
+}
 fn validate_json(value: &str, maximum: usize, object: bool) -> Result<(), String> {
     if value.is_empty() || value.len() > maximum {
         return Err(invalid());
@@ -238,7 +249,24 @@ fn schema(conn: &Connection) -> Result<(), String> {
         NEW.result_sha256 IS OLD.result_sha256 AND NEW.result_bytes IS OLD.result_bytes AND
         (NEW.result_json IS OLD.result_json OR (NEW.phase='acknowledged' AND NEW.result_json IS NULL)))
       BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_IMMUTABLE'); END;")
-      .map_err(|e| e.to_string())
+      .map_err(|e| e.to_string())?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS native_delivery_unavailable_results (
+      original_id TEXT PRIMARY KEY REFERENCES native_delivery_originals(original_id));
+    CREATE TRIGGER IF NOT EXISTS native_delivery_unavailable_valid BEFORE INSERT ON native_delivery_unavailable_results
+      WHEN NOT EXISTS(SELECT 1 FROM native_delivery_originals WHERE original_id=NEW.original_id AND method='native.services.workspace.format' AND phase='possible' AND result_json IS NULL AND result_sha256 IS NULL AND result_bytes IS NULL)
+      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_INVALID'); END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_unavailable_immutable BEFORE UPDATE ON native_delivery_unavailable_results
+      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_unavailable_retained BEFORE DELETE ON native_delivery_unavailable_results
+      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_unavailable_result_guard BEFORE UPDATE OF result_json,result_sha256,result_bytes ON native_delivery_originals
+      WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results WHERE original_id=NEW.original_id)
+      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RESULT_UNAVAILABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_unavailable_dispatch_guard BEFORE UPDATE OF phase ON native_delivery_originals
+      WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results WHERE original_id=NEW.original_id) AND NEW.phase!='possible'
+      BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RESULT_UNAVAILABLE'); END;")
+      .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn exists(conn: &Connection) -> Result<bool, String> {
@@ -286,11 +314,13 @@ fn checked_record(
         runtime,
         connection,
         rowid: row.get(16)?,
+        result_budget: to_size(row.get(17)?)?,
     };
     let params_length: Option<i64> = row.get(14)?;
     let result_length: Option<i64> = row.get(15)?;
-    let budget = result_budget(&record.method).map_err(|_| rusqlite::Error::InvalidQuery)?;
-    if record.rowid <= 0
+    let budget = record.result_budget;
+    if !valid_budget(&record.method, budget)
+        || record.rowid <= 0
         || !original_id(&record.id)
         || !uuid(&record.created_instance)
         || !key(&record.semantic_key)
@@ -348,6 +378,7 @@ fn same(a: &Original, b: &Original) -> bool {
         && a.source_profile_id == b.source_profile_id
         && a.payload_sha256 == b.payload_sha256
         && a.payload_bytes == b.payload_bytes
+        && a.result_budget == b.result_budget
         && a.created_instance == b.created_instance
 }
 fn current(conn: &Connection, expected: &Original) -> Result<Original, String> {
@@ -387,6 +418,24 @@ pub(crate) fn prepare(
     method: &str,
     params_json: &str,
 ) -> Result<Original, String> {
+    prepare_with_budget(
+        store,
+        semantic_key,
+        route_fingerprint,
+        method,
+        params_json,
+        result_budget(method)?,
+    )
+}
+
+pub(crate) fn prepare_with_budget(
+    store: &SessionStore,
+    semantic_key: &str,
+    route_fingerprint: &str,
+    method: &str,
+    params_json: &str,
+    budget: usize,
+) -> Result<Original, String> {
     prepare_inputs(semantic_key, route_fingerprint, method, params_json)?;
     write(store, |conn| {
         schema(conn)?;
@@ -397,6 +446,7 @@ pub(crate) fn prepare(
             route_fingerprint,
             method,
             params_json,
+            budget,
             |conn| {
                 epochs::legacy_allocation_allowed(conn, route_fingerprint)?;
                 Ok(uuid::Uuid::new_v4().to_string())
@@ -420,10 +470,13 @@ fn prepare_tx(
     route_fingerprint: &str,
     method: &str,
     params_json: &str,
+    budget: usize,
     allocate: impl FnOnce(&Connection) -> Result<String, String>,
 ) -> Result<Original, String> {
     require_full(conn)?;
-    let budget = result_budget(method)?;
+    if !valid_budget(method, budget) {
+        return Err(invalid());
+    }
     let hash = digest(params_json);
     let ids = identity(conn)?;
     epochs::check_semantic(
@@ -455,7 +508,10 @@ fn prepare_tx(
         return Ok(record);
     }
     let counts = |conn: &Connection| -> Result<(i64, i64, i64), String> {
-        conn.query_row("SELECT COUNT(*),COALESCE(SUM(phase!='acknowledged'),0),COALESCE(SUM(CASE WHEN phase!='acknowledged' THEN payload_bytes+result_budget ELSE 0 END),0) FROM native_delivery_originals",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())
+        // Independent bounded lanes prevent uncertain formatter work from using
+        // control capacity. Legacy 32 MiB reservations retain their original
+        // allowance; only a qualified Host may use the smaller format lane.
+        conn.query_row("SELECT (SELECT COUNT(*) FROM native_delivery_originals),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE 1 END),0),COALESCE(SUM(payload_bytes+CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE result_budget END),0) FROM native_delivery_originals WHERE phase!='acknowledged' AND CASE WHEN ?1='native.services.workspace.format' THEN method=?1 AND result_budget=?2 ELSE method!='native.services.workspace.format' END",params![method,budget as i64],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())
     };
     let full = |(rows, active, bytes): (i64, i64, i64)| {
         rows < 0
@@ -466,7 +522,15 @@ fn prepare_tx(
             || (bytes as usize)
                 .checked_add(params_json.len())
                 .and_then(|n| n.checked_add(budget))
-                .is_none_or(|n| n > MAX_ACTIVE_BYTES)
+                .is_none_or(|n| {
+                    n > if method == "native.services.workspace.format"
+                        && budget == FORMAT_RESULT_BYTES
+                    {
+                        MAX_FORMAT_ACTIVE_BYTES
+                    } else {
+                        MAX_ACTIVE_BYTES
+                    }
+                })
     };
     let mut usage = counts(conn)?;
     if full(usage) && method == BUFFER_UPDATE {
@@ -604,7 +668,7 @@ fn load_bytes(conn: &Connection, original: &Original, result: bool) -> Result<St
     let (column, maximum, hash, length) = if result {
         (
             "result_json",
-            result_budget(&original.method)?,
+            original.result_budget,
             original.result_sha256.as_deref().ok_or_else(invalid)?,
             original.result_bytes.ok_or_else(invalid)?,
         )
@@ -658,8 +722,30 @@ pub(crate) fn record_result(
     result_json: &str,
 ) -> Result<Original, String> {
     check_runtime(store, original)?;
-    validate_json(result_json, result_budget(original.method())?, false)?;
+    validate_json(result_json, original.result_budget, false)?;
     write(store, |conn| record_result_tx(conn, original, result_json))
+}
+
+/// The qualified Host has irreversibly fenced result publication for this exact
+/// original. Release only the impossible future result reservation. This does
+/// not establish effect completion, consume output, or authorize redispatch.
+pub(crate) fn release_unavailable_result_tx(
+    conn: &Connection,
+    original: &Original,
+) -> Result<(), String> {
+    require_full(conn)?;
+    schema(conn)?;
+    let record = current(conn, original)?;
+    if record.method != "native.services.workspace.format" || record.phase != Phase::Possible {
+        return Err(invalid());
+    }
+    let _ = load_bytes(conn, &record, false)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO native_delivery_unavailable_results(original_id) VALUES(?1)",
+        [&record.id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub(crate) fn record_result_tx(
@@ -668,7 +754,7 @@ pub(crate) fn record_result_tx(
     result_json: &str,
 ) -> Result<Original, String> {
     require_full(conn)?;
-    validate_json(result_json, result_budget(original.method())?, false)?;
+    validate_json(result_json, original.result_budget, false)?;
     let hash = digest(result_json);
     let record = current(conn, original)?;
     if record.phase != Phase::Acknowledged {

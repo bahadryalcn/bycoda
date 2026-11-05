@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import type { McpConnection } from "../../settings/model/mcp";
+import type { McpConnection } from "../../settings";
 import {
   getCachedMcpSettings,
   loadMcpSettings,
   subscribeMcpSettings,
   type McpSettingsSnapshot,
-} from "../../settings/model/mcpSettingsCache";
+} from "../../settings/public/mcpSettingsCache";
 import type { HarnessId } from "../model/session";
 
 export type ComposerMcpCatalog = {

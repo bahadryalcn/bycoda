@@ -5,7 +5,7 @@ import {
 } from "../../../shared/lib/storedSetting";
 import { t, sourceMessages } from "../../../shared/i18n/core";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESSES, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import {
   ALT,
   FULLSCREEN_SHORTCUT,
@@ -946,6 +946,47 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "explorer gitignore ignored hidden files tree",
   },
   {
+    id: "workspace-background",
+    section: "appearance",
+    get label() {
+      return t("Workspace background");
+    },
+    keywords:
+      "gradient gradyan geçiş colors presets linear radial mesh soft blend angle strength background",
+  },
+  {
+    id: "workspace-gradient-style",
+    section: "appearance",
+    get label() {
+      return t("Gradient style");
+    },
+    keywords: "gradient gradyan geçiş linear radial mesh soft blend",
+  },
+  {
+    id: "workspace-gradient-colors",
+    section: "appearance",
+    get label() {
+      return t("Gradient colors");
+    },
+    keywords: "gradient gradyan geçiş colors colours renk",
+  },
+  {
+    id: "workspace-gradient-angle",
+    section: "appearance",
+    get label() {
+      return t("Gradient angle");
+    },
+    keywords: "gradient gradyan geçiş angle açı direction",
+  },
+  {
+    id: "workspace-gradient-strength",
+    section: "appearance",
+    get label() {
+      return t("Background strength");
+    },
+    keywords: "gradient gradyan geçiş strength intensity opacity yoğunluk",
+  },
+  {
     id: "chat-background",
     section: "appearance",
     get label() {
@@ -961,6 +1002,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords:
       "animated wallpaper ascii ai neural tree latent face thought weaver ascii mask calm motion backdrop sinir ağacı gizil yüz düşünce dokuyucu ascii maske sakin arka plan",
+  },
+  {
+    id: "title-model-default",
+    section: "chat",
+    get label() {
+      return t("Default title model");
+    },
+    keywords:
+      "conversation title regenerate rename model provider account haiku terra flash başlık isim yeniden oluştur varsayılan",
   },
   {
     id: "translation-model-default",
@@ -994,6 +1044,22 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Transcript layout");
     },
     keywords: "full width chat bubble message",
+  },
+  {
+    id: "dictation-enabled",
+    section: "chat",
+    get label() {
+      return t("Enable dictation");
+    },
+    keywords: "dictate dictation speech to text microphone diktate dikte yazdır mikrofon",
+  },
+  {
+    id: "speech-microphone",
+    section: "chat",
+    get label() {
+      return t("Microphone access");
+    },
+    keywords: "microphone permission privacy macos windows linux mikrofon izin",
   },
   {
     id: "voice-companion",
@@ -1760,11 +1826,16 @@ export function loadTabAnimationsEnabled(): boolean {
 
 export function saveTabAnimationsEnabled(value: boolean) {
   writeFlag(TAB_ANIMATIONS_ENABLED_KEY, value);
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:tab-animations-change"));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("bycoda:tab-animations-change"));
 }
 
 export const subscribeTabAnimationsEnabled = (onChange: () => void) =>
-  subscribePreferenceChanges([TAB_ANIMATIONS_ENABLED_KEY], "bycoda:tab-animations-change", onChange);
+  subscribePreferenceChanges(
+    [TAB_ANIMATIONS_ENABLED_KEY],
+    "bycoda:tab-animations-change",
+    onChange,
+  );
 
 export type CollapsedProjectRailMode = "compact" | "hidden";
 
@@ -1876,7 +1947,8 @@ export function saveQuickComposerEnabled(value: boolean): boolean {
   } catch {
     return false;
   }
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:quick-composer-enabled-change"));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("bycoda:quick-composer-enabled-change"));
   return true;
 }
 
@@ -1893,7 +1965,11 @@ export function loadQuickComposerShortcut(): string {
 
 export const QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT = "bycoda:quick-composer-shortcut-change";
 export const subscribeQuickComposerShortcut = (onChange: () => void) =>
-  subscribePreferenceChanges([QUICK_COMPOSER_SHORTCUT_KEY], QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT, onChange);
+  subscribePreferenceChanges(
+    [QUICK_COMPOSER_SHORTCUT_KEY],
+    QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT,
+    onChange,
+  );
 
 export function saveQuickComposerShortcut(value: string): boolean {
   if (!isGlobalShortcut(value)) return false;
@@ -1906,7 +1982,8 @@ export function saveQuickComposerShortcut(value: string): boolean {
   } catch {
     return false;
   }
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent(QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT));
   return true;
 }
 
@@ -2264,7 +2341,12 @@ const RESUME_AT_RESET_KEY = "bycoda.resumeAtReset";
 export const RESUME_AT_RESET_DEFAULT = true;
 
 /** Whether a usage limit notice starts armed to continue at the reset. */
-const resumeAtResetSetting = storedFlag(RESUME_AT_RESET_KEY, RESUME_AT_RESET_DEFAULT, "bycoda:resume-at-reset-change", true);
+const resumeAtResetSetting = storedFlag(
+  RESUME_AT_RESET_KEY,
+  RESUME_AT_RESET_DEFAULT,
+  "bycoda:resume-at-reset-change",
+  true,
+);
 export const subscribeResumeAtReset = resumeAtResetSetting.subscribe;
 
 function saveChatFlag(key: string, value: boolean, event: string): boolean {
@@ -2272,7 +2354,9 @@ function saveChatFlag(key: string, value: boolean, event: string): boolean {
     const raw = value ? "1" : "0";
     localStorage.setItem(key, raw);
     if (localStorage.getItem(key) !== raw) return false;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(event));
   return true;
 }
@@ -2372,6 +2456,7 @@ export type KeybindingRow = {
  * focused surface handlers such as the draft composer workspace toggle.
  */
 export const KEYBINDINGS: KeybindingRow[] = [
+  { command: "Voice: Push to Talk", keys: "", when: "Voice connected and microphone paused" },
   { command: DESKTOP_STOP_COMMAND, keys: `${CTRL}${IS_MAC ? "⌥" : "Alt+"}Esc`, when: "Anywhere" },
   { command: "App: Settings", keys: `${MOD},`, when: "Always" },
   { command: "App: Search", keys: `${MOD}K`, when: "Always" },
@@ -2836,8 +2921,16 @@ export function loadAutoContinueInterrupted(): boolean {
 }
 
 export function saveAutoContinueInterrupted(value: boolean) {
-  return saveChatFlag(AUTO_CONTINUE_INTERRUPTED_KEY, value, "bycoda:auto-continue-interrupted-change");
+  return saveChatFlag(
+    AUTO_CONTINUE_INTERRUPTED_KEY,
+    value,
+    "bycoda:auto-continue-interrupted-change",
+  );
 }
 
 export const subscribeAutoContinueInterrupted = (onChange: () => void) =>
-  subscribePreferenceChanges([AUTO_CONTINUE_INTERRUPTED_KEY], "bycoda:auto-continue-interrupted-change", onChange);
+  subscribePreferenceChanges(
+    [AUTO_CONTINUE_INTERRUPTED_KEY],
+    "bycoda:auto-continue-interrupted-change",
+    onChange,
+  );

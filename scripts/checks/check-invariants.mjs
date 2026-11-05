@@ -17,8 +17,10 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { compareCounts, countFindings, sortedCounts } from "./check-ui-drift.mjs";
+import { checkPrivacyWriterCalls } from "./check-privacy-writers.mjs";
 
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/invariants-baseline.json";
@@ -41,23 +43,20 @@ function run(root, command, args) {
   return result;
 }
 
-function binary(root, name) {
-  const file = path.join(
-    root,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? `${name}.cmd` : name,
-  );
-  if (!fs.existsSync(file))
-    throw new Error(`${name} is not installed; run pnpm install before the invariants check`);
-  return file;
+function astGrepBinary(root) {
+  const installer = path.join(root, "node_modules", "@ast-grep", "cli", "postinstall.js");
+  if (!fs.existsSync(installer))
+    throw new Error("ast-grep is not installed; run pnpm install before the invariants check");
+  const binary = createRequire(import.meta.url)(installer).resolveBinaryPath();
+  if (!binary) throw new Error("ast-grep native binary is missing; install optional dependencies");
+  return binary;
 }
 
 /** ast-grep findings as { file, rule, line, text, message }. */
 export function scanAstGrep(root, files) {
   const targets = files ?? astGrepRoots.filter((dir) => fs.existsSync(path.join(root, dir)));
   if (!targets.length) return [];
-  const result = run(root, binary(root, "ast-grep"), [
+  const result = run(root, astGrepBinary(root), [
     "scan",
     "--config",
     astGrepConfig,
@@ -93,14 +92,44 @@ export function scanOxlint(root, files) {
   ]);
   if (result.status !== 0 && result.status !== 1)
     throw new Error(`oxlint failed (${result.status}): ${result.stderr}`);
-  const { diagnostics } = JSON.parse(result.stdout);
-  return diagnostics.map((diagnostic) => ({
-    file: normalize(diagnostic.filename),
-    rule: diagnostic.code.replace(/^eslint\(/, "oxlint(").replace(/^(\w[\w-]*)\((.+)\)$/, "$1/$2"),
-    line: diagnostic.labels?.[0]?.span?.line ?? 0,
-    text: diagnostic.message.slice(0, 160),
-    message: diagnostic.help ?? diagnostic.message,
-  }));
+  return parseOxlintOutput(result.stdout, result.status);
+}
+
+/** Tool-level diagnostics cannot be assigned to a baseline bucket. */
+export function parseOxlintOutput(stdout, status) {
+  let output;
+  try {
+    output = JSON.parse(stdout);
+  } catch {
+    throw new Error(`oxlint returned invalid JSON: ${stdout.slice(0, 500)}`);
+  }
+  if (!output || !Array.isArray(output.diagnostics))
+    throw new Error("oxlint returned malformed output: missing diagnostics array");
+  if (status !== 0 && output.diagnostics.length === 0)
+    throw new Error(`oxlint failed (${status}) without diagnostics`);
+  return output.diagnostics.map((diagnostic) => {
+    if (
+      !diagnostic ||
+      typeof diagnostic.filename !== "string" ||
+      !diagnostic.filename ||
+      typeof diagnostic.code !== "string" ||
+      !diagnostic.code ||
+      typeof diagnostic.message !== "string"
+    ) {
+      const detail =
+        typeof diagnostic?.message === "string" ? diagnostic.message : JSON.stringify(diagnostic);
+      throw new Error(`oxlint reported a tool diagnostic: ${detail}`);
+    }
+    return {
+      file: normalize(diagnostic.filename),
+      rule: diagnostic.code
+        .replace(/^eslint\(/, "oxlint(")
+        .replace(/^(\w[\w-]*)\((.+)\)$/, "$1/$2"),
+      line: diagnostic.labels?.[0]?.span?.line ?? 0,
+      text: diagnostic.message.slice(0, 160),
+      message: diagnostic.help ?? diagnostic.message,
+    };
+  });
 }
 
 export function scanAll(root, files) {
@@ -130,6 +159,26 @@ export function checkInvariants({ root = defaultRoot, files } = {}) {
     ...bucket,
     items: findings.filter((item) => item.file === bucket.file && item.rule === bucket.rule),
   }));
+  const privacyCalls = checkPrivacyWriterCalls({ root, files: scope });
+  for (const item of privacyCalls) {
+    const rule = "privacy-writer-outside-fence";
+    regressions.push({
+      file: item.file,
+      rule,
+      count: 1,
+      baseline: 0,
+      items: [
+        {
+          file: item.file,
+          line: item.line,
+          rule,
+          message:
+            "Privacy writers must run inside withRoomPrivacyMutation or a reviewed delegate.",
+          text: item.text,
+        },
+      ],
+    });
+  }
   return { success: regressions.length === 0, ...result, regressions, findings, current };
 }
 

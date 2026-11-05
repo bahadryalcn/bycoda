@@ -1,7 +1,49 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
-use crate::fs::{expand_home, git_run};
+use crate::fs::{expand_home, git_stream_output, GIT_LOCAL_TIMEOUT};
+
+const MAX_INDEX_RECORD_BYTES: usize = 64 * 1024;
+
+#[derive(Default)]
+struct IndexRecords {
+    pending: Vec<u8>,
+}
+
+impl IndexRecords {
+    fn feed(
+        &mut self,
+        bytes: &[u8],
+        mut record: impl FnMut(&[u8]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        for part in bytes.split_inclusive(|byte| *byte == 0) {
+            let terminated = part.last() == Some(&0);
+            let data = if terminated {
+                &part[..part.len() - 1]
+            } else {
+                part
+            };
+            if self.pending.len().saturating_add(data.len()) > MAX_INDEX_RECORD_BYTES {
+                return Err("Git index record is too large".into());
+            }
+            self.pending.extend_from_slice(data);
+            if terminated {
+                record(&self.pending)?;
+                self.pending.clear();
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<(), String> {
+        if self.pending.is_empty() {
+            Ok(())
+        } else {
+            Err("Git index output was incomplete".into())
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn git_submodules(cwd: String) -> Result<Vec<String>, String> {
@@ -13,6 +55,7 @@ pub async fn git_submodules(cwd: String) -> Result<Vec<String>, String> {
 /// Discover initialized gitlinks without fetching or moving any working tree.
 fn list(cwd: &Path) -> Result<Vec<String>, String> {
     let root = cwd.canonicalize().map_err(|error| error.to_string())?;
+    let deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
     let mut queue = vec![root.clone()];
     let mut seen = HashSet::from([root.clone()]);
     let mut paths = Vec::new();
@@ -20,44 +63,67 @@ fn list(cwd: &Path) -> Result<Vec<String>, String> {
     while index < queue.len() {
         let parent = queue[index].clone();
         index += 1;
-        let entries = git_run(&parent, &["ls-files", "--stage", "-z", "--", "."])
-            .ok_or_else(|| "Could not read submodules".to_string())?;
-        for entry in entries.split('\0') {
-            let Some((metadata, path)) = entry.split_once('\t') else {
-                continue;
-            };
-            let fields: Vec<_> = metadata.split(' ').collect();
-            if fields.len() != 3
-                || fields[0] != "160000"
-                || !matches!(fields[2], "0" | "1" | "2" | "3")
-            {
-                continue;
-            }
-            let Ok(child) = parent.join(path).canonicalize() else {
-                continue;
-            };
-            if seen.contains(&child) || !child.join(".git").exists() {
-                continue;
-            }
-            let Ok(relative) = child.strip_prefix(&root) else {
-                continue;
-            };
-            let top = git_run(&child, &["rev-parse", "--show-toplevel"])
-                .ok_or_else(|| "Could not read submodule repository".to_string())?;
-            if PathBuf::from(top.trim()).canonicalize().ok().as_ref() != Some(&child) {
-                continue;
-            }
-            if paths.len() >= 256 {
-                return Err("Too many nested submodules".to_string());
-            }
-            paths.push(
-                relative
-                    .to_string_lossy()
-                    .replace(std::path::MAIN_SEPARATOR, "/"),
-            );
-            seen.insert(child.clone());
-            queue.push(child);
-        }
+        let mut parser = IndexRecords::default();
+        git_stream_output(
+            &parent,
+            &["ls-files", "--stage", "-z", "--", "."],
+            deadline,
+            false,
+            |chunk| {
+                parser.feed(chunk, |entry| {
+                    let entry = String::from_utf8_lossy(entry);
+                    let Some((metadata, path)) = entry.split_once('\t') else {
+                        return Err("Git index record is invalid".into());
+                    };
+                    let fields: Vec<_> = metadata.split(' ').collect();
+                    if fields.len() != 3 || !matches!(fields[2], "0" | "1" | "2" | "3") {
+                        return Err("Git index record is invalid".into());
+                    }
+                    if fields[0] != "160000" {
+                        return Ok(());
+                    }
+                    let Ok(child) = parent.join(path).canonicalize() else {
+                        return Ok(());
+                    };
+                    if seen.contains(&child) || !child.join(".git").exists() {
+                        return Ok(());
+                    }
+                    let Ok(relative) = child.strip_prefix(&root) else {
+                        return Ok(());
+                    };
+                    let mut top = Vec::new();
+                    git_stream_output(
+                        &child,
+                        &["rev-parse", "--show-toplevel"],
+                        deadline,
+                        true,
+                        |chunk| {
+                            if top.len().saturating_add(chunk.len()) > MAX_INDEX_RECORD_BYTES {
+                                return Err("Submodule repository path is too large".into());
+                            }
+                            top.extend_from_slice(chunk);
+                            Ok(())
+                        },
+                    )?;
+                    let top = String::from_utf8_lossy(&top);
+                    if PathBuf::from(top.trim()).canonicalize().ok().as_ref() != Some(&child) {
+                        return Ok(());
+                    }
+                    if paths.len() >= 256 {
+                        return Err("Too many nested submodules".to_string());
+                    }
+                    paths.push(
+                        relative
+                            .to_string_lossy()
+                            .replace(std::path::MAIN_SEPARATOR, "/"),
+                    );
+                    seen.insert(child.clone());
+                    queue.push(child);
+                    Ok(())
+                })
+            },
+        )?;
+        parser.finish()?;
     }
     paths.sort();
     Ok(paths)
@@ -66,6 +132,40 @@ fn list(cwd: &Path) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn index_records_stream_without_retaining_the_index() {
+        let mut parser = IndexRecords::default();
+        let mut count = 0usize;
+        let data = b"100644 abc 0\tfile\0";
+        for _ in 0..200_000 {
+            for chunk in data.chunks(7) {
+                parser
+                    .feed(chunk, |record| {
+                        assert_eq!(record, b"100644 abc 0\tfile");
+                        count += 1;
+                        Ok(())
+                    })
+                    .unwrap();
+                assert!(parser.pending.len() < data.len());
+            }
+        }
+        parser.finish().unwrap();
+        assert_eq!(count, 200_000);
+    }
+
+    #[test]
+    fn index_records_reject_oversized_and_truncated_records() {
+        let mut parser = IndexRecords::default();
+        assert!(parser
+            .feed(&vec![b'x'; MAX_INDEX_RECORD_BYTES + 1], |_| Ok(()))
+            .is_err());
+        let mut parser = IndexRecords::default();
+        parser.feed(b"unfinished", |_| Ok(())).unwrap();
+        assert!(parser.finish().is_err());
+        let mut parser = IndexRecords::default();
+        assert!(parser.feed(b"entry\0", |_| Err("stop".into())).is_err());
+    }
 
     struct Fixture(PathBuf);
 
@@ -106,6 +206,42 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    #[test]
+    fn large_index_discovers_gitlink_without_gitmodules() {
+        use std::io::Write;
+        use std::process::Stdio;
+        let fixture = Fixture::new();
+        let parent = fixture.repo("parent");
+        let child = fixture.repo("parent/child");
+        let blob = run(&parent, &["rev-parse", "HEAD:file.txt"]);
+        let commit = run(&child, &["rev-parse", "HEAD"]);
+        let mut command = crate::fs::git_cmd();
+        let mut process = command
+            .arg("-C")
+            .arg(&parent)
+            .args(["update-index", "--index-info"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        {
+            let mut input = process.stdin.take().unwrap();
+            for index in 0..50_000 {
+                writeln!(input, "100644 {blob}\tstaged-{index:05}").unwrap();
+            }
+            writeln!(input, "160000 {commit}\tchild").unwrap();
+        }
+        let output = process.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!parent.join(".gitmodules").exists());
+        assert_eq!(list(&parent).unwrap(), vec!["child"]);
     }
 
     #[test]

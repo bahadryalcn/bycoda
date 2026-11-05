@@ -34,13 +34,20 @@ export const VAD_TUNING = {
  * highest normalized autocorrelation over pitch lags 70–400 Hz, computed on a
  * 2× decimated signal so a 64 ms frame costs well under a millisecond.
  */
-export function frameFeatures(samples: Int16Array, rate: number): FrameFeatures {
+type FrameScratch = { signal: Float32Array; squares: Float64Array };
+
+export function frameFeatures(
+  samples: Int16Array,
+  rate: number,
+  scratch?: FrameScratch,
+): FrameFeatures {
   let energy = 0;
   for (const sample of samples) energy += (sample / 32768) ** 2;
   const rms = samples.length ? Math.sqrt(energy / samples.length) : 0;
   const half = rate / 2;
   const n = samples.length >> 1;
-  const x = new Float32Array(n);
+  const x = scratch && scratch.signal.length >= n ? scratch.signal : new Float32Array(n);
+  if (scratch) scratch.signal = x;
   let mean = 0;
   for (let i = 0; i < n; i++) {
     x[i] = (samples[2 * i] + samples[2 * i + 1]) / 65536;
@@ -49,7 +56,9 @@ export function frameFeatures(samples: Int16Array, rate: number): FrameFeatures 
   mean /= n || 1;
   for (let i = 0; i < n; i++) x[i] -= mean;
   // Prefix sums of squares give each lag's window energy in O(1).
-  const squares = new Float64Array(n + 1);
+  const squares = scratch && scratch.squares.length > n ? scratch.squares : new Float64Array(n + 1);
+  if (scratch) scratch.squares = squares;
+  squares[0] = 0;
   for (let i = 0; i < n; i++) squares[i + 1] = squares[i] + x[i] * x[i];
   const minLag = Math.max(1, Math.floor(half / 400));
   const maxLag = Math.min(n - 32, Math.ceil(half / 70));
@@ -72,6 +81,10 @@ export function frameFeatures(samples: Int16Array, rate: number): FrameFeatures 
  * adaptive background floor. Audio from before the onset is kept (pre-roll).
  */
 export class VoiceVad {
+  private readonly scratch: FrameScratch = {
+    signal: new Float32Array(0),
+    squares: new Float64Array(0),
+  };
   private chunks: Int16Array[] = [];
   private preRoll: Int16Array[] = [];
   /** Recent frames: whether each was voiced speech (pitch + loudness). */
@@ -89,7 +102,7 @@ export class VoiceVad {
   /** Changes whenever speech starts or resumes, so a stale pause cannot end the turn. */
   private pauseId = 0;
   private paused = false;
-  private full=false;
+  private full = false;
   constructor(
     private rate: number,
     private start: () => void,
@@ -100,26 +113,31 @@ export class VoiceVad {
     private options: {
       pause?: (audio: Int16Array, pauseId: number) => void;
       endSilence?: number;
-      manualTurnEnd?:boolean;
-      limit?:()=>void;
+      manualTurnEnd?: boolean;
+      limit?: () => void;
     } = {},
   ) {}
   /** Stricter onset while the assistant is speaking (echo residue, breaths). */
   setStrict(strict: boolean) {
     this.strict = strict;
   }
-  setEndSilence(seconds?: number) {
+  setEndSilence(seconds?: number, pause?: (audio: Int16Array, pauseId: number) => void) {
     this.options.endSilence = seconds;
-    if (seconds !== undefined) this.options.pause = undefined;
+    this.options.pause = pause;
   }
-  setManualTurnEnd(manual:boolean){if(this.options.manualTurnEnd!==manual)this.full=false;this.options.manualTurnEnd=manual;this.paused=false;this.pauseId++;}
+  setManualTurnEnd(manual: boolean) {
+    if (this.options.manualTurnEnd !== manual) this.full = false;
+    this.options.manualTurnEnd = manual;
+    this.paused = false;
+    this.pauseId++;
+  }
   private threshold() {
     const base = Math.max(VAD_TUNING.minRms, VAD_TUNING.floorRatio * this.floor);
     return this.strict ? base * VAD_TUNING.strictFactor : base;
   }
   push(samples: Int16Array) {
-    if(this.full)return;
-    const { rms, periodicity } = frameFeatures(samples, this.rate);
+    if (this.full) return;
+    const { rms, periodicity } = frameFeatures(samples, this.rate, this.scratch);
     const loud = rms > this.threshold();
     if (!this.talking) {
       const speech = loud && periodicity >= VAD_TUNING.minPeriodicity;
@@ -159,15 +177,21 @@ export class VoiceVad {
     const voice = loud && this.sinceVoiced <= this.rate * VAD_TUNING.unvoicedCarry;
     this.quiet = voice ? 0 : this.quiet + samples.length;
     // Long thinking pauses do not grow a manual recording without bound.
-    if(!this.options.manualTurnEnd||voice||this.quiet<=this.rate*1.2){this.chunks.push(samples);this.count+=samples.length;}
+    if (!this.options.manualTurnEnd || voice || this.quiet <= this.rate * 1.2) {
+      this.chunks.push(samples);
+      this.count += samples.length;
+    }
     if (voice) {
       this.voiced += samples.length;
       if (this.paused) this.pauseId++;
       this.paused = false;
     }
     const end = this.options.endSilence ?? 0.6;
-    if(this.options.manualTurnEnd){
-      if(this.count>=this.rate*120){this.full=true;this.options.limit?.();}
+    if (this.options.manualTurnEnd) {
+      if (this.count >= this.rate * 120) {
+        this.full = true;
+        this.options.limit?.();
+      }
       return; // Only the owner's Finish turn control commits this audio.
     }
     if (this.quiet >= this.rate * end || this.count >= this.rate * 20) return this.flush();
@@ -183,7 +207,7 @@ export class VoiceVad {
   }
   /** Ends the turn at the pause `pauseId` if the speaker has not continued since. */
   commit(pauseId: number): boolean {
-    if(this.options.manualTurnEnd)return false;
+    if (this.options.manualTurnEnd) return false;
     if (!this.talking || !this.paused || pauseId !== this.pauseId) return false;
     this.reset();
     return true;
@@ -217,7 +241,7 @@ export class VoiceVad {
     this.sinceVoiced = 0;
     this.talking = false;
     this.paused = false;
-    this.full=false;
+    this.full = false;
     this.pauseId++;
   }
 }
@@ -234,12 +258,30 @@ export function resamplePcm(input: Int16Array, rate: number): Int16Array {
   return result;
 }
 
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+/** Reuse PCM storage on little-endian devices; retain explicit wire order elsewhere. */
 export function pcmBase64(input: Int16Array) {
-  const bytes = new Uint8Array(input.length * 2);
-  const view = new DataView(bytes.buffer);
-  input.forEach((sample, index) => view.setInt16(index * 2, sample, true));
+  const bytes = LITTLE_ENDIAN
+    ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+    : new Uint8Array(input.length * 2);
+  if (!LITTLE_ENDIAN) {
+    const view = new DataView(bytes.buffer);
+    input.forEach((sample, index) => view.setInt16(index * 2, sample, true));
+  }
   let raw = "";
   for (let i = 0; i < bytes.length; i += 8192)
     raw += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(raw);
+}
+
+export function decodePcmBase64(encoded: string): Int16Array {
+  const raw = atob(encoded);
+  if (!raw.length || raw.length % 2) throw new Error("Invalid speech audio.");
+  const bytes = Uint8Array.from(raw, (value) => value.charCodeAt(0));
+  if (LITTLE_ENDIAN) return new Int16Array(bytes.buffer);
+  const view = new DataView(bytes.buffer);
+  return Int16Array.from({ length: bytes.length / 2 }, (_, index) =>
+    view.getInt16(index * 2, true),
+  );
 }

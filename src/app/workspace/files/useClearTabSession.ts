@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import {
   isFilesystemTab,

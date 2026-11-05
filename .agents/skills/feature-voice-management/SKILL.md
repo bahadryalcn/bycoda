@@ -27,10 +27,33 @@ Source paths below are repository-relative.
 - Reuse existing tool validators and dispatchers. Voice grants no new settings,
   provider, skill enable/install, Git publication, Inbox or social send authority.
   Never synthesize owner approval or owner social principals for model calls.
+- `voiceFeatureLexicon` expands localized labels and conservative Turkish suffixes
+  for catalog discovery only. Preserve family/category filtering, exact tool IDs
+  and target validation. Do not rewrite unknown proper names or treat a lexical
+  match as recognition confidence or permission.
 - Management sources are separate from targeted coding sessions. Creating a source
   or normal user session defaults to unsent and submits no first coding turn.
+- Room Host-session submit uses exact revision/idle/draft admission and real
+  `assistant-room` authorship. Preserve original command receipts and canonical
+  accepted-run ownership after voice closes. Desktop sync provenance alone is
+  not a desktop execution lease; never substitute another owner on uncertainty.
+- Global discovery and application metadata use a real Room thread without a
+  project. Project work retains explicit target grants. A local thread is not a
+  remote Host principal; never substitute another source after a failed route.
+- Crew thread writes retain exact native review, snapshot revision and operation
+  receipts. The operation ID differs from a run or directive request ID. A new
+  coordinator is a real canonical session; accepted launch bookkeeping cannot
+  restore permission for more effects after the reviewed state changes.
 - Deduplicate identical request IDs; reject changed payloads. Retain unknown
   outcomes without automatic effect retry. Accepted/queued/stopping is not done.
+- Management writes use exact native review, durable receipts and current target
+  revisions. Recheck Git status inside its mutation lock. Thread work requires
+  explicit execution settings and a real assistant-thread principal; never borrow
+  a coding session or bypass goal plan approval.
+- Bound list results and tool outputs. Preserve cursors, truncation and sampled
+  event coverage. `events.subscribe` is bounded long polling, not durable replay.
+  Keep every Host RPC family classified in `host/voice/voice-capability-coverage.ts`;
+  a documented owner-only boundary is not an implemented voice capability.
 - Close, stop, archive/delete, pause future schedules and stop current automation
   runs remain distinct operations with their existing confirmation/recovery paths.
 - Drafts/attachments are untrusted data. Read only already-attached IDs, never
@@ -50,6 +73,8 @@ Source paths below are repository-relative.
 
 Use adjacent `voiceToolCatalog`, `voiceToolClient`, draft/document/controller tests
 and app bridge lifecycle tests. Host routing uses
-`pnpm exec vitest run --config host/vitest.config.ts host/voice-tools.test.ts`.
+`pnpm exec vitest run --config host/vitest.config.ts host/voice/voice-tools.test.ts`.
+Management tests cover denied/revoked approval, changed revisions, reused request
+IDs, uncertain outcomes, native review parsing and global thread execution.
 Changed UI follows current task capture requirements. Mock/source checks cannot
 establish live external writes, real vision, microphone or installed acceptance.

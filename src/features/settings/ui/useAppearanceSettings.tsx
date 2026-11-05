@@ -1,4 +1,8 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
+import {
+  saveWorkspaceBackground,
+  WORKSPACE_BACKGROUND_DEFAULT,
+} from "../model/workspaceBackground";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   readAppearanceSaveIssues,
@@ -103,7 +107,7 @@ import {
 import {
   pickAndSaveChatBackground,
   removeChatBackground,
-} from "../../projects/model/chatBackground";
+} from "../../projects/public/chatBackground";
 import {
   applyUiScale,
   loadUiScale,
@@ -212,7 +216,8 @@ export function useAppearanceSettings(
   );
   const [chatBackgroundBlur, setChatBackgroundBlur] = useThemeStorageState(loadChatBackgroundBlur);
   const [diffPalette, setDiffPalette] = useThemeStorageState(loadDiffPalette);
-  const [chatBackgroundScope, setChatBackgroundScope] = useThemeStorageState(loadChatBackgroundScope);
+  const [chatBackgroundScope, setChatBackgroundScope] =
+    useThemeStorageState(loadChatBackgroundScope);
   const [newThreadBackgroundEffect, setBackgroundEffect] = useThemeStorageState(
     loadNewThreadBackgroundEffect,
   );
@@ -382,6 +387,7 @@ export function useAppearanceSettings(
   );
 
   const restoreDefaults = useCallback(() => {
+    saveWorkspaceBackground(WORKSPACE_BACKGROUND_DEFAULT, { replace: true });
     onPreferences({
       ...APPEARANCE_DEFAULTS,
       chatWidth: preferences.chatWidth,

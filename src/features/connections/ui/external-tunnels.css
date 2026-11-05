@@ -62,5 +62,10 @@
   border-radius: var(--radius-panel);
 }
 
-.external-tunnel-form > button { justify-self: start; }
-.external-tunnel-form [role="radiogroup"] { justify-self: start; max-inline-size: 100%; }
+.external-tunnel-form > button {
+  justify-self: start;
+}
+.external-tunnel-form [role="radiogroup"] {
+  justify-self: start;
+  max-inline-size: 100%;
+}

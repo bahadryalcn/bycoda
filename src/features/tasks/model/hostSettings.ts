@@ -23,12 +23,14 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
 /** The settings with how much of today's time is used. */
 export type HostSettingsState = HostSettings & {
   usedMinutes: number;
+  usageUncertain?: boolean;
   /** Today's time is used up, so no new work starts until tomorrow. */
   limitReached: boolean;
 };
 
 /** The reason a steward records when it skips a run for the daily limit. */
 export const DAILY_LIMIT_SKIP = "Daily agent time used up";
+export const DAILY_LIMIT_UNCERTAIN_SKIP = "Daily agent time is incomplete";
 
 /** The choices for the daily limit, in minutes. */
 export const DAILY_LIMIT_CHOICES = [0, 60, 120, 240, 480, 720] as const;
@@ -70,6 +72,7 @@ export function parseHostSettingsState(value: unknown): HostSettingsState | null
     return {
       ...settings,
       usedMinutes: v.usedMinutes,
+      ...(v.usageUncertain === true ? { usageUncertain: true } : {}),
       limitReached: v.limitReached === true,
     };
   } catch {

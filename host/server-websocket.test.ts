@@ -8,13 +8,13 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
-import { ModelCatalogCache } from "./model-catalog-cache";
-import type { HostProvider } from "./providers";
-import { DesktopSessions } from "./desktopSessions";
-import { HostTerminals } from "./terminals";
+import { ModelCatalogCache } from "./providers/model-catalog-cache";
+import type { HostProvider } from "./providers/providers";
+import { DesktopSessions } from "./desktop/desktopSessions";
+import { HostTerminals } from "./terminals/terminals";
 import { AsyncHostNotes } from "./host-notes-async";
-import { DevServersService } from "./dev-servers";
-import { DevServerAccess } from "./dev-server-access";
+import { DevServersService } from "./dev-servers/dev-servers";
+import { DevServerAccess } from "./dev-servers/dev-server-access";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { createHostServer } from "./server";
 import type { HostSession } from "../src/features/connections/model/protocol";
@@ -660,9 +660,16 @@ describe("Host HTTP/WS read composition", () => {
   });
   it("shares pipe-shell creation and output across HTTP and WS without replaying writes", async () => {
     let emit!: (data: string) => void;
-    const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
-    const launch = vi.fn((_profile, _cwd, output) => {
+    let exit!: (code: number | null) => void;
+    const child = {
+      write: vi.fn(async () => {}),
+      stop: vi.fn(async () => {
+        exit(0);
+      }),
+    };
+    const launch = vi.fn((_profile, _cwd, output, onExit) => {
       emit = output;
+      exit = onExit;
       return child;
     });
     const terminals = new HostTerminals(
@@ -1088,6 +1095,7 @@ describe("Host HTTP/WS read composition", () => {
     );
     const socket = await host.ready();
     const listed = await host.rpc(socket, "sessions.list", { projectId: host.project.id });
+    expect(listed.error).toBeUndefined();
     const descriptor = listed.result.$bulk;
     expect(descriptor.totalBytes).toBeGreaterThan(1_048_576);
     const url = `http://127.0.0.1:${host.port}/ws-bulk/${descriptor.transferId}?offset=0`;

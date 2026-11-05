@@ -57,6 +57,38 @@ fn page(mut values: Vec<Value>, input: &Value) -> Result<Value, String> {
         "total": total, "nextOffset": if next < total { Some(next) } else { None }}),
     )
 }
+pub(super) fn read_reviewed(app: &AppHandle, action: &str, input: &Value) -> Result<Value, String> {
+    let state = app.state::<crate::remote::RemoteConnections>();
+    let (records, revision) = crate::server_inventory::reviewed_inventory(app, &state)?;
+    let values = records.into_iter().map(serde_json::to_value).collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "Invalid server metadata")?;
+    if action == "servers.get" {
+        let id = required(input, "id")?;
+        let server = values.into_iter().find(|value| value["id"] == id).ok_or("Server no longer exists")?;
+        Ok(json!({"server":server,"inventoryRevision":revision}))
+    } else {
+        let mut result = page(values, input)?;
+        result["inventoryRevision"] = json!(revision);
+        Ok(result)
+    }
+}
+pub(super) fn apply_reviewed(app: &AppHandle, action: &str, input: &Value) -> Result<Value, String> {
+    let expected = required(input, "expectedInventoryRevision")?;
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) { return Err("Invalid server inventory revision".into()); }
+    let state = app.state::<crate::remote::RemoteConnections>();
+    match action {
+        "servers.ssh.save" => {
+            let endpoint = serde_json::from_value(input["endpoint"].clone()).map_err(|_| "Invalid SSH endpoint")?;
+            let saved = crate::server_inventory::server_ssh_save_reviewed(app.clone(), state, input["id"].as_str().map(str::to_owned), required(input, "name")?, endpoint, input["importOnly"].as_bool(), Some(&expected))?;
+            serde_json::to_value(saved).map_err(|_| "Invalid server metadata".into())
+        }
+        "servers.ssh.remove" => {
+            crate::server_inventory::server_ssh_remove_reviewed(app.clone(), state, required(input, "id")?, Some(&expected))?;
+            Ok(json!({"removed":true}))
+        }
+        _ => Err("Unsupported reviewed server action".into()),
+    }
+}
 
 pub(super) fn call(app: &AppHandle, action: &str, input: &Value) -> Result<Value, String> {
     use crate::server_inventory as inventory;

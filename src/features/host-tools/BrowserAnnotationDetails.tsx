@@ -32,6 +32,28 @@ export function BrowserAnnotationDetails({
         <dd>
           <code>{element.selector}</code>
         </dd>
+        {element.role ? (
+          <>
+            <dt>{t("Role")}</dt>
+            <dd>{element.role}</dd>
+          </>
+        ) : null}
+        {element.layout ? (
+          <>
+            <dt>{t("Layout")}</dt>
+            <dd>
+              <code>{element.layout.display}</code>
+            </dd>
+          </>
+        ) : null}
+        {element.interaction ? (
+          <>
+            <dt>{t("Disabled")}</dt>
+            <dd>{t(element.interaction.disabled ? "Yes" : "No")}</dd>
+            <dt>{t("Keyboard focusable")}</dt>
+            <dd>{t(element.interaction.focusable ? "Yes" : "No")}</dd>
+          </>
+        ) : null}
         <dt>{t("DOM ancestry")}</dt>
         <dd>
           <code>{element.path}</code>
@@ -46,6 +68,12 @@ export function BrowserAnnotationDetails({
           <pre>{element.text || t("No visible text")}</pre>
         </dd>
       </dl>
+      {element.boxModelLimitation ? (
+        <p className="host-tool-muted">{t(element.boxModelLimitation)}</p>
+      ) : null}
+      {element.layout?.limitation ? (
+        <p className="host-tool-muted">{t(element.layout.limitation)}</p>
+      ) : null}
       <details>
         <summary>{t("Computed styles")}</summary>
         <dl>

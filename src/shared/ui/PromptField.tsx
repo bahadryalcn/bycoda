@@ -143,7 +143,11 @@ export function PromptField({
   const body = (
     <>
       {header}
-      <div className={styles.editor} data-text-size={textSize} data-monospace={monospace ? "" : undefined}>
+      <div
+        className={styles.editor}
+        data-text-size={textSize}
+        data-monospace={monospace ? "" : undefined}
+      >
         {children}
         {overlay != null ? (
           <div ref={mirror} aria-hidden className={styles.mirror}>

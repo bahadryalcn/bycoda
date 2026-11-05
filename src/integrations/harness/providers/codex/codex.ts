@@ -1,5 +1,6 @@
 import {
   queueProviderOperation,
+  retireProviderEpoch,
   assertProviderOperation,
   observeProviderProcess,
   finishProviderOperation,
@@ -53,7 +54,7 @@ import {
 } from "../../../../features/sessions/model/userQuestion";
 import { resolveCodexBinary, spawnChild, watchChild } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
-import { reportSessionCommands } from "../../core/reportedCommands";
+import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
 import {
   asRecord,
@@ -453,8 +454,14 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
     throw new Error("Provider operation replaced before steer");
   const turnId = live.activeTurnId;
   const originalLatch = live.turnDone;
-  const continueParent = !turnId && live.parentCompleted && !live.awaitingAsyncAnswers && live.turnDone && live.openAgentRows.size > 0;
-  if (!turnId && !continueParent) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  const continueParent =
+    !turnId &&
+    live.parentCompleted &&
+    !live.awaitingAsyncAnswers &&
+    live.turnDone &&
+    live.openAgentRows.size > 0;
+  if (!turnId && !continueParent)
+    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
 
   const rpc = await rpcTurnWriter(
     live.handle,
@@ -464,20 +471,31 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   );
   if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId, rpc);
   if (live.cancelled) throw new Error("Follow-up cancelled because the turn was stopped");
-  if (live.turnDone !== originalLatch || !originalLatch ||
-    (continueParent ? !live.parentCompleted || !!live.activeTurnId || live.pendingTurnStart : live.activeTurnId !== turnId))
-    throw new Error("The previous turn changed before this follow-up was sent. Send it as a new message.");
+  if (
+    live.turnDone !== originalLatch ||
+    !originalLatch ||
+    (continueParent
+      ? !live.parentCompleted || !!live.activeTurnId || live.pendingTurnStart
+      : live.activeTurnId !== turnId)
+  )
+    throw new Error(
+      "The previous turn changed before this follow-up was sent. Send it as a new message.",
+    );
 
   if (continueParent) {
     const previous = live.turnInput;
     if (!previous) throw new Error("No original Codex turn for this follow-up");
-    await startParentTurn(live, {
-      ...previous,
-      ...input,
-      onEvent: previous.onEvent,
-      runtimeInstructions: undefined,
-      onAccepted: undefined,
-    }, rpc);
+    await startParentTurn(
+      live,
+      {
+        ...previous,
+        ...input,
+        onEvent: previous.onEvent,
+        runtimeInstructions: undefined,
+        onAccepted: undefined,
+      },
+      rpc,
+    );
     return;
   }
 
@@ -684,9 +702,9 @@ export async function cancelCodexTurn(
   let rpc;
   try {
     rpc =
-    context && turnId
-      ? await rpcTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
-      : live.rpc;
+      context && turnId
+        ? await rpcTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
+        : live.rpc;
   } catch (error) {
     console.warn("[codex] Control writer unavailable; stopping process", error);
     await stopCodexSession(sessionId, live.handle);
@@ -704,7 +722,10 @@ export async function cancelCodexTurn(
       if (liveByThread.get(sessionId) === live) {
         live.cancelled = false;
         live.muteUpdates = false;
-        live.onEvent({ type: "status", text: "Could not confirm that the subagents stopped. Retry Stop to verify their outcome." });
+        live.onEvent({
+          type: "status",
+          text: "Could not confirm that the subagents stopped. Retry Stop to verify their outcome.",
+        });
       }
       throw error;
     }
@@ -725,10 +746,14 @@ export async function cancelCodexTurn(
     await stopCodexSession(sessionId, live.handle);
   } else if (turnId) {
     await rpc
-      .request("turn/interrupt", {
-        threadId: live.threadId,
-        turnId,
-      }, 5_000)
+      .request(
+        "turn/interrupt",
+        {
+          threadId: live.threadId,
+          turnId,
+        },
+        5_000,
+      )
       .catch(async (error: unknown) => {
         console.warn("[codex] Interrupt failed; stopping process", error);
         await stopCodexSession(sessionId, live.handle);
@@ -796,7 +821,9 @@ export async function retireOriginalCodexWriter(
   )
     throw new Error("The original Codex writer cannot be verified; continuation remains guarded.");
   if (live.activeTurnId || live.pendingTurnStart)
-    throw new Error("The original Codex writer still has active work; continuation remains guarded.");
+    throw new Error(
+      "The original Codex writer still has active work; continuation remains guarded.",
+    );
   // stopCodexSession captures the matching handle synchronously, before waiting
   // for retirement. Unlike forget, it preserves the persisted resume identity.
   await stopCodexSession(sessionId, context);
@@ -813,7 +840,9 @@ export async function forgetCodexSession(
   const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  forgetSessionCommands(sessionId);
   await stopCodexSession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(cancellationEpoch, operationTailsBySession, sessionId);
 }
 
 export function bindCodexSession(
@@ -1249,11 +1278,16 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
     for (const [requestId, { pending }] of live.queuedAsyncAnswers) {
       if (live.questions.get(requestId) !== pending) continue;
       live.onEvent({
-        type: "question.updated", requestId, delivery: "unknown",
+        type: "question.updated",
+        requestId,
+        delivery: "unknown",
         error: "Answer delivery could not be confirmed. Check the connection before continuing.",
       });
     }
-    live.onEvent({ type: "session.error", message: error instanceof Error ? error.message : String(error) });
+    live.onEvent({
+      type: "session.error",
+      message: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   } finally {
     live.pendingTurnStart = false;
@@ -1263,20 +1297,31 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
   if (!live.cancelled && !live.muteUpdates && live.asyncAnswerTexts.length) {
     const text = live.asyncAnswerTexts.join("\n\n");
     const queued = new Map(live.queuedAsyncAnswers);
-    await runTurn(live, {
-      ...input, text, attachments: [], runtimeInstructions: undefined,
-      onAccepted: () => {
-        for (const [id, { pending, reply }] of queued) {
-          if (live.questions.get(id) === pending) pending.resolve(reply);
-          live.queuedAsyncAnswers.delete(id);
-        }
+    await runTurn(
+      live,
+      {
+        ...input,
+        text,
+        attachments: [],
+        runtimeInstructions: undefined,
+        onAccepted: () => {
+          for (const [id, { pending, reply }] of queued) {
+            if (live.questions.get(id) === pending) pending.resolve(reply);
+            live.queuedAsyncAnswers.delete(id);
+          }
+        },
       },
-    }, rpc);
+      rpc,
+    );
   }
 }
 
 /** Starts a provider parent turn without replacing the execution's latch or children. */
-async function startParentTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView): Promise<void> {
+async function startParentTurn(
+  live: Live,
+  input: SendTurnInput,
+  rpc: JsonRpcWriterView,
+): Promise<void> {
   const model = nativeModelId(input.model) || live.model;
   const effort = input.modelSettings?.reasoningEffort;
   const serviceTier = input.modelSettings?.serviceTier;
@@ -1332,7 +1377,12 @@ async function startParentTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWri
           const turnId = response.turn?.id ?? live.activeTurnId;
           // turn/completed can arrive before turn/start returns; don't resurrect a
           // finished turn's id after finishActiveTurn cleared activeTurnId.
-          if (turnId && live.turnDone && !live.awaitingAsyncAnswers && !live.completedParentTurns.has(turnId)) {
+          if (
+            turnId &&
+            live.turnDone &&
+            !live.awaitingAsyncAnswers &&
+            !live.completedParentTurns.has(turnId)
+          ) {
             live.activeTurnId = live.activeTurnId ?? turnId;
             live.onEvent({ type: "turn.started", providerTurnId: turnId });
           }
@@ -1411,13 +1461,19 @@ function handleNotification(
   }
   const notifiedTurnId = stringField(asRecord(rec?.turn), "id") ?? stringField(rec, "turnId");
   const activityItem = asRecord(rec?.item);
-  const childActivity = (method === "item/started" || method === "item/completed") &&
+  const childActivity =
+    (method === "item/started" || method === "item/completed") &&
     (activityItem?.type === "subAgentActivity" || activityItem?.type === "collabAgentToolCall");
   // Child state may still be reported against the parent turn that spawned it.
   // Stale parent text/lifecycle must not interfere with its newer continuation.
   if (notifiedTurnId && live.completedParentTurns.has(notifiedTurnId) && !childActivity) return;
-  if ((method === "turn/completed" || method === "turn/aborted") &&
-    live.activeTurnId && notifiedTurnId && live.activeTurnId !== notifiedTurnId) return;
+  if (
+    (method === "turn/completed" || method === "turn/aborted") &&
+    live.activeTurnId &&
+    notifiedTurnId &&
+    live.activeTurnId !== notifiedTurnId
+  )
+    return;
   // A Codex turn is a sequence of items. Completing an agentMessage does not
   // mean the turn is over — more tools and messages can still arrive. Only
   // turn/completed (and turn/aborted) settle sendCodexTurn, which is what the
@@ -1437,20 +1493,32 @@ function handleNotification(
     if (event.type === "session.error" && live.openAgentRows.size > 0) {
       // session.error seals UI streaming. Report the failure immediately, but
       // retain execution ownership until its independently running children end.
-      if (!live.pendingParentErrors.some((pending) => pending.type === "session.error" && pending.message === event.message))
+      if (
+        !live.pendingParentErrors.some(
+          (pending) => pending.type === "session.error" && pending.message === event.message,
+        )
+      )
         live.pendingParentErrors.push(event);
       live.onEvent({ type: "status", key: "codex-parent-error", text: event.message });
       continue;
     }
     // A fast child may finish before its spawn call returns. That call's
     // stale running snapshot cannot reopen the child's settled row.
-    if ((event.type === "tool.started" || event.type === "tool.updated") && event.kind === "agent" &&
-      ["pending", "in_progress", "running"].includes(event.status ?? "")) {
+    if (
+      (event.type === "tool.started" || event.type === "tool.updated") &&
+      event.kind === "agent" &&
+      ["pending", "in_progress", "running"].includes(event.status ?? "")
+    ) {
       const children = [...live.subagentThreads].filter(([, owner]) => owner === event.callId);
       if (children.length && children.every(([id]) => live.terminalChildren.has(id))) continue;
     }
-    if (duplicate && event.type === "tool.updated" && event.kind === "agent" &&
-      event.status && !["pending", "in_progress", "running"].includes(event.status)) {
+    if (
+      duplicate &&
+      event.type === "tool.updated" &&
+      event.kind === "agent" &&
+      event.status &&
+      !["pending", "in_progress", "running"].includes(event.status)
+    ) {
       for (const childId of codexSubagentThreadIds(asRecord(rec?.item) ?? {}))
         settleChild(live, childId, event.status);
     }
@@ -1707,8 +1775,11 @@ function bindSubagentThreads(
   for (const childId of children) {
     const owner = live.subagentThreads.get(childId);
     if (owner) {
-      if (live.terminalChildren.has(childId) &&
-        (item.tool === "resumeAgent" || (itemType === "subAgentActivity" && item.kind === "started"))) {
+      if (
+        live.terminalChildren.has(childId) &&
+        (item.tool === "resumeAgent" ||
+          (itemType === "subAgentActivity" && item.kind === "started"))
+      ) {
         live.terminalChildren.delete(childId);
         live.subagentThreads.set(childId, callId);
         continue;
@@ -1776,8 +1847,13 @@ function handleSubagentNotification(
   live.pendingSubagent.set(threadId, backlog);
 }
 
-function emitSubagentNotification(live: Live, threadId: string, callId: string,
-  method: string, params: unknown): void | Promise<void> {
+function emitSubagentNotification(
+  live: Live,
+  threadId: string,
+  callId: string,
+  method: string,
+  params: unknown,
+): void | Promise<void> {
   const rec = asRecord(params);
   const turn = asRecord(rec?.turn);
   const turnId = stringField(turn, "id") ?? stringField(rec, "turnId");
@@ -1796,12 +1872,22 @@ function emitSubagentNotification(live: Live, threadId: string, callId: string,
   if (method === "turn/completed" || method === "turn/aborted" || method === "thread/closed") {
     const current = live.childTurns.get(threadId);
     if (turnId && current && current !== turnId) return;
-    const status = stringField(turn, "status") ?? (method === "thread/closed" ? "interrupted" : method === "turn/aborted" ? "interrupted" : undefined);
+    const status =
+      stringField(turn, "status") ??
+      (method === "thread/closed"
+        ? "interrupted"
+        : method === "turn/aborted"
+          ? "interrupted"
+          : undefined);
     // Unknown/missing completion state is not proof of success.
     if (status && ["completed", "failed", "interrupted", "cancelled"].includes(status)) {
       if (key) live.completedChildTurns.add(key);
-      settleChild(live, threadId, status === "completed" ? "completed" : status === "failed" ? "failed" : "interrupted",
-        stringField(asRecord(turn?.error), "message"));
+      settleChild(
+        live,
+        threadId,
+        status === "completed" ? "completed" : status === "failed" ? "failed" : "interrupted",
+        stringField(asRecord(turn?.error), "message"),
+      );
     }
   }
   return emitSubagentSteps(live, callId, method, params);
@@ -1871,19 +1957,25 @@ function settleChild(live: Live, threadId: string, status: string, message?: str
   const title = callId ? live.openAgentRows.get(callId) : undefined;
   if (!callId || !title) return;
   const previous = live.childOutcomes.get(callId);
-  const severity = (value: string) => value === "failed" ? 3 : value === "interrupted" || value === "stopped" ? 2 : 1;
+  const severity = (value: string) =>
+    value === "failed" ? 3 : value === "interrupted" || value === "stopped" ? 2 : 1;
   if (!previous || severity(status) > severity(previous)) live.childOutcomes.set(callId, status);
   // An activity row may represent more than one child.
-  if ([...live.subagentThreads].some(([id, owner]) => owner === callId && !live.terminalChildren.has(id))) return;
+  if (
+    [...live.subagentThreads].some(
+      ([id, owner]) => owner === callId && !live.terminalChildren.has(id),
+    )
+  )
+    return;
   live.openAgentRows.delete(callId);
-    live.onEvent({
-      type: "tool.updated",
-      callId,
-      title,
-      kind: "agent",
-      status: live.childOutcomes.get(callId) ?? status,
-      ...(message ? { detail: message } : {}),
-    });
+  live.onEvent({
+    type: "tool.updated",
+    callId,
+    title,
+    kind: "agent",
+    status: live.childOutcomes.get(callId) ?? status,
+    ...(message ? { detail: message } : {}),
+  });
   syncBackgroundWait(live);
   maybeFinishBackgroundTurn(live);
 }
@@ -1903,8 +1995,15 @@ function closeOpenAgentRows(live: Live): void {
 }
 
 function maybeFinishBackgroundTurn(live: Live): void {
-  if (!live.parentCompleted || live.pendingTurnStart || live.awaitingAsyncAnswers ||
-    live.activeTurnId || live.openAgentRows.size || !live.turnDone) return;
+  if (
+    !live.parentCompleted ||
+    live.pendingTurnStart ||
+    live.awaitingAsyncAnswers ||
+    live.activeTurnId ||
+    live.openAgentRows.size ||
+    !live.turnDone
+  )
+    return;
   finishActiveTurn(live);
 }
 

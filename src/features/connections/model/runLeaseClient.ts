@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getShellSessions, subscribeShell } from "../../sessions/model/sessionsStore";
+import { getShellSessions, subscribeShell } from "../../sessions/public/sessionsStore";
 import {
   isLeaseHeld,
   leaseHeldText,
   RUN_LEASE_CAPABILITY,
+  RUN_LEASE_TTL_MS,
   HOST_WRITER_RETIREMENT_CAPABILITY,
   type RunLease,
 } from "../../sync/model/runLease";
@@ -39,6 +40,17 @@ const MACHINE_RECHECK_MS = 15_000;
 const FIRST_LOOK_MS = 2_000;
 /** How long a send waits for the host's answer before it starts without a lease. */
 export const RUN_LEASE_ACQUIRE_TIMEOUT_MS = 4_000;
+/**
+ * A retirement-capable Host waits up to 20 s for the previous provider writer
+ * to stop before it answers. Wait past that window so a slow but healthy
+ * retirement is granted instead of refused and left uncertain.
+ */
+export const RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS = 25_000;
+/**
+ * An abandoned grant whose return is uncertain is never renewed by this window,
+ * so the Host drops it once its TTL passes. The guard clears after that.
+ */
+export const RUN_LEASE_UNCERTAIN_GUARD_MS = RUN_LEASE_TTL_MS + 5_000;
 /** A lease whose turn never becomes busy here (it failed to start) is given back after this. */
 export const RUN_LEASE_IDLE_RELEASE_MS = 30_000;
 
@@ -47,7 +59,11 @@ let probing: Promise<string | undefined> | undefined;
 let transport: Transport = (id, method, params) => remoteRequest(id, method, params);
 
 /** Replaces the host transport and forgets what was learned (tests). */
-export function configureRunLeaseClient(next?: { transport?: Transport; machineId?: string; retirement?: boolean }) {
+export function configureRunLeaseClient(next?: {
+  transport?: Transport;
+  machineId?: string;
+  retirement?: boolean;
+}) {
   transport = next?.transport ?? ((id, method, params) => remoteRequest(id, method, params));
   machine = next?.machineId
     ? { id: next.machineId, checkedAt: Infinity, retirement: next.retirement }
@@ -146,7 +162,7 @@ function watchTurns() {
   unsubscribe ??= subscribeShell(() => {
     if (!tracked.size) return;
     const sessions = new Map(getShellSessions().map((session) => [session.id, session]));
-    for (const [id, state] of [...tracked]) {
+    for (const [id, state] of Array.from(tracked)) {
       if (sessions.get(id)?.busy) {
         state.sawBusy = true;
         clearTimeout(state.idleTimer);
@@ -176,7 +192,11 @@ export function heldRunLeases(): { sessionId: string; epoch: number }[] {
  */
 export function noteRunLeases(answers: Record<string, RunLease | null> | undefined): string[] {
   const lost: string[] = [];
-  const busy = new Set(getShellSessions().filter((session) => session.busy).map((s) => s.id));
+  const busy = new Set(
+    getShellSessions()
+      .filter((session) => session.busy)
+      .map((s) => s.id),
+  );
   for (const [sessionId, lease] of Object.entries(answers ?? {})) {
     const state = tracked.get(sessionId);
     if (!state) continue;
@@ -213,10 +233,11 @@ function trackLease(sessionId: string, lease: RunLease, late = false) {
 export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcome> {
   const id = runLeaseMachine();
   if (!id) return { kind: "unavailable" };
-  if (retirementWaits.has(sessionId)) return {
-    kind: "failed",
-    text: "Message not sent: the previous ownership transfer is still pending or unknown. Your message is retained. Check the task repair state or Host connection before continuing.",
-  };
+  if (retirementWaits.has(sessionId))
+    return {
+      kind: "failed",
+      text: "Message not sent: the previous ownership transfer is still pending or unknown. Your message is retained. Sending is allowed again within about two minutes; check the Host connection if this persists.",
+    };
   const retirement = machine?.retirement === true;
   pending.add(sessionId);
   let timedOut = false;
@@ -230,10 +251,13 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
     // A slow host (a busy notes worker, a handoff) must not hold a send invisibly:
     // after a moment the turn starts as before, as when the host is unreachable.
     const limit = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        timedOut = true;
-        reject(new Error("Run lease request timed out"));
-      }, RUN_LEASE_ACQUIRE_TIMEOUT_MS);
+      timer = setTimeout(
+        () => {
+          timedOut = true;
+          reject(new Error("Run lease request timed out"));
+        },
+        retirement ? RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS : RUN_LEASE_ACQUIRE_TIMEOUT_MS,
+      );
     });
     const { lease } = await Promise.race([request, limit]);
     trackLease(sessionId, lease);
@@ -244,23 +268,34 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
         // No provider started. A late lease belongs to this abandoned request,
         // never to a later send; return only that epoch without tracking it.
         const cleanup = request.then(
-          ({ lease }) => transport(id, "sessions.runLease", {
-            sessionId, clientId: holder(), action: "release", epoch: lease.epoch,
-          }),
+          ({ lease }) =>
+            transport(id, "sessions.runLease", {
+              sessionId,
+              clientId: holder(),
+              action: "release",
+              epoch: lease.epoch,
+            }),
           (error: unknown) => {
             // These acquire refusals precede a grant. Retirement may still be
             // pending on the Host, but a fresh query cannot reuse a late lease.
             // Handle only the acquire rejection here: a release failure after
             // a grant must remain guarded even if it carries the same code.
             const text = error instanceof Error ? error.message : String(error);
-            if (isLeaseHeld(error) || /\bHOST_WRITER_RETIREMENT_(?:FAILED|PENDING):/.test(text)) return;
+            if (isLeaseHeld(error) || /\bHOST_WRITER_RETIREMENT_(?:FAILED|PENDING):/.test(text))
+              return;
             throw error;
           },
         );
         retirementWaits.set(sessionId, cleanup);
-        void cleanup.then(() => {
+        const clear = () => {
           if (retirementWaits.get(sessionId) === cleanup) retirementWaits.delete(sessionId);
-        }, () => {}); // Uncertain grant/release remains held, never reused by a new send.
+        };
+        void cleanup.then(clear, () => {
+          // Uncertain grant/release stays guarded until any late lease has
+          // expired on the Host, then a fresh acquire may ask again.
+          const timer = setTimeout(clear, RUN_LEASE_UNCERTAIN_GUARD_MS);
+          timer.unref?.();
+        });
         return {
           kind: "failed",
           text: "Message not sent: the previous Host writer's retirement is still unconfirmed. Your message is retained. Check the task or Host connection before continuing.",

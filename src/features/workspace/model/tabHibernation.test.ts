@@ -14,13 +14,23 @@ const MIN = 60_000;
 describe("recordTabVisits", () => {
   it("stamps the active tab and gives first-seen tabs the current time", () => {
     const visits = recordTabVisits(new Map(), ["a", "b"], "a", 1_000);
-    expect(visits).toEqual(new Map([["a", 1_000], ["b", 1_000]]));
+    expect(visits).toEqual(
+      new Map([
+        ["a", 1_000],
+        ["b", 1_000],
+      ]),
+    );
   });
 
   it("keeps the last visit of an inactive tab and drops tabs that are gone", () => {
     const first = recordTabVisits(new Map(), ["a", "b", "c"], "a", 1_000);
     const next = recordTabVisits(first, ["a", "b"], "b", 5_000);
-    expect(next).toEqual(new Map([["a", 1_000], ["b", 5_000]]));
+    expect(next).toEqual(
+      new Map([
+        ["a", 1_000],
+        ["b", 5_000],
+      ]),
+    );
   });
 });
 
@@ -80,7 +90,12 @@ describe("unseen finished TTL", () => {
   it("expires a badge only after the TTL and restarts it when the session finishes again", () => {
     let since = trackUnseenSince(new Map(), new Set(["a"]), 1_000);
     since = trackUnseenSince(since, new Set(["a", "b"]), 5_000);
-    expect(since).toEqual(new Map([["a", 1_000], ["b", 5_000]]));
+    expect(since).toEqual(
+      new Map([
+        ["a", 1_000],
+        ["b", 5_000],
+      ]),
+    );
     expect([...expiredUnseenSessionIds(since, 1_000 + UNSEEN_FINISHED_TTL_MS - 1)]).toEqual([]);
     expect([...expiredUnseenSessionIds(since, 1_000 + UNSEEN_FINISHED_TTL_MS)]).toEqual(["a"]);
 

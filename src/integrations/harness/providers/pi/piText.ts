@@ -158,7 +158,8 @@ async function promptOnLive(
   };
   const timeoutMs = input.timeoutMs ?? REQUEST_TIMEOUT_MS;
   try {
-    await writer.request({ type: "new_session" }).catch(() => undefined);
+    // Never continue with the previous utility conversation if reset failed.
+    await writer.request({ type: "new_session" });
     const thinking = input.modelSettings?.thinking;
     await writer
       .request({
@@ -275,7 +276,11 @@ async function startLive(
   const previous = captureDrop(flavor);
   let stopping = Promise.resolve();
   const childId = flavor.textChildId;
-  const textProcess = createChildProcessHandle(childId, operationContext?.nativeControlTurn);
+  const textProcess = createChildProcessHandle(
+    childId,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(textProcess, operationContext, true);
   const liveRef: { current: LiveText | null } = { current: null };
   let admitted = false;

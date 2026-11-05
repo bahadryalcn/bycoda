@@ -69,7 +69,10 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
   const { path } = await resolveCursorBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId), "cursor.catalog");
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "cursor.catalog",
+  );
   const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);
@@ -134,7 +137,7 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
 async function discoverViaCli(workingDirectory?: string): Promise<AgentModel[]> {
   const { path } = await resolveCursorBinary();
   const cwd = workingDirectory ?? (await homeDir());
-  const stdout = await execChild(path, ["--list-models"], cwd, "cursor");
+  const stdout = await execChild(path, ["--list-models"], cwd, "cursor", undefined, "management");
   return modelsFromListModelsOutput(stdout);
 }
 

@@ -166,9 +166,15 @@ it.each([false, true])(
     });
     await act(async () => root.render(createElement(LinearSettings)));
     await click("Refresh teams");
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+    );
     await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
-    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent?.includes("Disconnect"))!.click());
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+        .find((button) => button.textContent?.includes("Disconnect"))!
+        .click(),
+    );
     await fill("Linear API key", "replacement-test-key");
     await click("Save and test connection");
     expect(container.textContent).toContain("New account team");

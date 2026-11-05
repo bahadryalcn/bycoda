@@ -55,6 +55,8 @@ type OpenCodeConnection = Readonly<{
   serverPassword?: string;
   nativeSessionId?: string;
   nativeAuthority?: Readonly<NativeAuthorityScope>;
+  nativeSessionCapability?: import("../../core/controlTurn").NativeSessionCapability;
+  nativeOwnedService?: import("./opencodeService").NativeOwnedOpenCode;
 }>;
 type OpenCodeHttpDispatch = (input: HarnessHttpInput) => Promise<{ status: number; body: string }>;
 
@@ -88,6 +90,8 @@ export class OpenCodeClient {
     readonly serverPassword?: string,
     private readonly nativeSessionId?: string,
     private readonly nativeAuthority?: NativeAuthorityScope,
+    private readonly nativeSessionCapability?: import("../../core/controlTurn").NativeSessionCapability,
+    private readonly nativeOwnedService?: import("./opencodeService").NativeOwnedOpenCode,
   ) {
     this.connection = Object.freeze({
       baseUrl,
@@ -96,6 +100,8 @@ export class OpenCodeClient {
       serverPassword,
       nativeSessionId,
       nativeAuthority: nativeAuthority ? Object.freeze({ ...nativeAuthority }) : undefined,
+      nativeSessionCapability,
+      nativeOwnedService,
     });
   }
 
@@ -482,7 +488,15 @@ export class OpenCodeClient {
       },
       onEnd,
     );
-    await openHarnessSse(sessionId, url, this.headers(), this.nativeAuthority);
+    await openHarnessSse(
+      sessionId,
+      url,
+      this.headers(),
+      this.nativeAuthority,
+      undefined,
+      this.nativeSessionCapability,
+      this.nativeOwnedService,
+    );
   }
 
   async closeEvents(sessionId: string): Promise<void> {
@@ -681,6 +695,10 @@ export class OpenCodeClient {
     const hasBody = opts?.body !== undefined;
     const response = await (this.hostRequest ?? harnessHttp)({
       ...(this.nativeSessionId ? { sessionId: this.nativeSessionId } : {}),
+      ...(this.nativeSessionCapability
+        ? { nativeSessionCapability: this.nativeSessionCapability }
+        : {}),
+      ...(this.nativeOwnedService ? { nativeOwnedService: this.nativeOwnedService } : {}),
       ...(this.nativeAuthority
         ? {
             authorityEnvironmentId: this.nativeAuthority.environmentId,

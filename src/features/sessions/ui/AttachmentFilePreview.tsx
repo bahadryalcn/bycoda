@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { DocumentMessage } from "../../files/ui/DocumentMessage";
+import { DocumentMessage } from "../../files/public/DocumentMessage";
 import type { Attachment } from "../model/session";
 import { isAttachmentFolder } from "../model/attachments";
 import { readBinaryFile } from "../../../platform/tauri/fs";
-import { canPreviewFile } from "../../files/model/filePreview";
-import { mediaKind } from "../../files/model/mediaPreview";
-import { documentKind, MAX_DOCUMENT_BYTES } from "../../files/model/documentViewer";
-import { DocumentView } from "../../files/ui/DocumentView";
+import { canPreviewFile } from "../../files/public/filePreviewMetadata";
+import { mediaKind } from "../../files/public/mediaPreview";
+import { documentKind, MAX_DOCUMENT_BYTES } from "../../files/public/documentViewer";
+import { DocumentView } from "../../files/public/DocumentView";
 import { Modal } from "../../../shared/ui/Modal";
 import { lazySurface } from "../../../shared/ui/lazySurface";
-import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 
 const MediaView = lazySurface(async () => ({
-  default: (await import("../../files/ui/MediaView")).MediaView,
+  default: (await import("../../files").then((entry) => entry.loadMediaView())).MediaView,
 }));
 
 function isTextAttachment(attachment: Attachment): boolean {

@@ -24,18 +24,19 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { formatInteger } from "../../../shared/lib/numbers";
-import type { ColorScheme } from "../../settings/model/appearance";
+import type { ColorScheme, DiffLayout } from "../../settings";
 import { basename } from "../../../platform/tauri/fs";
-import { highlightDiffFile, type SyntaxToken } from "../../files/editor/syntaxTokens";
+import { highlightDiffFile, type SyntaxToken } from "../../files/public/syntaxTokens";
+
 import { useDiffZoom } from "../hooks/useDiffZoom";
 import { useFocusFollow } from "../hooks/useFocusFollow";
 import { DiffCommentComposer } from "./DiffCommentComposer";
 import "./UnifiedDiffView.css";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 import {
   DiffOverviewContext,
   DiffOverviewRegistry,
@@ -43,7 +44,6 @@ import {
   useDiffOverviewSource,
 } from "./DiffOverviewRuler";
 import { DiffLayoutToggle, useResponsiveDiffLayout } from "./DiffLayoutToggle";
-import type { DiffLayout } from "../../settings/model/settings";
 import { splitRowMarks, unifiedRowMarks } from "../model/diffOverview";
 import { buildSplitRows, type SplitRow } from "../model/splitRows";
 import {
@@ -243,13 +243,15 @@ export function UnifiedDiffView({
         {/* Count and churn truncate first; the view and expand controls never wrap away. */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
           <OverflowTooltip label={fileLabel}>
-            <span className="min-w-0 truncate text-(--ui-text-secondary)">
-              {fileLabel}
-            </span>
+            <span className="min-w-0 truncate text-(--ui-text-secondary)">{fileLabel}</span>
           </OverflowTooltip>
           <DiffCounts additions={additions} deletions={deletions} />
         </span>
-        <span role="group" aria-label={t("Diff view")} className="ml-auto flex shrink-0 items-center gap-0.5">
+        <span
+          role="group"
+          aria-label={t("Diff view")}
+          className="ml-auto flex shrink-0 items-center gap-0.5"
+        >
           <DiffLayoutToggle className="mr-0.5" />
           <Button
             size="sm"
@@ -459,7 +461,10 @@ const FileSection = memo(function FileSection({
         >
           <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
           <FileTypeIcon name={name} isDir={false} />
-          <MiddleTruncate mode="path" className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)">
+          <MiddleTruncate
+            mode="path"
+            className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)"
+          >
             {file.label}
           </MiddleTruncate>
           <DiffCounts additions={file.additions} deletions={file.deletions} />
@@ -636,6 +641,9 @@ function VirtualRows({
   const codeRightRef = useRef<HTMLDivElement | null>(null);
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
   const hover = useRef<DiffHover | null>(null);
+  const hoverNodes = useRef(new Map<string, HTMLElement[]>());
+  const hoverActions = useRef(new Map<HTMLElement, HTMLElement[]>());
+  const markedHoverNodes = useRef<HTMLElement[]>([]);
   const [commentTarget, setCommentTarget] = useState<DiffCommentDraft | null>(null);
   const rows = useMemo(
     () =>
@@ -718,27 +726,31 @@ function VirtualRows({
       const body = bodyRef.current;
       const mark = (next: DiffHover | null) => {
         const syncActions = (node: HTMLElement) => {
-          for (const action of node.querySelectorAll<HTMLElement>("[data-gutter-action]")) {
-            const pointerSelected = node.dataset.pointerRow === "true" &&
+          for (const action of hoverActions.current.get(node) ?? []) {
+            const pointerSelected =
+              node.dataset.pointerRow === "true" &&
               (action.dataset.gutterAction === "stage" || node.dataset.pointerHover === "true");
-            action.toggleAttribute("data-selected", action.dataset.retainedAction === "true" || pointerSelected);
+            action.toggleAttribute(
+              "data-selected",
+              action.dataset.retainedAction === "true" || pointerSelected,
+            );
           }
         };
         if (hover.current?.key === next?.key && hover.current?.side === next?.side) {
           // A comment draft may have closed since the last pointer movement.
-          for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) syncActions(node);
+          for (const node of markedHoverNodes.current) syncActions(node);
           return;
         }
         hover.current = next;
-        for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) {
+        for (const node of markedHoverNodes.current) {
           node.dataset.pointerRow = "false";
           node.dataset.pointerHover = "false";
           syncActions(node);
         }
+        markedHoverNodes.current = [];
         if (!next || !body) return;
-        for (const node of body.querySelectorAll<HTMLElement>(
-          `[data-diff-hover-key="${CSS.escape(next.key)}"]`,
-        )) {
+        markedHoverNodes.current = hoverNodes.current.get(next.key) ?? [];
+        for (const node of markedHoverNodes.current) {
           node.dataset.pointerRow = "true";
           node.dataset.pointerHover =
             !splitRows || node.dataset.diffSide === next.side ? "true" : "false";
@@ -769,6 +781,27 @@ function VirtualRows({
     },
     [range.end, range.padTop, range.start, rows, sizedRows, splitRows],
   );
+
+  // DOM membership changes on commit, not on every pointer movement. Keep only
+  // currently mounted rows/actions so virtual windows and comment drafts refresh it.
+  useLayoutEffect(() => {
+    const nodes = new Map<string, HTMLElement[]>();
+    const actions = new Map<HTMLElement, HTMLElement[]>();
+    const marked: HTMLElement[] = [];
+    for (const node of bodyRef.current?.querySelectorAll<HTMLElement>("[data-diff-hover-key]") ??
+      []) {
+      const key = node.dataset.diffHoverKey!;
+      const group = nodes.get(key) ?? [];
+      group.push(node);
+      nodes.set(key, group);
+      actions.set(node, [...node.querySelectorAll<HTMLElement>("[data-gutter-action]")]);
+      if (node.dataset.pointerRow === "true") marked.push(node);
+    }
+    hoverNodes.current = nodes;
+    hoverActions.current = actions;
+    markedHoverNodes.current = marked;
+    if (!marked.length) hover.current = null;
+  });
 
   useLayoutEffect(() => {
     if (!near) return;
@@ -950,6 +983,7 @@ function VirtualRows({
       ) : null}
       <div
         ref={bodyRef}
+        data-diff-body
         className="flex"
         onMouseMove={(event) => {
           mouseRef.current = { x: event.clientX, y: event.clientY };
@@ -1105,12 +1139,12 @@ const SplitLane = memo(function SplitLane({
     return side === "before" ? (
       <DiffLineRow line={row.line} lane={lane} hovered={false} commenting={false} />
     ) : (
-      <div className="bg-[var(--ui-surface)]" style={HUNK_HEIGHT} />
+      <div className="bg-[var(--ui-workspace-canvas-surface)]" style={HUNK_HEIGHT} />
     );
   }
   const line = side === "before" ? row.left : row.right;
   if (!line) {
-    return <div className="bg-[var(--ui-surface)]" style={LINE_HEIGHT} />;
+    return <div className="bg-[var(--ui-workspace-canvas-surface)]" style={LINE_HEIGHT} />;
   }
   return (
     <DiffLineRow
@@ -1198,7 +1232,10 @@ function FoldBar({
 }) {
   useLocale();
   return (
-    <div className="flex items-center gap-1 bg-[var(--ui-surface-muted)] px-2" style={FOLD_HEIGHT}>
+    <div
+      className="flex items-center gap-1 bg-[var(--ui-workspace-reading-muted)] px-2"
+      style={FOLD_HEIGHT}
+    >
       <Button
         size="sm"
         inset
@@ -1276,7 +1313,10 @@ const DiffLineRow = memo(function DiffLineRow({
   useLocale();
   if (line.kind === "hunk") {
     return (
-      <div className="flex items-center bg-[var(--ui-surface)]" style={HUNK_HEIGHT}>
+      <div
+        className="flex items-center bg-[var(--ui-workspace-canvas-surface)]"
+        style={HUNK_HEIGHT}
+      >
         {lane === "code" ? (
           <span className="px-3 font-mono diff-meta-text leading-none text-[var(--ui-text-muted)]">
             {line.text}
@@ -1322,20 +1362,20 @@ const DiffLineRow = memo(function DiffLineRow({
             data-retained-action={hovered || commenting ? "true" : "false"}
             className="absolute top-0.5 left-0.5 z-1"
           >
-          <InlineAction
-            label={`Comment on line ${number ?? ""}`.trim()}
-            motion="none"
-            type="button"
-            onClick={(event) =>
-              onComment(
-                side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
-                line,
-                event.currentTarget.getBoundingClientRect(),
-              )
-            }
-          >
-            <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
-          </InlineAction>
+            <InlineAction
+              label={`Comment on line ${number ?? ""}`.trim()}
+              motion="none"
+              type="button"
+              onClick={(event) =>
+                onComment(
+                  side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
+                  line,
+                  event.currentTarget.getBoundingClientRect(),
+                )
+              }
+            >
+              <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
           </ActionHost>
         ) : null}
         {onStage ? (
@@ -1345,16 +1385,16 @@ const DiffLineRow = memo(function DiffLineRow({
             data-retained-action={stageVisible ? "true" : "false"}
             className="absolute top-0.5 left-full z-1 ml-0.5"
           >
-          <InlineAction
-            label={t("Stage hunk")}
-            motion="none"
-            type="button"
-            onClick={() => {
-              if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
-            }}
-          >
-            <Plus className="icon-xs" strokeWidth={1.75} />
-          </InlineAction>
+            <InlineAction
+              label={t("Stage hunk")}
+              motion="none"
+              type="button"
+              onClick={() => {
+                if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
+              }}
+            >
+              <Plus className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
           </ActionHost>
         ) : null}
       </div>

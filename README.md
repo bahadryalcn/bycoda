@@ -97,12 +97,13 @@ Try one of these prompts in a project you know:
 
 The getting-started path here runs the desktop app from source. For local
 Windows/macOS packaging and installation, follow the
-[shared update coordinator](docs/local-update.md). Independent release publishing
-and automatic updates are currently disabled; see [release status](docs/reference/fork.md#releases-and-updates).
+[shared update coordinator](docs/local-update.md). Installed release builds check for signed
+updates automatically; releases are published only by an owner-dispatched
+workflow. See [releases and updates](docs/reference/fork.md#releases-and-updates).
 
 ### 1. Prepare your tools
 
-- Install **Node.js**, **Rust**, and Tauri's native build prerequisites for your
+- Install **Node.js 22.12 or newer** (see [.nvmrc](.nvmrc)), **Rust**, and Tauri's native build prerequisites for your
   platform. See [development setup](CONTRIBUTING.md#development-environment).
 - Use the **pnpm version pinned in [package.json](package.json)**.
 - Install and authenticate at least one supported provider CLI.
@@ -148,7 +149,7 @@ See the [getting-started guide](docs/guides/onboarding.md) for details.
 - [Software license](LICENSE) and [security reporting](SECURITY.md).
 
 These documents are bundled for offline reading in **Settings → Policies**, with
-English and Turkish policy text. Privacy contact: [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com).
+English and Turkish policy text. Privacy contact: [info@bycoda.codes](mailto:info@bycoda.codes).
 
 ## Help shape bycoda
 

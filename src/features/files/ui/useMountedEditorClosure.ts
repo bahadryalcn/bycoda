@@ -16,7 +16,7 @@ import {
   type TransactionSpec,
 } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { mergeResolutionField } from "../../source-control/model/mergeResolution";
+import { mergeResolutionField } from "../../source-control/public/mergeResolution";
 
 /** Public instance boundaries are installed before the owned view is exposed.
  * Dispatch rejection precedes MergeView's chunk mutation; aliases/prototype
@@ -129,6 +129,7 @@ export function exactMountedEditorDraftReceipt(
     path: string;
     text: string | null;
     eol: string;
+    serializedText?: string;
     diskBaseline: string | null;
   },
 ): NativeEditorDraftMetadata | null {
@@ -160,7 +161,13 @@ export function exactMountedEditorDraftReceipt(
     record.payload.path !== input.path ||
     record.payload.text !== input.text ||
     record.payload.diskBaseline !== input.diskBaseline ||
-    record.payload.eol !== input.eol
+    record.payload.eol !== input.eol ||
+    (input.serializedText !== undefined &&
+      (record.payload.serializedText ??
+        record.payload.text.replace(
+          /\n/g,
+          record.payload.eol === "crlf" ? "\r\n" : record.payload.eol === "cr" ? "\r" : "\n",
+        )) !== input.serializedText)
   )
     return null;
   return ack;

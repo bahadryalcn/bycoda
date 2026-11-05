@@ -33,6 +33,9 @@ impl std::fmt::Debug for Lease {
     }
 }
 impl Lease {
+    pub(crate) fn same_generation(&self, other: &Self) -> bool {
+        self.owner == other.owner && Arc::ptr_eq(&self.alive, &other.alive)
+    }
     pub(crate) fn owner(&self) -> &str {
         &self.owner
     }

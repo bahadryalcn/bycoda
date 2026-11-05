@@ -1,4 +1,8 @@
 /** Persisted owner identity only: never provider IDs, endpoints or credentials. */
+import {
+  hasControlCharacters,
+  replaceControlCharacters,
+} from "../../../shared/lib/controlCharacters";
 export type LocalSessionLocator =
   | { kind: "host"; environmentId: string; sessionId: string }
   | {
@@ -19,7 +23,7 @@ function validId(value: unknown): value is string {
     value.length > 0 &&
     value.length <= 256 &&
     value.trim() === value &&
-    !/[\u0000-\u001f\u007f]/.test(value) &&
+    !hasControlCharacters(value) &&
     value !== "." &&
     value !== ".."
   );
@@ -83,7 +87,7 @@ export function parseLocalSessionLink(href: string): LocalSessionReference | nul
 }
 
 export function escapeSessionReferenceLabel(title: string): string {
-  return (title.replace(/[\u0000-\u001f\u007f]/g, " ").trim() || "Session").replace(
+  return (replaceControlCharacters(title, " ").trim() || "Session").replace(
     /[\\`*_[\]<>!()#|~]/g,
     "\\$&",
   );

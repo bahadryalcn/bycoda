@@ -222,7 +222,10 @@ export function WorktreePicker({
                   <MiddleTruncate mode="text" className="text-ui-body">
                     {tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) })}
                   </MiddleTruncate>
-                  <MiddleTruncate mode="path" className="text-ui-caption text-(--ui-text-secondary)">
+                  <MiddleTruncate
+                    mode="path"
+                    className="text-ui-caption text-(--ui-text-secondary)"
+                  >
                     {`${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`}
                   </MiddleTruncate>
                 </span>

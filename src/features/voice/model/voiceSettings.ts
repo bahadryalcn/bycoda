@@ -9,8 +9,10 @@ export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
 export type VoiceMode = "local" | "grok" | "openai";
 
 export type VoiceSettings = {
-  manualTurnEnd?:boolean;
-  manualTurnEndRevision?:number;
+  /** Explicit opt-in: OpenAI receives continuous live audio for turn detection. */
+  experimentalSemanticVad?: boolean;
+  manualTurnEnd?: boolean;
+  manualTurnEndRevision?: number;
   microphoneId?: string;
   turnEndSilence?: number;
   holdAnnouncements?: boolean;
@@ -18,6 +20,7 @@ export type VoiceSettings = {
   visual: VoiceVisual;
   compact: boolean;
   enabled: boolean;
+  dictationEnabled: boolean;
   /** Zero disables idle sleep; otherwise minutes without owner input. */
   idleSleepMinutes: number;
   natural: boolean;
@@ -35,9 +38,11 @@ export type VoiceSettings = {
   ttsPath: string;
 };
 const defaults: VoiceSettings = {
+  experimentalSemanticVad: false,
   visual: "mark",
   compact: false,
   enabled: false,
+  dictationEnabled: false,
   idleSleepMinutes: 10,
   natural: true,
   mode: "local",
@@ -61,14 +66,35 @@ const preference = createStoredSetting<VoiceSettings>({
         ? (value.visual as VoiceVisual)
         : "mark",
       compact: value?.compact === true,
+      experimentalSemanticVad: value?.experimentalSemanticVad === true,
       enabled: value?.enabled === true,
-      ...(typeof value?.manualTurnEnd==="boolean"?{manualTurnEnd:value.manualTurnEnd}:{}),
-      ...(Number.isSafeInteger(value?.manualTurnEndRevision)&&value.manualTurnEndRevision>=0?{manualTurnEndRevision:value.manualTurnEndRevision}:{}),
-      ...(typeof value?.microphoneId === "string" && value.microphoneId.length <= 300 ? {microphoneId:value.microphoneId} : {}),
-      ...(Number.isFinite(value?.turnEndSilence) && value.turnEndSilence >= 0.5 && value.turnEndSilence <= 5 ? {turnEndSilence:value.turnEndSilence} : {}),
-      ...(typeof value?.holdAnnouncements === "boolean" ? {holdAnnouncements:value.holdAnnouncements} : {}),
-      ...(typeof value?.allowBargeIn === "boolean" ? {allowBargeIn:value.allowBargeIn} : {}),
-      idleSleepMinutes: Number.isInteger(value?.idleSleepMinutes) && value.idleSleepMinutes >= 0 && value.idleSleepMinutes <= 120 ? value.idleSleepMinutes : 10,
+      // Preserve existing dictation visibility until its own switch is saved.
+      dictationEnabled:
+        typeof value?.dictationEnabled === "boolean"
+          ? value.dictationEnabled
+          : value?.enabled === true,
+      ...(typeof value?.manualTurnEnd === "boolean" ? { manualTurnEnd: value.manualTurnEnd } : {}),
+      ...(Number.isSafeInteger(value?.manualTurnEndRevision) && value.manualTurnEndRevision >= 0
+        ? { manualTurnEndRevision: value.manualTurnEndRevision }
+        : {}),
+      ...(typeof value?.microphoneId === "string" && value.microphoneId.length <= 300
+        ? { microphoneId: value.microphoneId }
+        : {}),
+      ...(Number.isFinite(value?.turnEndSilence) &&
+      value.turnEndSilence >= 0.5 &&
+      value.turnEndSilence <= 5
+        ? { turnEndSilence: value.turnEndSilence }
+        : {}),
+      ...(typeof value?.holdAnnouncements === "boolean"
+        ? { holdAnnouncements: value.holdAnnouncements }
+        : {}),
+      ...(typeof value?.allowBargeIn === "boolean" ? { allowBargeIn: value.allowBargeIn } : {}),
+      idleSleepMinutes:
+        Number.isInteger(value?.idleSleepMinutes) &&
+        value.idleSleepMinutes >= 0 &&
+        value.idleSleepMinutes <= 120
+          ? value.idleSleepMinutes
+          : 10,
       natural: value?.natural !== false,
       mode: value?.mode === "grok" || value?.mode === "openai" ? value.mode : "local",
       engine:

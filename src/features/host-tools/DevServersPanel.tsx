@@ -10,6 +10,13 @@ import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import { pathKey } from "../../shared/lib/paths";
 import { useEffect, useRef, useState } from "react";
+import {
+  peekToolsDraftPart,
+  subscribeToolsDraftTransfer,
+  writeToolsDraftPart,
+  holdToolsDraftTransfer,
+  type ToolsDraftScope,
+} from "./toolsDraftTransfer";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
 import { BrowserPanel } from "./BrowserPanel";
@@ -99,12 +106,41 @@ function pollDelay(failures: number, quietScans: number): number {
   return base * Math.min(4, 2 ** failures);
 }
 
-export function DevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch }) {
-  return <ProjectDevServersPanel key={cwd} cwd={cwd} launch={launch} />;
+export function DevServersPanel({
+  cwd,
+  launch,
+  active = true,
+  transferScope,
+}: {
+  cwd: string;
+  launch?: Launch;
+  active?: boolean;
+  transferScope?: ToolsDraftScope;
+}) {
+  return (
+    <ProjectDevServersPanel
+      key={cwd}
+      cwd={cwd}
+      launch={launch}
+      active={active}
+      transferScope={transferScope}
+    />
+  );
 }
 
-function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch }) {
+function ProjectDevServersPanel({
+  cwd,
+  launch,
+  active,
+  transferScope,
+}: {
+  cwd: string;
+  launch?: Launch;
+  active: boolean;
+  transferScope?: ToolsDraftScope;
+}) {
   useLocale();
+  const saved = transferScope ? peekToolsDraftPart(transferScope, "servers") : undefined;
   const [scan, setScan] = useState<DevServerScan>();
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<string>();
@@ -112,10 +148,12 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const [scanError, setScanError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [search, setSearch] = useRetainedState(`dev-servers:${pathKey(cwd)}:search`, "");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [selectedId, setSelectedId] = useState<string>();
-  const [selectedEndpoint, setSelectedEndpoint] = useState<string>();
+  const [error, setError] = useState(saved?.error ?? "");
+  const [notice, setNotice] = useState(saved?.notice ?? "");
+  const [selectedId, setSelectedId] = useState<string | undefined>(saved?.selectedId);
+  const [selectedEndpoint, setSelectedEndpoint] = useState<string | undefined>(
+    saved?.selectedEndpoint,
+  );
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [details, setDetails] = useState<DevServerDetails>();
   const [intent, setIntent] = useState<Intent>("details");
@@ -124,23 +162,83 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const [logs, setLogs] = useState<{ available: boolean; output: string }>();
   const [preview, setPreview] = useState<string>();
   const [sharing, setSharing] = useState<string>();
-  const [showStart, setShowStart] = useState(!!launch);
-  const [name, setName] = useState(launch?.input.name ?? "");
-  const [command, setCommand] = useState(launch?.input.command ?? "");
-  const [workingDirectory, setWorkingDirectory] = useState(launch?.input.cwd ?? "");
-  const [port, setPort] = useState(launch?.input.expectedPort?.toString() ?? "");
-  const [restartCommand, setRestartCommand] = useState("");
-  const [restartCwd, setRestartCwd] = useState("");
+  const [showStart, setShowStart] = useState(saved?.showStart ?? !!launch);
+  const [name, setName] = useState(saved?.name ?? launch?.input.name ?? "");
+  const [command, setCommand] = useState(saved?.command ?? launch?.input.command ?? "");
+  const [workingDirectory, setWorkingDirectory] = useState(
+    saved?.workingDirectory ?? launch?.input.cwd ?? "",
+  );
+  const [port, setPort] = useState(saved?.port ?? launch?.input.expectedPort?.toString() ?? "");
+  const [restartCommand, setRestartCommand] = useState(saved?.restartCommand ?? "");
+  const [restartCwd, setRestartCwd] = useState(saved?.restartCwd ?? "");
+  const [localStart, setLocalStart] = useState<
+    | {
+        base: DevServerStartResult | undefined;
+        result: DevServerStartResult | undefined;
+      }
+    | undefined
+  >(() => (saved?.startResult ? { base: launch?.result, result: saved.startResult } : undefined));
+  useEffect(() => {
+    if (!transferScope) return;
+    return subscribeToolsDraftTransfer(transferScope, ({ servers }) => {
+      if (!servers) return;
+      setShowStart(servers.showStart);
+      setName(servers.name);
+      setCommand(servers.command);
+      setWorkingDirectory(servers.workingDirectory);
+      setPort(servers.port);
+      setRestartCommand(servers.restartCommand);
+      setRestartCwd(servers.restartCwd);
+      setSelectedId(servers.selectedId);
+      setSelectedEndpoint(servers.selectedEndpoint);
+      setError(servers.error ?? "");
+      setNotice(servers.notice ?? "");
+      if (servers.startResult) setLocalStart({ base: launch?.result, result: servers.startResult });
+    });
+  }, [transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
+    if (active && transferScope)
+      writeToolsDraftPart(transferScope, "servers", {
+        showStart,
+        name,
+        command,
+        workingDirectory,
+        port,
+        restartCommand,
+        restartCwd,
+        selectedId,
+        selectedEndpoint,
+        error,
+        notice,
+        startResult: localStart?.result ?? launch?.result,
+      });
+  }, [
+    active,
+    transferScope?.cwd,
+    transferScope?.sessionId,
+    transferScope?.targetValue,
+    showStart,
+    name,
+    command,
+    workingDirectory,
+    port,
+    restartCommand,
+    restartCwd,
+    selectedId,
+    selectedEndpoint,
+    error,
+    notice,
+    localStart?.result,
+    launch?.result,
+  ]);
   // A start result from this panel replaces the launch's result until the next launch result.
-  const [localStart, setLocalStart] = useState<{
-    base: DevServerStartResult | undefined;
-    result: DevServerStartResult | undefined;
-  }>();
   const setStartResult = (result: DevServerStartResult | undefined) =>
     setLocalStart({ base: launch?.result, result });
   const startResult =
     localStart && localStart.base === launch?.result ? localStart.result : launch?.result;
   const alive = useRef(false);
+  const visible = useRef(active);
+  visible.current = active;
   const pending = useRef(false);
   const scanFlight = useRef<Promise<boolean> | undefined>(undefined);
   const failures = useRef(0);
@@ -151,6 +249,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const actionError = useRef<HTMLDivElement>(null);
 
   const reveal = (element: HTMLElement | null) => {
+    if (!visible.current) return;
     element?.focus({ preventScroll: true });
     element?.scrollIntoView({ block: "nearest" });
   };
@@ -201,6 +300,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const action = async (name: string, work: () => Promise<unknown>, waitForScan = true) => {
     if (!alive.current || pending.current || launch?.pending) return;
     pending.current = true;
+    const releaseTransfer = transferScope ? holdToolsDraftTransfer(transferScope) : undefined;
     setBusy(true);
     setOperation(name);
     setError("");
@@ -214,6 +314,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     } catch (cause) {
       if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      releaseTransfer?.();
       pending.current = false;
       if (alive.current) {
         setBusy(false);
@@ -222,13 +323,17 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     }
   };
   useEffect(() => {
+    if (!launch?.pending || !transferScope) return;
+    return holdToolsDraftTransfer(transferScope);
+  }, [launch?.pending, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !active) return;
     let stopped = false;
     let polling = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -259,7 +364,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     // The wrapper remounts for a new project. Polls share one flight and wait
     // until the previous scan completes; hidden windows do no discovery work.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh]);
+  }, [autoRefresh, active]);
   useEffect(() => {
     // A finished launch started a server outside this panel's own requests; rescan for it.
     if (launch?.result?.server) void action("refresh", () => refresh(true));
@@ -905,83 +1010,88 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       ) : null}
       {showStart ? (
         <Surface as="section" variant="outline">
-        <form
-          ref={startForm}
-          tabIndex={-1}
-          className="dev-server-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const expectedPort = port ? Number(port) : undefined;
-            if (
-              !name.trim() ||
-              !command.trim() ||
-              (expectedPort !== undefined &&
-                (!Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535))
-            )
-              return;
-            void action("start", async () => {
-              setStartResult(undefined);
-              const result = await request<DevServerStartResult>("start", {
-                name: name.trim(),
-                command: command.trim(),
-                ...(workingDirectory.trim() ? { cwd: workingDirectory.trim() } : {}),
-                expectedPort,
+          <form
+            ref={startForm}
+            tabIndex={-1}
+            className="dev-server-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const expectedPort = port ? Number(port) : undefined;
+              if (
+                !name.trim() ||
+                !command.trim() ||
+                (expectedPort !== undefined &&
+                  (!Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535))
+              )
+                return;
+              void action("start", async () => {
+                setStartResult(undefined);
+                const result = await request<DevServerStartResult>("start", {
+                  name: name.trim(),
+                  command: command.trim(),
+                  ...(workingDirectory.trim() ? { cwd: workingDirectory.trim() } : {}),
+                  expectedPort,
+                });
+                if (!alive.current) return;
+                setStartResult(result);
+                await refresh(true);
               });
-              if (!alive.current) return;
-              setStartResult(result);
-              await refresh(true);
-            });
-          }}
-        >
-          <TextField
-            label={t("Server name")}
-            value={name}
-            required
-            maxLength={80}
-            disabled={disabled}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <TextField
-            label={t("Server command")}
-            value={command}
-            required
-            maxLength={32768}
-            disabled={disabled}
-            onChange={(event) => setCommand(event.target.value)}
-          />
-          <TextField
-            label={t("Working directory")}
-            value={workingDirectory}
-            disabled={disabled}
-            onChange={(event) => setWorkingDirectory(event.target.value)}
-          />
-          <NumberField
-            label={t("Expected port (optional)")}
-
-            min={1}
-            max={65535}
-            value={port}
-            disabled={disabled}
-            onChange={(event) => setPort(event.target.value)}
-          />
-          <p className="host-tool-muted">
-            {t(
-              "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",
-            )}
-          </p>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={operation === "start" || !!launch?.pending}
-            disabled={unavailable("start") || !name.trim() || !command.trim()}
+            }}
           >
-            {t("Start command")}
-          </Button>
-        </form>
+            <TextField
+              label={t("Server name")}
+              value={name}
+              required
+              maxLength={80}
+              disabled={disabled}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <TextField
+              label={t("Server command")}
+              value={command}
+              required
+              maxLength={32768}
+              disabled={disabled}
+              onChange={(event) => setCommand(event.target.value)}
+            />
+            <TextField
+              label={t("Working directory")}
+              value={workingDirectory}
+              disabled={disabled}
+              onChange={(event) => setWorkingDirectory(event.target.value)}
+            />
+            <NumberField
+              label={t("Expected port (optional)")}
+
+              min={1}
+              max={65535}
+              value={port}
+              disabled={disabled}
+              onChange={(event) => setPort(event.target.value)}
+            />
+            <p className="host-tool-muted">
+              {t(
+                "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",
+              )}
+            </p>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={operation === "start" || !!launch?.pending}
+              disabled={unavailable("start") || !name.trim() || !command.trim()}
+            >
+              {t("Start command")}
+            </Button>
+          </form>
         </Surface>
       ) : null}
       {startResult?.conflict ? (
-        <Surface as="section" variant="outline" className="dev-server-conflict" aria-label={t("Port conflict")}>
+        <Surface
+          as="section"
+          variant="outline"
+          className="dev-server-conflict"
+          aria-label={t("Port conflict")}
+        >
           <Alert tone="danger" role="alert">
             {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
           </Alert>

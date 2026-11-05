@@ -1,3 +1,5 @@
+import { SocialMediaEditorContext, useSocialMediaEditor } from "./useSocialMediaEditor";
+import { socialMediaIds } from "../model/socialMediaEditor";
 import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
@@ -5,10 +7,13 @@ import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useEffect, useState } from "react";
 import { XMediaFields } from "./XMediaFields";
 import { SocialUploadImagePreview } from "./SocialUploadImagePreview";
 import { socialRows } from "../model/socialWorkspace";
+import { socialQueryScope } from "../model/socialQuery";
 import type {
   SocialDraft,
   SocialDraftApprovalInput,
@@ -35,19 +40,32 @@ export function DraftList({
   run,
   snapshot,
   recipientInParent = false,
+  scopeKey = "collection",
 }: {
   drafts: SocialDraft[];
   client: SocialClient;
   run: Run;
   snapshot?: SocialSnapshot;
   recipientInParent?: boolean;
+  scopeKey?: string;
 }) {
   return (
-    <div>
-      {drafts.map((draft) => (
-        <Draft key={draft.id} draft={draft} client={client} run={run} snapshot={snapshot} recipientInParent={recipientInParent} />
-      ))}
-    </div>
+    <ContinuousList
+      items={drafts}
+      itemKey={(draft) => draft.id}
+      stateKey={`social-drafts:${socialQueryScope(client).join(":")}:${snapshot?.executorId ?? "unknown"}:${snapshot?.programProjectId ?? "all"}:${scopeKey}:${recipientInParent ? "parent" : "detail"}`}
+      estimateSize={176}
+      renderItem={(draft) => (
+        <Draft
+          key={draft.id}
+          draft={draft}
+          client={client}
+          run={run}
+          snapshot={snapshot}
+          recipientInParent={recipientInParent}
+        />
+      )}
+    />
   );
 }
 
@@ -64,13 +82,15 @@ function Draft({
   snapshot?: SocialSnapshot;
   recipientInParent: boolean;
 }) {
+  const mediaEditor = useSocialMediaEditor(client, false);
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(draft.text);
-  const [factIds, setFactIds] = useState(draft.factIds);
-  const [media, setMedia] = useState(draft.media ?? []);
+  const editorStateKey = `social-draft-editor:${socialQueryScope(client).join(":")}:${snapshot?.executorId ?? "unknown"}:${snapshot?.programProjectId ?? "all"}:${draft.id}`;
+  const [editing, setEditing] = useRetainedState(`${editorStateKey}:editing`, false);
+  const [text, setText] = useRetainedState(`${editorStateKey}:text`, draft.text);
+  const [factIds, setFactIds] = useRetainedState(`${editorStateKey}:facts`, draft.factIds);
+  const [media, setMedia] = useRetainedState(`${editorStateKey}:media`, draft.media ?? []);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [editPolicy, setEditPolicy] = useState<SocialPolicy>();
@@ -192,7 +212,11 @@ function Draft({
   return (
     <article className="social-preview">
       <div className="social-record-heading">
-        {!recipientInParent ? <strong className="min-w-0 break-words text-ui-secondary font-medium">{contact?.name || t("Contact in the conversation")}</strong> : null}
+        {!recipientInParent ? (
+          <strong className="min-w-0 break-words text-ui-secondary font-medium">
+            {contact?.name || t("Contact in the conversation")}
+          </strong>
+        ) : null}
         <StatusBadge
           status={job?.status ?? (generating ? "running" : draft.reviewReason ? "review" : "draft")}
           label={
@@ -214,7 +238,10 @@ function Draft({
             : draft.kind === "comment"
               ? t("Comment draft")
               : t("Reply draft")}
-        </span>        <span>{t("Created")}: {time(draft.createdAt)}</span>
+        </span>{" "}
+        <span>
+          {t("Created")}: {time(draft.createdAt)}
+        </span>
       </div>
 
       {(editing ? media : draft.media)?.length ? (
@@ -271,8 +298,12 @@ function Draft({
                     });
                   }, t("Draft updated. The new content must be approved again before sending.")),
                 )
-              )
+              ) {
                 setEditing(false);
+                void mediaEditor
+                  .discard()
+                  .catch(() => setPolicyError(t("Unable to release media for this draft.")));
+              }
             })();
           }}
         >
@@ -348,33 +379,43 @@ function Draft({
             </Alert>
           ) : null}
           {canEditMedia ? (
-            <XMediaFields
-              value={media}
-              client={client}
-              onChange={setMedia}
-              onBusyChange={setMediaBusy}
-              message={messageDraft}
-              label={
-                account?.platform === "x"
-                  ? undefined
-                  : t("{p0} attachments", {
-                      p0: account!.platform === "whatsapp" ? "WhatsApp" : "Telegram",
-                    })
-              }
-              help={
-                account?.platform === "x"
-                  ? undefined
-                  : account?.connection !== "browser"
-                    ? t(
-                        "One PNG/JPEG up to 5 MiB or MP4 up to {p0} MiB. Captions fit 1024 UTF-16 characters.",
-                        { p0: account?.platform === "whatsapp" ? 16 : 50 },
-                      )
-                    : t("Files are uploaded to the selected host and attached through the browser.")
-              }
-              maxVideoMiB={apiMessagingMedia ? (account?.platform === "whatsapp" ? 16 : 50) : 64}
-              maxCount={account?.platform === "x" ? undefined : 1}
-              allowAltText={account?.platform === "x"}
-            />
+            <SocialMediaEditorContext.Provider value={mediaEditor}>
+              <XMediaFields
+                value={media}
+                client={client}
+                onChange={setMedia}
+                onMediaRemove={(removed) => {
+                  for (const id of socialMediaIds(removed))
+                    void mediaEditor
+                      .releaseCurrent(id)
+                      .catch(() => setPolicyError(t("Unable to release media for this draft.")));
+                }}
+                onBusyChange={setMediaBusy}
+                message={messageDraft}
+                label={
+                  account?.platform === "x"
+                    ? undefined
+                    : t("{p0} attachments", {
+                        p0: account!.platform === "whatsapp" ? "WhatsApp" : "Telegram",
+                      })
+                }
+                help={
+                  account?.platform === "x"
+                    ? undefined
+                    : account?.connection !== "browser"
+                      ? t(
+                          "One PNG/JPEG up to 5 MiB or MP4 up to {p0} MiB. Captions fit 1024 UTF-16 characters.",
+                          { p0: account?.platform === "whatsapp" ? 16 : 50 },
+                        )
+                      : t(
+                          "Files are uploaded to the selected host and attached through the browser.",
+                        )
+                }
+                maxVideoMiB={apiMessagingMedia ? (account?.platform === "whatsapp" ? 16 : 50) : 64}
+                maxCount={account?.platform === "x" ? undefined : 1}
+                allowAltText={account?.platform === "x"}
+              />
+            </SocialMediaEditorContext.Provider>
           ) : null}
           <div className="social-actions">
             <Button
@@ -397,7 +438,12 @@ function Draft({
               disabled={socialLocked}
               variant="secondary"
               type="button"
-              onClick={() => setEditing(false)}
+              onClick={() => {
+                setEditing(false);
+                void mediaEditor
+                  .discard()
+                  .catch(() => setPolicyError(t("Unable to release media for this draft.")));
+              }}
             >
               {t("Cancel editing")}
             </Button>
@@ -424,18 +470,21 @@ function Draft({
         </a>
       ) : null}
       {draft.generation ? (
-        <details className="text-ui-caption text-(--ui-text-secondary)"><summary>{t("Generation details")}</summary><p>
-          {t("Agent: {p0} · {p1} · {p2}", {
-            p0: HARNESS_TITLE[draft.generation.agent.provider],
-            p1: draft.generation.agent.model || t("default model"),
-            p2: {
-              queued: t("Waiting to generate"),
-              running: t("Generating"),
-              completed: t("Generated"),
-              review: t("Review required"),
-            }[draft.generation.status],
-          })}
-        </p></details>
+        <details className="text-ui-caption text-(--ui-text-secondary)">
+          <summary>{t("Generation details")}</summary>
+          <p>
+            {t("Agent: {p0} · {p1} · {p2}", {
+              p0: HARNESS_TITLE[draft.generation.agent.provider],
+              p1: draft.generation.agent.model || t("default model"),
+              p2: {
+                queued: t("Waiting to generate"),
+                running: t("Generating"),
+                completed: t("Generated"),
+                review: t("Review required"),
+              }[draft.generation.status],
+            })}
+          </p>
+        </details>
       ) : null}
       {!editing ? (
         <div className="social-approval">
@@ -452,10 +501,19 @@ function Draft({
               variant="secondary"
               disabled={socialLocked || !!job || draft.generation?.status === "running"}
               onClick={() => {
-                setText(draft.text);
-                setFactIds(draft.factIds);
-                setMedia(draft.media ?? []);
-                setEditing(true);
+                void pendingUi
+                  .run("draft.open", () =>
+                    run(async () => {
+                      for (const id of socialMediaIds(draft.media))
+                        await mediaEditor.claimExisting(id);
+                      if (mediaEditor.isClosed()) return;
+                      setText(draft.text);
+                      setFactIds(draft.factIds);
+                      setMedia(draft.media ?? []);
+                      setEditing(true);
+                    }),
+                  )
+                  .catch(() => setPolicyError(t("Unable to retain media for this draft.")));
               }}
             >
               {t("Edit")}

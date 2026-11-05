@@ -580,7 +580,9 @@ it("keeps sorting separate from filtering and exposes the applied filter summary
   expect(document.querySelectorAll("[data-server-row]")).toHaveLength(1);
   expect(trigger.textContent).toContain("1");
   expect(document.querySelector(".servers-selection-bar")?.textContent).toContain("Favorites only");
-  expect(document.querySelector(".servers-selection-bar")?.textContent).toContain("Recently used first");
+  expect(document.querySelector(".servers-selection-bar")?.textContent).toContain(
+    "Recently used first",
+  );
 });
 
 it("searches and displays the effective SSH destination while preserving the editable base", async () => {

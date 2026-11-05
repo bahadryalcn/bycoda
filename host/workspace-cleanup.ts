@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, readdir, readlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { Worker } from "node:worker_threads";
 import {
   copyFileSync,
   cpSync,
@@ -15,33 +14,33 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFileAsync, runGitText } from "../src/shared/lib/processExecution.node";
-import { withHostGitMutation } from "./git-mutations";
-import { invalidateHostWorktrees } from "./git-worktrees";
+import { withHostGitMutation } from "./git/git-mutations";
+import { invalidateHostWorktrees } from "./git/git-worktrees";
 import {
   canonicalWorkspaceDirectorySync,
   canonicalWorkspacePathSync,
   ordinaryWorkspacePath,
   workspacePathKey,
-} from "./workspace-paths";
+} from "./workspaces/workspace-paths";
 import type {
   ManagedWorkspace,
   WorkspaceActivity,
   WorkspaceCleanupPlan,
   WorkspaceRemovalOperation,
   WorkspaceReservation,
-} from "./workspace-contracts";
+} from "./workspaces/workspace-contracts";
 import type {
   ExecutionActivityReservations,
   WorkspaceOwnerAuthorization,
   WorkspaceRegistry,
   WorkspaceRemovalService,
-} from "./workspace-service-contracts";
+} from "./workspaces/workspace-service-contracts";
 import type {
   WorkspaceActivityPersistence,
   WorkspaceActivityReconciliation,
   WorkspaceActivityReconciliationRequest,
-} from "./workspace-activity-store";
-import type { WorkspaceMutation, WorkspaceOperation } from "./workspace-contracts";
+} from "./workspaces/workspace-activity-store";
+import type { WorkspaceMutation, WorkspaceOperation } from "./workspaces/workspace-contracts";
 
 export const sameWorkspacePath = (a: string, b: string) =>
   workspacePathKey(canonicalWorkspaceDirectorySync(a)) ===
@@ -180,27 +179,76 @@ async function registrations(cwd: string) {
   });
 }
 
-type SourceState = { status: string; head: string; branch: string; fingerprint: string };
-/** Per-workspace memo of the last exact scan; keyed so an unchanged workspace is not re-hashed. */
-const sourceStateCache = new Map<string, { key: string; state: SourceState }>();
-
-async function hashFileInto(hash: ReturnType<typeof createHash>, full: string) {
-  for await (const chunk of createReadStream(full)) hash.update(chunk as Buffer);
+/** A negative result only rejects automatic retention; it never authorizes removal. */
+export async function retentionSourceClean(path: string): Promise<boolean> {
+  const status = await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  if (status) return false;
+  const ignored = await git(path, [
+    "ls-files",
+    "-z",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+  ]);
+  return !ignored
+    .split("\0")
+    .filter(Boolean)
+    .some(
+      (file) =>
+        !file.split(/[\\/]/).includes("node_modules") &&
+        file !== "temp/" &&
+        !file.startsWith("temp/"),
+    );
 }
 
-/**
- * Snapshot of a workspace's source for dirty detection and cleanup fingerprints.
- * Everything is async so the Host event loop stays responsive. When ignored private
- * inputs exist the status is already "ignored-private-inputs", so the fingerprint is a
- * cheap stat-based digest instead of hashing every (possibly huge) ignored file.
- * `cached` (scan/preview path only) reuses the previous exact result when HEAD, index
- * mtime and the newest tracked/untracked mtime are unchanged; execution never uses it.
- */
-async function sourceState(
-  path: string,
-  detachedLinks = new Map<string, string>(),
-  options: { cached?: boolean } = {},
-): Promise<SourceState> {
+// Serialize CPU/IO-heavy scans and bound both worker lifetime and queued admission.
+let fingerprintPending = 0;
+let fingerprintTail: Promise<void> = Promise.resolve();
+async function fingerprintSource(data: Record<string, unknown>): Promise<string> {
+  if (fingerprintPending >= 16) throw new Error("Cleanup fingerprint capacity exceeded; retry.");
+  fingerprintPending++;
+  const previous = fingerprintTail;
+  let release!: () => void;
+  fingerprintTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await previous;
+    const worker = new Worker(new URL("./workspace-cleanup-worker.mjs", import.meta.url), {
+      workerData: data,
+    });
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("Cleanup fingerprint timed out.")),
+          120_000,
+        );
+        worker.once("message", (result: { fingerprint?: string; error?: string }) => {
+          clearTimeout(timer);
+          if (result.error || !result.fingerprint)
+            reject(new Error(result.error ?? "Cleanup fingerprint failed."));
+          else resolve(result.fingerprint);
+        });
+        worker.once("error", (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        worker.once("exit", (code) => {
+          clearTimeout(timer);
+          reject(new Error(`Cleanup fingerprint worker exited (${code}).`));
+        });
+      });
+    } finally {
+      await worker.terminate();
+    }
+  } finally {
+    fingerprintPending--;
+    release();
+  }
+}
+
+async function sourceState(path: string, detachedLinks = new Map<string, string>()) {
   // A failed status is propagated, never converted to a clean result.
   const status = (await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]))
     .split("\0")
@@ -229,76 +277,23 @@ async function sourceState(
         file !== "temp/" &&
         !file.startsWith("temp/"),
     );
-  // Unknown ignored inputs may be private source. Only known dependency/evidence
-  // directories are disposable; everything else requires owner preservation.
-  const privateFiles: string[] = [];
-  const addPrivateFiles = async (file: string) => {
-    const full = resolve(path, file);
-    if (!inside(path, full)) throw new Error("Unsafe ignored source path.");
-    const info = await lstat(full);
-    if (info.isDirectory()) {
-      for (const name of await readdir(full)) {
-        if (name === ".git")
-          throw new Error("Nested repository requires private recovery support.");
-        if (name !== "node_modules") await addPrivateFiles(join(file, name));
-      }
-    } else privateFiles.push(file);
+  const index = resolve(path, (await git(path, ["rev-parse", "--git-path", "index"])).trim());
+  const fingerprint = await fingerprintSource({
+    path,
+    files,
+    ignored,
+    index,
+    head,
+    branch,
+    status,
+    detachedLinks: [...detachedLinks],
+  });
+  return {
+    status: status || (ignored.length ? "ignored-private-inputs" : ""),
+    head,
+    branch,
+    fingerprint,
   };
-  for (const file of ignored) await addPrivateFiles(file);
-  const index = (
-    await git(path, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
-  ).trim();
-  const indexInfo = await lstat(index).catch(() => null);
-  const sorted = [...new Set([...files, ...privateFiles])].sort();
-  const resultStatus = status || (ignored.length ? "ignored-private-inputs" : "");
-  const validated = new Set<string>();
-  const stats = new Map<string, Awaited<ReturnType<typeof lstat>> | null>();
-  let newest = 0;
-  for (const file of sorted) {
-    const full = resolve(path, file);
-    if (!inside(path, full)) throw new Error("Unsafe source path.");
-    // Never read a tracked path through an ancestor link.
-    const parent = dirname(full) === path ? join(path, "__validation__") : dirname(full);
-    if (!validated.has(parent)) {
-      assertNoFollowPath(path, parent);
-      validated.add(parent);
-    }
-    const info = await lstat(full).catch(() => null);
-    stats.set(file, info);
-    if (info) newest = Math.max(newest, info.mtimeMs);
-  }
-  const statusDigest = createHash("sha256").update(status).digest("hex");
-  if (ignored.length) {
-    // Short-circuit: status is already ignored-private-inputs/dirty; never read file bodies.
-    const cheap = createHash("sha256")
-      .update(head)
-      .update(branch)
-      .update(statusDigest)
-      .update(`index:${indexInfo?.mtimeMs ?? 0}:${indexInfo?.size ?? 0}`);
-    for (const file of sorted) {
-      const info = stats.get(file);
-      cheap.update(`\0${file}\0${info ? `${info.size}:${info.mtimeMs}` : "missing"}`);
-      if (!info) cheap.update(detachedLinks.get(file) ?? "");
-    }
-    return { status: resultStatus, head, branch, fingerprint: cheap.digest("hex") };
-  }
-  const cacheKey = `${head}\0${branch}\0${statusDigest}\0${indexInfo?.mtimeMs ?? 0}\0${newest}\0${sorted.length}`;
-  const cached = sourceStateCache.get(path);
-  if (options.cached && !detachedLinks.size && cached?.key === cacheKey) return cached.state;
-  const hash = createHash("sha256").update(head).update(branch).update(status);
-  if (indexInfo) await hashFileInto(hash, index);
-  for (const file of sorted) {
-    const full = resolve(path, file);
-    const info = stats.get(file);
-    hash.update(file).update("\0");
-    if (info?.isSymbolicLink()) hash.update(await readlink(full));
-    else if (info?.isFile()) await hashFileInto(hash, full);
-    else if (info) throw new Error("Unsupported source entry requires private recovery support.");
-    else hash.update(detachedLinks.get(file) ?? "missing");
-  }
-  const state = { status: resultStatus, head, branch, fingerprint: hash.digest("hex") };
-  if (!detachedLinks.size) sourceStateCache.set(path, { key: cacheKey, state });
-  return state;
 }
 
 export function createExecutionActivityReservations(deps: {
@@ -484,7 +479,7 @@ export function createExecutionActivityReservations(deps: {
       await ready;
       const released: string[] = [];
       const blocked: { activityId: string; reason: string }[] = [];
-      for (const id of [...previousActivityIds]) {
+      for (const id of Array.from(previousActivityIds)) {
         const activity = activities.get(id);
         if (!activity || (request.workspaceId && activity.workspaceId !== request.workspaceId))
           continue;
@@ -655,9 +650,10 @@ export async function guardedRemoveWorkspace(
         force: false,
         filter: (source) => source !== join(input.path, ".git"),
       });
-      const index = (
-        await git(input.path, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
-      ).trim();
+      const index = resolve(
+        input.path,
+        (await git(input.path, ["rev-parse", "--git-path", "index"])).trim(),
+      );
       if (exists(index)) copyFileSync(index, join(input.archiveRoot, "index"));
       const ref = `refs/bycoda/rewinds/${input.operationId}/rescue-head`;
       await git(input.projectCwd, ["update-ref", ref, registered.head]);
@@ -829,15 +825,16 @@ export function createWorkspaceRemovalService(
           registered.locked
         )
           throw new Error("Managed ownership/branch/registration is invalid or locked.");
-        const common = (
-          await git(workspace.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        ).trim();
+        const common = resolve(
+          workspace.path,
+          (await git(workspace.path, ["rev-parse", "--git-common-dir"])).trim(),
+        );
         if (!sameWorkspacePath(common, workspace.repositoryId))
           throw new Error("Workspace repository identity changed.");
         links = await inventoryWorkspaceLinks(workspace.path);
         if (links.some((l) => l.kind === "unsafe"))
           throw new Error("Unsafe or unknown reparse point blocks cleanup.");
-        const state = await sourceState(workspace.path, undefined, { cached: true });
+        const state = await sourceState(workspace.path);
         head = state.head;
         fingerprint = state.fingerprint;
         dirty = !!state.status;

@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
 import {
   useCallback,
   useRef,
@@ -118,11 +119,14 @@ export function useProjectLocationChange({
       );
       projectTerminalsRef.current = nextDocks;
       setProjectTerminals(nextDocks);
-      rebaseProjectData(from, to);
+      const movedRecents = await withRoomPrivacyMutation(async () => {
+        await rebaseProjectData(from, to);
+        return replaceProjectPath(from, to);
+      });
       setSidebarTabSelection((current) =>
         sameProjectPath(current.project, from) ? { ...current, project: pathKey(to) } : current,
       );
-      setRecents(replaceProjectPath(from, to));
+      setRecents(movedRecents);
       onFileMoved(from, to);
       notifyDirsChanged();
     },

@@ -1,89 +1,74 @@
 ---
 name: feature-voice
-description: Change voice audio, microphone capture, dictation, recognition admission, local/cloud playback, setup or companion visuals. Preserve speech sequencing and composer drafts; application management is a separate feature.
+description: Change microphone capture, dictation, local/cloud voice, setup and companion UI. Preserve speech order and drafts; management has a separate owner.
 ---
 
 # Voice
 
-Audio, dictation and companion UI. [Voice management](../feature-voice-management/SKILL.md)
-owns application actions; composer owns draft/caret/send. Paths are repository-relative.
+Own capture, recognition, playback and companion UI across `src/features/voice/`,
+`host/voice/` and native audio/window adapters. Composer owns drafts/send;
+[voice management](../feature-voice-management/SKILL.md) owns application actions,
+and Assistant owns shared identity, Room and setup completion. Inspect mobile separately.
 
-## Start and workflow
+## Source starts
 
-1. Identify route, mic lifetime, target, candidate/accepted sequence and playback owner.
-2. Trace the UI/controller into the relevant model and Host worker using
-   [the source map and audio contracts](references/surfaces.md).
-3. Preserve keys, cancellation and setup recovery. Exercise rejected recognition
-   while earlier genuine speech is pending.
-4. Report protocol, recorded audio, real mic/provider and installed proof separately.
+- UI/model: `src/features/voice/ui/` (VoiceCompanion, VoiceSettings, DictationButton)
+  and `src/features/voice/model/` (voiceSession, localVoice, realtimeVoice).
+- Host: `host/voice/` (runtime/setup and worker dispatch); `host/assistant/voice/`
+  owns admitted Assistant delivery.
+- Native: `src-tauri/src/` owns presence, microphone settings, generation and overlay
+  adapters. Follow the affected adapter in the [owner map](references/surfaces.md).
+- Tests: adjacent UI/model/Host suites and voice fixtures in `tests/browser/`.
+
+## Workflow
+
+1. Identify route, microphone lifetime, onset target, candidate/accepted sequence and playback owner.
+2. Follow the [owner map](references/surfaces.md); load only the relevant runtime or interaction contract.
+3. Trace consent, scope, persistence and cancellation across UI, model, Host and native boundaries.
+4. Exercise rejection during pending speech, target switches, cancellation and uncertain delivery;
+   distinguish protocol fixtures, recorded audio, live microphone/provider and installed proof.
 
 ## Preserve
 
-- Microphone capture is opt-in and starts only from explicit user action. Mute,
-  disable, close and device changes invalidate the appropriate pending work.
-- Cloud recovery may reacquire a microphone already authorized for the live
-  connection, preserving mute. Idle/lock sleep releases capture; returning shows
-  ready with the mic closed until Talk. Explicit disconnect cancels retries.
-- Retry only recoverable failures, with fresh credentials and bounded text
-  context; never replay tools. Keep unknown presence distinct from active and
-  retain uncertain/in-flight request identities when rotating operation history.
-- Capture the target at speech onset/accepted route binding. A later selected tab
-  must not redirect an earlier candidate; a captured absent target stays absent.
-- Acoustic candidates and accepted speech have separate sequence ownership. A
-  rejected cough/non-speech candidate must not discard pending genuine speech,
-  interrupt playback or become an instruction. Only accepted words supersede work.
-- Realtime epochs identify microphone lifetime; preserve serialized commit/item
-  matching and authorized response IDs. External cancellation still wins.
-- Keep finite ASR confidence checks and non-speech transcript handling without
-  discarding short lexical/code utterances. Text filtering is not acoustic proof.
-- Cloud defaults to `REALTIME_END_SILENCE` (1.2 s); explicit owner pause applies
-  to both runtimes. Don't answer mid-sentence pauses. Drop untranscribed/rejected/
-  overflowing idle candidates silently; only unacknowledged commits or undrained
-  send backlogs end voice. Steady unvoiced noise cannot extend capture to 20 s.
-- Manual mode bypasses silence/Smart Turn commits in both runtimes; only owner Finish
-  commits. Bound audio without auto-answering at its cap. Only acknowledged owner rules
-  can enable it; conscious owner changes win over pending acknowledgements.
-- Silence is not Stop work. Preserve accepted-job tracking, abortable side replies,
-  pin/follow behavior and the existing permission gates.
-- Dictation inserts through the composer draft/selection owner, preserving IME,
-  attachments and cancellation. It does not implicitly submit a message.
-  Fast start (mic during load, warm recognizer): [source map](references/surfaces.md).
-- Visuals start on actual playback. Muted/closed mic RMS is zero; stale playback
-  cannot reactivate after silence.
-- Style/compact/movement changes do not reconnect voice. Preserve overlay/focus,
-  clamped movement, full actions on expand and reduced-motion/state readability.
-- Floating `voice-overlay-<owner>` mirrors owner-window audio/tools through snapshots
-  and whitelisted commands. Never treat overlays as workspaces (quit/tray/reap/state).
-  Owner close/reload closes it; overlay/native close docks and shows the app without
-  disconnecting voice. Floating stays in Voice options.
-- Persona is quoted style after core rules, never authority/target/format changes.
-  Host setup replaces skip; core identity/budget and voice provider/playback/mic
-  verification have separate gates. Retain legacy persona backups.
-- Memory/rules are quoted preferences from current speech or Settings, never
-  session/tool/draft content. Rules require exact accepted correction, not model
-  quotes/fact promotion. Retain immutable pending intent across lost acknowledgements.
-  Forget requires owner card + fresh version; acknowledge only store success. Disabled
-  memory rejects all saves. Partial legacy migration retains backup/context.
-- Transcript writes retain original thread/session focus and idempotency through retries.
-  Reconnect seeds summary/text only; never replay tools. Thread grants are a real typed
-  subject, never a fabricated session. Working-copy/desktop operations keep real focus.
-- Job review creates nothing before explicit Start; freeze accepted payloads and keep
-  partial/unknown results visible. A choice is not an approval or external-send grant.
-- Job/note controls require explicit owner intent and captured/current scope intersection.
-  Delete needs exact owner confirmation; clear Stop needs no extra dialog. No model stop-all.
-- Auto uses saved accepted-owner language, never UI locale. Fixed language wins; unknown
-  auto cannot silently choose English for real briefings. Output previews have no mic/tools.
-- Preserve CPU/GPU/auto, cloud/system/natural choices and truthful setup recovery.
-  Setup changes grant no installation authority.
+- Capture needs explicit owner action. Authorized live recovery preserves mute; idle/lock sleep
+  releases capture and returns Ready with microphone closed. Disconnect cancels retries.
+- Onset/accepted binding captures target, including absence. Candidates and accepted speech have
+  separate ownership; rejected sounds cannot replace accepted work or interrupt playback.
+- Preserve realtime microphone epochs, serialized item/commit matching, authorized response IDs
+  and external cancellation. Unknown cleanup closes transport before authorized recovery.
+- Manual turn end needs acknowledged owner opt-in; only Finish commits, and conscious changes
+  win over pending acknowledgements. Silence, mute, disconnect and Stop work stay distinct.
+- Effects retain immutable request identity across bounded waits/recovery. Timeout is uncertain;
+  reconnect seeds text only, never tools. Quiet observation is not provider completion.
+- Played history needs actual playback receipts. Preserve acknowledgement/wait policy,
+  pending choices, engagement privacy and accepted-job tracking in local/cloud routes.
+- Dictation uses composer draft/selection ownership, preserving IME, attachments and cancellation;
+  no implicit send. Companion/dictation switches and recognition-only setup remain independent.
+- Style, movement and compact changes preserve connection, focus, clamped placement and accessible
+  actions. Overlays mirror owner audio/tools through whitelisted commands, never workspace authority.
+- Persona, memory and rules are quoted data. Exact accepted corrections, versioned owner forget
+  and store success govern memory; disabled memory rejects saves. Retain legacy backups.
+- History binds original thread/session, scope and idempotency. Disclosure intersects frozen
+  contributors with live visibility; missing history cannot redirect speech or grant tools.
+- Job review creates nothing before Start. Choices are not approvals; job/note actions need exact
+  intent/scope, deletion confirmation and retained partial/unknown results. No model stop-all.
+- Auto language follows accepted owner speech; fixed language wins, unknown Auto refuses real
+  briefings. Output-only playback grants no capture/tools. Setup retains engine choices and
+  truthful recovery without installation authority.
 
-## Conditional references and checks
+## Focused checks
 
-- Runtime detail: [source map](references/surfaces.md).
-- Durable choice provenance: [owner decisions](references/decisions.md).
-- User behavior: [voice guide](../../../docs/guides/voice.md).
-- Global tools/draft attachments: [voice management](../feature-voice-management/SKILL.md).
+Run adjacent suites in `src/features/voice/model/`, `src/features/voice/ui/` and
+`host/voice/` using the web and `host/vitest.config.ts` configurations. Follow
+[verification order](../../../docs/reference/testing.md#order-of-verification) for normal
+web/Host checks and changed native adapters. Use affected voice fixtures in `tests/browser/`;
+source/mocks cannot prove acoustic, OS permission, device, provider or installed acceptance.
 
-Run voice tests; Host workers use
-`pnpm exec vitest run --config host/vitest.config.ts host/voice-python.test.ts`
-or the affected adjacent suite. Use normal `pnpm check:web` / `pnpm host:build`
-when needed. Source/mocks do not prove acoustic, device or provider acceptance.
+## References
+
+- [Owner map](references/surfaces.md): choose UI, model, Host, native and test owners.
+- [Runtime contracts](references/runtime.md): recognition, recovery, playback and handoff changes.
+- [Interaction contracts](references/interactions.md): memory/history, controls, setup, dictation and overlays.
+- [Owner decisions](references/decisions.md): durable owner choices, without new authority.
+- [Voice guide](../../../docs/guides/voice.md): user behavior and setup.
+- [Voice management](../feature-voice-management/SKILL.md): application tools and draft attachments.

@@ -73,17 +73,10 @@
 }
 .bycoda-task-column {
   border: 1px solid var(--ui-tone-neutral-border);
-  border-block-start-width: 2px;
 }
 .bycoda-task-column > h2 {
   border-block-end: 1px solid var(--ui-tone-neutral-border);
   margin-block-end: 8px;
-}
-.bycoda-task-column[data-task-column="running"] {
-  border-block-start-color: var(--ui-tone-info-border);
-}
-.bycoda-task-column[data-task-column="done"] {
-  border-block-start-color: var(--ui-tone-success-border);
 }
 .bycoda-task-column article {
   border-radius: 5px;
@@ -113,7 +106,7 @@
   }
 }
 .bycoda-titlebar {
-  background: var(--color-background-base);
+  background: var(--ui-navigation-chrome);
   border-block-end-color: var(--color-stroke);
 }
 .bycoda-project-rail {
@@ -327,9 +320,10 @@ html.theme-light .project-sigil {
   white-space: nowrap;
   animation: bycoda-welcome 1400ms ease both;
 }
-.bycoda-welcome img {
+.bycoda-welcome-icon {
   width: 24px;
   height: 24px;
+  flex-shrink: 0;
   object-fit: contain;
 }
 @keyframes bycoda-welcome {
@@ -375,6 +369,11 @@ html.theme-light .project-sigil {
 .bycoda-rail-tools--compact {
   display: none;
 }
+/* Settings sits at the rail's bottom edge, below the update and repository footers. */
+.bycoda-rail-tools--footer {
+  padding-block: 2px 8px;
+  margin-block-end: 0;
+}
 @container rail (width <= 280px) {
   .bycoda-rail-tools--expanding {
     display: none;
@@ -404,7 +403,7 @@ html.theme-light .project-sigil {
   min-height: 32px;
   height: 32px;
   padding-inline: 6px;
-  background: var(--bycoda-panel);
+  background: var(--ui-navigation-panel);
 }
 .bycoda-workspace-tabs {
   container: workspace-tabs / inline-size;
@@ -428,13 +427,6 @@ html.theme-light .project-sigil {
 .workspace-tab-dot {
   display: none;
   flex: none;
-  inline-size: 0.4rem;
-  block-size: 0.4rem;
-  border-radius: 9999px;
-  background: var(--ui-text-secondary);
-}
-.workspace-tab-dot[data-tone="working"] {
-  background: var(--color-active);
 }
 .workspace-tab-stats {
   display: none;
@@ -489,7 +481,7 @@ html.theme-light .project-sigil {
   /* Follows the shared density preference: compact control height plus 8px. */
   min-height: calc(var(--ui-control-height-compact) + 0.5rem);
   height: calc(var(--ui-control-height-compact) + 0.5rem);
-  background: var(--color-background-base);
+  background: var(--ui-navigation-chrome);
   border-bottom: 1px solid var(--color-stroke);
 }
 /* Keep the same native controls on the highest visible chrome row. */
@@ -594,4 +586,3 @@ html.theme-light {
 html[data-performance-no-blur] {
   --glass-blur: 0px;
 }
-

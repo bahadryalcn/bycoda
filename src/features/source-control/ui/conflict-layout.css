@@ -58,14 +58,14 @@
   color: var(--ui-tone-success-fg);
 }
 
-/* Panes share the canvas; the grid gap is the hairline between them. */
+/* Panes share the canvas; their borders retain the hairline on glass. */
 .conflict-layout-panes {
   display: grid;
   flex: 1;
   min-inline-size: 0;
   min-block-size: 0;
   gap: 1px;
-  background: var(--ui-pane-border);
+  background: var(--ui-workspace-panel);
   position: relative;
   grid-template-columns: minmax(0, var(--conflict-x, 50%)) minmax(0, 1fr);
   grid-template-rows: minmax(0, var(--conflict-y, 50%)) minmax(0, 1fr);
@@ -78,7 +78,8 @@
   min-block-size: 0;
   overflow: clip;
   container: conflict-pane / inline-size;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
+  border: 1px solid var(--ui-pane-border);
 }
 .conflict-pane-result {
   grid-area: result;

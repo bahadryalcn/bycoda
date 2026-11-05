@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostAutomations, type AutomationWorkspaceServices } from "../../automations";
+import { HostAutomations, type AutomationWorkspaceServices } from "../../automations/automations";
 import * as dto from "../../../src/shared/model/host-contracts/automations";
 import { createHostAutomationsService } from "./service";
 

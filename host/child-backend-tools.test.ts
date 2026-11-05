@@ -4,8 +4,8 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostChildBackend } from "./child-backend";
-import type { RuntimeLogAccess } from "./runtime-log-tools";
-import type { SocialService } from "./social";
+import type { RuntimeLogAccess } from "./execution/runtime-log-tools";
+import type { SocialService } from "./social/social";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
 

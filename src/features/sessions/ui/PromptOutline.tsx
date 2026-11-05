@@ -28,7 +28,7 @@ import { Popover } from "../../../shared/ui/Popover";
 
 const OPEN_DELAY_MS = 25;
 const SCROLL_INSET_PX = 8;
-const POPOVER_WIDTH = 288;
+const POPOVER_WIDTH = 320;
 const MIN_PROMPTS = 2;
 const BAR_HEIGHT_PX = 2;
 const BAR_WIDTH_PX = 11;
@@ -262,6 +262,7 @@ export const PromptOutline = memo(function PromptOutline({
             fullWidth
             iconOnly
             label={promptLabel(prompt)}
+            title=""
             variant="item"
             key={prompt.id}
             type="button"
@@ -310,21 +311,17 @@ export const PromptOutline = memo(function PromptOutline({
           align="center"
           gap={10}
           width={POPOVER_WIDTH}
+          solid
           onDismiss={close}
           aria-label={t("Prompt preview")}
-          className="pointer-events-none flex flex-col gap-1.5 p-3 font-sans"
+          className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
         >
-          <p className="line-clamp-2 text-ui-body leading-snug text-(--ui-tone-neutral-fg)">
+          <p className="truncate text-ui-body font-medium leading-snug text-(--color-content)">
             {preview.title}
           </p>
           {preview.reply ? (
             <p className="line-clamp-2 text-ui-body leading-snug text-(--ui-text-secondary)">
-              {preview.reply}
-            </p>
-          ) : null}
-          {preview.detail ? (
-            <p className="line-clamp-2 text-ui-caption leading-snug text-(--ui-text-secondary)">
-              {preview.detail}
+              {[preview.reply, preview.detail].filter(Boolean).join(" ")}
             </p>
           ) : null}
         </Popover>

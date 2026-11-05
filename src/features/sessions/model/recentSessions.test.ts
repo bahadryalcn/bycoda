@@ -30,10 +30,7 @@ function stored(
   };
 }
 
-function live(
-  id: string,
-  patch: Partial<LiveSessionInfo> = {},
-): LiveSessionInfo {
+function live(id: string, patch: Partial<LiveSessionInfo> = {}): LiveSessionInfo {
   return {
     id,
     cwd: "/work/a",
@@ -45,11 +42,7 @@ function live(
   };
 }
 
-function build(
-  rows: StoredSessionRow[],
-  liveInfos: LiveSessionInfo[] = [],
-  limit = 10,
-) {
+function build(rows: StoredSessionRow[], liveInfos: LiveSessionInfo[] = [], limit = 10) {
   return buildRecentSessions({
     stored: rows,
     live: liveInfos,
@@ -60,6 +53,13 @@ function build(
 }
 
 describe("buildRecentSessions", () => {
+  it("shows saved interruption until a complete live transcript or active turn supersedes it", () => {
+    const rows = [stored("cut", 100, { interrupted: true })];
+    expect(build(rows)[0].status).toBe("interrupted");
+    expect(build(rows, [live("cut", { interruptionKnown: false })])[0].status).toBe("interrupted");
+    expect(build(rows, [live("cut", { interruptionKnown: true })])[0].status).toBeUndefined();
+    expect(build(rows, [live("cut", { status: "working" })])[0].status).toBe("working");
+  });
   it("preserves Host management from stored and live rows without changing recency or pins", () => {
     const management = {
       assistant: true as const,
@@ -81,15 +81,10 @@ describe("buildRecentSessions", () => {
       pinned: true,
       managedBy: management,
     });
-    expect(rows.find((row) => row.id === "remote")?.managedBy).toEqual(
-      management,
+    expect(rows.find((row) => row.id === "remote")?.managedBy).toEqual(management);
+    expect(sameLiveSessionInfos([live("one")], [live("one", { managedBy: management })])).toBe(
+      false,
     );
-    expect(
-      sameLiveSessionInfos(
-        [live("one")],
-        [live("one", { managedBy: management })],
-      ),
-    ).toBe(false);
   });
   it("preserves completion recency after the Done badge is read", () => {
     const rows = [stored("finished", 100), stored("other", 200)];
@@ -102,11 +97,7 @@ describe("buildRecentSessions", () => {
   });
 
   it("orders by last activity and strips the harness prefix from titles", () => {
-    const rows = build([
-      stored("old", 10),
-      stored("new", 30),
-      stored("mid", 20),
-    ]);
+    const rows = build([stored("old", 10), stored("new", 30), stored("mid", 20)]);
     expect(rows.map((row) => row.id)).toEqual(["new", "mid", "old"]);
     expect(rows[0].title).toBe("new");
   });
@@ -129,26 +120,15 @@ describe("buildRecentSessions", () => {
 
   it("caps the list even when pinned sessions exceed the limit", () => {
     const rows = build(
-      Array.from({ length: 15 }, (_, i) =>
-        stored(`p-${i}`, i, { pinned: true }),
-      ),
+      Array.from({ length: 15 }, (_, i) => stored(`p-${i}`, i, { pinned: true })),
       [],
       5,
     );
-    expect(rows.map((row) => row.id)).toEqual([
-      "p-14",
-      "p-13",
-      "p-12",
-      "p-11",
-      "p-10",
-    ]);
+    expect(rows.map((row) => row.id)).toEqual(["p-14", "p-13", "p-12", "p-11", "p-10"]);
   });
 
   it("leaves out sessions of projects that are not on the rail", () => {
-    const rows = build([
-      stored("in", 2),
-      stored("out", 3, { cwd: "/elsewhere" }),
-    ]);
+    const rows = build([stored("in", 2), stored("out", 3, { cwd: "/elsewhere" })]);
     expect(rows.map((row) => row.id)).toEqual(["in"]);
   });
 
@@ -174,11 +154,7 @@ describe("buildRecentSessions", () => {
         live("fresh-local", { status: "working" }),
       ],
     );
-    expect(rows.map((row) => row.id)).toEqual([
-      "fresh-local",
-      "remote",
-      "saved",
-    ]);
+    expect(rows.map((row) => row.id)).toEqual(["fresh-local", "remote", "saved"]);
     expect(rows.find((row) => row.id === "remote")).toMatchObject({
       remote: true,
       pinnable: false,
@@ -203,9 +179,7 @@ describe("liveSessionInfos", () => {
     const session = newSession("claude", "/work/a");
     return {
       ...session,
-      blocks: [
-        { id: "u1", role: "user", text: "hi", startedAt: 100, durationMs: 50 },
-      ],
+      blocks: [{ id: "u1", role: "user", text: "hi", startedAt: 100, durationMs: 50 }],
       ...patch,
     };
   }
@@ -239,20 +213,13 @@ describe("liveSessionInfos", () => {
       ],
       new Set(["done"]),
     );
-    expect(infos.map((info) => info.status)).toEqual([
-      "working",
-      "input",
-      "done",
-      undefined,
-    ]);
+    expect(infos.map((info) => info.status)).toEqual(["working", "input", "done", undefined]);
     expect(infos[3].activityAt).toBe(150);
   });
 
   it("compares by value", () => {
     expect(sameLiveSessionInfos([live("a")], [live("a")])).toBe(true);
-    expect(
-      sameLiveSessionInfos([live("a")], [live("a", { status: "done" })]),
-    ).toBe(false);
+    expect(sameLiveSessionInfos([live("a")], [live("a", { status: "done" })])).toBe(false);
   });
 });
 
@@ -277,10 +244,7 @@ describe("recent sessions preferences", () => {
     expect(loadRecentSessionsPrefs()).toEqual({ collapsed: false, count: 3 });
     saveRecentSessionsPrefs({ collapsed: true, count: 20 });
     expect(loadRecentSessionsPrefs()).toEqual({ collapsed: true, count: 20 });
-    localStorage.setItem(
-      "bycoda.lastSessions",
-      JSON.stringify({ collapsed: false, count: 7 }),
-    );
+    localStorage.setItem("bycoda.lastSessions", JSON.stringify({ collapsed: false, count: 7 }));
     expect(loadRecentSessionsPrefs().count).toBe(10);
   });
 });

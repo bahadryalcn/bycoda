@@ -5,10 +5,12 @@ import { createTauriHostConnection, NativeHostConnectionError } from "./hostConn
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+const current = vi.hoisted(() => ({ label: "main" }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "workspace-3" }),
+  getCurrentWebviewWindow: () => ({ label: current.label }),
 }));
 afterEach(() => {
+  current.label = "main";
   vi.resetAllMocks();
 });
 
@@ -81,10 +83,6 @@ it("filters other machines and malformed native events and releases listening on
   });
   const listener = vi.fn();
   const release = await createTauriHostConnection("machine").listen(listener);
-  // Rust emits to the attaching window; the listener must not be process-wide.
-  expect(listen).toHaveBeenCalledExactlyOnceWith("host-connection-event", expect.any(Function), {
-    target: "workspace-3",
-  });
   const state = {
     kind: "state",
     environmentId: "env",
@@ -101,6 +99,42 @@ it("filters other machines and malformed native events and releases listening on
   release();
   release();
   expect(unlisten).toHaveBeenCalledOnce();
+});
+
+it("delivers a targeted Host event only to its window and propagates registration failure", async () => {
+  const handlers = new Map<string, (event: never) => void>();
+  vi.mocked(listen).mockImplementation(async (_name, callback, options) => {
+    handlers.set(options?.target as string, callback as (event: never) => void);
+    return () => handlers.delete(options?.target as string);
+  });
+  const first = vi.fn();
+  const second = vi.fn();
+  current.label = "main";
+  const releaseFirst = await createTauriHostConnection("machine").listen(first);
+  current.label = "other";
+  const releaseSecond = await createTauriHostConnection("machine").listen(second);
+  const state = {
+    kind: "state",
+    environmentId: "env",
+    generation: 1,
+    phase: "ready",
+    category: null,
+  };
+  handlers.get("main")?.({ payload: { machineId: "machine", event: state } } as never);
+  expect(first).toHaveBeenCalledExactlyOnceWith(state);
+  expect(second).not.toHaveBeenCalled();
+  releaseFirst();
+  releaseSecond();
+  vi.mocked(listen).mockRejectedValueOnce(new Error("registration failed"));
+  await expect(createTauriHostConnection("machine").listen(vi.fn())).rejects.toThrow(
+    "registration failed",
+  );
+  current.label = "";
+  vi.mocked(listen).mockClear();
+  await expect(createTauriHostConnection("machine").listen(vi.fn())).rejects.toThrow(
+    "window identity",
+  );
+  expect(listen).not.toHaveBeenCalled();
 });
 
 it("validates canonical subscription envelopes before forwarding", async () => {

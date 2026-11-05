@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { voiceToolCatalog } from "../../../../host/voice-tools";
+import { voiceToolCatalog } from "../../../../host/voice/voice-tools";
 import {
   readVoiceToolCatalog,
   selectVoiceTools,
@@ -71,5 +71,170 @@ describe("voice tool discovery", () => {
     expect(selectVoiceTools(catalog, { limit: Infinity }).tools).toHaveLength(12);
     expect(selectVoiceTools(catalog, { limit: 5000, offset: -10 }).tools).toHaveLength(40);
     expect(selectVoiceTools(catalog, { offset: 1000 }).tools).toEqual([]);
+  });
+
+  it("discovers localized features and synonymous Turkish and English words without changing scope", () => {
+    const catalog = [
+      tool("crews.list"),
+      tool("crews.create"),
+      tool("tasks.list"),
+      tool("inbox.list", "social"),
+    ];
+    for (const query of [
+      "ekipleri",
+      "ekiplerim",
+      "ekipteki",
+      "crew'ler",
+      "takımlar",
+      "kru",
+      "クルー",
+      "小队",
+      "équipe",
+      "equipo",
+    ]) {
+      expect(selectVoiceTools(catalog, { query }).tools.map((item) => item.action)).toEqual([
+        "crews.list",
+        "crews.create",
+      ]);
+    }
+    expect(
+      selectVoiceTools(catalog, { query: "ekip crew listele" }).tools.map((item) => item.action),
+    ).toEqual(["crews.list"]);
+    for (const query of ["ekipleri listele", "ekipteki listele", "crew'ler listele"]) {
+      expect(selectVoiceTools(catalog, { query }).tools.map((item) => item.action)).toEqual([
+        "crews.list",
+      ]);
+    }
+    expect(
+      selectVoiceTools(catalog, { query: "ekip oluştur" }).tools.map((item) => item.action),
+    ).toEqual(["crews.create"]);
+    expect(selectVoiceTools(catalog, { query: "Kree" }).tools).toEqual([]);
+    expect(selectVoiceTools(catalog, { query: "ekip", family: "social" }).tools).toEqual([]);
+    expect(
+      selectVoiceTools(catalog, { query: "ekip", category: "conversation:tasks" }).tools,
+    ).toEqual([]);
+  });
+
+  it("covers UI feature labels from every supported locale", async () => {
+    const locales = await Promise.all([
+      import("../../../shared/i18n/locales/en.json"),
+      import("../../../shared/i18n/locales/tr.json"),
+      import("../../../shared/i18n/locales/de.json"),
+      import("../../../shared/i18n/locales/es.json"),
+      import("../../../shared/i18n/locales/fr.json"),
+      import("../../../shared/i18n/locales/ja.json"),
+      import("../../../shared/i18n/locales/pt.json"),
+      import("../../../shared/i18n/locales/zh-CN.json"),
+    ]);
+    const labels = {
+      Crew: "crews",
+      Crews: "crews",
+      Tasks: "tasks",
+      Notes: "notes",
+      Projects: "projects",
+      Inbox: "inbox",
+      Archive: "archive",
+      Settings: "settings",
+      Servers: "servers",
+      Search: "search",
+      Sessions: "sessions",
+      Automations: "automations",
+      Logs: "logs",
+      Goals: "goals",
+      Skills: "skills",
+      Providers: "providers",
+      Terminals: "terminals",
+      Terminal: "terminals",
+      Usage: "usage",
+      Devices: "devices",
+      Browser: "browser",
+      Files: "files",
+      Models: "models",
+      Agents: "agents",
+      Jobs: "jobs",
+      Assistant: "assistant",
+      Notifications: "notifications",
+      MCP: "mcp",
+    } as const;
+    for (const locale of locales)
+      for (const [label, category] of Object.entries(labels)) {
+        const catalog = [tool(`${category}.list`)];
+        expect(
+          selectVoiceTools(catalog, { query: locale.default[label as keyof typeof labels] }).total,
+          `${label}: ${locale.default[label as keyof typeof labels]}`,
+        ).toBe(1);
+      }
+  });
+
+  it("maps localized action labels to real catalog actions", async () => {
+    const locales = await Promise.all([
+      import("../../../shared/i18n/locales/en.json"),
+      import("../../../shared/i18n/locales/tr.json"),
+      import("../../../shared/i18n/locales/de.json"),
+      import("../../../shared/i18n/locales/es.json"),
+      import("../../../shared/i18n/locales/fr.json"),
+      import("../../../shared/i18n/locales/ja.json"),
+      import("../../../shared/i18n/locales/pt.json"),
+      import("../../../shared/i18n/locales/zh-CN.json"),
+    ]);
+    const labels = {
+      List: "list",
+      Create: "create",
+      Delete: "delete",
+      Edit: "update",
+      Update: "update",
+      Start: "start",
+      Stop: "stop",
+      Pause: "pause",
+      Resume: "resume",
+      Read: "read",
+    } as const;
+    const catalog = voiceToolCatalog();
+    for (const locale of locales)
+      for (const [label, action] of Object.entries(labels)) {
+        const query = locale.default[label as keyof typeof labels];
+        expect(
+          selectVoiceTools(catalog, { query, limit: 40 }).tools.some((item) =>
+            item.action.split(".").includes(action),
+          ),
+          `${label}: ${query}`,
+        ).toBe(true);
+      }
+  });
+
+  it("finds actual advertised feature families in each UI language", async () => {
+    const locales = await Promise.all([
+      import("../../../shared/i18n/locales/en.json"),
+      import("../../../shared/i18n/locales/tr.json"),
+      import("../../../shared/i18n/locales/de.json"),
+      import("../../../shared/i18n/locales/es.json"),
+      import("../../../shared/i18n/locales/fr.json"),
+      import("../../../shared/i18n/locales/ja.json"),
+      import("../../../shared/i18n/locales/pt.json"),
+      import("../../../shared/i18n/locales/zh-CN.json"),
+    ]);
+    const labels = {
+      Crews: "crews",
+      Tasks: "tasks",
+      Notes: "notes",
+      Sessions: "sessions",
+      Automations: "automations",
+      Inbox: "inbox",
+      Skills: "skills",
+      Devices: "devices",
+      Terminals: "terminals",
+      Browser: "browser",
+      Logs: "logs",
+    } as const;
+    const catalog = voiceToolCatalog();
+    for (const locale of locales)
+      for (const [label, category] of Object.entries(labels)) {
+        const query = locale.default[label as keyof typeof labels];
+        expect(
+          selectVoiceTools(catalog, { query, category: `conversation:${category}`, limit: 40 })
+            .total,
+          `${label}: ${query}`,
+        ).toBeGreaterThan(0);
+      }
   });
 });

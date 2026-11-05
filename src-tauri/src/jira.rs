@@ -1,5 +1,6 @@
 use crate::integrations::http::string_field;
 pub mod board;
+pub(crate) mod room_inbox;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

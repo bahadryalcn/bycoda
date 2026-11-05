@@ -4,10 +4,10 @@ import {
   peekProjectFiles,
   recentOpenedFiles,
   subscribeProjectFiles,
-} from "../../files/model/fileIndex";
-import { buildMentionIndex, rankMentionFiles } from "../../files/model/fileMentions";
+} from "../../files/public/fileIndex";
+import { buildMentionIndex, rankMentionFiles } from "../../files/public/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
-import { looksLikeProject } from "../../projects/model/recents";
+import { looksLikeProject } from "../../projects/public/recents";
 import {
   loadNoteSummaries,
   notesAsProjectFiles,

@@ -5,15 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Local session references browser fixture</title>
     <style>
-      body { margin: 0; background: var(--ui-surface); color: var(--ui-text-primary); }
-      main { inline-size: min(100%, 56rem); padding: 2rem; margin-inline: auto; font-family: var(--font-sans); }
-      h1 { font-size: 1rem; margin-block: 0 0.5rem; }
-      h2 { font-size: 0.875rem; margin-block: 0 1rem; }
-      section { margin-block-start: 2rem; min-inline-size: 0; }
-      .fixture-caption { color: var(--ui-text-secondary); font-size: 0.8125rem; margin-block: 0 1rem; }
-      .fixture-controls { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.8125rem; }
-      .fixture-output { display: block; overflow-wrap: anywhere; color: var(--ui-text-secondary); margin-block-start: 1rem; font-size: 0.8125rem; }
+      body {
+        margin: 0;
+        background: var(--ui-surface);
+        color: var(--ui-text-primary);
+      }
+      main {
+        inline-size: min(100%, 56rem);
+        padding: 2rem;
+        margin-inline: auto;
+        font-family: var(--font-sans);
+      }
+      h1 {
+        font-size: 1rem;
+        margin-block: 0 0.5rem;
+      }
+      h2 {
+        font-size: 0.875rem;
+        margin-block: 0 1rem;
+      }
+      section {
+        margin-block-start: 2rem;
+        min-inline-size: 0;
+      }
+      .fixture-caption {
+        color: var(--ui-text-secondary);
+        font-size: 0.8125rem;
+        margin-block: 0 1rem;
+      }
+      .fixture-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        font-size: 0.8125rem;
+      }
+      .fixture-output {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--ui-text-secondary);
+        margin-block-start: 1rem;
+        font-size: 0.8125rem;
+      }
     </style>
   </head>
-  <body><div id="root"></div><script type="module" src="./session-references.tsx"></script></body>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./session-references.tsx"></script>
+  </body>
 </html>

@@ -9,9 +9,10 @@
   vertical-align: middle;
 }
 .xs.xs[data-variant="count"] {
-  min-inline-size: 0.875rem;
-  min-block-size: 0.875rem;
-  padding-inline: 0.1875rem;
+  min-inline-size: 1ch;
+  min-block-size: 0;
+  padding: 0;
+  line-height: inherit;
 }
 .xs.xs[data-variant="dot"] {
   padding-inline: 0;

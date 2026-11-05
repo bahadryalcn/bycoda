@@ -1,12 +1,13 @@
+import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
   subscribeGitChanged,
   type GitChangeScope,
   type GitDiffIndex,
 } from "../../../platform/tauri/fs";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
 import { sameConflicts } from "../model/conflictSection";
 import { gitPanelRuntime } from "../model/gitPanelState";
 import {
@@ -22,7 +23,7 @@ import {
 } from "../model/gitRefreshPolicy";
 import { applyProjectDiffStats } from "./useProjectDiffStats";
 
-const indexByCwd = new Map<string, GitDiffIndex>();
+const indexByCwd = new CheckoutCache<string, GitDiffIndex>();
 
 /** Observations already contain a fresh index; mutations need a new read. */
 let announcingObservedChange = false;
@@ -88,6 +89,7 @@ export function useDiffIndex(
     if (!enabled || !cwd || cwd === "~") {
       return;
     }
+    const releaseCache = indexByCwd.retain(cwd);
     const cached = cachedIndex(cwd);
     if (cached && !sameIndex(indexRef.current, cached)) {
       indexRef.current = cached;
@@ -221,6 +223,7 @@ export function useDiffIndex(
       window.removeEventListener("focus", onResume);
       document.removeEventListener("visibilitychange", onResume);
       unsubGit();
+      releaseCache();
     };
   }, [cwd, enabled, nonce, remote, polling, panel]);
 

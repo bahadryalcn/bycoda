@@ -91,6 +91,7 @@ async function startTurn(
     intent?: TurnIntent;
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
+    providerSessionId?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -128,7 +129,7 @@ async function startTurn(
       (message) =>
         (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
     )!;
-  emit({ type: "system", subtype: "init", session_id: "sess_1" });
+  emit({ type: "system", subtype: "init", session_id: options.providerSessionId ?? "sess_1" });
   emit({
     type: "control_response",
     response: { subtype: "success", request_id: initialize.request_id },
@@ -434,6 +435,31 @@ describe("claude streamed tool inputs", () => {
       expect(settled).toBe(true);
     },
   );
+  it("holds the next prompt until the stopped query's result drains", async () => {
+    const first = await startTurn("s1");
+    await cancelClaudeTurn("s1");
+    await first.turn;
+    const users = () => parse().filter((message) => message.type === "user").length;
+    const before = users();
+    const send = () =>
+      sendClaudeTurn({
+        sessionId: "s1",
+        cwd: "/repo",
+        model: "claude:claude-sonnet-5",
+        modelSettings: {},
+        runtimeMode: "supervised",
+        text: "next",
+        attachments: [],
+        onEvent: () => undefined,
+      });
+    await expect(send()).rejects.toThrow("still settling");
+    expect(users()).toBe(before);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    const next = send();
+    await waitFor(() => users() === before + 1, "next admitted prompt");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await next;
+  });
   it("launches the selected advisor and rebinds when it is disabled", async () => {
     const first = await startTurn("advisor-session", {
       modelSettings: { advisor: "opus", subagentModel: "haiku", subagentPolicy: "force" },
@@ -1245,6 +1271,7 @@ describe("claude legacy account resume", () => {
     bindClaudeSession("s1", "legacy-session", "/repo");
     const { turn } = await startTurn("s1", {
       providerAccountId: "default",
+      providerSessionId: "legacy-session",
     });
     expect(spawned[0]).toEqual(expect.arrayContaining(["--resume", "legacy-session"]));
     expect(spawned[0]).not.toContain("--session-id");
@@ -3181,6 +3208,50 @@ it("preserves the original control-request lineage after an asynchronous user de
     origin,
   );
   await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+  emit({ type: "result", subtype: "success", session_id: "sess_1" });
+  await turn;
+});
+
+it("parses a brace-heavy streamed Write input once on its original live tool", async () => {
+  const { events, turn } = await startTurn("s1");
+  emit({
+    type: "stream_event",
+    session_id: "sess_1",
+    event: {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "toolu_large", name: "Write", input: {} },
+    },
+  });
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    const delta = (partial_json: string) =>
+      emit({
+        type: "stream_event",
+        session_id: "sess_1",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json },
+        },
+      });
+    delta('{"file_path":"a.ts","content":"');
+    for (let index = 0; index < 500; index++) delta("}".repeat(20));
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "toolu_large"),
+    ).toHaveLength(0);
+    delta('"}');
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "toolu_large"),
+    ).toHaveLength(1);
+    expect(
+      parse.mock.calls.filter(([text]) =>
+        String(text).startsWith('{"file_path":"a.ts","content":"'),
+      ),
+    ).toHaveLength(1);
+  } finally {
+    parse.mockRestore();
+  }
   emit({ type: "result", subtype: "success", session_id: "sess_1" });
   await turn;
 });

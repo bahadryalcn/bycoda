@@ -1,5 +1,6 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import {
   isHarnessConstructionId,
   requireHarnessProcessReceipt,
@@ -21,7 +22,11 @@ import {
 } from "./nativeOutputDelivery";
 import { socialBridge, socialSpawnArgs } from "./socialBridge";
 import { observeProviderOperation } from "./providerObservation";
-import { nativeControlTurnReceipt, type ControlTurnHandle } from "./controlTurn";
+import {
+  nativeControlTurnReceipt,
+  nativeSessionCapability,
+  type ControlTurnHandle,
+} from "./controlTurn";
 import type { HostRunHandle, HostRunBinding } from "./hostRun";
 import { retireProviderProcess } from "./providerRetirement";
 import { runtimeLogsBridge, runtimeLogsSpawnArgs } from "./runtimeLogsBridge";
@@ -96,31 +101,9 @@ export function invokeProviderCommand<T>(
   return invoke<T>(command, args);
 }
 
-let windowLabel: string | null | undefined;
-
-/** A global `listen` registers as target `Any`, which Tauri delivers to even
- * when the backend used `emit_to` another window. Scoping the listener to this
- * window's label still receives broadcasts and targeted events for it, and
- * skips those the backend routed to other windows. */
-function currentWindowLabel(): string | null {
-  if (windowLabel === undefined) {
-    // The same field `getCurrentWindow()` reads; avoids importing the window API.
-    const internals = (
-      globalThis as {
-        __TAURI_INTERNALS__?: {
-          metadata?: { currentWindow?: { label?: string } };
-        };
-      }
-    ).__TAURI_INTERNALS__;
-    windowLabel = internals?.metadata?.currentWindow?.label || null;
-  }
-  return windowLabel;
-}
-
 function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<UnlistenFn> {
   if (backend) return backend.listen(event, handler);
-  const label = currentWindowLabel();
-  return label ? tauriListen(event, handler, { target: label }) : tauriListen(event, handler);
+  return listenWindowAsync(event, handler);
 }
 
 type LinePayload = {
@@ -194,7 +177,12 @@ type ProcessFrame = {
 };
 type ChildProcessState = {
   handle: ChildProcessHandle;
+  /** Physical native route captured from this exact management grant. */
+  routeId: string;
   nativeControlTurn?: ControlTurnHandle;
+  purpose?: "management" | "utility";
+  purposePage?: Promise<string>;
+  purposeToken?: string;
   hostRun?: HostRunHandle;
   invoke: ChildBackend["invoke"];
   backend: HarnessProcessReceipt["backend"];
@@ -240,10 +228,16 @@ const guardedSpawns = new Map<string, GuardedSpawnGroup>();
 export function createChildProcessHandle(
   sessionId: string,
   nativeControlTurn?: ControlTurnHandle,
+  purpose?: "management" | "utility",
 ): ChildProcessHandle {
   if (typeof sessionId !== "string" || !sessionId || sessionId.length > 512)
     throw new Error("Invalid harness process locator");
   if (nativeControlTurn) nativeControlTurnReceipt(nativeControlTurn);
+  const purposePage =
+    purpose && !backend && typeof isTauri === "function" && isTauri()
+      ? tauriInvoke<string>("canonical_store_page_token")
+      : undefined;
+  if (purposePage) void purposePage.catch(() => undefined);
   const handle = Object.freeze({ sessionId }) as ChildProcessHandle;
   let resolve!: ChildProcessState["resolve"];
   let reject!: ChildProcessState["reject"];
@@ -255,7 +249,10 @@ export function createChildProcessHandle(
   void ready.catch(() => undefined);
   processStates.set(handle, {
     handle,
+    routeId: sessionId,
     nativeControlTurn,
+    purpose,
+    purposePage,
     invoke: backend ? backend.invoke.bind(backend) : tauriInvoke,
     backend: backend ? "host" : "native",
     ready,
@@ -270,6 +267,13 @@ export function createChildProcessHandle(
     earlyBytes: 0,
   });
   return handle;
+}
+
+/** Physical route captured by this exact process handle after spawn admission. */
+export function capturedChildRoute(handle: ChildProcessHandle): string {
+  const state = processStates.get(handle);
+  if (!state || !state.spawnReturned) throw new Error("Provider process route is not ready");
+  return state.routeId;
 }
 
 /** The original construction's authority observation, never a current session lookup. */
@@ -368,7 +372,7 @@ export function bindChildTurnWriter(
       let hostBinding: HostRunBinding | undefined;
       if (backend === "host" && hostRun) {
         const raw = await invoke<unknown>("harness_bind_host_run", {
-          sessionId: handle.sessionId,
+          sessionId: process.routeId,
           constructionId: receipt.constructionId,
           hostRun,
         });
@@ -379,7 +383,7 @@ export function bindChildTurnWriter(
       }
       if (backend === "native" && control) {
         const raw = await invoke<unknown>("harness_bind_turn", {
-          sessionId: handle.sessionId,
+          sessionId: process.routeId,
           constructionId: receipt.constructionId,
           controlTurn: control,
         });
@@ -454,21 +458,28 @@ export function invalidateChildOutput(handle: ChildProcessHandle, reason: string
   const state = childState(handle);
   if (state.backend !== "native" || state.order === 0) return;
   const invalidate = (receipt: HarnessProcessReceipt) =>
-    invalidateNativeOutputConstruction(handle.sessionId, receipt.constructionId, reason);
+    invalidateNativeOutputConstruction(state.routeId, receipt.constructionId, reason);
   if (state.receipt) invalidate(state.receipt);
   else {
     // The actual invoked spawn may still return after local close/cancellation.
     // Only its own receipt can select a stream; unknown remains quarantined.
-    void state.ready.then(invalidate, () =>
-      quarantineNativeOutputSession(handle.sessionId, reason),
-    );
+    void state.ready.then(invalidate, () => quarantineNativeOutputSession(state.routeId, reason));
   }
 }
 
 function registerProcess(state: ChildProcessState): void {
-  const routes = processRoutes.get(state.handle.sessionId) ?? new Set<ChildProcessState>();
+  const routes = processRoutes.get(state.routeId) ?? new Set<ChildProcessState>();
   routes.add(state);
-  processRoutes.set(state.handle.sessionId, routes);
+  processRoutes.set(state.routeId, routes);
+}
+
+function bindProcessRoute(state: ChildProcessState, routeId: string): void {
+  if (state.routeId === routeId) return;
+  const old = processRoutes.get(state.routeId);
+  const registered = old?.delete(state) ?? false;
+  if (old && old.size === 0) processRoutes.delete(state.routeId);
+  state.routeId = routeId;
+  if (registered) registerProcess(state);
 }
 
 function releaseFrame(frame: ProcessFrame): void {
@@ -494,9 +505,9 @@ function detachProcess(state: ChildProcessState): void {
   if (buffered?.nativeItems) discardNativeOutputItems(buffered.nativeItems, "child-unwatched");
   lineBuffer.delete(state);
   clearEarly(state);
-  const routes = processRoutes.get(state.handle.sessionId);
+  const routes = processRoutes.get(state.routeId);
   routes?.delete(state);
-  if (!routes?.size) processRoutes.delete(state.handle.sessionId);
+  if (!routes?.size) processRoutes.delete(state.routeId);
   if (currentChildren.get(state.handle.sessionId) === state.handle)
     currentChildren.delete(state.handle.sessionId);
 }
@@ -785,8 +796,8 @@ function teardownBridge() {
   const pending = bridge;
   bridge = null;
   bridgeAttempt = null;
-  for (const routes of [...processRoutes.values()])
-    for (const state of [...routes]) {
+  for (const routes of Array.from(processRoutes.values()))
+    for (const state of Array.from(routes)) {
       state.cancelled = true;
       if (state.phase === "new" || state.phase === "preparing")
         state.reject(new Error("Harness bridge retired"));
@@ -935,6 +946,8 @@ export async function spawnChild(
   }
   try {
     checkGuarded();
+    if (state.purposePage) state.purposeToken = await state.purposePage;
+    checkGuarded();
     if (beforeSpawn && group && attempt) {
       await beforeSpawn();
       checkGuarded();
@@ -944,7 +957,7 @@ export async function spawnChild(
     }
     const binaryPath = binaryProvider ? runtimeProviderBinaryPath(binaryProvider) : undefined;
     let launchArgs = args;
-    if (binaryProvider === "claude" || binaryProvider === "codex") {
+    if (!state.purpose && (binaryProvider === "claude" || binaryProvider === "codex")) {
       const [social, logs, conversation] = await Promise.all([
         socialBridge(sessionId),
         runtimeLogsBridge(sessionId),
@@ -963,22 +976,51 @@ export async function spawnChild(
       if (group.latest !== attempt.generation) throw new Error("Provider startup cancelled");
     }
     checkGuarded();
+    const managementRequest = Object.freeze({
+      command,
+      args: Object.freeze([...launchArgs]),
+      cwd,
+      account: account ? Object.freeze({ ...account }) : undefined,
+      binaryProvider,
+      binaryPath,
+      purpose: state.purpose,
+    });
+    const managementGrant =
+      state.backend === "native" && state.purpose && state.purposeToken
+        ? await state.invoke<{ token: string; routeId: string } | null>(
+            "harness_management_spawn_grant",
+            {
+              pageToken: state.purposeToken,
+              command: managementRequest,
+            },
+          )
+        : undefined;
+    checkGuarded();
+    if (managementGrant) bindProcessRoute(state, managementGrant.routeId);
     if (!Number.isSafeInteger(spawnOrder + 1))
       throw new Error("Provider startup generation exhausted");
     state.order = ++spawnOrder;
     state.phase = "invoking";
     const raw = await state.invoke<unknown>("harness_spawn", {
-      sessionId,
-      command,
-      args: launchArgs,
-      cwd,
-      account,
-      binaryProvider,
-      binaryPath,
+      ...managementRequest,
+      sessionId: state.routeId,
       genericAcpId,
+      ...(managementGrant
+        ? {
+            nativeManagementToken: managementGrant.token,
+            nativeManagementRouteId: managementGrant.routeId,
+            nativeManagementPurpose: state.purpose,
+          }
+        : {}),
       ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
       ...(state.backend === "native" && state.nativeControlTurn
         ? { controlTurn: nativeControlTurnReceipt(state.nativeControlTurn) }
+        : {}),
+      ...(state.purpose && state.purposeToken
+        ? { nativeProcessPurpose: { kind: state.purpose, pageToken: state.purposeToken } }
+        : {}),
+      ...(state.backend === "native" && state.nativeControlTurn
+        ? { nativeSessionCapability: nativeSessionCapability(state.nativeControlTurn) }
         : {}),
       ...(state.backend === "host" && hostRun ? { hostRun } : {}),
       ...authorityArgs,
@@ -986,7 +1028,7 @@ export async function spawnChild(
       ...(state.backend === "host" && beforeSpawn ? { beforeSpawn } : {}),
     });
     state.spawnReturned = true;
-    const receipt = requireHarnessProcessReceipt(raw, sessionId, state.backend);
+    const receipt = requireHarnessProcessReceipt(raw, state.routeId, state.backend);
     state.receipt = receipt;
     state.phase = "bound";
     const previous = currentChildren.get(sessionId);
@@ -1001,11 +1043,20 @@ export async function spawnChild(
       if (group && attempt) group.published = attempt.generation;
       // Retain the witness on every older original, including pending replies.
       // A successor exiting before that reply arrives cannot resurrect it.
-      for (const previous of [...(processRoutes.get(sessionId) ?? [])])
+      for (const previous of Array.from(processRoutes.get(sessionId) ?? []))
         if (previous !== state && previous.order > 0 && previous.order < state.order) {
           previous.retired = true;
           detachProcess(previous);
         }
+      if (
+        previousState &&
+        previousState !== state &&
+        previousState.routeId !== sessionId &&
+        previousState.order < state.order
+      ) {
+        previousState.retired = true;
+        detachProcess(previousState);
+      }
       currentChildren.set(sessionId, handle);
     } else if (superseded) {
       state.retired = true;
@@ -1076,7 +1127,7 @@ export function writeChild(
               ? "harness_write_controlled"
               : "harness_write",
           {
-            sessionId: original.handle.sessionId,
+            sessionId: original.routeId,
             constructionId: writer.receipt.constructionId,
             line,
             ...(writer.hostBinding
@@ -1085,6 +1136,17 @@ export function writeChild(
                 ? { binding: writer.binding }
                 : {}),
             ...authorityArgs,
+            ...(original.purpose && original.purposeToken
+              ? {
+                  nativeProcessPurpose: {
+                    kind: original.purpose,
+                    pageToken: original.purposeToken,
+                  },
+                }
+              : {}),
+            ...(writer.backend === "native" && writer.controlTurn
+              ? { nativeSessionCapability: nativeSessionCapability(writer.controlTurn) }
+              : {}),
           },
         ),
         work,
@@ -1095,10 +1157,16 @@ export function writeChild(
       if (state.cancelled || state.retired || state.exited)
         throw new Error("Harness process construction retired");
       return state.invoke<void>("harness_write", {
-        sessionId: handle.sessionId,
+        sessionId: state.routeId,
         constructionId: receipt.constructionId,
         line,
         ...authorityArgs,
+        ...(state.purpose && state.purposeToken
+          ? { nativeProcessPurpose: { kind: state.purpose, pageToken: state.purposeToken } }
+          : {}),
+        ...(state.backend === "native" && state.nativeControlTurn
+          ? { nativeSessionCapability: nativeSessionCapability(state.nativeControlTurn) }
+          : {}),
       });
     };
     return trackNativeOutputWork(
@@ -1121,7 +1189,7 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
     return (state.kill = Promise.resolve());
   const kill = (receipt: HarnessProcessReceipt) =>
     state.invoke<void>("harness_kill", {
-      sessionId: handle.sessionId,
+      sessionId: state.routeId,
       constructionId: receipt.constructionId,
     });
   const run: Promise<void> = (
@@ -1134,7 +1202,7 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
             // Without a valid construction id native answers CONSTRUCTION_REQUIRED
             // (there is nothing addressable to stop); that is not a kill failure.
             return state
-              .invoke<void>("harness_kill", { sessionId: handle.sessionId })
+              .invoke<void>("harness_kill", { sessionId: state.routeId })
               .catch((killError: unknown) => {
                 if (/NATIVE_PROCESS_CONSTRUCTION_REQUIRED/.test(String(killError))) {
                   console.warn("[child] kill skipped, spawn receipt was invalid", killError);
@@ -1163,12 +1231,12 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
   return run;
 }
 
-export function killAllChildren(): Promise<void> {
+function clearPageChildren(): void {
   // A naturally ended child can still have undelivered buffered output here.
   // Native kill_all cannot cancel that already-removed lifetime for us.
   invalidateNativeOutputDelivery("children-reset");
-  for (const routes of [...processRoutes.values()])
-    for (const state of [...routes]) {
+  for (const routes of Array.from(processRoutes.values()))
+    for (const state of Array.from(routes)) {
       state.cancelled = true;
       if (state.phase === "new" || state.phase === "preparing")
         state.reject(new Error("Harness children reset"));
@@ -1180,6 +1248,15 @@ export function killAllChildren(): Promise<void> {
   ownedSse.clear();
   currentChildren.clear();
   guardedSpawns.clear();
+}
+
+/** Discard this page's local routes; native page retirement stops its children. */
+export function forgetWindowChildren(): void {
+  clearPageChildren();
+}
+
+export function killAllChildren(): Promise<void> {
+  clearPageChildren();
   return invoke("harness_kill_all");
 }
 
@@ -1283,6 +1360,8 @@ export type HarnessHttpInput = {
   sessionId?: string;
   authorityEnvironmentId?: string;
   authorityGeneration?: number;
+  nativeSessionCapability?: import("./controlTurn").NativeSessionCapability;
+  nativeOwnedService?: import("../providers/opencode/opencodeService").NativeOwnedOpenCode;
 };
 export type HostHarnessHttpSource = Readonly<{
   baseUrl: string;
@@ -1359,6 +1438,8 @@ export function openHarnessSse(
   headers?: Record<string, string>,
   authority?: NativeAuthorityScope,
   logicalSessionId?: string,
+  capability?: import("./controlTurn").NativeSessionCapability,
+  ownedService?: import("../providers/opencode/opencodeService").NativeOwnedOpenCode,
 ): Promise<void> {
   ownedSse.add(sessionId);
   return invoke("harness_sse_open", {
@@ -1367,6 +1448,8 @@ export function openHarnessSse(
     headers,
     ...nativeAuthorityArgs(authority),
     ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
+    ...(capability === undefined ? {} : { nativeSessionCapability: capability }),
+    ...(ownedService === undefined ? {} : { nativeOwnedService: ownedService }),
   });
 }
 
@@ -1394,7 +1477,7 @@ export function inspectHarnessBinary(
     }
     try {
       const version = (
-        await execChild(resolved.path, ["--version"], undefined, provider, binaryPath)
+        await execChild(resolved.path, ["--version"], undefined, provider, binaryPath, "management")
       ).trim();
       return /\d+\.\d+\.\d+/.test(version)
         ? { path: resolved.path, version }
@@ -1422,30 +1505,95 @@ export async function updateHarnessCli(
   });
 }
 
+/** Capture cleanup permission while the exact fresh utility child still exists.
+ * Execute only after caller has physically retired that original child. */
+export async function prepareUtilitySessionCleanup(
+  handle: ChildProcessHandle,
+  command: string,
+  args: string[],
+  cwd: string,
+  binaryProvider: ConfigurableBinaryProvider,
+): Promise<() => Promise<string>> {
+  const state = childState(handle);
+  const binaryPath = runtimeProviderBinaryPath(binaryProvider);
+  const request = Object.freeze({
+    command,
+    args: Object.freeze([...args]),
+    cwd,
+    binaryProvider,
+    binaryPath,
+  });
+  if (state.backend !== "native" || typeof isTauri !== "function" || !isTauri()) {
+    return () => execChild(command, args, cwd, binaryProvider, binaryPath, "utility");
+  }
+  const receipt = state.receipt ?? (await state.ready);
+  const grant = await state.invoke<{ token: string; routeId: string }>(
+    "harness_utility_cleanup_grant",
+    {
+      sessionId: state.routeId,
+      constructionId: receipt.constructionId,
+      command: request,
+    },
+  );
+  let invoked = false;
+  return () => {
+    if (invoked) throw new Error("Original utility cleanup already dispatched.");
+    invoked = true;
+    return state.invoke<string>("harness_exec", {
+      ...request,
+      nativeManagementToken: grant.token,
+      nativeManagementRouteId: grant.routeId,
+    });
+  };
+}
+
 export function execChild(
   command: string,
   args: string[],
   cwd?: string,
   binaryProvider?: ConfigurableBinaryProvider,
   binaryPathOverride?: string | null,
+  purpose?: "management" | "utility",
 ): Promise<string> {
   const binaryPath =
     binaryPathOverride === undefined && binaryProvider
       ? runtimeProviderBinaryPath(binaryProvider)
       : binaryPathOverride;
   const work = captureNativeOutputWork();
+  const originalBackend = backend;
+  const originalInvoke = originalBackend
+    ? originalBackend.invoke.bind(originalBackend)
+    : tauriInvoke;
+  const request = Object.freeze({
+    command,
+    args: Object.freeze([...args]),
+    cwd,
+    binaryProvider,
+    binaryPath,
+  });
+  const purposePage =
+    purpose && !originalBackend && typeof isTauri === "function" && isTauri()
+      ? tauriInvoke<string>("canonical_store_page_token")
+      : undefined;
+  const dispatch = (pageToken?: string): Promise<string> => {
+    const invokeExec = (grant?: { token: string; routeId: string }) =>
+      originalInvoke<string>("harness_exec", {
+        ...request,
+        ...(purpose && pageToken ? { nativeProcessPurpose: { kind: purpose, pageToken } } : {}),
+        ...(grant
+          ? { nativeManagementToken: grant.token, nativeManagementRouteId: grant.routeId }
+          : {}),
+      });
+    return purpose === "management" && pageToken
+      ? originalInvoke<{ token: string; routeId: string }>("harness_management_grant", {
+          pageToken,
+          command: request,
+        }).then(invokeExec)
+      : invokeExec();
+  };
   let actual: Promise<string>;
   try {
-    actual = trackNativeOutputWork(
-      invoke<string>("harness_exec", {
-        command,
-        args: [...args],
-        cwd,
-        binaryProvider,
-        binaryPath,
-      }),
-      work,
-    );
+    actual = trackNativeOutputWork(purposePage ? purposePage.then(dispatch) : dispatch(), work);
   } catch (error) {
     work?.fail("cli-probe-invoke-threw");
     throw error;

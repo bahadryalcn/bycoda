@@ -1,10 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { appendReadyHandoff, buildDeterministicHandoff } from "../../sessions/model/handoff";
-import { invokeWorkspace, notifyGitChanged, resolveProjectLocation } from "../../../platform/tauri/fs";
+import { appendReadyHandoff, buildDeterministicHandoff } from "../../sessions/public/handoff";
+import { newSession, sessionWorkCwd } from "../../sessions/public/session";
+import { type Session } from "../../sessions";
+import {
+  invokeWorkspace,
+  notifyGitChanged,
+  resolveProjectLocation,
+} from "../../../platform/tauri/fs";
 import { isFilesystemTab, type FilePaneTab } from "../../workspace/model/layout";
 import { isEqualOrInside, pathKey, parentPath } from "../../../shared/lib/paths";
-import { isBlankSession } from "../../projects/model/projectReturn";
-import { newSession, sessionWorkCwd, type Session } from "../../sessions/model/session";
+import { isBlankSession } from "../../projects/public/projectReturn";
 
 export type Worktree = {
   path: string;
@@ -21,9 +26,16 @@ export type Worktree = {
 export type Worktrees = { worktrees: Worktree[]; defaultRoot: string };
 
 export type WorktreeRemovalReview = {
-  projectCwd: string; commonDir: string; path: string; branch: string | null;
-  head: string; status: string; unpushed: number; sessionIds: string[];
-  hasTerminals: boolean; hasAgents: boolean;
+  projectCwd: string;
+  commonDir: string;
+  path: string;
+  branch: string | null;
+  head: string;
+  status: string;
+  unpushed: number;
+  sessionIds: string[];
+  hasTerminals: boolean;
+  hasAgents: boolean;
 };
 export const reviewWorktreeRemoval = (cwd: string, path: string) =>
   invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
@@ -32,7 +44,10 @@ export const listWorktrees = (cwd: string) => invokeWorkspace<Worktrees>("git_wo
 
 /** A missing parent may be an unmounted volume, not a deleted worktree. */
 export async function worktreeDeletedExternally(path: string): Promise<boolean> {
-  const [tree, parent] = await Promise.all([resolveProjectLocation(path), resolveProjectLocation(parentPath(path))]);
+  const [tree, parent] = await Promise.all([
+    resolveProjectLocation(path),
+    resolveProjectLocation(parentPath(path)),
+  ]);
   return !tree && !!parent;
 }
 

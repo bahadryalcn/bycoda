@@ -34,8 +34,7 @@ export function CrewTaskPicker({
   // A host without Crews support offers nothing to choose. With no crew saved on the task, the
   // choice collapses to one quiet line; its reason and retry stay behind the information control.
   // A saved crew keeps the full picker and alerts so the task cannot silently lose its crew.
-  const unsupported =
-    !value && (crews.error != null || (crews.data != null && !available));
+  const unsupported = !value && (crews.error != null || (crews.data != null && !available));
   if (unsupported)
     return (
       <div

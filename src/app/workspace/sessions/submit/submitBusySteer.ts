@@ -26,6 +26,8 @@ import {
 } from "../../../../integrations/harness";
 import { t } from "../../../../shared/i18n";
 import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
+import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
+import { clearDeliveryProgress } from "../../../../features/sessions/model/deliveryProgress";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { userTurnCards } from "../../helpers/sessionHelpers";
 import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
@@ -407,6 +409,13 @@ export function steerBusySubmit(
               if (entry.id !== sessionId) return entry;
               const cleaned = {
                 ...entry,
+                // Removing a restored row optimistically made it active. A wait
+                // is not acceptance and must not release the remaining queue.
+                ...(fromRow &&
+                storedCurrent.queueStatus === "restored" &&
+                entry.queueStatus === "active"
+                  ? { queueStatus: "restored" as const }
+                  : {}),
                 blocks: entry.blocks.filter((block) => block.id !== steerUserId),
               };
               const row = {
@@ -432,13 +441,18 @@ export function steerBusySubmit(
           const paused = sessionsRef.current.find((entry) => entry.id === sessionId)?.queueStatus;
           const note =
             paused === "paused" || paused === "restored"
-              ? t("The provider is not taking follow-ups right now. Your message is in the paused queue; resume the queue to send it.")
-              : t("The provider is not taking follow-ups right now. Your message is queued and will be sent next.");
-          updateDeliveryProgress(sessionId, progress, "rejected", note);
-          showSubmitNotice(sessionId, note);
+              ? t(
+                  "The provider is not taking follow-ups right now. Your message is in the paused queue; resume the queue to send it.",
+                )
+              : t(
+                  "The provider is not taking follow-ups right now. Your message is queued and will be sent next.",
+                );
+          // No provider write happened. This is waiting work, not a rejected send.
+          clearDeliveryProgress(sessionId, progress);
           wakeSharedLocalQueues([sessionId]);
-          // A queue action must not remove this reinserted row as an accepted steer.
-          return !options?.queuedMessageId;
+          // Release a claimed row without accepting it or pausing the queue.
+          if (options?.queuedMessageId) throw new QueueDeferredError(note);
+          return true;
         }
         const message =
           error instanceof Error

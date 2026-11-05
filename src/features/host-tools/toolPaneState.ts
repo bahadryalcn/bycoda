@@ -1,3 +1,4 @@
+import { sameToolsSession } from "./toolsSessionRegistry";
 import { useSyncExternalStore } from "react";
 
 type PaneIdentity = { cwd: string; sessionId: string };
@@ -20,10 +21,7 @@ function subscribe(listener: () => void) {
 export function useDockedTools(tools: PaneIdentity) {
   return useSyncExternalStore(
     subscribe,
-    () =>
-      [...owners.values()].some((panes) =>
-        panes.some((pane) => pane.cwd === tools.cwd && pane.sessionId === tools.sessionId),
-      ),
+    () => [...owners.values()].some((panes) => panes.some((pane) => sameToolsSession(pane, tools))),
     () => false,
   );
 }

@@ -45,7 +45,9 @@ describe("AgentMarkdown text direction", () => {
     );
 
     expect(markup).toContain('class="markdown-code-shell markdown-code-resizable"');
-    expect(markup).toContain('data-collapsed="false" dir="ltr"');
+    const shell = markup.match(/<div class="markdown-code-shell[^>]*>/)?.[0];
+    expect(shell).toContain('data-collapsed="false"');
+    expect(shell).toContain('dir="ltr"');
   });
 });
 

@@ -8,12 +8,7 @@ import {
 } from "./EditorDraftRecoverySection";
 import type { SessionRecovery } from "../../../features/workspace/model/sessionRecovery";
 import { BufferRecoveryReports } from "./BufferRecoveryReports";
-import {
-  RecoveryTabs,
-  recoveryPanelId,
-  recoveryTabId,
-  type RecoveryTab,
-} from "./RecoveryLayout";
+import { RecoveryTabs, recoveryPanelId, recoveryTabId, type RecoveryTab } from "./RecoveryLayout";
 
 const PREFIX = "workspace-recovery";
 

@@ -106,7 +106,9 @@ for (const theme of ["light", "dark"])
         await button.focus();
         await button.press("Enter");
       };
-      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Setup fixture");
+      await dialog
+        .getByRole("textbox", { name: "Assistant name", exact: true })
+        .fill("Setup fixture");
       await capture(0);
       await next();
       await chooseSetupValue(page, "Language", "English");
@@ -260,7 +262,9 @@ for (const theme of ["light", "dark"])
         return openSettingsGroup(page, label);
       };
       const identity = await showGroup("Identity");
-      await identity.getByRole("textbox", { name: "Name", exact: true }).fill("Settings fixture");
+      await identity
+        .getByRole("textbox", { name: "Assistant name", exact: true })
+        .fill("Settings fixture");
       await identity
         .getByRole("textbox", { name: "How should I address you?", exact: true })
         .fill("Owner fixture");
@@ -311,7 +315,7 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `settings-${theme}-${width}-cost.png`),
       });
-      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await saveProfileSettings(page);
       await expect(dialog).toHaveCount(0);
       expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
         name: "Settings fixture",
@@ -343,6 +347,25 @@ for (const theme of ["light", "dark"])
     });
 
 async function openSettingsGroup(page: Page, name: string) {
+  const pages: Record<string, string> = {
+    Identity: "Personal",
+    Language: "Personal",
+    "Conversation behavior": "Personal",
+    Autonomy: "Work",
+    "Presence and hours": "Schedule",
+    "Cost and context": "Advanced",
+    "Manual session supervision": "Projects",
+    "Computer use": "Computer use",
+    "Conversation retention": "Advanced",
+    "Today's usage": "Advanced",
+  };
+  await page.getByRole("dialog").getByRole("tab", { name: pages[name], exact: true }).click();
+  if (name === "Computer use")
+    return page
+      .getByRole("dialog")
+      .locator("section")
+      .and(page.getByRole("region", { name, exact: true }))
+      .first();
   const summary = page
     .getByRole("dialog")
     .locator("summary")
@@ -425,13 +448,10 @@ for (const theme of ["light", "dark"])
         "Conversation retention",
         "Today's usage",
       ]) {
-        const summary = settings
-          .locator("summary")
-          .filter({ hasText: new RegExp(`^${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) });
-        await summary.click();
+        const group = await openSettingsGroup(page, section);
+        const summary = section === "Computer use" ? group : group.locator(":scope > summary");
         await summary.scrollIntoViewIfNeeded();
         await capture(`settings-${section.toLowerCase().replace(/[^a-z]+/g, "-")}`);
-        await summary.click();
       }
       await settings.getByRole("button", { name: "Close", exact: true }).click();
       await room.getByRole("button", { name: "More options", exact: true }).click();
@@ -905,7 +925,7 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `output-context-advanced-${theme}-${width}.png`),
       });
-      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await saveProfileSettings(page);
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Cost and context");
@@ -1122,7 +1142,12 @@ for (const theme of ["light", "dark"])
       await expect(
         manual.getByRole("switch", { name: "Allow manual session supervision", exact: true }),
       ).toHaveAttribute("aria-checked", "false");
-      await expect(manual.getByRole("checkbox", { name: "MonoCode", exact: true })).toBeChecked();
+      await manual.getByRole("button", { name: /^Selected projects:/ }).click();
+      await expect(page.getByRole("option", { name: /MonoCode/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await page.keyboard.press("Escape");
       await expect(dialog.getByText("Secret project", { exact: true })).toHaveCount(0);
       await page.screenshot({
         animations: "disabled",
@@ -1209,7 +1234,7 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `retention-${theme}-${width}.png`),
       });
-      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await saveProfileSettings(page);
       await expect(page.getByRole("dialog")).not.toBeVisible();
     });
 
@@ -1528,7 +1553,7 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `roles-advanced-${theme}-${width}.png`),
       });
-      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await saveProfileSettings(page);
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Autonomy");
@@ -1540,7 +1565,7 @@ for (const theme of ["light", "dark"])
         planning.getByRole("button", { name: "fixture-role-model", exact: true }),
       ).toBeVisible();
       await planning.getByRole("button", { name: "Use worker model", exact: true }).click();
-      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await saveProfileSettings(page);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Autonomy");
       await dialog.getByRole("button", { name: "Advanced role models", exact: true }).click();
@@ -1826,3 +1851,10 @@ for (const theme of ["light", "dark"])
       await expect(page.getByText("Assistant supervision removed", { exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as any).__fixtureDetachCalls)).toBe(1);
     });
+
+async function saveProfileSettings(page: Page) {
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Save profile settings", exact: true }).click();
+  await expect(dialog.getByText("Profile settings saved.", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+}

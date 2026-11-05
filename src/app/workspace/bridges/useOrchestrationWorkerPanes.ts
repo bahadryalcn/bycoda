@@ -1,7 +1,12 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { WorkerDetailRequest } from "./useOrchestrationState";
-import { type WorkspaceTab, leafIds, newAgentTab, openEditorTab } from "../../../features/workspace/model/layout";
+import {
+  type WorkspaceTab,
+  leafIds,
+  newAgentTab,
+  openEditorTab,
+} from "../../../features/workspace/model/layout";
 import { prepareOrchestrationWorkerDetails } from "../../../features/orchestration/model/orchestrationWorkspace";
 import { type OrchestrationWorkerDetail } from "../../../features/orchestration/ui/OrchestrationActions";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
@@ -15,7 +20,10 @@ export interface OrchestrationWorkerPanesDeps {
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
   projectCwdRef: MutableRefObject<string>;
   focusOpenSession: (sessionId: string) => boolean;
-  onSelectHistorySession: (sessionId: string, options?: { isCurrent?: () => boolean }) => Promise<unknown>;
+  onSelectHistorySession: (
+    sessionId: string,
+    options?: { isCurrent?: () => boolean },
+  ) => Promise<unknown>;
   ensureOpenSession: Parameters<typeof prepareOrchestrationWorkerDetails>[1]["openWorker"];
   inspectedWorkerId: string | null;
   setInspectedWorkerId: Dispatch<SetStateAction<string | null>>;
@@ -39,7 +47,12 @@ export function useOrchestrationWorkerPanes({
 }: OrchestrationWorkerPanesDeps) {
   const requestSerial = useRef(0);
   const requestGuards = useRef(new WeakMap<WorkerDetailRequest, () => boolean>());
-  useEffect(() => () => { requestSerial.current++; }, []);
+  useEffect(
+    () => () => {
+      requestSerial.current++;
+    },
+    [],
+  );
   const queueWorkerPanes = useCallback(
     async (workers: OrchestrationWorkerDetail[], isCurrent: () => boolean = () => true) => {
       const serial = ++requestSerial.current;
@@ -48,8 +61,9 @@ export function useOrchestrationWorkerPanes({
         serial === requestSerial.current && getGroupLockView() === privacy && isCurrent();
       const accessible = (id: string) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
-        return !!session && !session.inboxAsk &&
-          !isProjectLockedIn(getGroupLockView().lock, session.cwd);
+        return (
+          !!session && !session.inboxAsk && !isProjectLockedIn(getGroupLockView().lock, session.cwd)
+        );
       };
       // Finished workers are not open; load stored transcripts before the
       // tabs appear so the pane does not flash the empty state.
@@ -59,9 +73,10 @@ export function useOrchestrationWorkerPanes({
             if (!current()) return;
             const lead = await ensureOpenSession(leadId);
             if (!current() || !lead || !accessible(leadId)) return;
-            if (!focusOpenSession(leadId)) await onSelectHistorySession(leadId, { isCurrent: current });
+            if (!focusOpenSession(leadId))
+              await onSelectHistorySession(leadId, { isCurrent: current });
           },
-          openWorker: (id) => current() ? ensureOpenSession(id) : Promise.resolve(null),
+          openWorker: (id) => (current() ? ensureOpenSession(id) : Promise.resolve(null)),
           hasSession: (id) => current() && accessible(id),
         });
         if (!current() || !request?.workers.length) return false;
@@ -86,7 +101,7 @@ export function useOrchestrationWorkerPanes({
     if (!workerDetailRequest) return;
     const current = requestGuards.current.get(workerDetailRequest);
     if (current && !current()) {
-      setWorkerDetailRequest((previous) => previous === workerDetailRequest ? null : previous);
+      setWorkerDetailRequest((previous) => (previous === workerDetailRequest ? null : previous));
       return;
     }
     const { leadId, workers } = workerDetailRequest;
@@ -100,7 +115,7 @@ export function useOrchestrationWorkerPanes({
       }
       return;
     }
-    setWorkerDetailRequest((previous) => previous === workerDetailRequest ? null : previous);
+    setWorkerDetailRequest((previous) => (previous === workerDetailRequest ? null : previous));
     // Every agent of a run shares one pane, the way files do: `openEditorTab`
     // focuses an open tab, adds to the pane already beside the lead, or splits
     // one off when there is none.

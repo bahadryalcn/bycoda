@@ -159,15 +159,17 @@ pub async fn import_read_codex(
 /// (or is not a project folder, like the home directory). Created on demand
 /// inside the app's own data directory and named after the original folder.
 #[tauri::command]
-pub fn import_placeholder_dir(app: AppHandle, original: String) -> Result<String, String> {
+pub async fn import_placeholder_dir(app: AppHandle, original: String) -> Result<String, String> {
     let root = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?
         .join("imported-history");
-    let dir = root.join(placeholder_name(&original));
-    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    Ok(path_to_js(&dir))
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = root.join(placeholder_name(&original));
+        std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        Ok(path_to_js(&dir))
+    }).await.map_err(|error| error.to_string())?
 }
 
 fn placeholder_name(original: &str) -> String {

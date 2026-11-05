@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isSingleLineCommand } from "./terminalSuggestions";
 
 export type RemoteSuggestionSource = "commands" | "paths" | "history";
@@ -63,64 +62,6 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
   );
 }
 
-type ShellStateHandler = (payload: unknown) => void;
-
-/**
- * One window-scoped `ssh-shell-state` listener per window, shared by every SSH
- * terminal and dispatched by terminal id. Rust emits the event to the owner
- * window only, so a plain listener per terminal both leaked across windows and
- * multiplied native registrations by the number of open terminals.
- */
-const shellStateHandlers = new Map<string, Set<ShellStateHandler>>();
-let shellStateBridge: Promise<UnlistenFn> | null = null;
-
-function dispatchShellState(event: { payload: unknown }): void {
-  const payload = event.payload;
-  const id = payload && typeof payload === "object" ? (payload as { id?: unknown }).id : undefined;
-  if (typeof id !== "string") return;
-  const handlers = shellStateHandlers.get(id);
-  if (!handlers) return;
-  // Set iteration tolerates a handler unsubscribing while the event is delivered.
-  for (const handler of handlers) handler(payload);
-}
-
-/**
- * Registers `handler` for the terminal `id`. `ready` rejects when the native
- * listener could not be registered; the registration is not cached in that
- * case, so a later terminal retries it. The last disposer releases the listener.
- */
-export function subscribeShellState(
-  id: string,
-  handler: ShellStateHandler,
-): { ready: Promise<void>; dispose: () => void } {
-  let handlers = shellStateHandlers.get(id);
-  if (!handlers) {
-    handlers = new Set();
-    shellStateHandlers.set(id, handlers);
-  }
-  handlers.add(handler);
-  const bridge =
-    shellStateBridge ??
-    (shellStateBridge = listenWindowAsync<unknown>("ssh-shell-state", dispatchShellState));
-  void bridge.catch(() => {
-    if (shellStateBridge === bridge) shellStateBridge = null;
-  });
-  let disposed = false;
-  return {
-    ready: bridge.then(() => undefined),
-    dispose: () => {
-      if (disposed) return;
-      disposed = true;
-      handlers.delete(handler);
-      if (handlers.size === 0) shellStateHandlers.delete(id);
-      if (shellStateHandlers.size === 0 && shellStateBridge === bridge) {
-        shellStateBridge = null;
-        void bridge.then((unlisten) => unlisten()).catch(() => undefined);
-      }
-    },
-  };
-}
-
 export type SshShellController = ReturnType<typeof useSshShellIntegration>;
 
 /**
@@ -129,6 +70,60 @@ export type SshShellController = ReturnType<typeof useSshShellIntegration>;
  * accepted, and native code still verifies every insertion.
  */
 export type SshShellPreview = { prefix: string; suggestions: string[] };
+
+type ShellSubscriber = { receive: (payload: unknown) => void; failed: () => void };
+const shellSubscribers = new Map<string, Set<ShellSubscriber>>();
+type ShellBridge = { ready: Promise<void>; stop?: () => void };
+let shellBridge: ShellBridge | undefined;
+
+function ensureShellBridge() {
+  if (!shellBridge) {
+    const bridge: ShellBridge = { ready: Promise.resolve() };
+    shellBridge = bridge;
+    bridge.ready = listenWindowAsync<unknown>("ssh-shell-state", ({ payload }) => {
+      if (shellBridge !== bridge || !payload || typeof payload !== "object") return;
+      const id = (payload as { id?: unknown }).id;
+      if (typeof id !== "string") return;
+      for (const entry of shellSubscribers.get(id) ?? []) entry.receive(payload);
+    }).then(
+      (stop) => {
+        if (shellBridge !== bridge) stop();
+        else bridge.stop = stop;
+      },
+      (error: unknown) => {
+        if (shellBridge === bridge) {
+          shellBridge = undefined;
+          for (const group of shellSubscribers.values()) for (const entry of group) entry.failed();
+        }
+        throw error;
+      },
+    );
+    void bridge.ready.catch(() => {});
+  }
+  return shellBridge!;
+}
+
+function subscribeShellState(id: string, subscriber: ShellSubscriber) {
+  const entries = shellSubscribers.get(id) ?? new Set<ShellSubscriber>();
+  entries.add(subscriber);
+  shellSubscribers.set(id, entries);
+  const bridge = ensureShellBridge();
+  let disposed = false;
+  return {
+    ready: bridge.ready,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      entries.delete(subscriber);
+      if (!entries.size && shellSubscribers.get(id) === entries) shellSubscribers.delete(id);
+      if (!shellSubscribers.size && shellBridge) {
+        const current = shellBridge;
+        shellBridge = undefined;
+        current.stop?.();
+      }
+    },
+  };
+}
 
 const PREVIEW_RETENTION_MS = 1500;
 
@@ -205,6 +200,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     state?.status !== "suggestions"
       ? { prefix: retained.prefix, suggestions: retained.suggestions }
       : undefined;
+  const listenerReady = useRef<Promise<void> | undefined>(undefined);
   const stateRef = useRef(state);
   useLayoutEffect(() => {
     stateRef.current = state;
@@ -217,67 +213,70 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     cancelPassive();
     if (!enabled) return;
     let disposed = false;
-    const subscription = subscribeShellState(id, (payload) => {
-      if (disposed || !validSshShellState(payload, id)) return;
-      const value = payload;
-      if (value.status === "ready") {
-        const previousScope = trustedScope.current;
-        trustedScope.current = { host: value.host, user: value.user };
-        if (
-          previousScope &&
-          (previousScope.host !== value.host || previousScope.user !== value.user)
-        ) {
-          cancelPassive();
-          epoch.current += 1;
-          pending.current = false;
-          acknowledgement.current = undefined;
-          buffered.current = undefined;
-          clearTimer();
-          setWaitingFor(null);
-          setFailure(undefined);
-          clearPreview();
-          const reset = {
-            ...preferences.current,
-            revision: preferences.current.revision + 1,
-            automatic: false,
-            source: "commands" as const,
-          };
-          preferences.current = reset;
-          updatePreferences(reset);
-        }
-        if (pending.current) return;
-        passiveAllowed.current = true;
-        setSnapshotRevision(preferences.current.revision);
-        setState(value);
-        return;
-      }
-      if (value.status === "suggestions") {
-        if (!pending.current) return;
-        if (!acknowledgement.current) {
-          buffered.current = value;
+    const listener = subscribeShellState(id, {
+      receive: (payload) => {
+        if (disposed || !validSshShellState(payload, id)) return;
+        const value = payload;
+        if (value.status === "ready") {
+          const previousScope = trustedScope.current;
+          trustedScope.current = { host: value.host, user: value.user };
+          if (
+            previousScope &&
+            (previousScope.host !== value.host || previousScope.user !== value.user)
+          ) {
+            cancelPassive();
+            epoch.current += 1;
+            pending.current = false;
+            acknowledgement.current = undefined;
+            buffered.current = undefined;
+            clearTimer();
+            setWaitingFor(null);
+            setFailure(undefined);
+            clearPreview();
+            const reset = {
+              ...preferences.current,
+              revision: preferences.current.revision + 1,
+              automatic: false,
+              source: "commands" as const,
+            };
+            preferences.current = reset;
+            updatePreferences(reset);
+          }
+          if (pending.current) return;
+          passiveAllowed.current = true;
+          setSnapshotRevision(preferences.current.revision);
+          setState(value);
           return;
         }
-        if (value.requestId !== acknowledgement.current) return;
-      } else {
-        passiveAllowed.current = value.promptReady === true;
-        cancelPassive();
-      }
-      pending.current = false;
-      buffered.current = undefined;
-      clearTimer();
-      setWaitingFor(null);
-      clearPreview();
-      setFailure(
-        value.status === "unavailable"
-          ? { id, message: "No safe matching suggestions." }
-          : undefined,
-      );
-      setSnapshotRevision(preferences.current.revision);
-      setState(value);
+        if (value.status === "suggestions") {
+          if (!pending.current) return;
+          if (!acknowledgement.current) {
+            buffered.current = value;
+            return;
+          }
+          if (value.requestId !== acknowledgement.current) return;
+        } else {
+          passiveAllowed.current = value.promptReady === true;
+          cancelPassive();
+        }
+        pending.current = false;
+        buffered.current = undefined;
+        clearTimer();
+        setWaitingFor(null);
+        clearPreview();
+        setFailure(
+          value.status === "unavailable"
+            ? { id, message: "No safe matching suggestions." }
+            : undefined,
+        );
+        setSnapshotRevision(preferences.current.revision);
+        setState(value);
+      },
+      failed: () => {
+        if (!disposed) setFailure({ id, message: "Remote shell integration is unavailable" });
+      },
     });
-    void subscription.ready.catch(() => {
-      if (!disposed) setFailure({ id, message: "Remote shell integration is unavailable" });
-    });
+    listenerReady.current = listener.ready;
     return () => {
       disposed = true;
       passiveAllowed.current = false;
@@ -286,7 +285,8 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       epoch.current += 1;
       clearTimer();
       clearPreview();
-      subscription.dispose();
+      listenerReady.current = undefined;
+      listener.dispose();
     };
   }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
 
@@ -318,6 +318,10 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
         }
       }, 2500);
       try {
+        if (!listenerReady.current) throw new Error("Remote shell integration is unavailable");
+        listenerReady.current = ensureShellBridge().ready;
+        await listenerReady.current;
+        if (current !== epoch.current || !pending.current) return;
         const requestId = await invoke<string>("ssh_terminal_suggestions_request", {
           id,
           ...(requestedSource ? { source: requestedSource } : {}),

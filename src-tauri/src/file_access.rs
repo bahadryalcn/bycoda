@@ -106,94 +106,123 @@ fn alias_key(path: &Path) -> PathBuf {
     }
 }
 
-/// Read a registry state file. A missing file is `None`. An empty or unparsable
-/// file (a crash between a write and its rename, or a hand edit) is moved aside
-/// to `<name>.corrupt-<unix-ms>` for inspection and also reported as `None`, so
-/// the app starts with the fail-closed default instead of refusing to launch.
-/// Real I/O errors (permissions, EIO) still fail, since a restart cannot repair them.
-fn read_state<T>(
-    file: &Path,
-    label: &str,
-    parse: impl FnOnce(&[u8]) -> Result<T, String>,
-) -> Result<Option<T>, String> {
-    let bytes = match std::fs::read(file) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("{label} could not be read: {error}")),
-    };
-    let parsed = if bytes.iter().all(u8::is_ascii_whitespace) {
-        Err("the file is empty".to_string())
-    } else {
-        parse(&bytes)
-    };
-    let problem = match parsed {
-        Ok(value) => return Ok(Some(value)),
-        Err(problem) => problem,
-    };
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis())
-        .unwrap_or(0);
-    let name = file
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "state".to_string());
-    let aside = file.with_file_name(format!("{name}.corrupt-{stamp}"));
-    // ast-grep-ignore: rust-rename-without-fsync -- moves the unreadable file aside; nothing is written
-    std::fs::rename(file, &aside).map_err(|error| {
-        format!("{label} could not be read ({problem}) and could not be moved aside: {error}")
-    })?;
-    eprintln!(
-        "{label} could not be read ({problem}); moved {} aside to {} and continuing with the default",
-        file.display(),
-        aside.display()
-    );
-    Ok(None)
-}
-
-/// Replace `<protected>/<name>` through a temp file that is flushed to disk
-/// before the rename, so a crash leaves either the old or the new content.
-fn write_state(protected: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn durable_write(file: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
-    let next = protected.join(format!("{}.json", uuid::Uuid::new_v4()));
-    let written = (|| {
-        let mut file = std::fs::File::create(&next)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&next, protected.join(name))
+    let parent = file.parent().ok_or("Missing registry directory")?;
+    let next = parent.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| -> std::io::Result<()> {
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&next)?;
+        output.write_all(bytes)?;
+        output.sync_all()?;
+        drop(output);
+        std::fs::rename(&next, file)?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)?.sync_all()?;
+        Ok(())
     })();
-    if written.is_err() {
+    if result.is_err() {
         let _ = std::fs::remove_file(&next);
     }
-    written.map_err(|error| error.to_string())?;
-    #[cfg(unix)]
-    {
-        // Make the rename itself durable; Windows journals it and cannot sync a directory.
-        if let Ok(directory) = std::fs::File::open(protected) {
-            let _ = directory.sync_all();
-        }
-    }
-    Ok(())
+    result.map_err(|error| error.to_string())
+}
+fn link_quarantine(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::hard_link(source, destination)
 }
 
+// Called during initialization before the registry is published. Mutations after
+// initialization are serialized by FileAccess::registry.
+fn read_recoverable<T>(
+    path: &Path,
+    description: &str,
+    parse: impl Fn(&[u8]) -> Result<T, String>,
+    default: impl Fn() -> T,
+) -> Result<T, String> {
+    for _ in 0..4 {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(default()),
+            Err(error) => return Err(format!("{description} could not be read: {error}")),
+        };
+        match parse(&bytes) {
+            Ok(value) => return Ok(value),
+            Err(reason) => {
+                // Reload when another writer replaced the observed bytes. Never
+                // intentionally quarantine a replacement we have not parsed.
+                match std::fs::read(path) {
+                    Ok(current) if current != bytes => continue,
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => {
+                        return Err(format!("{description} could not be rechecked: {error}"))
+                    }
+                }
+                let name = path
+                    .file_name()
+                    .ok_or("Missing registry file name")?
+                    .to_string_lossy();
+                let quarantine =
+                    path.with_file_name(format!("{name}.corrupt-{}", uuid::Uuid::new_v4()));
+                // Reserve a unique recovery name, sync it, then recheck before unlink.
+                link_quarantine(path, &quarantine)
+                    .map_err(|error| format!("{description} quarantine failed: {error}"))?;
+                let evidence = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(cfg!(windows))
+                    .open(&quarantine)
+                    .map_err(|error| format!("{description} quarantine sync failed: {error}"))?;
+                evidence
+                    .sync_all()
+                    .map_err(|error| format!("{description} quarantine sync failed: {error}"))?;
+                #[cfg(unix)]
+                std::fs::File::open(path.parent().ok_or("Missing registry directory")?)
+                    .and_then(|dir| dir.sync_all())
+                    .map_err(|error| format!("{description} quarantine sync failed: {error}"))?;
+                match std::fs::read(path) {
+                    Ok(current) if current == bytes => {
+                        std::fs::remove_file(path)
+                            .map_err(|error| format!("{description} quarantine failed: {error}"))?;
+                        #[cfg(unix)]
+                        std::fs::File::open(path.parent().ok_or("Missing registry directory")?)
+                            .and_then(|dir| dir.sync_all())
+                            .map_err(|error| {
+                                format!("{description} quarantine sync failed: {error}")
+                            })?;
+                        eprintln!(
+                            "{description} was corrupt ({reason}); recovery copy: {}",
+                            quarantine.display()
+                        );
+                        return Ok(default());
+                    }
+                    Ok(_) => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => {
+                        return Err(format!("{description} could not be rechecked: {error}"))
+                    }
+                }
+            }
+        }
+    }
+    Err(format!("{description} changed during recovery"))
+}
 impl Registry {
     fn open(protected: PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(&protected).map_err(|error| error.to_string())?;
         let protected = canonical_target(&protected)?;
-        let mode = read_state(
+        let mode = read_recoverable(
             &protected.join("access-mode.json"),
             "File access mode",
-            |bytes| {
-                serde_json::from_slice::<FileAccessMode>(bytes).map_err(|error| error.to_string())
-            },
-        )?
-        .unwrap_or(FileAccessMode::Unconfigured);
-        let persistent = read_state(
+            |bytes| serde_json::from_slice(bytes).map_err(|error| error.to_string()),
+            || FileAccessMode::Unconfigured,
+        )?;
+        let persistent = read_recoverable(
             &protected.join("grants.json"),
             "File permissions",
             |bytes| {
-                let grants = serde_json::from_slice::<Vec<Grant>>(bytes)
-                    .map_err(|error| error.to_string())?;
+                let grants: Vec<Grant> =
+                    serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
                 if grants.iter().any(|grant| {
                     !grant.path.is_absolute()
                         || grant
@@ -201,12 +230,12 @@ impl Registry {
                             .components()
                             .any(|part| matches!(part, Component::ParentDir))
                 }) {
-                    return Err("invalid saved file permission".into());
+                    return Err("Invalid saved file permission".into());
                 }
                 Ok(grants)
             },
-        )?
-        .unwrap_or_default();
+            Vec::new,
+        )?;
         Ok(Self {
             mode,
             persistent,
@@ -252,17 +281,17 @@ impl Registry {
     }
 
     fn save(&self, grants: &[Grant]) -> Result<(), String> {
+        let file = self.protected.join("grants.json");
         let bytes = serde_json::to_vec(grants).map_err(|error| error.to_string())?;
-        write_state(&self.protected, "grants.json", &bytes)
+        durable_write(&file, &bytes)
     }
 
     fn set_mode(&mut self, mode: FileAccessMode) -> Result<(), String> {
         let bytes = serde_json::to_vec(&mode).map_err(|error| error.to_string())?;
-        write_state(&self.protected, "access-mode.json", &bytes)?;
+        durable_write(&self.protected.join("access-mode.json"), &bytes)?;
         self.mode = mode;
         Ok(())
     }
-
     fn grant(&mut self, path: &Path, directory: bool, persistent: bool) -> Result<(), String> {
         self.grant_access(path, directory, persistent, true)
     }
@@ -603,9 +632,17 @@ fn validate_copy_paths(
         check_path: &impl Fn(&Path, bool) -> Result<PathBuf, String>,
         ancestors: &mut HashSet<PathBuf>,
     ) -> Result<(), String> {
+        let metadata = std::fs::symlink_metadata(from).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_symlink() {
+            // Copy the link itself, not its target or descendants. Authorize the
+            // containing directory and the new link location.
+            check_path(from.parent().ok_or("Link has no parent")?, false)?;
+            check_path(to, true)?;
+            return Ok(());
+        }
         let source = check_path(from, false)?;
         check_path(to, true)?;
-        if from.is_dir() {
+        if metadata.is_dir() {
             if !ancestors.insert(source.clone()) {
                 return Err("Cannot copy a cyclic symbolic link".into());
             }
@@ -685,75 +722,99 @@ mod tests {
         ));
     }
 
-    fn quarantined(protected: &Path, name: &str) -> Vec<PathBuf> {
-        let prefix = format!("{name}.corrupt-");
-        let mut found: Vec<PathBuf> = std::fs::read_dir(protected)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .filter(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with(&prefix)
-            })
-            .collect();
-        found.sort();
-        found
-    }
-
     #[test]
-    fn malformed_broad_consent_is_moved_aside_and_starts_unconfigured() {
-        let (_tmp, mut registry, folder) = fixture();
-        registry.set_mode(FileAccessMode::AllFiles).unwrap();
+    fn malformed_broad_consent_fails_closed() {
+        let (_tmp, registry, _folder) = fixture();
         std::fs::write(registry.protected.join("access-mode.json"), "invalid").unwrap();
         let restored = Registry::open(registry.protected.clone()).unwrap();
         assert_eq!(restored.mode, FileAccessMode::Unconfigured);
-        assert!(!restored.allowed(&canonical_target(&folder).unwrap(), false));
-        assert!(!restored.protected.join("access-mode.json").exists());
-        let aside = quarantined(&restored.protected, "access-mode.json");
-        assert_eq!(aside.len(), 1);
-        assert_eq!(std::fs::read(&aside[0]).unwrap(), b"invalid");
-        // The next start no longer finds anything to move aside.
-        let again = Registry::open(restored.protected.clone()).unwrap();
-        assert_eq!(again.mode, FileAccessMode::Unconfigured);
-        assert_eq!(quarantined(&again.protected, "access-mode.json").len(), 1);
+        assert!(!restored.allowed(&canonical_target(&_folder).unwrap(), false));
     }
 
     #[test]
-    fn empty_state_files_after_a_crash_do_not_block_startup() {
-        let (_tmp, mut registry, folder) = fixture();
-        registry.grant(&folder, true, true).unwrap();
-        registry.set_mode(FileAccessMode::SelectedFolders).unwrap();
-        std::fs::write(registry.protected.join("grants.json"), "").unwrap();
-        std::fs::write(registry.protected.join("access-mode.json"), "\n").unwrap();
-        let restored = Registry::open(registry.protected.clone()).unwrap();
-        assert_eq!(restored.mode, FileAccessMode::Unconfigured);
-        assert!(restored.persistent.is_empty());
-        assert_eq!(quarantined(&restored.protected, "grants.json").len(), 1);
-        assert_eq!(
-            quarantined(&restored.protected, "access-mode.json").len(),
-            1
+    fn corrupt_grants_are_quarantined_and_new_consent_survives_restart() {
+        for bytes in ["", "{", "[{}]", "[{\"path\":\"relative\",\"selected\":\"relative\",\"directory\":true,\"writable\":true}]"] {
+            let (_tmp, registry, folder) = fixture();
+            let path = registry.protected.join("grants.json");
+            std::fs::write(&path, bytes).unwrap();
+            let mut restored = Registry::open(registry.protected.clone()).unwrap();
+            assert!(!restored.allowed(&canonical_target(&folder).unwrap(), false));
+            let copies: Vec<_> = std::fs::read_dir(&registry.protected).unwrap().map(|entry| entry.unwrap().path()).collect();
+            assert_eq!(copies.len(), 1);
+            assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes.as_bytes());
+            restored.grant(&folder, true, true).unwrap();
+            assert!(Registry::open(registry.protected.clone()).unwrap().allowed(&canonical_target(&folder).unwrap(), true));
+        }
+    }
+
+    #[test]
+    fn recovery_reloads_changed_valid_file_before_quarantine() {
+        let (_tmp, registry, _folder) = fixture();
+        let path = registry.protected.join("grants.json");
+        std::fs::write(&path, b"broken").unwrap();
+        let replaced = std::cell::Cell::new(false);
+        let grants = read_recoverable(
+            &path,
+            "File permissions",
+            |bytes| {
+                if !replaced.replace(true) {
+                    std::fs::write(&path, b"[]").unwrap();
+                }
+                serde_json::from_slice::<Vec<Grant>>(bytes).map_err(|e| e.to_string())
+            },
+            Vec::new,
+        )
+        .unwrap();
+        assert!(grants.is_empty());
+        assert_eq!(std::fs::read(&path).unwrap(), b"[]");
+        assert_eq!(std::fs::read_dir(registry.protected).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn repeated_replacement_stops_recovery_without_removing_file() {
+        let (_tmp, registry, _folder) = fixture();
+        let path = registry.protected.join("grants.json");
+        std::fs::write(&path, b"broken").unwrap();
+        let attempts = std::cell::Cell::new(0);
+        let result = read_recoverable(
+            &path,
+            "File permissions",
+            |_| {
+                let next = attempts.get() + 1;
+                attempts.set(next);
+                std::fs::write(&path, format!("broken-{next}")).unwrap();
+                Err::<Vec<Grant>, _>("invalid".into())
+            },
+            Vec::new,
         );
+        assert!(result.unwrap_err().contains("changed during recovery"));
+        assert_eq!(attempts.get(), 4);
+        assert_eq!(std::fs::read(&path).unwrap(), b"broken-4");
     }
-
     #[test]
-    fn state_writes_leave_no_temp_files_and_replace_the_old_content() {
-        let (_tmp, mut registry, folder) = fixture();
-        registry.set_mode(FileAccessMode::AllFiles).unwrap();
-        registry.set_mode(FileAccessMode::SelectedFolders).unwrap();
-        registry.grant(&folder, true, true).unwrap();
-        let names: Vec<String> = std::fs::read_dir(&registry.protected)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        let mut sorted = names.clone();
-        sorted.sort();
-        assert_eq!(sorted, vec!["access-mode.json", "grants.json"]);
-        let restored = Registry::open(registry.protected.clone()).unwrap();
-        assert_eq!(restored.mode, FileAccessMode::SelectedFolders);
-        assert_eq!(restored.persistent.len(), 1);
+    fn quarantine_collision_and_failure_preserve_existing_evidence() {
+        let (_tmp, registry, _folder) = fixture();
+        let source = registry.protected.join("grants.json");
+        let destination = registry.protected.join("grants.json.corrupt-existing");
+        std::fs::write(&source, b"broken").unwrap();
+        std::fs::write(&destination, b"earlier evidence").unwrap();
+        assert!(link_quarantine(&source, &destination).is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"broken");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"earlier evidence");
+        assert!(
+            link_quarantine(&source, &registry.protected.join("missing").join("copy")).is_err()
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), b"broken");
     }
-
+    #[test]
+    fn failed_write_retains_existing_destination() {
+        let (_tmp, registry, _folder) = fixture();
+        let destination = registry.protected.join("grants.json");
+        std::fs::create_dir(&destination).unwrap();
+        assert!(durable_write(&destination, b"[]").is_err());
+        assert!(destination.is_dir());
+        assert_eq!(std::fs::read_dir(registry.protected).unwrap().count(), 1);
+    }
     #[test]
     fn denial_does_not_grant_or_write_permissions() {
         let (_tmp, mut registry, folder) = fixture();
@@ -810,27 +871,15 @@ mod tests {
     }
 
     #[test]
-    fn malformed_permissions_are_moved_aside_and_registry_cannot_grant_itself() {
-        let (_tmp, mut registry, folder) = fixture();
+    fn malformed_permissions_fail_closed_and_registry_cannot_grant_itself() {
+        let (_tmp, mut registry, _folder) = fixture();
         assert!(registry
             .grant(&registry.protected.clone(), true, true)
             .is_err());
-        registry.grant(&folder, true, true).unwrap();
         std::fs::write(registry.protected.join("grants.json"), "invalid").unwrap();
         let restored = Registry::open(registry.protected.clone()).unwrap();
-        // Fail closed: no grant survives an unreadable registry.
-        assert!(!restored.allowed(&canonical_target(&folder).unwrap(), false));
-        assert_eq!(quarantined(&restored.protected, "grants.json").len(), 1);
-        // A parsable grant that could never have been written is treated the same way.
-        std::thread::sleep(std::time::Duration::from_millis(2)); // distinct quarantine stamp
-        std::fs::write(
-            registry.protected.join("grants.json"),
-            r#"[{"path":"relative/escape","selected":"relative/escape","directory":true,"writable":true}]"#,
-        )
-        .unwrap();
-        let restored = Registry::open(registry.protected.clone()).unwrap();
-        assert!(restored.persistent.is_empty());
-        assert_eq!(quarantined(&restored.protected, "grants.json").len(), 2);
+        assert_eq!(restored.mode, FileAccessMode::Unconfigured);
+        assert!(!restored.allowed(&canonical_target(&_folder).unwrap(), false));
     }
 
     #[test]
@@ -940,8 +989,12 @@ mod tests {
         assert!(registry.escaped_existing_grant(&requested, &canonical));
         assert!(canonical_target(&folder.join("dangling/new.txt")).is_err());
         let destination = folder.join("copy");
+        let visited = std::cell::RefCell::new(Vec::new());
+        // Copy recreates link entries without traversing their targets. Direct
+        // reads through the escaping or dangling junction remain denied above.
         assert!(
             validate_copy_paths(&folder, &destination, &|path, mutation| {
+                visited.borrow_mut().push(path.to_path_buf());
                 let canonical = canonical_target(path)?;
                 if registry.allowed(&canonical, mutation) {
                     Ok(canonical)
@@ -949,8 +1002,9 @@ mod tests {
                     Err("denied".into())
                 }
             })
-            .is_err()
+            .is_ok()
         );
+        assert!(visited.borrow().iter().all(|path| path.starts_with(&folder)));
         assert!(!destination.exists());
     }
 

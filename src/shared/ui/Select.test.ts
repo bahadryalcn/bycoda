@@ -196,7 +196,12 @@ it("keeps the keyboard cursor when a parent re-renders an open select with a new
   const draw = () =>
     act(async () =>
       root.render(
-        createElement(Select, { label: "Choice", value: "a", options: make(), onValueChange: change }),
+        createElement(Select, {
+          label: "Choice",
+          value: "a",
+          options: make(),
+          onValueChange: change,
+        }),
       ),
     );
   await draw();

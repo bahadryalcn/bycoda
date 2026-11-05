@@ -178,6 +178,27 @@ describe("receiving a tab from another window", () => {
     expect(native.event).toBe("window_transfer_available");
   });
 
+  it("answers a readiness probe without consuming a transfer", async () => {
+    mount();
+    await act(async () => {});
+    await act(async () => {
+      await native.handler!({ payload: "probe:one" });
+    });
+    expect(calls.window_transfer_probe_reply).toEqual([{ probeId: "probe:one" }]);
+    expect(calls.take_window_transfer).toBeUndefined();
+    expect(state.tabs).toEqual([existing]);
+  });
+
+  it("restores the destination draft when native acceptance expired", async () => {
+    respond("window_transfer_ready", async () => {
+      throw new Error("This transfer has expired.");
+    });
+    mount();
+    await receive();
+    expect(state.tabs).toEqual([existing]);
+    expect(calls.reject_window_transfer).toHaveLength(1);
+  });
+
   it("adds the tab, then acknowledges it, and publishes nothing", async () => {
     const ready = deferred<undefined>();
     respond("window_transfer_ready", () => ready.promise);
@@ -304,27 +325,18 @@ describe("receiving a tab from another window", () => {
     expect(published).toHaveLength(1);
   });
 
-  it("rolls everything back and rejects when the acknowledgement fails", async () => {
+  it("keeps the received pane when acknowledgement outcome is unknown", async () => {
     respond("window_transfer_ready", async () => {
-      throw new Error("Source window closed");
+      throw new Error("response lost");
     });
     mount();
     await receive();
-    // The imported tab, its session and the activation are all undone.
-    expect(state.tabs).toEqual([existing]);
-    expect(state.sessions).toEqual([]);
-    expect(deps.setProjectCwd).toHaveBeenLastCalledWith("/repo");
-    expect(deps.activateTab).toHaveBeenLastCalledWith("existing-tab");
-    expect(deps.observedSessions.current.size).toBe(0);
-    expect(deps.lastPersisted.current.size).toBe(0);
-    expect(deps.skipForgetSessionIds.current.size).toBe(0);
-    expect(calls.reject_window_transfer).toEqual([
-      { transferId: ID, reason: "Error: Source window closed" },
-    ]);
-    expect(deps.movingTabIds.current.size).toBe(0);
-    expect(deps.movingSessionIds.current.size).toBe(0);
+    expect(state.tabs).toHaveLength(2);
+    expect(state.sessions).toEqual([incomingSession]);
+    expect(calls.window_transfer_ready).toHaveLength(2);
+    expect(calls.reject_window_transfer).toBeUndefined();
     expect(published).toEqual([
-      "danger: The tab could not be placed in this window. Source window closed. It stays in its original window.",
+      "danger: The transfer result is unknown. Check both windows before retrying.",
     ]);
   });
 

@@ -1,5 +1,29 @@
-.review { display: flex; flex-direction: column; gap: 12px; min-inline-size: 0; }
-.job { display: grid; gap: 10px; border: 0; padding: 0; margin: 0; min-inline-size: 0; }
-.job + .job { border-block-start: 1px solid var(--ui-tone-neutral-border); padding-block-start: 12px; }
-.job legend { padding: 0; margin-block-end: 8px; font-weight: 600; color: var(--ui-text-secondary); }
-.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.job {
+  display: grid;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+.job + .job {
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+  padding-block-start: 12px;
+}
+.job legend {
+  padding: 0;
+  margin-block-end: 8px;
+  font-weight: 600;
+  color: var(--ui-text-secondary);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

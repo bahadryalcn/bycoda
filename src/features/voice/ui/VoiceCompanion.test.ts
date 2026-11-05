@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { chooseManualEndingFromMenu, floatVoiceFromMenu } from "./VoiceCompanion.testSupport";
 import type { Session } from "../../sessions/model/session";
 import type { VoiceAssistantInput } from "../model/voiceAssistant";
 import * as historyTransport from "../model/voiceHistoryTransport";
@@ -25,6 +26,7 @@ const assistantHost = vi.hoisted(() => ({
   } as any,
   request: vi.fn(async (input: any): Promise<any> => {
     if (input.op === "snapshot") return { snapshot: assistantHost.snapshot };
+    if (input.op === "voice.runtime.register") return { ok: true };
     if (input.op === "projects.list")
       return {
         projects: [
@@ -121,14 +123,20 @@ const presence = vi.hoisted(() => ({
   value: "active" as "active" | "idle" | "away" | "unknown",
   native: "unknown" as "active" | "idle" | "away" | "unknown",
 }));
-vi.mock("../model/voicePresence", () => ({
+vi.mock("../model/voicePresence", async (original) => ({
+  ...(await original<typeof import("../model/voicePresence")>()),
   useVoicePresence: () => presence.value,
   readNativeVoicePresence: async () => presence.native,
 }));
 const mock = vi.hoisted(() => ({
   callbacks: null as any,
   close: vi.fn(),
-  speak: vi.fn(() => true),
+  speak: vi.fn((_text: string, _append?: boolean) => true),
+  delivered: [] as Array<() => void>,
+  autoDeliver: true,
+  preview: vi.fn(async (..._args: unknown[]) => {}),
+  silence: vi.fn(),
+  resumeAfterOwnerAnswer: vi.fn(),
   converse: vi.fn(async () => ({ action: "submit", reply: "" })),
   connect: vi.fn(async () => {}),
   warm: vi.fn(async () => {}),
@@ -140,6 +148,9 @@ const mock = vi.hoisted(() => ({
   finishTurn: vi.fn(),
   configureConversation: vi.fn(),
   mute: vi.fn(),
+  setOutputMuted: vi.fn(),
+  beginPushToTalk: vi.fn(() => true),
+  endPushToTalk: vi.fn(),
   assistant: vi.fn(async (_request: VoiceAssistantInput) => ({
     action: "reply",
     reply: "Done reading.",
@@ -163,16 +174,23 @@ vi.mock("../model/realtimeVoice", () => ({
       mock.realtime = args[1];
     }
     connect = mock.realtimeConnect;
+    resumeAfterOwnerAnswer = mock.resumeAfterOwnerAnswer;
     close = mock.close;
+    retire = async () => {};
     speak = mock.speak;
     addImage = mock.image;
     mute = mock.mute;
-    silence() {}
+    setOutputMuted = mock.setOutputMuted;
+    beginPushToTalk = mock.beginPushToTalk;
+    endPushToTalk = mock.endPushToTalk;
+    silence = mock.silence;
+    pause = mock.silence;
     configureConversation = mock.configureConversation;
     finishTurn = mock.finishTurn;
   },
 }));
 vi.mock("../model/voiceAssistant", () => ({ converseWithAssistant: mock.assistant }));
+vi.mock("../model/voicePreview", () => ({ previewVoice: mock.preview }));
 vi.mock("../model/voiceToolClient", () => ({
   callVoiceTool: mock.toolCall,
   discoverVoiceTools: mock.discover,
@@ -190,9 +208,20 @@ vi.mock("../model/localVoice", () => ({
     }
     connect = mock.connect;
     close = mock.close;
-    speak = mock.speak;
+    retire = async () => {};
+    speak(text: string, append?: boolean, delivered?: () => void) {
+      const accepted = mock.speak(text, append);
+      if (accepted && delivered) {
+        mock.delivered.push(delivered);
+        if (mock.autoDeliver) delivered();
+      }
+      return accepted;
+    }
     mute = mock.mute;
-    silence() {}
+    setOutputMuted = mock.setOutputMuted;
+    beginPushToTalk = mock.beginPushToTalk;
+    endPushToTalk = mock.endPushToTalk;
+    silence = mock.silence;
     configureConversation = mock.configureConversation;
     finishTurn = mock.finishTurn;
   },
@@ -235,6 +264,108 @@ vi.mock("../../../shared/i18n", () => ({
   translateAt: (_locale: string, key: string) => key,
 }));
 import { VoiceCompanion } from "./VoiceCompanion";
+
+it.each(["pointerup", "pointercancel"] as const)(
+  "moves presentation without rendering audio controls until %s",
+  async (finishEvent) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"],
+    });
+    localStorage.removeItem("bycoda:voice-position");
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    let commits = 0;
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        return new DOMRect(
+          Number.parseFloat(this.style.left) || 100,
+          Number.parseFloat(this.style.top) || 100,
+          300,
+          250,
+        );
+      });
+    try {
+      await act(async () =>
+        root.render(
+          createElement(
+            Profiler,
+            {
+              id: "voice-drag",
+              onRender: () => {
+                commits++;
+              },
+            },
+            createElement(VoiceCompanion, {
+              activeId: "a",
+              sessions: [a, b],
+              onSubmit: () => true,
+              onStop: () => {},
+            }),
+          ),
+        ),
+      );
+      await click("Voice companion");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      const move = container.querySelector<HTMLButtonElement>(
+        'button[aria-label^="Move voice window"]',
+      )!;
+      move.setPointerCapture = vi.fn();
+      await act(async () => {
+        move.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            button: 0,
+            pointerId: 17,
+            clientX: 110,
+            clientY: 110,
+          }),
+        );
+      });
+      const before = commits;
+      await act(async () => {
+        for (let index = 0; index < 20; index++)
+          move.dispatchEvent(
+            new PointerEvent("pointermove", {
+              bubbles: true,
+              pointerId: 17,
+              clientX: 210 + index,
+              clientY: 210 + index,
+            }),
+          );
+      });
+      expect(commits).toBe(before);
+      const panel = container.querySelector<HTMLElement>('section[aria-label="Voice companion"]')!;
+      expect(panel.style.left).toBe("219px");
+      await act(async () => {
+        move.dispatchEvent(
+          new PointerEvent(finishEvent, {
+            bubbles: true,
+            pointerId: 17,
+            clientX: 229,
+            clientY: 229,
+          }),
+        );
+      });
+      expect(commits).toBeGreaterThan(before);
+      expect(panel.style.left).toBe("219px");
+      if (finishEvent === "pointerup")
+        expect(JSON.parse(localStorage.getItem("bycoda:voice-position")!)).toEqual({
+          x: 219,
+          y: 219,
+        });
+      else expect(localStorage.getItem("bycoda:voice-position")).toBeNull();
+    } finally {
+      bounds.mockRestore();
+      localStorage.removeItem("bycoda:voice-position");
+    }
+  },
+);
+
 let root: Root, container: HTMLDivElement;
 // Existing scenarios start after the owner skipped persona setup; first run is covered below.
 beforeEach(() => {
@@ -242,6 +373,8 @@ beforeEach(() => {
   assistantHost.messages = [];
   assistantHost.contexts.clear();
   presence.value = "active";
+  mock.delivered = [];
+  mock.autoDeliver = true;
   localStorage.removeItem("bycoda.voice.scope");
   vi.spyOn(historyTransport, "captureLocalVoiceHistory").mockImplementation(() => ({
     key: "fixture-local",
@@ -263,6 +396,8 @@ afterEach(async () => {
   localStorage.removeItem("bycoda.voice.persona");
   localStorage.removeItem("bycoda.voice.memory");
   localStorage.removeItem("bycoda.voice.owner-rule-pending.v1");
+  localStorage.removeItem("bycoda.voice.last-briefing");
+  localStorage.removeItem("bycoda.voice.last-briefing-attempt");
   for (const key of Object.keys(localStorage))
     if (key.startsWith("bycoda.assistant.question-presentation:")) localStorage.removeItem(key);
   vi.clearAllMocks();
@@ -366,23 +501,8 @@ async function click(label: string) {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(),
   );
 }
-async function chooseManualEnding() {
-  await click("Automatic replies");
-  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
-    button => button.textContent === "Wait until I finish",
-  )!;
-  expect(option).toBeDefined();
-  await act(async () => option.click());
-}
-/** Floating is an item of the voice options menu. */
-async function floatOut() {
-  await click("Voice options");
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) =>
-    element.textContent?.includes("Float outside the app"),
-  );
-  expect(item).toBeDefined();
-  await act(async () => item!.click());
-}
+const chooseManualEnding = () => chooseManualEndingFromMenu(click);
+const floatOut = () => floatVoiceFromMenu(click);
 async function speech(text: string, binding?: any) {
   let turn = binding;
   if (!turn)
@@ -390,11 +510,103 @@ async function speech(text: string, binding?: any) {
       turn = mock.callbacks.start();
     });
   await act(async () => {
+    if (mock.callbacks.interceptTranscript?.({ text, language: "tr", inferenceMs: 150 }, turn))
+      return;
     const accepted = mock.callbacks.accept(turn);
     if (accepted) mock.callbacks.transcript({ text, language: "tr", inferenceMs: 150 }, accepted);
   });
   return turn;
 }
+it("silently accepts a completed answer's acknowledgement but admits a compound request", async () => {
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Ekipler hazır." } as any);
+  const { onSubmit } = await setup();
+  await speech("Ekipleri göster");
+  const calls = mock.converse.mock.calls.length,
+    spoken = mock.speak.mock.calls.length;
+  await speech("tamam");
+  expect(mock.converse).toHaveBeenCalledTimes(calls);
+  expect(mock.speak).toHaveBeenCalledTimes(spoken);
+  expect(onSubmit).not.toHaveBeenCalled();
+  await speech("tamam ekipleri aç");
+  expect(mock.converse).toHaveBeenCalledTimes(calls + 1);
+});
+it("keeps an answer to an outstanding question on the normal path", async () => {
+  mock.converse.mockResolvedValueOnce({
+    action: "reply",
+    reply: "Ayrıntıları göstereyim mi?",
+  } as any);
+  await setup();
+  await speech("Durum nedir?");
+  const calls = mock.converse.mock.calls.length;
+  await speech("tamam");
+  expect(mock.converse).toHaveBeenCalledTimes(calls + 1);
+});
+it("waits silently and does not cancel work on an explicit thinking pause", async () => {
+  const { onSubmit, onStop } = await setup();
+  const calls = mock.converse.mock.calls.length;
+  await speech("bir saniye, düşünüyorum");
+  expect(mock.silence).toHaveBeenCalledOnce();
+  expect(mock.converse).toHaveBeenCalledTimes(calls);
+  expect(mock.speak).not.toHaveBeenCalled();
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(onStop).not.toHaveBeenCalled();
+});
+it("keeps capture through mouse idle while conversation is active, then expires it", async () => {
+  // Advance the capture clock, not ten minutes of unrelated visual animation frames.
+  vi.useFakeTimers({
+    toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+  });
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Buradayım." } as any);
+  const { render } = await setup();
+  await speech("Orada mısın?");
+  presence.value = "idle";
+  await render("a");
+  expect(mock.close).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+  expect(mock.close).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Asleep");
+});
+it("clears conversational engagement when the microphone is paused", async () => {
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Buradayım." } as any);
+  const { render } = await setup();
+  await speech("Orada mısın?");
+  presence.value = "idle";
+  await render("a");
+  await click("Pause mic");
+  expect(mock.close).toHaveBeenCalledOnce();
+});
+it("omits unheard local speech after a newer admitted request", async () => {
+  mock.autoDeliver = false;
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Duyulmayan devam." } as any);
+  await setup();
+  await speech("İlk sorum");
+  const delivered = mock.delivered[0];
+  expect(assistantHost.messages.some((item) => item.text === "Duyulmayan devam.")).toBe(false);
+  await speech("Hayır ikinci sorum");
+  await act(async () => delivered());
+  expect(assistantHost.messages.some((item) => item.text === "Duyulmayan devam.")).toBe(false);
+});
+it("persists only completed realtime playback and never a discarded reply", async () => {
+  await setupGlobal();
+  await act(async () => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Bir özet ver");
+    mock.realtime.reply("Üretilmiş devam", false, "r-cut");
+    mock.realtime.replyDiscarded("r-cut");
+    mock.realtime.replyPlayed("r-cut");
+  });
+  expect(assistantHost.messages.some((item) => item.text === "Üretilmiş devam")).toBe(false);
+  await act(async () => {
+    mock.realtime.reply("Duyulan yanıt.", false, "r-played");
+    mock.realtime.replyPlayed("r-played");
+  });
+  expect(assistantHost.messages.filter((item) => item.text === "Duyulan yanıt.")).toHaveLength(1);
+  await act(async () => {
+    expect(mock.realtime.interceptTranscript("tamam")).toBe(true);
+    mock.realtime.replyPlayed("r-played");
+  });
+  expect(assistantHost.messages.filter((item) => item.text === "Duyulan yanıt.")).toHaveLength(1);
+});
 it("lets the owner select manual ending live without submitting or reconnecting", async () => {
   const { onSubmit } = await setup();
   await chooseManualEnding();
@@ -921,19 +1133,19 @@ it("keeps voice running through compact mode, live appearance updates and expans
 });
 it("retires the expanded turn menu on collapse and keeps the real mode selected after expansion", async () => {
   await setup();
-  await click("Automatic replies");
+  await click("Reply when I pause");
   expect(document.querySelector('[role="menu"]')).not.toBeNull();
   await click("Compact voice companion");
   expect(document.querySelector('[role="menu"]')).toBeNull();
-  expect(container.querySelectorAll('[data-split-part="menu"]')).toHaveLength(1);
-  await click("Automatic replies");
+  expect(container.querySelectorAll('[aria-label="Turn ending"]')).toHaveLength(1);
+  await click("Turn ending");
   let options = [...document.querySelectorAll('[role="menuitemradio"]')];
-  expect(options.map(option => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
   await click("Expand voice companion");
   expect(document.querySelector('[role="menu"]')).toBeNull();
-  await click("Automatic replies");
+  await click("Reply when I pause");
   options = [...document.querySelectorAll('[role="menuitemradio"]')];
-  expect(options.map(option => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
   expect(mock.finishTurn).not.toHaveBeenCalled();
   expect(mock.connect).toHaveBeenCalledOnce();
   expect(mock.close).not.toHaveBeenCalled();
@@ -985,9 +1197,11 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    const feedback = container.querySelector<HTMLDetailsElement>('details[role="alert"]')!;
+    const feedback = container.querySelector<HTMLDetailsElement>("details")!;
     expect(feedback.open).toBe(false);
-    expect(feedback.querySelector("summary")?.textContent).toBe("Voice needs attention");
+    expect(feedback.hasAttribute("role")).toBe(false);
+    expect(feedback.querySelector("summary")?.textContent).toBe("Error details");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Voice needs attention");
     await act(() => {
       feedback.querySelector("summary")!.click();
     });
@@ -1002,9 +1216,18 @@ it("uses playback events rather than reply text to announce assistant speech", a
   await setup();
   await act(async () => mock.callbacks.playback(true));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("assistant");
-  expect(container.querySelector('[role="status"]')?.textContent).toBe("Assistant speaking");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some(
+      (element) => element.textContent === "Assistant speaking",
+    ),
+  ).toBe(true);
   await act(async () => mock.callbacks.playback(false));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("listening");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some(
+      (element) => element.textContent === "Assistant speaking",
+    ),
+  ).toBe(false);
   await act(async () => mock.callbacks.error("Playback failed"));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("error");
 });
@@ -1232,17 +1455,57 @@ it("keeps cloud audio/transcript through project and scope changes without widen
   expect(mock.toolCall).toHaveBeenLastCalledWith(
     expect.objectContaining({
       cwd: "/b",
-      sessionId: "b",
       threadId: "global",
       causalContext: expect.objectContaining({ id: expect.any(String) }),
     }),
     expect.objectContaining({ requestId: "new-beta-request" }),
   );
+  expect(mock.toolCall.mock.lastCall![0]).not.toHaveProperty("sessionId");
+});
+
+it("waits for the original runtime registration before connecting the cloud provider", async () => {
+  const original = assistantHost.request.getMockImplementation()!;
+  const ack = Promise.withResolvers<{ ok: boolean }>();
+  assistantHost.request.mockImplementation((input) =>
+    input.op === "voice.runtime.register" ? ack.promise : original(input),
+  );
+  try {
+    await setupGlobal(null);
+    expect(assistantHost.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: "voice.runtime.register",
+        threadId: "global",
+        generationKey: expect.any(String),
+      }),
+    );
+    expect(mock.realtimeConnect).not.toHaveBeenCalled();
+    await act(async () => {
+      ack.resolve({ ok: true });
+    });
+    expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+  } finally {
+    assistantHost.request.mockImplementation(original);
+  }
+});
+
+it("keeps cloud disconnected when runtime registration is not confirmed", async () => {
+  const original = assistantHost.request.getMockImplementation()!;
+  assistantHost.request.mockImplementation(async (input) =>
+    input.op === "voice.runtime.register" ? { ok: false } : original(input),
+  );
+  try {
+    await setupGlobal(null);
+    expect(mock.realtimeConnect).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Voice runtime registration was not confirmed.");
+    expect(mock.close).toHaveBeenCalled();
+  } finally {
+    assistantHost.request.mockImplementation(original);
+  }
 });
 
 it("starts global cloud voice without an active coding session and exposes workspace discovery", async () => {
   const { workspace, onSubmit } = await setupGlobal(null);
-  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+  expect(mock.realtimeConnect.mock.calls, container.textContent ?? "Voice UI").toHaveLength(1);
   expect(container.textContent).toContain("Global");
   expect(await mock.realtime.tool("app_context", {})).toMatchObject({
     scope: "global",
@@ -1300,12 +1563,12 @@ it("keeps the local onset session and project for application tools while ASR aw
   expect(mock.toolCall).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
       cwd: "/a",
-      sessionId: "a",
       threadId: "global",
       causalContext: expect.objectContaining({ id: expect.any(String) }),
     }),
     expect.objectContaining({ action: "files.read", requestId: "read-onset-a" }),
   );
+  expect(mock.toolCall.mock.lastCall![0]).not.toHaveProperty("sessionId");
   await request.execute("submit_work", { text: "Fix Alpha" });
   expect(onSubmit).toHaveBeenCalledExactlyOnceWith("a", "Fix Alpha");
 });
@@ -1421,6 +1684,93 @@ it("sleeps when idle and returns ready without opening the microphone", async ()
   expect(mock.connect).toHaveBeenCalledTimes(connects);
 });
 
+for (const kind of ["daily", "routine", "stale"] as const)
+  it(`does not read a ${kind} briefing just because the owner returns`, async () => {
+    const profile = assistantHost.snapshot.profile;
+    try {
+      assistantHost.snapshot.profile = {
+        ...profile,
+        proactiveSpeech: "return",
+        quietStart: 0,
+        quietEnd: 0,
+        language: "tr",
+      };
+      const time = Date.now() - (kind === "stale" ? 360_000 : 0);
+      assistantHost.snapshot.briefing = {
+        id: kind,
+        text: "Rutin özet",
+        createdAt: time,
+        ...(kind === "daily"
+          ? {}
+          : {
+              voiceReceipt: {
+                reason: "return",
+                returnAt: time,
+                meaningful: kind !== "routine",
+                important: false,
+              },
+            }),
+      };
+      const { render } = await setup();
+      presence.value = "idle";
+      await render("a");
+      presence.value = "active";
+      await render("a");
+      expect(mock.preview).not.toHaveBeenCalled();
+    } finally {
+      assistantHost.snapshot.profile = profile;
+      delete assistantHost.snapshot.briefing;
+    }
+  });
+for (const interruption of ["away", "speaker mute"] as const)
+  it(`lets a confirmed briefing finish and never retries after ${interruption}`, async () => {
+    vi.useFakeTimers();
+    const profile = assistantHost.snapshot.profile;
+    mock.preview.mockImplementationOnce(() => new Promise<void>(() => {}));
+    try {
+      assistantHost.snapshot.profile = {
+        ...profile,
+        proactiveSpeech: "return",
+        quietStart: 0,
+        quietEnd: 0,
+        language: "tr",
+      };
+      const now = Date.now();
+      assistantHost.snapshot.briefing = {
+        id: "meaningful-return",
+        text: "İncelemeni bekleyen bir iş var.",
+        createdAt: now,
+        voiceReceipt: { reason: "return", returnAt: now, meaningful: true, important: true },
+      };
+      const { render } = await setup();
+      presence.value = "idle";
+      await render("a");
+      presence.value = "active";
+      await render("a");
+      expect(mock.preview).toHaveBeenCalledOnce();
+      expect(mock.preview.mock.calls[0][7]).toMatchObject({ complete: true });
+      const signal = mock.preview.mock.calls[0][3] as AbortSignal;
+      await act(async () => vi.advanceTimersByTimeAsync(61_000));
+      expect(signal.aborted).toBe(false);
+      expect(mock.connect).toHaveBeenCalledOnce();
+      if (interruption === "speaker mute") {
+        await click("Compact voice companion");
+        await click("Mute speaker");
+      } else {
+        presence.value = "away";
+        await render("a");
+      }
+      expect(signal.aborted).toBe(true);
+      if (interruption === "speaker mute") await click("Unmute speaker");
+      presence.value = "active";
+      await render("a");
+      expect(mock.preview).toHaveBeenCalledOnce();
+    } finally {
+      assistantHost.snapshot.profile = profile;
+      delete assistantHost.snapshot.briefing;
+    }
+  });
+
 it("does not wake voice after an explicit disconnect", async () => {
   const { render } = await setup();
   await click("Disconnect voice");
@@ -1529,6 +1879,45 @@ it("seeds GLOBAL voice only with proven captured contributors and no unscoped su
   } finally {
     assistantHost.request.mockImplementation(original);
     locked.mockRestore();
+  }
+});
+it("keeps GLOBAL voice listening with an incomplete Host project directory without disclosing unverified history", async () => {
+  const original = assistantHost.request.getMockImplementation()!;
+  assistantHost.request.mockImplementation(async (input) =>
+    input.op === "projects.list"
+      ? { projects: [{ id: "pa", path: "/a", name: "Alpha" }] }
+      : input.op === "threads.messages"
+        ? {
+            messages: [
+              { role: "user", text: "Verified personal", projectIds: [] },
+              { role: "assistant", text: "Unknown Beta", projectIds: ["pb"] },
+            ],
+          }
+        : original(input),
+  );
+  try {
+    const { render } = await setupGlobal();
+    expect(container.textContent).toContain("Listening");
+    expect(mock.realtimeConnect).toHaveBeenCalledWith(
+      expect.anything(),
+      [{ role: "user", text: "Verified personal" }],
+      expect.objectContaining({ summary: "", disclosureCurrent: expect.any(Function) }),
+    );
+    const options = mock.realtimeConnect.mock.calls[0][2] as { disclosureCurrent: () => boolean };
+    expect(options.disclosureCurrent()).toBe(true);
+    const locked = vi
+      .spyOn(groupLock, "isProjectLocked")
+      .mockImplementation((path) => path === "/b");
+    try {
+      expect(options.disclosureCurrent()).toBe(false);
+      await render("a");
+      expect(container.textContent).toContain("Ready. Microphone is off.");
+      expect(mock.close).toHaveBeenCalled();
+    } finally {
+      locked.mockRestore();
+    }
+  } finally {
+    assistantHost.request.mockImplementation(original);
   }
 });
 it("discards read history and closes capture when privacy changes before credential-delayed seed disclosure", async () => {
@@ -1787,6 +2176,35 @@ it("shows a clickable voice choice and consumes its spoken answer without starti
   expect(onSubmit).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain("Which project?");
 });
+it("keeps a realtime choice pending through an explicit wait and accepts the later answer", async () => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
+  const { onSubmit } = await setup();
+  let answer!: Promise<unknown>;
+  const settled = vi.fn();
+  await act(async () => {
+    answer = mock.realtime.tool("present_choices", {
+      question: "Which project?",
+      options: [
+        { id: "one", label: "monocode" },
+        { id: "two", label: "clinic" },
+      ],
+    });
+    void answer.then(settled);
+  });
+  await act(async () => {
+    expect(mock.realtime.interceptTranscript("bir saniye düşünüyorum")).toBe(true);
+  });
+  expect(settled).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Which project?");
+  expect(mock.silence).toHaveBeenCalledOnce();
+  await act(async () => {
+    expect(mock.realtime.interceptTranscript("the second one")).toBe(true);
+  });
+  await expect(answer).resolves.toEqual({ kind: "answered", answers: { choice: ["two"] } });
+  expect(mock.resumeAfterOwnerAnswer).toHaveBeenCalledOnce();
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
 it("temporarily expands a compact companion for a pending choice without changing the preference", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai", compact: true }));
   await setup();
@@ -2462,3 +2880,18 @@ it.each(["resolve", "reject"] as const)(
     }
   },
 );
+
+it("speaker mute survives compact changes and never mutes the microphone or stops work", async () => {
+  const { onStop } = await setup();
+  await click("Mute speaker");
+  expect(mock.setOutputMuted).toHaveBeenLastCalledWith(true);
+  expect(mock.mute).not.toHaveBeenCalled();
+  await click("Compact voice companion");
+  expect(
+    container.querySelector('[aria-label="Unmute speaker"]')?.getAttribute("aria-pressed"),
+  ).toBe("true");
+  await click("Unmute speaker");
+  expect(mock.setOutputMuted).toHaveBeenLastCalledWith(false);
+  expect(mock.connect).toHaveBeenCalledOnce();
+  expect(onStop).not.toHaveBeenCalled();
+});

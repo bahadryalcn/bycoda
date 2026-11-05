@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import {
   backgroundMachineFor,
@@ -47,10 +48,24 @@ export type ProjectCrews = {
   definitions: CrewDefinition[];
   agents: SavedCrewAgent[];
   runs: CrewRunView[];
+  historyNextCursor?: string;
   catalog: HostModelCatalog;
   catalogError?: string;
 };
 export function useProjectCrews(cwd: string, enabled = true) {
+  const [older, setOlder] = useState<CrewRunView[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null | undefined>();
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const historyGeneration = useRef(0);
+  const firstCursor = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    historyGeneration.current++;
+    firstCursor.current = undefined;
+    setOlder([]);
+    setNextCursor(undefined);
+    setHistoryError(undefined);
+  }, [cwd]);
   const client = useQueryClient();
   const key = [HOST_CREWS, cwd];
   const query = useQuery({
@@ -62,10 +77,10 @@ export function useProjectCrews(cwd: string, enabled = true) {
       if (!machine) throw new Error("Update and connect this project's host to use Crews.");
       const project = await hostProjectFor(machine, cwd);
       const [state, modelState] = await Promise.all([
-        remoteRequest<Pick<ProjectCrews, "definitions" | "runs" | "agents">>(
+        remoteRequest<Pick<ProjectCrews, "definitions" | "runs" | "agents" | "historyNextCursor">>(
           machine.id,
           "crews.list",
-          { projectId: project.id },
+          { projectId: project.id, historyLimit: 40 },
         ),
         remoteRequest<HostModelCatalog>(machine.id, "models.list", {
           projectId: project.id,
@@ -100,6 +115,14 @@ export function useProjectCrews(cwd: string, enabled = true) {
           : 15_000,
     retry: false,
   });
+  useEffect(() => {
+    if (firstCursor.current === query.data?.historyNextCursor) return;
+    firstCursor.current = query.data?.historyNextCursor;
+    historyGeneration.current++;
+    setNextCursor(undefined);
+    setHistoryLoading(false);
+    setHistoryError(undefined);
+  }, [query.data?.historyNextCursor]);
   const call = async <T = unknown>(action: string, input: Record<string, unknown>): Promise<T> => {
     const data = query.data;
     if (!data) throw new Error("Crew host is not connected");
@@ -117,5 +140,46 @@ export function useProjectCrews(cwd: string, enabled = true) {
       await client.invalidateQueries({ queryKey: key });
     }
   };
-  return { ...query, call };
+  const loadMoreHistory = async () => {
+    const data = query.data;
+    const cursor = nextCursor === undefined ? data?.historyNextCursor : nextCursor;
+    if (!data || !cursor || historyLoading) return;
+    const generation = historyGeneration.current;
+    setHistoryLoading(true);
+    setHistoryError(undefined);
+    try {
+      const page = await remoteRequest<Pick<ProjectCrews, "runs" | "historyNextCursor">>(
+        data.machine.id,
+        "crews.list",
+        { projectId: data.project.id, historyLimit: 40, historyCursor: cursor },
+      );
+      if (generation !== historyGeneration.current) return;
+      setOlder((previous) => {
+        const rows = new Map(previous.map((run) => [run.id, run]));
+        for (const run of page.runs) if (run.status === "finished") rows.set(run.id, run);
+        return [...rows.values()];
+      });
+      setNextCursor(page.historyNextCursor ?? null);
+    } catch (reason) {
+      if (generation === historyGeneration.current) setHistoryError(String(reason));
+    } finally {
+      if (generation === historyGeneration.current) setHistoryLoading(false);
+    }
+  };
+  const data = query.data && {
+    ...query.data,
+    runs: [
+      ...query.data.runs,
+      ...older.filter((run) => !query.data!.runs.some((fresh) => fresh.id === run.id)),
+    ],
+  };
+  return {
+    ...query,
+    data,
+    call,
+    loadMoreHistory,
+    historyLoading,
+    historyError,
+    hasMoreHistory: !!(nextCursor === undefined ? query.data?.historyNextCursor : nextCursor),
+  };
 }

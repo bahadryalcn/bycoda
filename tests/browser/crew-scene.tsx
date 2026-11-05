@@ -45,7 +45,10 @@ declare global {
     renderStarWarsStage?: (options: StarWarsStageOptions) => Promise<void>;
     starWarsFixtureLayout: (count: number, viewportWidth?: number) => CrewPlace[];
     /** The production painter and layout for the portrait matrix, which cannot import `/src` from a built fixture. */
-    crewPortraitFixture: { createCodeArtPainter: typeof createCodeArtPainter; crewLayout: typeof crewLayout };
+    crewPortraitFixture: {
+      createCodeArtPainter: typeof createCodeArtPainter;
+      crewLayout: typeof crewLayout;
+    };
   }
 }
 

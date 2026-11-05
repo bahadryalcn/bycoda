@@ -103,7 +103,9 @@ export function NotificationAlerts() {
     setPermissionPending(request ? "request" : "probe");
     setPermissionError(false);
     try {
-      const permission = await (request ? requestNotificationPermission() : probeNotificationPermission());
+      const permission = await (request
+        ? requestNotificationPermission()
+        : probeNotificationPermission());
       if (active.current) {
         setNotificationPermission(permission);
         setPermissionError(permission === "unavailable");
@@ -125,7 +127,11 @@ export function NotificationAlerts() {
       window.removeEventListener("focus", refresh);
     };
   }, [checkPermission]);
-  const commitPreference = (id: string, write: () => boolean | void, update: () => void): boolean => {
+  const commitPreference = (
+    id: string,
+    write: () => boolean | void,
+    update: () => void,
+  ): boolean => {
     try {
       if (write() === false) throw new Error("Preference was not persisted");
       update();
@@ -143,20 +149,32 @@ export function NotificationAlerts() {
       return false;
     }
   };
-  const saveFeedback = (id: string) => failedSaves[id] ? (
-    <SettingsFeedback state="error" action={<Button onClick={failedSaves[id]}>{t("Retry")}</Button>}>
-      {t("Could not save changes")}
-    </SettingsFeedback>
-  ) : undefined;
+  const saveFeedback = (id: string) =>
+    failedSaves[id] ? (
+      <SettingsFeedback
+        state="error"
+        action={<Button onClick={failedSaves[id]}>{t("Retry")}</Button>}
+      >
+        {t("Could not save changes")}
+      </SettingsFeedback>
+    ) : undefined;
   const onSoundsEnabled = (next: boolean) => {
-    commitPreference("sounds", () => saveSoundsEnabled(next), () => setSoundsEnabled(next));
+    commitPreference(
+      "sounds",
+      () => saveSoundsEnabled(next),
+      () => setSoundsEnabled(next),
+    );
   };
   const onNotificationsEnabled = (next: boolean) => {
     if (permissionInFlight.current) return;
-    commitPreference("notifications", () => saveNotificationsEnabled(next), () => {
-      setNotificationsEnabled(next);
-      if (next) void checkPermission(true);
-    });
+    commitPreference(
+      "notifications",
+      () => saveNotificationsEnabled(next),
+      () => {
+        setNotificationsEnabled(next);
+        if (next) void checkPermission(true);
+      },
+    );
   };
   const permissionText = permissionError
     ? t("Status unavailable")
@@ -173,10 +191,14 @@ export function NotificationAlerts() {
               : t("Status unavailable");
   const permissionStatus = (
     <div className="notification-permission-message" role={permissionError ? "alert" : "status"}>
-      <div className={notificationPermission === "denied" ? "text-(--ui-tone-warning-fg)" : undefined}>
-        {!permissionError && !permissionPending && notificationPermission === "denied"
-          ? <NotificationsBlocked />
-          : permissionText}
+      <div
+        className={notificationPermission === "denied" ? "text-(--ui-tone-warning-fg)" : undefined}
+      >
+        {!permissionError && !permissionPending && notificationPermission === "denied" ? (
+          <NotificationsBlocked />
+        ) : (
+          permissionText
+        )}
       </div>
       <Button
         variant="ghost"
@@ -190,7 +212,11 @@ export function NotificationAlerts() {
         <RefreshCw aria-hidden className="icon-sm" />
       </Button>
       {notificationsEnabled && notificationPermission === "prompt" ? (
-        <Button loading={permissionPending === "request"} disabled={permissionPending !== null} onClick={() => void checkPermission(true)}>
+        <Button
+          loading={permissionPending === "request"}
+          disabled={permissionPending !== null}
+          onClick={() => void checkPermission(true)}
+        >
           {t("Request permission")}
         </Button>
       ) : null}
@@ -198,15 +224,8 @@ export function NotificationAlerts() {
   );
   return (
     <div className="notification-alert-settings settings-topics">
-      <Group
-        title={t("Application alerts")}
-        persistence={{ mode: "automatic" }}
-      >
-        <Row
-          id="sounds"
-          label={t("Sounds")}
-          feedback={saveFeedback("sounds")}
-        >
+      <Group title={t("Application alerts")} persistence={{ mode: "automatic" }}>
+        <Row id="sounds" label={t("Sounds")} feedback={saveFeedback("sounds")}>
           <Toggle label={t("Sounds")} on={soundsEnabled} onChange={onSoundsEnabled} />
         </Row>
         <Row
@@ -236,9 +255,13 @@ export function NotificationAlerts() {
             feedback={saveFeedback(event.id)}
             disabled={event.id === "taskbar" && !IS_WIN}
             info={
-              event.id === "taskbar" && !IS_WIN
-                ? <InfoPopover>{t("Taskbar badges and flashing are available only on Windows. Your choice is preserved.")}</InfoPopover>
-                : undefined
+              event.id === "taskbar" && !IS_WIN ? (
+                <InfoPopover>
+                  {t(
+                    "Taskbar badges and flashing are available only on Windows. Your choice is preserved.",
+                  )}
+                </InfoPopover>
+              ) : undefined
             }
           >
             <Toggle
@@ -246,7 +269,11 @@ export function NotificationAlerts() {
               on={notificationEvents[event.id]}
               disabled={!notificationsEnabled || (event.id === "taskbar" && !IS_WIN)}
               onChange={(on) => {
-                commitPreference(event.id, () => saveNotificationEvent(event.id, on), () => setNotificationEvents(loadNotificationEvents()));
+                commitPreference(
+                  event.id,
+                  () => saveNotificationEvent(event.id, on),
+                  () => setNotificationEvents(loadNotificationEvents()),
+                );
               }}
             />
           </Row>
@@ -256,7 +283,13 @@ export function NotificationAlerts() {
           label={t("Daily summary")}
           dependsOn={notificationsEnabled}
           disabledReason={t("Enable Desktop notifications first")}
-          info={<InfoPopover>{t("One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.")}</InfoPopover>}
+          info={
+            <InfoPopover>
+              {t(
+                "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
+              )}
+            </InfoPopover>
+          }
           feedback={saveFeedback("summary-enabled")}
         >
           <Toggle
@@ -264,7 +297,11 @@ export function NotificationAlerts() {
             on={summaryEnabled}
             disabled={!notificationsEnabled}
             onChange={(on) => {
-              commitPreference("summary-enabled", () => saveDailySummaryEnabled(on), () => setSummaryEnabled(on));
+              commitPreference(
+                "summary-enabled",
+                () => saveDailySummaryEnabled(on),
+                () => setSummaryEnabled(on),
+              );
             }}
           />
         </Row>
@@ -280,7 +317,11 @@ export function NotificationAlerts() {
             saved={summaryTime}
             disabled={!notificationsEnabled || !summaryEnabled}
             onCommit={(time) => {
-              commitPreference("summary-time", () => saveDailySummaryTime(time), () => setSummaryTime(time));
+              commitPreference(
+                "summary-time",
+                () => saveDailySummaryTime(time),
+                () => setSummaryTime(time),
+              );
             }}
           />
         </Row>

@@ -25,6 +25,7 @@ import type {
 } from "../../../../features/sessions/model/userQuestion";
 import {
   questionsFromUnknown,
+  assertQuestionNotesSupported,
   selectedAnswerLabels,
 } from "../../../../features/sessions/model/userQuestion";
 import {
@@ -88,6 +89,7 @@ export function askQuestionResponse(
   questions: UserQuestion[],
 ): Record<string, unknown> {
   if (reply.kind !== "answered") return { outcome: "skip_interview" };
+  assertQuestionNotesSupported(questions, reply);
   const answers: Record<string, string | string[]> = {};
   for (const question of questions) {
     const labels = selectedAnswerLabels(question, reply);

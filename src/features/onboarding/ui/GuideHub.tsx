@@ -213,10 +213,7 @@ export default function GuideHub({
                   >
                     <span className="guide-hub-nav-label">{item.title}</span>
                     {complete ? (
-                      <Check
-                        className="icon-sm guide-hub-complete"
-                        aria-label={t("Done")}
-                      />
+                      <Check className="icon-sm guide-hub-complete" aria-label={t("Done")} />
                     ) : seen.includes(item.id) ? (
                       <Check className="icon-sm guide-hub-seen" aria-label={t("Viewed")} />
                     ) : null}

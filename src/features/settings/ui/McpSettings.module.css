@@ -68,7 +68,8 @@
   padding-inline: 16px;
 }
 /* Hairline dividers and a quiet hover, like every settings group (V3-013). */
-.row + .row {
+.row + .row,
+.list [data-collection-key] + [data-collection-key] .row {
   border-block-start: 1px solid var(--ui-settings-hairline);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -124,14 +125,13 @@
   overflow-wrap: anywhere;
 }
 .status {
-  grid-column: 4;
-  grid-row: 1;
+  grid-column: 2 / -1;
+  grid-row: 3;
   display: flex;
   align-items: center;
   align-self: start;
   justify-self: start;
   min-block-size: var(--ui-control-height-compact);
-  max-inline-size: 14rem;
   min-inline-size: 0;
 }
 .statusBadge {
@@ -196,10 +196,25 @@
   font-variant-numeric: tabular-nums;
 }
 @container (inline-size < 520px) {
-  .row { grid-template-columns: 16px minmax(0, 1fr) 8rem 28px; }
-  .identity { grid-column: 2 / 4; }
-  .details { grid-column: 2 / 4; }
-  .rowActions { grid-column: 2; grid-row: 3; }
-  .status { grid-column: 3; grid-row: 3; }
-  .rowMenu { grid-column: 4; grid-row: 3; }
+  .row {
+    grid-template-columns: 16px minmax(0, 1fr) 8rem 28px;
+  }
+  .identity {
+    grid-column: 2 / 4;
+  }
+  .details {
+    grid-column: 2 / 4;
+  }
+  .rowActions {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .status {
+    grid-column: 2 / -1;
+    grid-row: 4;
+  }
+  .rowMenu {
+    grid-column: 4;
+    grid-row: 3;
+  }
 }

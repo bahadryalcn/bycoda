@@ -84,7 +84,9 @@ function InlineEmptyState({
         </span>
       ) : null}
       <span className="min-w-0 break-words">
-        {title ? <strong className="font-medium text-(--ui-tone-neutral-fg)">{title} </strong> : null}
+        {title ? (
+          <strong className="font-medium text-(--ui-tone-neutral-fg)">{title} </strong>
+        ) : null}
         {description}
       </span>
       {action}
@@ -152,7 +154,9 @@ export function EmptyState({
   const implied = impliedRole(kind);
   // An unreadable source or a hidden match must not wear the "nothing here" folder glyph.
   const glyph =
-    icon !== undefined ? icon : kind === "unavailable" ? (
+    icon !== undefined ? (
+      icon
+    ) : kind === "unavailable" ? (
       <CircleAlert width={24} height={24} strokeWidth={1.5} />
     ) : kind === "filtered" ? (
       <Search width={24} height={24} strokeWidth={1.5} />

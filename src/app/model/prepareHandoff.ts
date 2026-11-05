@@ -15,8 +15,7 @@ import { hostFeatureRequest } from "../../features/connections/model/hostFeature
 const ARCHIVE_MAX_MESSAGES = 19_000;
 const ARCHIVE_MAX_BYTES = 7 * 1024 * 1024;
 const encoder = new TextEncoder();
-const bytesOf = (value: unknown) =>
-  encoder.encode(JSON.stringify(value)).length;
+const bytesOf = (value: unknown) => encoder.encode(JSON.stringify(value)).length;
 
 /**
  * Keeps the archive inside the writer's limits for a very long conversation. The
@@ -36,9 +35,7 @@ export function fitHandoffArchive(history: HandoffHistory): {
   const noteReserve = 1024;
   let budget = ARCHIVE_MAX_BYTES - baseBytes - noteReserve;
   let slots = ARCHIVE_MAX_MESSAGES - 1;
-  const firstUserIndex = messages.findIndex(
-    (message) => message.role === "user",
-  );
+  const firstUserIndex = messages.findIndex((message) => message.role === "user");
   const kept = new Set<number>();
   if (firstUserIndex >= 0 && sizes[firstUserIndex] <= ARCHIVE_MAX_BYTES / 16) {
     kept.add(firstUserIndex);
@@ -55,11 +52,7 @@ export function fitHandoffArchive(history: HandoffHistory): {
       continue;
     }
     // One oversized recent message: keep its tail so the newest part survives.
-    if (
-      !clipped.size &&
-      kept.size <= (firstUserIndex >= 0 ? 1 : 0) &&
-      budget > 4096
-    ) {
+    if (!clipped.size && kept.size <= (firstUserIndex >= 0 ? 1 : 0) && budget > 4096) {
       const text = messages[index].text.slice(-Math.floor((budget - 2048) / 4));
       clipped.set(index, {
         ...messages[index],

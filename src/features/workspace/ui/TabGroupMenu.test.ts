@@ -7,7 +7,11 @@ import { TabGroupMenu } from "./TabGroupMenu";
 import { BellOff } from "../../../shared/ui/icons";
 import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/projectLogos";
 
-vi.mock("../../projects/model/projectLogos", () => ({ clearProjectLogo: vi.fn(), pickAndSetProjectLogo: vi.fn(), projectLogoSrc: (path: string) => path }));
+vi.mock("../../projects/model/projectLogos", () => ({
+  clearProjectLogo: vi.fn(),
+  pickAndSetProjectLogo: vi.fn(),
+  projectLogoSrc: (path: string) => path,
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -41,7 +45,10 @@ function hover(label: string) {
   act(() => button(label).dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
 }
 
-function renderMenu(onExtraPick = vi.fn(), overrides: Partial<ComponentProps<typeof TabGroupMenu>> = {}) {
+function renderMenu(
+  onExtraPick = vi.fn(),
+  overrides: Partial<ComponentProps<typeof TabGroupMenu>> = {},
+) {
   act(() =>
     root.render(
       createElement(TabGroupMenu, {
@@ -83,21 +90,27 @@ function renderMenu(onExtraPick = vi.fn(), overrides: Partial<ComponentProps<typ
   return onExtraPick;
 }
 
-it.each(["save", "remove"])("keeps project logo %s errors visible and retryable", async (action) => {
-  const operation = action === "save" ? vi.mocked(pickAndSetProjectLogo) : vi.mocked(clearProjectLogo);
-  operation.mockRejectedValueOnce(new Error("Logo is too large (maximum 2 MB)."));
-  const onClose = vi.fn(); const onLogoChange = vi.fn();
-  renderMenu(vi.fn(), { logoProject: "/repo", logoPath: "/existing.png", onClose, onLogoChange });
-  const label = action === "save" ? "Change project logo" : "Remove project logo";
-  await act(async () => button(label).click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("maximum 2 MB");
-  expect(onClose).not.toHaveBeenCalled(); expect(onLogoChange).not.toHaveBeenCalled();
-  if (action === "save") vi.mocked(pickAndSetProjectLogo).mockResolvedValueOnce("/new.png");
-  else vi.mocked(clearProjectLogo).mockResolvedValueOnce(undefined);
-  await act(async () => button(label).click());
-  expect(onLogoChange).toHaveBeenCalledOnce();
-  expect(document.querySelector('[role="alert"]')).toBeNull();
-});
+it.each(["save", "remove"])(
+  "keeps project logo %s errors visible and retryable",
+  async (action) => {
+    const operation =
+      action === "save" ? vi.mocked(pickAndSetProjectLogo) : vi.mocked(clearProjectLogo);
+    operation.mockRejectedValueOnce(new Error("Logo is too large (maximum 2 MB)."));
+    const onClose = vi.fn();
+    const onLogoChange = vi.fn();
+    renderMenu(vi.fn(), { logoProject: "/repo", logoPath: "/existing.png", onClose, onLogoChange });
+    const label = action === "save" ? "Change project logo" : "Remove project logo";
+    await act(async () => button(label).click());
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("maximum 2 MB");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onLogoChange).not.toHaveBeenCalled();
+    if (action === "save") vi.mocked(pickAndSetProjectLogo).mockResolvedValueOnce("/new.png");
+    else vi.mocked(clearProjectLogo).mockResolvedValueOnce(undefined);
+    await act(async () => button(label).click());
+    expect(onLogoChange).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  },
+);
 
 it("keeps the context menu scrollable within the viewport", () => {
   renderMenu();

@@ -71,6 +71,235 @@ afterEach(async () => {
 });
 
 describe("sprint planning authority", () => {
+  it("replaces a pruned source cursor with a scoped snapshot and marks the gap", async () => {
+    const project = { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" };
+    mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list")
+        return {
+          sprints: [],
+          planning: [],
+          sources: [{ environmentId: "mac", cursor: 2, syncedAt: 1, visibleProjectIds: ["b"] }],
+        };
+      if (method === "tasks.events")
+        return { gap: true, cursor: 2, events: [], hasMore: false, historyAvailableFrom: 50 };
+      if (method === "tasks.snapshotWithCursor")
+        return {
+          cursor: 20,
+          historyAvailableFrom: 50,
+          tasks: [
+            { id: "included", projectId: "b", title: "Included", status: "todo", updatedAt: 40 },
+            {
+              id: "excluded",
+              projectId: "other",
+              title: "Excluded",
+              status: "todo",
+              updatedAt: 40,
+            },
+          ],
+        };
+      if (method === "sprints.ingest") return {};
+      throw new Error(`Unexpected ${method}`);
+    });
+    await act(async () => root!.render(createElement(Harness, { projects: [project] })));
+    await act(async () => board.refresh());
+    const call = mocks.request.mock.calls.find((entry) => entry[1] === "sprints.ingest");
+    expect(call?.[2]).toMatchObject({
+      input: {
+        environmentId: "mac",
+        fromCursor: 2,
+        historyGap: true,
+        cursor: 20,
+        snapshot: { historyAvailableFrom: 50, tasks: [{ id: "included" }] },
+      },
+    });
+  });
+  it("keeps coordinator loading visible until both read lanes settle", async () => {
+    const replies: ((value: unknown) => void)[] = [];
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list")
+        return new Promise((resolve) => {
+          replies.push(resolve);
+        });
+      throw new Error(`Unexpected ${method}`);
+    });
+    await act(async () => root!.render(createElement(Harness)));
+    let readback!: Promise<void>;
+    await act(async () => {
+      readback = board.refresh(false);
+    });
+    expect(replies).toHaveLength(2);
+    expect(board.loading).toBe(true);
+    await act(async () => {
+      replies[1]({ sprints: [], planning: [], sources: [] });
+      await readback;
+    });
+    expect(board.loading).toBe(true);
+    const sync = board.refresh();
+    await act(async () => {
+      replies[0]({ sprints: [], planning: [], sources: [] });
+    });
+    // Catch-up's final coordinator read also owns a loading token.
+    expect(replies).toHaveLength(3);
+    expect(board.loading).toBe(true);
+    await act(async () => {
+      replies[2]({ sprints: [], planning: [], sources: [] });
+      await sync;
+    });
+    expect(board.loading).toBe(false);
+  });
+  it("publishes coordinator data and coalesces catch-up while a source is slow", async () => {
+    const project = { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" };
+    const sprint = { id: "sprint", name: "Available now", projects: [project] } as HostSprint;
+    let resolveEvents!: (value: unknown) => void;
+    mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list")
+        return {
+          sprints: [sprint],
+          planning: [],
+          sources: [
+            { environmentId: "mac", cursor: 0, syncedAt: Date.now(), visibleProjectIds: ["b"] },
+          ],
+        };
+      if (method === "tasks.events")
+        return new Promise((resolve) => {
+          resolveEvents = resolve;
+        });
+      if (method === "sprints.ingest") return {};
+      throw new Error(`Unexpected ${method}`);
+    });
+    await act(async () => root!.render(createElement(Harness, { projects: [project] })));
+    expect(board.sprints).toEqual([sprint]);
+    expect(board.loading).toBe(false);
+    let refresh!: Promise<void>;
+    await act(async () => {
+      refresh = board.refresh();
+      for (let tick = 0; tick < 20; tick++) expect(board.refresh()).toBe(refresh);
+    });
+    expect(mocks.request.mock.calls.filter((call) => call[1] === "tasks.events")).toHaveLength(1);
+    await act(async () => {
+      resolveEvents({ cursor: 0, events: [], hasMore: false });
+      await refresh;
+    });
+    expect(mocks.request.mock.calls.filter((call) => call[1] === "tasks.events")).toHaveLength(1);
+    expect(mocks.request.mock.calls.filter((call) => call[1] === "sprints.list")).toHaveLength(2);
+  });
+  it("reads an acknowledged create back without waiting for source history, but lifecycle still waits", async () => {
+    const project = { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" };
+    const sprint = { id: "sprint", name: "New", projects: [project], revision: 1 } as HostSprint;
+    let failEvents!: (reason: Error) => void;
+    let created = false;
+    mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list")
+        return {
+          sprints: created ? [sprint] : [],
+          planning: [],
+          sources: [
+            { environmentId: "mac", cursor: 0, syncedAt: Date.now(), visibleProjectIds: ["b"] },
+          ],
+        };
+      if (method === "tasks.events")
+        return new Promise((_resolve, reject) => {
+          failEvents = reject;
+        });
+      if (method === "sprints.create") {
+        created = true;
+        return sprint;
+      }
+      throw new Error(`Unexpected ${method}`);
+    });
+    await act(async () => root!.render(createElement(Harness, { projects: [project] })));
+    await act(async () => {
+      await board.create({
+        name: "New",
+        projects: [project],
+        capacityPoints: null,
+        projectCapacities: {},
+      });
+    });
+    expect(board.sprints).toEqual([sprint]);
+    let result!: Promise<unknown>;
+    await act(async () => {
+      result = board.command(sprint, "start").catch((error) => error);
+    });
+    expect(mocks.request.mock.calls.some((call) => call[1] === "sprints.start")).toBe(false);
+    await act(async () => {
+      failEvents(new Error("Offline"));
+      expect(await result).toEqual(
+        expect.objectContaining({ message: expect.stringContaining("Synchronize") }),
+      );
+    });
+    expect(mocks.request.mock.calls.some((call) => call[1] === "sprints.start")).toBe(false);
+  });
+  it("retires an in-flight source when the visible project scope changes", async () => {
+    const project = { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" };
+    let resolveEvents!: (value: unknown) => void;
+    mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list")
+        return {
+          sprints: [],
+          planning: [],
+          sources: [
+            { environmentId: "mac", cursor: 0, syncedAt: Date.now(), visibleProjectIds: ["b"] },
+          ],
+        };
+      if (method === "tasks.events")
+        return new Promise((resolve) => {
+          resolveEvents = resolve;
+        });
+      if (method === "sprints.ingest") return {};
+      throw new Error(`Unexpected ${method}`);
+    });
+    await act(async () => root!.render(createElement(Harness, { projects: [project] })));
+    const oldRead = board.refresh();
+    await act(async () => root!.render(createElement(Harness, { projects: [] })));
+    await act(async () => {
+      resolveEvents({ cursor: 0, events: [], hasMore: false });
+      await oldRead;
+    });
+    expect(mocks.request.mock.calls.some((call) => call[1] === "sprints.ingest")).toBe(false);
+    expect(board.syncErrors).toEqual([]);
+  });
+  it("follows a pre-mutation coordinator read with one fresh readback", async () => {
+    await act(async () => root!.render(createElement(Harness)));
+    let resolveOld!: (value: unknown) => void;
+    const saved = { id: "new", name: "New", projects: [] } as unknown as HostSprint;
+    let reads = 0;
+    mocks.request.mockImplementation(async (_id, method) => {
+      if (method === "sprints.list") {
+        if (++reads === 1)
+          return new Promise((resolve) => {
+            resolveOld = resolve;
+          });
+        return { sprints: [saved], planning: [], sources: [] };
+      }
+      if (method === "sprints.create") return saved;
+      throw new Error(`Unexpected ${method}`);
+    });
+    let old!: Promise<void>;
+    let created!: Promise<HostSprint>;
+    await act(async () => {
+      old = board.refresh(false);
+    });
+    await act(async () => {
+      created = board.create({
+        name: "New",
+        projects: [],
+        capacityPoints: null,
+        projectCapacities: {},
+      });
+    });
+    expect(reads).toBe(1);
+    await act(async () => {
+      resolveOld({ sprints: [], planning: [], sources: [] });
+      await Promise.all([old, created]);
+    });
+    expect(reads).toBe(2);
+    expect(board.sprints).toEqual([saved]);
+  });
   it("uses stable environment identity and never falls back from a missing chosen Host", () => {
     expect(planningCoordinator([local, remote], "")).toEqual(local);
     expect(planningCoordinator([local, remote], "missing")).toBeUndefined();

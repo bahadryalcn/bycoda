@@ -19,7 +19,8 @@ export const remoteModelCatalogScopeKey = (scope: RemoteModelCatalogScope) =>
 function rememberCatalog(key: string, catalog: HostModelCatalog) {
   cachedCatalogs.delete(key);
   cachedCatalogs.set(key, catalog);
-  while (cachedCatalogs.size > CACHE_LIMIT) cachedCatalogs.delete(cachedCatalogs.keys().next().value!);
+  while (cachedCatalogs.size > CACHE_LIMIT)
+    cachedCatalogs.delete(cachedCatalogs.keys().next().value!);
 }
 
 /** Isolate UI harnesses that intentionally reuse machine/project identifiers. */

@@ -12,11 +12,7 @@ const dataHandlers = new Map<string, DataHandler>();
 const exitHandlers = new Map<string, ExitHandler>();
 const dataBuffer = new Map<string, Uint8Array[]>();
 const dataBufferBytes = new Map<string, number>();
-/** PTYs this window opened. The `pty-data` listener is scoped to this window,
- * but a local terminal whose owner window closed is still broadcast to every
- * window (Rust `emit_to_owner` fallback); decoding those in a window that never
- * mounted them was megabytes of base64 work and a 256KB replay buffer per
- * stranger id, so the filter stays. */
+/** PTYs this window opened; ignore data for unmounted, unrelated terminals. */
 const openedPtys = new Set<string>();
 const flowControlled = new Set<string>();
 
@@ -28,6 +24,7 @@ const flowControlled = new Set<string>();
 const MAX_BUFFERED_BYTES = 256 * 1024;
 const MAX_BUFFERED = 200;
 let bridge: Promise<UnlistenFn[]> | null = null;
+let bridgeGeneration = 0;
 let users = 0;
 let teardownTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -155,10 +152,10 @@ function flushAcks() {
 
 function ensureBridge() {
   if (bridge) return bridge;
-  // Window-scoped: Rust emits `pty-data`/`pty-exit` to the owner window, so a
-  // plain listener would decode (and acknowledge) every other window's output.
+  const generation = ++bridgeGeneration;
   const pending = Promise.allSettled([
     listenWindowAsync<DataPayload>("pty-data", (event) => {
+      if (bridgeGeneration !== generation) return;
       const { id, data, flow } = event.payload;
       const acknowledge = pendingAck(id, flow);
       const handler = dataHandlers.get(id);
@@ -179,6 +176,7 @@ function ensureBridge() {
       }
     }),
     listenWindowAsync<ExitPayload>("pty-exit", (event) => {
+      if (bridgeGeneration !== generation) return;
       const { id, code } = event.payload;
       const slot = ackSlots.get(id);
       if (slot) flushAck(id, slot);
@@ -195,6 +193,7 @@ function ensureBridge() {
     );
     const failure = results.find((result) => result.status === "rejected");
     if (!failure) return listeners;
+    if (bridgeGeneration === generation) bridgeGeneration++;
     // A partly registered bridge must not leak its successful listener or cache
     // a rejected promise forever. A subsequent terminal subscription can retry.
     for (const unlisten of listeners) {
@@ -235,6 +234,7 @@ function release() {
     teardownTimer = undefined;
     if (users > 0) return;
     flushAcks();
+    bridgeGeneration++;
     bridge = null;
     void pending.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
   }, 500);
@@ -280,10 +280,16 @@ export function resizePty(id: string, cols: number, rows: number): Promise<void>
   next.running = (async () => {
     try {
       let sent: [number, number] | null = null;
+      let failure: unknown;
       while (!sent || sent[0] !== next.cols || sent[1] !== next.rows) {
         sent = [next.cols, next.rows];
-        await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+        try {
+          await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+        } catch (error) {
+          failure = error;
+        }
       }
+      if (failure !== undefined) throw failure;
     } finally {
       resizeSlots.delete(id);
     }

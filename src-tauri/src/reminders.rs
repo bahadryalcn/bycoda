@@ -63,7 +63,7 @@ pub struct OpenReminder {
 #[derive(Default)]
 pub struct ReminderService {
     preferences: Mutex<Option<DeliveryPreferences>>,
-    pending_open: Mutex<Option<OpenReminder>>,
+    pending_open: Mutex<std::collections::VecDeque<OpenReminder>>,
     window_sessions: Mutex<HashMap<String, Vec<String>>>,
 }
 
@@ -171,8 +171,7 @@ fn take_due(
 
 #[tauri::command(async)]
 pub fn reminder_list(store: State<'_, SessionStore>) -> Result<Vec<Reminder>, String> {
-    let conn = store.lock_conn()?;
-    list(&conn).map_err(|error| error.to_string())
+    store.with_read_conn(|conn| list(conn).map_err(|error| error.to_string()))
 }
 
 #[tauri::command(async)]
@@ -293,13 +292,21 @@ pub fn reminder_take_open(
         .pending_open
         .lock()
         .map_err(|error| error.to_string())?;
-    if pending.as_ref().is_some_and(|request| {
+    if let Some(index) = pending.iter().position(|request| {
         request
             .window_label
             .as_deref()
             .is_none_or(|label| label == window.label() || app.get_webview_window(label).is_none())
     }) {
-        return Ok(pending.take());
+        let request = pending.remove(index);
+        if pending.iter().any(|next| {
+            next.window_label.as_deref().is_none_or(|label| {
+                label == window.label() || app.get_webview_window(label).is_none()
+            })
+        }) {
+            let _ = app.emit_to(window.label(), OPEN, ());
+        }
+        return Ok(request);
     }
     Ok(None)
 }
@@ -326,7 +333,10 @@ fn queue_open(app: &AppHandle, session_id: String, due_at: i64) -> Result<(), St
         let mut windows = handle.webview_windows();
         windows.retain(|label, _| crate::window::is_workspace_window(label));
         let service = handle.state::<ReminderService>();
-        let owners = service.window_sessions.lock().ok();
+        let mut owners = service.window_sessions.lock().ok();
+        if let Some(owners) = owners.as_mut() {
+            owners.retain(|label, _| windows.contains_key(label));
+        }
         let owns_session = |window: &&WebviewWindow| {
             owners.as_ref().is_some_and(|owners| {
                 owners
@@ -358,13 +368,13 @@ fn queue_open(app: &AppHandle, session_id: String, due_at: i64) -> Result<(), St
         };
         drop(owners);
         if let Ok(mut pending) = service.pending_open.lock() {
-            *pending = Some(request);
+            pending.push_back(request);
         }
         if let Some(window) = target {
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
-            let _ = window.emit(OPEN, ());
+            let _ = handle.emit_to(window.label(), OPEN, ());
         } else {
             let _ = crate::window::open_new_window(&handle);
         }

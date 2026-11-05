@@ -238,9 +238,7 @@ it("mutes several selected projects without changing another project's notificat
   act(() => checkbox("Select me/other").click());
   const bulk = container.querySelector('[aria-label="Mute selected projects"]');
   expect(bulk).not.toBeNull();
-  act(() =>
-    bulk!.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!.click(),
-  );
+  act(() => bulk!.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!.click());
   const eightHours = [...document.querySelectorAll('[role="menuitem"]')].find((button) =>
     button.textContent?.startsWith("8 hours ("),
   );

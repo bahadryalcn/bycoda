@@ -9,7 +9,15 @@ let latest: Result;
 let root: Root;
 let container: HTMLDivElement;
 
-function Probe({ resetKey, count, initial }: { resetKey: string; count: number; initial?: number }) {
+function Probe({
+  resetKey,
+  count,
+  initial,
+}: {
+  resetKey: string;
+  count: number;
+  initial?: number;
+}) {
   const result = useKeyedActiveIndex(resetKey, count, initial);
   useLayoutEffect(() => {
     latest = result;

@@ -156,6 +156,9 @@ export async function persistVoiceOwnerChoice(
         ...(value.answer.custom?.[saved.id]
           ? { custom: { [question.id]: value.answer.custom[saved.id] } }
           : {}),
+        ...(value.answer.notes?.[saved.id]
+          ? { notes: { [question.id]: value.answer.notes[saved.id] } }
+          : {}),
       };
     };
     return {

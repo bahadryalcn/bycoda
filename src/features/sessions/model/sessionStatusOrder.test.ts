@@ -36,6 +36,8 @@ it("prioritizes input, failure and working, preserving finished/history ties", (
     "old-a",
   ]);
   expect(compare(row("retry", "retrying"), row("working"))).toBe(0);
+  expect(compare({ ...row("interrupted"), interrupted: true }, row("failed", "failed"))).toBe(0);
+  expect(compare({ ...row("working"), interrupted: true }, row("working"))).toBe(0);
 });
 
 it("applies status changes inside ordered folders, pins, reminders and loose rows", () => {

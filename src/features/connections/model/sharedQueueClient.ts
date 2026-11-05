@@ -1,4 +1,4 @@
-import { persistableQueue } from "../../sessions/model/queuePersistence";
+import { persistableQueue } from "../../sessions/public/queuePersistence";
 import { cachedRemoteCapabilities, remoteRequest } from "./connections";
 import {
   ATTACHMENT_OWNERSHIP_CAPABILITY,

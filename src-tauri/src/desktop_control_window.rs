@@ -15,7 +15,8 @@ use tauri::{
 
 pub const LABEL: &str = "desktop-control-indicator";
 const EVENT: &str = "desktop_control_indicator_state";
-const POLL: Duration = Duration::from_secs(1);
+const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+const CHANGE_WAIT: Duration = Duration::from_secs(25);
 const DEADLINE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -90,6 +91,7 @@ impl Core {
                 self.view.status_error = false;
             }
             Err(_) => {
+                self.view.status = None;
                 self.view.status_error = true;
             }
         }
@@ -353,6 +355,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
     std::thread::Builder::new()
         .name("desktop-control-indicator".into())
         .spawn(move || {
+            let mut revision = String::new();
             while app.state::<State>().running.load(Ordering::Acquire) {
                 let generation = {
                     let state = app.state::<State>();
@@ -410,7 +413,24 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                         publish(&app);
                     }
                 }
-                std::thread::sleep(POLL);
+                let source = app.state::<State>().source.lock().ok().and_then(|source| source.clone());
+                let change = source.as_ref().ok_or("Computer control source is unavailable".to_string()).and_then(|source| {
+                    source.project_until("desktop.status.wait", json!({"afterRevision": revision.clone(), "timeoutMs": 25000}), Instant::now() + CHANGE_WAIT + DEADLINE, |value| {
+                        value["revision"].as_str().filter(|revision| revision.len() <= 100).map(str::to_owned).ok_or("Computer control status revision is invalid".into())
+                    })
+                });
+                match change {
+                    Ok(next) => revision = next,
+                    Err(error) => {
+                        let state = app.state::<State>();
+                        if let Ok(mut core) = state.core.lock() { let generation = core.generation; core.poll(generation, Err(error)); }
+                        if let Ok(mut captured) = state.source.lock() {
+                            if source.as_ref().is_some_and(|old| captured.as_ref().is_some_and(|current| Arc::ptr_eq(old, current)) && !old.is_current()) { *captured = None; revision.clear(); }
+                        }
+                        publish(&app);
+                        std::thread::sleep(RECONNECT_DELAY);
+                    }
+                }
             }
         })
         .map_err(|error| error.to_string())?;
@@ -585,6 +605,7 @@ mod tests {
         core.poll(0, Err("unavailable".into()));
         assert!(core.view.visible);
         assert!(core.view.status_error);
+        assert!(core.view.status.is_none());
         assert!(core.dismiss().is_err());
     }
     #[test]

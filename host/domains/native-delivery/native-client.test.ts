@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
-import { fixture } from "../../native-devices.test-support";
-import { deliverySha } from "../../native-delivery.test-support";
+import { fixture } from "../../devices/native-devices.test-support";
+import { deliverySha } from "../../native-delivery/native-delivery.test-support";
 import { nativeDeliveryEpochOriginalId } from "../../../src/shared/model/host-contracts/native-delivery-epochs";
 
 const binary = process.env.BYCODA_NATIVE_DELIVERY_TEST_BINARY;

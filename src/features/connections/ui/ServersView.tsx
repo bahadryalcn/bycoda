@@ -397,7 +397,9 @@ export function ServersView({
         dragRegion
         chromeInset={!besideRail ? true : compactRail ? "compact" : false}
         className="select-none"
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         trailing={IS_MAC ? null : <WindowControls />}
       >
         <ToolHeader>
@@ -410,85 +412,89 @@ export function ServersView({
       <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
         <div className="servers-search-actions flex min-w-0 basis-64 flex-1 items-center gap-2">
           {showCollectionTools ? (
-          <>
-          <SearchInput
-            appearance="field"
-            containerClassName="servers-search min-w-0 max-w-96 flex-1"
-            aria-label={t("Search servers")}
-            placeholder={t("Search by name or address")}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <Button
-            ref={filtersAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("Server filters")}
-            selected={filterCount > 0 || recentFirst}
-            aria-expanded={filtersOpen}
-            aria-haspopup="dialog"
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            <ListFilter aria-hidden className="icon-sm" />
-            {filterCount > 0 ? <span aria-hidden className="text-ui-caption tabular-nums">{filterCount}</span> : null}
-          </Button>
-          {filtersOpen ? (
-            <Popover
-              anchor={filtersAnchor}
-              align="end"
-              width={280}
-              role="dialog"
-              aria-label={t("Server filters")}
-              onDismiss={() => setFiltersOpen(false)}
-            >
-              <div className="flex flex-col gap-3 p-3">
-                <SearchableSelect
-                  label={t("Group")}
-                  value={group}
-                  options={[
-                    { value: "", label: t("All groups") },
-                    ...groups.map((value) => ({ value, label: value })),
-                  ]}
-                  onChange={setGroup}
-                />
-                <SearchableSelect
-                  label={t("Tags")}
-                  value={tag}
-                  options={[
-                    { value: "", label: t("All tags") },
-                    ...tags.map((value) => ({ value, label: value })),
-                  ]}
-                  onChange={setTag}
-                />
-                <Switch
-                  label={t("Favorites only")}
-                  checked={favoritesOnly}
-                  onCheckedChange={setFavoritesOnly}
-                />
-                <div className="border-t border-stroke pt-3">
-                  <Switch
-                    label={t("Recently used first")}
-                    checked={recentFirst}
-                    onCheckedChange={setRecentFirst}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  disabled={!filterCount && !recentFirst}
-                  onClick={() => {
-                    setGroup("");
-                    setTag("");
-                    setFavoritesOnly(false);
-                    setRecentFirst(false);
-                  }}
+            <>
+              <SearchInput
+                appearance="field"
+                containerClassName="servers-search min-w-0 max-w-96 flex-1"
+                aria-label={t("Search servers")}
+                placeholder={t("Search by name or address")}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <Button
+                ref={filtersAnchor}
+                variant="ghost"
+                iconOnly
+                label={t("Server filters")}
+                selected={filterCount > 0 || recentFirst}
+                aria-expanded={filtersOpen}
+                aria-haspopup="dialog"
+                onClick={() => setFiltersOpen(!filtersOpen)}
+              >
+                <ListFilter aria-hidden className="icon-sm" />
+                {filterCount > 0 ? (
+                  <span aria-hidden className="text-ui-caption tabular-nums">
+                    {filterCount}
+                  </span>
+                ) : null}
+              </Button>
+              {filtersOpen ? (
+                <Popover
+                  anchor={filtersAnchor}
+                  align="end"
+                  width={280}
+                  role="dialog"
+                  aria-label={t("Server filters")}
+                  onDismiss={() => setFiltersOpen(false)}
                 >
-                  {t("Reset filters")}
-                </Button>
-              </div>
-            </Popover>
-          ) : null}
-          <ViewToggle layout={layout} onChange={setLayout} />
-          </>
+                  <div className="flex flex-col gap-3 p-3">
+                    <SearchableSelect
+                      label={t("Group")}
+                      value={group}
+                      options={[
+                        { value: "", label: t("All groups") },
+                        ...groups.map((value) => ({ value, label: value })),
+                      ]}
+                      onChange={setGroup}
+                    />
+                    <SearchableSelect
+                      label={t("Tags")}
+                      value={tag}
+                      options={[
+                        { value: "", label: t("All tags") },
+                        ...tags.map((value) => ({ value, label: value })),
+                      ]}
+                      onChange={setTag}
+                    />
+                    <Switch
+                      label={t("Favorites only")}
+                      checked={favoritesOnly}
+                      onCheckedChange={setFavoritesOnly}
+                    />
+                    <div className="border-t border-stroke pt-3">
+                      <Switch
+                        label={t("Recently used first")}
+                        checked={recentFirst}
+                        onCheckedChange={setRecentFirst}
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      disabled={!filterCount && !recentFirst}
+                      onClick={() => {
+                        setGroup("");
+                        setTag("");
+                        setFavoritesOnly(false);
+                        setRecentFirst(false);
+                      }}
+                    >
+                      {t("Reset filters")}
+                    </Button>
+                  </div>
+                </Popover>
+              ) : null}
+              <ViewToggle layout={layout} onChange={setLayout} />
+            </>
           ) : null}
           <Button
             variant="ghost"
@@ -531,8 +537,18 @@ export function ServersView({
               anchor={actionsAnchor}
               label={t("Add")}
               items={[
-                { kind: "item", id: "add-ssh", label: t("Add SSH server"), description: t("SSH terminal access") },
-                { kind: "item", id: "add-machine", label: t("Add machine"), description: t("Connect a machine running bycoda Host") },
+                {
+                  kind: "item",
+                  id: "add-ssh",
+                  label: t("Add SSH server"),
+                  description: t("SSH terminal access"),
+                },
+                {
+                  kind: "item",
+                  id: "add-machine",
+                  label: t("Add machine"),
+                  description: t("Connect a machine running bycoda Host"),
+                },
                 { kind: "sep" },
                 { kind: "item", id: "import-termius", label: t("Import from Termius") },
               ]}
@@ -609,7 +625,7 @@ export function ServersView({
           {servers.length > 0 || !loaded ? (
             <div
               aria-busy={bulkBusy}
-              className="servers-selection-bar sticky top-0 z-1 bg-(--color-background-base) text-ui-caption"
+              className="servers-selection-bar sticky top-0 z-1 bg-(--ui-workspace-reading-base) text-ui-caption"
             >
               {checkedServers.length > 0 ? (
                 <Checkbox
@@ -633,9 +649,11 @@ export function ServersView({
               <h1 className="min-w-0 text-ui-body font-medium">
                 {t("Servers")}{" "}
                 <span className="text-(--ui-text-muted) tabular-nums">
-                  {loaded ? (filtered.length === servers.length
-                    ? servers.length
-                    : `${filtered.length} / ${servers.length}`) : null}
+                  {loaded
+                    ? filtered.length === servers.length
+                      ? servers.length
+                      : `${filtered.length} / ${servers.length}`
+                    : null}
                 </span>
               </h1>
               {checkedServers.length ? (
@@ -788,27 +806,27 @@ export function ServersView({
                     </div>
                   </div>
                 ) : null}
-                  <dl className="mbe-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-ui-caption">
-                    <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
-                    <dd className="break-all">{address(selected)}</dd>
-                    {selected.machine?.ssh || selected.sshEndpoint ? (
-                      <>
-                        <dt className="text-(--ui-text-muted)">{t("SSH port")}</dt>
-                        <dd>
-                          {selected.effectiveSshEndpoint?.port ??
-                            selected.sshEndpoint?.port ??
-                            selected.machine?.ssh?.port ??
-                            22}
-                        </dd>
-                        {selected.machine?.ssh ? (
-                          <>
-                            <dt className="text-(--ui-text-muted)">{t("Host service port")}</dt>
-                            <dd>{selected.machine.ssh.remotePort}</dd>
-                          </>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </dl>
+                <dl className="mbe-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-ui-caption">
+                  <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
+                  <dd className="break-all">{address(selected)}</dd>
+                  {selected.machine?.ssh || selected.sshEndpoint ? (
+                    <>
+                      <dt className="text-(--ui-text-muted)">{t("SSH port")}</dt>
+                      <dd>
+                        {selected.effectiveSshEndpoint?.port ??
+                          selected.sshEndpoint?.port ??
+                          selected.machine?.ssh?.port ??
+                          22}
+                      </dd>
+                      {selected.machine?.ssh ? (
+                        <>
+                          <dt className="text-(--ui-text-muted)">{t("Host service port")}</dt>
+                          <dd>{selected.machine.ssh.remotePort}</dd>
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+                </dl>
                 <ServersConnectionTools
                   key={selected.id}
                   server={selected}

@@ -1,3 +1,4 @@
+import { LiveAgentWindowWatches } from "./liveAgentWindowWatches";
 import { getSessionsRevision } from "../../features/sessions/model/sessionsStore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emit, emitTo, listen } from "@tauri-apps/api/event";
@@ -10,8 +11,7 @@ const REQUEST = "workspace_live_agents_request";
 const FOCUS = "workspace_focus_live_agent";
 const GONE = "workspace_live_agents_gone";
 
-/** Rebroadcast and dead-window sweep. A closing window announces itself via
- * `GONE`, so this is only the fallback for crashes and missed events. */
+/** Each visible owner publishes its distinct summary; peer lifecycle is event driven. */
 const HEARTBEAT_MS = 30_000;
 
 function shallowEqualRecord(a: object | undefined, b: object | undefined): boolean {
@@ -46,7 +46,8 @@ export function useWindowLiveAgents(
   localRef.current = local;
   const ownedRef = useRef(ownedSessionKeys);
   ownedRef.current = ownedSessionKeys;
-  const [snapshots, setSnapshots] = useState<Map<string, WindowLiveAgents>>(() => new Map());
+  const snapshotsRef = useRef(new Map<string, WindowLiveAgents>());
+  const [snapshots, setSnapshots] = useState(snapshotsRef.current);
   // Streamed prose does not trigger broadcasts; only changes to the rail do.
   const previousRef = useRef({
     local,
@@ -64,6 +65,23 @@ export function useWindowLiveAgents(
   useEffect(() => {
     let disposed = false;
     const unlisteners: Array<() => void> = [];
+    const watches = new LiveAgentWindowWatches({
+      listWindows: async () =>
+        (await getAllWindows()).map((peer) => ({
+          label: peer.label,
+          // Window.listen targets {kind: "Window", label}; global listen/current-window helper would select a different target.
+          listenDestroyed: (handler: () => void) => peer.listen("tauri://destroyed", handler),
+        })),
+      current: (owner) => snapshotsRef.current.get(owner),
+      missing: (record) => {
+        if (disposed || snapshotsRef.current.get(record.ownerWindowLabel) !== record) return;
+        const next = new Map(snapshotsRef.current);
+        next.delete(record.ownerWindowLabel);
+        snapshotsRef.current = next;
+        setSnapshots(next);
+      },
+      visible: () => !document.hidden,
+    });
     const publish = () =>
       emit(SNAPSHOT, {
         ownerWindowLabel: label,
@@ -78,34 +96,31 @@ export function useWindowLiveAgents(
         [
           listen<WindowLiveAgents>(SNAPSHOT, ({ payload }) => {
             if (disposed || payload.ownerWindowLabel === label) return;
-            setSnapshots((previous) => {
-              const prior = previous.get(payload.ownerWindowLabel);
-              if (
-                prior &&
-                ((payload.sourceId &&
-                  typeof payload.revision === "number" &&
-                  prior.sourceId === payload.sourceId &&
-                  (prior.revision ?? -1) >= payload.revision) ||
-                  ((!payload.sourceId || payload.revision === undefined) &&
-                    sameSummary(
-                      { local: prior.agents, owned: prior.ownedSessionKeys },
-                      payload.agents,
-                      payload.ownedSessionKeys,
-                    )))
-              )
-                return previous;
-              return new Map(previous).set(payload.ownerWindowLabel, payload);
-            });
+            const previous = snapshotsRef.current;
+            const prior = previous.get(payload.ownerWindowLabel);
+            if (
+              prior &&
+              ((payload.sourceId &&
+                typeof payload.revision === "number" &&
+                prior.sourceId === payload.sourceId &&
+                (prior.revision ?? -1) >= payload.revision) ||
+                ((!payload.sourceId || payload.revision === undefined) &&
+                  sameSummary(
+                    { local: prior.agents, owned: prior.ownedSessionKeys },
+                    payload.agents,
+                    payload.ownedSessionKeys,
+                  )))
+            )
+              return;
+            const next = new Map(previous).set(payload.ownerWindowLabel, payload);
+            snapshotsRef.current = next;
+            watches.observe(payload);
+            setSnapshots(next);
           }),
-          listen<{ ownerWindowLabel?: string }>(GONE, ({ payload }) => {
+          listen<{ ownerWindowLabel?: string; sourceId?: string }>(GONE, ({ payload }) => {
             const owner = payload?.ownerWindowLabel;
             if (disposed || !owner || owner === label) return;
-            setSnapshots((previous) => {
-              if (!previous.has(owner)) return previous;
-              const next = new Map(previous);
-              next.delete(owner);
-              return next;
-            });
+            watches.gone(owner, payload.sourceId);
           }),
           listen(REQUEST, () => {
             if (!disposed) void publish().catch(() => {});
@@ -121,37 +136,26 @@ export function useWindowLiveAgents(
         await emit(REQUEST);
       }
     };
+    for (const record of snapshotsRef.current.values()) watches.observe(record);
     void register().catch(() => {});
-    const sweep = () =>
-      void getAllWindows()
-        .then((windows) => {
-          if (disposed) return;
-          const alive = new Set(windows.map((window) => window.label));
-          setSnapshots((previous) => {
-            if ([...previous.keys()].every((owner) => alive.has(owner))) return previous;
-            return new Map([...previous].filter(([owner]) => alive.has(owner)));
-          });
-        })
-        .catch(() => {});
     const timer = window.setInterval(() => {
-      // A hidden window shows no rail: skip the rebroadcast and the window
-      // list IPC; returning to view republishes and sweeps immediately.
+      // Hidden owners still answer REQUEST; periodic publication alone pauses.
       if (document.hidden) return;
       void publish().catch(() => {});
-      sweep();
     }, HEARTBEAT_MS);
     const onVisible = () => {
       if (document.hidden) return;
       void publish().catch(() => {});
-      sweep();
+      watches.visible();
     };
     const onPageHide = () => {
-      void emit(GONE, { ownerWindowLabel: label }).catch(() => {});
+      void emit(GONE, { ownerWindowLabel: label, sourceId }).catch(() => {});
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       disposed = true;
+      watches.dispose();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pagehide", onPageHide);

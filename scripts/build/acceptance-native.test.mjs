@@ -16,7 +16,7 @@ import {
   assertRejectedNativeAdmission,
   validateAcceptanceRun,
 } from "./acceptance-native.mjs";
-import { nativeDevDesktopDataPath } from "../../host/workspace-bootstrap.ts";
+import { nativeDevDesktopDataPath } from "../../host/workspaces/workspace-bootstrap.ts";
 
 test("requires the Host writer rejection and exact new reservation before legacy recovery seeding", () => {
   const expected = {

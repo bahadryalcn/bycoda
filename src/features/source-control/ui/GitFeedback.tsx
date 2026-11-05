@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 

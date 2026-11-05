@@ -1,3 +1,9 @@
+import { prepareOutputVerification } from "./nativeOutputVerificationClient";
+import {
+  MAX_OUTPUT_ITEMS as MAX_ITEMS,
+  MAX_OUTPUT_BYTES as MAX_BYTES,
+} from "./nativeOutputVerification";
+export { frameNativeOutputItems } from "./nativeOutputVerification";
 import { z } from "zod";
 import { isHarnessConstructionId } from "../../../shared/model/harnessProcess";
 
@@ -124,6 +130,7 @@ type Runtime = {
   constructionInvalidationFailure: string | null;
   origins: WeakMap<NativeOutputEventOrigin, readonly NativeOutputItem[]>;
   outcomes: Map<NativeOutputItem, Item>;
+  outcomesByStream: Map<Stream, Set<Item>>;
   works: WeakMap<NativeOutputWork, { active: boolean; origin: NativeOutputEventOrigin }>;
   lineageVersion: number;
   workJobs: number;
@@ -145,6 +152,7 @@ const runtime: Runtime = hot?.data.nativeOutputDelivery ?? {
   constructionInvalidationFailure: null,
   origins: new WeakMap(),
   outcomes: new Map(),
+  outcomesByStream: new Map(),
   works: new WeakMap(),
   lineageVersion: 2,
   workJobs: 0,
@@ -161,6 +169,16 @@ if (runtime.lineageVersion !== 2) {
   runtime.lineageVersion = 2;
 }
 runtime.outcomes ??= new Map();
+// Preserve diagnostics across hot replacement without rescanning the global
+// retained history on every stream inspection.
+if (!runtime.outcomesByStream) {
+  runtime.outcomesByStream = new Map();
+  for (const item of runtime.outcomes.values()) {
+    let items = runtime.outcomesByStream.get(item.batch.stream);
+    if (!items) runtime.outcomesByStream.set(item.batch.stream, (items = new Set()));
+    items.add(item);
+  }
+}
 runtime.works ??= new WeakMap();
 runtime.workJobs ??= 0;
 runtime.timers ??= new Map();
@@ -176,11 +194,7 @@ if (constructionHistoryMissing) {
     unavailable(stream, runtime.constructionInvalidationFailure);
 }
 if (hot) hot.data.nativeOutputDelivery = runtime;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const MAX_STREAMS = 512;
-const MAX_ITEMS = 4096;
-const MAX_BYTES = 1024 * 1024;
 const MAX_HASH_JOBS = 32;
 const MAX_PENDING_BATCHES = 128;
 const MAX_CAUSAL_WORK = 1024;
@@ -333,38 +347,6 @@ function advance(stream: Stream) {
   }
 }
 
-/** Binary framing matches Native; no JSON reserialization or newline joining. */
-export function frameNativeOutputItems(
-  channel: NativeOutputChannel,
-  items: readonly string[],
-): Uint8Array<ArrayBuffer> {
-  if (items.length < 1 || items.length > MAX_ITEMS) throw new Error("NATIVE_OUTPUT_ITEMS_CAPACITY");
-  let length = 0;
-  const bytes = items.map((item) => {
-    if (typeof item !== "string" || item.length > MAX_BYTES)
-      throw new Error("NATIVE_OUTPUT_BYTES_CAPACITY");
-    const value = encoder.encode(item);
-    length += value.byteLength;
-    if (length > MAX_BYTES) throw new Error("NATIVE_OUTPUT_BYTES_CAPACITY");
-    if (decoder.decode(value) !== item) throw new Error("NATIVE_OUTPUT_INVALID_UTF8");
-    return value;
-  });
-  const prefix = encoder.encode("bycoda-native-output-items-v1\0");
-  const result = new Uint8Array(prefix.length + 5 + items.length * 8 + length);
-  result.set(prefix);
-  result[prefix.length] = channel === "stdout" ? 1 : channel === "stderr" ? 2 : 3;
-  const view = new DataView(result.buffer);
-  view.setUint32(prefix.length + 1, items.length, true);
-  let offset = prefix.length + 5;
-  for (const item of bytes) {
-    view.setUint32(offset, item.byteLength, true);
-    view.setUint32(offset + 4, 0, true);
-    result.set(item, offset + 8);
-    offset += 8 + item.byteLength;
-  }
-  return result;
-}
-
 /** Always preserve ordinary provider delivery, even when metadata is unusable. */
 export function observeNativeOutputBatch(
   sessionId: string,
@@ -401,12 +383,9 @@ export function observeNativeOutputBatch(
   if (stream.pending.size >= MAX_PENDING_BATCHES || runtime.hashJobs >= MAX_HASH_JOBS)
     unavailable(stream, "renderer-capacity");
   if (stream.unavailable) return;
-  let framed: Uint8Array<ArrayBuffer>;
+  let verify: () => Promise<string>;
   try {
-    framed = frameNativeOutputItems(channel, items);
-    const overhead =
-      encoder.encode("bycoda-native-output-items-v1\0").length + 5 + items.length * 8;
-    if (framed.byteLength - overhead !== value.utf8Bytes) throw new Error("byte-count");
+    verify = prepareOutputVerification(channel, items, value.utf8Bytes);
   } catch {
     unavailable(stream, "invalid-payload");
     return;
@@ -464,26 +443,37 @@ export function observeNativeOutputBatch(
     // Bounded diagnostic history; private token ownership lives in the WeakMap.
     if (runtime.outcomes.size >= MAX_RETAINED_OUTCOMES) {
       const oldest = runtime.outcomes.keys().next().value!;
-      runtime.outcomes.get(oldest)!.batch.stream.diagnosticsTruncated = true;
+      const removed = runtime.outcomes.get(oldest)!;
+      removed.batch.stream.diagnosticsTruncated = true;
+      const items = runtime.outcomesByStream.get(removed.batch.stream);
+      items?.delete(removed);
+      if (items?.size === 0) runtime.outcomesByStream.delete(removed.batch.stream);
       runtime.outcomes.delete(oldest);
     }
     runtime.outcomes.set(token, owned);
+    let streamOutcomes = runtime.outcomesByStream.get(stream);
+    if (!streamOutcomes) runtime.outcomesByStream.set(stream, (streamOutcomes = new Set()));
+    streamOutcomes.add(owned);
     return token;
   });
   runtime.hashJobs++;
   void Promise.resolve()
-    .then(() => crypto.subtle.digest("SHA-256", framed))
-    .then((digest) => {
-      const actual = [...new Uint8Array(digest)]
-        .map((part) => part.toString(16).padStart(2, "0"))
-        .join("");
+    .then(verify)
+    .then((actual) => {
       if (actual !== value.payloadSha256) unavailable(stream, "payload-digest");
       else {
         batch.digestVerified = true;
         advance(stream);
       }
     })
-    .catch(() => unavailable(stream, "digest-unavailable"))
+    .catch((error) =>
+      unavailable(
+        stream,
+        error instanceof Error && error.message === "invalid-payload"
+          ? "invalid-payload"
+          : "digest-unavailable",
+      ),
+    )
     .finally(() => {
       runtime.hashJobs--;
     });
@@ -568,7 +558,8 @@ export function captureNativeOutputEvent(sessionId: string, event: object): void
   }
   runtime.events.set(event, { origin: current, sessionId, applied: false });
   for (const item of items) if (item.outcome === "pending-parser") item.outcome = "emitted";
-  const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+  const streams =
+    items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
   for (const stream of streams) {
     if (stream.queuedEvents < Number.MAX_SAFE_INTEGER) stream.queuedEvents++;
     else unavailable(stream, "event-count-capacity");
@@ -739,8 +730,10 @@ export function retainNativeOutputEventOrigin(
     failOrigin(origin, "causal-session-changed");
     return null;
   }
-  const batches = items.length === 1 ? [items[0].batch] : [...new Set(items.map((item) => item.batch))];
-  const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+  const batches =
+    items.length === 1 ? [items[0].batch] : [...new Set(items.map((item) => item.batch))];
+  const streams =
+    items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
   for (const batch of batches) batch.causalPending ??= 0;
   for (const stream of streams) {
     stream.causalPending ??= 0;
@@ -973,7 +966,10 @@ export function markNativeOutputEventsApplied(sessionId: string, events: readonl
       continue;
     }
     origin.applied = true;
-    const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+    const streams =
+      items.length === 1
+        ? [items[0].batch.stream]
+        : new Set(items.map((item) => item.batch.stream));
     for (const stream of streams) {
       if (stream.appliedEvents < Number.MAX_SAFE_INTEGER) stream.appliedEvents++;
       else unavailable(stream, "event-count-capacity");
@@ -1027,17 +1023,15 @@ export function inspectNativeOutputDelivery(sessionId: string) {
             nativeLastSequence: stream.terminal?.lastSequence ?? null,
             pendingBatches: stream.pending.size,
             outcomes: Object.freeze(
-              [...runtime.outcomes.values()]
-                .filter((item) => item.batch.stream === stream)
-                .map((item) =>
-                  Object.freeze({
-                    sequence: item.batch.sequence,
-                    itemIndex: item.comparison.itemIndex,
-                    outcome: item.outcome,
-                    reason: item.outcomeReason,
-                    unavailableReason: stream.unavailable,
-                  }),
-                ),
+              [...(runtime.outcomesByStream.get(stream) ?? [])].map((item) =>
+                Object.freeze({
+                  sequence: item.batch.sequence,
+                  itemIndex: item.comparison.itemIndex,
+                  outcome: item.outcome,
+                  reason: item.outcomeReason,
+                  unavailableReason: stream.unavailable,
+                }),
+              ),
             ),
             diagnosticsTruncated: stream.diagnosticsTruncated === true,
             unavailableReason: stream.unavailable,

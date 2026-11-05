@@ -15,7 +15,7 @@ import {
   type GitHistoryCommit,
   type GitStashEntry,
 } from "../../../platform/tauri/fs";
-import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCapabilities";
+import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback } from "./GitFeedback";
 import {
@@ -157,7 +157,12 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       ) : null}
       {open ? (
         entries.length === 0 && !loading && !error ? (
-          <EmptyState size="inline" kind="empty" className="px-3 pt-0" description={t("No stashes")} />
+          <EmptyState
+            size="inline"
+            kind="empty"
+            className="px-3 pt-0"
+            description={t("No stashes")}
+          />
         ) : (
           <ul className="max-h-[min(10rem,20vh)] overflow-y-auto pb-1">
             {entries.map((entry) => (

@@ -41,3 +41,15 @@ Owner quote, 2026-11-03; source: owner chat in the live background timing sessio
 > live background effektleri çok kısa sürede kayboluyor belli bir süre gözüküp kaybolması gerekiyor msela yüzler 10 15 saniye sonra kaybolup yine bir süre sonra belirmesi gerekiyor ama şuanda öyle değil
 
 This set the appear/hold/rest rhythm in `live-background/calmSignal.ts` (`SHOW_SECONDS`, `REST_SECONDS`) for every live scene. Reappearance needs new output from the running turn, and an idle pane stays at rest; both are implementation choices, not owner decisions.
+
+## Canvas first
+
+Owner decision, 2026-11-05 (rules audit, confirming the 2026-10-31 Pure canvas default and the 2026-11-04 chat corrections). Recorded decision text:
+
+The ground is pure black in dark mode and pure white in light mode by default, and every ordinary surface shares it. Project rail, sidebars, chat and transcript areas, assistant chat, settings pages and their groups, collection lists, detail panes and empty states are the canvas, with hairline borders or spacing as separation. Nothing ordinary gets a gray fill, a mid-gray panel layer or a card tone of its own.
+
+Raised surfaces are reserved for floating surfaces, the composer writing area, code/terminal/log viewers, inputs and the hover/selected/drag states that already have roles. Appearance previews and danger zones keep their status tone.
+
+This supersedes the earlier default that standard panel and card surfaces use the shared raised surface role everywhere in the desktop app. The raised role is kept only for the cases above. Tinted canvas and custom surface colors keep the same hierarchy one step above their own ground.
+
+The Pure background tone (default) and Tinted tone are the origin of this rule; the 2026-10-31 Pure canvas quote above is their provenance.

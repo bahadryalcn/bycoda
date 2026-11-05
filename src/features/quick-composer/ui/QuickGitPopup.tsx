@@ -3,7 +3,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
 import {
@@ -35,7 +35,7 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
       setError("");
       setRequest(request);
     };
-    void listen<QuickGitRequest>(QUICK_GIT_REQUEST, ({ payload }) => {
+    void listenWindowAsync<QuickGitRequest>(QUICK_GIT_REQUEST, ({ payload }) => {
       received = true;
       accept(payload);
     })

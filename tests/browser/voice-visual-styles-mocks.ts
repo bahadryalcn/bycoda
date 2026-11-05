@@ -2,6 +2,11 @@
 export const fixtureVoice = {
   callbacks: null as any,
   connects: 0,
+  speakerMuted: false,
+  audioLevel: { current: 0 },
+  finishTool: null as null | ((value: unknown) => void),
+  pushToTalkStarts: 0,
+  pushToTalkEnds: 0,
   closes: 0,
   submits: 0,
   stops: 0,
@@ -22,14 +27,17 @@ export const fixtureVoice = {
   projectLists: 0,
   speech(text: string) {
     const onset = this.callbacks.start();
+    if (this.callbacks.interceptTranscript?.({ text }, onset)) return;
     const binding = this.callbacks.accept?.(onset) ?? onset;
     this.callbacks.transcript({ text }, binding);
   },
 };
 export class LocalVoice {
+  async retire() {}
   readonly level = { current: 0.55 };
   constructor(callbacks: any, _language?: string, _config?: unknown, level = this.level) {
     this.level = level;
+    fixtureVoice.audioLevel = level;
     this.level.current = 0.55;
     fixtureVoice.callbacks = callbacks;
   }
@@ -41,10 +49,25 @@ export class LocalVoice {
   close() {
     fixtureVoice.closes++;
   }
-  speak() {
+  speak(_text: string, _append?: boolean, delivered?: () => void) {
+    delivered?.();
     return true;
   }
-  mute() {}
+  mute(value: boolean) {
+    this.level.current = value ? 0 : 0.55;
+  }
+  beginPushToTalk() {
+    fixtureVoice.pushToTalkStarts++;
+    this.level.current = 0.55;
+    return true;
+  }
+  endPushToTalk() {
+    fixtureVoice.pushToTalkEnds++;
+    this.level.current = 0;
+  }
+  setOutputMuted(value: boolean) {
+    fixtureVoice.speakerMuted = value;
+  }
   finishTurn() {
     fixtureVoice.finishes++;
   }
@@ -56,6 +79,8 @@ export class LocalVoice {
   }
 }
 export const sessionsRef = { current: [] };
+export const getSessions = () => sessionsRef.current;
+export const subscribeSessionCommits = () => () => {};
 export const useSession = () => undefined;
 export const converseWithSession = () =>
   new URLSearchParams(location.search).has("remote")

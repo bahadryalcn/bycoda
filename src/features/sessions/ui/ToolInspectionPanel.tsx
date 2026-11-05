@@ -117,15 +117,23 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   const copy = () => {
     feedback.copy(() => copyMessage(copyText));
   };
-  const isJson = (section: (typeof sections)[number]) =>
-    !section.diff &&
-    !section.error &&
-    !section.truncated &&
-    section.title !== "Command" &&
-    section.title !== "Written content" &&
-    inspectionJson(section.text) !== null;
+  const presentation = useMemo(
+    () =>
+      sections.map((section) => ({
+        section,
+        json:
+          !section.diff &&
+          !section.error &&
+          !section.truncated &&
+          section.title !== "Command" &&
+          section.title !== "Written content"
+            ? inspectionJson(section.text)
+            : null,
+      })),
+    [sections],
+  );
   // JsonViewer owns its own layout, so the wrap choice only matters when some section is plain text.
-  const hasWrappable = sections.some((section) => !isJson(section));
+  const hasWrappable = presentation.some(({ json }) => json === null);
   const actions = [
     {
       id: "copy",
@@ -162,8 +170,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       data-tool-inspection
       className="flex min-w-0 flex-col gap-2 overflow-clip pb-2"
     >
-      {sections.map((section, index) => {
-        const json = isJson(section) ? inspectionJson(section.text) : null;
+      {presentation.map(({ section, json }, index) => {
         return (
           <section key={index} className="min-w-0">
             <div className="flex min-h-7 items-center justify-between gap-2 pr-1 pl-3">

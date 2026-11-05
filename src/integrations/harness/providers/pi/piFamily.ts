@@ -42,8 +42,11 @@ import {
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
-import { normalizeProjectPath } from "../../../../features/projects/model/recents";
-import type { UserQuestionReply } from "../../../../features/sessions/model/userQuestion";
+import { normalizeProjectPath } from "../../../../shared/lib/paths";
+import {
+  selectedAnswerLabels,
+  type UserQuestionReply,
+} from "../../../../features/sessions/model/userQuestion";
 import type {
   CommandContext,
   NativeCommand,
@@ -510,7 +513,8 @@ export async function steerTurn(flavor: PiFlavor, input: SteerTurnInput): Promis
   input = { ...input };
 
   const live = stateFor(flavor).liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!live?.activeTurn)
+    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
   const rpc = await piTurnWriter(
@@ -1494,7 +1498,7 @@ async function handleExtensionUi(
                   const selected = reply.answers[request.id]?.[0];
                   if (selected !== undefined && /^\d+$/.test(selected))
                     value = request.options[Number(selected)];
-                } else value = reply.custom?.[request.id];
+                } else value = selectedAnswerLabels(event.questions[0], reply)[0];
               }
               await nativeOutputSink(outputWork, writeChild)(
                 live.handle,
@@ -1546,7 +1550,7 @@ async function handleExtensionUi(
             if (selected !== undefined && /^\d+$/.test(selected))
               value = request.options[Number(selected)];
           } else {
-            value = reply.custom?.[request.id];
+            value = selectedAnswerLabels(event.questions[0], reply)[0];
           }
         }
         emitNative({

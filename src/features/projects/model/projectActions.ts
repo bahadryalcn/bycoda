@@ -1,6 +1,6 @@
 import { pathKey } from "../../../shared/lib/paths";
 import { canonicalShortcut } from "../../quick-composer/model/quickComposerShortcut";
-import { validateKeybindingShortcut } from "../../settings/model/settings";
+import { validateKeybindingShortcut } from "../../settings/public/settings";
 
 export const ACTION_ICONS = ["play", "terminal", "code", "globe", "wrench"] as const;
 export type ProjectAction = {

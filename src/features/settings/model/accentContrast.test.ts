@@ -105,7 +105,9 @@ describe("solid accent pair", () => {
 const CANVAS = { dark: "#171717", light: "#fafafa" } as const;
 
 function hsv(hex: string) {
-  const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const [r, g, b] = [1, 3, 5].map(
+    (offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255,
+  );
   const max = Math.max(r, g, b);
   const delta = max - Math.min(r, g, b);
   let hue = 0;
@@ -141,24 +143,34 @@ describe("text selection pair", () => {
     const whiteBand = (1 + 0.05) / 7 - 0.05;
     const visibleMin = (relativeLuminance(CANVAS.dark) + 0.05) * 3 - 0.05;
     expect(whiteBand).toBeLessThan(visibleMin);
-    expect(selectionAccentPair(ACCENTS.midPurple, "dark", "strong").foreground).toBe(ACCENT_INK_DARK);
+    expect(selectionAccentPair(ACCENTS.midPurple, "dark", "strong").foreground).toBe(
+      ACCENT_INK_DARK,
+    );
     // Black ink at 7:1 needs >= 0.3; 3:1 on #fafafa needs <= 0.285.
     const blackBand = 7 * 0.05 - 0.05;
     const visibleMax = (relativeLuminance(CANVAS.light) + 0.05) / 3 - 0.05;
     expect(blackBand).toBeGreaterThan(visibleMax);
-    expect(selectionAccentPair(ACCENTS.midPurple, "light", "strong").foreground).toBe(ACCENT_INK_LIGHT);
+    expect(selectionAccentPair(ACCENTS.midPurple, "light", "strong").foreground).toBe(
+      ACCENT_INK_LIGHT,
+    );
   });
 
   it("keeps the scheme ink when the accent barely has to move", () => {
-    expect(selectionAccentPair(ACCENTS.midPurple, "dark", "auto").foreground).toBe(ACCENT_INK_LIGHT);
-    expect(selectionAccentPair(ACCENTS.midPurple, "light", "auto").foreground).toBe(ACCENT_INK_DARK);
+    expect(selectionAccentPair(ACCENTS.midPurple, "dark", "auto").foreground).toBe(
+      ACCENT_INK_LIGHT,
+    );
+    expect(selectionAccentPair(ACCENTS.midPurple, "light", "auto").foreground).toBe(
+      ACCENT_INK_DARK,
+    );
   });
 
   it("keeps a pale accent on a dark canvas instead of darkening it into mustard", () => {
     const pair = selectionAccentPair(ACCENTS.lightYellow, "dark", "auto");
     expect(pair.background).toBe(ACCENTS.lightYellow);
     expect(pair.foreground).toBe(ACCENT_INK_DARK);
-    expect(selectionAccentPair(ACCENTS.deepPurple, "light", "auto").background).toBe(ACCENTS.deepPurple);
+    expect(selectionAccentPair(ACCENTS.deepPurple, "light", "auto").background).toBe(
+      ACCENTS.deepPurple,
+    );
   });
 
   it("keeps hue and chroma when the fill must move (no grey-khaki from mixing towards black)", () => {
@@ -175,7 +187,9 @@ describe("text selection pair", () => {
       expect(hueDistance(hsv(pair.background).hue, hsv(accent).hue)).toBeLessThan(8);
       // Darkening must not drain the colour; lifting a deep accent legitimately lowers HSV saturation.
       if (scheme === "light") {
-        expect(hsv(pair.background).saturation).toBeGreaterThanOrEqual(hsv(accent).saturation * 0.8);
+        expect(hsv(pair.background).saturation).toBeGreaterThanOrEqual(
+          hsv(accent).saturation * 0.8,
+        );
       }
     }
   });
@@ -184,7 +198,9 @@ describe("text selection pair", () => {
     const base = selectionAccentPair(ACCENTS.deepPurple, "dark", "auto");
     const canvas = { dark: "#3a4350", light: "#fafafa" };
     const lifted = selectionAccentPair(ACCENTS.deepPurple, "dark", "auto", canvas);
-    expect(relativeLuminance(lifted.background)).toBeGreaterThan(relativeLuminance(base.background));
+    expect(relativeLuminance(lifted.background)).toBeGreaterThan(
+      relativeLuminance(base.background),
+    );
     expect(lifted.ratio).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(lifted.background, canvas.dark)).toBeGreaterThanOrEqual(3);
   });
@@ -193,9 +209,7 @@ describe("text selection pair", () => {
     expect(selectionAccentPair(ACCENTS.deepPurple, "dark", "auto").background).not.toBe(
       ACCENTS.deepPurple,
     ); // too dark to see on a dark canvas, so it is lifted
-    expect(selectionAccentPair(ACCENTS.midGray, "light", "auto").background).toBe(
-      ACCENTS.midGray,
-    );
+    expect(selectionAccentPair(ACCENTS.midGray, "light", "auto").background).toBe(ACCENTS.midGray);
   });
 });
 
@@ -209,7 +223,9 @@ describe("paper selection pair (glyphs painted on a white page)", () => {
       }
     });
     it(`${name}: stays 3:1 apart from the page in auto`, () => {
-      expect(contrastRatio(paperSelectionPair(accent, "auto").background, PAPER_CANVAS)).toBeGreaterThanOrEqual(3);
+      expect(
+        contrastRatio(paperSelectionPair(accent, "auto").background, PAPER_CANVAS),
+      ).toBeGreaterThanOrEqual(3);
     });
   }
 

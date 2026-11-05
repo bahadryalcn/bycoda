@@ -4,7 +4,10 @@ import { type Submit } from "../helpers/types";
 import { isRecoverySessionHeld } from "../../../features/workspace/model/sessionRecovery";
 import { CONTINUE_PROMPT, canAutoContinue } from "../../../features/sessions/model/inFlight";
 import { isLiveHarness } from "../../../integrations/harness";
-import { claimAutoContinue, isAutoContinueDue } from "../../../features/sessions/model/autoContinue";
+import {
+  claimAutoContinue,
+  isAutoContinueDue,
+} from "../../../features/sessions/model/autoContinue";
 export interface AutoContinueDeps {
   sessions: Session[];
   sessionsRef: MutableRefObject<Session[]>;

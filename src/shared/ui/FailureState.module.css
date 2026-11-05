@@ -42,7 +42,7 @@
   color: var(--color-content);
 }
 .surface[data-fullscreen] {
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
 }
 
 .title {

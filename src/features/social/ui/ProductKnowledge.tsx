@@ -142,7 +142,8 @@ export function ProductKnowledge({
     setSuggest({ projectId: activeProject, working: false, error: "" });
   const review = suggest.projectId === activeProject ? suggest.review : undefined;
   const openSuggestions = review
-    ? visibleCandidates(review).filter((candidate) => !review.accepted.includes(candidate.id)).length
+    ? visibleCandidates(review).filter((candidate) => !review.accepted.includes(candidate.id))
+        .length
     : 0;
   const sourceText = draft.sourceText ?? "";
   const sourceLabel = draft.sourceLabel ?? "";
@@ -196,7 +197,12 @@ export function ProductKnowledge({
     const requestId =
       suggest.error && suggest.attempt?.key === key ? suggest.attempt.id : crypto.randomUUID();
     const mine = ++askToken.current;
-    setSuggest({ projectId: forProject, working: true, error: "", attempt: { id: requestId, key } });
+    setSuggest({
+      projectId: forProject,
+      working: true,
+      error: "",
+      attempt: { id: requestId, key },
+    });
     try {
       const result = await client.request<FactSuggestResult>("facts.suggest", input, requestId);
       if (mine !== askToken.current) return;
@@ -323,7 +329,9 @@ export function ProductKnowledge({
                 ? `${projectName ?? ""} · ${profile.productName || t("No product name")} · ${t("Verified facts")}: ${factCount}${profileSet ? "" : ` · ${t("Brand voice or name missing")}`}`
                 : `${projectName ?? ""} · ${t("No product profile yet. AI and automatic replies have no verified facts to use.")}`}
             {unsavedProfile || editing || added.length ? ` · ${t("Unsaved changes")}` : ""}
-            {openSuggestions ? ` · ${t("{p0} suggestions to review", { p0: openSuggestions })}` : ""}
+            {openSuggestions
+              ? ` · ${t("{p0} suggestions to review", { p0: openSuggestions })}`
+              : ""}
           </small>
         </div>
         <Button
@@ -341,7 +349,9 @@ export function ProductKnowledge({
       {open ? (
         <SocialDialog
           title={t("Product knowledge")}
-          description={t("Verified product facts are the only facts AI drafts and automatic replies may rely on.")}
+          description={t(
+            "Verified product facts are the only facts AI drafts and automatic replies may rely on.",
+          )}
           size="lg"
           onClose={() => {
             closing.current = true;
@@ -482,7 +492,9 @@ export function ProductKnowledge({
                       verifiedAt: Date.now(),
                     };
                     const facts = draft.factId
-                      ? (profile?.facts ?? []).map((item) => (item.id === draft.factId ? fact : item))
+                      ? (profile?.facts ?? []).map((item) =>
+                          item.id === draft.factId ? fact : item,
+                        )
                       : [...(profile?.facts ?? []), fact];
                     void (async () => {
                       if (
@@ -557,7 +569,10 @@ export function ProductKnowledge({
               ) : null}
             </section>
             {suggestOpen ? (
-              <section className="social-knowledge-suggest" aria-label={t("Suggest facts from text")}>
+              <section
+                className="social-knowledge-suggest"
+                aria-label={t("Suggest facts from text")}
+              >
                 <form
                   className="social-form"
                   onSubmit={(event) => {
@@ -591,7 +606,10 @@ export function ProductKnowledge({
                     visibleLabel
                     value={accountId}
                     disabled={socialLocked || suggest.working || !eligible.length}
-                    options={eligible.map((account) => ({ value: account.id, label: account.name }))}
+                    options={eligible.map((account) => ({
+                      value: account.id,
+                      label: account.name,
+                    }))}
                     onValueChange={(value) => updateDraft({ accountId: value })}
                   />
                   {blocked ? (
@@ -612,11 +630,11 @@ export function ProductKnowledge({
                     </p>
                   )}
                   {review && !suggest.working ? (
-                    <p className="social-muted">{t("Asking again replaces the suggestions below.")}</p>
+                    <p className="social-muted">
+                      {t("Asking again replaces the suggestions below.")}
+                    </p>
                   ) : null}
-                  {suggest.error ? (
-                    <InlineError>{suggest.error}</InlineError>
-                  ) : null}
+                  {suggest.error ? <InlineError>{suggest.error}</InlineError> : null}
                   <div className="social-actions">
                     <Button
                       type="submit"
@@ -669,7 +687,9 @@ export function ProductKnowledge({
                     size="sm"
                     type="button"
                     loading={pendingUi.is("project-profile.save-added-facts")}
-                    disabled={socialLocked || !activeProject || !productName.trim() || !voice.trim()}
+                    disabled={
+                      socialLocked || !activeProject || !productName.trim() || !voice.trim()
+                    }
                     onClick={saveAdded}
                   >
                     {t("Save added facts")}

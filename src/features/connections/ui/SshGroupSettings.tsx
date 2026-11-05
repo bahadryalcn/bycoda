@@ -60,6 +60,16 @@ export function SshGroupSettings({
     value: SshGroupDraft;
     expectedRevision: number | null;
   } | null>(`ssh-group-editor:${server.id}`, null);
+  const environmentIds = useRef<number[]>([]).current;
+  const nextEnvironmentId = useRef(0);
+  const environmentScope = useRef<string | undefined>(undefined);
+  if (environmentScope.current !== draft?.value.id) {
+    environmentScope.current = draft?.value.id;
+    environmentIds.length = 0;
+  }
+  const environmentCount = draft?.value.environment.length ?? 0;
+  while (environmentIds.length < environmentCount) environmentIds.push(nextEnvironmentId.current++);
+  if (environmentIds.length > environmentCount) environmentIds.length = environmentCount;
   const inheritance: SshInheritance | null = selected
     ? {
         groupId: selected,
@@ -403,7 +413,7 @@ export function SshGroupSettings({
                 />
               </fieldset>
               {draft.value.environment.map((entry, index) => (
-                <div key={index} className="mbs-2 flex min-w-0 items-end gap-1">
+                <div key={environmentIds[index]} className="mbs-2 flex min-w-0 items-end gap-1">
                   <TextField
                     fieldClassName="min-w-0 flex-1"
                     label={`${t("Variable name")} ${index + 1}`}
@@ -432,11 +442,12 @@ export function SshGroupSettings({
                   />
                   <Button
                     disabled={busy}
-                    onClick={() =>
+                    onClick={() => {
+                      environmentIds.splice(index, 1);
                       editDraft({
                         environment: draft.value.environment.filter((_, i) => i !== index),
-                      })
-                    }
+                      });
+                    }}
                   >
                     {t("Remove")}
                   </Button>

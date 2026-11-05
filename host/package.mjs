@@ -70,8 +70,18 @@ const target = args.includes("--target")
   : `${process.platform}-${process.arch}`;
 const targets = args.includes("--all") ? Object.keys(runtimes) : [target];
 const signDesktopHelper = args.includes("--sign-desktop-helper");
-if(signDesktopHelper && (process.platform!=="win32" || targets.length!==1 || target!==`win32-${process.arch}` || !args.includes("--desktop-helper")))
+if (
+  signDesktopHelper &&
+  (process.platform !== "win32" ||
+    targets.length !== 1 ||
+    target !== `win32-${process.arch}` ||
+    !args.includes("--desktop-helper"))
+)
   throw new Error("--sign-desktop-helper requires one local Windows target and --desktop-helper.");
+// macOS: sign the bundled helper with a stable identity so Accessibility and Screen
+// Recording grants survive Host updates. codesign exists only on macOS.
+const macosSigningIdentity =
+  process.env.BYCODA_MACOS_SIGNING_IDENTITY?.trim() || process.env.APPLE_SIGNING_IDENTITY?.trim();
 const desktopHelperCacheIndex = args.indexOf("--desktop-helper-cache");
 if (
   desktopHelperCacheIndex >= 0 &&
@@ -233,7 +243,12 @@ for (const target of targets) {
   await copyFile("build/host/bycoda-host.mjs", join(folder, "bycoda-host.mjs"));
   await copyFile("build/host/host-notes-worker.mjs", join(folder, "host-notes-worker.mjs"));
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
+  await copyFile("build/host/session-read-helper.mjs", join(folder, "session-read-helper.mjs"));
   await copyFile("build/host/snapshot-worker.mjs", join(folder, "snapshot-worker.mjs"));
+  await copyFile(
+    "build/host/workspace-cleanup-worker.mjs",
+    join(folder, "workspace-cleanup-worker.mjs"),
+  );
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
   if (desktopHelpers.has(target)) {
     const expected = desktopHelpers.get(target),
@@ -245,11 +260,27 @@ for (const target of targets) {
     );
     if (JSON.stringify(copied.manifest) !== JSON.stringify(expected.manifest))
       throw new Error(`Desktop helper changed before packaging ${target}`);
-    if(signDesktopHelper)await signDesktopHelperBundle(join(folder,"agent-desktop"),{
-      certificateThumbprint:process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
-      storeLocation:process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
-      arch,
-    });
+    if (platform === "darwin") {
+      if (process.platform === "darwin" && macosSigningIdentity)
+        await signDesktopHelperBundle(join(folder, "agent-desktop"), {
+          platform,
+          arch,
+          identity: macosSigningIdentity,
+        });
+      else
+        console.log(
+          `Desktop helper for ${target} stays ad-hoc signed (${
+            process.platform === "darwin"
+              ? "set BYCODA_MACOS_SIGNING_IDENTITY or APPLE_SIGNING_IDENTITY"
+              : "codesign requires macOS"
+          }); macOS resets its Accessibility and Screen Recording grants on every Host update.`,
+        );
+    } else if (signDesktopHelper)
+      await signDesktopHelperBundle(join(folder, "agent-desktop"), {
+        certificateThumbprint: process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
+        storeLocation: process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
+        arch,
+      });
   }
   if (nativeAdmission)
     await copyAdmissionBundle(

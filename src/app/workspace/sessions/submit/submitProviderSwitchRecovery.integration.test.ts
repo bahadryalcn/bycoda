@@ -51,6 +51,12 @@ import {
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
+vi.mock("../../../../features/connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<
+    typeof import("../../../../features/connections/model/sessionExecutionBinding")
+  >()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 vi.mock("../../../../features/settings/model/exactGitRewind", () => ({
   getExactGitRewindEnabled: vi.fn(async () => false),
 }));
@@ -428,16 +434,31 @@ describe("provider switch context and failed retirement recovery", () => {
     const request = "RECOVERED-REQUEST: resolve CONTRACT-7421 with the attached trace.";
     // Restore a failed divider produced before best-effort cleanup was introduced.
     // New submissions no longer fail solely because retirement is unverified.
-    setSessions((all) => all.map((session) => {
-      const source = session.pendingSwitch!;
-      const prepared = appendPreparingHandoff(session, "claude", "codex", source);
-      const failed = failHandoff(prepared, source, cleanupError!.message);
-      return { ...failed, blocks: [...failed.blocks, {
-        id: "preserved-user", role: "user", text: request, attachments: [currentAttachment],
-      }, {
-        id: "historical-cleanup-error", role: "system", text: cleanupError!.message, notice: "error",
-      }] };
-    }));
+    setSessions((all) =>
+      all.map((session) => {
+        const source = session.pendingSwitch!;
+        const prepared = appendPreparingHandoff(session, "claude", "codex", source);
+        const failed = failHandoff(prepared, source, cleanupError!.message);
+        return {
+          ...failed,
+          blocks: [
+            ...failed.blocks,
+            {
+              id: "preserved-user",
+              role: "user",
+              text: request,
+              attachments: [currentAttachment],
+            },
+            {
+              id: "historical-cleanup-error",
+              role: "system",
+              text: cleanupError!.message,
+              notice: "error",
+            },
+          ],
+        };
+      }),
+    );
     const failed = getSessions()[0];
     const saved = JSON.parse(JSON.stringify(sanitizeSessionForPersist(failed)));
     // Rehydrate from persisted data and fresh defaults, never from the live

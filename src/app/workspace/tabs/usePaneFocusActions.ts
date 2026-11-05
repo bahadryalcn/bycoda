@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { selectPaneTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { type Session } from "../../../features/sessions/model/session";
 import { type InboxSessionPortal } from "../../../features/inbox/ui/InboxDiscussionPanel";

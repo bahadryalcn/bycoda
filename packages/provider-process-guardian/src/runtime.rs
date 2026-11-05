@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+#[cfg(not(windows))]
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -125,12 +126,34 @@ impl Original {
         }
         #[cfg(not(windows))]
         {
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::process::CommandExt;
+                let parent = unsafe { libc::getpid() };
+                unsafe {
+                    command.pre_exec(move || {
+                        if libc::setpgid(0, 0) != 0
+                            || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0
+                        {
+                            return Err(io::Error::last_os_error());
+                        }
+                        if libc::getppid() != parent {
+                            libc::_exit(127);
+                        }
+                        Ok(())
+                    });
+                }
+            }
             command.spawn().map(|child| Self { child })
         }
     }
     fn stop(&mut self, uncertain: &AtomicBool) {
         #[cfg(windows)]
         self.job.terminate();
+        #[cfg(target_os = "linux")]
+        if unsafe { libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL) } != 0 {
+            uncertain.store(true, Ordering::Release);
+        }
         #[cfg(not(windows))]
         if self.child.kill().is_err() {
             uncertain.store(true, Ordering::Release);
@@ -291,6 +314,7 @@ fn supervise<W: Write + Send + 'static>(
     output: Arc<Output<W>>,
     binding: Binding,
     control: Arc<Control>,
+    build_receipt: Option<crate::build_receipt::BuildReceipt>,
 ) {
     let mut workers: Vec<JoinHandle<io::Result<()>>> = Vec::new();
     if let Some(stdin) = original.child.stdin.take() {
@@ -360,7 +384,12 @@ fn supervise<W: Write + Send + 'static>(
         }
         match original.child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) => thread::sleep(Duration::from_millis(5)),
+            Ok(None) => {
+                #[cfg(windows)]
+                original.job.wait_for_activity(50);
+                #[cfg(not(windows))]
+                thread::sleep(Duration::from_millis(5));
+            }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => {
                 control.uncertain.store(true, Ordering::Release);
@@ -380,6 +409,9 @@ fn supervise<W: Write + Send + 'static>(
     #[cfg(windows)]
     original.job.terminate();
     let mut retirement = original.drain();
+    // Physical containment proof is independent of the parent output pipe. A
+    // lost parent may break transport while the owned kernel job still drains.
+    crate::build_receipt::publish_if_verified(build_receipt, retirement, status.is_some());
     for worker in workers {
         if !matches!(worker.join(), Ok(Ok(()))) {
             control.uncertain.store(true, Ordering::Release);
@@ -430,6 +462,7 @@ fn start<W: Write + Send + 'static>(
     parent_id: String,
     mut command: Command,
     output: Arc<Output<W>>,
+    build_receipt: Option<crate::build_receipt::BuildReceipt>,
 ) -> io::Result<Option<Active>> {
     command
         .stdin(Stdio::piped())
@@ -464,7 +497,7 @@ fn start<W: Write + Send + 'static>(
     });
     if let Err(error) = started {
         control_failure(&control);
-        supervise(original, receiver, output, binding, control);
+        supervise(original, receiver, output, binding, control, build_receipt);
         return Err(error);
     }
     // Retain a second owner of the slot until the supervisor actually takes it.
@@ -476,6 +509,7 @@ fn start<W: Write + Send + 'static>(
         binding.clone(),
         control.clone(),
     );
+    let thread_receipt = build_receipt.clone();
     let monitor = thread::Builder::new()
         .name("provider-guardian-owner".into())
         .spawn(move || {
@@ -490,6 +524,7 @@ fn start<W: Write + Send + 'static>(
                     thread_output,
                     thread_binding,
                     thread_control,
+                    thread_receipt,
                 );
             }
         });
@@ -507,7 +542,7 @@ fn start<W: Write + Send + 'static>(
                 .unwrap_or_else(|error| error.into_inner())
                 .take()
             {
-                supervise(original, receiver, output, binding, control);
+                supervise(original, receiver, output, binding, control, build_receipt);
             }
             Ok(None)
         }
@@ -577,6 +612,7 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
                 args,
                 cwd,
                 env,
+                build_receipt,
             } => {
                 if attempted {
                     output.emit(GuardianReply::Failed {
@@ -590,6 +626,9 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
                     if version != VERSION
                         || supplied != guardian_id
                         || !protocol::valid_start(&command, &args, &cwd, &env)
+                        || build_receipt
+                            .as_ref()
+                            .is_some_and(|receipt| !receipt.valid() || !cfg!(windows))
                     {
                         not_started(
                             &output,
@@ -607,7 +646,13 @@ pub fn run<W: Write + Send + 'static>(input: &mut impl BufRead, writer: W) -> io
                     } else {
                         let mut process = Command::new(command);
                         process.args(args).current_dir(cwd).env_clear().envs(env);
-                        match start(&guardian_id, parent_id, process, output.clone()) {
+                        match start(
+                            &guardian_id,
+                            parent_id,
+                            process,
+                            output.clone(),
+                            build_receipt,
+                        ) {
                             Ok(owner) => {
                                 active = owner;
                                 Ok(())

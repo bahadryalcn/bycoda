@@ -23,24 +23,10 @@ import {
 import type { SprintBoardController } from "../model/sprintClient";
 import "./sprints.css";
 
-const DAY_MS = 86_400_000;
-/** Sprint dates are stored as local-midnight timestamps. Sprints saved before
- * that stored UTC midnight: a whole multiple of a day is read as a UTC date so
- * they still show the day that was picked. (A local midnight is a whole multiple
- * of a day only in UTC itself, where both readings agree.) */
-const dateValue = (value?: number) => {
-  if (value === undefined) return "";
-  const date = new Date(value);
-  if (value % DAY_MS === 0) return date.toISOString().slice(0, 10);
-  const pad = (part: number, width = 2) => String(part).padStart(width, "0");
-  return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
-const dateNumber = (value: string) => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return match
-    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime()
-    : undefined;
-};
+const dateValue = (value?: number) =>
+  value === undefined ? "" : new Date(value).toISOString().slice(0, 10);
+const dateNumber = (value: string) =>
+  value ? new Date(`${value}T00:00:00Z`).getTime() : undefined;
 export { dateValue as sprintDateValue, dateNumber as sprintDateNumber };
 
 export function SprintManagement({
@@ -266,7 +252,7 @@ export function SprintManagement({
                     }[selected.state],
                   )}
                 </span>
-                {selected.startsAt || selected.endsAt ? (
+                {selected.startsAt !== undefined || selected.endsAt !== undefined ? (
                   <span>
                     {dateValue(selected.startsAt) || t("No start date")} ·{" "}
                     {dateValue(selected.endsAt) || t("No end date")}

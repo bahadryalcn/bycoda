@@ -77,7 +77,11 @@ export default function SheetViewer({
         aria-label={names.length === 1 ? names[0] : undefined}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <SheetGridView key={active} grid={state.book.sheets[Math.min(active, names.length - 1)]} fitContent={fitContent} />
+        <SheetGridView
+          key={active}
+          grid={state.book.sheets[Math.min(active, names.length - 1)]}
+          fitContent={fitContent}
+        />
       </div>
       {state.book.omittedSheets > 0 ? (
         <p role="status" className="px-3 text-ui-caption text-(--ui-text-secondary)">

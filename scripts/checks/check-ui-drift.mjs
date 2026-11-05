@@ -35,6 +35,7 @@ export const rules = {
   "color-base-opacity": "opacity-modified base token (bg-background-base/45, border-stroke/60…)",
   "native-title": "title= on Button/InlineAction or interactive DOM (use tooltip=/Tooltip)",
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
+  "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
   "portal-outside-shared": "createPortal outside src/shared/ui",
   "popover-menu": "Popover with role=menu/listbox (use DropdownMenu/picker)",
   "hover-bg": "hover:bg-* recipe in TSX (use shared interaction states)",
@@ -498,11 +499,13 @@ export function scanFile(file, text, definitions) {
     const title = attributes.search(/\stitle=(?!""|'')/);
     if ((control || ["button", "a", "input"].includes(tag.name)) && title >= 0)
       add("native-title", tag.start + title + 1);
+    if (["p", "span"].includes(tag.name) && /\srole=\{?["']alert["']/.test(tag.span))
+      add("role-alert-text", tag.start);
     if (
-      ["p", "span", "div", "small", "li", "section"].includes(tag.name) &&
+      ["div", "small", "li", "section"].includes(tag.name) &&
       /\srole=\{?["']alert["']/.test(tag.span)
     )
-      add("role-alert-text", tag.start);
+      add("role-alert-container", tag.start);
     if (["button", "input", "select", "textarea"].includes(tag.name))
       add("raw-native-control", tag.start);
     if (tag.name === "a" && /\shref=/.test(attributes)) add("raw-anchor", tag.start);

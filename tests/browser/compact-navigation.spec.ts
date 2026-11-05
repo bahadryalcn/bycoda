@@ -56,15 +56,21 @@ async function installNavigationFixture(page: Page) {
   });
 }
 
-test("session detail closes on ancestor scroll and cancels a pending hover", async ({ page }, testInfo) => {
+test("session detail closes on ancestor scroll and cancels a pending hover", async ({
+  page,
+}, testInfo) => {
   await installNavigationFixture(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/tests/browser/compact-navigation.html", { waitUntil: "domcontentloaded" });
+  await page.goto("/tests/browser/compact-navigation.html?activityDate", {
+    waitUntil: "domcontentloaded",
+  });
   const row = page.locator("[data-session-card]").first();
   await expect(row).toBeVisible({ timeout: 90_000 });
   const select = row.locator("[data-session-select]");
-  const detail = page.locator('[role="tooltip"]').filter({ hasText: "Review compact navigation and unified search" });
+  const detail = page
+    .locator('[role="tooltip"]')
+    .filter({ hasText: "Review compact navigation and unified search" });
   // Force a real scroll rail without changing row data or hiding the hovered row.
   const rail = page.locator("[data-session-list-panel]").first();
   await rail.evaluate((element) => {
@@ -73,23 +79,33 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
     element.style.overflowY = "auto";
   });
   for (const theme of ["dark", "light"]) {
-    await page.evaluate((light) => document.documentElement.classList.toggle("theme-light", light), theme === "light");
-    await rail.evaluate((element) => { element.scrollTop = 0; });
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await rail.evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await page.mouse.move(1200, 700);
     await row.hover();
     await expect(detail).toBeVisible();
+    await expect(detail).toContainText("Last activity: Oct 17, 2026, 03:37 PM");
     await page.screenshot({ path: testInfo.outputPath(`session-detail-open-${theme}.png`) });
     // An unrelated pane scrolling must not dismiss the session's detail.
     await page.locator("main").dispatchEvent("scroll");
     await expect(detail).toBeVisible();
-    await rail.evaluate((element) => { element.scrollTop = 10; });
+    await rail.evaluate((element) => {
+      element.scrollTop = 10;
+    });
     await expect(detail).toHaveCount(0);
     await expect(select).not.toHaveAttribute("aria-describedby");
     await page.screenshot({ path: testInfo.outputPath(`session-detail-scrolled-${theme}.png`) });
 
     await page.mouse.move(1200, 700);
     await row.hover();
-    await rail.evaluate((element) => { element.scrollTop += 10; });
+    await rail.evaluate((element) => {
+      element.scrollTop += 10;
+    });
     await page.waitForTimeout(750);
     await expect(detail).toHaveCount(0);
 

@@ -8,12 +8,14 @@ import {
   useDefaultGitGenerationChoice,
 } from "../model/gitGenerationPreferences";
 const ModelPicker = lazy(() =>
-  import("../../sessions/ui/ModelPicker").then((module) => ({
-    default: module.ModelPicker,
-  })),
+  import("../../sessions")
+    .then((entry) => entry.loadModelPicker())
+    .then((module) => ({
+      default: module.ModelPicker,
+    })),
 );
-import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/model/models";
-import { HARNESSES, type HarnessId } from "../../sessions/model/session";
+import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/public/models";
+import { HARNESSES, type HarnessId } from "../../sessions";
 import {
   defaultProviderAccountId,
   providerAccountLabel,
@@ -125,9 +127,10 @@ export function GitGenerationSettings({
   const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
   const account = useSyncExternalStore(
     subscribeProviderAccounts,
-    () => supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
-      ? providerAccountLabel(harness, defaultProviderAccountId(harness))
-      : "",
+    () =>
+      supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
+        ? providerAccountLabel(harness, defaultProviderAccountId(harness))
+        : "",
     () => "",
   );
   return (
@@ -174,12 +177,19 @@ export function GitGenerationSettings({
             disabled={disabled}
           />
           {account ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">{t("Account")} · {account}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t("Account")} · {account}
+            </p>
           ) : null}
           {hasOverride && (
             <div className="flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
               <span>{t("Project setting")} ·</span>
-              <Button size="sm" variant="link" disabled={disabled} onClick={() => onChange(undefined)}>
+              <Button
+                size="sm"
+                variant="link"
+                disabled={disabled}
+                onClick={() => onChange(undefined)}
+              >
                 {t("Use global")}
               </Button>
             </div>

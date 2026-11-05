@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } fro
 
 import { loginHarness } from "../../../integrations/harness/core/auth";
 
-import { HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESS_TITLE, type HarnessId } from "../../sessions";
 
 import {
   newProviderAccount,
@@ -65,7 +65,6 @@ import {
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
-import type { HarnessId } from "../../sessions/model/session";
 
 const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...PROVIDER_ACCOUNT_PROVIDERS,
@@ -412,9 +411,7 @@ export function ProviderAccountsSettings({
                       <div className="provider-account-main">
                         <div className="provider-account-identity">
                           <OverflowTooltip label={account.label}>
-                            <span className="provider-account-name">
-                              {displayLabel}
-                            </span>
+                            <span className="provider-account-name">{displayLabel}</span>
                           </OverflowTooltip>
                           {account.isDefault && !autoDefaultLabel ? (
                             <Badge size="sm" className="shrink-0">
@@ -462,7 +459,8 @@ export function ProviderAccountsSettings({
                       </div>
                       <div className="provider-account-actions">
                         {signingIn || !limits || canSignIn(limits) ? (
-                          <Button reserveLabels={[t("Signing in…")]}
+                          <Button
+                            reserveLabels={[t("Signing in…")]}
                             size="sm"
                             variant="secondary"
                             loading={signingIn}
@@ -539,7 +537,8 @@ export function ProviderAccountsSettings({
                       {t("CLI sign-in completed")}
                     </span>
                   ) : null}
-                  <Button reserveLabels={[t("Signing in…")]}
+                  <Button
+                    reserveLabels={[t("Signing in…")]}
                     variant="secondary"
                     disabled={Boolean(working)}
                     loading={working === `signin:${standaloneHarness}`}
@@ -653,7 +652,8 @@ export function ProviderAccountEditor({
         <Button className="shrink-0" disabled={working && !adding} onClick={onCancel}>
           {t("Cancel")}
         </Button>
-        <Button reserveLabels={[t("Waiting for browser…"), t("Sign in and add")]}
+        <Button
+          reserveLabels={[t("Waiting for browser…"), t("Sign in and add")]}
           type="submit"
           variant="secondary"
           loading={working}

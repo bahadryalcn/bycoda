@@ -7,6 +7,14 @@ import { sessionWorkCwd, type Session } from "../../../features/sessions/model/s
 import { leafIds, newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness";
 import { type WindowMovePosition } from "../../model/windowTransferPopout";
+import {
+  reserveSessionWindow,
+  remoteSessionOwnershipKey,
+} from "../../model/sessionWindowOwnership";
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
+import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
+import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 
 export interface SessionLoadingDeps {
   sessionsRef: { current: Session[] };
@@ -192,18 +200,64 @@ export function useSessionLoading({
       sessionId: string,
       position: { x: number; y: number; clientX?: number; clientY?: number },
     ) => {
-      const session = await ensureOpenSession(sessionId);
-      if (!session) return;
-      if (!tabsRef.current.some((tab) => leafIds(tab.layout).includes(sessionId))) {
-        flushSync(() => {
-          const next = [...tabsRef.current, newTab(sessionId)];
-          tabsRef.current = next;
-          setTabs(next);
-        });
+      const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
+      const loaded =
+        sessionsRef.current.find((entry) => entry.id === sessionId) ??
+        (await loadStoredSession(sessionId));
+      if (
+        !loaded ||
+        removingSessionIds.current.has(sessionId) ||
+        (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch ||
+        isProjectLockedIn(getGroupLockView().lock, loaded.cwd) ||
+        isProjectLockedIn(getGroupLockView().lock, sessionWorkCwd(loaded))
+      )
+        return;
+      const remoteId = remoteSessionFor(loaded.id);
+      const keys = [sessionId];
+      if (isRemoteProjectPath(loaded.cwd) && !remoteId) return;
+      if (isRemoteProjectPath(loaded.cwd) && remoteId)
+        keys.push(remoteSessionOwnershipKey(loaded.cwd, remoteId));
+      const release = await reserveSessionWindow(keys);
+      if (!release) return;
+      let retained = false;
+      try {
+        if (
+          removingSessionIds.current.has(sessionId) ||
+          (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch ||
+          isProjectLockedIn(getGroupLockView().lock, loaded.cwd) ||
+          isProjectLockedIn(getGroupLockView().lock, sessionWorkCwd(loaded))
+        )
+          return;
+        if (!sessionsRef.current.some((entry) => entry.id === sessionId))
+          rememberLoadedSession(loadedSessionCache.current, loaded);
+        const session = await ensureOpenSession(sessionId);
+        if (
+          !session ||
+          !sameProjectPath(session.cwd, loaded.cwd) ||
+          (remoteId && remoteSessionFor(session.id) !== remoteId) ||
+          removingSessionIds.current.has(sessionId) ||
+          (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch ||
+          isProjectLockedIn(getGroupLockView().lock, session.cwd) ||
+          isProjectLockedIn(getGroupLockView().lock, sessionWorkCwd(session)) ||
+          !sessionsRef.current.some((entry) => entry.id === sessionId)
+        )
+          return;
+        if (!tabsRef.current.some((tab) => leafIds(tab.layout).includes(sessionId))) {
+          flushSync(() => {
+            const next = [...tabsRef.current, newTab(sessionId)];
+            tabsRef.current = next;
+            setTabs(next);
+          });
+        }
+        retained = true;
+        onPopOutPane(sessionId, position);
+      } finally {
+        await release(retained).catch((error) =>
+          console.error("Conversation ownership release failed", error),
+        );
       }
-      onPopOutPane(sessionId, position);
     },
-    [ensureOpenSession, onPopOutPane],
+    [ensureOpenSession, loadStoredSession, onPopOutPane],
   );
 
   const onPrefetchHistorySession = useCallback(

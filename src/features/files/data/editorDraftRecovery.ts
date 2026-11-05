@@ -1,3 +1,4 @@
+import { normalizeLineBreaks } from "../editor/editorDoc";
 import { invoke as invokeLocal, isTauri } from "@tauri-apps/api/core";
 import { z } from "zod";
 import {
@@ -47,6 +48,7 @@ const payloadSchema = z.strictObject({
   path: localPath,
   text: z.string().max(MAX_TEXT),
   eol: z.enum(["lf", "crlf", "cr"]),
+  serializedText: z.string().max(MAX_TEXT).optional(),
   diskBaseline: z.string().max(MAX_TEXT),
   revision,
 });
@@ -89,7 +91,9 @@ export type PreparedEditorDraftRestore = Readonly<{
     revision: number;
     payloadDigest: string;
   }>;
-  payload: Readonly<Pick<NativeEditorDraftRecord["payload"], "text" | "eol" | "diskBaseline">>;
+  payload: Readonly<
+    Pick<NativeEditorDraftRecord["payload"], "text" | "eol" | "serializedText" | "diskBaseline">
+  >;
 }>;
 export class EditorDraftRecoveryError extends Error {
   constructor(
@@ -188,12 +192,15 @@ async function validateRecord(
   path(p.path);
   bytes(p.text, MAX_TEXT);
   bytes(p.diskBaseline, MAX_TEXT);
+  if (p.serializedText !== undefined) bytes(p.serializedText, MAX_TEXT);
   const raw = JSON.stringify(p);
   const rawBytes = bytes(raw, MAX_DOCUMENT).length;
   const serialized =
-    p.eol === "lf" ? p.text : p.text.replace(/\n/g, p.eol === "crlf" ? "\r\n" : "\r");
+    p.serializedText ??
+    (p.eol === "lf" ? p.text : p.text.replace(/\n/g, p.eol === "crlf" ? "\r\n" : "\r"));
   if (
     p.text.includes("\r") ||
+    normalizeLineBreaks(serialized) !== p.text ||
     p.documentId !== m.documentId ||
     p.path !== m.path ||
     p.revision !== m.revision ||
@@ -324,7 +331,12 @@ function implement(options: Options, state: Runtime) {
   async function prepareActual(entry: Entry): Promise<PreparedEditorDraftRestore> {
     if (!entry.record) {
       const { record, ownerEpoch } = await readActual(entry.source);
-      const charge = (record.payload.text.length + record.payload.diskBaseline.length) * 2 + 1024;
+      const charge =
+        (record.payload.text.length +
+          record.payload.diskBaseline.length +
+          (record.payload.serializedText?.length ?? 0)) *
+          2 +
+        1024;
       if (state.retainedBytes + charge > MAX_PREPARED_BYTES)
         throw new EditorDraftRecoveryError("capacity");
       state.retainedBytes += charge;
@@ -371,6 +383,11 @@ function implement(options: Options, state: Runtime) {
           text: record.payload.text,
           eol: record.payload.eol,
           diskBaseline: record.payload.diskBaseline,
+          lineEndingSource:
+            record.payload.serializedText ??
+            (record.payload.eol === "lf"
+              ? record.payload.text
+              : record.payload.text.replace(/\n/g, record.payload.eol === "crlf" ? "\r\n" : "\r")),
         });
         // A manager can return a rejected ticket without admitting a job (e.g.
         // its snapshot budget is full). This fresh lane had no prior capture;
@@ -403,6 +420,7 @@ function implement(options: Options, state: Runtime) {
         target.payload.path !== record.payload.path ||
         target.payload.text !== record.payload.text ||
         target.payload.eol !== record.payload.eol ||
+        target.payload.serializedText !== record.payload.serializedText ||
         target.payload.diskBaseline !== record.payload.diskBaseline ||
         target.metadata.state !== "retained"
       )
@@ -421,6 +439,9 @@ function implement(options: Options, state: Runtime) {
         payload: Object.freeze({
           text: record.payload.text,
           eol: record.payload.eol,
+          ...(record.payload.serializedText !== undefined
+            ? { serializedText: record.payload.serializedText }
+            : {}),
           diskBaseline: record.payload.diskBaseline,
         }),
       }));

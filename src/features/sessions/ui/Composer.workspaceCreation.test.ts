@@ -10,6 +10,7 @@ const host = vi.hoisted(() => ({
     "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
 }));
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke: vi.fn(async (command: string) =>
     command === "local_host_bundle_status" ? host.status : [],
   ),

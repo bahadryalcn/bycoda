@@ -182,6 +182,9 @@ impl Client {
         input.flush().unwrap();
     }
     fn start(&mut self, mode: &str) -> u32 {
+        self.start_receipt(mode, None)
+    }
+    fn start_receipt(&mut self, mode: &str, receipt: Option<Value>) -> u32 {
         let mut env: BTreeMap<String, String> = std::env::vars()
             .filter(|(key, value)| {
                 !key.is_empty() && !key.contains(['=', '\0']) && !value.contains('\0')
@@ -189,9 +192,13 @@ impl Client {
             .collect();
         env.insert("BYCODA_GUARDIAN_FIXTURE".into(), mode.into());
         let parent = Uuid::new_v4().to_string();
-        self.send(json!({"version":1,"kind":"start","guardianId":self.guardian,"parentId":parent,
+        let mut frame = json!({"version":1,"kind":"start","guardianId":self.guardian,"parentId":parent,
             "command":std::env::current_exe().unwrap(),"args":["--exact","provider_fixture","--ignored","--nocapture"],
-            "cwd":std::env::current_dir().unwrap(),"env":env}));
+            "cwd":std::env::current_dir().unwrap(),"env":env});
+        if let Some(receipt) = receipt {
+            frame["buildReceipt"] = receipt;
+        }
+        self.send(frame);
         match self.next() {
             GuardianReply::Started {
                 version: VERSION,
@@ -392,6 +399,70 @@ fn parent_eof_retires_the_original_and_joins_its_io() {
     client.finish();
 }
 
+#[cfg(windows)]
+#[test]
+#[ignore = "owned parent crash fixture"]
+fn build_receipt_parent_fixture() {
+    let path = std::env::var("BYCODA_TEST_RECEIPT_PATH").unwrap();
+    let nonce = std::env::var("BYCODA_TEST_RECEIPT_NONCE").unwrap();
+    let mut client = Client::new();
+    client.start_receipt("descendant", Some(json!({"path":path,"nonce":nonce})));
+    client.output_contains(b"fixture-ready");
+    println!("crash-parent-ready");
+    io::stdout().flush().unwrap();
+    loop {
+        thread::sleep(Duration::from_secs(1));
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn parent_death_retires_owned_tree_and_publishes_exact_build_receipt() {
+    use std::os::windows::process::CommandExt;
+    let nonce = Uuid::new_v4().to_string();
+    let dir = std::env::temp_dir().join(format!("bycoda-build-receipt-{}", Uuid::new_v4()));
+    std::fs::create_dir(&dir).unwrap();
+    let path = dir.join(format!(".bycoda-build-retired-{nonce}.json"));
+    let mut parent = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "build_receipt_parent_fixture",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("BYCODA_TEST_RECEIPT_PATH", &path)
+        .env("BYCODA_TEST_RECEIPT_NONCE", &nonce)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
+        .spawn()
+        .unwrap();
+    let mut output = BufReader::new(parent.stdout.take().unwrap());
+    let mut line = String::new();
+    loop {
+        line.clear();
+        assert!(output.read_line(&mut line).unwrap() > 0);
+        if line.contains("crash-parent-ready") {
+            break;
+        }
+    }
+    parent.kill().unwrap();
+    parent.wait().unwrap();
+    let until = std::time::Instant::now() + Duration::from_secs(15);
+    while !path.exists() && std::time::Instant::now() < until {
+        thread::sleep(Duration::from_millis(20));
+    }
+    let proof: Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("guardian retirement receipt missing"))
+            .unwrap();
+    assert_eq!(
+        proof,
+        json!({"version":1,"nonce":nonce,"retirement":"verified"})
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn raw_provider_bytes_round_trip_without_utf8_loss_or_control_interpretation() {
     let mut client = Client::new();
@@ -536,4 +607,42 @@ fn unsupported_arguments_do_not_start_the_guardian_protocol() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
+}
+
+#[cfg(any(target_os = "linux", windows))]
+#[test]
+fn guardian_crash_retires_its_actual_provider() {
+    let mut client = Client::new();
+    let pid = client.start("raw");
+    client.output_contains(b"fixture-ready");
+    #[cfg(target_os = "linux")]
+    let provider = {
+        use std::os::fd::FromRawFd;
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
+        assert!(fd >= 0, "pidfd required for identity-bound crash observation");
+        unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) }
+    };
+    #[cfg(windows)]
+    let provider = {
+        use std::os::windows::io::FromRawHandle;
+        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE};
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid) };
+        assert!(!handle.is_null());
+        unsafe { std::os::windows::io::OwnedHandle::from_raw_handle(handle) }
+    };
+    client.child.kill().unwrap();
+    client.child.wait().unwrap();
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        let mut descriptor = libc::pollfd { fd: provider.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        assert_eq!(unsafe { libc::poll(&mut descriptor, 1, 10_000) }, 1);
+        assert_ne!(descriptor.revents & libc::POLLIN, 0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::Threading::WaitForSingleObject;
+        assert_eq!(unsafe { WaitForSingleObject(provider.as_raw_handle(), 10_000) }, 0);
+    }
 }

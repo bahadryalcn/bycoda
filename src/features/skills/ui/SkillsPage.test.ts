@@ -499,7 +499,9 @@ describe("Settings skill preview", () => {
       "Passed",
     ]);
     await click("Edit");
-    expect(EditorView.findFromDOM(panel.querySelector<HTMLElement>(".cm-editor")!)?.state.doc.toString()).toBe(source);
+    expect(
+      EditorView.findFromDOM(panel.querySelector<HTMLElement>(".cm-editor")!)?.state.doc.toString(),
+    ).toBe(source);
     await click("Preview");
   });
 
@@ -586,7 +588,9 @@ describe("Settings skill preview", () => {
     expect(document.activeElement).toBe(button("Other guide"));
     await click("Edit");
     // The editor is a contenteditable surface, so it is focusable and scrolls with the keyboard.
-    expect(document.querySelector<HTMLElement>(".cm-content")?.getAttribute("contenteditable")).toBe("true");
+    expect(
+      document.querySelector<HTMLElement>(".cm-content")?.getAttribute("contenteditable"),
+    ).toBe("true");
     await click("Preview");
   });
 
@@ -699,7 +703,11 @@ describe("Settings skill preview", () => {
       path: skills[1].path,
     });
     await click("Edit");
-    expect(EditorView.findFromDOM(dialog.querySelector<HTMLElement>(".cm-editor")!)?.state.doc.toString()).toBe(markdown);
+    expect(
+      EditorView.findFromDOM(
+        dialog.querySelector<HTMLElement>(".cm-editor")!,
+      )?.state.doc.toString(),
+    ).toBe(markdown);
     expect(button("Edit").getAttribute("aria-checked")).toBe("true");
     expect(loadDisabledSkillPaths()).toEqual([skills[1].path]);
     expect(
@@ -810,6 +818,7 @@ describe("Skills on connected machines", () => {
     expect(text).toContain("mac-notes");
     expect(text).toContain("kit:plan");
     expect(text).toContain("Personal guide");
+    expect(container.querySelectorAll("[data-continuous-list]")).toHaveLength(2);
     // 1 on this computer + 2 on the Mac.
     expect(text).toContain("3 skills");
     // Names only: no description line, no catalog switch on the other machine's rows.

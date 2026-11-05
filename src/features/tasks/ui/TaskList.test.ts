@@ -1,98 +1,74 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskList } from "./TaskList";
-import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
+import { bulkTaskKey } from "../model/taskBulkActions";
+vi.mock("./AssistantTaskBadge", () => ({ AssistantTaskBadge: () => null }));
 
-let host: HTMLDivElement;
-let root: ReturnType<typeof createRoot>;
+let container: HTMLDivElement;
+let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(80);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
 });
 afterEach(() => {
   act(() => root.unmount());
-  host.remove();
+  container.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-const tasks = Array.from({ length: 5_000 }, (_, index) => ({
-  id: `task-${index}`,
-  title: `Task ${index}`,
-  machineId: "local",
-  machineName: "Local",
-  cwd: "/project",
-  status: "todo",
-})) as BoardTask[];
 
-it("bounds mounted rows while retaining full selection, paging, position and open identity", () => {
-  const selected = new Set(tasks.map(bulkTaskKey));
-  const open = vi.fn();
-  const toggle = vi.fn();
-  act(() =>
-    root.render(
-      createElement(TaskList, { tasks, selected, selection: true, onOpen: open, onToggle: toggle }),
-    ),
-  );
-  expect(host.querySelectorAll("li")).toHaveLength(50);
-  expect(host.querySelector("li")?.getAttribute("aria-setsize")).toBe("5000");
-  expect(host.querySelectorAll("input:checked")).toHaveLength(50);
-  const next = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "Next",
-  )!;
-  act(() => next.click());
-  expect(host.querySelectorAll("li")).toHaveLength(50);
-  expect(host.querySelector("li")?.getAttribute("aria-posinset")).toBe("51");
-  const item = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "Task 50",
-  )!;
-  act(() => item.click());
-  expect(open).toHaveBeenCalledWith(tasks[50]);
-  const checkbox = host.querySelector<HTMLInputElement>("input")!;
-  act(() => checkbox.click());
-  expect(toggle).toHaveBeenCalledWith(tasks[50], false);
-  expect(selected.size).toBe(5_000);
-});
-
-it("keeps small filtered results available when the previous page becomes invalid", () => {
-  const props = {
-    selected: new Set<string>(),
-    selection: false,
-    onOpen: vi.fn(),
-    onToggle: vi.fn(),
-  };
-  act(() => root.render(createElement(TaskList, { ...props, tasks })));
-  act(() =>
-    [...host.querySelectorAll("button")].find((button) => button.textContent === "Next")!.click(),
-  );
-  act(() => root.render(createElement(TaskList, { ...props, tasks: tasks.slice(0, 2) })));
-  expect(host.querySelectorAll("li")).toHaveLength(2);
-  expect(host.querySelector("nav")).toBeNull();
-  expect(host.textContent).toContain("Task 0");
-});
-
-it("marks the task whose detail is open and shows its status as a badge", () => {
-  const rows = tasks.slice(0, 2).map((task, index) => ({
-    ...task,
-    status: index === 0 ? "blocked" : "todo",
+it("keeps bulk selection and active task through bounded scroll and appended rows", async () => {
+  const tasks = Array.from({ length: 1000 }, (_, index) => ({
+    id: String(index),
+    projectId: "project",
+    title: `Task ${index}`,
+    status: "todo",
+    machineId: "machine",
+    machineName: "Workstation",
+    cwd: "/project",
   })) as BoardTask[];
-  act(() =>
-    root.render(
-      createElement(TaskList, {
-        tasks: rows,
-        selected: new Set<string>(),
-        selection: false,
-        activeKey: "local:task-0",
-        onOpen: vi.fn(),
-        onToggle: vi.fn(),
-      }),
+  const selected = new Set(tasks.map(bulkTaskKey));
+  const onOpen = vi.fn();
+  const onToggle = vi.fn();
+  const render = (count: number) =>
+    act(async () =>
+      root.render(
+        createElement(TaskList, {
+          tasks: tasks.slice(0, count),
+          selection: true,
+          selected,
+          activeKey: "machine:999",
+          onOpen,
+          onToggle,
+        }),
+      ),
+    );
+  await render(1000);
+  expect(container.querySelectorAll(".task-management-row").length).toBeLessThan(64);
+  expect(container.querySelector("[data-active]")?.textContent).toContain("Task 999");
+  expect(
+    [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].every(
+      (node) => node.checked,
     ),
-  );
-  const items = host.querySelectorAll("li");
-  expect(items[0].hasAttribute("data-active")).toBe(true);
-  expect(items[1].hasAttribute("data-active")).toBe(false);
-  expect(items[0].textContent).toContain("Blocked");
+  ).toBe(true);
+  const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
+  await act(async () => {
+    scroller.scrollTop = 40000;
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  expect(container.textContent).toContain("Task 500");
+  await render(900);
+  await render(1000);
+  expect(scroller.scrollTop).toBe(40000);
+  expect(container.querySelectorAll(".task-management-row").length).toBeLessThan(64);
+  expect(container.textContent).not.toContain("Previous");
+  expect(container.textContent).not.toContain("Next");
 });

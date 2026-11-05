@@ -8,8 +8,8 @@ import styles from "./DictationButton.module.css";
 
 /**
  * Composer microphone: speech is recognized on this computer and each phrase is
- * inserted where the caret is. Offered once voice is enabled in Chat settings,
- * because recognition uses the same local installation.
+ * inserted where the caret is. Dictation has its own Chat setting while
+ * recognition uses the same local installation as the voice companion.
  */
 export function DictationButton({
   disabled = false,
@@ -31,10 +31,10 @@ export function DictationButton({
 
   useEffect(() => () => dictation.current?.cancel(), []);
   useEffect(() => {
-    if (disabled || !settings.enabled) dictation.current?.cancel();
-  }, [disabled, settings.enabled]);
+    if (disabled || !settings.dictationEnabled) dictation.current?.cancel();
+  }, [disabled, settings.dictationEnabled]);
 
-  if (!settings.enabled) return null;
+  if (!settings.dictationEnabled) return null;
 
   const toggle = () => {
     if (state === "finishing") return;
@@ -64,6 +64,7 @@ export function DictationButton({
       },
       locale.split("-")[0],
       voiceRuntimeSettings(settings),
+      settings.microphoneId,
     );
     dictation.current = next;
     void next.start();

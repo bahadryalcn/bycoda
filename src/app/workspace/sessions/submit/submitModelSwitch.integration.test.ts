@@ -59,6 +59,12 @@ const fileHistory = vi.hoisted(() => ({
   finish: vi.fn(async (..._args: unknown[]) => {}),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
+vi.mock("../../../../features/connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<
+    typeof import("../../../../features/connections/model/sessionExecutionBinding")
+  >()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 vi.mock("../../../../features/orchestration/model/orchestration", () => ({
   orchestrator: {
     submissionError: () => undefined,

@@ -7,6 +7,7 @@ import {
   questionPromptTitle,
   questionsFromUnknown,
   selectedAnswerLabels,
+  assertQuestionNotesSupported,
 } from "./userQuestion";
 
 describe("questionsFromUnknown", () => {
@@ -128,6 +129,29 @@ describe("question answers", () => {
       }),
     ).toEqual(["c.ts"]);
   });
+
+  it("appends optional notes to final selected label without changing option cardinality", () => {
+    expect(
+      selectedAnswerLabels(question, {
+        kind: "answered",
+        answers: { [question.id]: ["a.ts", "b.ts"] },
+        notes: { [question.id]: "Keep imports sorted" },
+      }),
+    ).toEqual(["a.ts", "b.ts\nKeep imports sorted"]);
+  });
+
+  it("rejects notes for fixed-only questions", () => {
+    const fixed = questionsFromUnknown({
+      questions: [{ question: "Mode?", options: [{ label: "Fast" }], custom: false }],
+    });
+    expect(() =>
+      assertQuestionNotesSupported(fixed, {
+        kind: "answered",
+        answers: { [fixed[0]!.id]: ["Fast"] },
+        notes: { [fixed[0]!.id]: "More" },
+      }),
+    ).toThrow("Question notes are only supported");
+  });
 });
 
 describe("buildQuestionReply", () => {
@@ -158,6 +182,22 @@ describe("buildQuestionReply", () => {
     expect(buildQuestionReply(questions, { [files.id]: ["a.ts", "b.ts"] }, {})).toEqual({
       kind: "answered",
       answers: { [files.id]: ["a.ts", "b.ts"] },
+    });
+  });
+
+  it("includes notes only for answered ordinary free-text-capable selections", () => {
+    expect(
+      buildQuestionReply(
+        questions,
+        { [language.id]: ["TypeScript"] },
+        {},
+        {},
+        { [language.id]: "Use strict mode", [files.id]: "ignored" },
+      ),
+    ).toEqual({
+      kind: "answered",
+      answers: { [language.id]: ["TypeScript"] },
+      notes: { [language.id]: "Use strict mode" },
     });
   });
 

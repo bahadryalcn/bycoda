@@ -1,3 +1,4 @@
+import { queueRoomPrivacyProjection, withRoomPrivacyMutation } from "./roomPrivacyProjection";
 import {
   loadProjectGroupAssignments,
   loadProjectGroups,
@@ -98,12 +99,15 @@ let unlocked: UnlockedGroups = initialUnlocked(
 let view: GroupLockView | null = null;
 let hiddenGroups = new Set(parseUnlockedIds(readItem(HIDDEN_KEY)));
 let temporarilyVisible = new Set<string>();
+// UI-only concealment while a lock waits for native drain. Never persisted.
+const optimisticLocks = new Set<string>();
 let hiddenGroupsAuthorized = false;
 let previousLock: LockSnapshot | null = null;
 const listeners = new Set<() => void>();
 let channel: BroadcastChannel | null = null;
 let lastActivityAt = Date.now();
 let privacyRevision = 0;
+let stateRequest: { id: string; revision: number } | undefined;
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false;
@@ -119,13 +123,13 @@ function currentView(): GroupLockView {
     groups.filter((group) => hiddenGroups.has(group.id)).map((group) => group.id),
   );
   const hiddenGroupIds = new Set(
-    [...savedHiddenGroupIds].filter((id) => !temporarilyVisible.has(id)),
+    [...savedHiddenGroupIds].filter((id) => !temporarilyVisible.has(id) || optimisticLocks.has(id)),
   );
   let lock = computeLockSnapshot({
     groups,
     assignments: loadProjectGroupAssignments(groups),
     hasPassword,
-    unlocked,
+    unlocked: new Set([...unlocked].filter((id) => !optimisticLocks.has(id))),
     hiddenGroupIds,
   });
   // Keep the object when nothing changed so hooks that read only the lock
@@ -151,8 +155,9 @@ function currentView(): GroupLockView {
   return view;
 }
 
-function invalidate() {
+function invalidate(qualify = true) {
   privacyRevision += 1;
+  if (qualify) queueRoomPrivacyProjection();
   view = null;
   for (const listener of [...listeners]) listener();
 }
@@ -160,6 +165,10 @@ function invalidate() {
 export function subscribeGroupLock(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+export function getGroupPrivacyRevision(): number {
+  return privacyRevision;
 }
 
 export function getGroupLockView(): GroupLockView {
@@ -329,11 +338,21 @@ function groupFingerprint(groupId: string): string | null {
 // ---- password --------------------------------------------------------------
 
 export async function setLockPassword(password: string): Promise<void> {
-  const revision = privacyRevision; const previous = JSON.stringify(settings.record);
+  const revision = privacyRevision;
+  const previous = JSON.stringify(settings.record);
   const record = await createPasswordRecord(password);
-  if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous) throw new Error("Privacy settings changed. Review the current state before setting a password.");
-  saveSettings({ ...settings, record }, true);
-  writeAttempts(NO_ATTEMPTS);
+  if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous)
+    throw new Error(
+      "Privacy settings changed. Review the current state before setting a password.",
+    );
+  await withRoomPrivacyMutation(() => {
+    if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous)
+      throw new Error(
+        "Privacy settings changed. Review the current state before setting a password.",
+      );
+    saveSettings({ ...settings, record }, true);
+    writeAttempts(NO_ATTEMPTS);
+  });
 }
 
 export async function changeLockPassword(current: string, next: string): Promise<VerifyResult> {
@@ -360,6 +379,7 @@ function clearPassword(): PasswordClearOutcome {
     return "not-saved";
   }
   temporarilyVisible.clear();
+  optimisticLocks.clear();
   hiddenGroupsAuthorized = false;
   writeAttempts(NO_ATTEMPTS);
   unlocked = new Set();
@@ -377,7 +397,10 @@ export async function removeLockPassword(current: string): Promise<VerifyResult>
   const result = await verifyLockPassword(current);
   if (result.ok && privacyRevision !== revision) return staleVerification();
   if (result.ok) {
-    const outcome = clearPassword();
+    const outcome = await withRoomPrivacyMutation(() =>
+      privacyRevision === revision ? clearPassword() : null,
+    );
+    if (outcome === null) return staleVerification();
     if (outcome !== "complete") return { ok: true, incomplete: outcome };
   }
   return result;
@@ -387,14 +410,18 @@ export async function removeLockPassword(current: string): Promise<VerifyResult>
  * The "forgot password" reset. Nothing is asked of the user here beyond what
  * the caller's dialog asks: there is no second factor on this device.
  */
-export function resetForgottenPassword(): PasswordClearOutcome {
-  return clearPassword();
+export function resetForgottenPassword(): Promise<PasswordClearOutcome> {
+  return withRoomPrivacyMutation(clearPassword);
 }
 
 // ---- groups ----------------------------------------------------------------
 
 /** Hiding is a device preference; it does not change group membership or jobs. */
-export function hideGroup(groupId: string): boolean {
+export function hideGroup(groupId: string): Promise<boolean> {
+  return withRoomPrivacyMutation(() => hideGroupNow(groupId));
+}
+
+function hideGroupNow(groupId: string): boolean {
   if (!loadProjectGroups().some((group) => group.id === groupId)) return false;
   const next = new Set([...hiddenGroups, groupId]);
   try {
@@ -426,7 +453,11 @@ export function closeHiddenGroups() {
 }
 
 /** Restore only this group, even when the unlock-all preference is enabled. */
-export function restoreHiddenGroup(groupId: string, temporary = false): boolean {
+export function restoreHiddenGroup(groupId: string, temporary = false): Promise<boolean> {
+  return withRoomPrivacyMutation(() => restoreHiddenGroupNow(groupId, temporary));
+}
+
+function restoreHiddenGroupNow(groupId: string, temporary: boolean): boolean {
   if (settings.record && !hiddenGroupsAuthorized) return false;
   if (!hiddenGroups.has(groupId)) return false;
   if (temporary) temporarilyVisible.add(groupId);
@@ -441,6 +472,7 @@ export function restoreHiddenGroup(groupId: string, temporary = false): boolean 
     hiddenGroups = next;
     temporarilyVisible.delete(groupId);
   }
+  optimisticLocks.delete(groupId);
   dispatch({ type: "unlock", groupIds: [groupId] });
   return true;
 }
@@ -449,7 +481,10 @@ export function restoreHiddenGroup(groupId: string, temporary = false): boolean 
  * Marks the group lockable, leaving it open until it is locked. False when
  * there is no password or the flag could not be saved; nothing changes then.
  */
-export function makeGroupLockable(groupId: string): boolean {
+export function makeGroupLockable(groupId: string): Promise<boolean> {
+  return withRoomPrivacyMutation(() => makeGroupLockableNow(groupId));
+}
+function makeGroupLockableNow(groupId: string): boolean {
   if (!settings.record) return false;
   if (!updateProjectGroup(groupId, (group) => ({ ...group, lockable: true }))) return false;
   dispatch({ type: "unlock", groupIds: [groupId] });
@@ -457,42 +492,66 @@ export function makeGroupLockable(groupId: string): boolean {
 }
 
 /** Locks a lockable group now and folds it away. */
-export function lockGroup(groupId: string) {
-  dispatch({ type: "lock", groupIds: [groupId] });
-  updateProjectGroup(groupId, (group) => ({ ...group, collapsed: true }));
+export function lockGroup(groupId: string): Promise<void> {
+  optimisticLocks.add(groupId);
+  invalidate(false);
+  return withRoomPrivacyMutation(() => {
+    dispatch({ type: "lock", groupIds: [groupId] });
+    optimisticLocks.delete(groupId);
+    updateProjectGroup(groupId, (group) => ({ ...group, collapsed: true }));
+  });
 }
 
-export function lockAllGroups() {
-  dispatch({ type: "lockAll" });
+export function lockAllGroups(): Promise<void> {
+  for (const group of loadProjectGroups()) {
+    if ((settings.record && group.lockable) || hiddenGroups.has(group.id))
+      optimisticLocks.add(group.id);
+  }
+  invalidate(false);
+  return withRoomPrivacyMutation(() => {
+    dispatch({ type: "lockAll" });
+    optimisticLocks.clear();
+  });
 }
 
 /** Opens the group when the password is right, and expands it. */
 export async function unlockGroup(groupId: string, password: string): Promise<VerifyResult> {
-  const revision = privacyRevision; const group = groupFingerprint(groupId);
+  const revision = privacyRevision;
+  const group = groupFingerprint(groupId);
   if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
-  if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
-  const locked = currentView().lock.lockedGroupIds;
-  dispatch({
-    type: "unlock",
-    groupIds: settings.unlockAll ? [...locked, groupId] : [groupId],
+  if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+    return staleVerification();
+  return withRoomPrivacyMutation(() => {
+    if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+      return staleVerification();
+    const locked = currentView().lock.lockedGroupIds;
+    const ids = settings.unlockAll ? [...locked, groupId] : [groupId];
+    for (const id of ids) optimisticLocks.delete(id);
+    dispatch({ type: "unlock", groupIds: ids });
+    updateProjectGroup(groupId, (group) => ({ ...group, collapsed: false }));
+    return result;
   });
-  updateProjectGroup(groupId, (group) => ({ ...group, collapsed: false }));
-  return result;
 }
 
 /** Takes the lock off one group. Asks for the password even when it is open. */
 export async function removeGroupLock(groupId: string, password: string): Promise<VerifyResult> {
-  const revision = privacyRevision; const group = groupFingerprint(groupId);
+  const revision = privacyRevision;
+  const group = groupFingerprint(groupId);
   if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
-  if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
-  const saved = updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
-  // Locking stays the safe side of a failed save.
-  dispatch({ type: "lock", groupIds: [groupId] });
-  return saved ? result : { ok: true, incomplete: "not-saved" };
+  if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+    return staleVerification();
+  return withRoomPrivacyMutation(() => {
+    if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+      return staleVerification();
+    const saved = updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
+    if (saved) optimisticLocks.delete(groupId);
+    dispatch({ type: "lock", groupIds: [groupId] });
+    return saved ? result : { ok: true, incomplete: "not-saved" };
+  });
 }
 
 // ---- options ---------------------------------------------------------------
@@ -549,32 +608,51 @@ function onStorage(event: StorageEvent) {
       groupIds: parseUnlockedIds(event.newValue),
     });
     invalidate();
-  } else if (key === GROUPS_KEY || key === ASSIGNMENTS_KEY) {
+  } else if (
+    key === GROUPS_KEY ||
+    key === ASSIGNMENTS_KEY ||
+    key === "bycoda.recentProjects" ||
+    key === "bycoda.archivedProjects"
+  ) {
     invalidate();
   }
 }
 
 function onChannelMessage(event: MessageEvent) {
   const message = event.data as
-    | { type?: string; groupIds?: unknown; visibleHiddenIds?: unknown }
+    | { type?: string; groupIds?: unknown; visibleHiddenIds?: unknown; requestId?: unknown }
     | undefined;
-  if (message?.type === "hello") {
+  if (message?.type === "hello-v2" && typeof message.requestId === "string") {
     channel?.postMessage({
-      type: "state",
+      type: "state-v2",
+      requestId: message.requestId,
       groupIds: [...unlocked],
       visibleHiddenIds: [...temporarilyVisible],
     });
-  } else if (message?.type === "state" && Array.isArray(message.groupIds)) {
-    hiddenGroupsAuthorized = false;
-    temporarilyVisible = new Set(
+  } else if (
+    (message?.type === "state" ||
+      (message?.type === "state-v2" &&
+        stateRequest !== undefined &&
+        stateRequest.id === message.requestId &&
+        stateRequest.revision === privacyRevision)) &&
+    Array.isArray(message.groupIds)
+  ) {
+    stateRequest = undefined;
+    const nextVisible = new Set(
       Array.isArray(message.visibleHiddenIds)
         ? message.visibleHiddenIds.filter((id): id is string => typeof id === "string")
         : [],
     );
-    unlocked = lockReducer(unlocked, {
+    const nextUnlocked = lockReducer(unlocked, {
       type: "replace",
       groupIds: message.groupIds.filter((id): id is string => typeof id === "string"),
     });
+    // Identical join replies are not privacy mutations and must not revoke a
+    // password authorization in an already open window.
+    if (sameSet(temporarilyVisible, nextVisible) && sameSet(unlocked, nextUnlocked)) return;
+    hiddenGroupsAuthorized = false;
+    temporarilyVisible = nextVisible;
+    unlocked = nextUnlocked;
     invalidate();
   } else if (message?.type === "activity") {
     lastActivityAt = Date.now();
@@ -590,7 +668,8 @@ if (typeof window !== "undefined") {
     // Node (tests) would otherwise wait on the open channel before exiting.
     (channel as { unref?: () => void }).unref?.();
     // A window opened later learns which groups are already open.
-    channel.postMessage({ type: "hello" });
+    stateRequest = { id: crypto.randomUUID(), revision: privacyRevision };
+    channel.postMessage({ type: "hello-v2", requestId: stateRequest.id });
   }
 }
 
@@ -601,6 +680,7 @@ if (typeof window !== "undefined") {
 export function startGroupLockWatcher(): () => void {
   lastActivityAt = Date.now();
   let lastBroadcast = 0;
+  let lockPending = false;
   const touch = () => {
     const now = Date.now();
     lastActivityAt = now;
@@ -614,8 +694,19 @@ export function startGroupLockWatcher(): () => void {
     window.addEventListener(name, touch, { capture: true, passive: true });
   }
   const timer = window.setInterval(() => {
-    if (unlocked.size > 0 && autoLockDue(lastActivityAt, Date.now(), settings.autoLockMinutes)) {
-      lockAllGroups();
+    if (
+      !lockPending &&
+      unlocked.size > 0 &&
+      autoLockDue(lastActivityAt, Date.now(), settings.autoLockMinutes)
+    ) {
+      lockPending = true;
+      void lockAllGroups()
+        .finally(() => {
+          lockPending = false;
+        })
+        .catch(() => {
+          // The shared privacy status retains the failure for explicit recovery.
+        });
     }
   }, AUTO_LOCK_CHECK_MS);
   return () => {

@@ -49,6 +49,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
   async function perform(
     action: string,
     args: Record<string, unknown>,
+    workspaceRequestId?: string,
   ): Promise<VoiceWorkspaceResult> {
     if (action === "workspace.projects.list") {
       const projects = read()
@@ -135,7 +136,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
     }
     if (action === "workspace.projects.select") {
       const fn = read().onSelectProject ?? unsupported;
-      await fn(path);
+      await fn(path, workspaceRequestId);
       return {
         action,
         status: sameProjectPath(read().getProjectPath(), path) ? "completed" : "accepted",
@@ -159,6 +160,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         requestId: clean(args.requestId, "requestId"),
         prompt,
         submit: args.submit === true,
+        ...(workspaceRequestId ? { workspaceRequestId } : {}),
         ...(args.harness === undefined ? {} : { harness: clean(args.harness, "harness", 200) }),
         ...(args.model === undefined ? {} : { model: clean(args.model, "model", 200) }),
       });
@@ -176,7 +178,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
     const base = { action, sessionId: id, projectPath: path };
     switch (action) {
       case "workspace.sessions.open":
-        await (deps.onOpen ?? unsupported)(id);
+        await (deps.onOpen ?? unsupported)(id, workspaceRequestId);
         return { ...base, status: read().getActiveSessionId() === id ? "completed" : "accepted" };
       case "workspace.sessions.close": {
         const result = await (deps.onClose ?? unsupported)(id);
@@ -209,7 +211,9 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         return { ...base, status: accepted ? "accepted" : "rejected", accepted };
       }
       case "workspace.sessions.stop":
-        await (deps.onStop ?? unsupported)(id);
+        await (
+          workspaceRequestId ? (deps.onStopForRoom ?? unsupported) : (deps.onStop ?? unsupported)
+        )(id);
         return {
           ...base,
           status: "accepted",
@@ -222,6 +226,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
   const execute = async (
     action: string,
     args: Record<string, unknown> = {},
+    workspaceRequestId?: string,
   ): Promise<VoiceWorkspaceResult> => {
     try {
       const tool = voiceWorkspaceTools.find((entry) => entry.name === action);
@@ -247,7 +252,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         throw new Error(
           "Voice action history is full. Reopen the voice controller before starting another action.",
         );
-      const result = perform(action, { ...args });
+      const result = perform(action, { ...args }, workspaceRequestId);
       receipts.set(requestId, { signature, result });
       return await result;
     } catch (error) {

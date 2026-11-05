@@ -5,9 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../../features/connections/model/connections";
 import type { HostGoal } from "../../../features/tasks/model/hostGoals";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
-import {HostAutomationSchema} from "../../../shared/model/host-contracts/automations";
-import {assistantAutomationProject,type AssistantAutomationReveal} from "../../../features/assistant/model/assistantAutomationReveal";
-import {assistantJobTasksGoal} from "../../../features/assistant/model/assistantJobTasksReveal";
+import { HostAutomationSchema } from "../../../shared/model/host-contracts/automations";
+import {
+  assistantAutomationProject,
+  type AssistantAutomationReveal,
+} from "../../../features/assistant/model/assistantAutomationReveal";
+import { assistantJobTasksGoal } from "../../../features/assistant/model/assistantJobTasksReveal";
 import type { RemoteMachine, HostSession } from "../../../features/connections/model/protocol";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { WindowControls } from "../../shell/WindowControls";
@@ -168,7 +171,7 @@ function WorkspaceToolPanelsComponent({
     goalId: string;
     token: number;
   }>();
-  const [automationReveal,setAutomationReveal]=useState<AssistantAutomationReveal>();
+  const [automationReveal, setAutomationReveal] = useState<AssistantAutomationReveal>();
   const canOpenAssistantProject = useStableCallback((path: string) => {
     const key = (value: string) => value.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase();
     return (
@@ -370,35 +373,108 @@ function WorkspaceToolPanelsComponent({
             setGoalReveal({ machineId: machine.id, goalId: goal.id, token: Date.now() });
             onSelectTool("tasks");
           }}
-          onReviewJobTasks={async target=>{
-            const machine=await invoke<RemoteMachine|null>("local_host_connect");
-            if(!machine||!target.environmentId)throw new Error("The linked job's Host identity is unavailable.");
-            const [environment,projects,response,goals]=await Promise.all([
-              remoteRequest<{environmentId:string}>(machine.id,"environment.describe",{},false,false,target.environmentId),
-              remoteRequest(machine.id,"assistant.request",{op:"projects.list"},false,false,target.environmentId).then(value=>AssistantResponseValidationSchema.parse(value)),
-              remoteRequest(machine.id,"assistant.request",{op:"jobs.get",id:target.jobId},false,false,target.environmentId).then(value=>AssistantResponseValidationSchema.parse(value)),
-              remoteRequest<HostGoal[]>(machine.id,"goals.list",{},false,false,target.environmentId),
+          onReviewJobTasks={async (target) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine || !target.environmentId)
+              throw new Error("The linked job's Host identity is unavailable.");
+            const [environment, projects, response, goals] = await Promise.all([
+              remoteRequest<{ environmentId: string }>(
+                machine.id,
+                "environment.describe",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                target.environmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "jobs.get", id: target.jobId },
+                false,
+                false,
+                target.environmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest<HostGoal[]>(
+                machine.id,
+                "goals.list",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
             ]);
-            const current=await invoke<RemoteMachine|null>("local_host_connect");
-            if(current?.id!==machine.id||current.environmentId!==target.environmentId)throw new Error("The linked job's Host identity is unavailable.");
-            const goal=assistantJobTasksGoal(target,environment.environmentId,response.job,goals,projects.projects??[],canOpenAssistantProject);
-            setGoalReveal({machineId:machine.id,goalId:goal.id,token:Date.now()});
+            const current = await invoke<RemoteMachine | null>("local_host_connect");
+            if (current?.id !== machine.id || current.environmentId !== target.environmentId)
+              throw new Error("The linked job's Host identity is unavailable.");
+            const goal = assistantJobTasksGoal(
+              target,
+              environment.environmentId,
+              response.job,
+              goals,
+              projects.projects ?? [],
+              canOpenAssistantProject,
+            );
+            setGoalReveal({ machineId: machine.id, goalId: goal.id, token: Date.now() });
             onSelectTool("tasks");
           }}
-          onOpenAutomation={async target=>{
-            const machine=await invoke<RemoteMachine|null>("local_host_connect");
-            if(!machine)throw new Error("This computer's Host is unavailable.");
-            const expectedEnvironmentId=target.environmentId??machine.environmentId;
-            if(!expectedEnvironmentId)throw new Error("The linked automation's Host identity is unavailable.");
-            const [environment,projects,automations]=await Promise.all([
-              remoteRequest<{environmentId:string}>(machine.id,"environment.describe",{},false,false,expectedEnvironmentId),
-              remoteRequest(machine.id,"assistant.request",{op:"projects.list"},false,false,expectedEnvironmentId).then(value=>AssistantResponseValidationSchema.parse(value)),
-              remoteRequest(machine.id,"automations.list",{},false,false,expectedEnvironmentId).then(value=>HostAutomationSchema.array().parse(value)),
+          onOpenAutomation={async (target) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine) throw new Error("This computer's Host is unavailable.");
+            const expectedEnvironmentId = target.environmentId ?? machine.environmentId;
+            if (!expectedEnvironmentId)
+              throw new Error("The linked automation's Host identity is unavailable.");
+            const [environment, projects, automations] = await Promise.all([
+              remoteRequest<{ environmentId: string }>(
+                machine.id,
+                "environment.describe",
+                {},
+                false,
+                false,
+                expectedEnvironmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                expectedEnvironmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest(
+                machine.id,
+                "automations.list",
+                {},
+                false,
+                false,
+                expectedEnvironmentId,
+              ).then((value) => HostAutomationSchema.array().parse(value)),
             ]);
-            const current=await invoke<RemoteMachine|null>("local_host_connect");
-            if(current?.id!==machine.id||current.environmentId!==expectedEnvironmentId)throw new Error("The linked automation's Host identity is unavailable.");
-            assistantAutomationProject(target,expectedEnvironmentId,environment.environmentId,projects.projects??[],automations,canOpenAssistantProject);
-            setAutomationReveal({id:target.id,projectId:target.projectId,environmentId:expectedEnvironmentId,machineId:machine.id,token:Date.now()});
+            const current = await invoke<RemoteMachine | null>("local_host_connect");
+            if (current?.id !== machine.id || current.environmentId !== expectedEnvironmentId)
+              throw new Error("The linked automation's Host identity is unavailable.");
+            assistantAutomationProject(
+              target,
+              expectedEnvironmentId,
+              environment.environmentId,
+              projects.projects ?? [],
+              automations,
+              canOpenAssistantProject,
+            );
+            setAutomationReveal({
+              id: target.id,
+              projectId: target.projectId,
+              environmentId: expectedEnvironmentId,
+              machineId: machine.id,
+              token: Date.now(),
+            });
             onSelectTool("automations");
           }}
           onOpenSession={async (sessionId, sourceEnvironmentId?: string) => {

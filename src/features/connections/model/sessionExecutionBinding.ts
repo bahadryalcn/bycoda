@@ -1,5 +1,14 @@
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { RemoteProject } from "./remoteProjects";
+import {
+  readBindingEvidencePage,
+  writeBindingEvidence,
+  preserveBindingSource,
+  readBindingEvidence,
+  skipImportedNativeBindingLegacy,
+  type StoredBindingEvidence,
+} from "./hostSessionBindingDatabase";
 
 export type HostSessionBinding = {
   kind: "local-host";
@@ -14,10 +23,199 @@ export type HostSessionBinding = {
   created: boolean;
 };
 const PREFIX = "bycoda.host-session-binding.v1:";
-/** Unreadable records are moved here (bytes preserved) so they stop breaking every listing. */
-const QUARANTINE_PREFIX = "bycoda.host-session-binding.quarantine.v1:";
-/** A deleted marker keeps the routing fence this long, then its key is removed. */
-export const HOST_SESSION_DELETED_TTL_MS = 30 * 86_400_000;
+const canonical = new Map<string, StoredBindingEvidence>();
+let hydrated = false;
+let hydrating: Promise<void> | undefined;
+const writes: Array<{ previous: StoredBindingEvidence | undefined; next: StoredBindingEvidence }> =
+  [];
+let saving: Promise<void> | undefined;
+let canonicalEpoch = false;
+let migrationOperationId: string | undefined;
+const MIGRATION_SCOPE = "host-session-bindings-migration.v1";
+const MIGRATION_KEY = "legacy-import";
+
+async function bindingEpoch(): Promise<{
+  active: boolean;
+  claim?: { pageToken: string; operationId: string };
+}> {
+  if (!isTauri()) return { active: false };
+  // Missing or failed readiness is unknown, never an authorization to cut over.
+  const ready = await invoke<boolean>("canonical_store_session_guard_ready");
+  if (ready !== true && ready !== false)
+    throw new Error("Session ownership guard readiness is unknown.");
+  if (!ready) return { active: false };
+  const marker = await invoke<{ version: number; value: unknown } | null>("canonical_store_get", {
+    scope: MIGRATION_SCOPE,
+    key: MIGRATION_KEY,
+  });
+  if (marker?.value === true) {
+    skipImportedNativeBindingLegacy();
+    return { active: true };
+  }
+  if (marker) throw new Error("Invalid session owner migration marker.");
+  const pageToken = await invoke<string>("canonical_store_page_token");
+  const operationId = (migrationOperationId ??= crypto.randomUUID());
+  let acquired = await invoke<{ owned: boolean; operationId: string }>("canonical_store_claim", {
+    scope: MIGRATION_SCOPE,
+    key: MIGRATION_KEY,
+    operationId,
+    pageToken,
+  });
+  if (!acquired.owned) {
+    const recovered = await invoke<boolean>("canonical_store_recover", {
+      scope: MIGRATION_SCOPE,
+      key: MIGRATION_KEY,
+      operationId: acquired.operationId,
+      pageToken,
+    });
+    if (recovered)
+      acquired = await invoke("canonical_store_claim", {
+        scope: MIGRATION_SCOPE,
+        key: MIGRATION_KEY,
+        operationId,
+        pageToken,
+      });
+  }
+  if (!acquired.owned)
+    throw new Error("Session owner migration is already in progress. Retry loading.");
+  return { active: true, claim: { pageToken, operationId } };
+}
+
+async function finishBindingEpoch(claim: {
+  pageToken: string;
+  operationId: string;
+}): Promise<void> {
+  const result = await invoke<{ applied: boolean }>("canonical_store_transaction", {
+    scope: MIGRATION_SCOPE,
+    pageToken: claim.pageToken,
+    operationId: crypto.randomUUID(),
+    checks: [{ key: MIGRATION_KEY, version: null }],
+    writes: [{ key: MIGRATION_KEY, value: true }],
+    legacy: [],
+    expectedRevision: null,
+    claim: { key: MIGRATION_KEY, operationId: claim.operationId, mode: "require" },
+  });
+  if (!result.applied) throw new Error("Session owner migration was not confirmed.");
+  if (
+    !(await invoke<boolean>("canonical_store_settle", {
+      scope: MIGRATION_SCOPE,
+      key: MIGRATION_KEY,
+      ...claim,
+    }))
+  )
+    throw new Error("Session owner migration settlement is unknown.");
+  skipImportedNativeBindingLegacy();
+}
+
+/** Synchronous acceptance can retain the draft while publication is pending. */
+export function hostSessionBindingsPending(): boolean {
+  return !hydrated || writes.length > 0;
+}
+
+/** Resolve every stored routing fence before absence can authorize Native execution. */
+export function hydrateHostSessionBindings(): Promise<void> {
+  if (hydrated) return Promise.resolve();
+  if (hydrating) return hydrating;
+  hydrating = (async () => {
+    const epoch = await bindingEpoch();
+    const loaded = new Map<string, StoredBindingEvidence>();
+    let after: string | undefined;
+    for (;;) {
+      const page = await readBindingEvidencePage(after);
+      for (const row of page) loaded.set(row.shellId, row);
+      if (page.length < 128) break;
+      after = page[page.length - 1].shellId;
+    }
+    for (let index = 0; (!epoch.active || epoch.claim) && index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(PREFIX)) continue;
+      const shellId = key.slice(PREFIX.length);
+      const raw = localStorage.getItem(key);
+      if (raw === null) continue;
+      if (loaded.has(shellId)) {
+        await preserveBindingSource(shellId, raw);
+        if (localStorage.getItem(key) !== raw)
+          throw new Error("Session owner migration source changed.");
+        continue;
+      }
+      const row = { shellId, raw, legacyRaw: raw };
+      await writeBindingEvidence(undefined, row);
+      if (localStorage.getItem(key) !== raw)
+        throw new Error("Session owner migration source changed.");
+      loaded.set(shellId, row);
+    }
+    if (epoch.claim) await finishBindingEpoch(epoch.claim);
+    if (epoch.active) {
+      // Native evidence and its recovery bytes committed before releasing quota.
+      // Never remove a source that changed during migration or in another page.
+      for (const row of loaded.values()) {
+        if (row.legacyRaw !== null && localStorage.getItem(PREFIX + row.shellId) === row.legacyRaw)
+          localStorage.removeItem(PREFIX + row.shellId);
+      }
+    }
+    canonical.clear();
+    for (const [id, row] of loaded) canonical.set(id, row);
+    canonicalEpoch = epoch.active;
+    hydrated = true;
+  })().finally(() => {
+    hydrating = undefined;
+  });
+  return hydrating;
+}
+
+/** Await durable owner publication before command admission or Native fallback. */
+export async function flushHostSessionBindings(shellId?: string): Promise<void> {
+  await hydrateHostSessionBindings();
+  do {
+    await drain();
+    if (shellId !== undefined) {
+      const latest = await readBindingEvidence(shellId);
+      if (writes.length) continue;
+      if (latest) canonical.set(shellId, latest);
+      else canonical.delete(shellId);
+    } else {
+      // Canonical-only writers no longer emit localStorage change fences. Read
+      // every owner before a caller uses this window's synchronous projection.
+      const latest = new Map<string, StoredBindingEvidence>();
+      let after: string | undefined;
+      for (;;) {
+        const page = await readBindingEvidencePage(after);
+        for (const row of page) latest.set(row.shellId, row);
+        if (page.length < 128) break;
+        after = page[page.length - 1].shellId;
+      }
+      if (writes.length) continue;
+      canonical.clear();
+      for (const [id, row] of latest) canonical.set(id, row);
+    }
+  } while (writes.length);
+}
+
+function drain(): Promise<void> {
+  if (saving) return saving;
+  saving = (async () => {
+    while (writes.length) {
+      const { previous, next } = writes[0];
+      await writeBindingEvidence(previous, next);
+      writes.shift();
+    }
+  })().finally(() => {
+    saving = undefined;
+  });
+  return saving;
+}
+
+function publish(shellId: string, raw: string): void {
+  if (isTauri() && !hydrated) throw new Error("Session owner storage is still loading.");
+  // Keep the old routing fence until every admission reads native authority.
+  if (!canonicalEpoch) localStorage.setItem(PREFIX + shellId, raw);
+  if (!hydrated) return;
+  const previous = canonical.get(shellId);
+  const next = { shellId, raw, legacyRaw: canonicalEpoch ? (previous?.legacyRaw ?? null) : raw };
+  canonical.set(shellId, next);
+  writes.push({ previous, next });
+  void drain().catch(() => {});
+}
 
 type StoredHostShell = {
   binding: HostSessionBinding;
@@ -27,177 +225,66 @@ type StoredHostShell = {
   archived?: boolean;
   pinned?: boolean;
   deleted?: boolean;
-  deletedAt?: number;
 };
-
-// Per-window index: the key scan runs once, each record is parsed once per
-// distinct raw string (a listing compares strings, which is cheap), and the
-// `storage` event keeps both current when another window writes.
-let knownIds: Set<string> | undefined;
-const records = new Map<string, { raw: string; record: StoredHostShell | undefined }>();
-const warned = new Set<string>();
-let storageListening = false;
-
-function storageAvailable(): boolean {
-  return typeof localStorage !== "undefined";
+class InvalidStoredSessionOwner extends Error {
+  constructor() {
+    super("Invalid stored session owner; reconnect this conversation before sending.");
+  }
 }
-
-function validRecord(shellId: string, value: unknown): value is StoredHostShell {
-  const b = (value as { binding?: Partial<HostSessionBinding> } | null)?.binding;
-  return !(
+function read(shellId: string): StoredHostShell | undefined {
+  if (typeof localStorage === "undefined") return;
+  const legacy = canonicalEpoch ? null : localStorage.getItem(PREFIX + shellId);
+  const evidence = canonical.get(shellId);
+  if (!canonicalEpoch && hydrated && evidence && legacy !== evidence.legacyRaw)
+    throw new Error("The stored session owner changed. Reload before continuing.");
+  if (!hydrated && typeof indexedDB !== "undefined")
+    throw new Error("Session owner storage is still loading. Sending is held.");
+  if (!canonicalEpoch && hydrated && !evidence && legacy !== null)
+    throw new Error("A session owner appeared in another window. Reload before continuing.");
+  const raw = hydrated ? (evidence?.raw ?? null) : legacy;
+  if (raw === null) return;
+  let value: ReturnType<typeof JSON.parse>;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new InvalidStoredSessionOwner();
+  }
+  const b = value?.binding;
+  if (
     b?.kind !== "local-host" ||
     ![b.machineId, b.environmentId, b.projectId, b.sessionId].every(
       (v) => typeof v === "string" && !!v,
     ) ||
     (b.authorityGeneration !== null &&
-      (!Number.isSafeInteger(b.authorityGeneration) || (b.authorityGeneration as number) < 1)) ||
+      (!Number.isSafeInteger(b.authorityGeneration) || b.authorityGeneration < 1)) ||
     typeof b.created !== "boolean" ||
-    (value as { shell?: { id?: unknown } }).shell?.id !== shellId
-  );
+    value?.shell?.id !== shellId
+  )
+    throw new InvalidStoredSessionOwner();
+  return value;
 }
 
-function listenForStorage() {
-  if (storageListening || typeof window === "undefined") return;
-  storageListening = true;
-  window.addEventListener("storage", (event: StorageEvent) => {
-    if (event.key === null) {
-      knownIds = undefined;
-      records.clear();
-      return;
-    }
-    if (!event.key.startsWith(PREFIX)) return;
-    const shellId = event.key.slice(PREFIX.length);
-    records.delete(shellId);
-    if (event.newValue === null) knownIds?.delete(shellId);
-    else knownIds?.add(shellId);
-  });
-}
-
-function keyIndex(): Set<string> {
-  if (knownIds) return knownIds;
-  knownIds = new Set();
-  if (storageAvailable()) {
-    for (let index = 0; index < localStorage.length; index++) {
-      const key = localStorage.key(index);
-      if (key?.startsWith(PREFIX)) knownIds.add(key.slice(PREFIX.length));
-    }
-  }
-  listenForStorage();
-  return knownIds;
-}
-
-function forget(shellId: string) {
-  records.delete(shellId);
-  knownIds?.delete(shellId);
-}
-
-/** Set an unreadable record aside, once, without failing the caller. */
-function quarantine(shellId: string, raw: string) {
-  if (!warned.has(shellId)) {
-    warned.add(shellId);
-    console.warn(
-      `Stored Host session owner for ${shellId} is unreadable and was set aside; reconnect that conversation before sending.`,
-    );
-  }
+/** A malformed owner remains a fence for list projection, never an unowned row. */
+export function hasHostSessionOwnerFence(shellId: string): boolean {
   try {
-    localStorage.setItem(QUARANTINE_PREFIX + shellId, raw);
-    localStorage.removeItem(PREFIX + shellId);
-    forget(shellId);
-  } catch {
-    // No room to move it: remember it as invalid so it is skipped without another parse.
-    records.set(shellId, { raw, record: undefined });
-  }
-}
-
-function read(shellId: string): StoredHostShell | undefined {
-  if (!storageAvailable()) return;
-  const raw = localStorage.getItem(PREFIX + shellId);
-  if (raw === null) {
-    forget(shellId);
-    return;
-  }
-  const cached = records.get(shellId);
-  if (cached && cached.raw === raw) return cached.record;
-  let record: StoredHostShell | undefined;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (validRecord(shellId, value)) record = value;
-  } catch {
-    record = undefined;
-  }
-  if (!record) {
-    quarantine(shellId, raw);
-    return;
-  }
-  records.set(shellId, { raw, record });
-  knownIds?.add(shellId);
-  return record;
-}
-
-function isQuotaError(error: unknown): boolean {
-  const { name, code } = (error ?? {}) as { name?: unknown; code?: unknown };
-  return (
-    name === "QuotaExceededError" ||
-    name === "NS_ERROR_DOM_QUOTA_REACHED" ||
-    code === 22 ||
-    code === 1014
-  );
-}
-
-function storageError(error: unknown): Error {
-  if (isQuotaError(error))
-    return new Error(
-      "Browser storage is full, so this Host conversation could not be saved locally. Delete old Host conversations or pending requests and try again.",
-    );
-  return new Error(
-    `Could not save this Host conversation locally: ${error instanceof Error ? error.message : String(error)}`,
-  );
-}
-
-/** Removes deleted markers older than their TTL; returns how many keys were freed. */
-function expireDeletedMarkers(now = Date.now()): number {
-  let freed = 0;
-  for (const shellId of [...keyIndex()]) {
-    const stored = read(shellId);
-    if (!stored?.deleted || now - (stored.deletedAt ?? stored.updatedAt) < HOST_SESSION_DELETED_TTL_MS)
-      continue;
-    try {
-      localStorage.removeItem(PREFIX + shellId);
-      forget(shellId);
-      freed++;
-    } catch {
-      // Still present; the next listing tries again.
-    }
-  }
-  return freed;
-}
-
-function write(shellId: string, record: StoredHostShell): void {
-  const raw = JSON.stringify(record);
-  try {
-    localStorage.setItem(PREFIX + shellId, raw);
+    return !!read(shellId);
   } catch (error) {
-    // Out of room: free expired deleted markers and retry once before giving up.
-    if (!isQuotaError(error) || expireDeletedMarkers() === 0) throw storageError(error);
-    try {
-      localStorage.setItem(PREFIX + shellId, raw);
-    } catch (retryError) {
-      throw storageError(retryError);
-    }
+    if (error instanceof InvalidStoredSessionOwner) return true;
+    throw error;
   }
-  records.set(shellId, { raw, record });
-  knownIds?.add(shellId);
 }
 
 export function hostSessionBinding(
   session: Pick<Session, "id" | "hostBinding">,
 ): HostSessionBinding | undefined {
-  return read(session.id)?.binding ?? session.hostBinding;
+  const stored = read(session.id);
+  if (hydrated && !stored && session.hostBinding)
+    throw new Error("The session owner has no durable record. Reconnect before sending.");
+  return stored?.binding ?? session.hostBinding;
 }
 
 /** Must succeed before making the new tab available. No transcript is written
- * into Native's authoritative store; this is only a local display/default cache.
- * A full browser storage surfaces as a clear error, never a raw exception. */
+ * into Native's authoritative store; this is only a local display/default cache. */
 export function saveHostSessionBinding(shell: Session, binding: HostSessionBinding): Session {
   const next = { ...shell, hostBinding: binding };
   const previous = read(shell.id);
@@ -220,13 +307,16 @@ export function saveHostSessionBinding(shell: Session, binding: HostSessionBindi
     throw new Error("The session authority changed while the request was in flight.");
   if (previous?.binding.created && !binding.created)
     throw new Error("An acknowledged Host conversation cannot become uncreated.");
-  write(shell.id, {
-    ...previous,
-    createdAt: previous?.createdAt ?? Date.now(),
-    updatedAt: Date.now(),
-    binding,
-    shell: { ...next, blocks: [] },
-  });
+  publish(
+    shell.id,
+    JSON.stringify({
+      ...previous,
+      createdAt: previous?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      binding,
+      shell: { ...next, blocks: [] },
+    }),
+  );
   return next;
 }
 
@@ -298,23 +388,20 @@ export function hostSessionShellSummaries() {
       pinned?: boolean;
     }
   > = [];
-  if (!storageAvailable()) return summaries;
-  const now = Date.now();
-  for (const shellId of [...keyIndex()]) {
-    const stored = read(shellId);
-    if (!stored) continue;
-    if (stored.deleted) {
-      if (now - (stored.deletedAt ?? stored.updatedAt) >= HOST_SESSION_DELETED_TTL_MS) {
-        try {
-          localStorage.removeItem(PREFIX + shellId);
-          forget(shellId);
-        } catch {
-          // Still present; the next listing tries again.
-        }
-      }
-      continue;
+  if (typeof localStorage === "undefined") return summaries;
+  const keys = hydrated
+    ? [...canonical.keys()].map((id) => PREFIX + id)
+    : Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+  for (const key of keys) {
+    if (!key?.startsWith(PREFIX)) continue;
+    let stored: StoredHostShell | undefined;
+    try {
+      stored = read(key.slice(PREFIX.length));
+    } catch (error) {
+      if (error instanceof InvalidStoredSessionOwner) continue;
+      throw error;
     }
-    if (!stored.binding.created) continue;
+    if (!stored?.binding.created || stored.deleted) continue;
     const { shell, createdAt, updatedAt, archived, pinned } = stored;
     summaries.push({
       id: shell.id,
@@ -341,14 +428,13 @@ export function patchHostSessionShellMetadata(
 ): void {
   const stored = read(shellId);
   if (!stored) throw new Error("Missing session owner");
-  write(shellId, { ...stored, ...patch });
+  publish(shellId, JSON.stringify({ ...stored, ...patch }));
 }
 
 export function forgetHostSessionShell(shellId: string): void {
-  // A stale saved workspace must retain the routing fence after deletion; the
-  // marker expires after HOST_SESSION_DELETED_TTL_MS.
+  // A stale saved workspace must retain the routing fence after deletion.
   const stored = read(shellId);
-  if (stored) write(shellId, { ...stored, deleted: true, deletedAt: Date.now() });
+  if (stored) publish(shellId, JSON.stringify({ ...stored, deleted: true }));
 }
 
 export function hostExecutionProject(shell: Session): RemoteProject | undefined {

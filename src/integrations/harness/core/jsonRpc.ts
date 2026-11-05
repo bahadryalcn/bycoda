@@ -162,10 +162,10 @@ export class JsonRpcClient {
 
   withWriter(writer: ChildTurnWriter): JsonRpcWriterView {
     assertChildTurnWriter(this.child, writer);
-    const client = this;
+    const isClosed = () => this.isClosed;
     return Object.freeze({
       get isClosed() {
-        return client.isClosed;
+        return isClosed();
       },
       request: <T>(
         method: string,

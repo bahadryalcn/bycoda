@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronDown, ChevronUp, X } from "../../../shared/ui/icons";
-import { keybindingPressed } from "../../settings/model/settings";
+import { keybindingPressed } from "../../settings/public/settings";
 import { startPreviewSearch } from "./previewSearchTask";
 import { evaluatePreviewSearch } from "./previewSearchEvaluation";
 
@@ -180,7 +180,8 @@ export function FilePreviewSearch({
   useLayoutEffect(() => {
     // Accessible names are translated; find and keyboard recovery share the
     // actual document scroll owner instead of looking up its English label.
-    previewOwnerRef.current = contentRef.current?.querySelector<HTMLElement>(".markdown-preview") ?? contentRef.current;
+    previewOwnerRef.current =
+      contentRef.current?.querySelector<HTMLElement>(".markdown-preview") ?? contentRef.current;
   }, [active, contentVersion]);
 
   const cancelFocus = useCallback(() => {
@@ -385,7 +386,7 @@ export function FilePreviewSearch({
         <div
           role="search"
           aria-label={t("Find in preview")}
-          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 py-1 text-content"
+          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading-panel) px-2 py-1 text-content"
           onKeyDown={onKeyDown}
         >
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">

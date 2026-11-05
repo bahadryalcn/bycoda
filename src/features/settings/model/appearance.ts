@@ -1,5 +1,6 @@
 import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { themePalette } from "../../../shared/theme/palette";
+import { initWorkspaceBackground } from "./workspaceBackground";
 import { clamp } from "../../../shared/lib/numbers";
 import {
   APPEARANCE_PREFERENCES_EVENT,
@@ -63,6 +64,24 @@ let chatBackgroundRevision = Date.now();
 let nativeGlassReady = false;
 let glassFadeTimer: number | undefined;
 let glassSyncGeneration = 0;
+let nativeGlassError = false;
+let nativeGlassPending = false;
+const NATIVE_GLASS_EVENT = "bycoda:native-glass-status";
+export function readNativeGlassError() {
+  return nativeGlassError;
+}
+export function readNativeGlassPending() {
+  return nativeGlassPending;
+}
+export function subscribeNativeGlassStatus(listener: () => void) {
+  window.addEventListener(NATIVE_GLASS_EVENT, listener);
+  return () => window.removeEventListener(NATIVE_GLASS_EVENT, listener);
+}
+function setNativeGlassStatus(value: boolean, pending: boolean) {
+  nativeGlassError = value;
+  nativeGlassPending = pending;
+  window.dispatchEvent(new Event(NATIVE_GLASS_EVENT));
+}
 
 export const CHAT_BACKGROUND_PATH_CHANGE_EVENT = "bycoda:chat-background-path-change";
 
@@ -343,7 +362,9 @@ const appliedTint: { hue?: number; saturation?: number; darkLightness?: number }
 function themeCanvases(): AccentCanvas {
   const hue = appliedTint.hue ?? loadThemeHue();
   const saturation = appliedTint.saturation ?? loadThemeSaturation();
-  const darkBase = hex(hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness()));
+  const darkBase = hex(
+    hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness()),
+  );
   const darkContent = hex(hslToRgb(hue, saturation, 92));
   const lightBase = hex(hslToRgb(hue, saturation * 0.2, 98.6));
   const lightContent = hex(hslToRgb(hue, saturation * 0.35, 13));
@@ -594,6 +615,7 @@ let themeStorageWatching = false;
 
 export function initAppearance() {
   initAppearancePreferences();
+  initWorkspaceBackground();
   document.documentElement.classList.toggle("is-mac", IS_MAC);
   applyStoredAppearance();
   watchSystemColorScheme();
@@ -698,11 +720,12 @@ export function syncNativeGlass(scheme: ColorScheme) {
   const enabled = scheme === "dark" && (IS_LINUX ? loadBodyGlass() : loadWindowGlass());
   const root = document.documentElement;
   const generation = ++glassSyncGeneration;
+  setNativeGlassStatus(nativeGlassError, true);
   const setWindow = () =>
     invoke("set_window_glass_enabled", {
       enabled,
       background: opaqueWindowBackground(),
-    }).catch(() => {});
+    });
 
   if (glassFadeTimer !== undefined) {
     window.clearTimeout(glassFadeTimer);
@@ -710,18 +733,32 @@ export function syncNativeGlass(scheme: ColorScheme) {
   }
 
   if (enabled) {
-    void setWindow().finally(() => {
-      if (generation === glassSyncGeneration) {
-        root.classList.add("has-native-glass");
-      }
-    });
+    void setWindow()
+      .then(() => {
+        if (generation === glassSyncGeneration) {
+          setNativeGlassStatus(false, false);
+          root.classList.add("has-native-glass");
+        }
+      })
+      .catch(() => {
+        if (generation === glassSyncGeneration) {
+          root.classList.remove("has-native-glass");
+          setNativeGlassStatus(true, false);
+        }
+      });
     return;
   }
 
   root.classList.remove("has-native-glass");
   glassFadeTimer = window.setTimeout(() => {
     glassFadeTimer = undefined;
-    void setWindow();
+    void setWindow()
+      .then(() => {
+        if (generation === glassSyncGeneration) setNativeGlassStatus(false, false);
+      })
+      .catch(() => {
+        if (generation === glassSyncGeneration) setNativeGlassStatus(true, false);
+      });
   }, glassFadeMs());
 }
 
@@ -792,9 +829,29 @@ export function saveSidebarBlur(value: number) {
   writeNumber(BLUR_KEY, Math.round(clamp(value, SIDEBAR_BLUR_MIN, SIDEBAR_BLUR_MAX)));
 }
 
+let pendingSidebarBlur: number | undefined;
+let applyingSidebarBlur = false;
+
+async function flushSidebarBlur() {
+  if (applyingSidebarBlur) return;
+  applyingSidebarBlur = true;
+  try {
+    while (pendingSidebarBlur !== undefined) {
+      const radius = pendingSidebarBlur;
+      pendingSidebarBlur = undefined;
+      await invoke("set_window_background_blur", { radius }).catch(() => {});
+    }
+  } finally {
+    applyingSidebarBlur = false;
+  }
+}
+
 export function applySidebarBlur(value: number) {
   const next = Math.round(clamp(value, SIDEBAR_BLUR_MIN, SIDEBAR_BLUR_MAX));
-  if (IS_MAC) void invoke("set_window_background_blur", { radius: next }).catch(() => {});
+  if (IS_MAC) {
+    pendingSidebarBlur = next;
+    void flushSidebarBlur().catch(() => {});
+  }
   return next;
 }
 

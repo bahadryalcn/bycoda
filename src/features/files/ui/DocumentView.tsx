@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "../../../shared/ui/icons";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   basename,
   openPathWithDefaultApp,
@@ -23,7 +23,7 @@ import { DocumentMessage } from "./DocumentMessage";
 import { FileActionError } from "./FileActionError";
 import { formatFileSize } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 
 // The parsers are big; each loads on first use so none reach the main bundle.
 const PdfViewer = lazy(() => import("./PdfViewer"));
@@ -48,17 +48,22 @@ type LoadState =
  * Read-only surface for PDF, Word and Excel files. Reads the bytes the same way
  * the image viewer does, then hands them to a lazily loaded format viewer.
  */
-export function DocumentView({ path, cwd, readBytes, externalPath = path, fitContent = false }: Props) {
+export function DocumentView({
+  path,
+  cwd,
+  readBytes,
+  externalPath = path,
+  fitContent = false,
+}: Props) {
   useLocale();
   const kind = documentKind(path);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   // The error belongs to the file it came from; a different file shows none.
   const actionKey = JSON.stringify([path, externalPath ?? ""]);
-  const [actionFailure, setActionFailure] = useState<{ key: string; message: string } | null>(
-    null,
-  );
-  const actionError = actionFailure && actionFailure.key === actionKey ? actionFailure.message : null;
+  const [actionFailure, setActionFailure] = useState<{ key: string; message: string } | null>(null);
+  const actionError =
+    actionFailure && actionFailure.key === actionKey ? actionFailure.message : null;
   const setActionError = (message: string | null) =>
     setActionFailure(message === null ? null : { key: actionKey, message });
   const actionRequest = useRef(0);
@@ -183,7 +188,12 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path, fitCon
   } else {
     body = (
       <Suspense fallback={<Loading name={name} />}>
-        <FormatViewer kind={kind as DocumentKind} bytes={state.bytes} trailing={openButton} fitContent={fitContent} />
+        <FormatViewer
+          kind={kind as DocumentKind}
+          bytes={state.bytes}
+          trailing={openButton}
+          fitContent={fitContent}
+        />
       </Suspense>
     );
   }
@@ -230,7 +240,13 @@ function FormatViewer({
   useLocale();
   if (kind === "pdf") return <PdfViewer bytes={bytes} trailing={trailing} />;
   if (kind === "docx") return <DocxViewer bytes={bytes} />;
-  return <SheetViewer bytes={bytes} format={kind === "csv" || kind === "tsv" ? kind : undefined} fitContent={fitContent} />;
+  return (
+    <SheetViewer
+      bytes={bytes}
+      format={kind === "csv" || kind === "tsv" ? kind : undefined}
+      fitContent={fitContent}
+    />
+  );
 }
 
 function Loading({ name }: { name: string }) {

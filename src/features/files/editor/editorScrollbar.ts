@@ -181,7 +181,15 @@ class EditorScrollbar {
    * nested scroller there is not hijacked.
    */
   private readonly onWheel = (event: WheelEvent) => {
-    if (!this.active() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (
+      !this.active() ||
+      event.defaultPrevented ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey
+    )
+      return;
     if (event.deltaY === 0) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -255,7 +263,8 @@ class EditorScrollbar {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (!this.active() || event.defaultPrevented || event.button !== 0 || this.pointerId !== null) return;
+    if (!this.active() || event.defaultPrevented || event.button !== 0 || this.pointerId !== null)
+      return;
     // A gesture is worth a fresh read: the cached strip is one frame old and
     // the window may have moved since.
     this.measure();
@@ -334,7 +343,13 @@ class EditorScrollbar {
   private readonly onPointerLeave = () => this.setHover(false);
 
   private readonly onMouseDown = (event: MouseEvent) => {
-    if (!this.active() || event.defaultPrevented || event.button !== 0 || !this.claimsPress(event.target)) return;
+    if (
+      !this.active() ||
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      !this.claimsPress(event.target)
+    )
+      return;
     if (!this.overRail(event.clientX)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -371,7 +386,8 @@ class EditorScrollbar {
     const pointer = this.pointerId;
     this.pointerId = null;
     delete this.dom.dataset.dragging;
-    if (pointer !== null && this.view.dom.hasPointerCapture?.(pointer)) this.view.dom.releasePointerCapture(pointer);
+    if (pointer !== null && this.view.dom.hasPointerCapture?.(pointer))
+      this.view.dom.releasePointerCapture(pointer);
   }
 
   private metrics(): ScrollbarMetrics {

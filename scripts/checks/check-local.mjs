@@ -70,6 +70,15 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     };
   const files = decision.files.filter((file) => existsSync(path.join(root, file)));
   const steps = [];
+  // Windows caps a spawned command line near 32 KB; a broad dirty checkout exceeds it
+  // (spawn ENAMETOOLONG). Split file-list arguments into bounded batches instead.
+  const batched = (name, build, files, batchSize = 120) => {
+    for (let index = 0; index < files.length; index += batchSize) {
+      const batch = files.slice(index, index + batchSize);
+      const label = files.length > batchSize ? `${name} (${index / batchSize + 1})` : name;
+      steps.push(node(label, build(batch)));
+    }
+  };
   const tool = (name, args) => {
     const manifest = JSON.parse(
       readFileSync(path.join(root, "node_modules", name, "package.json"), "utf8"),
@@ -86,37 +95,33 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     /\.(?:[cm]?[jt]sx?|jsonc?|ya?ml|md|css|html|toml)$/.test(file),
   );
   const code = files.filter((file) => /\.[cm]?[jt]sx?$/.test(file));
-  if (supported.length)
-    steps.push(node("Changed-file formatting", tool("oxfmt", ["--check", ...supported])));
-  if (code.length) steps.push(node("Changed-file lint", tool("oxlint", [...code])));
+  batched("Changed-file formatting", (batch) => tool("oxfmt", ["--check", ...batch]), supported);
+  batched("Changed-file lint", (batch) => tool("oxlint", [...batch]), code);
   const ui = files.filter((file) => scopeOf(file));
-  if (ui.length)
-    steps.push(
-      node("Changed-file UI drift ratchet", [
-        path.join(root, "scripts/checks/check-ui-drift.mjs"),
-        "--files",
-        ...ui,
-      ]),
-    );
+  batched(
+    "Changed-file UI drift ratchet",
+    (batch) => [path.join(root, "scripts/checks/check-ui-drift.mjs"), "--files", ...batch],
+    ui,
+  );
   const invariants = files.filter((file) =>
     /^(?:src|host|packages|src-tauri\/src)\/.*\.(?:[cm]?[jt]sx?|rs)$/.test(file),
   );
-  if (invariants.length)
-    steps.push(
-      node("Changed-file code invariants ratchet", [
-        path.join(root, "scripts/checks/check-invariants.mjs"),
-        "--files",
-        ...invariants,
-      ]),
-    );
+  batched(
+    "Changed-file code invariants ratchet",
+    (batch) => [path.join(root, "scripts/checks/check-invariants.mjs"), "--files", ...batch],
+    invariants,
+  );
+  batched(
+    "Changed-file code structure ratchet",
+    (batch) => [path.join(root, "scripts/checks/check-code-structure.mjs"), "--files", ...batch],
+    invariants,
+  );
   const hooks = code.filter((file) => file.startsWith("src/"));
-  if (hooks.length)
-    steps.push(
-      node(
-        "Changed React hook contracts",
-        tool("oxlint", ["--config", ".oxlint-hooks.json", ...hooks]),
-      ),
-    );
+  batched(
+    "Changed React hook contracts",
+    (batch) => tool("oxlint", ["--config", ".oxlint-hooks.json", ...batch]),
+    hooks,
+  );
 
   const tests = new Set();
   for (const file of files) {

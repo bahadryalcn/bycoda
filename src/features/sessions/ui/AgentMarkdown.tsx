@@ -1,12 +1,14 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Button } from "../../../shared/ui/Button";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Alert } from "../../../shared/ui/Alert";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
-import { openWorkspaceUrl } from "../../connections/model/workspaceUrls";
+import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
 import {
   createContext,
   isValidElement,
@@ -42,16 +44,16 @@ import {
 } from "streamdown";
 import type { Pluggable, PluggableList, Plugin } from "unified";
 import { useRenderTrace } from "./useRenderTrace";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
-import { FileActionError } from "../../files/ui/FileActionError";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { useCodeHighlightPlugin } from "../../files/editor/useCodeHighlightPlugin";
-import { createLazyMermaidPlugin } from "../../files/editor/mermaidPlugin";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+import { FileActionError } from "../../files/public/FileActionError";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
+import { useCodeHighlightPlugin } from "../../files/public/useCodeHighlightPlugin";
+import { createLazyMermaidPlugin } from "../../files/public/mermaidPlugin";
 import { displayPath, isEmailAddress, isExtensionlessFileName } from "../../../shared/lib/paths";
 import { useWorkspaceFileResolver } from "../model/reactiveReads";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-import { remarkWorkspaceFileLinks } from "../../files/model/markdownFileLinks";
-import { isAtxHeadingLine } from "../../files/model/markdownSource";
+import { remarkWorkspaceFileLinks } from "../../files/public/markdownFileLinks";
+import { isAtxHeadingLine } from "../../files/public/markdownSource";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -61,14 +63,14 @@ import {
   openPathWithDefaultApp,
   revealPath,
 } from "../../../platform/tauri/fs";
-import { ChatFolderBrowser } from "../../files/ui/ChatFolderBrowser";
+import { ChatFolderBrowser } from "../../files/public/ChatFolderBrowser";
 import { Check, Copy, FolderOpen } from "../../../shared/ui/icons";
-import { resolveFileOpenRequest } from "../../files/model/fileIndex";
-import { existingChatPath } from "../../files/model/chatPathChecks";
+import { resolveFileOpenRequest } from "../../files/public/fileIndex";
+import { existingChatPath } from "../../files/public/chatPathChecks";
 import {
   messageFileCandidates,
   resolveMessageFileReference,
-} from "../../files/model/messagePathContext";
+} from "../../files/public/messagePathContext";
 import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -86,9 +88,9 @@ import {
   useWordFading,
   useWordFadeWindow,
 } from "./wordFade";
-import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../settings/model/settings";
+import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../settings/public/settings";
 import { usePresentationVisible } from "./presentationVisibility";
-import { usePrefersReducedMotion } from "../../settings/model/decorativeMotion";
+import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
 import { useParsedMarkdown } from "./useParsedMarkdown";
 import { parseLocalSessionLink } from "../model/localSessionReference";
@@ -98,20 +100,17 @@ import {
   rehypeHoldLocalSessionLinks,
   rehypeRestoreLocalSessionLinks,
 } from "./localSessionLinkSources";
-
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
   securityLevel: "strict",
   suppressErrorRendering: true,
 } as const;
-
 const mermaid = createLazyMermaidPlugin({
   config: {
     ...MERMAID_BASE_CONFIG,
     theme: "dark",
   },
 });
-
 // Extend only href protocols. Every bycoda target is validated before hardening
 // and again at dispatch; images and all other sanitizer rules stay unchanged.
 const [sanitizeMarkdown, markdownSchema] = defaultRehypePlugins.sanitize as [
@@ -592,7 +591,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const isPlaintextFallback = PLAINTEXT_FENCE_LANGUAGES.has(fence.language.toLowerCase());
 
   return (
-    <MarkdownCodeShell code={code}>
+    <MarkdownCodeShell code={code} language={fence.language}>
       {iconName ? (
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name={iconName} isDir={false} />
@@ -616,7 +615,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   );
 }
 
-function MarkdownCodeShell({ code, children }: { code: string; children: ReactNode }) {
+function MarkdownCodeShell({ code, language, children }: { code: string; language: string; children: ReactNode }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
@@ -635,7 +634,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
   return (
     <div
       className="markdown-code-shell markdown-code-resizable"
-      data-collapsed={collapsed}
+      data-collapsed={collapsed} data-code-identity={JSON.stringify([language, code])}
       dir="ltr"
       tabIndex={0}
       role="region"
@@ -838,7 +837,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
     return <img {...props} src={url} alt={alt ?? ""} />;
   }
   if (isNoteImagePath(url)) {
-    return <NoteAssetImage {...props} asset={url} alt={alt} />;
+    return <NoteAssetImage key={url} {...props} asset={url} alt={alt} />;
   }
   const file = localMedia && url ? resolveFile(url, cwd) : undefined;
   if (file && isLocalMediaPath(file.path)) {
@@ -1130,12 +1129,16 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // memoized former tail retain its fading plugin after a new block arrives.
   // Each message keeps its own parse, so a growing reply only lexes its open tail.
   const markdownStream = useId();
-  const { blocks: markdownBlocks, pending: markdownPending } = useParsedMarkdown(
-    paced.text,
-    markdownStream,
-  );
+  const {
+    blocks: markdownBlocks,
+    pending: markdownPending,
+    sourceFallback,
+  } = useParsedMarkdown(paced.text, markdownStream);
   const lastBlock = markdownBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
+  // Streamdown's memo comparator ignores the parser callback. Its children must
+  // change when a worker parse arrives, even when the original source is unchanged.
+  const parsedSource = useMemo(() => markdownBlocks.join(""), [markdownBlocks]);
   const pacedFadeOptions = useWordFadeWindow(paced.text);
   const arrivalFadeOptions = useArrivalFadeWindow(
     text,
@@ -1200,8 +1203,13 @@ export const AgentMarkdown = memo(function AgentMarkdown({
         <FileOpenContext.Provider value={fileOpen}>
           <BlockPluginContext.Provider value={blockPlugins}>
             <div ref={fadeRoot} className="min-w-0" aria-busy={markdownPending || undefined}>
-              {markdownPending && !markdownBlocks.length ? (
-                <div className="whitespace-pre-wrap">{paced.text}</div>
+              {sourceFallback ? (
+                <>
+                  <Alert tone="warning" inline>
+                    {t("Formatted preview unavailable. Showing source.")}
+                  </Alert>
+                  <div className="whitespace-pre-wrap">{paced.text}</div>
+                </>
               ) : (
                 <Streamdown
                   BlockComponent={DirectionalBlock}
@@ -1215,9 +1223,10 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   remarkPlugins={remarkPlugins}
                   rehypePlugins={rehypePlugins}
                 >
-                  {paced.text}
+                  {parsedSource}
                 </Streamdown>
               )}
+              {markdownPending ? <LoadingText>{t("Rendering Markdown…")}</LoadingText> : null}
             </div>
             {fileMenu ? (
               <ExplorerMenu
@@ -1341,6 +1350,8 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
   );
 }
 
+let mermaidRenderSequence = 0;
+
 function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean }) {
   useLocale();
   // A render result belongs to the code and scheme it was made for: anything
@@ -1360,7 +1371,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   useEffect(() => {
     if (incomplete) return;
     let cancelled = false;
-    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${Date.now().toString(36)}`;
+    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${++mermaidRenderSequence}`;
     void mermaid
       .getMermaid({
         ...MERMAID_BASE_CONFIG,
@@ -1381,7 +1392,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
 
   if (incomplete || failed) {
     return (
-      <MarkdownCodeShell code={code}>
+      <MarkdownCodeShell code={code} language="mermaid">
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name="diagram.mmd" isDir={false} />
         </span>

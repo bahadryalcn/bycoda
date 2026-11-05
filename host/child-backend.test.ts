@@ -1,18 +1,18 @@
 import { expect, it, vi } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, renameSync } from "node:fs";
 import { readFileSync, existsSync } from "node:fs";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
-import { ProviderConstructions } from "./provider-constructions";
+import { ProviderConstructions } from "./providers/provider-constructions";
 import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
-import { HostRunWriters } from "./run-writers";
+import { HostRunWriters } from "./execution/run-writers";
 import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
-import type { SocialService } from "./social";
-import { PROVIDER_STDERR_LINE_BYTES } from "./provider-lines";
+import type { SocialService } from "./social/social";
+import { PROVIDER_STDERR_LINE_BYTES } from "./providers/provider-lines";
 import {
   requireHarnessProcessReceipt,
   type HarnessProcessReceipt,
@@ -48,7 +48,7 @@ setInterval(()=>{},1000);`,
   const exits: Array<{ sessionId: string; constructionId: string; pid: number }> = [];
   const stateWaiters = new Set<() => void>();
   const changed = () => {
-    for (const check of [...stateWaiters]) check();
+    for (const check of Array.from(stateWaiters)) check();
   };
   const waitForState = (ready: () => boolean) =>
     new Promise<void>((resolve) => {
@@ -1199,6 +1199,155 @@ it("prepares a unique text-only workspace without project files", async () => {
     ).rejects.toThrow("Invalid text agent");
   } finally {
     rmSync(workspace.cwd, { recursive: true, force: true });
+  }
+});
+
+it("reclaims a finished text sandbox on later admission while retaining a live one", async () => {
+  const writers = new HostRunWriters();
+  const backend = new HostChildBackend({}, undefined, undefined, writers);
+  const runs = [];
+  const paths: string[] = [];
+  try {
+    for (let i = 0; i < 2; i++) {
+      const run = writers.reserve({
+        owner: {},
+        sessionId: `text-${i}`,
+        runId: `run-${i}`,
+        isCurrent: () => true,
+        auxiliary: true,
+      });
+      runs.push(run);
+      await writers.setExecutionCwd(run, tmpdir());
+      const workspace = await backend.invoke<{ cwd: string }>("harness_prepare_text_workspace", {
+        content: "text",
+        hostRun: run,
+      });
+      paths.push(workspace.cwd);
+      if (i === 0) await writers.finish(run);
+    }
+    expect(existsSync(paths[0])).toBe(false);
+    expect(existsSync(paths[1])).toBe(true);
+  } finally {
+    for (const path of paths) rmSync(path, { recursive: true, force: true });
+  }
+});
+
+it("admits more than 512 sequential retired text sandboxes", async () => {
+  const writers = new HostRunWriters();
+  const backend = new HostChildBackend({}, undefined, undefined, writers);
+  let last: string | undefined;
+  try {
+    for (let i = 0; i < 513; i++) {
+      const run = writers.reserve({
+        owner: {},
+        sessionId: `text-capacity-${i}`,
+        runId: `run-${i}`,
+        isCurrent: () => true,
+        auxiliary: true,
+      });
+      await writers.setExecutionCwd(run, tmpdir());
+      const workspace = await backend.invoke<{ cwd: string }>("harness_prepare_text_workspace", {
+        content: "text",
+        hostRun: run,
+      });
+      if (last) expect(existsSync(last)).toBe(false);
+      last = workspace.cwd;
+      await writers.finish(run);
+    }
+  } finally {
+    if (last) rmSync(last, { recursive: true, force: true });
+  }
+}, 60000);
+
+it("retains a replaced sandbox path and retries after the original identity returns", async () => {
+  const writers = new HostRunWriters();
+  const backend = new HostChildBackend({}, undefined, undefined, writers);
+  const paths: string[] = [];
+  const create = async (index: number) => {
+    const run = writers.reserve({
+      owner: {},
+      sessionId: `replace-${index}`,
+      runId: `run-${index}`,
+      isCurrent: () => true,
+      auxiliary: true,
+    });
+    await writers.setExecutionCwd(run, tmpdir());
+    const workspace = await backend.invoke<{ cwd: string }>("harness_prepare_text_workspace", {
+      content: "text",
+      hostRun: run,
+    });
+    paths.push(workspace.cwd);
+    await writers.finish(run);
+    return workspace.cwd;
+  };
+  let moved: string | undefined;
+  try {
+    const original = await create(0);
+    moved = `${original}-moved`;
+    renameSync(original, moved);
+    mkdirSync(original);
+    await create(1);
+    expect(existsSync(original)).toBe(true);
+    rmSync(original, { recursive: true });
+    renameSync(moved, original);
+    moved = undefined;
+    await create(2);
+    expect(existsSync(original)).toBe(false);
+  } finally {
+    for (const path of paths) rmSync(path, { recursive: true, force: true });
+    if (moved) rmSync(moved, { recursive: true, force: true });
+  }
+});
+
+it("retains a quarantined sandbox and revoked grant after deletion failure, then retries", async () => {
+  const writers = new HostRunWriters();
+  let fail = true;
+  const remove = vi.fn(async (path: string) => {
+    if (fail) throw new Error("injected removal failure");
+    await import("node:fs/promises").then(({ rm }) => rm(path, { recursive: true }));
+  });
+  const backend = new HostChildBackend({}, undefined, undefined, writers, remove);
+  const paths: string[] = [];
+  const create = async (index: number) => {
+    const run = writers.reserve({
+      owner: {},
+      sessionId: `retry-${index}`,
+      runId: `run-${index}`,
+      isCurrent: () => true,
+      auxiliary: true,
+    });
+    await writers.setExecutionCwd(run, tmpdir());
+    const workspace = await backend.invoke<{ cwd: string }>("harness_prepare_text_workspace", {
+      content: "text",
+      hostRun: run,
+    });
+    paths.push(workspace.cwd);
+    await writers.finish(run);
+    return workspace.cwd;
+  };
+  try {
+    const first = await create(0);
+    await create(1);
+    const quarantined = remove.mock.calls[0][0];
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(quarantined)).toBe(true);
+    const state = backend as unknown as {
+      textWorkspaceSlots: Set<unknown>;
+      textWorkspaces: Map<string, unknown>;
+    };
+    expect(state.textWorkspaceSlots.size).toBe(2);
+    expect(state.textWorkspaces.size).toBe(2);
+    const grant = state.textWorkspaces.values().next().value as object;
+    const ledger = writers as unknown as { cwdGrants: WeakMap<object, { revoked: boolean }> };
+    expect(ledger.cwdGrants.get(grant)?.revoked).toBe(true);
+    fail = false;
+    await create(2);
+    expect(existsSync(quarantined)).toBe(false);
+    expect(state.textWorkspaceSlots.size).toBe(1);
+    expect(state.textWorkspaces.size).toBe(1);
+  } finally {
+    for (const path of paths) rmSync(path, { recursive: true, force: true });
+    for (const [path] of remove.mock.calls) rmSync(path, { recursive: true, force: true });
   }
 });
 

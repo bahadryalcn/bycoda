@@ -115,7 +115,9 @@ export class RemoteSessionLists {
       );
     }
     const sessions = [...byId.values()].sort(
-      (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
+      (a, b) =>
+        (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt) ||
+        a.id.localeCompare(b.id),
     );
     return this.publish(machineId, projectId, sessions, change.etag);
   }

@@ -23,14 +23,27 @@ export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
 export const BADGE_COUNT_MAX = 99;
 
 /** Concise status presentation; domain-to-tone mapping remains with the caller (or StatusBadge). */
-export function Badge({ className, minWidth, style, size = "md", max, variant, ...props }: BadgeProps) {
+export function Badge({
+  className,
+  minWidth,
+  style,
+  size = "md",
+  max,
+  variant,
+  tone,
+  ...props
+}: BadgeProps) {
+  const badgeTone =
+    variant === "count" && tone !== "warning" && tone !== "danger" ? "accent" : (tone ?? "neutral");
   return (
     <ArcBadge
       {...props}
       variant={variant}
+      tone={badgeTone}
       size={size === "xs" ? "sm" : size}
       max={max ?? (variant === "count" ? BADGE_COUNT_MAX : undefined)}
       data-size={size}
+      data-tone={badgeTone}
       data-variant={variant ?? "label"}
       style={{ ...style, minInlineSize: minWidth ?? style?.minInlineSize }}
       className={["bycoda-arc", size === "xs" && styles.xs, className].filter(Boolean).join(" ")}
@@ -43,7 +56,7 @@ export type BadgeStatus = "failed" | "running" | "retrying" | "done" | "queued" 
 
 const STATUS_TONE: Record<BadgeStatus, BadgeTone> = {
   failed: "danger",
-  running: "info",
+  running: "accent",
   retrying: "warning",
   done: "success",
   queued: "neutral",
@@ -93,7 +106,10 @@ export function useStatusBadgeLabel(): (status: BadgeStatus) => string {
   };
 }
 
-export type StatusBadgeProps = Omit<BadgeProps, "tone" | "icon" | "variant" | "children" | "label"> & {
+export type StatusBadgeProps = Omit<
+  BadgeProps,
+  "tone" | "icon" | "variant" | "children" | "label"
+> & {
   status: BadgeStatus;
   /** Replaces the standard label (e.g. "Failed · 3"); tone and icon stay fixed by the status. */
   children?: ReactNode;

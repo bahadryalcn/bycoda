@@ -261,8 +261,7 @@ export function useWorkspaceKeyboardShortcuts({
         // Holding the chord must not flip the dock on every key repeat.
         else if (cmd === "toggle-terminal") {
           if (!e.repeat) run("toggle-terminal", a.onToggleProjectTerminal);
-        }
-        else if (cmd === "prev-session") run("prev-session", () => a.onNavigateSessionList(-1));
+        } else if (cmd === "prev-session") run("prev-session", () => a.onNavigateSessionList(-1));
         else if (cmd === "next-session") run("next-session", () => a.onNavigateSessionList(1));
         else if (cmd === "prev-session-in-tab")
           run("prev-session-in-tab", () => a.onNavigateSessionList(-1, true));

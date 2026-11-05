@@ -92,7 +92,7 @@ export function ServersConnectionTools({
           {sshEndpointPreview(endpoint.httpProxy)}
         </p>
       ) : null}
-      <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--color-background-base) pbe-2">
+      <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--ui-workspace-reading-base) pbe-2">
         {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
           <Button
             variant="primary"
@@ -161,7 +161,11 @@ export function ServersConnectionTools({
                     disabled={busy}
                   />
                   <div className="flex justify-end gap-2">
-                    <Button variant="ghost" disabled={busy} onClick={() => setEditingIdentity(false)}>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setEditingIdentity(false)}
+                    >
                       {t("Cancel")}
                     </Button>
                     <Button
@@ -192,7 +196,12 @@ export function ServersConnectionTools({
         </TabPanel>
         {canAssignKey ? (
           <TabPanel value="forwards" keepMounted>
-            <ServerForwards key={server.id} server={server} expanded active={panel === "forwards"} />
+            <ServerForwards
+              key={server.id}
+              server={server}
+              expanded
+              active={panel === "forwards"}
+            />
           </TabPanel>
         ) : null}
         <TabPanel value="automation" keepMounted>

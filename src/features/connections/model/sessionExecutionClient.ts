@@ -1,6 +1,7 @@
 import { commonHostSessionExecutionClient } from "../../../shared/lib/host-runtime/session-execution";
 import type { SessionExecutionClient } from "../../../shared/model/host-contracts/session-execution";
 import type { SessionAccess } from "./sessionAccess";
+import { flushHostSessionBindings } from "./sessionExecutionBinding";
 import {
   SessionsPageResultSchema,
   SessionSyncResponseSchema,
@@ -15,11 +16,22 @@ export function sessionExecutionClient(
     list: (params) => access.list(params.projectId, params.known),
     page: async (params) =>
       SessionsPageResultSchema.parse(
-        await access.page(params.sessionId, params.before, params.revision, params.digests, params.preview),
+        await access.page(
+          params.sessionId,
+          params.before,
+          params.revision,
+          params.digests,
+          params.preview,
+        ),
       ),
     sync: async ({ sessionId, ...params }) =>
       SessionSyncResponseSchema.parse(await access.sync(sessionId, params)),
-    dispatch: (command) => access.dispatch(command),
+    dispatch: async (command) => {
+      // Stop retains its independent safety path when storage is unavailable.
+      if (command.type !== "cancel" && command.type !== "stopItem")
+        await flushHostSessionBindings();
+      return access.dispatch(command);
+    },
     status: (commandId) => access.status(commandId),
   });
 }

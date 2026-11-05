@@ -1,5 +1,10 @@
 # Social Media host integration
 
+The Host syncs encrypted credential state before replacement and creates Windows
+vault keys exclusively with a completed file sync. Invalid or undecryptable vault
+state remains intact and blocks mutation. Repair storage or restore the correct
+key through the owner workflow before retrying; no read failure creates a blank vault.
+
 The global Social Media screen opens from the project rail or session composer. Accounts belong to a host authority; campaigns and conversations refer to projects. UI, session MCP and host CLI operations use the same `SocialService`, SQLite queue and authorization checks.
 
 ## Manage the workspace
@@ -129,7 +134,13 @@ rechecks the actor and reads persisted state back. A partial or uncertain update
 requires inspection instead of automatic repetition.
 
 Connected accounts do not need a foreground account window for routine supported
-operations. `SocialService.tick` runs on the host, polls eligible accounts when
+operations. YouTube API polling refreshes newest top-level comments while older
+thread/reply pages continue through their saved cursor, with at most four reads
+per poll. The refresh never resets the historical cursor or grows its reply queue;
+replies still follow the bounded backlog. Host ingest deduplicates repeated event
+IDs. This is not a claim of complete coverage between polls.
+
+`SocialService.tick` runs on the host, polls eligible accounts when
 `inbox.polling` is enabled, feeds inbound events into existing activated rules and
 dispatches approved jobs. Continuous product promotion uses the existing
 `SocialPrograms` schedule, verified public facts, generation limits and activation
@@ -211,17 +222,17 @@ images or one video for supported publishing, and one attachment in the supporte
 WhatsApp/Telegram conversation paths. Unsupported file shapes are rejected before
 dispatch.
 
-| Platform | Official API path | Isolated browser path |
-| --- | --- | --- |
-| X | User OAuth posts/media, comments/replies, mentions and permitted DM reads/sends | Posts/images/video, mentions and saved-post comments, legacy DM text, owner profile/follow controls; encrypted Chat and DM attachments unavailable |
-| Instagram | Professional account; HTTPS image, single video as a Reel in the feed, or ordered mixed carousel (up to four assets), owned-media comments and permitted text inbox replies | Image/carousel or one video publishing, saved-post comments/replies and recognized legacy direct-inbox text replies in an existing bound thread; no cold/new DM or message attachments |
-| Facebook | Managed Page text/link or up to four HTTPS images with alt text; explicitly selected uploaded-video Reels with durable publication verification; eligible comments and Messenger text replies | Selected personal/Page actor; text/media publishing, saved-post comments/replies and recognized existing-thread Messenger text replies; unrecognized/encrypted layouts unavailable |
-| LinkedIn | Member text; organization text/one to four uploaded images with alt text/readiness verification; eligible comments; no general DM adapter | Verified member/organization text/images/video or one titled PDF; single-image alt text, saved-post comments/replies, existing personal chats and free first-degree member initiation; no organization inbox/InMail |
-| YouTube | Verified channel video upload with durable processing completion and comments/replies | Studio video upload with metadata, visibility and audience declarations, saved-video comments/replies; no Community publishing or general DM |
-| TikTok | Direct Post of one video or up to four photo URLs on a verified domain, with creator settings, previews, explicit consent and completion polling | One local video through Studio with explicit privacy/content choices, saved-video comments/replies; no verified photo or DM/inbox recipe |
-| Snapchat | Allowlisted Public Profile API app; encrypted Spotlight MP4 upload with explicit locale and exact ID/status tracking until LIVE; no Story/comment/messaging adapter | Member existing-chat text paths; separate Public Profile upload with explicit Spotlight or 24-hour Story target, exactly one selected profile and one MP4. Current uploader acceptance lacks a durable Snap ID and remains review-required; new DM and chat media are not implemented |
-| WhatsApp | Business Cloud API phone, signed incoming text and text or one uploaded image/video reply within the supported window | A signed-in personal Web session, bounded visible chats and eligible text/one-image-or-video sends; no Status/Channels publishing |
-| Telegram | Bot token, bounded text polling and eligible text or one uploaded image/video sends; separate reviewed channel connection with verified administrator bot for text or one uploaded image/video publication | A signed-in personal Web session, bounded visible chats and eligible text/one-image-or-video sends; no channel publishing or bot provisioning |
+| Platform  | Official API path                                                                                                                                                                                          | Isolated browser path                                                                                                                                                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| X         | User OAuth posts/media, comments/replies, mentions and permitted DM reads/sends                                                                                                                            | Posts/images/video, mentions and saved-post comments, legacy DM text, owner profile/follow controls; encrypted Chat and DM attachments unavailable                                                                                                                                    |
+| Instagram | Professional account; HTTPS image, single video as a Reel in the feed, or ordered mixed carousel (up to four assets), owned-media comments and permitted text inbox replies                                | Image/carousel or one video publishing, saved-post comments/replies and recognized legacy direct-inbox text replies in an existing bound thread; no cold/new DM or message attachments                                                                                                |
+| Facebook  | Managed Page text/link or up to four HTTPS images with alt text; explicitly selected uploaded-video Reels with durable publication verification; eligible comments and Messenger text replies              | Selected personal/Page actor; text/media publishing, saved-post comments/replies and recognized existing-thread Messenger text replies; unrecognized/encrypted layouts unavailable                                                                                                    |
+| LinkedIn  | Member text; organization text/one to four uploaded images with alt text/readiness verification; eligible comments; no general DM adapter                                                                  | Verified member/organization text/images/video or one titled PDF; single-image alt text, saved-post comments/replies, existing personal chats and free first-degree member initiation; no organization inbox/InMail                                                                   |
+| YouTube   | Verified channel video upload with durable processing completion and comments/replies                                                                                                                      | Studio video upload with metadata, visibility and audience declarations, saved-video comments/replies; no Community publishing or general DM                                                                                                                                          |
+| TikTok    | Direct Post of one video or up to four photo URLs on a verified domain, with creator settings, previews, explicit consent and completion polling                                                           | One local video through Studio with explicit privacy/content choices, saved-video comments/replies; no verified photo or DM/inbox recipe                                                                                                                                              |
+| Snapchat  | Allowlisted Public Profile API app; encrypted Spotlight MP4 upload with explicit locale and exact ID/status tracking until LIVE; no Story/comment/messaging adapter                                        | Member existing-chat text paths; separate Public Profile upload with explicit Spotlight or 24-hour Story target, exactly one selected profile and one MP4. Current uploader acceptance lacks a durable Snap ID and remains review-required; new DM and chat media are not implemented |
+| WhatsApp  | Business Cloud API phone, signed incoming text and text or one uploaded image/video reply within the supported window                                                                                      | A signed-in personal Web session, bounded visible chats and eligible text/one-image-or-video sends; no Status/Channels publishing                                                                                                                                                     |
+| Telegram  | Bot token, bounded text polling and eligible text or one uploaded image/video sends; separate reviewed channel connection with verified administrator bot for text or one uploaded image/video publication | A signed-in personal Web session, bounded visible chats and eligible text/one-image-or-video sends; no channel publishing or bot provisioning                                                                                                                                         |
 
 WhatsApp and Telegram personal browser accounts use the **member** type; their API
 connections remain **business** and **bot** respectively. Instagram/Facebook
@@ -336,7 +347,7 @@ above; API restrictions do not automatically describe the website recipe.
 | Connection                   | Comment reads/replies                                                                                 | Private messages                                                                                              |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | X OAuth/API                  | Mentions/replies through permitted reads; replies to post IDs                                         | Read/reply/send with DM scopes, enabled API product and recipient eligibility                                 |
-| X browser session            | Bounded recent mentions/replies from recognized web responses; replies to exact post IDs | Legacy web inbox and verified numeric-conversation text sends; encrypted Chat unavailable |
+| X browser session            | Bounded recent mentions/replies from recognized web responses; replies to exact post IDs              | Legacy web inbox and verified numeric-conversation text sends; encrypted Chat unavailable                     |
 | Instagram professional OAuth | Read/reply on owned media                                                                             | Read and reply to user-initiated conversations within the supported response window; no cold initiation       |
 | Facebook Page OAuth          | Read/reply to eligible Page content                                                                   | Read and reply to user-initiated Page conversations within the supported response window; no cold initiation  |
 | LinkedIn OAuth               | Comments on known published posts; organization discovery additionally requires Posts API read access | Not implemented; LinkedIn Messages API is a restricted partner product, not enabled by ordinary sharing OAuth |
@@ -372,8 +383,9 @@ the current data and show a retry action.
 
 Start by connecting an account and granting the relevant project access. Prepare a
 campaign, save it, and check its current preview before approving it for the queue.
-Text counters use the account's effective character policy. In Inbox, assign the
-conversation to a project before saving a reply. Review drafts can be edited and
+Text counters use the account's effective character policy. Project replies use the
+assigned project. An owner-reviewed personal reply can instead remain attached to an
+unassigned conversation and its account. Review drafts can be edited and
 saved before approval. Editing a draft removes its previous approval and automatic
 rule authorization. Drafts already queued or dispatched cannot be edited.
 
@@ -517,7 +529,11 @@ session for the login window to appear.
 
 ## Project access and approval
 
-Account grants separately control reading, drafting, publishing, replies, outbound messages and comments for each project. A session's project and provider come from the host/native session registry, never the tool's JSON. Private threads from another project cannot be read or sent to. Unmatched conversations remain in owner review until explicitly assigned.
+Account grants separately control reading, drafting, publishing, replies, outbound messages and comments for each project. A session's project and provider come from the host/native session registry, never the tool's JSON. Private threads from another project cannot be read or sent to. Unmatched conversations remain in owner review until explicitly assigned or reviewed as personal replies.
+
+Assistant account access is separately configured in each account's **Assistant account access** section. It is denied by default; the owner can grant read and, separately, draft access. Account-scoped Assistant access covers only unassigned conversations on that account, never other accounts or project-assigned conversations. Revoking or changing the grant invalidates existing Assistant access. Personal drafts use no project facts and do not authorize sending. The owner must review the exact draft and use the existing send controls; account capabilities, consent, sending policy and uncertain-delivery recovery still apply.
+
+If an active voice generation has used an account, changing its Assistant grant first retires that generation on its original device. If retirement cannot be confirmed, Assistant access stays paused and the requested permissions remain pending across Host restarts. Reconnect the original device and save the pending permissions again to retry; the previous grant is not silently restored.
 
 Campaigns may select multiple projects/accounts and store independent content, media, links and publication times. Only explicitly entered, verified public project facts are offered to drafts/rules; project files and private transcripts are not scraped. Editing content invalidates its exact-content approval. Successful, pending and uncertain targets cannot be silently duplicated.
 
@@ -543,6 +559,7 @@ MCP tool names are `social_accounts_list`, `social_campaigns_create`, etc. CLI a
 policy.get           accounts.list        capabilities.get
 campaigns.create     campaigns.preview     campaigns.schedule     campaigns.status
 inbox.list           thread.read           replies.draft           replies.send
+drafts.read          drafts.update
 contacts.upsert      contacts.search       segments.create
 messages.draft       messages.send         comments.draft          comments.send
 automations.create   automations.pause     jobs.status             jobs.cancel
@@ -575,6 +592,10 @@ change during a read prevents the stale result from being ingested or clearing t
 account's monitoring state.
 
 The host owns the durable queue. Jobs continue across UI/session closure, but do not execute while the host is offline. Account/campaign/global stops, opt-outs, consent and current project permissions are checked before dispatch, including after credential I/O. Parallel replies to the same inbound event produce one job.
+
+For bounded history, call `jobs.status` or `campaigns.status` with `page: true`, an optional zero-based `offset`, and `limit` from 1 to 100 (default 50). The response contains `jobs` and `page: { offset, limit, total, nextOffset? }`; campaign status also includes its campaign. Pages describe live history, so refresh from offset zero after new jobs arrive. `jobs.status` with an exact `id` keeps its single-job result. Legacy array responses fail rather than truncate when more than 1,000 jobs match. The Social workspace uses bounded pages.
+
+The Host retains recent settled jobs in the active table and moves eligible older settled jobs to readable cold storage in bounded batches. Full original records and deduplication identities remain available through history and exact-ID reads. Queued, running, review, unresolved, prepared and delivery-tracking jobs stay active; therefore the active table may exceed its settled-job target. Owner calls `jobs.archive-status` to inspect active and cold counts, or `jobs.archive` with up to 100 exact job IDs to request a bounded move; ineligible IDs are reported as retained. This is archival, not a deletion or expiration policy.
 
 Rate limits use Retry-After/reset headers; browser pacing supplements platform
 limits. A dispatched timeout, crash or uncertain platform response goes to review

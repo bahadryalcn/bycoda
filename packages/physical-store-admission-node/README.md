@@ -78,14 +78,9 @@ const database = new DatabaseSync(canonicalPath, {
   readOnly: true,
   allowExtension: true,
 });
-database.loadExtension(
-  explicitAbsoluteArtifact,
-  native.sqliteExtensionEntryPoint(),
-);
+database.loadExtension(explicitAbsoluteArtifact, native.sqliteExtensionEntryPoint());
 database.enableLoadExtension(false);
-const row = database
-  .prepare("SELECT bycoda_connection_identity() AS value")
-  .get();
+const row = database.prepare("SELECT bycoda_connection_identity() AS value").get();
 const data = JSON.parse(row.value); // { version:1, physicalFileId, links }
 ```
 

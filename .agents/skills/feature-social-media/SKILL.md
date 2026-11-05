@@ -21,12 +21,23 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Program interval jitter includes stable program identity; previews of saved programs use that same identity. Accepted occurrences and publication receipts retain their existing identity.
+- Feature-only Codex discovery coalesces its original pending probe and briefly caches a cloned snapshot. Explicit refresh remains available; generation capability and actual image generation retain fresh checks and existing authority gates.
+- Query relevant Social jobs through indexed scopes or explicit pages. Preserve exact receipt and pending/unknown identities; legacy full-history calls and durable evidence need explicit migration or archival contracts before eviction.
+- Meta/LinkedIn comment polling requests an indexed two-publication Host page only after its original pending comment batch drains. Persist its exact job-key continuation with provider cursors; never replace legacy pending post IDs or turn connection changes into accepted inbox data.
+
+- `host/social/social-credentials.ts` preserves encrypted vault bytes on read/decrypt/schema failures. Sync ciphertext and exclusive Windows key creation before acknowledging persistence; a failed save may be retried after repair but never authorizes replacing unreadable credentials with an empty vault.
+
 - Keep Host/account/project/thread identity, isolated queries, stale-result rejection, retained panels and independent drafts across navigation.
+- Project-independent Assistant account access is owner-granted per account and defaults to denied. Bind the real Room, Host, device, exact account and grant version; revoke or change invalidates issued access. Discovery exposes only read-granted account identity metadata. Account-scoped tools see only unassigned conversations on that account; personal drafts retain that account/thread and never use project facts.
+- Account grant changes hold access denied while any retained voice generation is retired on its original device. Persist the requested permissions and held state across restart; retry needs signed exact-generation closure before the change commits.
+- Personal replies still require owner review of the exact draft and the existing send, policy, capability, consent and uncertain-delivery gates. Assistant grants never approve or dispatch a send. Preserve platform restrictions on AI use and recheck draft identity, account and policy after waits.
 - Capability, configured connection, verified account, project access, sending enabled and approval are distinct facts; preserve their effective-policy gates.
 - Draft/AI suggestion/preview prepares content only. Sending, activating rules and changing consent require their existing explicit authority.
 - Keep exact consequence review, media/context identity, idempotent request IDs, partial batch successes and uncertain-result recovery; never resend blindly.
 - Preserve people/segments access, scheduling, campaigns/programs, reply rules and activity inspection when simplifying navigation.
 - Public/browser/API modes and platforms differ. Do not advertise one adapter capability as universal provider support.
+- YouTube API polling reserves a newest-thread read while historical pages or replies drain. Preserve the saved backlog cursor and bounded reply queue; repeated event IDs are deduplicated by Host ingest. A newest-page refresh is not complete reply-history coverage.
 
 ## Workflow
 

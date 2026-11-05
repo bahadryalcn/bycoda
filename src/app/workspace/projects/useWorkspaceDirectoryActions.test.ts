@@ -20,6 +20,7 @@ import {
   type WorkspaceDirectoryActionsDeps,
 } from "./useWorkspaceDirectoryActions";
 import { useProjectOpen, type ProjectOpenDeps } from "./useProjectOpen";
+import { loadRecents } from "../../../features/projects/model/recents";
 
 const effects = vi.hoisted(() => ({
   forget: vi.fn(),
@@ -28,7 +29,7 @@ const effects = vi.hoisted(() => ({
   git: vi.fn(),
   persist: vi.fn(),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 vi.mock("../../../integrations/harness", async (original) => ({
   ...(await original<typeof import("../../../integrations/harness")>()),
   forgetHarnessSession: effects.forget,
@@ -201,6 +202,17 @@ it("plans and opens a different project from a blank Host tab without retargetin
   expect(next.providerAccountId).toBeUndefined();
   expect(tabsRef.current).toHaveLength(2);
   expect(activeTabIdRef.current).not.toBe(tabsRef.current[0].id);
+});
+
+it("settles Room project selection only after the canonical recents mutation", async () => {
+  configureDestination();
+  const source = hostSession();
+  await mount(source);
+  await act(async () => {
+    await projects.onSelectProject("G:/beta", "native-pending");
+  });
+  expect(loadRecents().some((project) => project.path === "G:/beta")).toBe(true);
+  expectHostUntouched(source);
 });
 
 it("guards a direct cwd change using a durable owner even when the in-memory binding field is absent", async () => {

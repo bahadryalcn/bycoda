@@ -15,6 +15,7 @@ export const DeviceHostStatusSchema = z.strictObject({
   installed: z.boolean(),
   agentInstalled: z.boolean(),
   platform: z.string(),
+  controlProtocol: z.literal(1).optional(),
   platforms: z.array(
     z.strictObject({
       platform: DevicePlatformSchema,
@@ -46,6 +47,7 @@ export const DeviceActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("home") }),
   z.strictObject({ type: z.literal("snapshot") }),
   z.strictObject({ type: z.literal("pressElement"), label: z.string() }),
+  z.strictObject({ type: z.literal("pressNode"), inspectionId: z.string(), nodeId: z.string() }),
   z.strictObject({
     type: z.literal("waitForText"),
     text: z.string(),
@@ -132,8 +134,66 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
     params: z.strictObject({ ...base, deviceId: z.string() }),
     result: DeviceFrameSchema,
   },
+  "devices.control.status": {
+    params: z.strictObject({ ...base, deviceId: z.string() }),
+    result: z.strictObject({ deviceId: z.string(), busy: z.boolean() }),
+  },
+  "devices.control.claim": {
+    params: z.strictObject({ ...base, deviceId: z.string(), requestId: z.string() }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      leaseId: z.string(),
+      expiresAt: SafeCounterSchema,
+    }),
+  },
+  "devices.control.release": {
+    params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string() }),
+    result: z.strictObject({ released: z.literal(true) }),
+  },
+  "devices.control.renew": {
+    params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string() }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      leaseId: z.string(),
+      expiresAt: SafeCounterSchema,
+    }),
+  },
+  "devices.inspect": {
+    params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string() }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      inspectionId: z.string(),
+      raw: z.string(),
+      inspectedAt: z.string(),
+      frame: DeviceFrameSchema,
+      coordinateSpace: z.enum(["pixels", "points"]),
+      viewport: z.strictObject({ width: SafeCounterSchema, height: SafeCounterSchema }).optional(),
+      nodes: z.array(
+        z.strictObject({
+          id: z.string(),
+          label: z.string(),
+          role: z.string(),
+          identity: z.string(),
+          bounds: z.strictObject({
+            x: z.number(),
+            y: z.number(),
+            width: z.number(),
+            height: z.number(),
+          }),
+          enabled: z.boolean(),
+          clickable: z.boolean(),
+        }),
+      ),
+    }),
+  },
   "devices.action": {
-    params: z.strictObject({ ...base, deviceId: z.string(), action: DeviceActionSchema }),
+    params: z.strictObject({
+      ...base,
+      deviceId: z.string(),
+      leaseId: z.string(),
+      requestId: z.string(),
+      action: DeviceActionSchema,
+    }),
     result: z.string(),
   },
 } as const;
@@ -146,6 +206,8 @@ export function nativeDeviceReadOnly(method: NativeDeviceMethod): boolean {
     method === "devices.status" ||
     method === "devices.list" ||
     method === "devices.preflight" ||
+    method === "devices.control.status" ||
+    method === "devices.inspect" ||
     method === "devices.preview.status"
   );
 }
@@ -220,6 +282,8 @@ export function deviceOwnerReadOnly(method: DeviceOwnerMethod): boolean {
     method === "devices.status" ||
     method === "devices.list" ||
     method === "devices.preflight" ||
+    method === "devices.control.status" ||
+    method === "devices.inspect" ||
     method === "devices.preview.status" ||
     method === "devices.preview.mobile.status" ||
     method === "devices.preview.impact"

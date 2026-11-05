@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
-import { loadCrewTheme, subscribeCrewTheme } from "../../settings/model/settings";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
+import { loadCrewTheme, subscribeCrewTheme } from "../../settings/public/settings";
 import { drawPacingUncle } from "./pacingUncleArt";
 
 /** About 1000 / `PACING_FPS` from the art module. */

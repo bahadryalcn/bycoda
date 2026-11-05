@@ -6,6 +6,9 @@ import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { useAttachmentPreview } from "./useAttachmentPreview";
 import { SkillTokenText } from "./SkillTokenText";
+import { AttachmentIdentity } from "./AttachmentIdentity";
+import { formatAttachmentSize } from "../model/attachmentPresentation";
+import styles from "./AttachmentTokenText.module.css";
 import {
   AttachmentFilePreview,
   canOpenFileAttachment,
@@ -36,12 +39,20 @@ function TokenPill({ token, label, attachment }: PillProps) {
     show,
     close,
   } = useAttachmentPreview(attachment);
+  const size = formatAttachmentSize(attachment.size);
   const body = (
-    <>
+    <span className={styles.token} title={attachment.name}>
+      <span className={styles.icon} aria-hidden="true">
+        <AttachmentIdentity attachment={attachment} />
+      </span>
       <span className="sr-only">[</span>
       {label}
       <span className="sr-only">]</span>
-    </>
+      {size ? (
+        // Drawn from an attribute so copying the pill still gives back `[image1]`.
+        <span className={styles.size} aria-hidden="true" data-size={size} />
+      ) : null}
+    </span>
   );
   if (!canOpen && !canOpenFile) {
     return (

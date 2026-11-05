@@ -7,7 +7,8 @@ import {
   sessionCheckpointStatus,
   subscribeReviewChanged,
   type CheckpointFile,
-} from "../../sessions/model/checkpoint";
+} from "../../sessions/public/checkpoint";
+
 import { forEachConcurrent } from "../../../shared/lib/concurrent";
 import { buildUnifiedFile, type UnifiedFileDiff } from "../model/unifiedDiff";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
@@ -174,9 +175,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     );
   }
   if (files == null) {
-    return (
-      <SurfaceLoading />
-    );
+    return <SurfaceLoading />;
   }
   if (files.length === 0) {
     return (

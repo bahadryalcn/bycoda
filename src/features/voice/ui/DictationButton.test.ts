@@ -44,15 +44,43 @@ async function render(props: Partial<Parameters<typeof DictationButton>[0]> = {}
   return { onText, onError, button: () => element.querySelector("button") };
 }
 
-it("is absent until voice is enabled in settings", async () => {
+it("uses its own setting independently of the voice companion", async () => {
   const { button } = await render();
   expect(button()).toBeNull();
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: true }));
+  expect(button()).toBeNull();
+  await act(async () =>
+    saveVoiceSettings({ ...loadVoiceSettings(), enabled: false, dictationEnabled: true }),
+  );
+  expect(button()?.getAttribute("aria-label")).toBe("Dictate");
+});
+
+it("cancels active dictation only when its own setting is disabled", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true, dictationEnabled: true });
+  const { button } = await render();
+  await act(async () => button()!.click());
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: false }));
+  expect(button()).not.toBeNull();
+  expect(mock.cancel).not.toHaveBeenCalled();
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: false }));
+  expect(button()).toBeNull();
+  expect(mock.cancel).toHaveBeenCalledOnce();
+});
+
+it("shows dictation for an existing enabled voice preference", async () => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true }));
+  const { button } = await render();
+  expect(button()?.getAttribute("aria-label")).toBe("Dictate");
+});
+
+it("shows dictation after explicitly enabling it", async () => {
+  const { button } = await render();
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true }));
   expect(button()?.getAttribute("aria-label")).toBe("Dictate");
 });
 
 it("toggles local dictation and hands recognized phrases to the composer", async () => {
-  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true, natural: false });
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, natural: false });
   const { onText, onError, button } = await render();
   await act(async () => button()!.click());
   expect(mock.start).toHaveBeenCalledOnce();
@@ -69,7 +97,7 @@ it("toggles local dictation and hands recognized phrases to the composer", async
 });
 
 it("cancels dictation when the composer becomes unavailable", async () => {
-  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true });
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
   await render();
   await act(async () => element.querySelector("button")!.click());
   await act(async () =>
@@ -81,7 +109,7 @@ it("cancels dictation when the composer becomes unavailable", async () => {
 });
 
 it("keeps preparation cancellable and blocks duplicate stop while transcribing", async () => {
-  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true });
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
   const { button } = await render();
   await act(async () => button()!.click());
   await act(async () => mock.callbacks.state("starting"));
@@ -101,7 +129,7 @@ it("keeps preparation cancellable and blocks duplicate stop while transcribing",
 });
 
 it("responds to microphone level, resets on stop, and ignores an old capture", async () => {
-  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true });
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
   const { button } = await render();
   await act(async () => button()!.click());
   const old = mock.callbacks;

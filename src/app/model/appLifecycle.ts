@@ -3,9 +3,7 @@ import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
-import { isWorkspaceWindowLabel } from "../../features/notifications/hooks/useBackgroundNotifications";
 import { prepareEditorsToClose } from "../../features/files/model/editorClose";
 import { confirmCloseTerminals } from "../../features/terminal/model/terminalClose";
 import {
@@ -13,7 +11,7 @@ import {
   forgetHarnessSession,
   isLiveHarness,
 } from "../../integrations/harness/core/registry";
-import { killAllChildren } from "../../integrations/harness/core/child";
+import { forgetWindowChildren, killAllChildren } from "../../integrations/harness/core/child";
 import {
   hasInFlightSessions,
   inFlightRefs,
@@ -24,7 +22,14 @@ import {
   workspaceFromResumed,
   type ResumedWorkspace,
 } from "../../features/sessions/model/inFlight";
-import { leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
+import { closeLeaf, leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
+import {
+  abortRestoredSession,
+  claimRestoredSession,
+  remoteSessionOwnershipKey,
+} from "./sessionWindowOwnership";
+import { parseRemotePath } from "../../features/connections/model/remoteProjects";
+import { remoteSessionFor } from "../../features/connections/model/connections";
 import { killPty } from "../../platform/tauri/pty";
 import {
   projectTerminalFileIds,
@@ -36,13 +41,17 @@ import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
 import {
   getSession,
   listInFlightSessions,
+  listDeletedSessionIds,
+  isSessionDeleted,
   listSessionsByProject,
   loadWorkspaceSnapshot,
+  isPrimaryWorkspaceWindow,
   replaceInFlightSessions,
   saveWorkspaceSnapshot,
   setSessionQueue,
   shouldPersistSession,
   upsertSession,
+  upsertSessionPreservingActivity,
   type SessionSummary,
 } from "../../features/sessions/data/sessionStore";
 import {
@@ -51,8 +60,11 @@ import {
   parseWorkspaceSnapshot,
 } from "../../features/workspace/model/workspaceSnapshot";
 import { flushComposerDrafts } from "../../features/sessions/data/composerDraftStore";
+import { flushAssistantDrafts } from "../../features/assistant/model/assistantDraftFlush";
 import { probeTurnTail, readTurnSteps, type TurnTail } from "../../platform/tauri/turnProbe";
 import { markAutoContinueDue } from "../../features/sessions/model/autoContinue";
+import { isOwnerStoppedTurn } from "../../features/sessions/model/turnInterruption";
+import { flushHostSessionBindings } from "../../features/connections/model/sessionExecutionBinding";
 import {
   classifyTurnRecovery,
   shouldAutoContinue,
@@ -146,60 +158,6 @@ async function readWorkspaceSnapshot(): Promise<{ ok: boolean; raw: unknown }> {
 let bootPromise: Promise<BootWorkspace> | null = null;
 let quitting = false;
 let quitDialogOpen = false;
-/** A "Save changes?" or "Close terminals?" dialog of this window's quit is open. */
-let closePromptPending = false;
-/**
- * Native exits `COMMIT_TIMEOUT` (10 s) after the commit starts, whether or not a
- * person is still reading a close dialog. Shortly before that, a dialog that is
- * still open calls the quit off instead, so the app never exits under it.
- */
-const QUIT_DIALOG_GRACE_MS = 8_000;
-/**
- * The workspace snapshot and the in-flight list are one row for the whole app.
- * Only the window that restored them at boot writes them back: the primary
- * workspace (`main`, or the first workspace window when none was open). A
- * window opened beside it (Cmd+N, a pop-out, a tool window) would otherwise
- * replace them with its own tabs, and an empty in-flight list from one window
- * would drop the other window's turn recovery. `null` until boot has decided.
- */
-let sharedStateOwner: boolean | null = null;
-
-/** True when this window writes the app-wide workspace snapshot and in-flight list. */
-export function ownsSharedWorkspaceState(): boolean {
-  if (sharedStateOwner !== null) return sharedStateOwner;
-  try {
-    return getCurrentWindow().label === "main";
-  } catch {
-    // No desktop window authority (tests, browser development): one window.
-    return true;
-  }
-}
-
-/**
- * `main` always owns the shared state. Another workspace window owns it only
- * when it is the sole one, which is how a dock click reopens the app after
- * every window was closed (`show_hidden_or_open_new` in `window.rs`).
- */
-async function detectSharedStateOwner(): Promise<boolean> {
-  let own: string;
-  try {
-    own = getCurrentWindow().label;
-  } catch {
-    return true;
-  }
-  if (own === "main") return true;
-  if (!isWorkspaceWindowLabel(own)) return false;
-  try {
-    const others = (await getAllWebviewWindows())
-      .map((window) => window.label)
-      .filter((label) => label !== own && isWorkspaceWindowLabel(label));
-    return others.length === 0;
-  } catch {
-    // Enumeration unavailable: a window that cannot prove it is alone must not
-    // take over the primary window's layout.
-    return false;
-  }
-}
 let bootingResumed: ResumedWorkspace | null = null;
 /** One hidden chat's history read; `timedOut` publishes the retryable error state. */
 type DeferredBootRead = { run: () => Promise<void>; timedOut: () => void };
@@ -256,7 +214,7 @@ function startDeferredBootReads(): void {
   void worker();
   void worker();
 }
-let liveWorkspace: {
+type LiveWorkspace = {
   sessions: () => Session[];
   tabs: () => WorkspaceTab[];
   activeTabId: () => string;
@@ -266,7 +224,8 @@ let liveWorkspace: {
   lastDockSide: () => DockSide | null;
   keepTab?: (tab: WorkspaceTab) => boolean;
   flush: () => void;
-} | null = null;
+};
+let liveWorkspace: LiveWorkspace | null = null;
 
 export function isAppQuitting(): boolean {
   return quitting;
@@ -323,21 +282,28 @@ export function setQuitWorkspace(
  * Persist this window for a quit the coordinator has already confirmed.
  * Exiting is `confirm_quit`'s job, once every window has reported ready.
  */
-export async function handleQuitRequested(): Promise<boolean> {
+export async function handleQuitRequested(commitId?: number): Promise<boolean> {
   if (liveWorkspace) {
     liveWorkspace.flush();
     quitting = true;
     try {
-      closePromptPending = true;
-      let proceed: boolean;
-      try {
-        proceed = await prepareWindowToClose(liveWorkspace.tabs(), liveWorkspace.projectTerminals());
-      } finally {
-        closePromptPending = false;
-      }
-      // Called off while the dialog was open (`abortQuit`): the app stays
-      // open, so the live turns must not be recorded as interrupted.
-      if (!proceed || !quitting) {
+      const withDialog =
+        commitId === undefined
+          ? undefined
+          : async <T>(show: () => Promise<T>): Promise<T> => {
+              await invoke("quit_commit_dialog", { id: commitId, open: true });
+              try {
+                return await show();
+              } finally {
+                await invoke("quit_commit_dialog", { id: commitId, open: false });
+              }
+            };
+      const prepared = await prepareWindowToClose(
+        liveWorkspace.tabs(),
+        liveWorkspace.projectTerminals(),
+        withDialog,
+      );
+      if (!prepared) {
         quitting = false;
         return false;
       }
@@ -355,6 +321,16 @@ export async function handleQuitRequested(): Promise<boolean> {
       return true;
     } catch (error) {
       quitting = false;
+      // Abort the native coordinator before opening an error dialog, otherwise
+      // its watchdog could exit while the user is reading the failure.
+      if (commitId !== undefined) {
+        try {
+          await invoke("quit_ready", { id: commitId, persisted: false });
+        } catch (abortError) {
+          console.warn("Aborting quit failed", abortError);
+          return false;
+        }
+      }
       await reportCloseFailure(error);
       return false;
     }
@@ -411,41 +387,36 @@ export async function askQuitConfirmation(id: number, inFlight: number): Promise
 }
 
 export async function commitQuit(id: number): Promise<void> {
-  let answered = false;
-  const answer = (persisted: boolean) => {
-    if (answered) return Promise.resolve();
-    answered = true;
-    return invoke("quit_ready", { id, persisted }).catch((error) => {
-      console.warn("appLifecycle operation failed", error);
-    });
-  };
-  // A person still reading "Save changes?" or "Close terminals?" when the
-  // native commit deadline is near: report "not persisted", which calls the
-  // quit off for every window and leaves the dialog where it is. Its answer
-  // still saves or closes; the next Quit then goes through without it.
-  const grace = setTimeout(() => {
-    if (!closePromptPending) return;
-    abortQuit();
-    void answer(false);
-  }, QUIT_DIALOG_GRACE_MS);
-  try {
-    const persisted = await handleQuitRequested();
-    await answer(persisted);
-  } finally {
-    clearTimeout(grace);
-  }
+  const persisted = await handleQuitRequested(id);
+  await invoke("quit_ready", { id, persisted }).catch((error) => {
+    console.warn("appLifecycle operation failed", error);
+  });
 }
 
 /**
  * A quit that stopped part-way because another window could not save. This
  * window is staying open, so it must go back to persisting on unload.
  */
+let transferredWindowState:
+  | { live: LiveWorkspace | null; boot: ResumedWorkspace | null }
+  | undefined;
+
 export function abortQuit(): void {
   quitting = false;
+  if (transferredWindowState) {
+    liveWorkspace = transferredWindowState.live;
+    bootingResumed = transferredWindowState.boot;
+    transferredWindowState = undefined;
+  }
   if (liveWorkspace && deferredBootReads.length) startDeferredBootReads();
 }
 
 /** A successfully drained pop-out must not save a stale workspace on unload. */
+export function beginTransferredWindowClose(): void {
+  transferredWindowState = { live: liveWorkspace, boot: bootingResumed };
+  quitting = true;
+}
+
 export function relinquishTransferredWindow(): void {
   quitting = true;
   liveWorkspace = null;
@@ -476,14 +447,13 @@ export function loadResumedWorkspace(): Promise<ResumedWorkspace | null> {
 /** Transfer and restore run once; callers share the same promise. */
 export function loadBootWorkspace(): Promise<BootWorkspace> {
   if (readToolWindow()) {
-    sharedStateOwner = false;
     return Promise.resolve({ windowTransfer: null, resumed: null, history: [], historyCwd: null });
   }
   if (!bootPromise) {
     bootPromise = (async () => {
+      await flushHostSessionBindings();
       const windowTransfer = await loadWindowTransfer();
       if (windowTransfer) {
-        sharedStateOwner = false;
         // The transfer already contains everything needed to paint its tab.
         // Workspace.refreshHistory loads the sidebar after mounting.
         return {
@@ -492,6 +462,11 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
           history: [],
           historyCwd: null,
         };
+      }
+      // Only the primary window restores the shared snapshot. An unavailable
+      // native identity is not permission to recover another window's turns.
+      if (!isPrimaryWorkspaceWindow()) {
+        return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
       }
       const hintedCwd = lastProjectPath();
       const historyHint: { value: Awaited<ReturnType<typeof listProjectHistory>> } = {
@@ -552,15 +527,6 @@ function reconcileRestoredProject(workspace: ResumedWorkspace): void {
 }
 
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
-  sharedStateOwner = await detectSharedStateOwner();
-  if (!sharedStateOwner) {
-    // A second workspace window (Cmd+N, a reloaded window beside `main`)
-    // starts blank. Restoring the saved layout here opened the same chats
-    // twice, treated the primary window's live turns as interrupted and could
-    // auto-continue them a second time.
-    console.info("[boot] secondary workspace window: starting without the saved layout");
-    return null;
-  }
   let serverRestoreOwner = false;
   try {
     serverRestoreOwner = getCurrentWindow().label === "main";
@@ -568,7 +534,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     // No desktop window authority: leave this optional state uninitialized.
   }
   if (serverRestoreOwner) serverTerminalRestoreState.beginLoad();
-  const [snapshotResult, refs] = await Promise.all([
+  const [snapshotResult, savedRefs] = await Promise.all([
     readWorkspaceSnapshot(),
     listInFlightSessions().catch((error) => {
       console.warn("appLifecycle could not list interrupted sessions", error);
@@ -592,27 +558,100 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   } else if (serverRestoreOwner) {
     serverTerminalRestoreState.loadFailed();
   }
-  const interrupted = new Set(refs.map((ref) => ref.sessionId));
-  const snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  let snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  const paneIds = new Set(
+    snapshot?.tabs.flatMap((tab) =>
+      [...tab.editorPanes, ...(tab.terminalPanes ?? [])].map((pane) => pane.id),
+    ) ?? [],
+  );
+  const claimIds = new Set(snapshot?.sessions.map((session) => session.id) ?? []);
+  const remoteKeys = new Map<string, string>();
+  for (const stub of snapshot?.sessions ?? []) {
+    const remoteId = stub.remoteSessionId ?? remoteSessionFor(stub.id);
+    if (remoteId && parseRemotePath(stub.cwd))
+      remoteKeys.set(stub.id, remoteSessionOwnershipKey(stub.cwd, remoteId));
+  }
+  for (const tab of snapshot?.tabs ?? [])
+    for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);
+  for (const ref of savedRefs) claimIds.add(ref.sessionId);
   const savedRecovery = parseSessionRecovery(
     snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
       ? snapshotRaw.sessionRecovery
       : null,
   );
+  const deletionCandidates = new Set(claimIds);
+  for (const stub of savedRecovery?.workspace.sessions ?? []) deletionCandidates.add(stub.id);
+  let deleted: Set<string>;
+  try {
+    deleted = new Set(await listDeletedSessionIds([...deletionCandidates]));
+  } catch (error) {
+    // Unknown deletion status cannot authorize recreating saved layout shells.
+    snapshotReadFailed = true;
+    console.warn("[boot] deleted conversations could not be verified", error);
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+    return null;
+  }
+  for (const id of deleted) claimIds.delete(id);
+  const foreign = new Set<string>();
+  const claimed = new Set<string>();
+  try {
+    for (const id of claimIds) {
+      const local = await claimRestoredSession(id);
+      if (!local) {
+        foreign.add(id);
+        continue;
+      }
+      claimed.add(id);
+      const remoteKey = remoteKeys.get(id);
+      if (remoteKey) {
+        if (await claimRestoredSession(remoteKey)) claimed.add(remoteKey);
+        else {
+          foreign.add(id);
+          await abortRestoredSession(id);
+          claimed.delete(id);
+        }
+      }
+    }
+  } catch (error) {
+    // Unknown ownership cannot safely paint or rewrite the saved workspace.
+    snapshotReadFailed = true;
+    console.warn("[boot] conversation ownership could not be verified", error);
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+    await Promise.all([...claimed].map((id) => abortRestoredSession(id).catch(() => {})));
+    return null;
+  }
+  const refs = savedRefs.filter(
+    (ref) => !foreign.has(ref.sessionId) && !deleted.has(ref.sessionId),
+  );
+  const interrupted = new Set(refs.map((ref) => ref.sessionId));
+  if (snapshot && (foreign.size || deleted.size)) {
+    const tabs = snapshot.tabs.flatMap((original) => {
+      let tab: WorkspaceTab | null = original;
+      for (const id of leafIds(original.layout))
+        if (foreign.has(id) || deleted.has(id)) tab = tab && closeLeaf(tab, id);
+      return tab ? [tab] : [];
+    });
+    snapshot = {
+      ...snapshot,
+      tabs,
+      sessions: snapshot.sessions.filter(
+        (session) => !foreign.has(session.id) && !deleted.has(session.id),
+      ),
+    };
+  }
   // Entries saved before a remote chat was ever sent are not recoverable history.
+  const unsentRecoveryIds: string[] = [];
+  for (const stub of savedRecovery?.workspace.sessions ?? []) {
+    if (
+      isUnsentRemoteShell(
+        stub,
+        await remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
+      )
+    )
+      unsentRecoveryIds.push(stub.id);
+  }
   const previousRecovery =
-    savedRecovery &&
-    dropRecoverySessions(
-      savedRecovery,
-      savedRecovery.workspace.sessions
-        .filter((stub) =>
-          isUnsentRemoteShell(
-            stub,
-            remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
-          ),
-        )
-        .map((stub) => stub.id),
-    );
+    savedRecovery && dropRecoverySessions(savedRecovery, [...deleted, ...unsentRecoveryIds]);
   setSessionRecovery(previousRecovery);
 
   const ids = new Set<string>();
@@ -655,11 +694,31 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
                 }),
             },
       ).catch(() => null);
+      if (isSessionDeleted(id)) {
+        deleted.add(id);
+        interrupted.delete(id);
+      }
       if (record) loaded.set(id, record);
     }),
   );
 
-  let workspace = snapshot ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted) : null;
+  let workspace = snapshot
+    ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted, deleted)
+    : null;
+  if (
+    !workspace &&
+    snapshot &&
+    snapshot.tabs.length === 0 &&
+    snapshot.projectTerminals.length > 0
+  ) {
+    workspace = {
+      tabs: [],
+      sessions: [],
+      activeTabId: "",
+      projectCwd: snapshot.projectCwd,
+      projectTerminals: snapshot.projectTerminals,
+    };
+  }
   if (workspace) reconcileRestoredProject(workspace);
   if (!workspace && refs.length > 0) {
     const sessions: Session[] = [];
@@ -677,12 +736,12 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
       const placeholder = { ...session, historyLoading: true };
       const owns = () =>
         !!(liveWorkspace?.sessions() ?? bootingResumed?.sessions)?.some(
-            (value) =>
-              value.id === placeholder.id &&
-              !value.busy &&
-              value.blocks === placeholder.blocks &&
-              value.queuedMessages === placeholder.queuedMessages,
-          );
+          (value) =>
+            value.id === placeholder.id &&
+            !value.busy &&
+            value.blocks === placeholder.blocks &&
+            value.queuedMessages === placeholder.queuedMessages,
+        );
       if (interrupted.has(session.id)) {
         const failed = () =>
           publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
@@ -696,7 +755,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
               if (!owns()) return;
               const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
               if (!owns()) return;
-              if (shouldPersistSession(recovered)) await upsertSession(recovered);
+              if (shouldPersistSession(recovered)) await upsertSessionPreservingActivity(recovered);
               publishBootSession(placeholder, recovered);
             } catch {
               failed();
@@ -750,7 +809,8 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     // Normally the mounting workspace starts these. If it never mounts, still hydrate.
     if (deferredBootReads.length)
       setTimeout(() => {
-        if (!liveWorkspace) console.warn("appLifecycle starting boot hydration without a workspace");
+        if (!liveWorkspace)
+          console.warn("appLifecycle starting boot hydration without a workspace");
         startDeferredBootReads();
       }, BOOT_READ_TIMEOUT_MS);
     // Progressive callbacks can finish while interrupted sessions are being
@@ -770,19 +830,31 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     );
   }
 
+  const paintedIds = new Set(workspace?.tabs.flatMap((tab) => leafIds(tab.layout)) ?? []);
+  for (const id of paintedIds) {
+    const key = remoteKeys.get(id);
+    if (key) paintedIds.add(key);
+  }
+  await Promise.all(
+    [...claimed]
+      .filter((id) => !paintedIds.has(id))
+      .map((id) => abortRestoredSession(id).catch(() => {})),
+  );
   if (!liveWorkspace && !quitting) bootingResumed = workspace;
   if (workspace) {
     // Recovery is for work the app closed in the middle of, not for every open chat.
     // Remote chats keep running on their Host, so they enter only when the in-flight
     // list names them. A still-loading placeholder is kept when its id was in flight.
-    const recoverable = workspace.sessions.filter(
-      (session) =>
+    const recoverable: Session[] = [];
+    for (const session of workspace.sessions) {
+      if (
         interrupted.has(session.id) &&
         !session.inboxAsk &&
         !session.orchestrationLeadId &&
-        // Drafts live in their own store and stay with the tab, so they do not keep it here.
-        !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })),
-    );
+        !isUnsentRemoteChat(session, await remoteShellState(session, { hasDraft: false }))
+      )
+        recoverable.push(session);
+    }
     if (recoverable.length) {
       setSessionRecovery(
         captureSessionRecovery(
@@ -819,7 +891,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         // Idle transcripts already came from disk. Rewriting every open chat
         // here serialized/indexed the entire workspace before first paint.
         .filter((session) => interrupted.has(session.id) && shouldPersistSession(session))
-        .map((session) => upsertSession(session).catch(() => null)),
+        .map((session) => upsertSessionPreservingActivity(session).catch(() => null)),
     );
   }
   return workspace;
@@ -908,6 +980,7 @@ async function withRecordedSteps(
  * Either way the steps the CLI recorded while the app was away are filled in.
  */
 async function recoverInterruptedTurn(session: Session): Promise<Session> {
+  if (isOwnerStoppedTurn(session.blocks)) return session;
   const [tail, steps] = await Promise.all([transcriptTail(session), readRecordedSteps(session)]);
   const recovery = classifyTurnRecovery({
     wasInFlight: true,
@@ -960,21 +1033,21 @@ export async function closeCurrentWindow(): Promise<void> {
   await invoke("destroy_window");
 }
 
-export type ReloadConcerns = {
-  unsavedFiles: boolean;
-  /** Chats with a live local turn in this window; a reload stops their processes. */
-  runningChats: number;
-};
-
-export async function confirmReload({ unsavedFiles, runningChats }: ReloadConcerns): Promise<boolean> {
-  if (!unsavedFiles && runningChats <= 0) return true;
-  const lines: string[] = [];
-  if (runningChats > 0) lines.push(t("Running chats in this window stop. Other windows stay open."));
-  if (unsavedFiles) lines.push(t("Unsaved changes in open files will be discarded."));
+export async function confirmReload(
+  hasUnsavedFiles: boolean,
+  hasRunningChats = false,
+): Promise<boolean> {
+  if (!hasUnsavedFiles && !hasRunningChats) return true;
   // The native dialog cannot hang behind page state while the window is going away.
   return platformConfirm({
     title: t("Reload {p0}?", { p0: PRODUCT_IDENTITY.displayName }),
-    message: lines.join("\n\n"),
+    message: hasRunningChats
+      ? hasUnsavedFiles
+        ? t(
+            "Running chats will be interrupted and unsaved changes in open files will be discarded.",
+          )
+        : t("Running chats will be interrupted.")
+      : t("Unsaved changes in open files will be discarded."),
     confirmLabel: t("Reload"),
     tone: "danger",
   });
@@ -1014,7 +1087,7 @@ export async function persistQuitState(
     sessions.map(async (session) => {
       if (!shouldPersistSession(session)) return;
       const payload = interrupted.has(session.id) ? markTurnInterrupted(session) : session;
-      const saved = await write(upsertSession(payload));
+      const saved = await write(upsertSessionPreservingActivity(payload));
       // A revision conflict resolves without a write. Keep this renderer's
       // unique transcript alive rather than reporting it safely persisted.
       if (mode === "quit" && saved === null) {
@@ -1026,6 +1099,7 @@ export async function persistQuitState(
   );
   // Drafts wait on a short timer; the quit must not.
   await write(flushComposerDrafts());
+  await write(flushAssistantDrafts());
   // The queue hook writes through as it changes; this settles the last edit
   // before the process goes.
   await Promise.all(
@@ -1033,10 +1107,6 @@ export async function persistQuitState(
       .filter((session) => shouldPersistSession(session) && session.queuedMessages?.length)
       .map((session) => write(setSessionQueue(session.id, session.queuedMessages))),
   );
-  // The snapshot and the in-flight list are app-wide rows: a secondary window
-  // leaves them to the primary one. Its transcripts, drafts and queues above
-  // are still saved, so its chats stay in history.
-  if (!ownsSharedWorkspaceState()) return;
   // A window whose saved layout was unreadable keeps the stored one.
   if (!workspaceSnapshotWriteBlocked())
     await write(
@@ -1064,9 +1134,8 @@ async function persistBootingResume(workspace: ResumedWorkspace): Promise<void> 
   await Promise.all(
     workspace.sessions
       .filter(shouldPersistSession)
-      .map((session) => upsertSession(session).catch(() => null)),
+      .map((session) => upsertSessionPreservingActivity(session).catch(() => null)),
   );
-  if (!ownsSharedWorkspaceState()) return;
   if (!workspaceSnapshotWriteBlocked())
     await saveWorkspaceSnapshot(
       collectWorkspaceSnapshot(
@@ -1145,6 +1214,7 @@ async function confirmAndCloseWindow(
 async function prepareWindowToClose(
   tabs: WorkspaceTab[],
   docks: ProjectTerminalDock[],
+  withDialog?: <T>(show: () => Promise<T>) => Promise<T>,
 ): Promise<boolean> {
   const files = [
     ...tabs.flatMap((tab) =>
@@ -1156,8 +1226,11 @@ async function prepareWindowToClose(
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),
   ];
   // Native dialog: the window is going away, so page state must not be able to hide the ask.
-  if (!(await confirmCloseTerminals(unique, platformConfirm))) return false;
-  return prepareEditorsToClose();
+  const confirm = withDialog
+    ? (request: Parameters<typeof platformConfirm>[0]) => withDialog(() => platformConfirm(request))
+    : platformConfirm;
+  if (!(await confirmCloseTerminals(unique, confirm))) return false;
+  return prepareEditorsToClose(withDialog);
 }
 
 async function reportCloseFailure(error: unknown): Promise<void> {
@@ -1198,14 +1271,12 @@ export async function reapWindowRuntime(
  * Page unload. Unlike `reapWindowRuntime` this leaves terminals running: a
  * reload (or macOS restarting a crashed web process) restores them under the
  * same ids and reattaches, and the backend reaps them when the window itself
- * is destroyed. Only this window's chats are stopped, one by one
- * (`harness_kill` per session): `killAllChildren` is `harness_kill_all`, which
- * is app-wide, so reloading one window took the providers running in every
- * other window with it. Native probes this window started (catalog, title)
- * end on their own or with the app.
+ * is destroyed.
  */
-export async function reapUnloadRuntime(sessions: Session[]): Promise<void> {
-  await forgetSessionChildren(sessions);
+export async function reapUnloadRuntime(_sessions: Session[]): Promise<void> {
+  // Native page retirement owns physical child cleanup. Never stop Host turns
+  // or another window's processes from a renderer unload.
+  forgetWindowChildren();
 }
 
 async function forgetSessionChildren(sessions: Session[]): Promise<void> {

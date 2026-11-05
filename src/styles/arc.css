@@ -366,7 +366,11 @@ html[data-control-density="touch"] .bycoda-arc-switch {
     outline: none !important;
   }
 
-  html :is([data-button-selected], .bycoda-arc-select-option[aria-selected="true"]):not(:disabled, [aria-disabled="true"]) {
+  html
+    :is([data-button-selected], .bycoda-arc-select-option[aria-selected="true"]):not(
+      :disabled,
+      [aria-disabled="true"]
+    ) {
     color: HighlightText;
     background: Highlight;
     border-color: Highlight;
@@ -601,7 +605,9 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   }
 }
 
-.bycoda-arc.bycoda-arc-select[data-field-size="sm"] { min-block-size: var(--ui-field-height-sm); }
+.bycoda-arc.bycoda-arc-select[data-field-size="sm"] {
+  min-block-size: var(--ui-field-height-sm);
+}
 .bycoda-arc .bycoda-arc-select-option {
   border-radius: calc(var(--ui-field-radius) - 2px);
 }

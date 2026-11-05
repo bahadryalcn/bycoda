@@ -30,7 +30,9 @@ describe("program form model", () => {
     };
     expect(summarizeProgramSuggestion("name", config, context)).toBe("Launch");
     expect(summarizeProgramSuggestion("projectId", config, context)).toBe("Alpha");
-    expect(summarizeProgramSuggestion("accountIds", config, context)).toBe("Brand, Removed account");
+    expect(summarizeProgramSuggestion("accountIds", config, context)).toBe(
+      "Brand, Removed account",
+    );
     expect(summarizeProgramSuggestion("totalPosts", config, context)).toBe("Unlimited");
     expect(summarizeProgramSuggestion("poolCampaignIds", config, context)).toBe("Pool item");
     expect(summarizeProgramSuggestion("unknown", config, context)).toBe(

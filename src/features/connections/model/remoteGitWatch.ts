@@ -4,7 +4,7 @@ import { subscribeRemoteRecovered } from "./remoteHealth";
 import { subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { parseRemotePath } from "./remoteProjects";
 
-/** The host watches the checkout's `.git` itself (host/git-watch.ts). */
+/** The host watches the checkout's `.git` itself (host/git/git-watch.ts). */
 export const GIT_WATCH = "git.watch";
 /** A checkout the host cannot watch is not asked about for this long, so an
  * unwatchable folder cannot wake the machine lane on every request. */

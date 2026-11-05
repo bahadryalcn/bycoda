@@ -53,10 +53,20 @@ export async function runTextOperation<T>(
   context: HarnessOperationContext | undefined,
   run: () => Promise<T>,
 ): Promise<T> {
-  assertProviderOperation(context);
+  const utility = Object.freeze({});
+  context?.onUtilityStarted?.(utility);
   try {
-    return await run();
-  } finally {
-    finishProviderOperation(context);
+    assertProviderOperation(context);
+    let result: T;
+    try {
+      result = await run();
+    } finally {
+      finishProviderOperation(context);
+    }
+    context?.onUtilityCompleted?.(utility);
+    return result;
+  } catch (error) {
+    context?.onUtilityFailed?.(utility);
+    throw error;
   }
 }

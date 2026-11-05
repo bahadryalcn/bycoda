@@ -48,36 +48,28 @@ const stored = {
 };
 
 it("inventories every declared Steward input, persisted row and run field without an open record", () => {
-  const source = readFileSync(
-    "src/features/tasks/model/hostStewards.ts",
-    "utf8",
-  );
+  const source = readFileSync("src/features/tasks/model/hostStewards.ts", "utf8");
   const keys = new Set(["scheduleKind", "minute", "time", "dayOfWeek"]);
   for (const name of ["HostStewardInput", "HostSteward"]) {
     const declaration = source.match(
       new RegExp(`export type ${name} = [^\\n]*\\{([\\s\\S]*?)^\\};`, "m"),
     );
     expect(declaration, name).not.toBeNull();
-    for (const field of declaration![1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm))
-      keys.add(field[1]);
+    for (const field of declaration![1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm)) keys.add(field[1]);
   }
-  expect(Object.keys(dto.HostStewardSchema.shape).sort()).toEqual(
-    [...keys].sort(),
-  );
+  expect(Object.keys(dto.HostStewardSchema.shape).sort()).toEqual([...keys].sort());
   const run = source.match(/export type StewardRun = \{([\s\S]*?)^\};/m)!;
   expect(Object.keys(dto.StewardRunSchema.shape).sort()).toEqual(
-    [...run[1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm)]
-      .map((field) => field[1])
-      .sort(),
+    [...run[1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm)].map((field) => field[1]).sort(),
   );
 });
 
 it("roundtrips complete mobile row/CAS spreads, desktop input and all actual run statuses", () => {
   expect(dto.HostStewardSchema.parse(stored)).toStrictEqual(stored);
   const mobile = { ...stored, enabled: true, expectedConfiguration: stored };
-  expect(dto.StewardsSaveParamsSchema.parse({ steward: mobile })).toStrictEqual(
-    { steward: mobile },
-  );
+  expect(dto.StewardsSaveParamsSchema.parse({ steward: mobile })).toStrictEqual({
+    steward: mobile,
+  });
   expect(dto.StewardsSaveParamsSchema.parse({ steward: input })).toStrictEqual({
     steward: input,
   });
@@ -89,17 +81,10 @@ it("roundtrips complete mobile row/CAS spreads, desktop input and all actual run
       isolate: false,
     }),
   );
-  for (const status of [
-    "running",
-    "succeeded",
-    "failed",
-    "skipped",
-    "cancelled",
-  ])
-    expect(
-      dto.HostStewardSchema.parse({ ...stored, lastRunStatus: status })
-        .lastRunStatus,
-    ).toBe(status);
+  for (const status of ["running", "succeeded", "failed", "skipped", "cancelled"])
+    expect(dto.HostStewardSchema.parse({ ...stored, lastRunStatus: status }).lastRunStatus).toBe(
+      status,
+    );
 });
 
 it("keeps owner defaults separate from wire parsing and rejects unknown candidate/null/type variants rather than stripping", () => {
@@ -141,13 +126,10 @@ it("keeps owner defaults separate from wire parsing and rejects unknown candidat
     { ...input, run: { ...stored.run, unknown: true } },
   ])
     expect(dto.StewardSavePayloadSchema.safeParse(invalid).success).toBe(false);
-  expect(dto.StewardsIdParamsSchema.safeParse({ stewardId: 1 }).success).toBe(
+  expect(dto.StewardsIdParamsSchema.safeParse({ stewardId: 1 }).success).toBe(false);
+  expect(dto.StewardsDeclineParamsSchema.safeParse({ taskId: "t", extra: true }).success).toBe(
     false,
   );
-  expect(
-    dto.StewardsDeclineParamsSchema.safeParse({ taskId: "t", extra: true })
-      .success,
-  ).toBe(false);
 });
 
 it("exports every finite Steward schema as deterministic supported draft-2020-12 JSON Schema", () => {

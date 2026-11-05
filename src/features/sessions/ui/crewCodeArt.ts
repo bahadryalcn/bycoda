@@ -1505,7 +1505,7 @@ function sitter(
   }
   // Brows carry most of the expression: anger pulls the inner ends down, laughter lifts them.
   const browTone = guest ? [200, 80, 110][(guest + id) % 3] : [215, 95, 80, 70, 90, 228][id];
-  const browLift = laugh * 1.5 - emphasis * 0 + thought * 0.8;
+  const browLift = laugh * 1.5 + thought * 0.8;
   for (const side of [-1, 1]) {
     const inner = -178.6 + emphasis * 2.6 - browLift + (thought && side > 0 ? -thought * 1.4 : 0);
     const outer = -178.4 - emphasis * 1.2 - browLift * 0.6;

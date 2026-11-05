@@ -1,6 +1,23 @@
 import type { HostToolTarget } from "../connections/model/hostToolTarget";
 import type { Attachment } from "../sessions/model/session";
 import type { DeviceFrame, DeviceSummary } from "./types";
+import {
+  DeviceImageDraftChangedError,
+  DeviceImageDraftDeliveryUncertainError,
+  DeviceImageDraftRejectedError,
+  DeviceImageTransferReceipts,
+  deviceImageTransferBinding,
+  deviceImageTransferFingerprint,
+  validDeviceImageTransfer,
+  type DeviceImageTransferOperation,
+  type DeviceImageTransferResult,
+} from "./deviceImageTransfer";
+export {
+  DeviceImageDraftChangedError,
+  DeviceImageDraftDeliveryUncertainError,
+  DeviceImageDraftRejectedError,
+  type DeviceImageTransferOperation,
+} from "./deviceImageTransfer";
 
 export type DeviceImageDraft = {
   device: DeviceSummary;
@@ -12,17 +29,28 @@ export type DeviceImageDraft = {
 
 type Receiver = (file: Attachment, context: string) => boolean;
 type DraftRequest = {
-  id: string;
-  cwd: string;
-  sessionId: string;
-  image: DeviceImageDraft;
+  operation: DeviceImageTransferOperation;
+  attemptId: string;
+  mode: "attach" | "receipt";
+  image?: DeviceImageDraft;
   replyTo: string;
 };
+type DraftReply = Omit<DraftRequest, "mode" | "image"> & { result: DeviceImageTransferResult };
 
 export const MAX_DEVICE_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 export const MAX_DEVICE_IMAGE_COMMENT = 4000;
 const DRAFT_EVENT = "bycoda:device-image-draft";
 const receivers = new Map<string, Receiver>();
+// Retain receipts across composer unmount/remount. Only a receipt query is allowed
+// after uncertainty, so a destination reload without receipts cannot duplicate work.
+const receipts = new DeviceImageTransferReceipts();
+const outgoing = new Map<
+  string,
+  {
+    operation: DeviceImageTransferOperation;
+    result: DeviceImageTransferResult;
+  }
+>();
 const key = (cwd: string, sessionId: string) => JSON.stringify([cwd, sessionId]);
 const validText = (value: unknown, max: number, empty = false): value is string =>
   typeof value === "string" &&
@@ -122,30 +150,56 @@ function validateDestination(cwd: string, sessionId: string) {
 async function receiveWindowImages(cwd: string, sessionId: string, receive: Receiver) {
   const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const { emitTo } = await import("@tauri-apps/api/event");
-  const replies = new Map<string, boolean>();
-  return getCurrentWebviewWindow().listen<DraftRequest>(DRAFT_EVENT, async ({ payload }) => {
+  const destination = getCurrentWebviewWindow();
+  return destination.listen<DraftRequest>(DRAFT_EVENT, async ({ payload }) => {
+    const operation = payload?.operation;
     if (
       receivers.get(key(cwd, sessionId)) !== receive ||
-      payload?.cwd !== cwd ||
-      payload.sessionId !== sessionId ||
-      !validText(payload.id, 128) ||
-      !validText(payload.replyTo, 128)
+      !validDeviceImageTransfer(operation) ||
+      operation.cwd !== cwd ||
+      operation.sessionId !== sessionId ||
+      operation.destinationWindow !== destination.label ||
+      !validText(payload.attemptId, 128) ||
+      !validText(payload.replyTo, 128) ||
+      (payload.mode !== "attach" && payload.mode !== "receipt") ||
+      (payload.mode === "attach" && payload.replyTo !== operation.sourceWindow)
     )
       return;
-    const requestKey = JSON.stringify([payload.replyTo, payload.id]);
-    let accepted = replies.get(requestKey);
-    if (accepted === undefined) {
-      accepted = false;
+    let result = receipts.find(operation);
+    if (payload.mode === "attach") {
       try {
-        const { file, context } = deviceImage(payload.image);
-        accepted = receive(file, context) === true;
+        const { bounded, file, context } = deviceImage(payload.image!);
+        if ((await fingerprint(operation, bounded)) !== operation.fingerprint) result = "conflict";
+        // Hashing yields. Recheck receiver ownership before touching the draft.
+        else if (receivers.get(key(cwd, sessionId)) === receive)
+          result = receipts.apply(operation, () => receive(file, context));
+        else result = "unknown";
       } catch {
-        // Malformed or stale app-window events must never mutate another draft.
+        result = "conflict";
       }
-      replies.set(requestKey, accepted);
-      if (replies.size > 100) replies.delete(replies.keys().next().value!);
     }
-    await emitTo(payload.replyTo, `${DRAFT_EVENT}-ack`, { id: payload.id, accepted });
+    await emitTo(payload.replyTo, `${DRAFT_EVENT}-ack`, {
+      operation,
+      attemptId: payload.attemptId,
+      replyTo: payload.replyTo,
+      result: result ?? "unknown",
+    } satisfies DraftReply).catch(() => undefined);
+  });
+}
+
+function fingerprint(
+  operation: Pick<
+    DeviceImageTransferOperation,
+    "sourceWindow" | "destinationWindow" | "cwd" | "sessionId"
+  >,
+  image: DeviceImageDraft,
+) {
+  return deviceImageTransferFingerprint({
+    sourceWindow: operation.sourceWindow,
+    destinationWindow: operation.destinationWindow,
+    cwd: operation.cwd,
+    sessionId: operation.sessionId,
+    image,
   });
 }
 
@@ -160,7 +214,7 @@ export function registerDeviceImageComposer(cwd: string, sessionId: string, rece
       : undefined;
   return () => {
     if (receivers.get(target) === receive) receivers.delete(target);
-    if (listener) void listener.then((stop) => stop?.());
+    if (listener) void listener.then((stop) => stop?.()).catch(() => undefined);
   };
 }
 
@@ -179,35 +233,167 @@ export async function attachDeviceImageAcrossWindows(
   sessionId: string,
   image: DeviceImageDraft,
   composerWindow?: string,
-) {
+  previous?: DeviceImageTransferOperation,
+): Promise<void> {
   validateDestination(cwd, sessionId);
-  if (receivers.has(key(cwd, sessionId)) || !composerWindow)
-    return attachDeviceImage(cwd, sessionId, image);
-  if (!validText(composerWindow, 128)) throw new Error("Invalid device screenshot conversation.");
+  if (previous) {
+    if (!validDeviceImageTransfer(previous)) throw new DeviceImageDraftChangedError(previous);
+    previous = Object.freeze({
+      id: previous.id,
+      sourceWindow: previous.sourceWindow,
+      destinationWindow: previous.destinationWindow,
+      cwd: previous.cwd,
+      sessionId: previous.sessionId,
+      fingerprint: previous.fingerprint,
+    });
+  }
+  if (composerWindow !== undefined && !validText(composerWindow, 128))
+    throw new Error("Invalid device screenshot conversation.");
   const { bounded } = deviceImage(image);
+  const native = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const sourceWindow = native
+    ? (await import("@tauri-apps/api/webviewWindow")).getCurrentWebviewWindow().label
+    : "local";
+  const destinationWindow = composerWindow ?? sourceWindow;
+  const scope = {
+    sourceWindow: previous?.sourceWindow ?? sourceWindow,
+    destinationWindow,
+    cwd,
+    sessionId,
+  };
+  const payloadFingerprint = await fingerprint(scope, bounded);
+  if (
+    previous &&
+    (!validDeviceImageTransfer(previous) ||
+      previous.cwd !== cwd ||
+      previous.sessionId !== sessionId ||
+      previous.destinationWindow !== destinationWindow ||
+      previous.fingerprint !== payloadFingerprint)
+  )
+    throw new DeviceImageDraftChangedError(previous);
+
+  // Also protect callers that retry without carrying their previous error. New
+  // window instances must carry the serializable operation with the tool draft.
+  const retained = previous
+    ? outgoing.get(previous.id)
+    : [...outgoing.values()].find(
+        (entry) =>
+          entry.operation.cwd === cwd &&
+          entry.operation.sessionId === sessionId &&
+          entry.operation.destinationWindow === destinationWindow &&
+          entry.result !== "rejected" &&
+          (entry.operation.fingerprint === payloadFingerprint || entry.result === "unknown"),
+      );
+  if (retained && retained.operation.fingerprint !== payloadFingerprint)
+    throw new DeviceImageDraftChangedError(retained.operation);
+  const operation =
+    previous ??
+    retained?.operation ??
+    Object.freeze({
+      id: crypto.randomUUID(),
+      ...scope,
+      fingerprint: payloadFingerprint,
+    });
+  if (retained?.result === "accepted") return;
+  if (retained?.result === "rejected") throw new DeviceImageDraftRejectedError();
+  if (previous || retained) return reconcileDeviceImageTransfer(operation);
+  if (outgoing.size >= 1024)
+    throw new Error("Screenshot attachment receipt capacity reached. Keep the source draft open.");
+  const entry = { operation, result: "unknown" as DeviceImageTransferResult };
+  outgoing.set(operation.id, entry);
+  const local = receivers.get(key(cwd, sessionId));
+  if (destinationWindow === sourceWindow && local) {
+    const { file, context } = deviceImage(bounded);
+    entry.result = receipts.apply(operation, () => local(file, context));
+    return acceptResult(operation, entry.result);
+  }
+  if (!native) {
+    outgoing.delete(operation.id);
+    throw new Error("Open the originating conversation before adding the screenshot.");
+  }
+  try {
+    entry.result = await exchange(operation, "attach", bounded);
+  } catch (cause) {
+    if (!(cause instanceof DeviceImageDraftDeliveryUncertainError)) outgoing.delete(operation.id);
+    throw cause;
+  }
+  acceptResult(operation, entry.result);
+}
+
+function acceptResult(
+  operation: DeviceImageTransferOperation,
+  result: DeviceImageTransferResult,
+): void {
+  if (result === "accepted") return;
+  if (result === "rejected") throw new DeviceImageDraftRejectedError();
+  if (result === "conflict") throw new DeviceImageDraftChangedError(operation);
+  throw new DeviceImageDraftDeliveryUncertainError(operation);
+}
+
+/** Reconcile only. Missing receipts and a new source window never resend image bytes. */
+export async function reconcileDeviceImageTransfer(
+  operation: DeviceImageTransferOperation,
+): Promise<void> {
+  if (!validDeviceImageTransfer(operation)) throw new DeviceImageDraftChangedError(operation);
+  const receipt = receipts.find(operation);
+  if (receipt !== undefined) {
+    const entry = outgoing.get(operation.id);
+    if (entry) entry.result = receipt;
+    return acceptResult(operation, receipt);
+  }
+  const native = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const localWindow = native
+    ? (await import("@tauri-apps/api/webviewWindow")).getCurrentWebviewWindow().label
+    : "local";
+  const result =
+    operation.destinationWindow === localWindow
+      ? (receipts.find(operation) ?? "unknown")
+      : native
+        ? await exchange(operation, "receipt")
+        : "unknown";
+  const entry = outgoing.get(operation.id);
+  if (entry) entry.result = result;
+  acceptResult(operation, result);
+}
+
+async function exchange(
+  operation: DeviceImageTransferOperation,
+  mode: DraftRequest["mode"],
+  image?: DeviceImageDraft,
+): Promise<DeviceImageTransferResult> {
   const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const { emitTo } = await import("@tauri-apps/api/event");
   const sender = getCurrentWebviewWindow();
-  const id = crypto.randomUUID();
+  const attemptId = crypto.randomUUID();
   let unlisten: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let finished = false;
+  let dispatched = false;
   try {
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<DeviceImageTransferResult>((resolve, reject) => {
       timer = setTimeout(
         () =>
           reject(
-            new Error(
-              "The screenshot draft was not acknowledged. Check the originating conversation before adding it again.",
-            ),
+            dispatched || mode === "receipt"
+              ? new DeviceImageDraftDeliveryUncertainError(operation)
+              : new Error("Open the originating conversation before adding the screenshot."),
           ),
         2500,
       );
       void sender
-        .listen<{ id: string; accepted: boolean }>(`${DRAFT_EVENT}-ack`, ({ payload }) => {
-          if (payload?.id !== id) return;
-          if (payload.accepted === true) resolve();
-          else reject(new Error("The conversation cannot accept this screenshot right now."));
+        .listen<DraftReply>(`${DRAFT_EVENT}-ack`, ({ payload }) => {
+          if (
+            finished ||
+            !payload ||
+            payload.attemptId !== attemptId ||
+            payload.replyTo !== sender.label ||
+            !validDeviceImageTransfer(payload.operation) ||
+            deviceImageTransferBinding(payload.operation) !==
+              deviceImageTransferBinding(operation) ||
+            !["accepted", "rejected", "unknown", "conflict"].includes(payload.result)
+          )
+            return;
+          resolve(payload.result);
         })
         .then((stop) => {
           if (finished) {
@@ -215,15 +401,22 @@ export async function attachDeviceImageAcrossWindows(
             return;
           }
           unlisten = stop;
-          return emitTo(composerWindow, DRAFT_EVENT, {
-            id,
-            cwd,
-            sessionId,
-            image: bounded,
+          dispatched = true;
+          return emitTo(operation.destinationWindow, DRAFT_EVENT, {
+            operation,
+            attemptId,
+            mode,
+            ...(mode === "attach" ? { image } : {}),
             replyTo: sender.label,
           } satisfies DraftRequest);
         })
-        .catch(reject);
+        .catch((cause) =>
+          reject(
+            dispatched || mode === "receipt"
+              ? new DeviceImageDraftDeliveryUncertainError(operation)
+              : cause,
+          ),
+        );
     });
   } finally {
     finished = true;

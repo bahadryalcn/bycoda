@@ -19,7 +19,7 @@
 
 .confirmed {
   color: var(--ui-tone-success-fg);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 
 .level {

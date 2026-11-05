@@ -1,6 +1,6 @@
-import { remoteRequest } from "../../connections/model/connections";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections";
 import { backgroundMachines } from "../../automations/model/hostAutomationClient";
 import {
   HOST_SETTINGS,
@@ -13,6 +13,7 @@ import {
 export type MachineLimits = HostSettingsState & {
   machineId: string;
   machineName: string;
+  stale?: boolean;
 };
 
 /** Machines whose host keeps work limits, this computer's included. Older
@@ -29,21 +30,17 @@ function machineLimits(machine: RemoteMachine, state: HostSettingsState): Machin
   };
 }
 
-/** The limits of each machine that answers. A machine that does not answer is
- * left out. */
+/** A failed read rejects so the query can retain its last answer as stale. */
 export async function listMachineLimits(
   machines: readonly RemoteMachine[],
 ): Promise<MachineLimits[]> {
   const results = await Promise.all(
     machines.map(async (machine) => {
-      try {
-        const state = parseHostSettingsState(
-          await remoteRequest<unknown>(machine.id, "host.settings.get"),
-        );
-        return state ? [machineLimits(machine, state)] : [];
-      } catch {
-        return [];
-      }
+      const state = parseHostSettingsState(
+        await remoteRequest<unknown>(machine.id, "host.settings.get"),
+      );
+      if (!state) throw new Error("The machine sent settings this app cannot read.");
+      return [machineLimits(machine, state)];
     }),
   );
   return results.flat();
@@ -63,11 +60,15 @@ export async function saveMachineLimits(
 
 /** The board's notice for machines whose daily agent time is used up, or null. */
 export function dailyLimitNotice(
-  limits: readonly Pick<MachineLimits, "machineName" | "limitReached">[],
+  limits: readonly (Pick<MachineLimits, "machineName" | "limitReached"> &
+    Pick<Partial<MachineLimits>, "usageUncertain">)[],
 ): string | null {
-  const names = limits.filter((entry) => entry.limitReached).map((entry) => entry.machineName);
-  if (!names.length) return null;
-  return names
-    .map((name) => `Daily agent time on ${name} is used up; queued work resumes tomorrow.`)
-    .join(" ");
+  const notices = limits
+    .filter((entry) => entry.limitReached)
+    .map((entry) =>
+      entry.usageUncertain
+        ? `Daily agent time on ${entry.machineName} is incomplete; queued work waits until tomorrow.`
+        : `Daily agent time on ${entry.machineName} is used up; queued work resumes tomorrow.`,
+    );
+  return notices.length ? notices.join(" ") : null;
 }

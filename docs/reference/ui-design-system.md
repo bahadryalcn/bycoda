@@ -12,6 +12,58 @@ and [component selection](ui-component-catalog.md) for the coverage map. Policie
 below apply to new and migrated code. Sections marked **target API** are a migration
 specification, not a claim that the props or components already exist.
 
+## Rules checklist for agents
+
+The short form of this document. `AGENTS.md` points here; the sections below explain
+each rule.
+
+- Choose controls for the task and Arc use-case guidance, reconsidering complete
+  groups. Preserve capabilities, not tag/button counts. Compare segmented/radio
+  choices, split actions and menus. Short stable lists may use Select; long, growing
+  or name-searchable lists need Combobox/autocomplete; multiple values need
+  searchable MultiSelect. Preserve free entry.
+- Search `src/shared/ui/`, settings controls and the feature before creating a
+  control. Reuse first, extend shared APIs for reusable gaps, and create a shared
+  component only for a concrete unmet need. Standard actions use
+  `src/shared/ui/Button.tsx` or a delegating wrapper. No screen-specific button
+  styling or visual-only IconButton/ToolbarButton/CardAction duplicates; keep color,
+  size, shape, focus, disabled and loading presentation centralized.
+- Prefer shared TextField, TextareaField, SearchableSelect, settings controls and Arc
+  adapters. Registry source belongs under `src/shared/ui/arc/`; application code uses
+  adapters. Preserve native props and ref contracts. Tabs, trees, menus, window
+  controls and drag targets keep keyboard, selection, focus, drag and native-window
+  behavior; do not mechanically replace them with buttons.
+- Reuse Popover, Modal, `overlay.ts` and native popup routing. Do not add another
+  overlay stack, focus trap, Escape framework or dialog/menu library. Use shared
+  appearance/motion tokens, icons and scoped `.bycoda-arc` roles; no global Arc
+  foundation imports or copied design systems.
+- Use shared semantic color tokens directly in CSS, Tailwind and inline styles. No
+  literal hex/RGB/HSL/OKLCH/named colors, arbitrary color utilities, or local
+  color-mix/opacity/gradient recipes. Ordinary panels, lists, sidebars and settings
+  groups share the canvas (DESIGN.md "Canvas first"); `var(--ui-surface)` is only for
+  floating surfaces, the composer, code/terminal viewers and inputs. Use existing
+  raised, hover, pressed, selected, text, border and status roles. Define genuinely new roles once in their owning shared theme under
+  `src/styles/` (palette.css, index.css, bycoda.css or arc.css), supporting light/dark/
+  custom themes. Keep mixing there and preserve neutral surface hues.
+- Keep headers/actions compact. Collection filters and advanced options go in
+  icon-triggered popovers with active indication and reset. Keep frequent actions
+  direct; secondary actions use overflow menus. Icons need accessible names and
+  tooltips; hover cannot be the only discovery/operation path.
+- Remove repetitive instructions and decorative cards. Optional help uses an
+  information control; long details use disclosure. Keep necessary labels, errors,
+  operation/approval state and recovery visible. Compactness must retain fields,
+  data, functions and drafts.
+- Separate sections primarily with spacing and subtle surface tones; retain clear
+  input, selection, focus and drag boundaries. Preserve the user's density settings.
+  Make pane, task and action ownership readable before reducing containment.
+- Preserve state ownership, persistence, validation, async callbacks, permission
+  gates and recovery. Restyling grants no new operation authority. Loading controls
+  prevent duplicate actions.
+- Shared-control changes need representative consumers checked for keyboard use,
+  narrow layouts, both themes and reduced motion. Legacy native controls do not
+  justify duplicates: within the named feature, migrate affected instances you find
+  and leave unrelated screens alone.
+
 ## Design direction
 
 Apply the compact, quiet product language in [DESIGN.md](DESIGN.md): content and
@@ -246,6 +298,15 @@ Features continue to own asynchronous operations; no new implicit persistence.
 
 ### Quiet, complete operation feedback
 
+`src/shared/ui/CapabilityStatus.tsx` presents three independent observations as a
+wrapping definition list. Supply `permission` (`enabled`, `disabled`, `unknown`),
+`readiness` (`ready`, `unavailable`, `checking`, `unknown`) and `activity`
+(`running`, `idle`, `unknown`). Domain owners provide evidence, invalidate stale
+runtime observations after failed reads, and retain saved permission separately.
+Inventory, picker visibility and credentials alone never prove readiness or
+activity. The component has no callbacks or activation effects. See ControlSpecimen
+for the real reference consumer.
+
 Every asynchronous action exposes pending state on its initiating Button (`loading`)
 or on the affected row/card. Track the actual action and target, not a shared busy
 flag that makes unrelated actions appear to run. Acquire duplicate-operation guards
@@ -452,6 +513,46 @@ from the user accent.
 
 ### Theme and interaction ownership
 
+Workspace canvases use `--ui-workspace-canvas` and navigation panes use
+`--ui-workspace-panel`. Both retain their opaque theme roles until dark native
+glass and Main pane glass are effective; then the owning `.body-glass` paints
+the user's opacity once and child canvases stay clear. The app root must not
+add a second translucent fill. Sidebar opacity remains independently owned.
+
+Navigation chrome, quiet cards, joined controls and selected-row layers use the
+central `--ui-navigation-*` roles. Their glass gate follows dark native window
+glass independently of Main pane glass. Navigation tab strips inside an existing
+sidebar canvas stay clear; an outer title bar owns its canvas fill, while a title
+bar nested inside a painted pane does not paint the opacity again. Bounded
+status chips, code fragments and field focus/press states retain their readable
+semantic fills. `ButtonGroup surface="navigation"` selects the navigation control
+role through the shared adapter; callers do not restyle the primitive locally.
+
+Opt-in workspace artwork is separate from native window glass and the saved
+Pure/Tinted canvas choice. `has-workspace-background` paints one root image through
+the shared safe gradient serializer and a theme-derived readability veil. Pane
+canvases expose that image; reading and control surfaces retain their semantic
+fills. Preview swatches use the same composition with local image/strength values.
+Project/chat images and live scenes keep their existing higher layers and opacity
+ownership. Reduced transparency and forced colors explicitly remove artwork while
+retaining the saved design; browsers need not implement a positive accessibility
+media query to display the normal background. Independent popups keep their own
+background contract.
+
+Reading regions use `--ui-workspace-reading` instead of clearing their background.
+Sticky text and overlapping panels must occlude content underneath: retain their
+opaque semantic tone or use the shared floating role. Verify actual scrolled
+content before applying translucency to an overlap boundary. The `-reading-base`, `-reading-chat`, `-reading-panel`
+and `-reading-muted` variants,
+and `-canvas-muted`, `-canvas-chat` and `-canvas-surface` variants, preserve the
+original opaque tone of existing consumers. These roles are defined only in
+`src/styles/index.css`; reduced transparency and forced colors restore opaque
+fills with selectors at least as specific as the glass selectors. Ordinary
+fields, floating overlays, status/diff marks and embedded document, browser,
+device or media pixels keep their own roles. Native effect success is separate
+from renderer styling; a failed effect retains an opaque canvas and exposes
+local retry rather than claiming glass is active.
+
 The palette supplies base seeds; `index.css` and `bycoda.css` derive the shared
 surface, text, state, geometry and motion roles, and `arc.css` maps them into
 scoped Arc controls. Appearance applies the saved theme and custom accent to the
@@ -558,7 +659,7 @@ consumed by name. Do not copy a value into feature CSS.
   it) and controls inside keep their own steps.
 - Pure and Tinted background (Appearance -> Themes -> Background tone, `html[data-canvas-background]`):
   Pure is the default and paints the shared canvas pure black or white for every palette. Derived
-  layers still mix from `--ui-tint-base`. Tokens and components must read well on both; do not
+  layers still mix from `--ui-tint-base`. Pure paints `--color-background-base` and `--ui-chat-canvas` from `--palette-canvasPureDark` / `--palette-canvasPureLight`; the Pure composer writing area uses `--ui-composer-surface` (one step above that ground). Tokens and components must read well on both; do not
   hard-code a canvas colour or test only one background.
 
 ## Type, density and layout
@@ -858,7 +959,7 @@ and `bycoda.css`. The rules cover:
 - loaders without reduced-motion handling;
 - base-hue colour utilities;
 - native `title=` on actions;
-- hand-written `role="alert"` and `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
+- hand-written `role="alert"` on `p`/`span` (`role-alert-text`) or `div`/`small`/`li`/`section` (`role-alert-container`), `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
 - feature `createPortal` and `Popover role=menu`;
 - `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights;
 - raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<a href>` and `target="_blank"` in

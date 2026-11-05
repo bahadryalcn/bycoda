@@ -335,9 +335,15 @@ export function recoverTaggedOrchestrationProposals(session: Session): Session {
   const interrupted = new Set<string>();
   let turnBlocks: Block[] = [];
   const finishTurn = () => {
-    if (turnBlocks.some((block) => block.turnOutcome === "stopped" ||
-      isSessionErrorBlock(block) || block.notice === "interrupt" ||
-      (block.role === "system" && isTurnInterruptMessage(block.text)))) {
+    if (
+      turnBlocks.some(
+        (block) =>
+          block.turnOutcome === "stopped" ||
+          isSessionErrorBlock(block) ||
+          block.notice === "interrupt" ||
+          (block.role === "system" && isTurnInterruptMessage(block.text)),
+      )
+    ) {
       for (const block of turnBlocks) interrupted.add(block.id);
     }
     turnBlocks = [];
@@ -356,7 +362,8 @@ export function recoverTaggedOrchestrationProposals(session: Session): Session {
       previous =
         proposal.leadId === session.id &&
         pathKey(proposal.cwd) === pathKey(session.cwd) &&
-        pathKey(proposal.checkoutCwd ?? proposal.cwd) === pathKey(session.worktreeCwd ?? session.cwd) &&
+        pathKey(proposal.checkoutCwd ?? proposal.cwd) ===
+          pathKey(session.worktreeCwd ?? session.cwd) &&
         (proposal.status === "ready" || proposal.status === "invalid")
           ? proposal
           : undefined;
@@ -365,10 +372,14 @@ export function recoverTaggedOrchestrationProposals(session: Session): Session {
     }
     if (block.role === "user" && !block.internal) revisionRequest = block.text;
     if (
-      !previous || block.streaming || block.internal || interrupted.has(block.id) ||
+      !previous ||
+      block.streaming ||
+      block.internal ||
+      interrupted.has(block.id) ||
       (block.role !== "assistant" && block.role !== "plan") ||
       !/^\s*<bycoda_proposal>[\s\S]*<\/bycoda_proposal>\s*$/.test(block.text)
-    ) return block;
+    )
+      return block;
     const proposal = completeOrchestrationProposal(
       {
         ...previous,

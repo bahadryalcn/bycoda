@@ -1,3 +1,4 @@
+import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import {
   gitBranches,
@@ -5,8 +6,8 @@ import {
   subscribeGitChanged,
   type GitBranches,
 } from "../../../platform/tauri/fs";
-import { reportRemoteLoad } from "../../connections/model/remoteHealth";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 
 export type ProjectBranchesState = {
   branches: GitBranches | null;
@@ -28,7 +29,10 @@ type Entry = {
   onResume: (() => void) | null;
 };
 
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.state,
+);
 
 function branchesEqual(a: GitBranches | null, b: GitBranches | null): boolean {
   if (a === b) return true;
@@ -75,6 +79,7 @@ function publish(entry: Entry, branches: GitBranches | null) {
     return;
   }
   entry.state = { branches, settled: true };
+  entries.refresh(entry.cwd);
   for (const listener of entry.listeners) listener();
 }
 
@@ -85,6 +90,7 @@ export function seedProjectBranches(cwd: string, branches: GitBranches) {
 }
 
 async function load(entry: Entry, force = false) {
+  if (entries.get(entry.cwd) !== entry) return;
   if (entry.inFlight) {
     entry.pending ||= force;
     return;
@@ -106,6 +112,7 @@ async function load(entry: Entry, force = false) {
       entry.pending = false;
       void load(entry, true);
     }
+    entries.prune();
   }
 }
 
@@ -153,6 +160,7 @@ export function useProjectBranchesState(cwd: string, enabled: boolean): ProjectB
       return () => {
         entry.listeners.delete(listener);
         if (entry.listeners.size === 0) stop(entry);
+        entries.prune();
       };
     },
     [active, cwd],

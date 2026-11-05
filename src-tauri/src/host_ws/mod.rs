@@ -9,6 +9,7 @@ mod bulk;
 mod commit;
 mod connection;
 mod demand;
+mod native_status;
 pub(crate) mod native_profile;
 mod permits;
 mod schema;
@@ -36,14 +37,7 @@ pub type EventSink = Arc<dyn Fn(NativeEvent) + Send + Sync>;
 // compatibility decision conservative for every legal caller request ID;
 // generated-envelope boundary tests prevent this reservation drifting silently.
 const MAX_REQUEST_ID_BYTES: usize = 200;
-fn native_profile_recovery(method: &str) -> bool {
-    matches!(
-        method,
-        "native.buffers.recovery.list"
-            | "native.buffers.recovery.read"
-            | "native.buffers.recovery.status"
-    )
-}
+use native_profile::native_profile_recovery;
 
 fn private_native_method(method: &str) -> bool {
     method.starts_with("native.") || method.starts_with("devServers.bridge")
@@ -71,6 +65,11 @@ fn native_device_method(method: &str) -> bool {
             | "devices.start"
             | "devices.boot"
             | "devices.capture"
+            | "devices.control.status"
+            | "devices.control.claim"
+            | "devices.control.release"
+            | "devices.control.renew"
+            | "devices.inspect"
             | "devices.action"
     )
 }
@@ -90,11 +89,23 @@ fn native_service_method(method: &str) -> bool {
         method,
         "native.services.runtimeLogs.bridge.describe"
             | "native.services.desktop.stop"
-            | "native.services.desktop.status"
             | "native.services.assistant.presence.get"
             | "native.services.assistant.presence.set"
+            | "native.services.assistant.visibility.epoch"
+            | "native.services.assistant.delegation.publicKey"
+            | "native.services.assistant.delegation.origin"
+            | "native.services.assistant.delegation.nativeChallenge"
+            | "native.services.assistant.delegation.attest"
+            | "native.services.assistant.delegation.issue"
+            | "native.services.assistant.delegation.issue.status"
+            | "native.services.assistant.delegation.challenge"
+            | "native.services.assistant.delegation.call"
+            | "native.services.assistant.delegation.revoke"
+            | "native.services.assistant.visibility.revoke"
+            | "native.services.assistant.visibility.reopen"
             | "native.services.runtimeLogs.access.issue"
             | "native.services.runtimeLogs.terminals.append"
+            | "native.services.runtimeLogs.terminals.demand"
             | "native.services.conversation.bridge.describe"
             | "native.services.conversation.access.issue"
             | "native.services.conversation.desktop.take"
@@ -117,7 +128,7 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.delivery.status"
             | "native.services.delivery.ack"
             | "native.services.delivery.result.read"
-    ) || native_delivery_epoch_method(method)
+    ) || native_delivery_epoch_method(method) || native_status::is_status(method)
 }
 
 #[cfg(test)]
@@ -125,6 +136,9 @@ mod desktop_stop_scope_tests {
     use super::*;
     #[test]
     fn emergency_stop_is_a_local_native_service_only() {
+        // Room browser panel disclosure is fenced by the HTTP response owner;
+        // WebSocket must reject before dispatch so only authenticated fallback runs.
+        assert!(!native_service_method("native.services.assistant.browser.panel"));
         assert!(native_service_method("native.services.desktop.stop"));
         assert!(native_service_method("native.services.desktop.status"));
         assert!(!native_peer_service_method(
@@ -149,6 +163,12 @@ pub(crate) fn native_peer_service_method(method: &str) -> bool {
     matches!(
         method,
         "native.services.social.native.status"
+            | "native.services.assistant.delegation.nativeChallenge"
+            | "native.services.assistant.delegation.issue"
+            | "native.services.assistant.delegation.issue.status"
+            | "native.services.assistant.delegation.challenge"
+            | "native.services.assistant.delegation.call"
+            | "native.services.assistant.delegation.revoke"
             | "native.services.social.native.enroll"
             | "native.services.social.native.register"
             | "native.services.social.native.authority"
@@ -330,6 +350,7 @@ pub struct RequestOptions {
     /// Optional operation budget, including queue admission and socket send.
     /// A relative response timeout must never extend this absolute deadline.
     pub absolute_deadline: Option<Instant>,
+    pub(crate) issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -476,6 +497,7 @@ struct Request {
     id: String,
     wire_id: String,
     consumer: String,
+    issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
     method: String,
     params: Value,
     command_id: Option<String>,
@@ -538,10 +560,184 @@ struct Shared {
     next_generation: Arc<AtomicU64>,
     last_state: Mutex<Option<NativeEvent>>,
     permits: Arc<permits::Permits>,
+    resume: Mutex<HashMap<demand::MemberId, ResumeProof>>,
+    resume_cuts: Mutex<HashMap<String, Vec<(demand::MemberId, ResumeProof)>>>,
+    resume_disabled: AtomicBool,
     changed: Notify,
 }
 
+#[derive(Clone)]
+struct ResumeProof {
+    shape: Value,
+    cursor: Option<Value>,
+    generation: u64,
+    resource: Option<Arc<permits::ResourceScope>>,
+    issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
+}
+
 impl Shared {
+    fn capture_resume_cuts(
+        &self,
+        generation: u64,
+        cuts: Vec<(Value, Vec<(demand::MemberId, Value)>)>,
+    ) {
+        let active: HashSet<String> = self.consumers().keys().cloned().collect();
+        let proofs = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut captured = self
+            .resume_cuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        captured.clear();
+        for (shape, members) in cuts {
+            let witnesses: Option<Vec<_>> = members
+                .into_iter()
+                .map(|(id, cursor)| {
+                    let proof = proofs.get(&id)?;
+                    if proof.generation != generation
+                        || proof.shape != shape
+                        || proof.cursor.as_ref() != Some(&cursor)
+                        || !active.contains(&id.owner)
+                        || !proof.resource.as_ref().is_some_and(|scope| scope.live())
+                        || !proof.issuer.as_ref().is_some_and(|issuer| issuer.is_live())
+                    {
+                        return None;
+                    }
+                    Some((id, proof.clone()))
+                })
+                .collect();
+            captured.insert(shape.to_string(), witnesses.unwrap_or_default());
+        }
+    }
+
+    fn take_resume_cut(&self, shape: &Value) -> Option<Vec<(demand::MemberId, ResumeProof)>> {
+        self.resume_cuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&shape.to_string())
+    }
+
+    fn adopt_resume(
+        &self,
+        member: &demand::MemberId,
+        proof: &ResumeProof,
+        generation: u64,
+        resource: Arc<permits::ResourceScope>,
+    ) {
+        let mut adopted = proof.clone();
+        adopted.generation = generation;
+        adopted.resource = Some(resource);
+        self.resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(member.clone(), adopted);
+    }
+    fn register_resume(
+        &self,
+        member: &demand::MemberId,
+        shape: Value,
+        requested: Option<&Value>,
+        generation: u64,
+        issuer: Option<&Arc<crate::control::receipts::WindowIssuer>>,
+    ) -> Option<Value> {
+        if self.resume_disabled.load(Ordering::Acquire) {
+            return None;
+        }
+        let active: HashSet<String> = self.consumers().keys().cloned().collect();
+        let mut proofs = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        proofs.retain(|id, proof| {
+            active.contains(&id.owner)
+                && proof.issuer.as_ref().is_none_or(|issuer| issuer.is_live())
+        });
+        let unique = proofs
+            .iter()
+            .filter(|(_, proof)| proof.shape == shape)
+            .count()
+            == 1;
+        let previous = proofs.remove(member);
+        let candidate = previous
+            .as_ref()
+            .filter(|proof| {
+                unique
+                    && proof.shape == shape
+                    && proof.generation < generation
+                    && proof.cursor.as_ref() == requested
+                    && requested.is_some()
+                    && proof.resource.as_ref().is_some_and(|scope| scope.live())
+                    && proof
+                        .issuer
+                        .as_ref()
+                        .zip(issuer)
+                        .is_some_and(|(prior, current)| {
+                            Arc::ptr_eq(prior, current) && current.is_live()
+                        })
+            })
+            .and_then(|proof| proof.cursor.clone());
+        if proofs.len() >= 512 {
+            proofs.clear();
+            self.resume_disabled.store(true, Ordering::Release);
+            return None;
+        }
+        proofs.insert(
+            member.clone(),
+            ResumeProof {
+                shape,
+                cursor: candidate.clone(),
+                generation,
+                resource: previous.and_then(|proof| {
+                    if candidate.is_some() {
+                        proof.resource
+                    } else {
+                        None
+                    }
+                }),
+                issuer: issuer.cloned(),
+            },
+        );
+        candidate
+    }
+    fn record_resume(
+        &self,
+        member: &demand::MemberId,
+        generation: u64,
+        cursor: Value,
+        resource: Arc<permits::ResourceScope>,
+        issuer: Option<&Arc<crate::control::receipts::WindowIssuer>>,
+    ) {
+        if !resource.live() || !self.active(&member.owner) {
+            return;
+        }
+        if let Some(proof) = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_mut(member)
+        {
+            if proof.generation == generation
+                && proof
+                    .issuer
+                    .as_ref()
+                    .zip(issuer)
+                    .is_some_and(|(prior, current)| {
+                        Arc::ptr_eq(prior, current) && current.is_live()
+                    })
+            {
+                proof.cursor = Some(cursor);
+                proof.resource = Some(resource);
+            }
+        }
+    }
+    fn remove_resume(&self, member: &demand::MemberId) {
+        self.resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(member);
+    }
     fn consumers(&self) -> std::sync::MutexGuard<'_, HashMap<String, Option<EventSink>>> {
         self.consumers
             .lock()
@@ -776,6 +972,9 @@ impl HostWsBroker {
             route: route.clone(),
             consumers: Mutex::new(HashMap::from([(consumer.into(), None)])),
             cancelled: Arc::new(Mutex::new(HashSet::new())),
+            resume: Mutex::new(HashMap::new()),
+            resume_cuts: Mutex::new(HashMap::new()),
+            resume_disabled: AtomicBool::new(false),
             ids: Arc::new(Mutex::new(HashMap::new())),
             stop: AtomicBool::new(false),
             pending: Arc::new(AtomicUsize::new(0)),
@@ -794,6 +993,14 @@ impl HostWsBroker {
         thread::Builder::new()
             .name("host-ws".into())
             .spawn(move || {
+                // Retire the handle even if the runtime or worker panics.
+                struct RetireWorker(Arc<Shared>);
+                impl Drop for RetireWorker {
+                    fn drop(&mut self) {
+                        self.0.stop.store(true, Ordering::Release);
+                    }
+                }
+                let _retire = RetireWorker(shared.clone());
                 match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -805,7 +1012,6 @@ impl HostWsBroker {
                         shared.state(0, "blocked", Some("internal"));
                     }
                 }
-                shared.stop.store(true, Ordering::Release);
             })
             .map_err(|_| {
                 WsFailure::local(
@@ -1191,6 +1397,7 @@ impl HostWsBroker {
             id: id.clone(),
             wire_id,
             consumer: consumer.into(),
+            issuer: options.issuer.clone(),
             method: method.into(),
             params,
             command_id: command_id.clone(),
@@ -1271,6 +1478,12 @@ impl HostWsBroker {
             }
             handle.shared.consumers().remove(consumer);
             handle.shared.permits.revoke_owner(consumer);
+            handle
+                .shared
+                .resume
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .retain(|member, _| member.owner != consumer);
             let keep = !handle.shared.consumers().is_empty();
             if !keep {
                 handle.shared.stop.store(true, Ordering::Release);

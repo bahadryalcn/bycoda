@@ -1,39 +1,77 @@
 import { expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { sprintDateNumber, sprintDateValue, SprintGoalDescription } from "./SprintManagement";
+import {
+  sprintDateNumber,
+  sprintDateValue,
+  SprintGoalDescription,
+  SprintManagement,
+} from "./SprintManagement";
+import type { SprintBoardController } from "../model/sprintClient";
+import type { SprintProjectRef } from "../model/hostSprints";
 
-function withZone<T>(zone: string, run: () => T): T {
-  const previous = process.env.TZ;
-  process.env.TZ = zone;
-  try {
-    return run();
-  } finally {
-    if (previous === undefined) delete process.env.TZ;
-    else process.env.TZ = previous;
-  }
-}
-
-it("stores local midnight and round-trips calendar dates at positive and negative UTC offsets", () => {
-  for (const zone of ["Europe/Istanbul", "America/Los_Angeles", "Pacific/Auckland", "UTC"]) {
-    withZone(zone, () => {
-      const encoded = sprintDateNumber("2026-10-26")!;
-      const local = new Date(encoded);
-      expect([local.getFullYear(), local.getMonth(), local.getDate(), local.getHours()]).toEqual([
-        2026, 9, 26, 0,
-      ]);
-      expect(sprintDateValue(encoded)).toBe("2026-10-26");
-      expect(sprintDateValue(sprintDateNumber(sprintDateValue(encoded)))).toBe("2026-10-26");
-    });
-  }
+it("round-trips calendar dates without shifting at positive or negative UTC offsets", () => {
+  const date = "2026-10-26";
+  const encoded = sprintDateNumber(date)!;
+  expect(new Date(encoded).toISOString()).toBe("2026-10-26T00:00:00.000Z");
+  expect(sprintDateValue(encoded)).toBe(date);
+  expect(new Date(encoded).toLocaleDateString("en-CA", { timeZone: "Europe/Istanbul" })).toBe(date);
+  expect(sprintDateValue(sprintDateNumber(sprintDateValue(encoded)))).toBe(date);
   expect(sprintDateNumber("")).toBeUndefined();
   expect(sprintDateValue(undefined)).toBe("");
 });
 
-it("still reads sprints saved as UTC midnight as the day that was picked", () => {
-  const legacy = Date.UTC(2026, 9, 26);
-  for (const zone of ["America/Los_Angeles", "Europe/Istanbul", "Pacific/Auckland"])
-    withZone(zone, () => expect(sprintDateValue(legacy)).toBe("2026-10-26"));
+it("keeps legacy UTC dates stable when opened and saved across time zones and DST", () => {
+  const previous = process.env.TZ;
+  try {
+    for (const zone of [
+      "Etc/GMT+12",
+      "Pacific/Kiritimati",
+      "Europe/Istanbul",
+      "America/Los_Angeles",
+    ]) {
+      process.env.TZ = zone;
+      for (const day of ["1970-01-01", "2026-03-08", "2026-11-01", "2026-10-26"]) {
+        const legacy = Date.parse(`${day}T00:00:00.000Z`);
+        const editValue = sprintDateValue(legacy);
+        const saved = sprintDateNumber(editValue);
+        expect(saved, `${zone} ${day}`).toBe(legacy);
+        expect(sprintDateValue(saved), `${zone} ${day}`).toBe(day);
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+});
+
+it("shows a valid epoch-zero sprint start in the selected sprint summary", () => {
+  const project = {
+    environmentId: "local",
+    projectId: "project",
+    cwd: "/project",
+  } as SprintProjectRef;
+  const board = {
+    sprints: [
+      { id: "s", name: "Epoch", state: "planned", revision: 1, projects: [project], startsAt: 0 },
+    ],
+    sources: [],
+    planning: new Map(),
+    machines: [],
+    supported: false,
+    loading: false,
+    syncErrors: [],
+    lifecycleIssue: () => undefined,
+  } as unknown as SprintBoardController;
+  const html = renderToStaticMarkup(
+    createElement(SprintManagement, {
+      board,
+      projects: [project],
+      selectedId: "s",
+      onSelect: () => {},
+    }),
+  );
+  expect(html).toContain("1970-01-01");
 });
 
 it("keeps a long sprint goal collapsed while preserving all of its content", () => {

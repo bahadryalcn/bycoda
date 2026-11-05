@@ -5,13 +5,15 @@ import styles from "./ButtonGroup.module.css";
 export function ButtonGroup({
   className,
   children,
+  surface = "default",
   ...props
-}: ComponentPropsWithRef<"div"> & { "aria-label": string }) {
+}: ComponentPropsWithRef<"div"> & { "aria-label": string; surface?: "default" | "navigation" }) {
   return (
     <div
       role="group"
       {...props}
       data-button-group="joined"
+      data-surface={surface}
       className={[styles.group, className].filter(Boolean).join(" ")}
     >
       {children}

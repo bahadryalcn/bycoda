@@ -2,15 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { DeviceHost } from "../../device-host";
-import { DevicePreviews } from "../../device-preview";
+import { DeviceHost } from "../../devices/device-host";
+import { DevicePreviews } from "../../devices/device-preview";
 import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts";
-import { fixture, sha } from "../../native-devices.test-support";
+import { fixture, sha } from "../../devices/native-devices.test-support";
 
 // This entry imports DevicePreviews directly; register its manifest fixture
 // before that import rather than relying on a later helper-module mock.
-vi.mock("../../expo-go", async (original) => ({
-  ...(await original<typeof import("../../expo-go")>()),
+vi.mock("../../devices/expo-go", async (original) => ({
+  ...(await original<typeof import("../../devices/expo-go")>()),
   expoManifest: async () => ({ sdkVersion: "53.0.0" }),
 }));
 

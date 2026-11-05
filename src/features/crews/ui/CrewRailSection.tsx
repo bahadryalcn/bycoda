@@ -2,19 +2,13 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import {
-  Bot,
-  Copy,
-  Globe,
-  Pencil,
-  Play,
-  Plus,
-  Trash2,
-} from "../../../shared/ui/icons";
+import { Bot, Copy, Globe, Pencil, Play, Plus, Trash2 } from "../../../shared/ui/icons";
 import {
   RAIL_SECTION_BLOCK,
   RailSectionHeader,
@@ -52,14 +46,14 @@ const StartCrewDialog = lazySurface(async () => ({
 /** Execution state only; what needs the owner is `CrewAttention` and takes the dot. */
 type RailExecution = Extract<CrewWorkStatus, "working" | "paused" | "active">;
 
-const ATTENTION_DOT: Record<CrewAttention, string> = {
-  decision: "bg-warning",
-  review: "bg-warning",
-  blocked: "bg-danger",
+const ATTENTION_DOT: Record<CrewAttention, BadgeTone> = {
+  decision: "warning",
+  review: "warning",
+  blocked: "danger",
 };
-const EXECUTION_DOT: Record<Exclude<RailExecution, "working">, string> = {
-  paused: "bg-(--ui-text-secondary)",
-  active: "bg-success",
+const EXECUTION_DOT: Record<Exclude<RailExecution, "working">, BadgeTone> = {
+  paused: "neutral",
+  active: "neutral",
 };
 
 // Most urgent first: the rail shows the strongest signal across a crew's ongoing work.
@@ -345,13 +339,14 @@ export function CrewRailSection({
                 <span className="relative grid icon-sm shrink-0 place-items-center">
                   <CrewAvatar crew={crew} active={working} />
                   {attention || (execution && !working) ? (
-                    <span
-                      aria-hidden
-                      className={`absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ${
+                    <StatusDot
+                      label={statusText}
+                      className="absolute -right-0.5 -bottom-0.5"
+                      tone={
                         attention
                           ? ATTENTION_DOT[attention]
                           : EXECUTION_DOT[execution as keyof typeof EXECUTION_DOT]
-                      }`}
+                      }
                     />
                   ) : null}
                 </span>
@@ -364,12 +359,14 @@ export function CrewRailSection({
                   </span>
                 ) : null}
                 {runs.length > 1 ? (
-                  <span
+                  <Badge
+                    variant="count"
+                    size="xs"
                     aria-hidden
-                    className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary) @max-[140px]/rail:hidden"
+                    className="shrink-0 @max-[140px]/rail:hidden"
                   >
                     {runs.length}
-                  </span>
+                  </Badge>
                 ) : null}
               </Button>
               <span className="flex shrink-0 items-center gap-px @max-[140px]/rail:hidden!">
@@ -399,9 +396,7 @@ export function CrewRailSection({
             </ActionHost>
           );
         })}
-        {error ? (
-          <InlineError className="px-2">{error}</InlineError>
-        ) : null}
+        {error ? <InlineError className="px-2">{error}</InlineError> : null}
       </div>
       {menu?.kind === "crew" && menuCrew ? (
         <DropdownMenu

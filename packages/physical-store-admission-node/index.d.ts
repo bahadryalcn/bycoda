@@ -44,6 +44,16 @@ export interface PhysicalRegistry {
 }
 export interface PhysicalStoreAdmission {
   mechanicalAbiVersion(): 2;
+  windowsListeners?(): { pid: number; address: string; port: number }[];
+  windowsProcessBirths?(
+    pids: number[],
+  ): { pid: number; state: "alive" | "missing" | "unknown"; startedAt?: string | null }[];
+  /** Optional additive capability; absent on older artifacts. */
+  renameNoReplace?(from: string, to: string): void;
+  guardedMove?(
+    from: string,
+    to: string,
+  ): Promise<{ path: string; recoveryPath: string; receiptPath: string; warning?: string | null }>;
   openRegistry(protectedRoot: string): PhysicalRegistry;
   /** Shared Core location derivation only; caller establishes canonical provenance. */
   registryRootForDatabase(canonicalAbsDbPath: string): string;

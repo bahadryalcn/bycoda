@@ -11,10 +11,65 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         ordinal INTEGER NOT NULL, block_id TEXT NOT NULL, block_json TEXT NOT NULL,
         revision INTEGER NOT NULL, PRIMARY KEY(session_id, ordinal));
       CREATE INDEX IF NOT EXISTS session_blocks_roles ON session_blocks(session_id,json_extract(block_json,'$.role'),json_extract(block_json,'$.draft'));
+      CREATE INDEX IF NOT EXISTS session_blocks_usage_started ON session_blocks(json_extract(block_json,'$.startedAt') DESC)
+        WHERE json_extract(block_json,'$.role')='user'
+          AND COALESCE(json_extract(block_json,'$.draft'),0)=0
+          AND json_type(block_json,'$.startedAt') IN ('integer','real');
       CREATE TRIGGER IF NOT EXISTS session_blocks_checkpoint_changed AFTER UPDATE OF blocks_json ON sessions
         WHEN OLD.blocks_json != NEW.blocks_json BEGIN
           UPDATE session_block_state SET revision=revision+1,length=-1 WHERE session_id=NEW.id;
         END;")?;
+    // Materialize legacy checkpoints once and keep them in sync with every
+    // writer. The transaction couples the backfill, triggers and version marker:
+    // a crash or competing connection cannot expose a half-built projection.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS session_usage_legacy (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        ordinal INTEGER NOT NULL, block_json TEXT NOT NULL,
+        PRIMARY KEY(session_id, ordinal));
+      CREATE INDEX IF NOT EXISTS session_usage_legacy_started ON session_usage_legacy(json_extract(block_json,'$.startedAt') DESC)
+        WHERE json_extract(block_json,'$.role')='user'
+          AND COALESCE(json_extract(block_json,'$.draft'),0)=0
+          AND json_type(block_json,'$.startedAt') IN ('integer','real');
+      CREATE TABLE IF NOT EXISTS session_usage_projection_version (version INTEGER PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS session_usage_invalid (session_id TEXT PRIMARY KEY);
+      CREATE TRIGGER IF NOT EXISTS session_usage_legacy_insert AFTER INSERT ON sessions BEGIN
+          DELETE FROM session_usage_legacy WHERE session_id=NEW.id;
+          DELETE FROM session_usage_invalid WHERE session_id=NEW.id;
+          INSERT INTO session_usage_invalid SELECT NEW.id WHERE COALESCE(NEW.blocks_json,'') != '' AND
+            (NOT json_valid(NEW.blocks_json) OR json_type(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE 'null' END) != 'array'
+             OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type != 'object'));
+          INSERT INTO session_usage_legacy SELECT NEW.id, CAST(key AS INTEGER), value
+            FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type='object'
+              AND NOT EXISTS(SELECT 1 FROM session_usage_invalid WHERE session_id=NEW.id);
+        END;
+      CREATE TRIGGER IF NOT EXISTS session_usage_legacy_update AFTER UPDATE OF blocks_json ON sessions BEGIN
+        DELETE FROM session_usage_legacy WHERE session_id=NEW.id;
+        DELETE FROM session_usage_invalid WHERE session_id=NEW.id;
+        INSERT INTO session_usage_invalid SELECT NEW.id WHERE COALESCE(NEW.blocks_json,'') != '' AND
+          (NOT json_valid(NEW.blocks_json) OR json_type(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE 'null' END) != 'array'
+           OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type != 'object'));
+        INSERT INTO session_usage_legacy SELECT NEW.id, CAST(key AS INTEGER), value
+          FROM json_each(CASE WHEN json_valid(NEW.blocks_json) THEN NEW.blocks_json ELSE '[]' END) WHERE type='object'
+            AND NOT EXISTS(SELECT 1 FROM session_usage_invalid WHERE session_id=NEW.id);
+        END;
+      CREATE TRIGGER IF NOT EXISTS session_usage_legacy_delete AFTER DELETE ON sessions BEGIN
+        DELETE FROM session_usage_legacy WHERE session_id=OLD.id;
+        DELETE FROM session_usage_invalid WHERE session_id=OLD.id;
+        END;")?;
+    let version: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM session_usage_projection_version WHERE version=1)", [], |row| row.get(0))?;
+    if !version {
+        tx.execute_batch("DELETE FROM session_usage_legacy;
+          DELETE FROM session_usage_invalid;
+          INSERT INTO session_usage_invalid SELECT id FROM sessions WHERE COALESCE(blocks_json,'') != '' AND
+            (NOT json_valid(blocks_json) OR json_type(CASE WHEN json_valid(blocks_json) THEN blocks_json ELSE 'null' END) != 'array'
+             OR EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(blocks_json) THEN blocks_json ELSE '[]' END) WHERE type != 'object'));
+          INSERT INTO session_usage_legacy SELECT s.id, CAST(b.key AS INTEGER), b.value
+            FROM sessions s, json_each(CASE WHEN json_valid(s.blocks_json) THEN s.blocks_json ELSE '[]' END) b
+            WHERE b.type='object' AND NOT EXISTS(SELECT 1 FROM session_usage_invalid i WHERE i.session_id=s.id);
+          INSERT INTO session_usage_projection_version VALUES(1);")?;
+    }
+    tx.commit()?;
     // Generate the compatibility view from the current schema so later columns
     // remain available. Summary readers retain their covering table indexes.
     let columns = conn
@@ -149,6 +204,48 @@ pub(super) fn apply_observed(
     if revision != delta.expected_revision {
         return Ok(write_receipts::ObservedWrite::absent());
     }
+    // Existing summary is invalidated by every external block or harness write.
+    // Retain it across this transaction only when no provenance-bearing block
+    // changes and the harness remains unchanged.
+    let cached_history: Option<String> = tx.query_row(
+        "SELECT summary.provider_history FROM session_list_summaries summary
+         JOIN sessions ON sessions.id=summary.session_id
+         JOIN session_provider_projection_state state ON state.session_id=summary.session_id
+         WHERE summary.session_id=?1 AND sessions.harness=?2 AND state.harness=?2 AND state.revision=?3",
+        params![&delta.session.id, &delta.session.harness, revision], |row| row.get(0),
+    ).optional().map_err(|e| e.to_string())?;
+    let cached_history =
+        cached_history.filter(|raw| super::provider_history::valid_cached(raw).is_some());
+    let mut provenance_changed = cached_history.is_none();
+    for change in &delta.changes {
+        let new_role = change.block.get("role").and_then(Value::as_str);
+        if matches!(new_role, Some("user" | "handoff")) {
+            provenance_changed = true;
+            break;
+        }
+        let old_relevant: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND ordinal=?2
+             AND json_extract(block_json,'$.role') IN ('user','handoff'))",
+                params![&delta.session.id, change.index as i64],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if old_relevant {
+            provenance_changed = true;
+            break;
+        }
+    }
+    if !provenance_changed && (delta.length as i64) < previous_length {
+        provenance_changed = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND ordinal>=?2
+             AND json_extract(block_json,'$.role') IN ('user','handoff'))",
+                params![&delta.session.id, delta.length as i64],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+    }
     let revision = revision + 1;
     let id = &delta.session.id;
     {
@@ -218,7 +315,8 @@ pub(super) fn apply_observed(
     let archived_user = super::has_archived_user_block(s.rewind_history.as_ref());
     tx.execute("UPDATE sessions SET cwd=?2,harness=?3,model=?4,model_settings=?5,runtime_mode=?6,title=?7,
       provider_session_id=?8,provider_account_id=?9,context_used=?10,context_window=?11,branch=?12,worktree_cwd=?13,
-      worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,updated_at=?17,
+      worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,
+      last_activity_at=CASE WHEN updated_at != ?17 THEN ?17 ELSE last_activity_at END,updated_at=?17,
       rewind_history_json=?18,pending_context_replay=?19,adopted_divergence=?21,adopted_base=?22,workspace_id=?23,workspace_revision=?24,
       workspace_mode=COALESCE(?25,workspace_mode),
       has_user_message=?20 OR EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user'),
@@ -241,6 +339,17 @@ pub(super) fn apply_observed(
     tx.execute(
         "UPDATE session_block_state SET revision=?2,length=?3 WHERE session_id=?1",
         params![id, revision, delta.length as i64],
+    )
+    .map_err(|e| e.to_string())?;
+    super::update_list_summary_with_history(
+        &tx,
+        id,
+        &s.harness,
+        if provenance_changed {
+            None
+        } else {
+            cached_history.as_deref()
+        },
     )
     .map_err(|e| e.to_string())?;
     let ack = DeltaAck {
@@ -527,6 +636,7 @@ fn page_with_cache(
     // A deferred read transaction pins metadata and blocks to the same WAL
     // snapshot. Cursors reject intervening writes rather than splice revisions.
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    deletions::assert_readable(&tx, id)?;
     let state: Option<(i64, usize)> = tx
         .query_row(
             "SELECT revision,length FROM session_block_state WHERE session_id=?1 AND length>=0",
@@ -761,6 +871,267 @@ mod tests {
         }
     }
     #[test]
+    fn assistant_stream_reuses_valid_history_but_user_edits_and_missing_cache_recompute() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, summary) = seed(&conn);
+        super::super::provider_history::STORED_SCANS.with(|count| count.set(0));
+        let ack = apply(&conn, &delta(session.clone(), &summary))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+            0
+        );
+        let user_edit = SessionDelta {
+            expected_updated_at: ack.updated_at,
+            expected_revision: ack.revision,
+            changes: vec![BlockChange {
+                index: 0,
+                block: json!({"id":"u","role":"user","turnModel":{"harness":"claude"}}),
+            }],
+            ..delta(session.clone(), &summary)
+        };
+        let edited = apply(&conn, &user_edit).unwrap().unwrap();
+        assert_eq!(
+            super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+            1
+        );
+        let cached: String = conn
+            .query_row(
+                "SELECT provider_history FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&cached).unwrap()["activeHarness"],
+            "claude"
+        );
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        let fallback = SessionDelta {
+            expected_updated_at: edited.updated_at,
+            expected_revision: edited.revision,
+            ..delta(session, &summary)
+        };
+        apply(&conn, &fallback).unwrap().unwrap();
+        assert_eq!(
+            super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+            2
+        );
+    }
+
+    #[test]
+    fn long_history_streaming_does_not_scan_prior_user_turns() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut session = session();
+        let mut blocks: Vec<Value> = (0..1500)
+            .map(|i| json!({"id":format!("u{i}"),"role":"user","turnModel":{"harness":"codex"}}))
+            .collect();
+        blocks.push(json!({"id":"a","role":"assistant","text":"before"}));
+        session.blocks = Value::Array(blocks);
+        let summary = upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        super::super::provider_history::STORED_SCANS.with(|count| count.set(0));
+        let delta = SessionDelta {
+            session,
+            expected_updated_at: summary.updated_at,
+            expected_revision: summary.transcript_revision.unwrap(),
+            length: 1501,
+            changes: vec![BlockChange {
+                index: 1500,
+                block: json!({"id":"a","role":"assistant","text":"streaming"}),
+            }],
+        };
+        apply(&conn, &delta).unwrap().unwrap();
+        assert_eq!(
+            super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+            0
+        );
+    }
+
+    #[test]
+    fn stale_projection_revision_forces_provenance_rebuild() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, summary) = seed(&conn);
+        conn.execute(
+            "UPDATE session_provider_projection_state SET revision=revision-1 WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        super::super::provider_history::STORED_SCANS.with(|count| count.set(0));
+        let ack = apply(&conn, &delta(session.clone(), &summary))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+            1
+        );
+        conn.execute(
+            "UPDATE session_list_summaries SET provider_history='{broken' WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        let next = SessionDelta {
+            expected_updated_at: ack.updated_at,
+            expected_revision: ack.revision,
+            ..delta(session, &summary)
+        };
+        apply(&conn, &next).unwrap().unwrap();
+        assert_eq!(
+            super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+            2
+        );
+    }
+
+    #[test]
+    fn malformed_projection_objects_recompute_for_summary_and_delta() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, summary) = seed(&conn);
+        let mut stamp = summary.updated_at;
+        let mut revision = summary.transcript_revision.unwrap();
+        for raw in [
+            "{}",
+            r#"{"providers":[2],"activeHarness":"codex"}"#,
+            r#"{"providers":["codex"],"activeHarness":7}"#,
+            r#"{"providers":["codex"],"activeHarness":"codex","handedOffFrom":null}"#,
+            r#"{"providers":["codex"],"activeHarness":"codex","activeModel":false}"#,
+        ] {
+            conn.execute(
+                "UPDATE session_list_summaries SET provider_history=?2 WHERE session_id=?1",
+                params![session.id, raw],
+            )
+            .unwrap();
+            super::super::provider_history::STORED_SCANS.with(|count| count.set(0));
+            let summary_value = super::super::provider_history::cached_or_stored(
+                &conn,
+                &session.id,
+                &session.harness,
+            )
+            .unwrap();
+            assert_eq!(summary_value["activeHarness"], "codex");
+            let next = SessionDelta {
+                expected_updated_at: stamp,
+                expected_revision: revision,
+                ..delta(session.clone(), &summary)
+            };
+            let ack = apply(&conn, &next).unwrap().unwrap();
+            stamp = ack.updated_at;
+            revision = ack.revision;
+            assert_eq!(
+                super::super::provider_history::STORED_SCANS.with(|count| count.get()),
+                2
+            );
+        }
+    }
+
+    #[test]
+    fn projection_tracks_handoff_user_deletion_and_harness_switch() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (mut session, summary) = seed(&conn);
+        let mut stamp = summary.updated_at;
+        let mut revision = summary.transcript_revision.unwrap();
+        let mut step = |length: usize, changes: Vec<BlockChange>, current: &SessionUpsert| {
+            let ack = apply(
+                &conn,
+                &SessionDelta {
+                    session: current.clone(),
+                    expected_updated_at: stamp,
+                    expected_revision: revision,
+                    length,
+                    changes,
+                },
+            )
+            .unwrap()
+            .unwrap();
+            stamp = ack.updated_at;
+            revision = ack.revision;
+            let cached = super::super::provider_history::cached_or_stored(
+                &conn,
+                &current.id,
+                &current.harness,
+            )
+            .unwrap();
+            let actual =
+                super::super::provider_history::stored(&conn, &current.id, &current.harness)
+                    .unwrap();
+            assert_eq!(cached, actual);
+            cached
+        };
+        step(
+            3,
+            vec![BlockChange {
+                index: 2,
+                block: json!({"id":"h","role":"handoff","handoff":{"from":"codex","to":"claude","status":"ready"}}),
+            }],
+            &session,
+        );
+        let history = step(
+            4,
+            vec![BlockChange {
+                index: 3,
+                block: json!({"id":"u2","role":"user"}),
+            }],
+            &session,
+        );
+        assert_eq!(history["activeHarness"], "claude");
+        let history = step(
+            4,
+            vec![BlockChange {
+                index: 3,
+                block: json!({"id":"u2","role":"user","draft":true}),
+            }],
+            &session,
+        );
+        assert_eq!(history["activeHarness"], "codex");
+        step(2, vec![], &session);
+        session.harness = "cursor".into();
+        step(2, vec![], &session);
+    }
+
+    #[test]
+    fn projection_tracks_full_save_and_database_reopen() {
+        let dir =
+            std::env::temp_dir().join(format!("bycoda-provider-cache-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.db");
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            let conn = store.conn.lock().unwrap();
+            let mut session = session();
+            session.blocks = json!([{ "id":"u", "role":"user", "turnModel":{"harness":"claude"} }]);
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        }
+        {
+            let store = SessionStore::open(path).unwrap();
+            let conn = store.conn.lock().unwrap();
+            let session = session();
+            let cached = super::super::provider_history::cached_or_stored(
+                &conn,
+                &session.id,
+                &session.harness,
+            )
+            .unwrap();
+            assert_eq!(cached["activeHarness"], "claude");
+            assert_eq!(
+                cached,
+                super::super::provider_history::stored(&conn, &session.id, &session.harness)
+                    .unwrap()
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn delta_is_authoritative_for_get_view_and_revision_pages() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
@@ -787,6 +1158,22 @@ mod tests {
         assert_eq!(checkpoint, super::super::legacy_blob::NORMALIZED_BLOB);
         assert!(page(&conn, &session.id, first.before, Some(first.revision), 1).is_err());
     }
+    #[test]
+    fn delta_updates_list_projection_atomically() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, summary) = seed(&conn);
+        let mut change = delta(session.clone(), &summary);
+        change.changes[0].block = json!({"id":"a","role":"system","notice":"interrupt"});
+        apply(&conn, &change).unwrap().unwrap();
+        let (interrupted, history): (i64, String) = conn.query_row(
+            "SELECT interrupted,provider_history FROM session_list_summaries WHERE session_id=?1",
+            [&session.id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(interrupted, 1);
+        assert!(serde_json::from_str::<Value>(&history).unwrap()["activeHarness"].is_string());
+    }
+
     #[test]
     fn delta_carries_the_adopted_base() {
         let store = SessionStore::open_in_memory().unwrap();

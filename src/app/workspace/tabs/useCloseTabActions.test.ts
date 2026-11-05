@@ -256,3 +256,12 @@ it("closes nothing when no tab is closable any more", async () => {
   expect(deps.tabsRef.current.map((value) => value.id)).toEqual(["a", "b"]);
   expect(deps.activateTab).not.toHaveBeenCalled();
 });
+
+it("keeps a replaced tab while an asynchronous close guard waits", async () => {
+  const pending = deferred();
+  actions.onCloseTabs(["a"], "b", { confirmed: true, stillClosable: () => pending.promise });
+  const replacement = { ...tab("replacement"), id: "a" };
+  await act(async () => setLiveTabs([replacement, tab("b")]));
+  await act(async () => pending.resolve(true));
+  expect(deps.tabsRef.current.map((value) => value.id)).toEqual(["a", "b"]);
+});

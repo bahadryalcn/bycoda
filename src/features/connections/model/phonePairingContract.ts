@@ -88,6 +88,9 @@ export function readMobileAccessStatus(value: unknown): MobileAccessStatus {
         }
       : {}),
     ...(endpoint ? { endpoint } : {}),
+    ...(typeof input.reason === "string" && input.reason.length <= 500
+      ? { reason: input.reason }
+      : {}),
     ...(typeof input.machineName === "string" && input.machineName.length <= 120
       ? { machineName: input.machineName.trim() }
       : {}),

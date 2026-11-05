@@ -11,16 +11,21 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub(crate) mod authority;
 pub(crate) mod cohort;
+pub(crate) mod canonical_store;
+pub(crate) mod pin_receipts;
 mod content_search;
 mod delete_with_images;
+mod deletions;
 pub(crate) mod host_notes_fence;
 pub(crate) mod incremental;
+mod interruption_repair;
 mod legacy_blob;
 pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
 mod provenance;
+mod provider_history;
 pub(crate) mod references;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
@@ -52,6 +57,7 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 pub struct SessionStore {
     /// Native construction identity, never a persisted store ID or IPC grant.
     native_instance_id: uuid::Uuid,
+    _recovery_lease: Option<std::fs::File>,
     conn: Arc<Mutex<cohort::RegisteredConnection>>,
     read_conn: Mutex<Option<Connection>>,
     /// Query-only connection for the UI's list/get reads. Search holds
@@ -107,6 +113,7 @@ impl SessionStore {
         )
         .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
+        ensure_window_in_flight(&conn).map_err(|e| e.to_string())?;
         authority::clear_stale_cli_ingress(&conn, started_at);
         crate::ssh_group_defaults::migrate(&conn)?;
         crate::worktrees::reconcile_removals(&conn)?;
@@ -123,8 +130,11 @@ impl SessionStore {
         let read_conn = open_reader()?;
         let list_conn = open_reader()?;
         let background_conn = open_reader()?;
+        let native_instance_id = uuid::Uuid::new_v4();
+        let recovery_lease = conn.create_recovery_lease(&native_instance_id.to_string())?;
         Ok(Self {
-            native_instance_id: uuid::Uuid::new_v4(),
+            native_instance_id,
+            _recovery_lease: Some(recovery_lease),
             conn: Arc::new(Mutex::new(conn)),
             read_conn: Mutex::new(Some(read_conn)),
             list_conn: Mutex::new(Some(list_conn)),
@@ -149,6 +159,7 @@ impl SessionStore {
         crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
             native_instance_id: uuid::Uuid::new_v4(),
+            _recovery_lease: None,
             conn: Arc::new(Mutex::new(cohort::RegisteredConnection::in_memory(conn))),
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
@@ -184,7 +195,7 @@ impl SessionStore {
     /// behind a long write on `conn` (WAL lets readers run alongside it). An
     /// in-memory store has no second connection, so it reads on `conn`.
     /// Only for commands that never write, even lazily.
-    fn with_read_conn<T>(
+    pub(crate) fn with_read_conn<T>(
         &self,
         read: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
@@ -388,6 +399,8 @@ mod search_index_start_tests {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUpsert {
+    #[serde(skip)]
+    pub preserve_activity_at: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_by: Option<Value>,
     pub id: String,
@@ -449,6 +462,11 @@ pub struct SessionUpsert {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {
+    pub last_activity_at: i64,
+    #[serde(default)]
+    pub interrupted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_history: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_by: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -549,6 +567,8 @@ pub struct SessionRecord {
 }
 
 #[tauri::command]
+// App/window are injected natively; preserve the established flat session-save IPC fields.
+#[allow(clippy::too_many_arguments)]
 pub async fn session_upsert(
     app: tauri::AppHandle,
     window: tauri::Window,
@@ -557,6 +577,7 @@ pub async fn session_upsert(
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
     capture_output_receipt: Option<bool>,
+    preserve_activity_at: Option<bool>,
 ) -> Result<Option<write_receipts::NativeWriteAck<SessionSummary>>, String> {
     crate::harness::run_blocking("session_upsert", move || {
         let store = app.state::<crate::session_store::SessionStore>();
@@ -566,6 +587,7 @@ pub async fn session_upsert(
         let session_id = session.id.clone();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_upsert(&session)?;
+            session.preserve_activity_at = preserve_activity_at.unwrap_or(false);
             // Git lookups can spawn processes; never do that while holding the
             // connection every other store command waits on.
             let git = upsert_git_info(&session);
@@ -706,6 +728,13 @@ fn delta_summary(
         return Ok(None);
     };
     Ok(Some(SessionSummary {
+        last_activity_at: stored_activity_at(conn, &session.id)?,
+        interrupted: stored_turn_interrupted(conn, &session.id)?,
+        provider_history: Some(provider_history::cached_or_stored(
+            conn,
+            &session.id,
+            &session.harness,
+        )?),
         managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: Some(revision),
         id: session.id.clone(),
@@ -1047,6 +1076,70 @@ pub async fn session_list_recent(
 }
 
 #[tauri::command]
+pub async fn session_list_recent_since(
+    app: tauri::AppHandle,
+    since: i64,
+) -> Result<Vec<SessionSummary>, String> {
+    crate::harness::run_blocking("session_list_recent_since", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent_since(conn, since).map_err(|e| e.to_string()))
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSessionCursor {
+    activity_at: i64,
+    id: String,
+    revision: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSessionPage {
+    rows: Vec<SessionSummary>,
+    next_cursor: Option<RecentSessionCursor>,
+}
+
+#[tauri::command]
+pub async fn session_list_recent_since_page(
+    app: tauri::AppHandle,
+    since: i64,
+    cursor: Option<RecentSessionCursor>,
+) -> Result<RecentSessionPage, String> {
+    if cursor
+        .as_ref()
+        .is_some_and(|value| value.id.is_empty() || value.id.len() > 1024)
+    {
+        return Err("Invalid recent-session cursor".into());
+    }
+    crate::harness::run_blocking("session_list_recent_since_page", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent_since_page(conn, since, cursor.as_ref()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn session_deleted_ids(
+    app: AppHandle,
+    session_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    if session_ids.len() > 10_000 {
+        return Err("Too many session deletion lookups".into());
+    }
+    for id in &session_ids {
+        validate_id(id, "session")?;
+    }
+    crate::harness::run_blocking("session_deleted_ids", move || {
+        let store = app.state::<SessionStore>();
+        store.with_read_conn(|conn| deletions::deleted_ids(conn, &session_ids))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn session_get(
     app: AppHandle,
     window: tauri::Window,
@@ -1057,7 +1150,11 @@ pub async fn session_get(
         validate_id(&session_id, "session")?;
         reconcile_pending_before_read(&app, &window, &store, &session_id);
         store
-            .with_read_conn(|conn| get_session_json(conn, &session_id).map_err(|e| e.to_string()))
+            .with_read_conn(|conn| {
+                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+                deletions::assert_readable(&tx, &session_id)?;
+                get_session_json(&tx, &session_id).map_err(|e| e.to_string())
+            })
             .map(tauri::ipc::Response::new)
     })
     .await
@@ -1355,15 +1452,19 @@ pub async fn session_delete(
     app: AppHandle,
     session_id: String,
     image_paths: Vec<String>,
+    allow_recreate: Option<bool>,
 ) -> Result<(), String> {
     crate::harness::run_blocking("session_delete", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         // Also cleans shared generated-image files. Keep the entire operation in
         // the shared lane rather than acquiring another barrier under the SQL lock.
         crate::native_window_lifecycle::persistence_write_observed(&window, || {
-            let result = delete_with_images::run(&store, &session_id, image_paths, |paths| {
-                crate::fs::delete_generated_images_sync(&app, paths)
-            });
+            let cleanup = |paths: &[String]| crate::fs::delete_generated_images_sync(&app, paths);
+            let result = if allow_recreate.unwrap_or(false) {
+                delete_with_images::run_with_mode(&store, &session_id, image_paths, true, cleanup)
+            } else {
+                delete_with_images::run(&store, &session_id, image_paths, cleanup)
+            };
             if result.0.is_ok() {
                 let _ = app.emit(crate::reminders::CHANGED, ());
             }
@@ -1510,7 +1611,7 @@ fn get_session_queue(conn: &Connection, session_id: &str) -> rusqlite::Result<Op
 }
 
 const COMPOSER_DRAFT_MAX_BYTES: usize = 8_000_000;
-/// A draft nobody touched for this long is not coming back; listing drops it.
+#[cfg(test)]
 const COMPOSER_DRAFT_MAX_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// Write-through for the unsent text in a session's composer. Keyed by the
@@ -1709,13 +1810,9 @@ fn set_composer_draft(
     Ok(())
 }
 
-/// Rows as `{ sessionId, draft }`, oldest-expired ones deleted first. A row
+/// Rows as `{ sessionId, draft }`. A row
 /// that no longer parses is skipped rather than failing the whole list.
 fn list_composer_drafts(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
-    conn.execute(
-        "DELETE FROM composer_drafts WHERE updated_at < ?1",
-        [now_millis() - COMPOSER_DRAFT_MAX_AGE_MS],
-    )?;
     let mut statement = conn
         .prepare("SELECT session_id, draft_json FROM composer_drafts ORDER BY updated_at DESC")?;
     let rows = statement.query_map([], |row| {
@@ -1744,9 +1841,13 @@ pub async fn session_set_in_flight(
     window: tauri::Window,
     sessions: Vec<InFlightSession>,
 ) -> Result<(), String> {
+    let captured_page = crate::harness::page_incarnation(&window)?;
     crate::harness::run_blocking("session_set_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        crate::native_window_lifecycle::persistence_write(&window, || {
+        let result = crate::native_window_lifecycle::persistence_write(&window, || {
+            if !crate::window::is_workspace_window(window.label()) {
+                return Err("Only workspace windows can record in-flight sessions".into());
+            }
             for session in &sessions {
                 validate_id(&session.session_id, "session")?;
                 if session.cwd.trim().is_empty() {
@@ -1754,8 +1855,31 @@ pub async fn session_set_in_flight(
                 }
             }
             let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            replace_in_flight(&mut conn, &sessions).map_err(|e| e.to_string())
-        })
+            let page = crate::harness::page_incarnation(&window)?;
+            if page != captured_page {
+                return Err("In-flight owner page has changed".into());
+            }
+            replace_window_in_flight(
+                &mut conn,
+                &store.native_instance_id().to_string(),
+                window.label(),
+                &page,
+                &sessions,
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(page)
+        });
+        if let Ok(page) = &result {
+            if crate::harness::page_retirement_waiting(page)
+                || matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            {
+                let _ = app.emit_to("main", "session-recovery-changed", ());
+            }
+        }
+        result.map(|_| ())
     })
     .await
 }
@@ -1767,7 +1891,271 @@ pub async fn session_list_in_flight(app: tauri::AppHandle) -> Result<Vec<InFligh
     crate::harness::run_blocking("session_list_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        list_in_flight(&conn).map_err(|e| e.to_string())
+        list_interrupted_in_flight(&conn, |id, page| {
+            if id == store.native_instance_id().to_string() {
+                matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            } else {
+                matches!(
+                    conn.recovery_lease_state(id),
+                    Ok(cohort::LeaseState::Unleased)
+                )
+            }
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecoveryCandidates {
+    sessions: Vec<InFlightSession>,
+    pending: bool,
+    receipt: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct RecoveryReceiptRow {
+    process: Option<String>,
+    page: Option<String>,
+    session: String,
+    cwd: String,
+}
+#[derive(Clone)]
+struct RecoveryReceipt {
+    store: String,
+    page: String,
+    rows: Vec<RecoveryReceiptRow>,
+    settled: Option<std::time::Instant>,
+}
+fn prune_recovery_receipts(
+    receipts: &mut HashMap<String, RecoveryReceipt>,
+    now: std::time::Instant,
+) {
+    receipts.retain(|_, receipt| {
+        receipt.settled.is_none_or(|settled| {
+            now.checked_duration_since(settled).unwrap_or_default()
+                < std::time::Duration::from_secs(600)
+        })
+    });
+}
+fn recovery_receipts() -> &'static Mutex<HashMap<String, RecoveryReceipt>> {
+    static RECEIPTS: std::sync::OnceLock<Mutex<HashMap<String, RecoveryReceipt>>> =
+        std::sync::OnceLock::new();
+    RECEIPTS.get_or_init(Mutex::default)
+}
+
+fn issue_recovery_receipt(
+    conn: &Connection,
+    owner_store: &str,
+    owner_page: &str,
+    sessions: &[InFlightSession],
+    stale: &[(String, String)],
+) -> Result<Option<String>, String> {
+    let included = |id: &str, cwd: &str| {
+        sessions
+            .iter()
+            .any(|item| item.session_id == id && item.cwd == cwd)
+    };
+    let mut result = Vec::new();
+    let mut statement = conn
+        .prepare("SELECT session_id, cwd FROM in_flight_legacy_sessions ORDER BY session_id, cwd")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (session, cwd) = row.map_err(|e| e.to_string())?;
+        if included(&session, &cwd) {
+            result.push(RecoveryReceiptRow {
+                process: None,
+                page: None,
+                session,
+                cwd,
+            });
+        }
+    }
+    let mut statement = conn.prepare("SELECT DISTINCT process_id, page_id, session_id, cwd FROM in_flight_window_sessions ORDER BY process_id, page_id, session_id, cwd").map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (process, page, session, cwd) = row.map_err(|e| e.to_string())?;
+        if stale.contains(&(process.clone(), page.clone())) && included(&session, &cwd) {
+            result.push(RecoveryReceiptRow {
+                process: Some(process),
+                page: Some(page),
+                session,
+                cwd,
+            });
+        }
+    }
+    if result.is_empty() {
+        return Ok(None);
+    }
+    let mut receipts = recovery_receipts()
+        .lock()
+        .map_err(|_| "Recovery receipts unavailable")?;
+    prune_recovery_receipts(&mut receipts, std::time::Instant::now());
+    if let Some((id, _)) = receipts.iter().find(|(_, receipt)| {
+        receipt.settled.is_none()
+            && receipt.store == owner_store
+            && receipt.page == owner_page
+            && receipt.rows == result
+    }) {
+        return Ok(Some(id.clone()));
+    }
+    if receipts
+        .values()
+        .filter(|receipt| receipt.settled.is_none())
+        .count()
+        >= 64
+    {
+        return Err("Recovery receipt capacity reached; retry after pending saves settle".into());
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    if receipts.len() >= 128 {
+        if let Some(id) = receipts
+            .iter()
+            .filter_map(|(id, receipt)| receipt.settled.map(|at| (id.clone(), at)))
+            .min_by_key(|(_, at)| *at)
+            .map(|(id, _)| id)
+        {
+            receipts.remove(&id);
+        }
+    }
+    receipts.insert(
+        id.clone(),
+        RecoveryReceipt {
+            store: owner_store.to_owned(),
+            page: owner_page.to_owned(),
+            rows: result,
+            settled: None,
+        },
+    );
+    Ok(Some(id))
+}
+
+fn acknowledge_recovery_rows(
+    conn: &Connection,
+    snapshot: &Value,
+    rows: &[RecoveryReceiptRow],
+    stale: &[(String, String)],
+) -> rusqlite::Result<()> {
+    let journal = &snapshot["sessionRecovery"];
+    for row in rows {
+        let covered = journal["workspace"]["sessions"]
+            .as_array()
+            .is_some_and(|sessions| {
+                sessions.iter().any(|session| {
+                    session["id"].as_str() == Some(row.session.as_str())
+                        && session["cwd"].as_str() == Some(row.cwd.as_str())
+                })
+            })
+            || journal["resolvedIds"].as_array().is_some_and(|ids| {
+                ids.iter()
+                    .any(|id| id.as_str() == Some(row.session.as_str()))
+            });
+        if !covered {
+            continue;
+        }
+        let protected: bool = {
+            let mut statement = conn.prepare("SELECT DISTINCT process_id, page_id FROM in_flight_window_sessions WHERE session_id = ?1")?;
+            let owners = statement.query_map([&row.session], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            owners
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|owner| !stale.contains(owner))
+        };
+        if protected {
+            continue;
+        }
+        match (&row.process, &row.page) {
+            (Some(process), Some(page)) if stale.contains(&(process.clone(), page.clone())) => {
+                conn.execute("DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2 AND session_id = ?3 AND cwd = ?4", params![process, page, row.session, row.cwd])?;
+            }
+            (None, None) => {
+                conn.execute(
+                    "DELETE FROM in_flight_legacy_sessions WHERE session_id = ?1 AND cwd = ?2",
+                    params![row.session, row.cwd],
+                )?;
+            }
+            _ => continue,
+        }
+        conn.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1 AND cwd = ?2 AND NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = ?1) AND NOT EXISTS (SELECT 1 FROM in_flight_legacy_sessions WHERE session_id = ?1)", params![row.session, row.cwd])?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_recovery_candidates(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+) -> Result<SessionRecoveryCandidates, String> {
+    if window.label() != "main" {
+        return Err("Only the primary workspace can read recovery candidates".into());
+    }
+    let owner_page = crate::harness::page_incarnation(&window)?;
+    crate::harness::run_blocking("session_recovery_candidates", move || {
+        let store = app.state::<SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let process = store.native_instance_id().to_string();
+        let mut statement = conn
+            .prepare("SELECT DISTINCT page_id FROM in_flight_window_sessions WHERE process_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let pages = statement
+            .query_map([&process], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut pending = false;
+        for page in pages {
+            if crate::harness::page_retirement_waiting(&page.map_err(|e| e.to_string())?) {
+                pending = true;
+                break;
+            }
+        }
+        // Read waiting first: a proof that settles during this call either
+        // requests another poll or is visible as confirmed below.
+        let stale = interrupted_processes(&conn, |id, page| {
+            if id == process {
+                matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            } else {
+                matches!(
+                    conn.recovery_lease_state(id),
+                    Ok(cohort::LeaseState::Unleased)
+                )
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        let sessions = list_interrupted_in_flight(&conn, |id, page| {
+            stale.iter().any(|item| item.0 == id && item.1 == page)
+        })
+        .map_err(|e| e.to_string())?;
+        if crate::harness::page_incarnation(&window)? != owner_page {
+            return Err("Recovery owner page has changed".into());
+        }
+        let receipt = issue_recovery_receipt(&conn, &process, &owner_page, &sessions, &stale)?;
+        Ok(SessionRecoveryCandidates {
+            sessions,
+            pending,
+            receipt,
+        })
     })
     .await
 }
@@ -1782,7 +2170,24 @@ pub async fn session_take_in_flight(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
             let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            take_in_flight(&mut conn).map_err(|e| e.to_string())
+            if window.label() != "main" {
+                return Err("Only the primary workspace can take interrupted sessions".into());
+            }
+            let stale = interrupted_processes(&conn, |id, page| {
+                if id == store.native_instance_id().to_string() {
+                    matches!(
+                        crate::harness::page_retirement_status(page),
+                        crate::harness::PageRetirement::Confirmed
+                    )
+                } else {
+                    matches!(
+                        conn.recovery_lease_state(id),
+                        Ok(cohort::LeaseState::Unleased)
+                    )
+                }
+            })
+            .map_err(|e| e.to_string())?;
+            take_interrupted_in_flight(&mut conn, &stale).map_err(|e| e.to_string())
         })
     })
     .await
@@ -1798,14 +2203,23 @@ pub async fn workspace_set_snapshot(
     app: tauri::AppHandle,
     window: tauri::Window,
     mut snapshot: Value,
+    recovery_receipt: Option<String>,
 ) -> Result<(), String> {
+    let owner_page = if recovery_receipt.is_some() {
+        Some(crate::harness::page_incarnation(&window)?)
+    } else {
+        None
+    };
     crate::harness::run_blocking("workspace_set_snapshot", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
+            if window.label() != "main" {
+                return Err("Only the primary workspace can save its snapshot".into());
+            }
             if !snapshot.is_object() {
                 return Err("workspace snapshot must be an object".into());
             }
-            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
             let owner = window.label() == "main";
             let previous = if owner && snapshot.get("serversRestore").is_some() {
                 None
@@ -1823,7 +2237,36 @@ pub async fn workspace_set_snapshot(
             if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
                 return Err("workspace snapshot is too large".into());
             }
-            set_workspace_snapshot(&conn, &json).map_err(|e| e.to_string())
+            let receipt_rows = if let Some(id) = recovery_receipt.as_deref() {
+                let mut receipts = recovery_receipts().lock().map_err(|_| "Recovery receipts unavailable")?;
+                prune_recovery_receipts(&mut receipts, std::time::Instant::now());
+                let receipt = receipts.get(id).cloned().ok_or("Recovery receipt unavailable; refresh candidates")?;
+                if receipt.store != store.native_instance_id().to_string() || Some(&receipt.page) != owner_page.as_ref() || crate::harness::page_incarnation(&window)? != receipt.page { return Err("Recovery receipt belongs to a different page or store".into()); }
+                if receipt.settled.is_some() { None } else { Some(receipt.rows) }
+            } else { None };
+            let stale = if receipt_rows.is_some() {
+                interrupted_processes(&conn, |id, page| {
+                    if id == store.native_instance_id().to_string() {
+                        matches!(crate::harness::page_retirement_status(page), crate::harness::PageRetirement::Confirmed)
+                    } else { matches!(conn.recovery_lease_state(id), Ok(cohort::LeaseState::Unleased)) }
+                }).map_err(|e| e.to_string())?
+            } else { Vec::new() };
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            set_workspace_snapshot(&tx, &json).map_err(|e| e.to_string())?;
+            if let Some(rows) = &receipt_rows { acknowledge_recovery_rows(&tx, &snapshot, rows, &stale).map_err(|e| e.to_string())?; }
+            tx.commit().map_err(|e| e.to_string())?;
+            if let Some(id) = recovery_receipt.as_deref() { if let Some(receipt) = recovery_receipts().lock().map_err(|_| "Recovery receipts unavailable")?.get_mut(id) { receipt.settled.get_or_insert_with(std::time::Instant::now); } }
+            if let Some(rows) = receipt_rows {
+                for row in rows {
+                    if let (Some(process), Some(page)) = (row.process, row.page) {
+                        if process == store.native_instance_id().to_string() {
+                            let remaining: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2)", params![process, page], |r| r.get(0)).map_err(|e| e.to_string())?;
+                            if !remaining { crate::harness::release_page_proof(&page); }
+                        }
+                    }
+                }
+            }
+            Ok(())
         })
     })
     .await
@@ -2175,7 +2618,23 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // markers must commit together, including the fresh-database path. Existing
     // legacy prefixes are repaired by the column checks in migrate_versions.
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    canonical_store::ensure_schema(&tx)?;
     migrate_versions(&tx)?;
+    crate::sync_owner::migrate(&tx)?;
+    crate::assistant_session_observation::install(&tx)?;
+    pin_receipts::migrate(&tx)?;
+    ensure_column(&tx, "last_activity_at", "INTEGER")?;
+    tx.execute_batch("CREATE INDEX IF NOT EXISTS sessions_activity_project_v2_idx ON sessions (cwd, COALESCE(last_activity_at,updated_at) DESC, id);
+        CREATE INDEX IF NOT EXISTS sessions_activity_recent_v2_idx ON sessions (pinned, COALESCE(last_activity_at,updated_at) DESC, id) WHERE has_user_message = 1 AND archived = 0;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_v2_idx ON sessions (COALESCE(last_activity_at,updated_at) DESC, id) WHERE linked_work_item_json IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS sessions_activity_project_cover_v2_idx ON sessions
+          (cwd,COALESCE(last_activity_at,updated_at) DESC,id,has_user_message,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,pinned,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode);
+        CREATE INDEX IF NOT EXISTS sessions_activity_recent_cover_v2_idx ON sessions
+          (pinned,COALESCE(last_activity_at,updated_at) DESC,id,cwd,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode)
+          WHERE has_user_message=1 AND archived=0;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_cover_v2_idx ON sessions
+          (COALESCE(last_activity_at,updated_at) DESC,id,cwd,has_user_message,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,pinned,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode)
+          WHERE linked_work_item_json IS NOT NULL;")?;
     tx.commit()?;
 
     // Keep independent schema helpers outside this transaction: some own their
@@ -2246,6 +2705,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
     incremental::ensure_schema(conn)?;
+    ensure_list_summaries(conn)?;
+    ensure_recent_session_revision(conn)?;
     rewind::ensure_schema(conn)?;
     crate::native_workspace::ensure_schema(conn)?;
     crate::native_editor_drafts::ensure_schema(conn)?;
@@ -2255,6 +2716,123 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     authority::ensure_schema(conn)?;
     native_raw_capture::ensure_schema(conn)?;
     row_identity::ensure_schema(conn)?;
+    deletions::ensure_schema(conn)?;
+    Ok(())
+}
+
+fn ensure_recent_session_revision(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS recent_session_revision (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
+        INSERT OR IGNORE INTO recent_session_revision(id,revision) VALUES(1,0);
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_insert AFTER INSERT ON sessions BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_update AFTER UPDATE OF id,has_user_message,archived,pinned,inbox_ask,last_activity_at,updated_at ON sessions
+        WHEN OLD.id IS NOT NEW.id OR OLD.has_user_message IS NOT NEW.has_user_message OR OLD.archived IS NOT NEW.archived OR OLD.pinned IS NOT NEW.pinned OR OLD.inbox_ask IS NOT NEW.inbox_ask OR COALESCE(OLD.last_activity_at,OLD.updated_at) IS NOT COALESCE(NEW.last_activity_at,NEW.updated_at)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_delete AFTER DELETE ON sessions BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_insert AFTER INSERT ON orchestration_workers
+        WHEN EXISTS(SELECT 1 FROM sessions WHERE id=NEW.session_id AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_update AFTER UPDATE OF session_id ON orchestration_workers
+        WHEN OLD.session_id IS NOT NEW.session_id AND EXISTS(SELECT 1 FROM sessions WHERE id IN (OLD.session_id,NEW.session_id) AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_delete AFTER DELETE ON orchestration_workers
+        WHEN EXISTS(SELECT 1 FROM sessions WHERE id=OLD.session_id AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;")
+}
+
+// Backfill one row per transaction: interrupted migrations resume, and a
+// concurrent writer cannot commit between reading a transcript and its summary.
+fn ensure_list_summaries(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS session_list_summaries (
+        session_id TEXT PRIMARY KEY, interrupted INTEGER NOT NULL, provider_history TEXT NOT NULL,
+        activity_at INTEGER NOT NULL, management_json TEXT
+    );
+    CREATE TABLE IF NOT EXISTS session_provider_projection_state (
+        session_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, harness TEXT NOT NULL
+    );
+    CREATE TRIGGER IF NOT EXISTS session_provider_projection_delete AFTER DELETE ON sessions
+    BEGIN DELETE FROM session_provider_projection_state WHERE session_id=OLD.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_provider_projection_rename AFTER UPDATE OF id ON sessions
+    WHEN OLD.id IS NOT NEW.id
+    BEGIN DELETE FROM session_provider_projection_state WHERE session_id=OLD.id OR session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_delete AFTER DELETE ON sessions
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_insert AFTER INSERT ON sessions
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_id AFTER UPDATE OF id ON sessions
+    WHEN OLD.id IS NOT NEW.id
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.id OR session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_transcript AFTER UPDATE OF blocks_json,harness ON sessions
+    WHEN OLD.blocks_json IS NOT NEW.blocks_json OR OLD.harness IS NOT NEW.harness
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_metadata AFTER UPDATE OF last_activity_at,updated_at,assistant_management_json ON sessions
+    BEGIN UPDATE session_list_summaries SET activity_at=COALESCE(NEW.last_activity_at,NEW.updated_at),
+      management_json=NEW.assistant_management_json WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_insert AFTER INSERT ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.session_id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_update AFTER UPDATE ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.session_id OR session_id=NEW.session_id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_delete AFTER DELETE ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.session_id; END;",
+    )?;
+    let missing = {
+        let mut statement = conn.prepare(
+            "SELECT id FROM sessions WHERE NOT EXISTS
+             (SELECT 1 FROM session_list_summaries WHERE session_id=sessions.id)",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for id in missing {
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+        let harness: Option<String> = tx
+            .query_row(
+                "SELECT harness FROM sessions WHERE id=?1 AND NOT EXISTS
+             (SELECT 1 FROM session_list_summaries WHERE session_id=sessions.id)",
+                [&id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(harness) = harness {
+            update_list_summary(&tx, &id, &harness)?;
+        }
+        tx.commit()?;
+    }
+    interruption_repair::repair_owner_stop_summaries(conn)
+}
+
+pub(crate) fn update_list_summary(
+    conn: &Connection,
+    id: &str,
+    harness: &str,
+) -> rusqlite::Result<()> {
+    update_list_summary_with_history(conn, id, harness, None)
+}
+
+fn update_list_summary_with_history(
+    conn: &Connection,
+    id: &str,
+    harness: &str,
+    cached_history: Option<&str>,
+) -> rusqlite::Result<()> {
+    let interrupted = stored_turn_interrupted(conn, id)?;
+    let history = match cached_history {
+        Some(history) => history.to_owned(),
+        None => provider_history::stored(conn, id, harness)?.to_string(),
+    };
+    conn.execute("INSERT INTO session_list_summaries(session_id,interrupted,provider_history,activity_at,management_json)
+        SELECT id,?2,?3,COALESCE(last_activity_at,updated_at),assistant_management_json FROM sessions WHERE id=?1
+        ON CONFLICT(session_id) DO UPDATE SET interrupted=excluded.interrupted,
+        provider_history=excluded.provider_history,activity_at=excluded.activity_at,
+        management_json=excluded.management_json",
+        params![id, interrupted, history])?;
+    conn.execute(
+        "INSERT INTO session_provider_projection_state(session_id,revision,harness)
+        SELECT session_id, revision, ?2 FROM session_block_state WHERE session_id=?1 AND length>=0
+        ON CONFLICT(session_id) DO UPDATE SET revision=excluded.revision,harness=excluded.harness",
+        params![id, harness],
+    )?;
     Ok(())
 }
 
@@ -2472,6 +3050,13 @@ fn upsert_session_in_transaction(
         Some(pieces) if !pieces.is_empty() => legacy_blob::NORMALIZED_BLOB,
         _ => blocks_json.as_str(),
     };
+    let previous_updated: Option<i64> = conn
+        .query_row(
+            "SELECT updated_at FROM sessions WHERE id=?1",
+            [&session.id],
+            |row| row.get(0),
+        )
+        .optional()?;
     let mut result = upsert_session_core(
         conn,
         session,
@@ -2482,6 +3067,8 @@ fn upsert_session_in_transaction(
         normalized_same,
     )?;
     if let Some(summary) = result.as_mut() {
+        conn.execute("UPDATE sessions SET last_activity_at = CASE WHEN (?2 OR ?3) THEN COALESCE(last_activity_at, ?4, updated_at) ELSE updated_at END WHERE id=?1", params![session.id, session.preserve_activity_at, previous_updated == Some(summary.updated_at), previous_updated])?;
+        summary.last_activity_at = stored_activity_at(conn, &session.id)?;
         if normalized_same {
             // Metadata-only saves still invalidate stale deltas and exact-row receipts.
             conn.execute(
@@ -2500,6 +3087,7 @@ fn upsert_session_in_transaction(
                 pieces.as_ref().map_or(0, Vec::len),
             )?;
         }
+        update_list_summary(conn, &session.id, &session.harness)?;
         summary.transcript_revision = conn
             .query_row(
                 "SELECT revision FROM session_block_state WHERE session_id=?1",
@@ -2756,6 +3344,12 @@ fn upsert_session_core(
         )?;
     }
     Ok(Some(SessionSummary {
+        last_activity_at: updated_at,
+        interrupted: turn_interrupted(session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[])),
+        provider_history: Some(provider_history::derive(
+            session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[]),
+            &session.harness,
+        )),
         managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: None,
         id: session.id.clone(),
@@ -3130,21 +3724,28 @@ fn list_by_project_with_git(
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_project_cover_v2_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE cwd = ?1
            AND has_user_message = 1
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
            AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC",
+         ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC",
     )?;
     let rows = statement.query_map(params![cwd], |row| {
         let stored_branch: Option<String> = row.get(9)?;
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
         let linked_work_item = optional_json(row.get(12)?);
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 21)?;
         Ok(SessionSummary {
-            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3187,21 +3788,28 @@ const LIST_LINKED_SQL: &str = "SELECT id, cwd, harness, model, runtime_mode, tit
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions INDEXED BY sessions_linked_idx
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_linked_cover_v2_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
            AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC";
+         ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC";
 
 fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
     let mut statement = conn.prepare(LIST_LINKED_SQL)?;
     let rows = statement.query_map([], |row| {
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 21)?;
         Ok(SessionSummary {
-            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3236,14 +3844,80 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
 /// Newest live sessions across every project, plus every pinned one however
 /// old. Read-only and branch-light: it never shells out to git per project.
 fn list_recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut rows = recent_rows(conn, true, -1)?;
-    rows.extend(recent_rows(conn, false, limit.clamp(1, 200))?);
+    let mut rows = recent_rows(conn, true, -1, i64::MIN)?;
+    rows.extend(recent_rows(conn, false, limit.clamp(1, 200), i64::MIN)?);
     rows.sort_by(|a, b| {
-        b.updated_at
-            .cmp(&a.updated_at)
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
             .then_with(|| a.id.cmp(&b.id))
     });
     Ok(rows)
+}
+
+fn list_recent_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<SessionSummary>> {
+    let mut rows = recent_rows(conn, true, -1, since)?;
+    rows.extend(recent_rows(conn, false, -1, since)?);
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(rows)
+}
+
+const RECENT_SESSION_PAGE_SIZE: usize = 100;
+fn list_recent_since_page(
+    conn: &Connection,
+    since: i64,
+    cursor: Option<&RecentSessionCursor>,
+) -> Result<RecentSessionPage, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let revision: i64 = tx
+        .query_row(
+            "SELECT revision FROM recent_session_revision WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if cursor.is_some_and(|value| value.revision != revision) {
+        return Err("RECENT_SESSIONS_CHANGED".into());
+    }
+    let mut rows = recent_rows_after(
+        &tx,
+        true,
+        (RECENT_SESSION_PAGE_SIZE + 1) as i64,
+        since,
+        cursor,
+    )
+    .map_err(|e| e.to_string())?;
+    rows.extend(
+        recent_rows_after(
+            &tx,
+            false,
+            (RECENT_SESSION_PAGE_SIZE + 1) as i64,
+            since,
+            cursor,
+        )
+        .map_err(|e| e.to_string())?,
+    );
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let has_more = rows.len() > RECENT_SESSION_PAGE_SIZE;
+    rows.truncate(RECENT_SESSION_PAGE_SIZE);
+    let next_cursor = if has_more {
+        rows.last().map(|row| RecentSessionCursor {
+            activity_at: row.last_activity_at,
+            id: row.id.clone(),
+            revision,
+        })
+    } else {
+        None
+    };
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(RecentSessionPage { rows, next_cursor })
 }
 
 // `sessions_recent_idx` is ordered by (pinned, updated_at DESC, id), so the
@@ -3254,27 +3928,62 @@ const RECENT_ROWS_SQL: &str =
     "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions INDEXED BY sessions_recent_idx
+                automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json,
+                COALESCE(last_activity_at,updated_at)
+         FROM sessions INDEXED BY sessions_activity_recent_cover_v2_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
            AND archived = 0
            AND pinned = ?1
+           AND COALESCE(last_activity_at,updated_at) >= ?3
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
            AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC
+         ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC
          LIMIT ?2";
 
 fn recent_rows(
     conn: &Connection,
     pinned: bool,
     limit: i64,
+    since: i64,
 ) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut statement = conn.prepare(RECENT_ROWS_SQL)?;
-    let rows = statement.query_map(params![pinned as i64, limit], |row| {
+    recent_rows_after(conn, pinned, limit, since, None)
+}
+
+fn recent_rows_after(
+    conn: &Connection,
+    pinned: bool,
+    limit: i64,
+    since: i64,
+    cursor: Option<&RecentSessionCursor>,
+) -> rusqlite::Result<Vec<SessionSummary>> {
+    let sql = if cursor.is_some() {
+        RECENT_ROWS_SQL.replace("AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)",
+            "AND COALESCE(last_activity_at,updated_at) <= ?4 AND (COALESCE(last_activity_at,updated_at) < ?4 OR id > ?5) AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)")
+    } else {
+        RECENT_ROWS_SQL.to_owned()
+    };
+    let mut statement = conn.prepare(&sql)?;
+    let mut args = vec![
+        rusqlite::types::Value::Integer(pinned as i64),
+        rusqlite::types::Value::Integer(limit),
+        rusqlite::types::Value::Integer(since),
+    ];
+    if let Some(value) = cursor {
+        args.push(rusqlite::types::Value::Integer(value.activity_at));
+        args.push(rusqlite::types::Value::Text(value.id.clone()));
+    }
+    let rows = statement.query_map(rusqlite::params_from_iter(args), |row| {
         let worktree_removed = row.get::<_, i64>(14)? != 0;
         let branch: Option<String> = row.get(9)?;
+        let (interrupted, provider_history, _, managed_by) = list_projection(conn, row, 20)?;
+        let last_activity_at = row.get(24)?;
         Ok(SessionSummary {
-            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3310,6 +4019,107 @@ fn recent_rows(
     rows.collect()
 }
 
+fn list_projection(
+    conn: &Connection,
+    row: &rusqlite::Row<'_>,
+    offset: usize,
+) -> rusqlite::Result<(bool, Option<Value>, i64, Option<Value>)> {
+    if let Some(interrupted) = row.get::<_, Option<i64>>(offset)? {
+        return Ok((
+            interrupted != 0,
+            optional_json(row.get(offset + 1)?),
+            row.get(offset + 2)?,
+            optional_json(row.get(offset + 3)?),
+        ));
+    }
+    // Another writer may have invalidated the projection after migration.
+    let id: String = row.get(0)?;
+    let harness: String = row.get(2)?;
+    Ok((
+        stored_turn_interrupted(conn, &id)?,
+        Some(provider_history::stored(conn, &id, &harness)?),
+        stored_activity_at(conn, &id)?,
+        provenance::stored_management(conn, &id)?,
+    ))
+}
+
+fn stored_activity_at(conn: &Connection, id: &str) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COALESCE(last_activity_at, updated_at) FROM sessions WHERE id=?1",
+        [id],
+        |row| row.get(0),
+    )
+}
+
+fn owner_stop_before_quit(blocks: &[Value]) -> bool {
+    blocks.len() >= 2
+        && blocks.last().is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && matches!(
+                    block.get("text").and_then(Value::as_str),
+                    Some(
+                        "Turn interrupted when bycoda quit." | "Turn interrupted when Bycoda quit."
+                    )
+                )
+        })
+        && blocks.get(blocks.len() - 2).is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && block.get("text").and_then(Value::as_str).map(str::trim)
+                    == Some("Stopped by you.")
+        })
+}
+
+fn turn_interrupted(blocks: &[Value]) -> bool {
+    !owner_stop_before_quit(blocks)
+        && blocks.last().is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && block.get("text").and_then(Value::as_str).map(str::trim)
+                    != Some("Stopped by you.")
+                && (block.get("notice").and_then(Value::as_str) == Some("interrupt")
+                    || matches!(
+                        block.get("text").and_then(Value::as_str),
+                        Some(
+                            "Turn interrupted when bycoda quit."
+                                | "Turn interrupted when Bycoda quit."
+                        )
+                    ))
+        })
+}
+
+fn stored_turn_tail(conn: &Connection, id: &str) -> rusqlite::Result<Vec<Value>> {
+    let mut statement = conn.prepare(
+        "SELECT block_json FROM session_blocks WHERE session_id=?1
+         AND EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)
+         ORDER BY ordinal DESC LIMIT 2",
+    )?;
+    let mut raw = statement
+        .query_map([id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    raw.reverse();
+    if raw.is_empty() {
+        let legacy: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT json_extract(blocks_json,'$[#-2]'),json_extract(blocks_json,'$[#-1]')
+             FROM sessions WHERE id=?1 AND json_valid(blocks_json)
+             AND NOT EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((previous, last)) = legacy {
+            raw.extend(previous.into_iter().chain(last));
+        }
+    }
+    Ok(raw
+        .into_iter()
+        .filter_map(|raw| serde_json::from_str(&raw).ok())
+        .collect())
+}
+
+fn stored_turn_interrupted(conn: &Connection, id: &str) -> rusqlite::Result<bool> {
+    Ok(turn_interrupted(&stored_turn_tail(conn, id)?))
+}
+
 /// Mirrors the sidebar's notion of a listable session: a transcript that the
 /// user has actually said something in.
 fn has_user_block(blocks: &Value) -> bool {
@@ -3343,9 +4153,26 @@ fn optional_json(raw: Option<String>) -> Option<Value> {
     raw.and_then(|value| serde_json::from_str(&value).ok())
 }
 
+#[cfg(test)]
 fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
+    delete_session_with_mode(conn, session_id, false)
+}
+
+fn delete_session_with_mode(
+    conn: &Connection,
+    session_id: &str,
+    allow_recreate: bool,
+) -> rusqlite::Result<()> {
     authority::assert_mutation_sql(conn, session_id)?;
     let tx = conn.unchecked_transaction()?;
+    if allow_recreate {
+        deletions::assert_recreatable_draft(&tx, session_id)?;
+    } else {
+        tx.execute(
+            "INSERT OR IGNORE INTO session_deletions(session_id,deleted_at) VALUES (?1,?2)",
+            params![session_id, now_millis()],
+        )?;
+    }
     let parent = worker_parent(&tx, session_id)?;
     // Ownership is also carried in transcripts for older clients. Release
     // that metadata along with the index so reopening a worker stays detached.
@@ -3369,6 +4196,11 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
             "UPDATE sessions SET blocks_json = ?1 WHERE id = ?2",
             params![blocks.to_string(), id],
         )?;
+        let harness: String =
+            tx.query_row("SELECT harness FROM sessions WHERE id=?1", [&id], |row| {
+                row.get(0)
+            })?;
+        update_list_summary(&tx, &id, &harness)?;
     }
     tx.execute(
         "DELETE FROM orchestration_runs WHERE lead_id = ?1",
@@ -3457,6 +4289,11 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
         [session_id],
     )?;
     tx.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
+    // This projection's delete trigger also removes per-window and legacy rows.
+    tx.execute(
+        "DELETE FROM in_flight_sessions WHERE session_id = ?1",
+        [session_id],
+    )?;
     tx.commit()
 }
 
@@ -3602,6 +4439,155 @@ fn get_session_json(conn: &Connection, session_id: &str) -> rusqlite::Result<Str
     Ok(head)
 }
 
+fn ensure_window_in_flight(conn: &Connection) -> rusqlite::Result<()> {
+    deletions::ensure_markers(conn)?;
+    let migrated: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'in_flight_legacy_sessions')", [], |row| row.get(0))?;
+    if !migrated {
+        conn.execute_batch("SAVEPOINT window_in_flight_migration;
+            CREATE TABLE IF NOT EXISTS in_flight_legacy_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL);
+            INSERT OR IGNORE INTO in_flight_legacy_sessions SELECT session_id, cwd, sort_index FROM in_flight_sessions;
+            RELEASE window_in_flight_migration;")?;
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS in_flight_window_sessions (
+        process_id TEXT NOT NULL, window_label TEXT NOT NULL, page_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        cwd TEXT NOT NULL, sort_index INTEGER NOT NULL,
+        PRIMARY KEY (process_id, window_label, page_id, session_id, cwd)
+    );
+    CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_delete AFTER DELETE ON in_flight_sessions BEGIN
+        DELETE FROM in_flight_window_sessions WHERE session_id = OLD.session_id;
+        DELETE FROM in_flight_legacy_sessions WHERE session_id = OLD.session_id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_insert AFTER INSERT ON in_flight_sessions
+      WHEN NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = NEW.session_id)
+      BEGIN INSERT OR REPLACE INTO in_flight_legacy_sessions (session_id, cwd, sort_index) VALUES (NEW.session_id, NEW.cwd, NEW.sort_index); END;
+    CREATE TRIGGER IF NOT EXISTS session_deleted_window_in_flight BEFORE INSERT ON in_flight_window_sessions
+      WHEN EXISTS(SELECT 1 FROM session_deletions WHERE session_id=NEW.session_id)
+      BEGIN SELECT RAISE(IGNORE); END;
+    CREATE TRIGGER IF NOT EXISTS session_deleted_legacy_in_flight BEFORE INSERT ON in_flight_legacy_sessions
+      WHEN EXISTS(SELECT 1 FROM session_deletions WHERE session_id=NEW.session_id)
+      BEGIN SELECT RAISE(IGNORE); END;",
+    )
+}
+
+fn replace_window_in_flight(
+    conn: &mut Connection,
+    process: &str,
+    window: &str,
+    page: &str,
+    sessions: &[InFlightSession],
+) -> rusqlite::Result<()> {
+    ensure_window_in_flight(conn)?;
+    let tx = conn.transaction()?;
+    let prior = {
+        let mut statement = tx.prepare("SELECT session_id FROM in_flight_window_sessions WHERE process_id = ?1 AND window_label = ?2 AND page_id = ?3")?;
+        let rows = statement.query_map(params![process, window, page], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute(
+        "DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND window_label = ?2 AND page_id = ?3",
+        params![process, window, page],
+    )?;
+    for (index, session) in sessions.iter().enumerate() {
+        tx.execute("INSERT OR IGNORE INTO in_flight_window_sessions (process_id, window_label, page_id, session_id, cwd, sort_index) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![process, window, page, session.session_id, session.cwd, index as i64])?;
+        tx.execute("INSERT INTO in_flight_sessions (session_id, cwd, sort_index) VALUES (?1, ?2, ?3) ON CONFLICT(session_id) DO UPDATE SET cwd = excluded.cwd, sort_index = excluded.sort_index", params![session.session_id, session.cwd, index as i64])?;
+    }
+    for id in prior {
+        tx.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1 AND NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = ?1) AND NOT EXISTS (SELECT 1 FROM in_flight_legacy_sessions WHERE session_id = ?1)", [id])?;
+    }
+    tx.commit()
+}
+
+fn interrupted_processes(
+    conn: &Connection,
+    is_stale: impl Fn(&str, &str) -> bool,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    ensure_window_in_flight(conn)?;
+    let mut statement =
+        conn.prepare("SELECT DISTINCT process_id, page_id FROM in_flight_window_sessions")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(id, page)| is_stale(id, page))
+        .collect())
+}
+
+fn list_interrupted_in_flight(
+    conn: &Connection,
+    is_stale: impl Fn(&str, &str) -> bool,
+) -> rusqlite::Result<Vec<InFlightSession>> {
+    let stale = interrupted_processes(conn, is_stale)?;
+    let mut statement = conn.prepare(
+        "SELECT session_id, cwd FROM in_flight_legacy_sessions ORDER BY sort_index, session_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(InFlightSession {
+            session_id: row.get(0)?,
+            cwd: row.get(1)?,
+        })
+    })?;
+    let mut result = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    let mut protected = std::collections::HashSet::new();
+    {
+        let mut statement = conn.prepare("SELECT process_id, page_id, session_id, cwd FROM in_flight_window_sessions ORDER BY sort_index, session_id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                InFlightSession {
+                    session_id: row.get(2)?,
+                    cwd: row.get(3)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (id, page, item) = row?;
+            if stale.contains(&(id, page)) {
+                result.push(item);
+            } else {
+                protected.insert(item.session_id);
+            }
+        }
+    }
+    result.retain(|item| !protected.contains(&item.session_id));
+    result.sort_by(|a, b| (&a.session_id, &a.cwd).cmp(&(&b.session_id, &b.cwd)));
+    result.dedup_by(|a, b| a.session_id == b.session_id && a.cwd == b.cwd);
+    Ok(result)
+}
+
+fn take_interrupted_in_flight(
+    conn: &mut Connection,
+    stale: &[(String, String)],
+) -> rusqlite::Result<Vec<InFlightSession>> {
+    ensure_window_in_flight(conn)?;
+    let tx = conn.transaction()?;
+    let sessions = list_interrupted_in_flight(&tx, |id, page| {
+        stale.iter().any(|item| item.0 == id && item.1 == page)
+    })?;
+    for item in &sessions {
+        tx.execute(
+            "DELETE FROM in_flight_sessions WHERE session_id = ?1 AND cwd = ?2",
+            params![item.session_id, item.cwd],
+        )?;
+        tx.execute(
+            "DELETE FROM in_flight_legacy_sessions WHERE session_id = ?1 AND cwd = ?2",
+            params![item.session_id, item.cwd],
+        )?;
+        for (id, page) in stale {
+            tx.execute("DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2 AND session_id = ?3 AND cwd = ?4", params![id, page, item.session_id, item.cwd])?;
+        }
+    }
+    tx.commit()?;
+    Ok(sessions)
+}
+
+#[cfg(test)]
 fn list_in_flight(conn: &Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     let mut statement = conn.prepare(
         "SELECT session_id, cwd FROM in_flight_sessions ORDER BY sort_index ASC, session_id ASC",
@@ -3615,6 +4601,7 @@ fn list_in_flight(conn: &Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     rows.collect()
 }
 
+#[cfg(test)]
 fn replace_in_flight(conn: &mut Connection, sessions: &[InFlightSession]) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM in_flight_sessions", [])?;
@@ -3631,6 +4618,7 @@ fn replace_in_flight(conn: &mut Connection, sessions: &[InFlightSession]) -> rus
     Ok(())
 }
 
+#[cfg(test)]
 fn take_in_flight(conn: &mut Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     let tx = conn.transaction()?;
     let sessions = {
@@ -3793,6 +4781,7 @@ mod tests {
 
     fn sample(id: &str, cwd: &str, title: &str) -> SessionUpsert {
         SessionUpsert {
+            preserve_activity_at: false,
             managed_by: None,
             id: id.into(),
             cwd: cwd.into(),
@@ -3821,6 +4810,108 @@ mod tests {
             created_at: None,
             updated_at: None,
         }
+    }
+
+    #[test]
+    fn owner_stop_is_idle_in_saved_and_legacy_session_summaries() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        for (notice, text, interrupted) in [
+            ("interrupt", "Stopped by you.", false),
+            ("interrupt", "  Stopped by you.\n", false),
+            ("info", "Stopped by you.", false),
+            (
+                "interrupt",
+                "Host restarted while this turn was running.",
+                true,
+            ),
+            ("interrupt", "Connection lost.", true),
+            ("", "Turn interrupted when bycoda quit.", true),
+            ("", "Turn interrupted when Bycoda quit.", true),
+        ] {
+            let mut session = sample("stopped", "/project", "Stopped");
+            session.blocks = json!([
+                { "id": "u", "role": "user", "text": "hello" },
+                { "id": "stop", "role": "system", "notice": notice, "text": text }
+            ]);
+            let saved =
+                upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(saved.interrupted, interrupted, "{text}");
+            for legacy in [false, true] {
+                if legacy {
+                    conn.execute("DELETE FROM session_blocks WHERE session_id='stopped'", [])
+                        .unwrap();
+                    conn.execute(
+                        "DELETE FROM session_block_state WHERE session_id='stopped'",
+                        [],
+                    )
+                    .unwrap();
+                    conn.execute(
+                        "UPDATE sessions SET blocks_json=?1 WHERE id='stopped'",
+                        [session.blocks.to_string()],
+                    )
+                    .unwrap();
+                }
+                assert_eq!(
+                    list_recent(&conn, 10).unwrap()[0].interrupted,
+                    interrupted,
+                    "{text}, legacy={legacy}"
+                );
+                assert_eq!(
+                    list_by_project_with_git(&conn, "/project", crate::fs::GitInfo::default())
+                        .unwrap()[0]
+                        .interrupted,
+                    interrupted,
+                    "{text}, legacy={legacy}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn interruption_preserves_activity_order_and_new_turn_clears_warning() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut older = sample("older", "/project", "Older");
+        older.updated_at = Some(100);
+        let mut newer = sample("newer", "/project", "Newer");
+        newer.updated_at = Some(200);
+        upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None).unwrap();
+        upsert_session_with_git(&conn, &newer, crate::fs::GitInfo::default(), None).unwrap();
+        older.blocks = json!([{ "id": "b1", "role": "user", "text": "hello" },
+            { "id": "stop", "role": "system", "notice": "interrupt", "text": "stopped" }]);
+        older.preserve_activity_at = true;
+        let saved = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert!(saved.interrupted);
+        assert_eq!(saved.last_activity_at, 100);
+        assert!(saved.updated_at > 200);
+        let rows = list_recent(&conn, 10).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["newer", "older"]
+        );
+        assert!(rows[1].interrupted);
+        older.preserve_activity_at = false;
+        let unchanged = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unchanged.last_activity_at, 100);
+        assert_eq!(list_recent(&conn, 10).unwrap()[0].id, "newer");
+        older
+            .blocks
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "id": "next", "role": "user", "text": "continue" }));
+        let resumed = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert!(!resumed.interrupted);
+        assert!(resumed.last_activity_at > 200);
+        assert!(!list_recent(&conn, 10).unwrap()[0].interrupted);
     }
 
     #[test]
@@ -4127,10 +5218,181 @@ mod tests {
         );
     }
 
-    /// The sidebar query must stay answerable from the index alone. Selecting a
-    /// column the index does not carry silently reintroduces a table seek per
-    /// row, and every summary column sits behind a ~180 KB `blocks_json` blob
-    /// in the record, so that regression is worth ~30x on a real project.
+    #[test]
+    fn legacy_activity_fallback_keeps_order_without_rewriting_rows() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for (id, at) in [("legacy", 300), ("migrated", 200), ("older", 100)] {
+            let mut value = sample(id, "/tmp/activity", id);
+            value.updated_at = Some(at);
+            value.linked_work_item = Some(json!({"kind":"pr", "number":1}));
+            upsert_session_with_git(&conn, &value, crate::fs::GitInfo::default(), None).unwrap();
+        }
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=NULL WHERE id='legacy'",
+            [],
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let value: (Option<i64>, i64) = conn
+            .query_row(
+                "SELECT last_activity_at,updated_at FROM sessions WHERE id='legacy'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(value, (None, 300));
+        let project =
+            list_by_project_with_git(&conn, "/tmp/activity", crate::fs::GitInfo::default())
+                .unwrap();
+        assert_eq!(
+            project.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["legacy", "migrated", "older"]
+        );
+        assert_eq!(list_recent(&conn, 1).unwrap()[0].id, "legacy");
+        assert_eq!(list_linked(&conn).unwrap()[0].id, "legacy");
+        assert_eq!(list_recent_since(&conn, 250).unwrap()[0].id, "legacy");
+    }
+
+    #[test]
+    fn recent_pages_are_bounded_complete_and_reject_concurrent_mutation() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for index in 0..1050 {
+            let id = format!("recent-{index:04}");
+            let mut session = sample(&id, "/tmp/paged", &id);
+            session.updated_at = Some(10_000 + (index / 3) as i64);
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+            if index % 5 == 0 {
+                conn.execute("UPDATE sessions SET pinned=1 WHERE id=?1", [&id])
+                    .unwrap();
+            }
+        }
+        let expected = list_recent_since(&conn, 10_000).unwrap();
+        let mut cursor = None;
+        let mut actual = Vec::new();
+        loop {
+            let page = list_recent_since_page(&conn, 10_000, cursor.as_ref()).unwrap();
+            assert!(page.rows.len() <= RECENT_SESSION_PAGE_SIZE);
+            actual.extend(page.rows.into_iter().map(|row| row.id));
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(
+            actual,
+            expected.into_iter().map(|row| row.id).collect::<Vec<_>>()
+        );
+        conn.execute("INSERT INTO orchestration_workers(session_id,lead_id) VALUES('outside-worker','lead-1')", []).unwrap();
+        let first = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute(
+            "UPDATE orchestration_workers SET lead_id='lead-2' WHERE session_id='outside-worker'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE sessions SET title='stream metadata' WHERE id='recent-0000'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE session_blocks SET block_json=json_set(block_json,'$.text','stream') WHERE session_id='recent-0000'", []).unwrap();
+        conn.execute(
+            "UPDATE session_list_summaries SET activity_at=1 WHERE session_id='recent-0001'",
+            [],
+        )
+        .unwrap();
+        let next = list_recent_since_page(&conn, 10_000, first.next_cursor.as_ref()).unwrap();
+        assert!(!next.rows.is_empty());
+        let after_stale_projection = list_recent_since_page(&conn, 10_000, None).unwrap();
+        assert!(after_stale_projection
+            .rows
+            .iter()
+            .all(|row| row.last_activity_at >= 10_000));
+        let mut stale_cursor = after_stale_projection.next_cursor;
+        let mut found_stale = false;
+        while let Some(cursor) = stale_cursor {
+            let page = list_recent_since_page(&conn, 10_000, Some(&cursor)).unwrap();
+            if let Some(row) = page.rows.iter().find(|row| row.id == "recent-0001") {
+                assert!(row.last_activity_at >= 10_000);
+                found_stale = true;
+            }
+            stale_cursor = page.next_cursor;
+        }
+        assert!(found_stale);
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=50000 WHERE id='recent-0000'",
+            [],
+        )
+        .unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, first.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+        let before_worker = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute("UPDATE orchestration_workers SET session_id='recent-0002' WHERE session_id='outside-worker'", []).unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, before_worker.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+        let before_delete = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute("DELETE FROM sessions WHERE id='recent-0001'", [])
+            .unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, before_delete.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+    }
+
+    #[test]
+    fn legacy_activity_migration_does_not_rewrite_large_transcripts() {
+        let dir = std::env::temp_dir().join(format!(
+            "bycoda-activity-benchmark-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        {
+            let store = SessionStore::open(dir.join("sessions.db")).unwrap();
+            let conn = store.conn.lock().unwrap();
+            let raw =
+                json!([{ "id":"large", "role":"user", "text":"x".repeat(65_536) }]).to_string();
+            for index in 0..128 {
+                let id = format!("legacy-{index}");
+                let mut value = sample(&id, "/tmp/large", &id);
+                value.updated_at = Some(index + 1);
+                upsert_session_with_git(&conn, &value, crate::fs::GitInfo::default(), None)
+                    .unwrap();
+                conn.execute(
+                    "UPDATE sessions SET blocks_json=?2,last_activity_at=NULL WHERE id=?1",
+                    params![id, raw],
+                )
+                .unwrap();
+                update_list_summary(&conn, &id, &value.harness).unwrap();
+            }
+            conn.execute_batch("CREATE TEMP TABLE activity_writes(n INTEGER NOT NULL); INSERT INTO activity_writes VALUES(0);
+                CREATE TEMP TRIGGER count_activity_updates AFTER UPDATE OF last_activity_at ON sessions BEGIN UPDATE activity_writes SET n=n+1; END;
+                DROP INDEX sessions_activity_project_cover_v2_idx; DROP INDEX sessions_activity_recent_cover_v2_idx; DROP INDEX sessions_activity_linked_cover_v2_idx;").unwrap();
+            let started = std::time::Instant::now();
+            migrate(&conn).unwrap();
+            eprintln!(
+                "legacy activity migration: 128 x 64 KiB: {:?}",
+                started.elapsed()
+            );
+            let writes: i64 = conn
+                .query_row("SELECT n FROM activity_writes", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(writes, 0);
+            let untouched: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sessions WHERE last_activity_at IS NULL",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(untouched, 128);
+            assert_eq!(list_recent(&conn, 1).unwrap()[0].id, "legacy-127");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The list joins the narrow projection rather than probing transcripts.
     #[test]
     fn list_by_project_is_served_by_a_covering_index() {
         let store = SessionStore::open_in_memory().unwrap();
@@ -4150,29 +5412,110 @@ mod tests {
                 .unwrap();
                 migrate(&conn).unwrap();
             }
-            let plan: String = conn
-                .query_row(
+            let mut statement = conn
+                .prepare(
                     "EXPLAIN QUERY PLAN
                  SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                         created_at, updated_at, branch, archived, pinned,
-                        linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
+                        linked_work_item_json,
+                        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id),
+                        worktree_cwd, worktree_removed, is_draft,
                         automation_id, workspace_id, workspace_revision, workspace_mode,
-                        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
-                 FROM sessions
+                        projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+                 FROM sessions INDEXED BY sessions_activity_project_cover_v2_idx
+                 LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
                  WHERE cwd = ?1
                    AND has_user_message = 1
                    AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
                    AND id NOT IN (SELECT session_id FROM orchestration_workers)
-                 ORDER BY updated_at DESC, id ASC",
-                    params!["/tmp/a"],
-                    |row| row.get(3),
+                 ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC",
                 )
                 .unwrap();
+            let plan = statement
+                .query_map(params!["/tmp/a"], |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+                .join("\n");
             assert!(
-                plan.contains("COVERING INDEX"),
-                "sidebar listing fell back to table seeks: {plan}"
+                plan.contains("COVERING INDEX sessions_activity_project_cover_v2_idx")
+                    && plan.contains("projection")
+                    && !plan.contains("session_blocks"),
+                "sidebar listing did not use the summary projection: {plan}"
             );
         }
+    }
+
+    #[test]
+    fn list_projection_backfills_and_tracks_full_writes() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut session = sample("projection", "/tmp/a", "Projection");
+        session.blocks = json!([
+            {"id":"u", "role":"user", "turnModel":{"harness":"claude"}},
+            {"id":"i", "role":"system", "notice":"interrupt"}
+        ]);
+        upsert_session(&conn, &session).unwrap();
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        ensure_list_summaries(&conn).unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert!(summary.interrupted);
+        assert_eq!(summary.provider_history.unwrap()["activeHarness"], "claude");
+        session.blocks = json!([{"id":"u", "role":"user", "turnModel":{"harness":"codex"}}]);
+        upsert_session(&conn, &session).unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert!(!summary.interrupted);
+        assert_eq!(summary.provider_history.unwrap()["activeHarness"], "codex");
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=42, assistant_management_json=?2 WHERE id=?1",
+            params![session.id, r#"{"assistant":true}"#],
+        )
+        .unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(summary.last_activity_at, 42);
+        assert_eq!(summary.managed_by.unwrap()["assistant"], true);
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        let fallback = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(fallback.last_activity_at, 42);
+        assert_eq!(fallback.provider_history.unwrap()["activeHarness"], "codex");
+        ensure_list_summaries(&conn).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        conn.execute(
+            "UPDATE session_blocks SET block_json=?2 WHERE session_id=?1 AND ordinal=0",
+            params![
+                session.id,
+                r#"{"id":"u","role":"user","turnModel":{"harness":"claude"}}"#
+            ],
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        let fallback = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(
+            fallback.provider_history.unwrap()["activeHarness"],
+            "claude"
+        );
     }
 
     #[test]
@@ -4769,6 +6112,25 @@ mod tests {
         assert!(list_recent(&conn, 10).unwrap().iter().any(|row| row.pinned));
     }
 
+    #[test]
+    fn recent_since_has_no_row_cap_and_includes_cutoff() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for i in 0..125 {
+            let mut session = sample(&format!("recent-{i}"), "/tmp/a", "Recent");
+            session.updated_at = Some(1_000 + i);
+            upsert_session(&conn, &session).unwrap();
+        }
+        let mut old = sample("old", "/tmp/a", "Old");
+        old.updated_at = Some(999);
+        upsert_session(&conn, &old).unwrap();
+        set_pinned(&conn, "old", true).unwrap();
+        let rows = list_recent_since(&conn, 1_000).unwrap();
+        assert_eq!(rows.len(), 125);
+        assert_eq!(rows.first().unwrap().updated_at, 1_124);
+        assert_eq!(rows.last().unwrap().updated_at, 1_000);
+    }
+
     fn guarded_upsert(
         conn: &Connection,
         session: &SessionUpsert,
@@ -4857,12 +6219,12 @@ mod tests {
         upsert_session(&conn, &linked).unwrap();
         upsert_session(&conn, &sample("s2", "/tmp/b", "Plain")).unwrap();
 
-        let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64]);
-        assert_indexed_and_presorted(&recent, "sessions_recent_idx");
-        let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64]);
-        assert_indexed_and_presorted(&pinned, "sessions_recent_idx");
+        let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64, &i64::MIN]);
+        assert_indexed_and_presorted(&recent, "sessions_activity_recent_cover_v2_idx");
+        let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64, &i64::MIN]);
+        assert_indexed_and_presorted(&pinned, "sessions_activity_recent_cover_v2_idx");
         let linked = query_plan(&conn, LIST_LINKED_SQL, &[]);
-        assert_indexed_and_presorted(&linked, "sessions_linked_idx");
+        assert_indexed_and_presorted(&linked, "sessions_activity_linked_cover_v2_idx");
     }
 
     #[test]
@@ -5631,7 +6993,7 @@ mod tests {
     }
 
     #[test]
-    fn composer_draft_listing_drops_expired_and_unparseable_rows() {
+    fn composer_draft_listing_keeps_old_and_unparseable_rows() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         set_composer_draft(&conn, "fresh", Some(&json!({ "text": "keep" }))).unwrap();
@@ -5649,12 +7011,13 @@ mod tests {
         .unwrap();
 
         let listed = list_composer_drafts(&conn).unwrap();
-        assert_eq!(listed.len(), 1);
+        assert_eq!(listed.len(), 2);
         assert_eq!(listed[0]["sessionId"], "fresh");
+        assert_eq!(listed[1]["sessionId"], "old");
         let left: i64 = conn
             .query_row("SELECT COUNT(*) FROM composer_drafts", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(left, 2, "only the expired row is deleted");
+        assert_eq!(left, 3, "listing must not delete unsent drafts");
     }
 
     #[test]
@@ -5682,6 +7045,256 @@ mod tests {
         assert_eq!(first[1].session_id, "s1");
         let second = take_in_flight(&mut conn).unwrap();
         assert!(second.is_empty());
+    }
+
+    #[test]
+    fn in_flight_windows_keep_separate_rows_and_only_prior_process_is_interrupted() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let entry = |id: &str| InFlightSession {
+            session_id: id.into(),
+            cwd: "/repo".into(),
+        };
+        replace_in_flight(&mut conn, &[entry("legacy")]).unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "old",
+            "secondary",
+            "oldpage",
+            &[entry("crashed")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[entry("main")])
+            .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "current",
+            "secondary",
+            "secondarypage",
+            &[entry("secondary")],
+        )
+        .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "current",
+            "popout",
+            "popoutpage",
+            &[entry("crashed")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[]).unwrap();
+        let canonical = list_in_flight(&conn).unwrap();
+        assert!(canonical.iter().any(|item| item.session_id == "secondary"));
+        assert!(!canonical.iter().any(|item| item.session_id == "main"));
+        conn.execute(
+            "DELETE FROM in_flight_sessions WHERE session_id = 'secondary'",
+            [],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[]).unwrap();
+        assert!(!list_in_flight(&conn)
+            .unwrap()
+            .iter()
+            .any(|item| item.session_id == "secondary"));
+        conn.execute(
+            "INSERT INTO in_flight_sessions VALUES ('secondary', '/repo', 0)",
+            [],
+        )
+        .unwrap();
+        let old = list_interrupted_in_flight(&conn, |id, _| id == "old").unwrap();
+        assert_eq!(
+            old.iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["legacy", "secondary"]
+        );
+        assert_eq!(
+            take_interrupted_in_flight(&mut conn, &[("old".into(), "oldpage".into())])
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(list_interrupted_in_flight(&conn, |id, _| id == "old")
+            .unwrap()
+            .is_empty());
+        replace_window_in_flight(&mut conn, "current", "popout", "popoutpage", &[]).unwrap();
+        assert_eq!(
+            list_interrupted_in_flight(&conn, |id, _| id == "old")
+                .unwrap()
+                .len(),
+            1
+        );
+        let after_restart = list_interrupted_in_flight(&conn, |id, _| id == "current").unwrap();
+        assert_eq!(
+            after_restart
+                .iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn recovery_lease_distinguishes_live_closed_and_unknown_owners() {
+        let dir =
+            std::env::temp_dir().join(format!("bycoda-recovery-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("sessions.sqlite");
+        let first = SessionStore::open(path.clone()).unwrap();
+        let id = first.native_instance_id().to_string();
+        let second = SessionStore::open(path).unwrap();
+        assert!(matches!(
+            second.conn.lock().unwrap().recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Live)
+        ));
+        assert!(second
+            .conn
+            .lock()
+            .unwrap()
+            .recovery_lease_state(&uuid::Uuid::new_v4().to_string())
+            .is_err());
+        drop(first);
+        assert!(matches!(
+            second.conn.lock().unwrap().recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Unleased)
+        ));
+        drop(second);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn retired_page_recovers_without_clearing_live_or_unknown_siblings() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let entry = |id: &str| InFlightSession {
+            session_id: id.into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old-page",
+            &[entry("retired")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "process", "main", "new-page", &[entry("new")])
+            .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "sibling",
+            "unknown-page",
+            &[entry("unknown")],
+        )
+        .unwrap();
+        let result = list_interrupted_in_flight(&conn, |_, page| page == "old-page").unwrap();
+        assert_eq!(
+            result
+                .iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["retired"]
+        );
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn recovery_ack_only_consumes_receipted_covered_occurrences() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let item = InFlightSession {
+            session_id: "same".into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(&mut conn, "process", "main", "old", &[item.clone()]).unwrap();
+        let rows = vec![RecoveryReceiptRow {
+            process: Some("process".into()),
+            page: Some("old".into()),
+            session: "same".into(),
+            cwd: "/repo".into(),
+        }];
+        replace_window_in_flight(&mut conn, "process", "main", "new", &[item]).unwrap();
+        let stale = vec![
+            ("process".into(), "old".into()),
+            ("process".into(), "new".into()),
+        ];
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"workspace":{"sessions":[{"id":"same","cwd":"/repo"}]}}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        let remaining: Vec<String> = conn
+            .prepare("SELECT page_id FROM in_flight_window_sessions")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(remaining, vec!["new"]);
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recovery_ack_preserves_uncovered_and_live_owned_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let item = InFlightSession {
+            session_id: "same".into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(&mut conn, "process", "main", "old", &[item.clone()]).unwrap();
+        let rows = vec![RecoveryReceiptRow {
+            process: Some("process".into()),
+            page: Some("old".into()),
+            session: "same".into(),
+            cwd: "/repo".into(),
+        }];
+        let stale = vec![("process".into(), "old".into())];
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"workspace":{"sessions":[]}}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "process", "other", "live", &[item]).unwrap();
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"resolvedIds":["same"]}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM in_flight_window_sessions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recovery_receipt_ttl_evicts_only_settled_entries() {
+        let now = std::time::Instant::now();
+        let receipt = |settled| RecoveryReceipt {
+            store: "store".into(),
+            page: "page".into(),
+            rows: vec![],
+            settled,
+        };
+        let mut receipts = HashMap::from([
+            ("pending".into(), receipt(None)),
+            ("settled".into(), receipt(Some(now))),
+        ]);
+        prune_recovery_receipts(&mut receipts, now + std::time::Duration::from_secs(599));
+        assert_eq!(receipts.len(), 2);
+        prune_recovery_receipts(&mut receipts, now + std::time::Duration::from_secs(600));
+        assert!(receipts.contains_key("pending"));
+        assert!(!receipts.contains_key("settled"));
     }
 
     #[test]

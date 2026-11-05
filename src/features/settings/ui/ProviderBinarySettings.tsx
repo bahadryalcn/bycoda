@@ -29,7 +29,7 @@ import {
 import { revealPath } from "../../../platform/tauri/fs";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 
-import { HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESS_TITLE } from "../../sessions";
 
 export const GLOBAL_PROVIDER_SCOPE = "global";
 

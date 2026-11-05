@@ -9,6 +9,25 @@ import {
 
 afterEach(() => localStorage.clear());
 
+it("keeps both voice and dictation off for a fresh preference", () => {
+  expect(loadVoiceSettings()).toMatchObject({ enabled: false, dictationEnabled: false });
+});
+
+it.each([true, false])("inherits legacy dictation visibility from voice enabled=%s", (enabled) => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ enabled }));
+  expect(loadVoiceSettings()).toMatchObject({ enabled, dictationEnabled: enabled });
+});
+
+it.each([
+  [true, false],
+  [false, true],
+])("persists independent voice=%s and dictation=%s choices", (enabled, dictationEnabled) => {
+  saveVoiceSettings({ ...loadVoiceSettings(), enabled, dictationEnabled });
+  expect(loadVoiceSettings()).toMatchObject({ enabled, dictationEnabled });
+  saveVoiceSettings({ ...loadVoiceSettings(), enabled: !enabled });
+  expect(loadVoiceSettings()).toMatchObject({ enabled: !enabled, dictationEnabled });
+});
+
 it("defaults older settings to mark and expanded while preserving runtime configuration", () => {
   localStorage.setItem(
     "bycoda.voice",

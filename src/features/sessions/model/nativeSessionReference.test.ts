@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-import {
-  nativeSessionReference,
-  resolveNativeSessionReference,
-} from "./nativeSessionReference";
+import { nativeSessionReference, resolveNativeSessionReference } from "./nativeSessionReference";
 
 const locator = {
   kind: "native" as const,
@@ -30,14 +27,11 @@ describe("native local session references", () => {
   it("sends all origin coordinates for native validation and never falls back by session id", async () => {
     invoke.mockResolvedValueOnce(null);
     expect(await resolveNativeSessionReference(locator)).toBeNull();
-    expect(invoke).toHaveBeenCalledExactlyOnceWith(
-      "session_reference_resolve",
-      {
-        sourceStoreId: "persisted-store",
-        sourceProfileId: "persisted-profile",
-        sessionId: "conversation",
-      },
-    );
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("session_reference_resolve", {
+      sourceStoreId: "persisted-store",
+      sourceProfileId: "persisted-profile",
+      sessionId: "conversation",
+    });
   });
 
   it("retains verified committed Host mapping and propagates unreadable-store errors", async () => {
@@ -49,8 +43,6 @@ describe("native local session references", () => {
     invoke.mockResolvedValueOnce({ locator: host });
     expect(await nativeSessionReference("conversation")).toEqual(host);
     invoke.mockRejectedValueOnce(new Error("database unavailable"));
-    await expect(resolveNativeSessionReference(locator)).rejects.toThrow(
-      "database unavailable",
-    );
+    await expect(resolveNativeSessionReference(locator)).rejects.toThrow("database unavailable");
   });
 });

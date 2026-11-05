@@ -148,7 +148,13 @@ export function usePickerList(props: PickerListOptions) {
     if (key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End") {
       event.preventDefault();
       move(
-        key === "ArrowDown" ? "next" : key === "ArrowUp" ? "previous" : key === "Home" ? "first" : "last",
+        key === "ArrowDown"
+          ? "next"
+          : key === "ArrowUp"
+            ? "previous"
+            : key === "Home"
+              ? "first"
+              : "last",
       );
       return;
     }

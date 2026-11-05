@@ -1,9 +1,4 @@
-import type {
-  Attachment,
-  ComposerTurnOptions,
-  PlanBuildTarget,
-  Session,
-} from "../../sessions/model/session";
+import type { Attachment, ComposerTurnOptions, PlanBuildTarget, Session } from "../../sessions";
 import type { HostSession } from "./protocol";
 import type { ApprovalDecision, UserQuestionReply } from "../../../integrations/harness";
 import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";

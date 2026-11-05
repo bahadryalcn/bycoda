@@ -2,6 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(windows)]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -25,7 +27,7 @@ const PTY_QUEUE_CHUNKS: usize = 64;
 /// Keystrokes or pastes queued for a terminal whose child is not reading.
 const WRITE_QUEUE_LEN: usize = 256;
 #[cfg(unix)]
-const KILL_ESCALATE: Duration = Duration::from_secs(1);
+mod unix_child;
 /// Output a hidden terminal may hold before it goes out as one batch anyway.
 const HIDDEN_FLUSH_BYTES: usize = 1024 * 1024;
 
@@ -191,7 +193,9 @@ struct LivePty {
     completion_shell: Option<String>,
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
-    master_fd: i32,
+    master_fd: std::fs::File,
+    #[cfg(unix)]
+    child: Option<Arc<unix_child::UnixChild>>,
     #[cfg(windows)]
     master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     pid: u32,
@@ -346,6 +350,15 @@ impl PtyHost {
         sessions.remove(id)
     }
 
+    #[cfg(unix)]
+    fn remove_if_child(&self, id: &str, child: &Arc<unix_child::UnixChild>) -> Option<Arc<LivePty>> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if !sessions.get(id).and_then(|live| live.child.as_ref()).is_some_and(|live| Arc::ptr_eq(live, child)) {
+            return None;
+        }
+        sessions.remove(id)
+    }
+
     pub(crate) fn kill_all(&self) {
         let kids: Vec<Arc<LivePty>> = {
             let mut map = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
@@ -413,21 +426,19 @@ impl LivePty {
 }
 
 fn reap(kids: Vec<Arc<LivePty>>) {
-    let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
-    for live in kids {
-        live.output.set_enabled(false);
-        #[cfg(unix)]
-        {
-            hangup(live.pid);
-            close_fd(live.master_fd);
-        }
-        #[cfg(not(unix))]
-        drop(live);
+    if kids.is_empty() {
+        return;
     }
-    // Quit and `Drop` both exit the process, so the SIGKILL has to land
-    // before this returns. `terminate`'s detached escalate thread never gets
-    // to run, and every shell is its own `setsid` session that outlives us.
-    crate::harness::terminate_all(&pids);
+    #[cfg(unix)]
+    unix_child::reap(kids);
+    #[cfg(not(unix))]
+    {
+        let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
+        for live in kids {
+            live.output.set_enabled(false);
+        }
+        crate::harness::terminate_all(&pids);
+    }
 }
 
 impl Drop for PtyHost {
@@ -480,6 +491,7 @@ pub fn pty_spawn(
         working_dir(&cwd)
     };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
+    crate::mobile_pty::reserve_native_spawn(&app, &id)?;
 
     let shell = shell_for(profile.as_deref());
 
@@ -707,6 +719,7 @@ fn spawn_private_program(
         .spawn_gate
         .lock()
         .unwrap_or_else(|e| e.into_inner());
+    crate::mobile_pty::desktop_control(&app, &id)?;
     let (cols, rows) = (cols.max(2), rows.max(2));
     ensure_identity(host.get(&id).as_deref(), Some(&identity))?;
     if let Some(live) = host.get(&id) {
@@ -765,9 +778,9 @@ fn spawn_private_program(
 fn reattach(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(live.master_fd, cols, rows)?;
+        resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols, rows)?;
         let mut pgrp: libc::pid_t = 0;
-        if unsafe { libc::ioctl(live.master_fd, libc::TIOCGPGRP, &mut pgrp) } == 0 && pgrp > 1 {
+        if unsafe { libc::ioctl(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), libc::TIOCGPGRP, &mut pgrp) } == 0 && pgrp > 1 {
             unsafe {
                 libc::kill(-pgrp, libc::SIGWINCH);
             }
@@ -886,7 +899,7 @@ pub async fn pty_resize(
 fn resize_live(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(live.master_fd, cols.max(2), rows.max(2))
+        resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols.max(2), rows.max(2))
     }
     #[cfg(windows)]
     {
@@ -932,7 +945,7 @@ pub fn pty_status(
     }
     #[cfg(unix)]
     {
-        let foreground = foreground_label(live.master_fd, live.pid);
+        let foreground = foreground_label(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), live.pid);
         Ok(PtyStatus {
             foreground,
             supported: true,
@@ -1014,9 +1027,9 @@ pub fn pty_kill(window: tauri::Window, host: State<PtyHost>, id: String) -> Resu
         }
         #[cfg(not(windows))]
         {
-            terminate(live.pid);
-            #[cfg(unix)]
-            close_fd(live.master_fd);
+            if let Some(child) = &live.child {
+                child.terminate();
+            }
         }
     }
     Ok(())
@@ -1054,11 +1067,13 @@ fn spawn_unix(
         crate::native_workspace::Activity::start(&app, &workdir, "terminal", None)?
     };
     use std::fs::File;
-    use std::os::unix::io::FromRawFd;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
-    let (master, slave) = open_pty(cols, rows)?;
+    let (master_fd, slave_fd) = open_pty(cols, rows)?;
+    let master = unsafe { File::from_raw_fd(master_fd) };
+    let slave = unsafe { File::from_raw_fd(slave_fd) };
 
     let mut cmd = Command::new(&shell);
     if let Some(proxy) = &http_proxy {
@@ -1067,9 +1082,9 @@ fn spawn_unix(
     cmd.envs(env.iter().copied());
     cmd.args(&args)
         .current_dir(&workdir)
-        .stdin(dup_stdio(slave)?)
-        .stdout(dup_stdio(slave)?)
-        .stderr(dup_stdio(slave)?)
+        .stdin(dup_stdio(slave.as_raw_fd())?)
+        .stdout(dup_stdio(slave.as_raw_fd())?)
+        .stderr(dup_stdio(slave.as_raw_fd())?)
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
         .env("COLORFGBG", "15;0")
@@ -1083,7 +1098,7 @@ fn spawn_unix(
     // setsid() already creates a new session and process group. Calling
     // process_group(0) first makes the child a group leader, so setsid()
     // fails with EPERM ("Operation not permitted").
-    let slave_fd = slave;
+    let slave_fd = slave.as_raw_fd();
     unsafe {
         cmd.pre_exec(move || {
             if libc::setsid() < 0 {
@@ -1098,30 +1113,28 @@ fn spawn_unix(
         });
     }
 
-    set_cloexec(master);
+    set_cloexec(master.as_raw_fd());
     let io = (|| -> Result<_, String> {
-        let reader = unsafe { File::from_raw_fd(dup_fd(master)?) };
-        let writer = unsafe { File::from_raw_fd(dup_fd(master)?) };
+        let reader = unsafe { File::from_raw_fd(dup_fd(master.as_raw_fd())?) };
+        let writer = unsafe { File::from_raw_fd(dup_fd(master.as_raw_fd())?) };
         Ok((reader, writer))
     })();
     let (reader, writer) = match io {
         Ok(io) => io,
         Err(error) => {
-            close_fd(slave);
-            close_fd(master);
             return Err(error);
         }
     };
     let spawned = cmd.spawn();
-    close_fd(slave);
-    let mut child = match spawned {
+    drop(slave);
+    let child = match spawned {
         Ok(child) => child,
         Err(error) => {
-            close_fd(master);
             return Err(format!("Failed to start {shell}: {error}"));
         }
     };
     let pid = child.id();
+    let child = Arc::new(unix_child::UnixChild::new(child));
     if let Some(activity) = workspace_activity.as_mut() {
         activity.started();
     }
@@ -1135,6 +1148,7 @@ fn spawn_unix(
         completion_shell: (!private).then(|| shell.clone()),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(writer)))),
         master_fd: master,
+        child: Some(child.clone()),
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
         output: Arc::new(OutputGate::for_desktop(!crate::mobile_pty::registered(
@@ -1150,21 +1164,46 @@ fn spawn_unix(
         .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
     let data_app = app.clone();
     let data_id = id.clone();
+    let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
+    let data_generation = mobile_generation.clone();
+    let data_child = child.clone();
     thread::spawn(move || {
         let mut file = reader;
         let fd = file.as_raw_fd();
         let mut buf = vec![0_u8; READ_CHUNK];
         let mut acc = Vec::with_capacity(READ_CHUNK);
         let mut last_emit = Instant::now();
+        let mut complete = false;
+        let mut exit_deadline = None;
         loop {
+            let timeout = if acc.is_empty() {
+                Duration::from_millis(250)
+            } else {
+                PTY_COALESCE.saturating_sub(last_emit.elapsed())
+            };
+            if !unix_child::reader_ready(fd, &data_child, &mut exit_deadline, timeout) {
+                if exit_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                    break;
+                }
+                if acc.is_empty() {
+                    continue;
+                }
+            }
             if acc.is_empty() {
                 match file.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        complete = true;
+                        break;
+                    }
                     Ok(n) => {
                         acc.extend_from_slice(&buf[..n]);
                         last_emit = Instant::now();
                     }
-                    Err(_) => break,
+                    Err(error) => {
+                        complete =
+                            cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
+                        break;
+                    }
                 }
             } else if pty_should_flush(acc.len(), last_emit.elapsed())
                 || !wait_readable(fd, PTY_COALESCE.saturating_sub(last_emit.elapsed()))
@@ -1185,9 +1224,16 @@ fn spawn_unix(
                 last_emit = Instant::now();
             } else {
                 match file.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        complete = true;
+                        break;
+                    }
                     Ok(n) => acc.extend_from_slice(&buf[..n]),
-                    Err(_) => break,
+                    Err(error) => {
+                        complete =
+                            cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
+                        break;
+                    }
                 }
             }
         }
@@ -1204,7 +1250,9 @@ fn spawn_unix(
             &integration,
         );
         if !private {
-            crate::mobile_pty::drained(&data_app, &data_id);
+            if let Some(generation) = data_generation.as_deref() {
+                crate::mobile_pty::drained(&data_app, &data_id, generation, complete);
+            }
         }
     });
 
@@ -1213,6 +1261,11 @@ fn spawn_unix(
     thread::spawn(move || {
         let exit = child.wait();
         let code = exit.as_ref().ok().and_then(|status| status.code());
+        if exit.is_ok() && !private {
+            if let Some(generation) = mobile_generation.as_deref() {
+                crate::mobile_pty::exited(&wait_app, &wait_id, generation, code);
+            }
+        }
         if exit.is_ok() {
             if let Some(activity) = workspace_activity {
                 let _ = activity.settled();
@@ -1221,19 +1274,18 @@ fn spawn_unix(
         // Only announce this child. A remount/respawn reuses the id, and the
         // previous wait thread must not paint "[process exited]" on the new PTY
         // or yank the replacement out of the host map.
-        let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
-            release_held_output(&host, &wait_app, &wait_id, pid);
-            host.remove_if_pid(&wait_id, pid).map(|live| {
-                close_fd(live.master_fd);
-                live.owner_label()
+        let owner = if exit.is_ok() {
+            wait_app.try_state::<PtyHost>().and_then(|host| {
+                host.remove_if_child(&wait_id, &child).map(|live| {
+                    live.output.set_enabled(false);
+                    live.set_output_visible(&wait_app, &wait_id, true);
+                    live.owner_label()
+                })
             })
         } else {
             None
         };
         if let Some(owner) = owner {
-            if !private {
-                crate::mobile_pty::exited(&wait_app, &wait_id, code);
-            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1346,16 +1398,26 @@ fn spawn_windows(
         .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
     let data_app = app.clone();
     let data_id = id.clone();
+    let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
+    let data_generation = mobile_generation.clone();
     // A blocking read on the ConPTY pipe cannot be polled with a timeout, so
     // this thread only reads; the emitter below owns the timed drain. The
     // bounded queue makes a flooding child wait instead of piling up memory.
     // Either side ending closes the channel and stops the other.
     let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(PTY_QUEUE_CHUNKS);
+    let drain_complete = Arc::new(AtomicBool::new(false));
+    let reader_complete = drain_complete.clone();
     thread::spawn(move || {
         let mut buf = vec![0_u8; READ_CHUNK];
         loop {
+            // ConPTY returns filedescriptor::FileDescriptor (vendor/portable-pty
+            // win/conpty.rs); its Windows Read maps BrokenPipe to Ok(0).
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    reader_complete.store(true, Ordering::Release);
+                    break;
+                }
+                Err(_) => break,
                 Ok(n) => {
                     if tx.send(buf[..n].to_vec()).is_err() {
                         break;
@@ -1380,7 +1442,14 @@ fn spawn_windows(
             )
         });
         if !private {
-            crate::mobile_pty::drained(&data_app, &data_id);
+            if let Some(generation) = data_generation.as_deref() {
+                crate::mobile_pty::drained(
+                    &data_app,
+                    &data_id,
+                    generation,
+                    drain_complete.load(Ordering::Acquire),
+                );
+            }
         }
     });
 
@@ -1389,6 +1458,11 @@ fn spawn_windows(
     thread::spawn(move || {
         let exit = child.wait();
         let code = exit.as_ref().ok().map(|status| status.exit_code() as i32);
+        if exit.is_ok() && !private {
+            if let Some(generation) = mobile_generation.as_deref() {
+                crate::mobile_pty::exited(&wait_app, &wait_id, generation, code);
+            }
+        }
         if exit.is_ok() {
             if let Some(activity) = workspace_activity {
                 let _ = activity.settled();
@@ -1402,9 +1476,6 @@ fn spawn_windows(
             None
         };
         if let Some(owner) = owner {
-            if !private {
-                crate::mobile_pty::exited(&wait_app, &wait_id, code);
-            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1491,54 +1562,18 @@ fn login_args(shell: &str) -> &'static [&'static str] {
     }
 }
 
-/// The hangup a closing shell expects, without `terminate`'s escalation.
-#[cfg(unix)]
-fn hangup(pid: u32) {
-    if pid == 0 || pid == 1 {
-        return;
-    }
-    let ipid = pid as i32;
-    unsafe {
-        libc::kill(ipid, libc::SIGHUP);
-        libc::kill(-ipid, libc::SIGHUP);
-    }
-}
-
+#[cfg(windows)]
 fn terminate(pid: u32) {
     if pid == 0 || pid == 1 {
         return;
     }
-    #[cfg(unix)]
-    {
-        let ipid = pid as i32;
-        unsafe {
-            libc::kill(ipid, libc::SIGHUP);
-            libc::kill(-ipid, libc::SIGHUP);
-            libc::kill(ipid, libc::SIGTERM);
-            libc::kill(-ipid, libc::SIGTERM);
-        }
-        thread::spawn(move || {
-            thread::sleep(KILL_ESCALATE);
-            unsafe {
-                libc::kill(ipid, libc::SIGKILL);
-                libc::kill(-ipid, libc::SIGKILL);
-            }
-        });
-    }
-    #[cfg(windows)]
-    {
-        let mut cmd = std::process::Command::new("taskkill");
-        crate::hide_window_console(&mut cmd);
-        let _ = cmd
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
-    }
+    let mut cmd = std::process::Command::new("taskkill");
+    crate::hide_window_console(&mut cmd);
+    let _ = cmd
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 #[cfg(unix)]
@@ -2204,11 +2239,26 @@ mod tests {
             cwd: std::path::PathBuf::from("/test"),
             completion_shell: None,
             writer: Mutex::new(Box::new(std::io::sink())),
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
+            child: None,
             pid,
             owner: Arc::new(Mutex::new(owner.to_string())),
             output: Arc::default(),
         })
+    }
+
+    #[test]
+    fn master_descriptor_stays_owned_until_last_operation_finishes() {
+        use std::os::fd::AsRawFd;
+        let host = PtyHost::new();
+        let live = fake_pty(42, "owner");
+        let operation = Arc::clone(&live);
+        let fd = live.master_fd.as_raw_fd();
+        host.insert("held".to_string(), live);
+        drop(host.remove_if_pid("held", 42).unwrap());
+        assert_ne!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+        assert_eq!(operation.master_fd.as_raw_fd(), fd);
+        drop(operation);
     }
 
     #[test]
@@ -2517,7 +2567,7 @@ mod queued_writer_tests {
             completion_shell: None,
             writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
             #[cfg(unix)]
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2595,7 +2645,7 @@ mod queued_writer_tests {
                 release: release_rx,
             })),
             #[cfg(unix)]
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2665,7 +2715,7 @@ mod queued_writer_tests {
                 completion_shell: None,
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]
-                master_fd: -1,
+                master_fd: std::fs::File::open("/dev/null").unwrap(),
                 #[cfg(windows)]
                 master: Mutex::new(pair.master),
                 pid: 0,

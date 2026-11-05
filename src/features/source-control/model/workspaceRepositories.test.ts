@@ -46,16 +46,16 @@ it("does not aggregate ordinary projects, groups or a workspace's other worktree
     ),
   ).toBeUndefined();
 });
-it("omits a workspace root from its own repository rows", () => {
+it("includes a declared workspace root alongside its nested repository after parent grouping", () => {
   expect(
     workspaceRepositoryPaths(
       "G:/wallet",
-      [{ ...groups[0], workspaceFolders: ["G:/wallet", "G:/wallet/api"] }],
-      {},
+      [{ ...groups[0], workspaceFolders: ["G:/wallet", "g:/WALLET/", "G:/wallet/core-pack"] }],
+      { "g:/wallet": "team", "g:/wallet/core-pack": "wallet" },
       [],
       NOTHING_LOCKED,
     ),
-  ).toEqual(["G:/wallet/api"]);
+  ).toEqual(["G:/wallet", "G:/wallet/core-pack"]);
 });
 it("does not reveal a locked folder or a hidden workspace root", () => {
   const lock = {

@@ -18,8 +18,14 @@ test("young portraits render every identity and expression in seated and working
           const { createCodeArtPainter, crewLayout } = (
             window as unknown as {
               crewPortraitFixture: {
-                createCodeArtPainter: (canvas: HTMLCanvasElement, options: object) => (...args: unknown[]) => void;
-                crewLayout: (count: number, width: number) => { x: number; y: number; scale: number }[];
+                createCodeArtPainter: (
+                  canvas: HTMLCanvasElement,
+                  options: object,
+                ) => (...args: unknown[]) => void;
+                crewLayout: (
+                  count: number,
+                  width: number,
+                ) => { x: number; y: number; scale: number }[];
               };
             }
           ).crewPortraitFixture;
@@ -49,24 +55,22 @@ test("young portraits render every identity and expression in seated and working
           );
           const c = canvas.getContext("2d")!;
           const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
-          const counts = crewLayout(12, 1280).map(
-            (seat) => {
-              let count = 0;
-              // Inspect each head/body column, excluding the sign and floor.
+          const counts = crewLayout(12, 1280).map((seat) => {
+            let count = 0;
+            // Inspect each head/body column, excluding the sign and floor.
+            for (
+              let y = Math.round((seat.y + 70 - 155 * seat.scale) * 3);
+              y < (seat.y + 60) * 3;
+              y++
+            )
               for (
-                let y = Math.round((seat.y + 70 - 155 * seat.scale) * 3);
-                y < (seat.y + 60) * 3;
-                y++
+                let x = Math.round((seat.x - 15 * seat.scale) * 3);
+                x < (seat.x + 15 * seat.scale) * 3;
+                x++
               )
-                for (
-                  let x = Math.round((seat.x - 15 * seat.scale) * 3);
-                  x < (seat.x + 15 * seat.scale) * 3;
-                  x++
-                )
-                  if (pixels[(y * canvas.width + x) * 4 + 3] > 24) count++;
-              return count;
-            },
-          );
+                if (pixels[(y * canvas.width + x) * 4 + 3] > 24) count++;
+            return count;
+          });
           // Capture the usual six-seat view at a readable portrait size.
           paint(
             states.slice(0, 6).map((_, id) => (id === 5 && !stand ? "sip" : "idle")),

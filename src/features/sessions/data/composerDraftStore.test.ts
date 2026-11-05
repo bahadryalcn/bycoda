@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 
 const cache = await import("../model/draftCache");
 const store = await import("./composerDraftStore");

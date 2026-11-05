@@ -1,7 +1,7 @@
 import { isHexColor } from "../../../shared/lib/colorUtils";
-import { compareSessionSummaries } from "../data/sessionHistory";
+import { compareSessionSummaries } from "./compareSessionSummaries";
 import type { SessionSummary } from "../data/sessionStore";
-import { normalizeProjectPath } from "../../projects/model/recents";
+import { normalizeProjectPath } from "../../projects/public/recents";
 import { orderByIds } from "../../../shared/lib/reorder";
 import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
 
@@ -258,7 +258,7 @@ export function createFolderWithSessions(
   folders: SessionFolder[],
   sessionIds: string[],
   name?: string,
-  placement: { parentId?: string; pinned?: boolean } = {},
+  placement: { parentId?: string; pinned?: boolean; id?: string } = {},
 ): { folders: SessionFolder[]; id: string } {
   const ids = uniqueIds(sessionIds);
   if (ids.length === 0) return { folders, id: "" };
@@ -273,7 +273,7 @@ export function createFolderWithSessions(
       ? { ...folder, sessionIds: folder.sessionIds.filter((id) => !ids.includes(id)) }
       : folder,
   );
-  const id = crypto.randomUUID();
+  const id = placement.id ?? crypto.randomUUID();
   const folder: SessionFolder = {
     id,
     name: name ?? uniqueFolderName(next),
@@ -605,13 +605,13 @@ export function saveSessionFolders(cwd: string, folders: SessionFolder[]): void 
 }
 
 /** Move folder and collapsed-section state when a project path changes. */
-export function rebaseSessionFolderSettings(from: string, to: string): void {
+export function rebaseSessionFolderSettings(from: string, to: string, includeFolders = true): void {
   const oldKey = storageKey(from);
   const newKey = storageKey(to);
   if (!oldKey || !newKey || oldKey === newKey) return;
   try {
     const folders = parseStore();
-    if (oldKey in folders) {
+    if (includeFolders && oldKey in folders) {
       if (!(newKey in folders)) folders[newKey] = folders[oldKey];
       delete folders[oldKey];
       localStorage.setItem(KEY, JSON.stringify(folders));

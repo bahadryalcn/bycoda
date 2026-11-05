@@ -1,10 +1,10 @@
-import type { AdoptedDivergence, Block, Session } from "../../sessions/model/session";
-import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
-import { sessionActivityAt } from "../../sessions/model/sessionActivity";
+import type { AdoptedDivergence, Block, Session } from "../../sessions";
+import { isTurnInterruptMessage } from "../../sessions/public/inFlight";
+import { sessionActivityAt } from "../../sessions/public/sessionActivity";
+import { persistableAttachment } from "../../sessions/public/attachments";
+import { buildConversationReplay } from "../../sessions/public/conversationRewind";
 import type { HostSession } from "./protocol";
 import { canonicalJson } from "../../sync/model/canonicalJson";
-import { persistableAttachment } from "../../sessions/model/attachments";
-import { buildConversationReplay } from "../../sessions/model/conversationRewind";
 import { keepFullTranscript, restoreLocalFiles, sameRemoteBlock } from "./remotePreview";
 import {
   blockDigest,

@@ -1,5 +1,6 @@
 import { pathKey } from "../../../shared/lib/paths";
-import { projectGroupWorkspaceRoot, type ProjectGroup } from "../../projects/model/projectGroups";
+import { projectGroupWorkspaceRoot, type ProjectGroup } from "../../projects/public/projectGroups";
+
 import { isProjectLockedIn, type LockSnapshot } from "../../group-lock/model/lockState";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 
@@ -35,7 +36,7 @@ export function workspaceRepositoryPaths(
     return root && pathKey(root) === key;
   });
   if (!group || isProjectLockedIn(lock, cwd)) return undefined;
-  const seen = new Set([key]);
+  const seen = new Set<string>();
   return [
     ...(group.workspaceFolders ?? []),
     ...rememberedPaths.filter((path) => assignments[pathKey(path)] === group.id),

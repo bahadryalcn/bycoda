@@ -1,23 +1,28 @@
 import { EngineOperations } from "./engine-operations";
-import {AssistantTurnPolicyDeferredError,recordDeferredAssistantTurn} from "./assistant-turn-policy";
-import {hostQuestionToken} from "./question-source";
+import { admitRunDuration, finishRunDuration } from "./execution/run-duration";
+import {
+  AssistantTurnPolicyDeferredError,
+  recordDeferredAssistantTurn,
+} from "./assistant/core/assistant-turn-policy";
+import { hostQuestionToken } from "./sessions/question-source";
+import { parseQuestionReply, resolveAuthorizedQuestionAttachments } from "./sessions/question-reply";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { executionUserIndex } from "../src/features/sessions/model/executionTurn";
-import { HostRunWriters } from "./run-writers";
+import { HostRunWriters } from "./execution/run-writers";
 import type { HostRunHandle } from "../src/integrations/harness/core/hostRun";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
 import { createHash, randomUUID } from "node:crypto";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
-import { assertHostProviderAccount } from "./provider-accounts";
+import { assertHostProviderAccount } from "./providers/provider-accounts";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
-import { HostCheckpoints } from "./checkpoints";
-import type { TurnGitHistory } from "./workspace-service-contracts";
-import type { ConversationRewindAdapter } from "./session-rewind";
-import { durableWrite, refComponent } from "./turn-git-history";
-import { previewContextualSession } from "./contextual-session";
+import { HostCheckpoints } from "./checkpoints/checkpoints";
+import type { TurnGitHistory } from "./workspaces/workspace-service-contracts";
+import type { ConversationRewindAdapter } from "./sessions/session-rewind";
+import { durableWrite, refComponent } from "./git/turn-git-history";
+import { previewContextualSession } from "./sessions/contextual-session";
 import {
   composeNoteContext,
   noteContextMeta,
@@ -25,9 +30,9 @@ import {
 } from "../src/features/notes/noteContext";
 import { isEditTool } from "../src/integrations/harness/core/preview";
 import { homedir } from "node:os";
-import { HandoffHistoryStore } from "./handoff-history";
+import { HandoffHistoryStore } from "./tasks/handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
-import { renameHostWorktreeBranch, resolveHostWorktreeAsync } from "./git-worktrees";
+import { renameHostWorktreeBranch, resolveHostWorktreeAsync } from "./git/git-worktrees";
 import {
   applyHarnessEvent,
   promoteLastAssistantToPlan,
@@ -88,18 +93,23 @@ import {
   type RemoteProvider,
   type ContextualSessionInput,
 } from "../src/features/connections/model/protocol";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import {
   ProviderActivityRetirements,
   stopCapturedProvider,
   type ProviderActivityRetirement,
-} from "./provider-activity-retirement";
+} from "./providers/provider-activity-retirement";
 import { HostStore } from "./store";
-import { isSessionRunActivity } from "./session-run-activity";
-import { parseRemoteAttachments, resolveAttachments } from "./attachments";
-import { runHostShell } from "./shell";
-import { isTaskWorktreeRemoving } from "./task-worktree-cleanup";
-import { prepareHostSkillPrompt } from "./prompt-skills";
+import { isSessionRunActivity } from "./sessions/session-run-activity";
+import {
+  parseRemoteAttachments,
+  resolveAttachments,
+} from "./attachments/attachments";
+import { runHostShell } from "./execution/shell";
+import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
+import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
+import { prepareHostSkillPrompt } from "./skills/prompt-skills";
+import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import {
   forgetRuntimeHint,
   harnessRuntimeHints,
@@ -220,6 +230,37 @@ function secondOpinionMeta(value: unknown): SecondOpinionMeta | undefined {
   };
 }
 
+/** Evidence belongs to each actual utility invocation under the original context. */
+function utilityCompletionProof() {
+  const pending = new Set<object>();
+  const seen = new Set<object>();
+  let completed = 0;
+  let failed = false;
+  return {
+    get completed() {
+      return completed > 0 && pending.size === 0 && !failed;
+    },
+    observe(isOwned: () => boolean) {
+      return {
+        onUtilityStarted(utility: object) {
+          if (!isOwned()) return;
+          if (seen.has(utility)) failed = true;
+          seen.add(utility);
+          pending.add(utility);
+        },
+        onUtilityCompleted(utility: object) {
+          if (!isOwned()) return;
+          if (!pending.delete(utility)) failed = true;
+          else completed++;
+        },
+        onUtilityFailed(_utility: object) {
+          if (isOwned()) failed = true;
+        },
+      };
+    },
+  };
+}
+
 export function parseCommand(input: unknown): HostCommand {
   const command = parseCommandBody(input);
   const value = (input as Record<string, unknown>).authorityGeneration;
@@ -282,6 +323,25 @@ function parseCommandBody(input: unknown): HostCommand {
     };
   }
   const sessionId = text(v.sessionId, "session ID");
+  if (v.type === "regenerateTitle") {
+    if (!isRemoteProvider(v.harness)) throw new Error("Invalid provider");
+    if (typeof v.expectedTitle !== "string" || v.expectedTitle.length > 4096)
+      throw new Error("Invalid expected session title");
+    return {
+      type: "regenerateTitle",
+      commandId,
+      sessionId,
+      expectedTitle: v.expectedTitle,
+      harness: v.harness,
+      model: text(v.model, "model", 200),
+      ...(v.modelSettings === undefined ? {} : { modelSettings: modelSettings(v.modelSettings) }),
+      ...(v.providerAccountId === undefined
+        ? {}
+        : {
+            providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness),
+          }),
+    };
+  }
   if (v.type === "contextual")
     return {
       type: "contextual",
@@ -290,6 +350,11 @@ function parseCommandBody(input: unknown): HostCommand {
       previewDigest: text(v.previewDigest, "reviewed context digest", 64),
     };
   if (v.type === "configure") {
+    if (
+      v.expectedRevision !== undefined &&
+      (!Number.isSafeInteger(v.expectedRevision) || Number(v.expectedRevision) < 0)
+    )
+      throw new Error("Invalid expected session revision");
     if (v.harness !== undefined && !isRemoteProvider(v.harness))
       throw new Error("Invalid provider");
     if (!RUNTIME_MODES.includes(v.runtimeMode as never)) throw new Error("Invalid permission mode");
@@ -297,6 +362,7 @@ function parseCommandBody(input: unknown): HostCommand {
       type: "configure",
       commandId,
       sessionId,
+      ...(v.expectedRevision === undefined ? {} : { expectedRevision: Number(v.expectedRevision) }),
       ...(v.harness !== undefined ? { harness: v.harness as RemoteProvider } : {}),
       // With an omitted harness this is only the account ID syntax check. The
       // actual persisted target provider/profile is checked before mutation.
@@ -334,6 +400,12 @@ function parseCommandBody(input: unknown): HostCommand {
     };
   }
   if (v.type === "send" || v.type === "draft" || v.type === "steer") {
+    if (
+      v.type === "draft" &&
+      v.expectedRevision !== undefined &&
+      (!Number.isSafeInteger(v.expectedRevision) || Number(v.expectedRevision) < 0)
+    )
+      throw new Error("Invalid expected session revision");
     if (
       v.noteCard !== undefined &&
       (v.type !== "send" ||
@@ -388,6 +460,9 @@ function parseCommandBody(input: unknown): HostCommand {
       type: v.type,
       commandId,
       sessionId,
+      ...(v.type === "draft" && v.expectedRevision !== undefined
+        ? { expectedRevision: Number(v.expectedRevision) }
+        : {}),
       ...resumeAtReset,
       text: v.text,
       ...(attachments.length ? { attachments } : {}),
@@ -467,54 +542,8 @@ function parseCommandBody(input: unknown): HostCommand {
     };
   }
   if (v.type === "answer") {
-    const reply = v.reply as { kind?: string; answers?: unknown; custom?: unknown } | undefined;
-    if (reply?.kind === "skipped")
-      return {
-        type: "answer",
-        commandId,
-        sessionId,
-        runId,
-        requestId,
-        reply: { kind: "skipped" },
-      };
-    if (
-      reply?.kind === "answered" &&
-      reply.answers &&
-      typeof reply.answers === "object" &&
-      !Array.isArray(reply.answers)
-    ) {
-      const entries = Object.entries(reply.answers);
-      if (
-        entries.length > 50 ||
-        entries.some(
-          ([key, value]) =>
-            key.length > 200 ||
-            !Array.isArray(value) ||
-            value.length > 50 ||
-            value.some((x) => typeof x !== "string" || x.length > 10_000),
-        )
-      )
-        throw new Error("Invalid question answers");
-      if (
-        reply.custom != null &&
-        (typeof reply.custom !== "object" ||
-          Array.isArray(reply.custom) ||
-          Object.values(reply.custom).some((x) => typeof x !== "string" || x.length > 10_000))
-      )
-        throw new Error("Invalid custom answers");
-      return {
-        type: "answer",
-        commandId,
-        sessionId,
-        runId,
-        requestId,
-        reply: {
-          kind: "answered",
-          answers: Object.fromEntries(entries),
-          ...(reply.custom ? { custom: reply.custom as Record<string, string> } : {}),
-        },
-      };
-    }
+    const reply = parseQuestionReply(v.reply);
+    return { type: "answer", commandId, sessionId, runId, requestId, reply };
   }
   throw new Error("Unsupported command");
 }
@@ -567,7 +596,7 @@ type ActiveHostTurn = {
   runId: string;
   priorBlockIds: Set<string>;
   ready: Promise<void>;
-  accepted?:boolean;
+  accepted?: boolean;
   steers: Promise<void>;
   controls: Promise<void>;
   done: Promise<void>;
@@ -591,15 +620,33 @@ type ActiveHostTurn = {
   operationContext?: HarnessOperationContext;
 };
 
-export type EngineCommandAdmission={
-    check:(stage:{phase:"command"|"provider";sessionId:string;runId?:string})=>Promise<void>;
-    onAccepted?:(receipt:CommandReceipt)=>Promise<void>;
+function retainWarmActivity(activity: ProviderActivityRetirement | undefined): void {
+  if (!activity) return;
+  void activity.retainWarm().catch((reason) => {
+    activity.recordFailure(reason);
+    console.error("Original warm provider activity release failed:", reason);
+  });
+}
+
+/** Only original writer authority survives a successfully settled warm turn. */
+type RetainedWriterTurn = Pick<
+  ActiveHostTurn,
+  "provider" | "activity" | "operationContext" | "authorityGeneration" | "cleanup"
+>;
+
+export type EngineCommandAdmission = {
+  check: (stage: {
+    phase: "command" | "provider";
+    sessionId: string;
+    runId?: string;
+  }) => Promise<void>;
+  onAccepted?: (receipt: CommandReceipt) => Promise<void>;
 };
 export class HostEngine {
-  private readonly commandAdmissions = new AsyncLocalStorage<EngineCommandAdmission|undefined>();
+  private readonly commandAdmissions = new AsyncLocalStorage<EngineCommandAdmission | undefined>();
   /** Internal captured execution authority; this is never part of a client command. */
-  withCommandAdmission<T>(admission:EngineCommandAdmission,work:()=>Promise<T>):Promise<T> {
-    return this.commandAdmissions.run(admission,work);
+  withCommandAdmission<T>(admission: EngineCommandAdmission, work: () => Promise<T>): Promise<T> {
+    return this.commandAdmissions.run(admission, work);
   }
   private readonly messageAuthors = new AsyncLocalStorage<SessionMessageAuthor>();
   withMessageAuthor<T>(author: SessionMessageAuthor, work: () => Promise<T>): Promise<T> {
@@ -608,22 +655,54 @@ export class HostEngine {
   /** Host-composed owner preferences; this never changes execution authority. */
   ownerInstructions?: () => Promise<string>;
   /** Host-owned scheduling fence. Never supplied by a provider or client command. */
-  beforeProviderTurn?:(input:{sessionId:string;runId?:string;author?:SessionMessageAuthor})=>Promise<void>;
-  private async checkProviderSchedule(sessionId:string,runId?:string){
-    const author=this.messageAuthors.getStore();
-    try{await this.beforeProviderTurn?.({sessionId,runId,...(author?{author:structuredClone(author)}:{})});}
-    catch(error){
-      if(error instanceof AssistantTurnPolicyDeferredError&&runId&&author?.kind==="task")await recordDeferredAssistantTurn(this.store,sessionId,runId,author.id,()=>!this.running.get(sessionId)?.providerEntered).catch(()=>undefined);
+  beforeProviderTurn?: (input: {
+    sessionId: string;
+    runId?: string;
+    author?: SessionMessageAuthor;
+  }) => Promise<void>;
+  private async checkProviderSchedule(sessionId: string, runId?: string) {
+    const author = this.messageAuthors.getStore();
+    try {
+      await this.beforeProviderTurn?.({
+        sessionId,
+        runId,
+        ...(author ? { author: structuredClone(author) } : {}),
+      });
+    } catch (error) {
+      if (error instanceof AssistantTurnPolicyDeferredError && runId && author?.kind === "task")
+        await recordDeferredAssistantTurn(
+          this.store,
+          sessionId,
+          runId,
+          author.id,
+          () => !this.running.get(sessionId)?.providerEntered,
+        ).catch(() => undefined);
       throw error;
     }
   }
   private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
+  private readonly deferredManagedBindings = new Map<
+    string,
+    {
+      projectId: string;
+      revision: number;
+      workspaceId: string;
+      providerSessionId: string | null;
+      harness: string | null;
+      cwd: string | null;
+      environmentId: string;
+    }
+  >();
   private running = new Map<string, ActiveHostTurn>();
-  private readonly questionReplyAuthors=new Map<string,{runId:string;token:string;reply:unknown;author:SessionMessageAuthor}>();
+  private readonly questionReplyAuthors = new Map<
+    string,
+    { runId: string; token: string; reply: unknown; author: SessionMessageAuthor }
+  >();
   /** Accepted turns whose provider dispatch has not yet installed their active run. */
   private dispatching = new Map<string, { runId: string | undefined; settled: Promise<void> }>();
   private readonly providerActivities = new ProviderActivityRetirements();
+  private readonly deletingSessions = new Set<string>();
   private readonly activityProviders = new Map<
     ProviderActivityRetirement,
     { id: string; provider: HostProvider }
@@ -643,7 +722,7 @@ export class HostEngine {
   /** Warm lightweight providers still belong to this engine and drain at shutdown. */
   private retainedProviders = new Map<string, Set<HostProvider>>();
   /** Original turn receipts retained for an explicit Host-to-desktop transfer. */
-  private retainedWriterTurns = new Map<string, ActiveHostTurn>();
+  private retainedWriterTurns = new Map<string, RetainedWriterTurn>();
 
   hasRetainedProviderWriter(id: string): boolean {
     return this.retainedWriterTurns.has(id);
@@ -651,7 +730,12 @@ export class HostEngine {
 
   /** Idle is not physical retirement. Keep the session operation locked until
    * the original provider has acknowledged cleanup and the caller grants its lease. */
-  async withRetiredProviderWriter<T>(id: string, grant: () => Promise<T>, admitted?:()=>Promise<void>): Promise<T> {
+  async withRetiredProviderWriter<T>(
+    id: string,
+    grant: () => Promise<T>,
+    admitted?: () => Promise<void>,
+    options?: { rebind?: boolean },
+  ): Promise<T> {
     await this.ready;
     return this.operations.run(id, async () => {
       await admitted?.();
@@ -662,7 +746,11 @@ export class HostEngine {
           const retire = original.provider.retireOriginal;
           const context = original.operationContext;
           if (!retire || !context || !original.activity)
-            throw new Error("HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.");
+            throw new Error(
+              options?.rebind === false
+                ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer cannot be safely retired; the session was not deleted."
+                : "HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.",
+            );
           original.cleanup = this.store.db.outsideScope(() =>
             original.activity!.retire(async () => {
               await this.store.assertAuthority(id, original.authorityGeneration);
@@ -676,28 +764,83 @@ export class HostEngine {
           await Promise.race([
             original.cleanup.then(() => original.activity?.release()),
             new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new Error(
-                "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
-              )), 20_000);
+              timer = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      options?.rebind === false
+                        ? "HOST_WRITER_RETIREMENT_PENDING: The original Host writer is still stopping; the session was not deleted. Retry after retirement completes."
+                        : "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
+                    ),
+                  ),
+                20_000,
+              );
             }),
           ]);
         } catch (error) {
-          if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:")) throw error;
-          throw new Error("HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.", { cause: error });
+          if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:"))
+            throw error;
+          throw new Error(
+            options?.rebind === false
+              ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer could not be retired; the session was not deleted."
+              : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.",
+            { cause: error },
+          );
         } finally {
           clearTimeout(timer);
         }
         this.retainedWriterTurns.delete(id);
-        this.retainedProviders.get(id)?.delete(original.provider);
+        this.forgetRetiredProvider(id, original.provider);
         // Keep only the persisted resume identity; never create a new history.
-        const current = (await this.store.session(id)).session;
-        if (current.providerSessionId)
-          original.provider.bind(id, current.providerSessionId, current.cwd, current.providerAccountId);
+        const current =
+          options?.rebind === false ? undefined : (await this.store.session(id)).session;
+        if (current?.providerSessionId)
+          original.provider.bind(
+            id,
+            current.providerSessionId,
+            current.cwd,
+            current.providerAccountId,
+          );
       }
       if (this.closing) throw new LeaseHeldError("host");
       await admitted?.();
       return grant();
     });
+  }
+  /** Deletion may not discard another retained provider cohort or rebind a retired writer. */
+  async withRetiredProviderWriterForDeletion<T>(
+    id: string,
+    remove: () => Promise<T>,
+    admitted: () => Promise<void>,
+  ): Promise<T> {
+    let held = false;
+    try {
+      return await this.withRetiredProviderWriter(
+        id,
+        remove,
+        async () => {
+          if (!held) {
+            this.deletingSessions.add(id);
+            held = true;
+          }
+          await admitted();
+          const writer = this.retainedWriterTurns.get(id);
+          const otherActivity = [...this.activityProviders].some(
+            ([activity, owner]) => owner.id === id && activity !== writer?.activity,
+          );
+          const otherProvider = [...(this.retainedProviders.get(id) ?? [])].some(
+            (provider) => provider !== writer?.provider,
+          );
+          if (otherActivity || otherProvider)
+            throw new Error(
+              "HOST_WRITER_RETIREMENT_FAILED: Other original provider work remains; the session was not deleted.",
+            );
+        },
+        { rebind: false },
+      );
+    } finally {
+      if (held) this.deletingSessions.delete(id);
+    }
   }
   private closing = false;
   private closePromise?: Promise<void>;
@@ -767,14 +910,20 @@ export class HostEngine {
   }
 
   private async executionActivity(value: HostSession, kind: "provider" | "shell") {
+    await assertShellOwnershipAvailable(this.store, value.session.worktreeCwd ?? value.session.cwd);
     if (isTaskWorktreeRemoving(value.session.worktreeCwd ?? value.session.cwd))
       throw new Error("The task checkout is being removed; wait before starting work");
-    await this.managedWorkspace(value);
-    if (!(await this.exactGitRewindEnabled())) return undefined;
+    const workspace = await this.managedWorkspace(value);
+    const exactGitRewind = await this.exactGitRewindEnabled();
+    const executionCwd = workspace?.path ?? value.session.worktreeCwd ?? value.session.cwd;
+    await assertShellOwnershipAvailable(this.store, executionCwd);
+    if (isTaskWorktreeRemoving(executionCwd))
+      throw new Error("The task checkout is being removed; wait before starting work");
+    if (!exactGitRewind) return undefined;
     return this.managedTurns?.startActivity?.(value, kind);
   }
-
   private reserveProviderActivity(id: string, provider: HostProvider): ProviderActivityRetirement {
+    if (this.deletingSessions.has(id)) throw new Error("Session deletion is in progress");
     const original = this.providerActivities.reserve(id, () =>
       this.activityProviders.delete(original),
     );
@@ -786,6 +935,13 @@ export class HostEngine {
     const retained = this.retainedProviders.get(id) ?? new Set<HostProvider>();
     retained.add(provider);
     this.retainedProviders.set(id, retained);
+  }
+
+  private forgetRetiredProvider(id: string, provider: HostProvider): void {
+    const retained = this.retainedProviders.get(id);
+    if (!retained) return;
+    retained.delete(provider);
+    if (retained.size === 0) this.retainedProviders.delete(id);
   }
 
   private stopOriginalTurn(id: string, original: ActiveHostTurn): Promise<void> {
@@ -849,6 +1005,60 @@ export class HostEngine {
       );
     if (workspace && (await this.exactGitRewindEnabled()))
       await this.managedTurns!.assertWritable(workspace.workspaceId);
+    const deferred = this.deferredManagedBindings.get(value.session.id);
+    if (deferred) {
+      const current = await this.store.session(value.session.id);
+      const identity = await this.store.sessionStartupIdentity(value.session.id);
+      if (
+        !identity ||
+        this.store.environmentId !== deferred.environmentId ||
+        identity.revision !== deferred.revision ||
+        identity.projectId !== deferred.projectId ||
+        identity.workspaceId !== deferred.workspaceId ||
+        identity.providerSessionId !== deferred.providerSessionId ||
+        identity.harness !== deferred.harness ||
+        identity.cwd !== deferred.cwd ||
+        current.revision !== deferred.revision ||
+        current.projectId !== deferred.projectId ||
+        current.session.workspaceId !== deferred.workspaceId ||
+        current.revision !== value.revision ||
+        current.projectId !== value.projectId ||
+        current.authorityGeneration !== value.authorityGeneration ||
+        current.session.workspaceId !== value.session.workspaceId ||
+        current.session.worktreeCwd !== value.session.worktreeCwd ||
+        current.session.providerSessionId !== value.session.providerSessionId ||
+        current.session.harness !== value.session.harness ||
+        current.session.providerAccountId !== value.session.providerAccountId
+      ) {
+        // Retire the stale attempt. A later explicit attempt may validate a
+        // coherent replacement, but this operation never binds that replacement.
+        if (
+          identity?.workspaceId &&
+          this.store.environmentId === deferred.environmentId &&
+          identity.projectId === current.projectId &&
+          identity.revision === current.revision &&
+          identity.workspaceId === current.session.workspaceId &&
+          identity.providerSessionId === (current.session.providerSessionId || null) &&
+          identity.harness === current.session.harness &&
+          identity.cwd === current.session.cwd
+        )
+          this.deferredManagedBindings.set(value.session.id, {
+            ...identity,
+            workspaceId: identity.workspaceId,
+            environmentId: deferred.environmentId,
+          });
+        throw new Error("Session identity changed before deferred provider binding");
+      }
+      await this.store.assertAuthority(value.session.id, value.authorityGeneration);
+      if (value.session.providerSessionId)
+        this.provider(value.session.harness).bind(
+          value.session.id,
+          value.session.providerSessionId,
+          workspace?.path ?? value.session.cwd,
+          value.session.providerAccountId,
+        );
+      this.deferredManagedBindings.delete(value.session.id);
+    }
     return workspace;
   }
 
@@ -937,7 +1147,9 @@ export class HostEngine {
         if (
           this.running.has(sessionId) ||
           latest.status === "running" ||
-          latest.session.blocks.some((block) => block.shell?.running) ||
+          latest.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          ) ||
           (latest.session.backgroundTasks?.length ?? 0) > 0 ||
           (latest.session.backgroundAgents ?? 0) > 0 ||
           (latest.session.queuedMessages?.length ?? 0) > 0
@@ -1101,20 +1313,6 @@ export class HostEngine {
     };
   }
 
-  /** Minimal session identity for `workspaceForSession` (project, id, workspace, worktree), without the transcript. */
-  private async managedIdentity(id: string, workspaceId: string): Promise<HostSession | undefined> {
-    const row = await this.store.db
-      .prepare(
-        "SELECT project_id, json_extract(snapshot, '$.session.worktreeCwd') AS worktree_cwd FROM sessions WHERE id=?",
-      )
-      .get(id);
-    if (!row?.project_id || !row.worktree_cwd) return undefined;
-    return {
-      projectId: String(row.project_id),
-      session: { id, workspaceId, worktreeCwd: String(row.worktree_cwd) },
-    } as unknown as HostSession;
-  }
-
   private async initialize(managedOnly = false): Promise<void> {
     await this.store.ready;
     const store = this.store;
@@ -1126,27 +1324,35 @@ export class HostEngine {
     for (const state of await store.startupStates()) {
       if (!this.managedTurns && state.workspaceId) continue;
       if (managedOnly && !state.workspaceId) continue;
-      // An idle, desktop-shared managed session only needs its workspace identity
-      // validated and its provider bound: read that identity from two columns instead
-      // of parsing and normalizing the whole transcript. A missing column falls back
-      // to the full snapshot, so validation is never skipped.
-      const lean =
+      // An idle managed conversation needs no provider until an explicit operation.
+      // Its exact workspace and authority are validated when that operation loads it.
+      if (
         this.managedTurns &&
         state.workspaceId &&
+        state.status === "idle" &&
         state.hasDesktop &&
-        !state.running &&
-        !state.shellRunning
-          ? await this.managedIdentity(state.id, state.workspaceId)
-          : undefined;
-      const snapshot = lean
-        ? undefined
-        : this.managedTurns || state.running || state.shellRunning || !state.hasDesktop
+        !state.shellRunning &&
+        !state.hasAuthority
+      ) {
+        this.deferredManagedBindings.set(state.id, {
+          projectId: state.projectId,
+          revision: state.revision,
+          workspaceId: state.workspaceId,
+          providerSessionId: state.providerSessionId,
+          harness: state.harness,
+          cwd: state.cwd,
+          environmentId: store.environmentId,
+        });
+        continue;
+      }
+      const snapshot =
+        this.managedTurns || state.running || state.shellRunning || !state.hasDesktop
           ? await store.session(state.id)
           : undefined;
       // The CLI creates the engine before the shared recovery graph. Never run legacy
       // recovery against a durable managed conversation in that interval.
       if (!this.managedTurns && snapshot?.session.workspaceId) continue;
-      const managedValue = this.managedTurns ? (snapshot ?? lean) : undefined;
+      const managedValue = this.managedTurns ? snapshot : undefined;
       let managed:
         | Awaited<ReturnType<ManagedTurnHistoryAdapter["workspaceForSession"]>>
         | undefined;
@@ -1178,7 +1384,7 @@ export class HostEngine {
           );
         continue;
       }
-      let value = snapshot ?? (await store.session(state.id));
+      let value = managedValue ?? (await store.session(state.id));
       // Sessions started here before they were shared with this machine's
       // desktop app become shared too, so the app on this machine lists them.
       if (!value.desktop)
@@ -1696,6 +1902,113 @@ export class HostEngine {
     );
   }
 
+  private async regenerateTitleCommand(
+    command: Extract<HostCommand, { type: "regenerateTitle" }>,
+    signature: string,
+  ): Promise<CommandReceipt> {
+    const id = command.sessionId;
+    if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
+    await this.flush(id);
+    const original = await this.store.session(id);
+    if (original.session.title !== command.expectedTitle)
+      throw new Error("Conversation title changed. Try again.");
+    const workspace = await this.managedWorkspace(original);
+    assertModelProvider(command.harness, command.model);
+    const providerAccountId =
+      command.providerAccountId === undefined
+        ? undefined
+        : await assertHostProviderAccount(command.harness, command.providerAccountId);
+    const provider = this.provider(command.harness);
+    if (!provider.generateTitle)
+      throw new Error("This provider cannot generate conversation titles.");
+    const message = original.session.blocks
+      .filter(
+        (block) =>
+          (block.role === "user" || block.role === "assistant") &&
+          !block.draft &&
+          !block.internal &&
+          block.text?.trim(),
+      )
+      .map((block) => `${block.role}: ${block.text}`)
+      .join("\n\n")
+      .slice(-24000);
+    if (!message.trim()) throw new Error("Conversation has no messages to generate a title from.");
+    const value = {
+      ...original,
+      session: {
+        ...original.session,
+        harness: command.harness,
+        cwd: workspace?.path ?? original.session.cwd,
+      },
+    };
+    const activity = this.reserveProviderActivity(id, provider);
+    let generated;
+    let entered = false;
+    const utilityProof = utilityCompletionProof();
+    try {
+      await activity.start(() => this.executionActivity(value, "provider"), command.harness);
+      entered = true;
+      generated = await this.withProviderRun(
+        value,
+        (operationContext) =>
+          provider.generateTitle!({
+            sessionId: id,
+            cwd: value.session.cwd,
+            message,
+            model: command.model,
+            modelSettings: command.modelSettings,
+            providerAccountId,
+            operationContext,
+          }),
+        true,
+        utilityProof,
+      );
+      if (!utilityProof.completed) this.retainProvider(id, provider);
+    } catch (error) {
+      if (entered) this.retainProvider(id, provider);
+      activity.recordFailure(error);
+      throw error;
+    } finally {
+      void activity.retainWarm().catch((error) => activity.recordFailure(error));
+      activity.bookkeepingFinished();
+    }
+    if (!generated) {
+      throw new Error("Could not generate a conversation title. Try again.");
+    }
+    if (this.closing) throw new Error("Host is stopping");
+    await this.store.db.checkAuthorization();
+    await this.store.assertAuthority(id, original.authorityGeneration);
+    await this.flush(id);
+    const current = await this.store.session(id);
+    await this.managedWorkspace(current);
+    if (current.session.title !== command.expectedTitle)
+      throw new Error("Conversation title changed. Try again.");
+    return this.store.transaction(async () => {
+      const saved = await this.save(
+        {
+          ...current,
+          session: {
+            ...current.session,
+            title: formatSessionTitle(current.session.harness, generated.title),
+          },
+        },
+        { type: "session.regeneratedTitle", commandId: command.commandId },
+      );
+      const receipt = {
+        commandId: command.commandId,
+        sessionId: id,
+        revision: saved.revision,
+        ...(saved.authorityGeneration === undefined
+          ? {}
+          : { authorityGeneration: saved.authorityGeneration }),
+      };
+      await this.store.recordReceipt(signature, receipt);
+      const live = this.live.get(id);
+      if (live) live.value = saved;
+      return receipt;
+    }, "critical");
+  }
+
   async updateSession(
     id: string,
     patch: Parameters<HostStore["updateSession"]>[1],
@@ -1721,7 +2034,12 @@ export class HostEngine {
   async continueSessionHistory(input: {
     sessionId: string;
     requestId: string;
-    source: { projectId: string; executionCwd: string; authorityGeneration?: number; runId?: string };
+    source: {
+      projectId: string;
+      executionCwd: string;
+      authorityGeneration?: number;
+      runId?: string;
+    };
     text: string;
     brief: string;
     author: SessionMessageAuthor;
@@ -1735,10 +2053,19 @@ export class HostEngine {
     text(requestId, "continuation request ID", 100);
     text(input.text, "continuation request", 32000);
     text(input.brief, "continuation packet", 32000);
-    const signature = createHash("sha256").update(JSON.stringify({
-      type: "task.history.continue", sessionId, requestId, source: input.source,
-      text: input.text, brief: input.brief, author: input.author,
-    })).digest("hex");
+    const signature = createHash("sha256")
+      .update(
+        JSON.stringify({
+          type: "task.history.continue",
+          sessionId,
+          requestId,
+          source: input.source,
+          text: input.text,
+          brief: input.brief,
+          author: input.author,
+        }),
+      )
+      .digest("hex");
     return this.operations.run(sessionId, async () => {
       const previous = await this.store.receipt(requestId, signature);
       if (previous) return previous;
@@ -1752,16 +2079,32 @@ export class HostEngine {
         await this.store.assertAuthority(sessionId, input.source.authorityGeneration);
         const current = await this.store.session(sessionId);
         const session = current.session;
-        if (current.status !== "idle" || current.projectId !== input.source.projectId ||
+        if (
+          current.status !== "idle" ||
+          current.projectId !== input.source.projectId ||
           (session.worktreeCwd ?? session.cwd) !== input.source.executionCwd ||
-          current.authorityGeneration !== input.source.authorityGeneration || current.runId !== input.source.runId)
+          current.authorityGeneration !== input.source.authorityGeneration ||
+          current.runId !== input.source.runId
+        )
           throw new Error("The original worker execution identity changed before continuation.");
-        if (session.pendingQuestion || session.pendingSwitch || pendingHandoff(session) ||
-          session.queuedMessages?.length || session.blocks.some(block => block.draft ||
-            (!!block.approval && !block.approval.decided) || block.followUpDelivery === "uncertain" ||
-            block.followUpDelivery === "pending" ||
-            (block.tool?.status !== undefined && ["running", "in_progress", "pending"].includes(block.tool.status)) ||
-            (block.agentRun !== undefined && block.agentRun.endedAt === undefined) || block.shell?.running))
+        if (
+          session.pendingQuestion ||
+          session.pendingSwitch ||
+          pendingHandoff(session) ||
+          session.queuedMessages?.length ||
+          session.blocks.some(
+            (block) =>
+              block.draft ||
+              (!!block.approval && !block.approval.decided) ||
+              block.followUpDelivery === "uncertain" ||
+              block.followUpDelivery === "pending" ||
+              (block.tool?.status !== undefined &&
+                ["running", "in_progress", "pending"].includes(block.tool.status)) ||
+              (block.agentRun !== undefined && block.agentRun.endedAt === undefined) ||
+              block.shell?.running ||
+              block.shell?.terminationFailed,
+          )
+        )
           throw new Error("Resolve the worker's pending input before continuing its history.");
         return current;
       };
@@ -1775,22 +2118,58 @@ export class HostEngine {
           const current = await check();
           await this.managedWorkspace(current);
           await check();
-          await this.save({ ...current, session: appendReadyHandoff({
-            ...current.session, providerSessionId: undefined, context: undefined,
-          }, current.session.harness, current.session.harness, input.brief) }, {
-            type: "session.taskContinuation", operationId: requestId,
-            sourceRunId: input.source.runId,
-          });
+          await this.save(
+            {
+              ...current,
+              session: appendReadyHandoff(
+                {
+                  ...current.session,
+                  providerSessionId: undefined,
+                  context: undefined,
+                },
+                current.session.harness,
+                current.session.harness,
+                input.brief,
+              ),
+            },
+            {
+              type: "session.taskContinuation",
+              operationId: requestId,
+              sourceRunId: input.source.runId,
+            },
+          );
           input.signal.throwIfAborted();
-          const sent = await this.withCommandAdmission({check:async stage=>{
-            input.signal.throwIfAborted();await input.admitted();
-            const latest=await this.store.session(sessionId);
-            if(stage.sessionId!==sessionId||latest.projectId!==input.source.projectId||(latest.session.worktreeCwd??latest.session.cwd)!==input.source.executionCwd||latest.authorityGeneration!==input.source.authorityGeneration||latest.runId!==(stage.phase==="command"?input.source.runId:stage.runId))throw new Error("The continued worker's captured source changed before dispatch.");
-            input.signal.throwIfAborted();
-          }},()=>this.withMessageAuthor(input.author, () => this.command({
-            type: "send", commandId: `${requestId}-send`, sessionId,
-            text: input.text, authorityGeneration: input.source.authorityGeneration,
-          })));
+          const sent = await this.withCommandAdmission(
+            {
+              check: async (stage) => {
+                input.signal.throwIfAborted();
+                await input.admitted();
+                const latest = await this.store.session(sessionId);
+                if (
+                  stage.sessionId !== sessionId ||
+                  latest.projectId !== input.source.projectId ||
+                  (latest.session.worktreeCwd ?? latest.session.cwd) !==
+                    input.source.executionCwd ||
+                  latest.authorityGeneration !== input.source.authorityGeneration ||
+                  latest.runId !== (stage.phase === "command" ? input.source.runId : stage.runId)
+                )
+                  throw new Error(
+                    "The continued worker's captured source changed before dispatch.",
+                  );
+                input.signal.throwIfAborted();
+              },
+            },
+            () =>
+              this.withMessageAuthor(input.author, () =>
+                this.command({
+                  type: "send",
+                  commandId: `${requestId}-send`,
+                  sessionId,
+                  text: input.text,
+                  authorityGeneration: input.source.authorityGeneration,
+                }),
+              ),
+          );
           const receipt = { ...sent, commandId: requestId };
           await input.onAccepted(receipt);
           await this.store.recordReceipt(signature, receipt);
@@ -1903,7 +2282,7 @@ export class HostEngine {
                 original.activity?.bookkeepingFinished();
                 if (this.running.get(id) === original) {
                   this.live.delete(id);
-                  this.retainedProviders.get(id)?.delete(original.provider);
+                  this.forgetRetiredProvider(id, original.provider);
                   this.running.delete(id);
                 }
               }),
@@ -1971,7 +2350,9 @@ export class HostEngine {
    */
   private async prepareCreationEarly(
     raw: unknown,
-  ): Promise<{ value: Awaited<ReturnType<HostEngine["prepareCreation"]>> } | { error: unknown } | undefined> {
+  ): Promise<
+    { value: Awaited<ReturnType<HostEngine["prepareCreation"]>> } | { error: unknown } | undefined
+  > {
     if (!raw || typeof raw !== "object" || (raw as Record<string, unknown>).type !== "create")
       return undefined;
     let create: Extract<HostCommand, { type: "create" }>;
@@ -2010,8 +2391,8 @@ export class HostEngine {
     return early ? early.value : await this.prepareCreation(command);
   }
 
-  async command(raw: unknown): Promise<CommandReceipt> {
-    const admission=this.commandAdmissions.getStore();
+  async command(raw: unknown, validateQuestionAttachments?: () => Promise<void>): Promise<CommandReceipt> {
+    const admission = this.commandAdmissions.getStore();
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
     // Stop requests keep their existing control path; SQL still enforces its own gate.
@@ -2022,151 +2403,398 @@ export class HostEngine {
       (raw.type === "cancel" || raw.type === "stopItem");
     if (!stopping) this.store.db.assertWriteAdmission();
     const early = await this.prepareCreationEarly(raw);
-    const operationKey=typeof raw==="object"&&raw!==null&&"sessionId" in raw?String(raw.sessionId):`create:${typeof raw==="object"&&raw!==null&&"commandId" in raw?raw.commandId:randomUUID()}`;
+    const operationKey =
+      typeof raw === "object" && raw !== null && "sessionId" in raw
+        ? String(raw.sessionId)
+        : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : randomUUID()}`;
     // Internal guarded work waits outside SQLite admission so an owner can
     // revoke its durable grant while an earlier session operation is pending.
     // Nested same-session calls remain reentrant inside their existing owner.
-    const admittedScope=(work:()=>Promise<CommandReceipt>)=>admission?this.operations.run(operationKey,()=>this.store.db.scope(work)):this.store.db.scope(work);
+    const admittedScope = (work: () => Promise<CommandReceipt>) =>
+      admission
+        ? this.operations.run(operationKey, () => this.store.db.scope(work))
+        : this.store.db.scope(work);
     return admittedScope(() =>
-      this.operations.run(
-        operationKey,
-        async () => {
-          if(admission)await admission.check({phase:"command",sessionId:typeof raw==="object"&&raw!==null&&"sessionId" in raw?String(raw.sessionId):""});
-          if (
-            raw &&
-            typeof raw === "object" &&
-            (raw as Record<string, unknown>).type === "create" &&
-            (raw as Record<string, unknown>).firstTurn !== undefined
-          ) {
-            const input = raw as Record<string, unknown>;
-            const create = parseCommand({ ...input, firstTurn: undefined });
-            if (create.type !== "create") throw new Error("Invalid session creation");
-            const first = parseCommand({ ...(input.firstTurn as object), sessionId: "pending" });
-            if (first.type !== "send" && first.type !== "draft")
-              throw new Error("Invalid first turn");
-            const signature = createHash("sha256")
-              .update(JSON.stringify({ create, first }))
-              .digest("hex");
-            const previous = await this.store.receipt(create.commandId, signature);
-            if (previous) return previous;
-            const prepared = await this.preparedCreation(early, create);
-            return await this.store.transaction(async () => {
-              const created = await this.command({
-                ...create,
-                ...(prepared ? { workspaceId: prepared.workspaceId, worktreeCwd: undefined } : {}),
-                commandId: `${create.commandId}:create`,
-              });
-              const sent = await this.command({ ...first, sessionId: created.sessionId });
-              const receipt = { ...sent, commandId: create.commandId };
-              await this.store.recordReceipt(signature, receipt);
-              return receipt;
-            }, "critical");
-          }
-          if (this.closing) throw new Error("Host is stopping");
-          const command = parseCommand(raw);
-          if (command.type !== "create")
-            await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
-          if (
-            (command.type === "cancel" || command.type === "stopItem") &&
-            this.store.db.persistenceHealth().state !== "ready"
-          )
-            return this.emergencyControl(command);
-          if (command.type !== "cancel" && command.type !== "stopItem")
-            this.store.db.assertWriteAdmission();
-          if (command.type === "rewind")
-            throw new Error("Rewind commands must use the asynchronous rewind handler");
-          const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
-          const previous = await this.store.receipt(command.commandId, signature);
+      this.operations.run(operationKey, async () => {
+        if (admission)
+          await admission.check({
+            phase: "command",
+            sessionId:
+              typeof raw === "object" && raw !== null && "sessionId" in raw
+                ? String(raw.sessionId)
+                : "",
+          });
+        if (
+          raw &&
+          typeof raw === "object" &&
+          (raw as Record<string, unknown>).type === "create" &&
+          (raw as Record<string, unknown>).firstTurn !== undefined
+        ) {
+          const input = raw as Record<string, unknown>;
+          const create = parseCommand({ ...input, firstTurn: undefined });
+          if (create.type !== "create") throw new Error("Invalid session creation");
+          const first = parseCommand({ ...(input.firstTurn as object), sessionId: "pending" });
+          if (first.type !== "send" && first.type !== "draft")
+            throw new Error("Invalid first turn");
+          const signature = createHash("sha256")
+            .update(JSON.stringify({ create, first }))
+            .digest("hex");
+          const previous = await this.store.receipt(create.commandId, signature);
           if (previous) return previous;
-          if (command.type === "contextual")
-            return await this.contextualCommand(command, signature);
-          const prepared =
-            command.type === "create" ? await this.preparedCreation(early, command) : undefined;
-          if (command.type !== "create" && this.rewinding.has(command.sessionId))
-            throw new Error("A conversation change is in progress");
-          // Commands apply to the latest state, including batched stream output.
-          if (command.type !== "create") await this.flush(command.sessionId);
-          if (command.type !== "create" && command.type !== "cancel" && command.type !== "stopItem")
-            await this.managedWorkspace(await this.store.session(command.sessionId));
-          let effect: ((saved: HostSession) => void) | undefined;
-          const { receipt, saved } = await this.store.transaction(async () => {
-            let value: HostSession;
-            if (command.type === "create") {
-              assertModelProvider(command.harness, command.model);
-              const project = await this.store.project(command.projectId);
-              if (this.switchingProjects.has(project.id))
-                throw new Error("Wait for the branch switch to finish");
-              this.provider(command.harness);
-              const workspaceId = prepared?.workspaceId ?? command.workspaceId;
-              const managed = workspaceId
-                ? await this.managedTurns?.workspaceForCreate?.({
-                    projectId: project.id,
-                    workspaceId,
-                    worktreeCwd: command.workspaceId ? command.worktreeCwd : undefined,
-                  })
-                : undefined;
-              if (workspaceId && managed?.workspaceId !== workspaceId)
-                throw new Error(
-                  "Managed session creation requires authoritative workspace ownership",
-                );
-              if (managed && (await this.exactGitRewindEnabled()))
-                await this.managedTurns!.assertWritable(managed.workspaceId);
-              if (
-                command.sessionId &&
-                managed?.sessionId &&
-                command.sessionId !== managed.sessionId
+          const prepared = await this.preparedCreation(early, create);
+          return await this.store.transaction(async () => {
+            const created = await this.command({
+              ...create,
+              ...(prepared ? { workspaceId: prepared.workspaceId, worktreeCwd: undefined } : {}),
+              commandId: `${create.commandId}:create`,
+            });
+            const sent = await this.command({ ...first, sessionId: created.sessionId });
+            const receipt = { ...sent, commandId: create.commandId };
+            await this.store.recordReceipt(signature, receipt);
+            return receipt;
+          }, "critical");
+        }
+        if (this.closing) throw new Error("Host is stopping");
+        const command = parseCommand(raw);
+        if (command.type !== "create")
+          await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
+        if (
+          (command.type === "cancel" || command.type === "stopItem") &&
+          this.store.db.persistenceHealth().state !== "ready"
+        )
+          return this.emergencyControl(command);
+        if (command.type !== "cancel" && command.type !== "stopItem")
+          this.store.db.assertWriteAdmission();
+        if (command.type === "rewind")
+          throw new Error("Rewind commands must use the asynchronous rewind handler");
+        const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
+        const previous = await this.store.receipt(command.commandId, signature);
+        if (previous) return previous;
+        if (command.type === "contextual") return await this.contextualCommand(command, signature);
+        if (command.type === "regenerateTitle")
+          return this.regenerateTitleCommand(command, signature);
+        const prepared =
+          command.type === "create" ? await this.preparedCreation(early, command) : undefined;
+        if (command.type !== "create" && this.rewinding.has(command.sessionId))
+          throw new Error("A conversation change is in progress");
+        // Commands apply to the latest state, including batched stream output.
+        if (command.type !== "create") await this.flush(command.sessionId);
+        if (command.type !== "create" && command.type !== "cancel" && command.type !== "stopItem")
+          await this.managedWorkspace(await this.store.session(command.sessionId));
+        let effect: ((saved: HostSession) => void) | undefined;
+        const { receipt, saved } = await this.store.transaction(async () => {
+          let value: HostSession;
+          if (command.type === "create") {
+            assertModelProvider(command.harness, command.model);
+            const project = await this.store.project(command.projectId);
+            if (this.switchingProjects.has(project.id))
+              throw new Error("Wait for the branch switch to finish");
+            this.provider(command.harness);
+            const workspaceId = prepared?.workspaceId ?? command.workspaceId;
+            const managed = workspaceId
+              ? await this.managedTurns?.workspaceForCreate?.({
+                  projectId: project.id,
+                  workspaceId,
+                  worktreeCwd: command.workspaceId ? command.worktreeCwd : undefined,
+                })
+              : undefined;
+            if (workspaceId && managed?.workspaceId !== workspaceId)
+              throw new Error(
+                "Managed session creation requires authoritative workspace ownership",
+              );
+            if (managed && (await this.exactGitRewindEnabled()))
+              await this.managedTurns!.assertWritable(managed.workspaceId);
+            if (command.sessionId && managed?.sessionId && command.sessionId !== managed.sessionId)
+              throw new Error("Requested session identity does not own this workspace");
+            const cwd =
+              managed?.path ?? (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd));
+            const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
+            await this.store.assertAuthority(sessionId, command.authorityGeneration);
+            if (await this.store.sessionAuthority(sessionId))
+              throw new Error("This managed workspace already has its session; resume it instead");
+            const now = Date.now();
+            value = {
+              projectId: project.id,
+              autoWorktreeBranch: managed ? undefined : command.autoWorktreeBranch,
+              // Shared with this machine's desktop app from the start: it lists
+              // the session in its project, and turns it runs come back here.
+              desktop: { updatedAt: 0 },
+              revision: 0,
+              status: "idle",
+              createdAt: now,
+              updatedAt: now,
+              session: {
+                id: sessionId,
+                cwd,
+                ...(!managed ? { workspaceMode: "current" as const } : {}),
+                ...(managed
+                  ? {
+                      workspaceId: managed.workspaceId,
+                      workspaceRevision: managed.revision,
+                      worktreeCwd: managed.path,
+                      branch: managed.branchRef.replace(/^refs\/heads\//, ""),
+                    }
+                  : {}),
+                harness: command.harness,
+                ...(command.providerAccountId === undefined
+                  ? {}
+                  : { providerAccountId: command.providerAccountId }),
+                model: command.model,
+                runtimeMode: command.runtimeMode,
+                modelSettings: command.modelSettings ?? {},
+                title: "New remote session",
+                ...(!managed && command.autoWorktreeBranch
+                  ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
+                  : {}),
+                blocks: [],
+              },
+            };
+          } else {
+            value = await this.store.session(command.sessionId);
+            if (
+              (command.type === "configure" || command.type === "draft") &&
+              command.expectedRevision !== undefined &&
+              value.revision !== command.expectedRevision
+            )
+              throw new Error(
+                "The conversation changed. Read it again before changing settings or adding a draft.",
+              );
+            if (
+              (command.type === "send" || command.type === "steer" || command.type === "draft") &&
+              command.attachments?.some(
+                (file) =>
+                  file.browserAnnotation &&
+                  (file.browserAnnotation.projectId !== value.projectId ||
+                    file.browserAnnotation.sessionId !== value.session.id),
               )
-                throw new Error("Requested session identity does not own this workspace");
-              const cwd =
-                managed?.path ?? (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd));
-              const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
-              await this.store.assertAuthority(sessionId, command.authorityGeneration);
-              if (await this.store.sessionAuthority(sessionId))
-                throw new Error(
-                  "This managed workspace already has its session; resume it instead",
-                );
-              const now = Date.now();
+            )
+              throw new Error("Browser selection belongs to another project or conversation");
+            if (
+              (command.type === "send" || command.type === "compact") &&
+              this.switchingProjects.has(value.projectId)
+            )
+              throw new Error("Wait for the branch switch to finish");
+            const provider = this.provider(value.session.harness);
+            if (command.type === "configure") {
+              if (value.status === "running")
+                throw new Error("Wait for the current turn before changing settings");
+              const harness = command.harness ?? value.session.harness;
+              assertModelProvider(harness, command.model);
+              this.provider(harness);
+              const plan = planComposerSwitch(value.session, harness);
+              const changedHarness = value.session.harness !== harness;
+              const inheritedAccount =
+                plan.kind === "revert"
+                  ? plan.restoreProviderAccountId
+                  : changedHarness
+                    ? undefined
+                    : value.session.providerAccountId;
+              const selectedAccount =
+                command.providerAccountId === undefined
+                  ? inheritedAccount
+                  : command.providerAccountId === null
+                    ? undefined
+                    : await assertHostProviderAccount(harness, command.providerAccountId);
+              const changedAccount =
+                command.providerAccountId !== undefined &&
+                (selectedAccount ?? "default") !== (inheritedAccount ?? "default");
               value = {
-                projectId: project.id,
-                autoWorktreeBranch: managed ? undefined : command.autoWorktreeBranch,
-                // Shared with this machine's desktop app from the start: it lists
-                // the session in its project, and turns it runs come back here.
-                desktop: { updatedAt: 0 },
-                revision: 0,
-                status: "idle",
-                createdAt: now,
-                updatedAt: now,
+                ...value,
                 session: {
-                  id: sessionId,
-                  cwd,
-                  ...(!managed ? { workspaceMode: "current" as const } : {}),
-                  ...(managed
+                  ...value.session,
+                  harness,
+                  model: command.model,
+                  modelSettings: command.modelSettings,
+                  runtimeMode: command.runtimeMode,
+                  ...(changedHarness
                     ? {
-                        workspaceId: managed.workspaceId,
-                        workspaceRevision: managed.revision,
-                        worktreeCwd: managed.path,
-                        branch: managed.branchRef.replace(/^refs\/heads\//, ""),
+                        providerSessionId: undefined,
+                        providerAccountId: undefined,
+                        context: undefined,
+                        usageLimit: undefined,
                       }
                     : {}),
-                  harness: command.harness,
+                  ...(plan.kind === "arm" ? { pendingSwitch: plan.pending } : {}),
+                  ...(plan.kind === "empty" ? { pendingSwitch: undefined } : {}),
+                  ...(plan.kind === "revert"
+                    ? {
+                        pendingSwitch: undefined,
+                        providerSessionId: plan.restoreProviderSessionId,
+                        providerAccountId: plan.restoreProviderAccountId,
+                      }
+                    : {}),
                   ...(command.providerAccountId === undefined
                     ? {}
-                    : { providerAccountId: command.providerAccountId }),
-                  model: command.model,
-                  runtimeMode: command.runtimeMode,
-                  modelSettings: command.modelSettings ?? {},
-                  title: "New remote session",
-                  ...(!managed && command.autoWorktreeBranch
-                    ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
+                    : { providerAccountId: selectedAccount }),
+                  ...(changedAccount
+                    ? { providerSessionId: undefined, context: undefined, usageLimit: undefined }
                     : {}),
-                  blocks: [],
                 },
               };
-            } else {
-              value = await this.store.session(command.sessionId);
               if (
-                (command.type === "send" || command.type === "steer" || command.type === "draft") &&
-                command.attachments?.some(
+                changedAccount &&
+                !changedHarness &&
+                !value.session.pendingSwitch &&
+                value.session.blocks.some((block) => block.role === "user")
+              ) {
+                value = {
+                  ...value,
+                  session: appendReadyHandoff(
+                    value.session,
+                    harness,
+                    harness,
+                    buildDeterministicHandoff(value.session),
+                  ),
+                };
+              }
+              if (plan.kind === "revert" && plan.restoreProviderSessionId && !changedAccount) {
+                effect = (saved) =>
+                  this.provider(saved.session.harness).bind(
+                    saved.session.id,
+                    plan.restoreProviderSessionId!,
+                    saved.session.cwd,
+                    saved.session.providerAccountId,
+                  );
+              }
+            } else if (command.type === "draft") {
+              if (value.status === "running" || value.session.blocks.some((block) => block.draft))
+                throw new Error("This session cannot save another draft right now");
+              const attachments = resolveAttachments(this.store, command.attachments ?? []);
+              value = {
+                ...value,
+                session: {
+                  ...value.session,
+                  title: value.session.blocks.length
+                    ? value.session.title
+                    : titleFromPrompt(command.text, value.session.harness, attachments),
+                  blocks: [
+                    ...value.session.blocks,
+                    {
+                      id: command.commandId,
+                      role: "user",
+                      ...(this.messageAuthors.getStore()
+                        ? { author: this.messageAuthors.getStore() }
+                        : {}),
+                      text: command.text,
+                      ...(attachments.length ? { attachments } : {}),
+                      draft: true,
+                    },
+                  ],
+                },
+              };
+            } else if (command.type === "usageLimit") {
+              const limit = value.session.usageLimit;
+              if (limit) {
+                const { usageLimit: _dismissed, ...rest } = value.session;
+                value = {
+                  ...value,
+                  session:
+                    command.action === "dismiss"
+                      ? rest
+                      : {
+                          ...value.session,
+                          usageLimit: {
+                            ...limit,
+                            resumeAtReset: command.action === "arm",
+                          },
+                        },
+                };
+              }
+            } else if (command.type === "removeDraft") {
+              const draft = value.session.blocks.find(
+                (block) => block.id === command.draftBlockId && block.draft,
+              );
+              if (!draft) throw new Error("Draft not found");
+              if (
+                draft.followUpDelivery === "pending" ||
+                (value.status === "running" && draft.followUpDelivery)
+              )
+                throw new Error("Follow-up delivery is still active");
+              value = {
+                ...value,
+                session: {
+                  ...value.session,
+                  blocks: value.session.blocks.filter((block) => block.id !== draft.id),
+                },
+              };
+            } else if (command.type === "shell") {
+              // No model turn: the block is the whole effect, so it is allowed
+              // while a turn runs.
+              value = {
+                ...value,
+                session: {
+                  ...value.session,
+                  blocks: [...value.session.blocks, shellBlock(command.commandId, command.line)],
+                },
+              };
+              effect = (saved) =>
+                this.runShell(
+                  saved.session.id,
+                  command.commandId,
+                  saved.session.cwd,
+                  command.line,
+                  saved.authorityGeneration,
+                );
+            } else if (command.type === "send" || command.type === "compact") {
+              if (this.retainedWriterTurns.get(command.sessionId)?.cleanup)
+                throw new Error(
+                  "HOST_WRITER_RETIREMENT_PENDING: The previous Host writer retirement is pending or failed. Your message was not sent; complete the ownership transfer before continuing.",
+                );
+              // Legacy storage may contain a mixed provider/model identity.
+              // Refuse it before consuming handoff/replay or dispatching a turn.
+              assertModelProvider(value.session.harness, value.session.model);
+              if (value.status === "running") throw new Error("This session is already running");
+              if (command.type === "compact" && !provider.compact)
+                throw new Error("Context compaction is unavailable for this provider");
+              const draft =
+                command.type === "send" && command.draftBlockId
+                  ? value.session.blocks.find(
+                      (block) => block.id === command.draftBlockId && block.draft,
+                    )
+                  : undefined;
+              if (command.type === "send" && command.draftBlockId && !draft)
+                throw new Error("Draft not found");
+              const plan =
+                command.type === "send" && command.planBlockId
+                  ? value.session.blocks.find(
+                      (block) => block.id === command.planBlockId && block.role === "plan",
+                    )
+                  : command.type === "send" &&
+                      (command.intent ?? "default") === "default" &&
+                      !command.draftBlockId &&
+                      !command.attachments?.length
+                    ? approvedPlanForMessage(value.session, command.text)
+                    : undefined;
+              const turnIntent = plan
+                ? "build"
+                : command.type === "send"
+                  ? command.intent
+                  : undefined;
+              if (
+                command.type === "send" &&
+                (command.planBlockId || command.intent === "build") &&
+                (!plan || !isBuildablePlan(plan))
+              )
+                throw new Error("Plan is not ready to build");
+              if (
+                command.type === "send" &&
+                command.expectedPlanText !== undefined &&
+                plan?.text !== command.expectedPlanText
+              )
+                throw new Error(
+                  "The reviewed plan changed. Review the current plan before building.",
+                );
+              const approvedPlanText =
+                plan && command.type === "send" && command.expectedPlanText !== undefined
+                  ? command.text
+                  : plan?.text;
+              const attachments =
+                command.type === "send"
+                  ? (draft?.attachments ??
+                    resolveAttachments(this.store, command.attachments ?? []))
+                  : [];
+              if (
+                attachments.some(
                   (file) =>
                     file.browserAnnotation &&
                     (file.browserAnnotation.projectId !== value.projectId ||
@@ -2175,879 +2803,717 @@ export class HostEngine {
               )
                 throw new Error("Browser selection belongs to another project or conversation");
               if (
-                (command.type === "send" || command.type === "compact") &&
-                this.switchingProjects.has(value.projectId)
+                command.type === "send" &&
+                command.secondOpinion &&
+                command.secondOpinion.to !== value.session.harness
               )
-                throw new Error("Wait for the branch switch to finish");
-              const provider = this.provider(value.session.harness);
-              if (command.type === "configure") {
-                if (value.status === "running")
-                  throw new Error("Wait for the current turn before changing settings");
-                const harness = command.harness ?? value.session.harness;
-                assertModelProvider(harness, command.model);
-                this.provider(harness);
-                const plan = planComposerSwitch(value.session, harness);
-                const changedHarness = value.session.harness !== harness;
-                const inheritedAccount =
-                  plan.kind === "revert"
-                    ? plan.restoreProviderAccountId
-                    : changedHarness
-                      ? undefined
-                      : value.session.providerAccountId;
-                const selectedAccount =
-                  command.providerAccountId === undefined
-                    ? inheritedAccount
-                    : command.providerAccountId === null
-                      ? undefined
-                      : await assertHostProviderAccount(harness, command.providerAccountId);
-                const changedAccount =
-                  command.providerAccountId !== undefined &&
-                  (selectedAccount ?? "default") !== (inheritedAccount ?? "default");
+                throw new Error("The second opinion target does not match this conversation");
+              const shellRuns =
+                command.type === "send" ? pendingShellRuns(value.session.blocks) : [];
+              let turnText =
+                command.type === "send"
+                  ? plan
+                    ? buildPlanPrompt(approvedPlanText ?? plan.text)
+                    : turnIntent === "plan"
+                      ? planTurnPrompt(command.text)
+                      : command.noteCard
+                        ? composeNoteContext(command.noteCard, command.text)
+                        : command.text
+                  : "";
+              const codexGoal =
+                command.type === "send" &&
+                value.session.harness === "codex" &&
+                /^\s*\/goal(?=\s|$)/.test(command.text);
+              let handoffPromptPrepared = false;
+              let prepareSendPolicy:
+                | ((input: SendTurnInput) => SendTurnInput | Promise<SendTurnInput>)
+                | undefined;
+              // Read before the turn's own block lands after them.
+              let handoffText: string | undefined;
+              let handoffFrom: RemoteProvider | undefined;
+              const rewindReplay =
+                command.type === "send" ? conversationReplayPrompt(value.session) : "";
+              if (command.type === "send" && value.session.pendingSwitch) {
+                const from = value.session.pendingSwitch.from;
+                const brief = buildDeterministicHandoff(value.session, command.text);
                 value = {
                   ...value,
-                  session: {
-                    ...value.session,
-                    harness,
-                    model: command.model,
-                    modelSettings: command.modelSettings,
-                    runtimeMode: command.runtimeMode,
-                    ...(changedHarness
-                      ? {
-                          providerSessionId: undefined,
-                          providerAccountId: undefined,
-                          context: undefined,
-                          usageLimit: undefined,
-                        }
-                      : {}),
-                    ...(plan.kind === "arm" ? { pendingSwitch: plan.pending } : {}),
-                    ...(plan.kind === "empty" ? { pendingSwitch: undefined } : {}),
-                    ...(plan.kind === "revert"
-                      ? {
-                          pendingSwitch: undefined,
-                          providerSessionId: plan.restoreProviderSessionId,
-                          providerAccountId: plan.restoreProviderAccountId,
-                        }
-                      : {}),
-                    ...(command.providerAccountId === undefined
-                      ? {}
-                      : { providerAccountId: selectedAccount }),
-                    ...(changedAccount
-                      ? { providerSessionId: undefined, context: undefined, usageLimit: undefined }
-                      : {}),
-                  },
+                  session: appendReadyHandoff(
+                    { ...value.session, pendingSwitch: undefined },
+                    from,
+                    value.session.harness,
+                    brief,
+                  ),
                 };
-                if (
-                  changedAccount &&
-                  !changedHarness &&
-                  !value.session.pendingSwitch &&
-                  value.session.blocks.some((block) => block.role === "user")
-                ) {
+              }
+              if (command.type === "send") {
+                const handoff = pendingHandoff(value.session);
+                handoffText = handoff?.text;
+                handoffFrom = handoff?.from as RemoteProvider | undefined;
+                if (handoffText) {
+                  const archive = new HandoffHistoryStore(
+                    dirname(this.store.attachmentDir),
+                  ).saveSync(handoffHistory(value.session));
+                  // Budget the actual outgoing request once. Skill bodies and runtime
+                  // hints are model input too, but must not be added to the request twice.
+                  const request = codexGoal ? command.text : withShellContext(shellRuns, turnText);
+                  turnText =
+                    !codexGoal &&
+                    (request.includes("bycoda-citation:") ||
+                      /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(request))
+                      ? await prepareHostSkillPrompt(
+                          request,
+                          value.session.worktreeCwd ?? value.session.cwd,
+                          undefined,
+                          value.session.id,
+                          value.session.harness,
+                        )
+                      : projectChatCitationsForProvider(request);
+                  handoffPromptPrepared = true;
+                  // A handoff starts a new provider thread, so its hint is sent again.
+                  const hint = [
+                    await harnessRuntimeHints(value.session.id),
+                    await this.ownerInstructions?.(),
+                  ]
+                    .filter(Boolean)
+                    .join("\n");
+                  const body = [rewindReplay, turnText].filter(Boolean).join("\n\n");
+                  const codex = value.session.harness === "codex";
+                  const handoffEnvelope = "<previous_agent_context>\n</previous_agent_context>\n\n";
+                  const runtimeInstructions = [
+                    hint,
+                    codexGoal ? handoffEnvelope : "",
+                    codexGoal
+                      ? withShellContext(
+                          shellRuns,
+                          command.noteCard ? composeNoteContext(command.noteCard, "") : "",
+                        )
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n");
+                  // Machine restrictions are appended by the provider wrapper. Capture
+                  // its trusted preparation so accounting and dispatch use them once.
+                  prepareSendPolicy = provider.prepareSendPolicy?.();
+                  const budgetInput: SendTurnInput = {
+                    sessionId: value.session.id,
+                    cwd: value.session.worktreeCwd ?? value.session.cwd,
+                    model: value.session.model,
+                    modelSettings: value.session.modelSettings,
+                    runtimeMode: value.session.runtimeMode,
+                    onEvent: () => {},
+                    text: codexGoal
+                      ? body
+                      : handoffEnvelope +
+                        (codex ? body : [hint, body].filter(Boolean).join("\n\n")),
+                    ...(codex && runtimeInstructions ? { runtimeInstructions } : {}),
+                  };
+                  const preparedBudget = await (prepareSendPolicy?.(budgetInput) ?? budgetInput);
+                  const budgetRequest = [preparedBudget.text, preparedBudget.runtimeInstructions]
+                    .filter(Boolean)
+                    .join("\n\n");
+                  const packet = buildBudgetedHandoff(value.session, {
+                    contextWindow: modelContextWindow(value.session.model, value.session.harness),
+                    request: budgetRequest,
+                    brief: handoffText,
+                    historyPath: archive.path,
+                  });
+                  handoffText = packet.text;
+                  const consumed = consumeHandoff(value.session);
                   value = {
                     ...value,
-                    session: appendReadyHandoff(
-                      value.session,
-                      harness,
-                      harness,
-                      buildDeterministicHandoff(value.session),
-                    ),
+                    session: packet.notice
+                      ? {
+                          ...consumed,
+                          blocks: [
+                            ...consumed.blocks,
+                            {
+                              id: randomUUID(),
+                              role: "system",
+                              notice: "info",
+                              text: packet.notice,
+                            },
+                          ],
+                        }
+                      : consumed,
                   };
                 }
-                if (plan.kind === "revert" && plan.restoreProviderSessionId && !changedAccount) {
-                  effect = (saved) =>
-                    this.provider(saved.session.harness).bind(
-                      saved.session.id,
-                      plan.restoreProviderSessionId!,
-                      saved.session.cwd,
-                      saved.session.providerAccountId,
+              }
+              const runId = randomUUID();
+              await admitRunDuration(this.store, value.session.id, runId);
+              const firstTurn =
+                command.type === "send" && !value.session.blocks.some((block) => !block.draft);
+              const placeholderTitle =
+                value.session.title === "New remote session" ||
+                canReplaceSessionTitle(
+                  value.session.title,
+                  value.session.harness,
+                  HARNESS_LABEL[value.session.harness],
+                );
+              const model = resolveModel(value.session.harness, value.session.model);
+              // A new turn answers the last usage limit, so its notice (and any
+              // armed resume) must not outlive it.
+              const { usageLimit: _answered, ...current } = value.session;
+              value = {
+                ...value,
+                status: "running",
+                runId,
+                runActivity: { runId, lastActivityAt: Date.now() },
+                session: {
+                  ...current,
+                  busy: true,
+                  pendingQuestion: undefined,
+                  submittedQuestions: undefined,
+                  title:
+                    firstTurn && placeholderTitle
+                      ? titleFromPrompt(command.text, value.session.harness, attachments)
+                      : value.session.title,
+                  blocks: [
+                    ...value.session.blocks
+                      .filter(
+                        (block) =>
+                          !block.draft || (!!block.followUpDelivery && block.id !== draft?.id),
+                      )
+                      .map((block) =>
+                        block === plan
+                          ? {
+                              ...block,
+                              text: approvedPlanText ?? block.text,
+                              plan: {
+                                ...(block.plan ?? { status: "ready" as const }),
+                                status: "building" as const,
+                                approvedText: approvedPlanText ?? block.text,
+                                ...(approvedPlanText !== block.text
+                                  ? {
+                                      originalText: block.plan?.originalText ?? block.text,
+                                      edited: true,
+                                    }
+                                  : {}),
+                              },
+                            }
+                          : block,
+                      ),
+                    {
+                      id: command.commandId,
+                      role: "user",
+                      ...(this.messageAuthors.getStore()
+                        ? { author: this.messageAuthors.getStore() }
+                        : {}),
+                      text: command.type === "compact" ? "/compact" : command.text,
+                      ...(command.type === "send" && command.secondOpinion
+                        ? { secondOpinion: command.secondOpinion }
+                        : {}),
+                      ...(command.type === "send" && command.noteCard
+                        ? { noteCard: noteContextMeta(command.noteCard) }
+                        : {}),
+                      ...(attachments.length ? { attachments } : {}),
+                      startedAt: Date.now(),
+                      turnModel: {
+                        harness: value.session.harness,
+                        id: value.session.model,
+                        name:
+                          model.id === value.session.model
+                            ? model.name
+                            : value.session.model.replace(/^[^:]+:/, ""),
+                      },
+                    },
+                  ],
+                },
+              };
+              effect = async (saved) =>
+                this.store.db.scope(() =>
+                  this.operations.run(saved.session.id, async () => {
+                    await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
+                    const current = await this.store.session(saved.session.id);
+                    if (
+                      this.closing ||
+                      current.runId !== saved.runId ||
+                      current.status !== "running" ||
+                      current.authorityGeneration !== saved.authorityGeneration
+                    )
+                      throw new Error("Accepted provider turn changed before dispatch");
+                    // Naming can commit after acceptance but before this callback.
+                    // Seed the same accepted run from its current revision while holding
+                    // both owners; nothing may interleave before run installs live state.
+                    const handoffBlock = handoffText
+                      ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
+                      : "";
+                    // Install synchronously while the owners are held, but let the
+                    // provider's async lifetime start outside this short SQL scope.
+                    this.store.db.outsideScope(() => {
+                      // Codex parses /goal only as the first token; context travels separately.
+                      this.run(
+                        current,
+                        command.type === "compact"
+                          ? null
+                          : codexGoal
+                            ? command.text
+                            : handoffPromptPrepared
+                              ? `${handoffBlock}${turnText}`
+                              : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
+                        turnIntent,
+                        attachments,
+                        command.resumeAtReset,
+                        handoffFrom,
+                        rewindReplay,
+                        codexGoal
+                          ? withShellContext(
+                              shellRuns,
+                              `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`,
+                            ).trim()
+                          : "",
+                        command.commandId,
+                        handoffPromptPrepared,
+                        prepareSendPolicy,
+                      );
+                      if (firstTurn && command.type === "send") {
+                        this.generateFirstTurnNames(current, command.text, placeholderTitle);
+                      }
+                    });
+                  }),
+                );
+            } else {
+              if (value.runId !== command.runId || value.status !== "running")
+                throw new Error("This request belongs to a finished or replaced turn");
+              if (command.type === "cancel") {
+                const original = this.running.get(command.sessionId);
+                const cancel = provider.cancel;
+                effect = () => {
+                  if (original && original.runId === command.runId) original.cancelled = true;
+                  if (original?.runId === command.runId && original.hostRun)
+                    this.runWriters.closeAdmission(original.hostRun);
+                  let cancellation: Promise<void>;
+                  try {
+                    cancellation = Promise.resolve(
+                      original?.runId === command.runId && original.operationContext
+                        ? cancel.call(provider, command.sessionId, original.operationContext)
+                        : cancel.call(provider, command.sessionId),
                     );
-                }
-              } else if (command.type === "draft") {
-                if (value.status === "running" || value.session.blocks.some((block) => block.draft))
-                  throw new Error("This session cannot save another draft right now");
+                  } catch (error) {
+                    cancellation = Promise.reject(error);
+                  }
+                  const controlled = cancellation.catch(async (error) => {
+                    // No owned turn is not permission to discover/stop a replacement later.
+                    if (
+                      !original ||
+                      original.runId !== command.runId ||
+                      (this.running.get(command.sessionId) !== original && !original.cleanup)
+                    )
+                      throw error;
+                    await this.store.assertAuthority(
+                      command.sessionId,
+                      command.authorityGeneration,
+                    );
+                    await this.stopOriginalTurn(command.sessionId, original);
+                  });
+                  if (original && original.runId === command.runId) {
+                    const prior = original.controls;
+                    original.controls = Promise.allSettled([prior, controlled]).then((results) => {
+                      const errors = results.flatMap((result) =>
+                        result.status === "rejected" ? [result.reason] : [],
+                      );
+                      if (errors.length)
+                        throw new AggregateError(errors, "Original provider control failed");
+                    });
+                    void original.controls.catch((error) =>
+                      original.activity?.recordFailure(error),
+                    );
+                  }
+                  void controlled.catch((error) =>
+                    console.error("Original provider cancel remains unconfirmed:", error),
+                  );
+                };
+              } else if (command.type === "stopItem") {
+                const active = this.running.get(command.sessionId);
+                if (!provider.stopItem)
+                  throw new Error("This provider cannot stop an individual task");
+                if (!active || active.runId !== command.runId || active.cancelled || active.ending)
+                  throw new Error("Only an active host-owned turn can stop an individual task");
+                const block = value.session.blocks.find((entry) => entry.id === command.blockId);
+                if (
+                  !block?.agentRun ||
+                  block.agentRun.endedAt !== undefined ||
+                  block.tool?.callId !== command.callId ||
+                  active.priorBlockIds.has(block.id) ||
+                  value.session.blocks.filter((entry) => entry.tool?.callId === command.callId)
+                    .length !== 1 ||
+                  !["running", "in_progress", "pending"].includes(block.tool.status ?? "") ||
+                  (block.approval && !block.approval.decided)
+                )
+                  throw new Error("This subagent changed or is no longer running");
+                effect = () => {
+                  void active.ready
+                    .then(async () => {
+                      if (
+                        this.running.get(command.sessionId) !== active ||
+                        active.cancelled ||
+                        active.ending
+                      )
+                        return;
+                      await this.flush(command.sessionId);
+                      const current = await this.store.session(command.sessionId);
+                      const target = current.session.blocks.find(
+                        (entry) => entry.id === command.blockId,
+                      );
+                      if (
+                        current.runId !== command.runId ||
+                        target?.tool?.callId !== command.callId ||
+                        !target.agentRun ||
+                        target.agentRun.endedAt !== undefined ||
+                        !["running", "in_progress", "pending"].includes(target.tool.status ?? "")
+                      )
+                        return;
+                      await this.store.assertAuthority(
+                        command.sessionId,
+                        command.authorityGeneration,
+                      );
+                      await provider.stopItem!(
+                        command.sessionId,
+                        command.callId,
+                        active.operationContext,
+                      );
+                    })
+                    .catch((reason) => {
+                      if (this.running.get(command.sessionId) === active)
+                        this.event(command.sessionId, command.runId, {
+                          type: "status",
+                          text: `Could not confirm the subagent stop request. Inspect its current status before taking further action: ${String(reason)}`,
+                        });
+                    });
+                };
+              } else if (command.type === "steer") {
+                assertModelProvider(value.session.harness, value.session.model);
+                const active = this.running.get(command.sessionId);
+                if (!provider.steer) throw new Error("This provider cannot steer an active turn");
+                if (!active || active.cancelled || active.ending)
+                  throw new Error("This turn was stopped");
                 const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
                   ...value,
                   session: {
                     ...value.session,
-                    title: value.session.blocks.length
-                      ? value.session.title
-                      : titleFromPrompt(command.text, value.session.harness, attachments),
                     blocks: [
                       ...value.session.blocks,
                       {
                         id: command.commandId,
                         role: "user",
-                        ...(this.messageAuthors.getStore() ? {author:this.messageAuthors.getStore()} : {}),
+                        ...(owner ? { continuationOf: owner.id } : {}),
+                        ...(this.messageAuthors.getStore()
+                          ? { author: this.messageAuthors.getStore() }
+                          : {}),
                         text: command.text,
-                        ...(attachments.length ? { attachments } : {}),
+                        attachments,
                         draft: true,
+                        followUpDelivery: "pending",
                       },
                     ],
                   },
                 };
-              } else if (command.type === "usageLimit") {
-                const limit = value.session.usageLimit;
-                if (limit) {
-                  const { usageLimit: _dismissed, ...rest } = value.session;
-                  value = {
-                    ...value,
-                    session:
-                      command.action === "dismiss"
-                        ? rest
-                        : {
-                            ...value.session,
-                            usageLimit: {
-                              ...limit,
-                              resumeAtReset: command.action === "arm",
-                            },
-                          },
-                  };
-                }
-              } else if (command.type === "removeDraft") {
-                const draft = value.session.blocks.find(
-                  (block) => block.id === command.draftBlockId && block.draft,
-                );
-                if (!draft) throw new Error("Draft not found");
-                if (
-                  draft.followUpDelivery === "pending" ||
-                  (value.status === "running" && draft.followUpDelivery)
-                )
-                  throw new Error("Follow-up delivery is still active");
-                value = {
-                  ...value,
-                  session: {
-                    ...value.session,
-                    blocks: value.session.blocks.filter((block) => block.id !== draft.id),
-                  },
-                };
-              } else if (command.type === "shell") {
-                // No model turn: the block is the whole effect, so it is allowed
-                // while a turn runs.
-                value = {
-                  ...value,
-                  session: {
-                    ...value.session,
-                    blocks: [...value.session.blocks, shellBlock(command.commandId, command.line)],
-                  },
-                };
-                effect = (saved) =>
-                  this.runShell(
-                    saved.session.id,
-                    command.commandId,
-                    saved.session.cwd,
-                    command.line,
-                    saved.authorityGeneration,
-                  );
-              } else if (command.type === "send" || command.type === "compact") {
-                if (this.retainedWriterTurns.get(command.sessionId)?.cleanup)
-                  throw new Error("HOST_WRITER_RETIREMENT_PENDING: The previous Host writer retirement is pending or failed. Your message was not sent; complete the ownership transfer before continuing.");
-                // Legacy storage may contain a mixed provider/model identity.
-                // Refuse it before consuming handoff/replay or dispatching a turn.
-                assertModelProvider(value.session.harness, value.session.model);
-                if (value.status === "running") throw new Error("This session is already running");
-                if (command.type === "compact" && !provider.compact)
-                  throw new Error("Context compaction is unavailable for this provider");
-                const draft =
-                  command.type === "send" && command.draftBlockId
-                    ? value.session.blocks.find(
-                        (block) => block.id === command.draftBlockId && block.draft,
+                effect = () => {
+                  let attempted = false;
+                  active.steers = active.steers
+                    .then(async () => {
+                      await active.ready;
+                      if (
+                        active.cancelled ||
+                        active.ending ||
+                        this.running.get(command.sessionId) !== active
                       )
-                    : undefined;
-                if (command.type === "send" && command.draftBlockId && !draft)
-                  throw new Error("Draft not found");
-                const plan =
-                  command.type === "send" && command.planBlockId
-                    ? value.session.blocks.find(
-                        (block) => block.id === command.planBlockId && block.role === "plan",
-                      )
-                    : command.type === "send" &&
-                        (command.intent ?? "default") === "default" &&
-                        !command.draftBlockId &&
-                        !command.attachments?.length
-                      ? approvedPlanForMessage(value.session, command.text)
-                      : undefined;
-                const turnIntent = plan
-                  ? "build"
-                  : command.type === "send"
-                    ? command.intent
-                    : undefined;
-                if (
-                  command.type === "send" &&
-                  (command.planBlockId || command.intent === "build") &&
-                  (!plan || !isBuildablePlan(plan))
-                )
-                  throw new Error("Plan is not ready to build");
-                if (
-                  command.type === "send" &&
-                  command.expectedPlanText !== undefined &&
-                  plan?.text !== command.expectedPlanText
-                )
-                  throw new Error(
-                    "The reviewed plan changed. Review the current plan before building.",
-                  );
-                const approvedPlanText =
-                  plan && command.type === "send" && command.expectedPlanText !== undefined
-                    ? command.text
-                    : plan?.text;
-                const attachments =
-                  command.type === "send"
-                    ? (draft?.attachments ??
-                      resolveAttachments(this.store, command.attachments ?? []))
-                    : [];
-                if (
-                  attachments.some(
-                    (file) =>
-                      file.browserAnnotation &&
-                      (file.browserAnnotation.projectId !== value.projectId ||
-                        file.browserAnnotation.sessionId !== value.session.id),
-                  )
-                )
-                  throw new Error("Browser selection belongs to another project or conversation");
-                if (
-                  command.type === "send" &&
-                  command.secondOpinion &&
-                  command.secondOpinion.to !== value.session.harness
-                )
-                  throw new Error("The second opinion target does not match this conversation");
-                const shellRuns =
-                  command.type === "send" ? pendingShellRuns(value.session.blocks) : [];
-                let turnText =
-                  command.type === "send"
-                    ? plan
-                      ? buildPlanPrompt(approvedPlanText ?? plan.text)
-                      : turnIntent === "plan"
-                        ? planTurnPrompt(command.text)
-                        : command.noteCard
-                          ? composeNoteContext(command.noteCard, command.text)
-                          : command.text
-                    : "";
-                const codexGoal =
-                  command.type === "send" &&
-                  value.session.harness === "codex" &&
-                  /^\s*\/goal(?=\s|$)/.test(command.text);
-                let handoffPromptPrepared = false;
-                let prepareSendPolicy: ((input: SendTurnInput) => SendTurnInput) | undefined;
-                // Read before the turn's own block lands after them.
-                let handoffText: string | undefined;
-                let handoffFrom: RemoteProvider | undefined;
-                const rewindReplay =
-                  command.type === "send" ? conversationReplayPrompt(value.session) : "";
-                if (command.type === "send" && value.session.pendingSwitch) {
-                  const from = value.session.pendingSwitch.from;
-                  const brief = buildDeterministicHandoff(value.session, command.text);
-                  value = {
-                    ...value,
-                    session: appendReadyHandoff(
-                      { ...value.session, pendingSwitch: undefined },
-                      from,
-                      value.session.harness,
-                      brief,
-                    ),
-                  };
-                }
-                if (command.type === "send") {
-                  const handoff = pendingHandoff(value.session);
-                  handoffText = handoff?.text;
-                  handoffFrom = handoff?.from as RemoteProvider | undefined;
-                  if (handoffText) {
-                    const archive = new HandoffHistoryStore(
-                      dirname(this.store.attachmentDir),
-                    ).saveSync(handoffHistory(value.session));
-                    // Budget the actual outgoing request once. Skill bodies and runtime
-                    // hints are model input too, but must not be added to the request twice.
-                    const request = codexGoal
-                      ? command.text
-                      : withShellContext(shellRuns, turnText);
-                    turnText =
-                      !codexGoal && /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(request)
-                        ? await prepareHostSkillPrompt(
-                            request,
-                            value.session.worktreeCwd ?? value.session.cwd,
-                            undefined,
-                            value.session.id,
-                          )
-                        : request;
-                    handoffPromptPrepared = true;
-                    // A handoff starts a new provider thread, so its hint is sent again.
-                    const hint = [await harnessRuntimeHints(value.session.id), await this.ownerInstructions?.()].filter(Boolean).join("\n");
-                    const body = [rewindReplay, turnText].filter(Boolean).join("\n\n");
-                    const codex = value.session.harness === "codex";
-                    const handoffEnvelope =
-                      "<previous_agent_context>\n</previous_agent_context>\n\n";
-                    const runtimeInstructions = [
-                      hint,
-                      codexGoal ? handoffEnvelope : "",
-                      codexGoal
-                        ? withShellContext(
-                            shellRuns,
-                            command.noteCard ? composeNoteContext(command.noteCard, "") : "",
-                          )
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join("\n\n");
-                    // Machine restrictions are appended by the provider wrapper. Capture
-                    // its trusted preparation so accounting and dispatch use them once.
-                    prepareSendPolicy = provider.prepareSendPolicy?.();
-                    const budgetInput: SendTurnInput = {
-                      sessionId: value.session.id,
-                      cwd: value.session.worktreeCwd ?? value.session.cwd,
-                      model: value.session.model,
-                      modelSettings: value.session.modelSettings,
-                      runtimeMode: value.session.runtimeMode,
-                      onEvent: () => {},
-                      text: codexGoal
-                        ? body
-                        : handoffEnvelope +
-                          (codex ? body : [hint, body].filter(Boolean).join("\n\n")),
-                      ...(codex && runtimeInstructions ? { runtimeInstructions } : {}),
-                    };
-                    const preparedBudget = prepareSendPolicy?.(budgetInput) ?? budgetInput;
-                    const budgetRequest = [preparedBudget.text, preparedBudget.runtimeInstructions]
-                      .filter(Boolean)
-                      .join("\n\n");
-                    const packet = buildBudgetedHandoff(value.session, {
-                      contextWindow: modelContextWindow(value.session.model, value.session.harness),
-                      request: budgetRequest,
-                      brief: handoffText,
-                      historyPath: archive.path,
-                    });
-                    handoffText = packet.text;
-                    const consumed = consumeHandoff(value.session);
-                    value = {
-                      ...value,
-                      session: packet.notice
-                        ? {
-                            ...consumed,
-                            blocks: [
-                              ...consumed.blocks,
-                              {
-                                id: randomUUID(),
-                                role: "system",
-                                notice: "info",
-                                text: packet.notice,
-                              },
-                            ],
-                          }
-                        : consumed,
-                    };
-                  }
-                }
-                const runId = randomUUID();
-                const firstTurn =
-                  command.type === "send" && !value.session.blocks.some((block) => !block.draft);
-                const placeholderTitle =
-                  value.session.title === "New remote session" ||
-                  canReplaceSessionTitle(
-                    value.session.title,
-                    value.session.harness,
-                    HARNESS_LABEL[value.session.harness],
-                  );
-                const model = resolveModel(value.session.harness, value.session.model);
-                // A new turn answers the last usage limit, so its notice (and any
-                // armed resume) must not outlive it.
-                const { usageLimit: _answered, ...current } = value.session;
-                value = {
-                  ...value,
-                  status: "running",
-                  runId,
-                  runActivity:{runId,lastActivityAt:Date.now()},
-                  session: {
-                    ...current,
-                    busy: true,
-                    pendingQuestion: undefined,
-                    submittedQuestions: undefined,
-                    title:
-                      firstTurn && placeholderTitle
-                        ? titleFromPrompt(command.text, value.session.harness, attachments)
-                        : value.session.title,
-                    blocks: [
-                      ...value.session.blocks
-                        .filter(
-                          (block) =>
-                            !block.draft || (!!block.followUpDelivery && block.id !== draft?.id),
-                        )
-                        .map((block) =>
-                          block === plan
-                            ? {
-                                ...block,
-                                text: approvedPlanText ?? block.text,
-                                plan: {
-                                  ...(block.plan ?? { status: "ready" as const }),
-                                  status: "building" as const,
-                                  approvedText: approvedPlanText ?? block.text,
-                                  ...(approvedPlanText !== block.text
-                                    ? {
-                                        originalText: block.plan?.originalText ?? block.text,
-                                        edited: true,
-                                      }
-                                    : {}),
-                                },
-                              }
-                            : block,
+                        return;
+                      const files = await Promise.all(
+                        attachments.map(async (file) =>
+                          isVisionImage(file.mimeType) && file.path && file.size <= 20 * 1024 * 1024
+                            ? { ...file, data: (await readFile(file.path)).toString("base64") }
+                            : file,
                         ),
-                      {
-                        id: command.commandId,
-                        role: "user",
-                        ...(this.messageAuthors.getStore() ? {author:this.messageAuthors.getStore()} : {}),
-                        text: command.type === "compact" ? "/compact" : command.text,
-                        ...(command.type === "send" && command.secondOpinion
-                          ? { secondOpinion: command.secondOpinion }
-                          : {}),
-                        ...(command.type === "send" && command.noteCard
-                          ? { noteCard: noteContextMeta(command.noteCard) }
-                          : {}),
-                        ...(attachments.length ? { attachments } : {}),
-                        startedAt: Date.now(),
-                        turnModel: {
-                          harness: value.session.harness,
-                          id: value.session.model,
-                          name:
-                            model.id === value.session.model
-                              ? model.name
-                              : value.session.model.replace(/^[^:]+:/, ""),
-                        },
-                      },
-                    ],
-                  },
-                };
-                effect = async (saved) =>
-                  this.store.db.scope(() =>
-                    this.operations.run(saved.session.id, async () => {
-                      await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
-                      const current = await this.store.session(saved.session.id);
-                      if (
-                        this.closing ||
-                        current.runId !== saved.runId ||
-                        current.status !== "running" ||
-                        current.authorityGeneration !== saved.authorityGeneration
-                      )
-                        throw new Error("Accepted provider turn changed before dispatch");
-                      // Naming can commit after acceptance but before this callback.
-                      // Seed the same accepted run from its current revision while holding
-                      // both owners; nothing may interleave before run installs live state.
-                      const handoffBlock = handoffText
-                        ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
-                        : "";
-                      // Install synchronously while the owners are held, but let the
-                      // provider's async lifetime start outside this short SQL scope.
-                      this.store.db.outsideScope(() => {
-                        // Codex parses /goal only as the first token; context travels separately.
-                        this.run(
-                          current,
-                          command.type === "compact"
-                            ? null
-                            : codexGoal
-                              ? command.text
-                              : handoffPromptPrepared
-                                ? `${handoffBlock}${turnText}`
-                                : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
-                          turnIntent,
-                          attachments,
-                          command.resumeAtReset,
-                          handoffFrom,
-                          rewindReplay,
-                          codexGoal
-                            ? withShellContext(
-                                shellRuns,
-                                `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`,
-                              ).trim()
-                            : "",
-                          command.commandId,
-                          handoffPromptPrepared,
-                          prepareSendPolicy,
-                        );
-                        if (firstTurn && command.type === "send") {
-                          this.generateFirstTurnNames(current, command.text, placeholderTitle);
-                        }
-                      });
-                    }),
-                  );
-              } else {
-                if (value.runId !== command.runId || value.status !== "running")
-                  throw new Error("This request belongs to a finished or replaced turn");
-                if (command.type === "cancel") {
-                  const original = this.running.get(command.sessionId);
-                  const cancel = provider.cancel;
-                  effect = () => {
-                    if (original && original.runId === command.runId) original.cancelled = true;
-                    if (original?.runId === command.runId && original.hostRun)
-                      this.runWriters.closeAdmission(original.hostRun);
-                    let cancellation: Promise<void>;
-                    try {
-                      cancellation = Promise.resolve(
-                        original?.runId === command.runId && original.operationContext
-                          ? cancel.call(provider, command.sessionId, original.operationContext)
-                          : cancel.call(provider, command.sessionId),
                       );
-                    } catch (error) {
-                      cancellation = Promise.reject(error);
-                    }
-                    const controlled = cancellation.catch(async (error) => {
-                      // No owned turn is not permission to discover/stop a replacement later.
+                      const prompt = await prepareHostSkillPrompt(
+                        command.text,
+                        value.session.cwd,
+                        undefined,
+                        value.session.id,
+                        value.session.harness,
+                      );
                       if (
-                        !original ||
-                        original.runId !== command.runId ||
-                        (this.running.get(command.sessionId) !== original && !original.cleanup)
+                        active.cancelled ||
+                        active.ending ||
+                        this.running.get(command.sessionId) !== active
                       )
-                        throw error;
+                        return;
+                      const managedBoundary = await this.beginManagedTurn(
+                        await this.store.session(command.sessionId),
+                        command.commandId,
+                      );
+                      if (managedBoundary) active.managedTurns.push(managedBoundary);
+                      const steerInput: Parameters<NonNullable<typeof provider.steer>>[0] = {
+                        sessionId: command.sessionId,
+                        cwd: value.session.cwd,
+                        model: value.session.model,
+                        modelSettings: value.session.modelSettings,
+                        text: prompt,
+                        attachments: files,
+                        operationContext: active.operationContext,
+                      };
+                      const preparedSteer = await (provider.prepareOperationPolicy?.(steerInput) ??
+                        steerInput);
+                      if (
+                        active.cancelled ||
+                        active.ending ||
+                        this.running.get(command.sessionId) !== active
+                      )
+                        return;
+                      attempted = true;
+                      await this.followUpDelivery(
+                        command.sessionId,
+                        command.runId,
+                        command.commandId,
+                        "uncertain",
+                      );
                       await this.store.assertAuthority(
                         command.sessionId,
                         command.authorityGeneration,
                       );
-                      await this.stopOriginalTurn(command.sessionId, original);
-                    });
-                    if (original && original.runId === command.runId) {
-                      const prior = original.controls;
-                      original.controls = Promise.allSettled([prior, controlled]).then(
-                        (results) => {
-                          const errors = results.flatMap((result) =>
-                            result.status === "rejected" ? [result.reason] : [],
-                          );
-                          if (errors.length)
-                            throw new AggregateError(errors, "Original provider control failed");
-                        },
-                      );
-                      void original.controls.catch((error) =>
-                        original.activity?.recordFailure(error),
-                      );
-                    }
-                    void controlled.catch((error) =>
-                      console.error("Original provider cancel remains unconfirmed:", error),
-                    );
-                  };
-                } else if (command.type === "stopItem") {
-                  const active = this.running.get(command.sessionId);
-                  if (!provider.stopItem)
-                    throw new Error("This provider cannot stop an individual task");
-                  if (
-                    !active ||
-                    active.runId !== command.runId ||
-                    active.cancelled ||
-                    active.ending
-                  )
-                    throw new Error("Only an active host-owned turn can stop an individual task");
-                  const block = value.session.blocks.find((entry) => entry.id === command.blockId);
-                  if (
-                    !block?.agentRun ||
-                    block.agentRun.endedAt !== undefined ||
-                    block.tool?.callId !== command.callId ||
-                    active.priorBlockIds.has(block.id) ||
-                    value.session.blocks.filter((entry) => entry.tool?.callId === command.callId)
-                      .length !== 1 ||
-                    !["running", "in_progress", "pending"].includes(block.tool.status ?? "") ||
-                    (block.approval && !block.approval.decided)
-                  )
-                    throw new Error("This subagent changed or is no longer running");
-                  effect = () => {
-                    void active.ready
-                      .then(async () => {
-                        if (
-                          this.running.get(command.sessionId) !== active ||
-                          active.cancelled ||
-                          active.ending
-                        )
-                          return;
-                        await this.flush(command.sessionId);
-                        const current = await this.store.session(command.sessionId);
-                        const target = current.session.blocks.find(
-                          (entry) => entry.id === command.blockId,
-                        );
-                        if (
-                          current.runId !== command.runId ||
-                          target?.tool?.callId !== command.callId ||
-                          !target.agentRun ||
-                          target.agentRun.endedAt !== undefined ||
-                          !["running", "in_progress", "pending"].includes(target.tool.status ?? "")
-                        )
-                          return;
-                        await this.store.assertAuthority(
-                          command.sessionId,
-                          command.authorityGeneration,
-                        );
-                        await provider.stopItem!(
-                          command.sessionId,
-                          command.callId,
-                          active.operationContext,
-                        );
-                      })
-                      .catch((reason) => {
-                        if (this.running.get(command.sessionId) === active)
-                          this.event(command.sessionId, command.runId, {
-                            type: "status",
-                            text: `Could not confirm the subagent stop request. Inspect its current status before taking further action: ${String(reason)}`,
-                          });
-                      });
-                  };
-                } else if (command.type === "steer") {
-                  assertModelProvider(value.session.harness, value.session.model);
-                  const active = this.running.get(command.sessionId);
-                  if (!provider.steer) throw new Error("This provider cannot steer an active turn");
-                  if (!active || active.cancelled || active.ending)
-                    throw new Error("This turn was stopped");
-                  const attachments = resolveAttachments(this.store, command.attachments ?? []);
-                  const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
-                  value = {
-                    ...value,
-                    session: {
-                      ...value.session,
-                      blocks: [
-                        ...value.session.blocks,
-                        {
-                          id: command.commandId,
-                          role: "user",
-                          ...(owner ? { continuationOf: owner.id } : {}),
-                          ...(this.messageAuthors.getStore() ? {author:this.messageAuthors.getStore()} : {}),
-                          text: command.text,
-                          attachments,
-                          draft: true,
-                          followUpDelivery: "pending",
-                        },
-                      ],
-                    },
-                  };
-                  effect = () => {
-                    let attempted = false;
-                    active.steers = active.steers
-                      .then(async () => {
-                        await active.ready;
-                        if (
-                          active.cancelled ||
-                          active.ending ||
-                          this.running.get(command.sessionId) !== active
-                        )
-                          return;
-                        const files = await Promise.all(
-                          attachments.map(async (file) =>
-                            isVisionImage(file.mimeType) &&
-                            file.path &&
-                            file.size <= 20 * 1024 * 1024
-                              ? { ...file, data: (await readFile(file.path)).toString("base64") }
-                              : file,
-                          ),
-                        );
-                        const prompt = await prepareHostSkillPrompt(
-                          command.text,
-                          value.session.cwd,
-                          undefined,
-                          value.session.id,
-                        );
-                        if (
-                          active.cancelled ||
-                          active.ending ||
-                          this.running.get(command.sessionId) !== active
-                        )
-                          return;
-                        const managedBoundary = await this.beginManagedTurn(
-                          await this.store.session(command.sessionId),
-                          command.commandId,
-                        );
-                        if (managedBoundary) active.managedTurns.push(managedBoundary);
-                        attempted = true;
+                      if (admission)
+                        await admission.check({
+                          phase: "provider",
+                          sessionId: command.sessionId,
+                          runId: command.runId,
+                        });
+                      await this.checkProviderSchedule(command.sessionId, command.runId);
+                      await provider.steer!(preparedSteer);
+                      // Cancellation can resolve a provider's steer without submitting it.
+                      // A retired owner therefore cannot establish successful delivery.
+                      if (
+                        !active.cancelled &&
+                        !active.ending &&
+                        this.running.get(command.sessionId) === active
+                      )
                         await this.followUpDelivery(
                           command.sessionId,
                           command.runId,
                           command.commandId,
-                          "uncertain",
                         );
-                        await this.store.assertAuthority(
+                    })
+                    .catch(async (reason) => {
+                      if (this.running.get(command.sessionId) === active) {
+                        await this.followUpDelivery(
                           command.sessionId,
-                          command.authorityGeneration,
+                          command.runId,
+                          command.commandId,
+                          attempted ? "uncertain" : "undelivered",
                         );
-                        if(admission)await admission.check({phase:"provider",sessionId:command.sessionId,runId:command.runId});
-                        await this.checkProviderSchedule(command.sessionId,command.runId);
-                        await provider.steer!({
-                          sessionId: command.sessionId,
-                          cwd: value.session.cwd,
-                          model: value.session.model,
-                          modelSettings: value.session.modelSettings,
-                          text: prompt,
-                          attachments: files,
-                          operationContext: active.operationContext,
+                        this.event(command.sessionId, command.runId, {
+                          type: "status",
+                          text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
                         });
-                        // Cancellation can resolve a provider's steer without submitting it.
-                        // A retired owner therefore cannot establish successful delivery.
-                        if (
-                          !active.cancelled &&
-                          !active.ending &&
-                          this.running.get(command.sessionId) === active
-                        )
-                          await this.followUpDelivery(
-                            command.sessionId,
-                            command.runId,
-                            command.commandId,
-                          );
-                      })
-                      .catch(async (reason) => {
-                        if (this.running.get(command.sessionId) === active) {
-                          await this.followUpDelivery(
-                            command.sessionId,
-                            command.runId,
-                            command.commandId,
-                            attempted ? "uncertain" : "undelivered",
-                          );
-                          this.event(command.sessionId, command.runId, {
-                            type: "status",
-                            text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
-                          });
-                        }
-                      });
-                  };
-                } else if (command.type === "approve") {
-                  const pending = value.session.blocks.filter(
+                      }
+                    });
+                };
+              } else if (command.type === "approve") {
+                const pending = value.session.blocks.filter(
+                  (block) =>
+                    block.approval?.requestId === command.requestId && !block.approval.decided,
+                );
+                if (pending.length !== 1)
+                  throw new Error("Approval is already resolved or ambiguous");
+                if (pending[0].approval?.occurrenceId !== command.approvalOccurrenceId)
+                  throw new Error("This approval request changed. Refresh it before responding.");
+                const active = this.running.get(command.sessionId);
+                const liveOwner = this.live.get(command.sessionId);
+                if (
+                  !active ||
+                  active.runId !== command.runId ||
+                  active.cancelled ||
+                  active.ending ||
+                  !liveOwner
+                )
+                  throw new Error("This request belongs to a finished or replaced turn");
+                const blockId = pending[0].id;
+                const authorityGeneration = value.authorityGeneration;
+                value = {
+                  ...value,
+                  session: applyHarnessEvent(value.session, {
+                    type: "approval.resolved",
+                    requestId: command.requestId,
+                    occurrenceId: command.approvalOccurrenceId,
+                    decision: command.decision,
+                  }),
+                };
+                effect = () => {
+                  const current = this.live.get(command.sessionId);
+                  const requests = current?.value.session.blocks.filter(
                     (block) =>
-                      block.approval?.requestId === command.requestId && !block.approval.decided,
+                      block.id === blockId && block.approval?.requestId === command.requestId,
                   );
-                  if (pending.length !== 1)
-                    throw new Error("Approval is already resolved or ambiguous");
-                  if (pending[0].approval?.occurrenceId !== command.approvalOccurrenceId)
-                    throw new Error("This approval request changed. Refresh it before responding.");
-                  const active = this.running.get(command.sessionId);
-                  const liveOwner = this.live.get(command.sessionId);
                   if (
-                    !active ||
-                    active.runId !== command.runId ||
+                    this.running.get(command.sessionId) !== active ||
                     active.cancelled ||
                     active.ending ||
-                    !liveOwner
-                  )
-                    throw new Error("This request belongs to a finished or replaced turn");
-                  const blockId = pending[0].id;
-                  const authorityGeneration = value.authorityGeneration;
-                  value = {
-                    ...value,
-                    session: applyHarnessEvent(value.session, {
-                      type: "approval.resolved",
-                      requestId: command.requestId,
-                      occurrenceId: command.approvalOccurrenceId,
-                      decision: command.decision,
-                    }),
-                  };
-                  effect = () => {
-                    const current = this.live.get(command.sessionId);
-                    const requests = current?.value.session.blocks.filter(
+                    current !== liveOwner ||
+                    current.value.runId !== command.runId ||
+                    current.value.status !== "running" ||
+                    current.value.authorityGeneration !== authorityGeneration ||
+                    this.provider(current.value.session.harness) !== provider ||
+                    requests?.length !== 1 ||
+                    requests[0].approval?.occurrenceId !== command.approvalOccurrenceId ||
+                    requests[0].approval?.decided !== command.decision ||
+                    current.value.session.blocks.some(
                       (block) =>
-                        block.id === blockId && block.approval?.requestId === command.requestId,
-                    );
-                    if (
-                      this.running.get(command.sessionId) !== active ||
-                      active.cancelled ||
-                      active.ending ||
-                      current !== liveOwner ||
-                      current.value.runId !== command.runId ||
-                      current.value.status !== "running" ||
-                      current.value.authorityGeneration !== authorityGeneration ||
-                      this.provider(current.value.session.harness) !== provider ||
-                      requests?.length !== 1 ||
-                      requests[0].approval?.occurrenceId !== command.approvalOccurrenceId ||
-                      requests[0].approval?.decided !== command.decision ||
-                      current.value.session.blocks.some(
-                        (block) =>
-                          block.approval?.requestId === command.requestId &&
-                          !block.approval.decided,
-                      )
-                    )
-                      throw new Error(
-                        "The original approval source changed before provider dispatch",
-                      );
-                    // No await between the final original-source guard and the callback.
-                    provider.approve(
-                      command.sessionId,
-                      command.requestId,
-                      command.decision,
-                      command.approvalOccurrenceId,
-                    );
-                  };
-                } else {
-                  if (value.session.pendingQuestion?.requestId !== command.requestId)
-                    throw new Error("Question is already resolved");
-                  if (
-                    ["sending", "queued", "unknown"].includes(
-                      value.session.pendingQuestion.delivery ?? "",
+                        block.approval?.requestId === command.requestId && !block.approval.decided,
                     )
                   )
-                    throw new Error("Question answer is already pending delivery");
-                  const questionToken=hostQuestionToken(value),liveOwner=this.live.get(command.sessionId),active=this.running.get(command.sessionId),author=this.messageAuthors.getStore();
-                  if(!active||active.runId!==command.runId||active.cancelled||active.ending||!liveOwner)throw new Error("This question belongs to a finished or replaced turn");
-                  value = {
-                    ...value,
-                    session: applyHarnessEvent(value.session, {
+                    throw new Error(
+                      "The original approval source changed before provider dispatch",
+                    );
+                  // No await between the final original-source guard and the callback.
+                  provider.approve(
+                    command.sessionId,
+                    command.requestId,
+                    command.decision,
+                    command.approvalOccurrenceId,
+                  );
+                };
+              } else {
+                if (value.session.pendingQuestion?.requestId !== command.requestId)
+                  throw new Error("Question is already resolved");
+                const resolvingOwner = this.live.get(command.sessionId);
+                const resolvingToken = hostQuestionToken(value);
+                let answerReply = command.reply;
+                if (command.reply.kind === "answered" && command.reply.attachments) {
+                  const attachments = await resolveAuthorizedQuestionAttachments(
+                    this.store, value.session.pendingQuestion.questions, command.reply.attachments, validateQuestionAttachments,
+                  );
+                  answerReply = { ...command.reply, attachments };
+                  if (
+                    this.live.get(command.sessionId) !== resolvingOwner ||
+                    !resolvingOwner ||
+                    resolvingOwner.value.session.pendingQuestion?.requestId !== command.requestId ||
+                    hostQuestionToken(resolvingOwner.value) !== resolvingToken
+                  )
+                    throw new Error("Question changed while resolving attachments");
+                }
+                if (
+                  ["sending", "queued", "unknown"].includes(
+                    value.session.pendingQuestion.delivery ?? "",
+                  )
+                )
+                  throw new Error("Question answer is already pending delivery");
+                const questionToken = hostQuestionToken(value),
+                  liveOwner = this.live.get(command.sessionId),
+                  active = this.running.get(command.sessionId),
+                  author = this.messageAuthors.getStore();
+                if (
+                  !active ||
+                  active.runId !== command.runId ||
+                  active.cancelled ||
+                  active.ending ||
+                  !liveOwner
+                )
+                  throw new Error("This question belongs to a finished or replaced turn");
+                value = {
+                  ...value,
+                  session: applyHarnessEvent(value.session, {
+                    type: "question.updated",
+                    requestId: command.requestId,
+                    delivery: "sending",
+                  }),
+                };
+                effect = () => {
+                  const current = this.live.get(command.sessionId);
+                  if (
+                    this.running.get(command.sessionId) !== active ||
+                    active.cancelled ||
+                    active.ending ||
+                    current !== liveOwner ||
+                    current.value.runId !== command.runId ||
+                    current.value.authorityGeneration !== value.authorityGeneration ||
+                    this.provider(current.value.session.harness) !== provider ||
+                    current.value.session.pendingQuestion?.requestId !== command.requestId ||
+                    (questionToken !== undefined &&
+                      hostQuestionToken(current.value) !== questionToken)
+                  )
+                    throw new Error(
+                      "The original question source changed before provider dispatch",
+                    );
+                  if (author && questionToken && answerReply.kind === "answered")
+                    this.questionReplyAuthors.set(command.sessionId, {
+                      runId: command.runId,
+                      token: questionToken,
+                      reply: structuredClone(answerReply),
+                      author: structuredClone(author),
+                    });
+                  try {
+                    provider.answer(command.sessionId, command.requestId, answerReply);
+                  } catch {
+                    this.event(command.sessionId, command.runId, {
                       type: "question.updated",
                       requestId: command.requestId,
-                      delivery: "sending",
-                    }),
-                  };
-                  effect = () => {
-                    const current=this.live.get(command.sessionId);
-                    if(this.running.get(command.sessionId)!==active||active.cancelled||active.ending||current!==liveOwner||current.value.runId!==command.runId||current.value.authorityGeneration!==value.authorityGeneration||this.provider(current.value.session.harness)!==provider||current.value.session.pendingQuestion?.requestId!==command.requestId||(questionToken!==undefined&&hostQuestionToken(current.value)!==questionToken))throw new Error("The original question source changed before provider dispatch");
-                    if(author&&questionToken&&command.reply.kind==="answered")this.questionReplyAuthors.set(command.sessionId,{runId:command.runId,token:questionToken,reply:structuredClone(command.reply),author:structuredClone(author)});
-                    try {
-                      provider.answer(command.sessionId, command.requestId, command.reply);
-                    } catch {
-                      this.event(command.sessionId, command.runId, {
-                        type: "question.updated",
-                        requestId: command.requestId,
-                        delivery: "unknown",
-                        error:
-                          "Answer delivery could not be confirmed. Check the connection before continuing.",
-                      });
-                    }
-                  };
-                }
+                      delivery: "unknown",
+                      error:
+                        "Answer delivery could not be confirmed. Check the connection before continuing.",
+                    });
+                  }
+                };
               }
             }
-            const saved = await this.store.save(
-              {
-                ...value,
-                revision: value.revision + 1,
-                // Creation already initialized both timestamps from the same clock read.
-                updatedAt: command.type === "create" ? value.updatedAt : Date.now(),
-              },
-              { type: "command", command },
-            );
-            const result = {
-              commandId: command.commandId,
-              sessionId: saved.session.id,
-              revision: saved.revision,
-              ...(saved.authorityGeneration === undefined
-                ? {}
-                : { authorityGeneration: saved.authorityGeneration }),
-              ...((command.type === "send" || command.type === "compact") && saved.runId
-                ? { runId: saved.runId }
-                : {}),
-            };
-            if(admission?.onAccepted)await admission.onAccepted(result);
-            await this.store.recordReceipt(signature, result);
-            return { receipt: result, saved };
-          }, "critical");
-          if (command.type === "cancel") {
-            const active = this.running.get(saved.session.id);
-            if (active?.runId === command.runId) active.cancelled = true;
           }
-          const live = this.live.get(saved.session.id);
-          if (live) live.value = saved;
-          // A receipt means durable host acceptance, not provider completion.
-          if (effect) {
-            const dispatch = async () => {
-              try {
-                await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
-                if(admission)await admission.check({phase:"provider",sessionId:saved.session.id,runId:saved.runId});
-                await this.checkProviderSchedule(saved.session.id,saved.runId);
-                await this.commandAdmissions.run(admission,()=>effect!(saved));
-              } catch (error) {
-                await this.settleUnstarted(saved.session.id, saved.runId);
-                throw error;
-              }
-            };
-            this.store.afterCommit(() =>
-              command.type === "send" || command.type === "compact" || command.type === "steer"
-                ? this.trackDispatch(saved.session.id, saved.runId, dispatch)
-                : dispatch(),
-            );
-          }
-          return receipt;
-        },
-      ),
+          const saved = await this.store.save(
+            {
+              ...value,
+              revision: value.revision + 1,
+              // Creation already initialized both timestamps from the same clock read.
+              updatedAt: command.type === "create" ? value.updatedAt : Date.now(),
+            },
+            { type: "command", command },
+          );
+          const result = {
+            commandId: command.commandId,
+            sessionId: saved.session.id,
+            revision: saved.revision,
+            ...(saved.authorityGeneration === undefined
+              ? {}
+              : { authorityGeneration: saved.authorityGeneration }),
+            ...((command.type === "send" || command.type === "compact") && saved.runId
+              ? { runId: saved.runId }
+              : {}),
+          };
+          if (admission?.onAccepted) await admission.onAccepted(result);
+          await this.store.recordReceipt(signature, result);
+          return { receipt: result, saved };
+        }, "critical");
+        if (command.type === "cancel") {
+          const active = this.running.get(saved.session.id);
+          if (active?.runId === command.runId) active.cancelled = true;
+        }
+        const live = this.live.get(saved.session.id);
+        if (live) live.value = saved;
+        // A receipt means durable host acceptance, not provider completion.
+        if (effect) {
+          const dispatch = async () => {
+            try {
+              await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
+              if (admission)
+                await admission.check({
+                  phase: "provider",
+                  sessionId: saved.session.id,
+                  runId: saved.runId,
+                });
+              await this.checkProviderSchedule(saved.session.id, saved.runId);
+              await this.commandAdmissions.run(admission, () => effect!(saved));
+            } catch (error) {
+              await this.settleUnstarted(saved.session.id, saved.runId);
+              throw error;
+            }
+          };
+          this.store.afterCommit(() =>
+            command.type === "send" || command.type === "compact" || command.type === "steer"
+              ? this.trackDispatch(saved.session.id, saved.runId, dispatch)
+              : dispatch(),
+          );
+        }
+        return receipt;
+      }),
     );
   }
 
@@ -3220,25 +3686,37 @@ export class HostEngine {
       // The removed turns may have carried the runtime hint; resend it next turn.
       forgetRuntimeHint(command.sessionId);
       if (strategy.preserveProviderBinding && provider.rewind) {
-        await this.withProviderRun(initial, async (operationContext) =>
-          provider.rewind!({
-            sessionId: command.sessionId,
-            cwd: initial.session.cwd ?? "",
-            model: initial.session.model,
-            modelSettings: initial.session.modelSettings,
-            providerAccountId: initial.session.providerAccountId,
-            runtimeMode: initial.session.runtimeMode,
-            providerTurnId: strategy.providerTurnId,
-            operationContext,
-            // Native providers can emit a new binding (Pi/OMP fork to a child).
-            // Capture that id while keeping all transcript events out of the host
-            // until the archive and block removal commit together.
-            onEvent: (event) => {
-              if (event.type === "session.providerBound")
-                nativeProviderSessionId = event.providerSessionId;
-            },
-          }),
-        );
+        const rewindInput: Parameters<NonNullable<typeof provider.rewind>>[0] = {
+          sessionId: command.sessionId,
+          cwd: initial.session.cwd ?? "",
+          model: initial.session.model,
+          modelSettings: initial.session.modelSettings,
+          providerAccountId: initial.session.providerAccountId,
+          runtimeMode: initial.session.runtimeMode,
+          providerTurnId: strategy.providerTurnId,
+          // Native providers can emit a new binding (Pi/OMP fork to a child).
+          // Capture that id while keeping all transcript events out of the host
+          // until the archive and block removal commit together.
+          onEvent: (event) => {
+            if (event.type === "session.providerBound")
+              nativeProviderSessionId = event.providerSessionId;
+          },
+        };
+        const preparedRewind = await (provider.prepareOperationPolicy?.(rewindInput) ??
+          rewindInput);
+        const preparedState = await this.store.session(command.sessionId);
+        if (
+          preparedState.revision !== revision ||
+          preparedState.status === "running" ||
+          this.running.has(command.sessionId)
+        )
+          throw new Error("The conversation changed while rewind was preparing");
+        await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
+        if (this.closing) throw new Error("Host is stopping");
+        await this.withProviderRun(initial, async (operationContext) => {
+          Object.assign(preparedRewind, { operationContext });
+          return provider.rewind!(preparedRewind);
+        });
         nativeRewindApplied = true;
       } else {
         // Fresh-session replay prevents all providers from reusing the old id.
@@ -3378,21 +3856,54 @@ export class HostEngine {
   ): void {
     void (async (): Promise<ShellResult> => {
       let release: (() => Promise<void>) | undefined;
+      let ownership: Awaited<ReturnType<typeof reserveShellOwnership>> | undefined;
+      let physicalUnknown = false;
       try {
         await this.store.assertAuthority(id, authorityGeneration);
         const value = await this.store.session(id);
         release = await this.executionActivity(value, "shell");
         await this.store.assertAuthority(id, authorityGeneration);
         // Resolve once more at admission; never execute a renderer-supplied cwd.
-        return await this.shell(value.session.worktreeCwd ?? value.session.cwd ?? cwd, command);
+        const originalCwd = value.session.worktreeCwd ?? value.session.cwd ?? cwd;
+        ownership = await reserveShellOwnership(this.store, originalCwd, "session", id, command);
+        physicalUnknown = true;
+        const result =
+          this.shell === runHostShell
+            ? await runHostShell(
+                originalCwd,
+                command,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                (identity) => ownership!.observe(identity),
+              )
+            : await this.shell(originalCwd, command);
+        if (result.terminationFailed) {
+          physicalUnknown = true;
+          await ownership.unknown(result.terminationFailed);
+        } else {
+          await ownership.complete();
+          physicalUnknown = false;
+        }
+        return result;
       } catch (error) {
+        if (ownership && physicalUnknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          await ownership
+            .unknown(message)
+            .catch((failure) =>
+              console.error("Could not persist shell retirement failure:", failure),
+            );
+          return { output: message, exitCode: null, timedOut: false, terminationFailed: message };
+        }
         return {
           output: error instanceof Error ? error.message : String(error),
           exitCode: null,
           timedOut: false,
         };
       } finally {
-        await release?.();
+        if (!physicalUnknown) await release?.();
       }
     })()
       .then((result) => {
@@ -3427,6 +3938,8 @@ export class HostEngine {
   private async withProviderRun<T>(
     value: HostSession,
     effect: (context: HarnessOperationContext) => Promise<T>,
+    auxiliary = false,
+    utilityProof?: ReturnType<typeof utilityCompletionProof>,
   ): Promise<T> {
     const sessionId = value.session.id;
     const generation = value.authorityGeneration;
@@ -3434,7 +3947,8 @@ export class HostEngine {
     let owned = true;
     const hostRun = this.runWriters.reserve({
       owner,
-      sessionId,
+      sessionId: auxiliary ? `host.text.${value.session.harness}` : sessionId,
+      auxiliary,
       runId: randomUUID(),
       authorityGeneration: generation,
       isCurrent: () => owned,
@@ -3446,6 +3960,7 @@ export class HostEngine {
       operation: owner,
       hostRun,
       hostControlRun: this.runWriters.controlRun(hostRun),
+      ...utilityProof?.observe(() => owned),
     });
     let result!: T;
     let failed = false;
@@ -3510,20 +4025,24 @@ export class HostEngine {
       console.debug("[bycoda] provider hint admission refused", error);
       return;
     }
+    const utilityProof = utilityCompletionProof();
     const context: HarnessOperationContext = Object.freeze({
       operation: owner,
       hostRun,
       hostControlRun: this.runWriters.controlRun(hostRun),
+      ...utilityProof.observe(() => owned),
     });
+    let executed = false;
     const work = (async () => {
       let failed = false;
       let failure: unknown;
-      let executed = false;
       let result: T | undefined;
       try {
-        await activity.start(() => this.executionActivity(value, "provider"), value.session.harness);
+        await activity.start(
+          () => this.executionActivity(value, "provider"),
+          value.session.harness,
+        );
         if (!this.closing) {
-          this.retainProvider(value.session.id, provider);
           executed = true;
           result = await effect(context);
         }
@@ -3535,6 +4054,7 @@ export class HostEngine {
         await this.runWriters.finish(hostRun!);
       } catch (error) {
         owned = false;
+        if (executed) this.retainProvider(parentId, provider);
         activity.recordFailure(error);
         throw failed
           ? new AggregateError([failure, error], "Original hint work and writer retirement failed")
@@ -3543,13 +4063,19 @@ export class HostEngine {
       owned = false;
       void activity.retainWarm().catch((error) => activity.recordFailure(error));
       if (failed) throw failure;
+      if (executed && !utilityProof.completed) this.retainProvider(parentId, provider);
       if (executed) {
         try {
           await apply(result as T);
         } catch (error) {
           // A conversation deleted while its hint ran has no target left: the discarded
           // hint is not cleanup uncertainty and must not fail a later shutdown.
-          if (await this.store.sessionAuthority(parentId).then((found) => !!found, () => true))
+          if (
+            await this.store.sessionAuthority(parentId).then(
+              (found) => !!found,
+              () => true,
+            )
+          )
             throw error;
           console.debug("[bycoda] retained provider hint", error);
         }
@@ -3557,6 +4083,7 @@ export class HostEngine {
     })()
       .then(() => activity.bookkeepingFinished())
       .catch((error) => {
+        if (executed) this.retainProvider(parentId, provider);
         activity.recordFailure(error);
         throw error;
       });
@@ -3705,7 +4232,7 @@ export class HostEngine {
     goalContext = "",
     userBlockId?: string,
     promptPrepared = false,
-    prepareSendPolicy?: (input: SendTurnInput) => SendTurnInput,
+    prepareSendPolicy?: (input: SendTurnInput) => SendTurnInput | Promise<SendTurnInput>,
   ): void {
     this.store.db.assertWriteAdmission();
     let session = value.session;
@@ -3715,7 +4242,7 @@ export class HostEngine {
     let replayConsumed = false;
     const acceptReplay = async () => {
       await this.store.assertAuthority(session.id, value.authorityGeneration);
-      active.accepted=true;
+      active.accepted = true;
       this.store.changes.notify();
       ready();
       if (!rewindReplay || replayConsumed) return;
@@ -3854,24 +4381,35 @@ export class HostEngine {
               },
             };
             if (prompt === null) {
+              const compactInput = await (provider.prepareOperationPolicy?.(input) ?? input);
+              if (this.closing || active.cancelled || this.running.get(session.id) !== active)
+                throw new Error("Turn cancelled");
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-              const admission=this.commandAdmissions.getStore();
-              if(admission)await admission.check({phase:"provider",sessionId:session.id,runId});
-              await this.checkProviderSchedule(session.id,runId);
-              if(this.closing||active.cancelled)throw new Error("Turn cancelled");
+              const admission = this.commandAdmissions.getStore();
+              if (admission)
+                await admission.check({ phase: "provider", sessionId: session.id, runId });
+              await this.checkProviderSchedule(session.id, runId);
+              if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               active.providerEntered = true;
-              await provider.compact!(input);
+              await provider.compact!(compactInput);
               forgetRuntimeHint(session.id);
             } else {
               const preparedPrompt =
                 !promptPrepared &&
-                /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt) &&
+                (prompt.includes("bycoda-citation:") ||
+                  /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt)) &&
                 !(session.harness === "codex" && /^\s*\/goal(?:\s|$)/.test(prompt))
-                  ? await prepareHostSkillPrompt(prompt, session.cwd, undefined, session.id)
-                  : prompt;
+                  ? await prepareHostSkillPrompt(
+                      prompt,
+                      session.cwd,
+                      undefined,
+                      session.id,
+                      session.harness,
+                    )
+                  : projectChatCitationsForProvider(prompt);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               const thread = {
                 harness: session.harness,
@@ -3880,7 +4418,9 @@ export class HostEngine {
               const hint = pendingRuntimeHint(
                 session.id,
                 thread,
-                [await harnessRuntimeHints(session.id), await this.ownerInstructions?.()].filter(Boolean).join("\n"),
+                [await harnessRuntimeHints(session.id), await this.ownerInstructions?.()]
+                  .filter(Boolean)
+                  .join("\n"),
               );
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
@@ -3923,17 +4463,22 @@ export class HostEngine {
                     ),
                   )),
               };
+              const finalProviderInput = await (prepareSendPolicy?.(providerInput) ??
+                provider.prepareOperationPolicy?.(providerInput) ??
+                providerInput);
+              if (this.running.get(session.id) !== active) throw new Error("Turn cancelled");
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-              const admission=this.commandAdmissions.getStore();
-              if(admission)await admission.check({phase:"provider",sessionId:session.id,runId});
-              await this.checkProviderSchedule(session.id,runId);
-              if(this.closing||active.cancelled)throw new Error("Turn cancelled");
+              const admission = this.commandAdmissions.getStore();
+              if (admission)
+                await admission.check({ phase: "provider", sessionId: session.id, runId });
+              await this.checkProviderSchedule(session.id, runId);
+              if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               active.providerEntered = true;
-              await provider.send(prepareSendPolicy?.(providerInput) ?? providerInput);
+              await provider.send(finalProviderInput);
               markHint();
               active.ending = true;
               await this.store.db.scope(() => this.operations.run(session.id, acceptReplay));
@@ -3963,15 +4508,28 @@ export class HostEngine {
           try {
             const pending = work();
             if (stage === "retirement") {
-              await Promise.race([pending, new Promise<never>((_, reject) => {
-                timer = setTimeout(() => reject(new Error("Provider retirement is still pending; replacement remains guarded.")), 20_000);
-              })]);
+              await Promise.race([
+                pending,
+                new Promise<never>((_, reject) => {
+                  timer = setTimeout(
+                    () =>
+                      reject(
+                        new Error(
+                          "Provider retirement is still pending; replacement remains guarded.",
+                        ),
+                      ),
+                    20_000,
+                  );
+                }),
+              ]);
             } else await pending;
           } catch (reason) {
             cleanupFailed = true;
             console.warn(`Session ${stage} cleanup failed; settling anyway:`, reason);
             active.activity?.recordFailure(reason);
-          } finally { clearTimeout(timer); }
+          } finally {
+            clearTimeout(timer);
+          }
         };
         active.failureStage = "retirement";
         if (cold && active.admissionRefused && active.activity) {
@@ -3999,11 +4557,7 @@ export class HostEngine {
         await soft("delivery", () => active.steers);
         await soft("delivery", () => active.controls);
         if (active.hostRun) await soft("retirement", () => this.runWriters.finish(active.hostRun!));
-        if (!cold)
-          void active.activity?.retainWarm().catch((reason) => {
-            active.activity?.recordFailure(reason);
-            console.error("Original warm provider activity release failed:", reason);
-          });
+        if (!cold) retainWarmActivity(active.activity);
         active.failureStage = "persistence";
         if (active.managed) {
           // Keep each accepted boundary independently; compaction never prunes this map.
@@ -4067,8 +4621,10 @@ export class HostEngine {
                   : settled,
                 { type: "settled", error, cancelled: active.cancelled },
               );
+              await finishRunDuration(this.store, session.id, runId!);
             }
             // The settled state is saved: whatever happens next, drop the running entry.
+            let bookkeepingComplete = false;
             try {
               if (cold) await soft("retirement", () => active.activity?.release());
               active.failureStage = "callback";
@@ -4094,13 +4650,29 @@ export class HostEngine {
                   persisted.cwd,
                   persisted.providerAccountId,
                 );
-              if (!cleanupFailed) active.activity?.bookkeepingFinished();
+              if (!cleanupFailed) {
+                active.activity?.bookkeepingFinished();
+                bookkeepingComplete = true;
+              }
             } finally {
               if (this.running.get(session.id) === active) {
                 if (cold && active.activity && !cleanupFailed)
-                  this.retainedProviders.get(session.id)?.delete(provider);
+                  this.forgetRetiredProvider(session.id, provider);
                 if (cold && !cleanupFailed && this.retainedWriterTurns.get(session.id) === active)
                   this.retainedWriterTurns.delete(session.id);
+                if (
+                  !cold &&
+                  bookkeepingComplete &&
+                  this.retainedWriterTurns.get(session.id) === active
+                ) {
+                  this.retainedWriterTurns.set(session.id, {
+                    provider: active.provider,
+                    activity: active.activity,
+                    operationContext: active.operationContext,
+                    authorityGeneration: active.authorityGeneration,
+                    cleanup: active.cleanup,
+                  });
+                }
                 this.running.delete(session.id);
               }
             }
@@ -4164,7 +4736,7 @@ export class HostEngine {
   ): void {
     const original = this.running.get(id);
     if (!original || original.runId !== runId) return;
-    const observedAt=Date.now();
+    const observedAt = Date.now();
     this.queueEvent(
       id,
       async () => {
@@ -4172,13 +4744,18 @@ export class HostEngine {
         if (!live || live.value.runId !== runId) return;
         await this.store.assertAuthority(id, live.value.authorityGeneration);
         if (before) await before();
-        await this.applyEvent(id, runId, event,observedAt);
+        await this.applyEvent(id, runId, event, observedAt);
       },
       original,
     );
   }
 
-  private async applyEvent(id: string, runId: string, event: HarnessEvent,observedAt:number): Promise<void> {
+  private async applyEvent(
+    id: string,
+    runId: string,
+    event: HarnessEvent,
+    observedAt: number,
+  ): Promise<void> {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
     await this.store.assertAuthority(id, live.value.authorityGeneration);
@@ -4214,22 +4791,56 @@ export class HostEngine {
       }
     }
     // The host cannot read the desktop's settings; the turn carried them.
-    if(event.type==="question.asked"){event={...event,occurrenceId:randomUUID()};this.questionReplyAuthors.delete(id);}
-    const questionAuthor=event.type==="question.resolved"&&event.decision==="answered"?this.questionReplyAuthors.get(id):undefined;
-    const acceptedAuthor=questionAuthor&&questionAuthor.runId===runId&&questionAuthor.token===hostQuestionToken(live.value)&&JSON.stringify(questionAuthor.reply)===JSON.stringify(event.type==="question.resolved"?event.reply:undefined)?questionAuthor.author:undefined;
+    if (event.type === "question.asked") {
+      event = { ...event, occurrenceId: randomUUID() };
+      this.questionReplyAuthors.delete(id);
+    }
+    const questionAuthor =
+      event.type === "question.resolved" && event.decision === "answered"
+        ? this.questionReplyAuthors.get(id)
+        : undefined;
+    const acceptedAuthor =
+      questionAuthor &&
+      questionAuthor.runId === runId &&
+      questionAuthor.token === hostQuestionToken(live.value) &&
+      JSON.stringify(questionAuthor.reply) ===
+        JSON.stringify(event.type === "question.resolved" ? event.reply : undefined)
+        ? questionAuthor.author
+        : undefined;
     let session = applyHarnessEvent(live.value.session, event, {
       resumeAtReset: this.running.get(id)?.resumeAtReset ?? false,
     });
-    if(acceptedAuthor&&session.blocks.length>live.value.session.blocks.length){const blocks=[...session.blocks],last=blocks.length-1;blocks[last]={...blocks[last],author:acceptedAuthor};session={...session,blocks};}
-    if(event.type==="question.resolved")this.questionReplyAuthors.delete(id);
-    const activity=isSessionRunActivity(event,session!==live.value.session);
-    if (session === live.value.session&&!activity) return;
+    if (acceptedAuthor && session.blocks.length > live.value.session.blocks.length) {
+      const blocks = [...session.blocks],
+        last = blocks.length - 1;
+      blocks[last] = { ...blocks[last], author: acceptedAuthor };
+      session = { ...session, blocks };
+    }
+    if (event.type === "question.resolved") this.questionReplyAuthors.delete(id);
+    const activity = isSessionRunActivity(event, session !== live.value.session);
+    if (session === live.value.session && !activity) return;
     if (live.blockChanges) {
       const changed = changedBlocks(live.value.session.blocks, session.blocks);
       if (changed === undefined) live.blockChanges = undefined;
       else for (const [blockId, block] of changed) live.blockChanges.set(blockId, block);
     }
-    live.value = { ...live.value, session,...(activity?{runActivity:{runId,lastActivityAt:Math.max(observedAt,live.value.runActivity?.runId===runId?live.value.runActivity.lastActivityAt:observedAt)}}:{}) };
+    live.value = {
+      ...live.value,
+      session,
+      ...(activity
+        ? {
+            runActivity: {
+              runId,
+              lastActivityAt: Math.max(
+                observedAt,
+                live.value.runActivity?.runId === runId
+                  ? live.value.runActivity.lastActivityAt
+                  : observedAt,
+              ),
+            },
+          }
+        : {}),
+    };
     live.events.push(event);
     if (!BATCHED.has(event.type)) await this.flush(id);
     else {
@@ -4279,43 +4890,79 @@ export class HostEngine {
   }
 
   /** Wait only for the owned turn, including provider and checkpoint cleanup. */
-  async commandDelivery(sessionId:string,runId:string|undefined,commandId:string,steer:boolean,signal:AbortSignal):Promise<"delivered"|"not_delivered"|"unknown"> {
-    const pending=this.dispatching.get(sessionId);
-    if(pending&&pending.runId===runId)await pending.settled;
-    const active=this.running.get(sessionId);
-    const original=active?.runId===runId?active:undefined;
-    let steersSettled=!original;
-    if(steer&&original) {
-      const settled=()=>{steersSettled=true;this.store.changes.notify();};
-      void original.steers.then(settled,settled);
+  async commandDelivery(
+    sessionId: string,
+    runId: string | undefined,
+    commandId: string,
+    steer: boolean,
+    signal: AbortSignal,
+  ): Promise<"delivered" | "not_delivered" | "unknown"> {
+    const pending = this.dispatching.get(sessionId);
+    if (pending && pending.runId === runId) await pending.settled;
+    const active = this.running.get(sessionId);
+    const original = active?.runId === runId ? active : undefined;
+    let steersSettled = !original;
+    if (steer && original) {
+      const settled = () => {
+        steersSettled = true;
+        this.store.changes.notify();
+      };
+      void original.steers.then(settled, settled);
     }
-    const deadline=Date.now()+10_000;
-    while(!signal.aborted&&Date.now()<deadline) {
-      const version=this.store.changes.version;
-      const current=await this.store.session(sessionId);
-      const block=current.session.blocks.find(item=>item.id===commandId);
-      if(!block)return "unknown";
-      if(steer) {
-        if(block.followUpDelivery==="undelivered")return "not_delivered";
-        if(!block.followUpDelivery&&!block.draft)return "delivered";
-        if(block.followUpDelivery==="uncertain"&&steersSettled)return "unknown";
-      } else if(original?.accepted)return "delivered";
-      if(current.runId!==runId||current.status!=="running")return "unknown";
-      await this.store.changes.wait(deadline,()=>signal.aborted,version,signal);
+    const deadline = Date.now() + 10_000;
+    while (!signal.aborted && Date.now() < deadline) {
+      const version = this.store.changes.version;
+      const current = await this.store.session(sessionId);
+      const block = current.session.blocks.find((item) => item.id === commandId);
+      if (!block) return "unknown";
+      if (steer) {
+        if (block.followUpDelivery === "undelivered") return "not_delivered";
+        if (!block.followUpDelivery && !block.draft) return "delivered";
+        if (block.followUpDelivery === "uncertain" && steersSettled) return "unknown";
+      } else if (original?.accepted) return "delivered";
+      if (current.runId !== runId || current.status !== "running") return "unknown";
+      await this.store.changes.wait(deadline, () => signal.aborted, version, signal);
     }
     return "unknown";
   }
   /** A provider question-resolved event proves submission, not model consumption. */
-  async questionAnswerDelivery(sessionId:string,runId:string,operationId:string,signal:AbortSignal):Promise<{delivery:"submitted"|"unknown";answeredBlockId?:string;turnBlockId?:string}>{
-    const deadline=Date.now()+10000;
-    while(!signal.aborted&&Date.now()<deadline){
-      const version=this.store.changes.version,current=await this.store.session(sessionId);
-      const block=current.session.blocks.find(item=>item.author?.kind==="assistant"&&item.author.reason==="answer"&&item.author.operationId===operationId&&!!item.questionAnswers?.length);
-      if(block&&current.runId===runId)return{delivery:"submitted",answeredBlockId:block.id,...(block.continuationOf?{turnBlockId:block.continuationOf}:{})};
-      if(current.runId!==runId||current.status!=="running"||current.session.pendingQuestion?.delivery==="unknown"||current.session.pendingQuestion?.delivery==="failed")return{delivery:"unknown"};
-      await this.store.changes.wait(deadline,()=>signal.aborted,version,signal);
+  async questionAnswerDelivery(
+    sessionId: string,
+    runId: string,
+    operationId: string,
+    signal: AbortSignal,
+  ): Promise<{
+    delivery: "submitted" | "unknown";
+    answeredBlockId?: string;
+    turnBlockId?: string;
+  }> {
+    const deadline = Date.now() + 10000;
+    while (!signal.aborted && Date.now() < deadline) {
+      const version = this.store.changes.version,
+        current = await this.store.session(sessionId);
+      const block = current.session.blocks.find(
+        (item) =>
+          item.author?.kind === "assistant" &&
+          item.author.reason === "answer" &&
+          item.author.operationId === operationId &&
+          !!item.questionAnswers?.length,
+      );
+      if (block && current.runId === runId)
+        return {
+          delivery: "submitted",
+          answeredBlockId: block.id,
+          ...(block.continuationOf ? { turnBlockId: block.continuationOf } : {}),
+        };
+      if (
+        current.runId !== runId ||
+        current.status !== "running" ||
+        current.session.pendingQuestion?.delivery === "unknown" ||
+        current.session.pendingQuestion?.delivery === "failed"
+      )
+        return { delivery: "unknown" };
+      await this.store.changes.wait(deadline, () => signal.aborted, version, signal);
     }
-    return{delivery:"unknown"};
+    return { delivery: "unknown" };
   }
   async waitForRun(sessionId: string, runId: string | undefined): Promise<void> {
     await this.ready;
@@ -4380,7 +5027,7 @@ export class HostEngine {
       [...stops].flatMap(([provider, owned]) =>
         [...owned].map(async ([id, work]) => {
           await work;
-          this.retainedProviders.get(id)?.delete(provider);
+          this.forgetRetiredProvider(id, provider);
         }),
       ),
     );

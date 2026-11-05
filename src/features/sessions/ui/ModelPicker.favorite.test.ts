@@ -34,7 +34,14 @@ vi.mock("../../../shared/ui/Popover", () => ({
   }) =>
     createElement(
       "div",
-      { role, className, tabIndex, onKeyDown, style: props.style, "aria-label": props["aria-label"] },
+      {
+        role,
+        className,
+        tabIndex,
+        onKeyDown,
+        style: props.style,
+        "aria-label": props["aria-label"],
+      },
       children,
     ),
 }));
@@ -128,9 +135,7 @@ function starFor(name: string): HTMLButtonElement {
     (el.getAttribute("aria-label") ?? el.textContent ?? "").startsWith(name),
   )!;
   expect(option).toBeDefined();
-  return option.parentElement!.querySelector<HTMLButtonElement>(
-    'button[aria-label$="favorites"]',
-  )!;
+  return option.parentElement!.querySelector<HTMLButtonElement>('button[aria-label$="favorites"]')!;
 }
 
 function favoriteWrites() {
@@ -150,7 +155,10 @@ describe("model picker favorites under StrictMode", () => {
   });
 
   it("removing a favorite writes once without the removed id", async () => {
-    localStorage.setItem("bycoda.favoriteModels", JSON.stringify(["cursor:first", "cursor:second"]));
+    localStorage.setItem(
+      "bycoda.favoriteModels",
+      JSON.stringify(["cursor:first", "cursor:second"]),
+    );
     setItemCalls.length = 0;
     await openPicker();
     await act(async () => starFor("First").click());

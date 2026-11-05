@@ -129,8 +129,10 @@ function AccountLimits({
     return () => window.clearInterval(timer);
   }, []);
   const observationAge = Math.max(0, now - limits.updatedAt);
-  const observationUnit = observationAge >= 86_400_000 ? "day" : observationAge >= 3_600_000 ? "hour" : "minute";
-  const observationStep = observationUnit === "day" ? 86_400_000 : observationUnit === "hour" ? 3_600_000 : 60_000;
+  const observationUnit =
+    observationAge >= 86_400_000 ? "day" : observationAge >= 3_600_000 ? "hour" : "minute";
+  const observationStep =
+    observationUnit === "day" ? 86_400_000 : observationUnit === "hour" ? 3_600_000 : 60_000;
   const windows = (["session", "weekly", "monthly"] as const).flatMap((kind) =>
     limits[kind] ? [{ kind, window: limits[kind]! }] : [],
   );
@@ -162,16 +164,50 @@ function AccountLimits({
             className="text-ui-caption text-(--ui-text-secondary)"
           />
         </div>
-        <Button ref={menuButton} variant="ghost" iconOnly label={t("Account actions")} tooltip={t("Account actions")} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
+        <Button
+          ref={menuButton}
+          variant="ghost"
+          iconOnly
+          label={t("Account actions")}
+          tooltip={t("Account actions")}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
           <MoreHorizontal aria-hidden className="icon-sm" />
         </Button>
-        {menuOpen ? <DropdownMenu anchor={menuButton} label={t("Account color")} items={[
-          { kind: "group", id: "color", label: t("Color"), items: PROVIDER_ACCOUNT_COLORS.map((option) => ({
-            kind: "item" as const, id: option.id, label: t(option.label), checked: account.color === option.id,
-            icon: <span className="size-2.5 rounded-full" style={{ background: option.value }} />,
-          })) },
-          { kind: "item", id: "default", label: t("Default"), checked: !account.color },
-        ]} onPick={(id) => { setProviderAccountColor(account.provider, account.id, PROVIDER_ACCOUNT_COLORS.find((option) => option.id === id)?.id); setMenuOpen(false); }} onClose={() => setMenuOpen(false)} /> : null}
+        {menuOpen ? (
+          <DropdownMenu
+            anchor={menuButton}
+            label={t("Account color")}
+            items={[
+              {
+                kind: "group",
+                id: "color",
+                label: t("Color"),
+                items: PROVIDER_ACCOUNT_COLORS.map((option) => ({
+                  kind: "item" as const,
+                  id: option.id,
+                  label: t(option.label),
+                  checked: account.color === option.id,
+                  icon: (
+                    <span className="size-2.5 rounded-full" style={{ background: option.value }} />
+                  ),
+                })),
+              },
+              { kind: "item", id: "default", label: t("Default"), checked: !account.color },
+            ]}
+            onPick={(id) => {
+              setProviderAccountColor(
+                account.provider,
+                account.id,
+                PROVIDER_ACCOUNT_COLORS.find((option) => option.id === id)?.id,
+              );
+              setMenuOpen(false);
+            }}
+            onClose={() => setMenuOpen(false)}
+          />
+        ) : null}
       </div>
       <div className="usage-quota-list">
         {windows.map(({ kind, window }) => {
@@ -221,9 +257,33 @@ function AccountLimits({
           );
         })}
       </div>
-      {limits.updatedAt > 0 ? <p className="usage-muted">{t("Last observed")}: <time dateTime={new Date(limits.updatedAt).toISOString()} title={new Date(limits.updatedAt).toLocaleString(locale)}>{new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-Math.round(observationAge / observationStep), observationUnit)}</time></p> : null}
+      {limits.updatedAt > 0 ? (
+        <p className="usage-muted">
+          {t("Last observed")}:{" "}
+          <time
+            dateTime={new Date(limits.updatedAt).toISOString()}
+            title={new Date(limits.updatedAt).toLocaleString(locale)}
+          >
+            {new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+              -Math.round(observationAge / observationStep),
+              observationUnit,
+            )}
+          </time>
+        </p>
+      ) : null}
       {limits.error ? (
-        <Alert tone="danger" role="alert" action={<Button loading={limits.status === "fetching"} onClick={() => void loadRateLimits(provider, accountId, true)}>{t("Retry")}</Button>}>
+        <Alert
+          tone="danger"
+          role="alert"
+          action={
+            <Button
+              loading={limits.status === "fetching"}
+              onClick={() => void loadRateLimits(provider, accountId, true)}
+            >
+              {t("Retry")}
+            </Button>
+          }
+        >
           {label}: {limits.error}
         </Alert>
       ) : null}

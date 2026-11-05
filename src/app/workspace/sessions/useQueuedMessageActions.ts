@@ -30,7 +30,10 @@ import {
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
 } from "../../../features/connections/model/useSharedLocalQueues";
-import { QueueNotReadyError } from "../../../features/connections/model/sharedQueue";
+import {
+  QueueDeferredError,
+  QueueNotReadyError,
+} from "../../../features/connections/model/sharedQueue";
 import {
   nextQueueStatus,
   planResume,
@@ -302,7 +305,22 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
               if (error instanceof QueueNotReadyError) {
                 // Nothing was sent. The queue stays as it is and the head is
                 // offered again once the host or the other computer settles.
-                scheduleRetry(session.id);
+                const attempt = scheduleRetry(session.id);
+                if (error instanceof QueueDeferredError && attempt >= MAX_REFUSED_DRAINS) {
+                  retryAfter.current.delete(session.id);
+                  setSessions((entries) => entries.map((entry) =>
+                    entry.id === session.id && entry.queuedMessages?.[0]?.id === head.id
+                      && entry.queueStatus !== "paused" && entry.queueStatus !== "resuming"
+                      && entry.queueStatus !== "restored"
+                      ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "reject") }
+                      : entry,
+                  ));
+                  enqueueHarnessEvent(session.id, {
+                    type: "status",
+                    text: t("The queued message is still waiting. The queue is paused; resume it to try again.") + ` ${error.message}`,
+                  });
+                  flushHarnessEvents();
+                }
                 return;
               }
               // The provider refused the head, or its delivery is unconfirmed:
@@ -462,6 +480,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
             ),
           );
         return accepted;
+      } catch (error) {
+        if (error instanceof QueueDeferredError) return { kind: "waiting", message: error.message };
+        throw error;
       } finally {
         manualActions.current.delete(sessionId);
       }
@@ -573,6 +594,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         }
         return false;
       } catch (error) {
+        if (error instanceof QueueDeferredError) return { kind: "waiting", message: error.message };
         settleResuming(sessionId, nextQueueStatus("resuming", "resume-failed"));
         throw error;
       } finally {

@@ -238,3 +238,18 @@ it("keeps a plain conflict draft after a deferred save failure and allows the sa
   expect(writeTextFile).toHaveBeenCalledTimes(2);
   expect(onResolved).toHaveBeenCalledOnce();
 });
+
+it("preserves mixed separators when saving a conflict resolution", async () => {
+  vi.mocked(readTextFile).mockResolvedValue("first\r\nsecond\nthird\r");
+  await mount();
+  const output = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Resolved output"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      output,
+      "FIRST\nsecond\nthird\n",
+    );
+    output.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save and stage");
+  expect(writeTextFile).toHaveBeenCalledWith(stages.path, "FIRST\r\nsecond\nthird\r");
+});

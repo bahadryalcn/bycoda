@@ -1,5 +1,5 @@
 import { memo, useSyncExternalStore } from "react";
-import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/model/settings";
+import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/public/settings";
 import { CrewScene } from "./crewSurface";
 import "./BycodaSession.css";
 import type { Session } from "../model/session";

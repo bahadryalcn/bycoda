@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { previewBlock } from "../../../../host/transcriptPage";
+import { previewBlock } from "../../../../host/sessions/transcriptPage";
 import type { Block, Session } from "../../sessions/model/session";
 import { blockDigest, conversationHead } from "../../sync/model/conversationDigest";
 import {

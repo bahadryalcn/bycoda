@@ -7,7 +7,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 
 import {
   useCallback,
@@ -27,7 +27,7 @@ import {
   type EditorDraftDocument,
   type NativeCaptureState,
 } from "../data/editorDraftPersistence";
-import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
+import { MarkdownViewShell, useMarkdownMode } from "../../sessions/public/MarkdownModeToggle";
 
 import {
   basename,
@@ -45,14 +45,14 @@ import {
 import { syncWatchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
+import { MarkdownDocumentPreview } from "../../sessions/public/MarkdownDocumentPreview";
 
 import {
   detectLineEnding,
   type LineEnding,
   normalizeLineBreaks,
+  restoreMixedLineEndings,
   restoreLineEnding,
-  restoreLineEndings,
 } from "../editor/editorDoc";
 
 import { FilePreviewSearch } from "./FilePreviewSearch";
@@ -165,6 +165,7 @@ export function FileEditor({
   const [gitBase, setGitBase] = useState<{
     path: string;
     original: string;
+    originalRaw: string;
     kind: GitFileDiffKind;
     lineEnding: LineEnding;
     eolOnly: boolean;
@@ -276,6 +277,7 @@ export function FileEditor({
   const draftBaselineRef = useRef<string | null>(null);
   const latestDocumentRef = useRef<string | Text | null>(null);
   const eolRef = useRef<LineEnding>("\n");
+  const lineEndingSourceRef = useRef("");
   const onDirtyChangeRef = useRef(onDirtyChange);
   const loadedDocumentRef = useRef<{ id: string; reloadKey: number } | null>(null);
   const renderedDocumentRef = useRef<string | null>(null);
@@ -298,6 +300,10 @@ export function FileEditor({
         path,
         text,
         eol,
+        serializedText:
+          text === null
+            ? undefined
+            : restoreMixedLineEndings(text, lineEndingSourceRef.current, eolRef.current),
         diskBaseline: baseline,
       });
       const exactAck = receipt !== null;
@@ -345,6 +351,10 @@ export function FileEditor({
           origin,
           text,
           eol,
+          serializedText:
+            text === null
+              ? null
+              : restoreMixedLineEndings(text, lineEndingSourceRef.current, eolRef.current),
           diskBaseline: baseline,
           dirty: dirtyRef.current,
           readOnly: actual?.readOnly ?? null,
@@ -399,6 +409,7 @@ export function FileEditor({
         captureId: crypto.randomUUID(),
         text: latestDocumentRef.current,
         diskBaseline: draftBaselineRef.current,
+        lineEndingSource: lineEndingSourceRef.current,
         eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
       });
     }
@@ -455,21 +466,12 @@ export function FileEditor({
         captureId: crypto.randomUUID(),
         text,
         diskBaseline: baseline,
+        lineEndingSource: lineEndingSourceRef.current,
         eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
       });
     },
     [documentId, path, editorClosure],
   );
-
-  // Serialize the LF document for disk. Against the baseline the document was
-  // edited from, a mixed file keeps the breaks of its unchanged lines; without
-  // a baseline the detected majority convention applies (see editorDoc.ts).
-  const serializeForDisk = useCallback((content: string) => {
-    const baseline = draftBaselineRef.current ?? diskTextRef.current;
-    return baseline === null
-      ? restoreLineEnding(content, eolRef.current)
-      : restoreLineEndings(content, baseline);
-  }, []);
 
   const applyDiskContent = useCallback(
     (raw: string) => {
@@ -478,6 +480,7 @@ export function FileEditor({
       // and restore the file's own line endings on save. Feeding CRLF text
       // into the LF document doubles every line (see editorDoc.ts).
       eolRef.current = detectLineEnding(raw);
+      lineEndingSourceRef.current = raw;
       setDiskVerificationError(null);
       diskTextRef.current = raw;
       draftBaselineRef.current = raw;
@@ -643,6 +646,8 @@ export function FileEditor({
         draftBaselineRef.current = payload.diskBaseline;
         latestDocumentRef.current = payload.text;
         eolRef.current = payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n";
+        lineEndingSourceRef.current =
+          payload.serializedText ?? restoreLineEnding(payload.text, eolRef.current);
         pendingDiskRef.current = actual === null || actual !== payload.diskBaseline;
         if (pendingDiskRef.current) diskChangeVersion.current += 1;
         setDiskConflict(pendingDiskRef.current);
@@ -741,6 +746,7 @@ export function FileEditor({
         setGitBase({
           path,
           original,
+          originalRaw: diff.original,
           kind,
           lineEnding: detectLineEnding(diff.original || diff.current),
           eolOnly: !!(file?.staged || file?.unstaged) && eolDiffers,
@@ -894,18 +900,22 @@ export function FileEditor({
       // Do not let an older watcher read replace the baseline of this save.
       loadGeneration.current += 1;
       setSaveState({ status: "saving" });
-      const serializedContent = serializeForDisk(content);
-      const operation = saveQueue.current.then(() => {
-        if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
-          setDiskConflict(true);
-          throw new Error("The file changed on disk. Choose reload or overwrite before saving.");
-        }
-        return writeTextFile(path, serializedContent);
-      });
-      saveQueue.current = operation.catch((error) => {
-        console.warn("FileEditor operation failed", error);
-      });
       try {
+        const serializedContent = restoreMixedLineEndings(
+          content,
+          lineEndingSourceRef.current,
+          eolRef.current,
+        );
+        const operation = saveQueue.current.then(() => {
+          if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
+            setDiskConflict(true);
+            throw new Error("The file changed on disk. Choose reload or overwrite before saving.");
+          }
+          return writeTextFile(path, serializedContent);
+        });
+        saveQueue.current = operation.catch((error) => {
+          console.warn("FileEditor operation failed", error);
+        });
         await operation;
         if (capture && draftHandle) {
           // Native reporting is independent of the completed filesystem write.
@@ -922,6 +932,7 @@ export function FileEditor({
           diskTextRef.current = serializedContent;
           setDiskVerificationError(null);
           draftBaselineRef.current = serializedContent;
+          lineEndingSourceRef.current = serializedContent;
           pendingDiskRef.current = false;
           setDiskConflict(false);
           // Keep the reload prop at the saved baseline, so restoring the initial
@@ -945,7 +956,7 @@ export function FileEditor({
         settled();
       }
     },
-    [cwd, path, documentId, captureDraft, editorClosure, serializeForDisk],
+    [cwd, path, documentId, captureDraft, editorClosure],
   );
 
   // Another editor on this file, showing the same text, wrote `content`: adopt
@@ -954,12 +965,26 @@ export function FileEditor({
   const peerSaved = useCallback(
     (content: string) => {
       const latest = latestDocumentRef.current;
-      const serializedContent = serializeForDisk(content);
+      let serializedContent: string;
+      try {
+        serializedContent = restoreMixedLineEndings(
+          content,
+          lineEndingSourceRef.current,
+          eolRef.current,
+        );
+      } catch (error) {
+        setSaveState({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
       loadGeneration.current += 1;
       recoveryReviewRef.current = false;
       diskTextRef.current = serializedContent;
       setDiskVerificationError(null);
       draftBaselineRef.current = serializedContent;
+      lineEndingSourceRef.current = serializedContent;
       pendingDiskRef.current = false;
       setDiskConflict(false);
       setLoadState((current) =>
@@ -972,7 +997,7 @@ export function FileEditor({
       if (latest !== null && latest.toString() !== content) captureDraft(latest);
       setSaveState({ status: "saved" });
     },
-    [captureDraft, serializeForDisk],
+    [captureDraft],
   );
 
   const stageGit = useCallback(
@@ -989,8 +1014,8 @@ export function FileEditor({
         await gitStageContents(
           cwd,
           relative,
-          restoreLineEnding(contents, gitDiff.lineEnding),
-          restoreLineEnding(gitDiff.original, gitDiff.lineEnding),
+          restoreMixedLineEndings(contents, gitDiff.originalRaw, gitDiff.lineEnding),
+          gitDiff.originalRaw,
         );
         notifyGitChanged(cwd, "index");
       } catch (error) {
@@ -1063,6 +1088,8 @@ export function FileEditor({
         if (pendingDiskRef.current) diskChangeVersion.current += 1;
         setDiskConflict(pendingDiskRef.current);
         eolRef.current = payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n";
+        lineEndingSourceRef.current =
+          payload.serializedText ?? restoreLineEnding(payload.text, eolRef.current);
         recoveryReviewRef.current = true;
         setLoadState({ status: "ready", content: normalizeLineBreaks(payload.diskBaseline) });
         setDraft(payload.text);
@@ -1355,6 +1382,7 @@ export function FileEditor({
       )}
       {hasMarkdownShell ? (
         <MarkdownViewShell
+          zoomable={markdown}
           mode={mode}
           onModeChange={setMode}
           leading={
@@ -1410,15 +1438,15 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">{chromeError}</InlineError>
+        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">
+          {chromeError}
+        </InlineError>
       ) : null}
       <footer
         className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
       >
         <Tooltip label={path} when={path === relativePath ? "overflow" : "always"}>
-          <span className="min-w-0 flex-1 truncate font-mono">
-            {relativePath}
-          </span>
+          <span className="min-w-0 flex-1 truncate font-mono">{relativePath}</span>
         </Tooltip>
         {html ? (
           <Button

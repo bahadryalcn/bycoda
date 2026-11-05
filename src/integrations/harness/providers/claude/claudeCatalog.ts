@@ -269,7 +269,10 @@ async function discoverViaListModels(
   const cwd = workingDirectory ?? (await homeDir());
   const sessionId = crypto.randomUUID();
   const probeId = `${PROBE_ID}-${sessionId}`;
-  const child = retirements.admit(createChildProcessHandle(probeId), "claude.catalog");
+  const child = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "claude.catalog",
+  );
 
   let listed: ((models: AgentModel[]) => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
@@ -343,7 +346,7 @@ async function discoverViaListModels(
 async function discoverViaVersion(workingDirectory?: string): Promise<AgentModel[]> {
   const { path } = await resolveClaudeBinary();
   const cwd = workingDirectory ?? (await homeDir());
-  const versionOut = await execChild(path, ["--version"], cwd, "claude");
+  const versionOut = await execChild(path, ["--version"], cwd, "claude", undefined, "management");
   const version = parseClaudeVersion(versionOut);
   return modelsForClaudeVersion(version);
 }

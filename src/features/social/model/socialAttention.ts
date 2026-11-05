@@ -62,7 +62,9 @@ const excerpt = (text: string, max = 72) => {
 };
 
 function jobCount(snapshot: SocialSnapshot, status: SocialJob["status"]) {
-  return snapshot.jobCounts?.[status] ?? snapshot.jobs.filter((job) => job.status === status).length;
+  return (
+    snapshot.jobCounts?.[status] ?? snapshot.jobs.filter((job) => job.status === status).length
+  );
 }
 
 /**
@@ -124,15 +126,22 @@ export function buildAttention(input: {
       action: t("Add account"),
     });
   const disconnected = base.accounts.filter((account) => !account.connected);
-  const unauthorized = base.accounts.filter((account) => account.connected && !account.accessApproved);
+  const unauthorized = base.accounts.filter(
+    (account) => account.connected && !account.accessApproved,
+  );
   const paused = base.accounts.filter((account) => account.paused);
-  const noProject = base.accounts.filter((account) => !Object.values(account.grants).some((grant) => grant.length));
+  const noProject = base.accounts.filter(
+    (account) => !Object.values(account.grants).some((grant) => grant.length),
+  );
   if (disconnected.length)
     items.push({
       id: "accounts-disconnected",
       tone: "warning",
       title: t("{p0} accounts are not connected", { p0: disconnected.length }),
-      detail: disconnected.slice(0, 3).map((account) => account.name).join(", "),
+      detail: disconnected
+        .slice(0, 3)
+        .map((account) => account.name)
+        .join(", "),
       count: disconnected.length,
       target: "Accounts",
       action: t("Connect"),
@@ -142,7 +151,10 @@ export function buildAttention(input: {
       id: "accounts-awaiting-access",
       tone: "warning",
       title: t("{p0} accounts await platform access", { p0: unauthorized.length }),
-      detail: unauthorized.slice(0, 3).map((account) => account.name).join(", "),
+      detail: unauthorized
+        .slice(0, 3)
+        .map((account) => account.name)
+        .join(", "),
       count: unauthorized.length,
       target: "Accounts",
       action: t("Review access"),
@@ -152,7 +164,10 @@ export function buildAttention(input: {
       id: "accounts-paused",
       tone: "info",
       title: t("{p0} accounts are paused", { p0: paused.length }),
-      detail: paused.slice(0, 3).map((account) => account.name).join(", "),
+      detail: paused
+        .slice(0, 3)
+        .map((account) => account.name)
+        .join(", "),
       count: paused.length,
       target: "Accounts",
       action: t("Open accounts"),
@@ -180,7 +195,10 @@ export function buildAttention(input: {
         tone: "danger",
         title: t("{p0} sends need your attention", { p0: failed + review }),
         detail: review
-          ? t("{p0} failed · {p1} with an unverified result; do not resend those.", { p0: failed, p1: review })
+          ? t("{p0} failed · {p1} with an unverified result; do not resend those.", {
+              p0: failed,
+              p1: review,
+            })
           : t("{p0} failed", { p0: failed }),
         count: failed + review,
         target: "Activity",
@@ -213,14 +231,19 @@ export function buildAttention(input: {
     const snapshot = sources.campaigns.data;
     const drafts = snapshot.campaigns.filter((campaign) => {
       const state = snapshot.campaignStates?.[campaign.id];
-      return state ? state === "draft" : !snapshot.jobs.some((job) => job.campaignId === campaign.id) && !campaign.paused;
+      return state
+        ? state === "draft"
+        : !snapshot.jobs.some((job) => job.campaignId === campaign.id) && !campaign.paused;
     });
     if (drafts.length)
       items.push({
         id: "campaigns-draft",
         tone: "info",
         title: t("{p0} content items are not scheduled yet", { p0: drafts.length }),
-        detail: drafts.slice(0, 3).map((campaign) => campaign.name).join(", "),
+        detail: drafts
+          .slice(0, 3)
+          .map((campaign) => campaign.name)
+          .join(", "),
         count: drafts.length,
         target: "Campaigns",
         action: t("Review content"),
@@ -237,7 +260,9 @@ export function buildAttention(input: {
       items.push({
         id: "drafts-waiting",
         tone: "warning",
-        title: t("{p0} reply drafts await review", { p0: snapshot.pages?.drafts?.total ?? waiting.length }),
+        title: t("{p0} reply drafts await review", {
+          p0: snapshot.pages?.drafts?.total ?? waiting.length,
+        }),
         detail: t("Approve the exact text before it can be sent."),
         count: snapshot.pages?.drafts?.total ?? waiting.length,
         target: "Inbox",
@@ -265,7 +290,10 @@ export function buildAttention(input: {
         id: "plans-paused",
         tone: "info",
         title: t("{p0} sharing plans are paused", { p0: pausedPlans.length }),
-        detail: pausedPlans.slice(0, 3).map((plan) => plan.name).join(", "),
+        detail: pausedPlans
+          .slice(0, 3)
+          .map((plan) => plan.name)
+          .join(", "),
         count: pausedPlans.length,
         target: "Automations",
         action: t("Open plans"),

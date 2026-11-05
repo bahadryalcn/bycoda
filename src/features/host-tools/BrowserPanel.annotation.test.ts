@@ -5,6 +5,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { BrowserPanel } from "./BrowserPanel";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
 import { registerBrowserComposer } from "./browserComposer";
+import { writeBrowserDraftTransfer } from "./browserDraftTransfer";
 
 vi.mock("../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: vi.fn() }));
 let container: HTMLDivElement, root: Root;
@@ -58,6 +59,7 @@ async function select() {
   );
 }
 beforeEach(() => {
+  writeBrowserDraftTransfer("/project", "host", "project", { comment: "" });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   vi.setSystemTime(1000);
@@ -130,12 +132,88 @@ it("routes selection clicks to inspection, then only adds a draft attachment aft
     stop();
   }
 });
+
+it("revalidates each saved capture before adding multiple selections", async () => {
+  let selected = 0;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _cap, method, params) => {
+    if (method === "browser.annotation.start") state.annotationId = "annotation";
+    const id =
+      method === "browser.annotation.select" ? `capture-${++selected}` : String(params?.captureId);
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 1280, height: 720 }
+        : {}),
+      ...(method === "browser.annotation.select" || method === "browser.annotation.read"
+        ? { selection: { ...selection, id } }
+        : {}),
+    };
+  });
+  const receive = vi.fn(() => true);
+  const stop = registerBrowserComposer("/project", "shell", receive);
+  try {
+    await render();
+    await start();
+    await select();
+    await act(async () => button("Keep selection and select another").click());
+    await select();
+    await act(async () => button("Add selection to composer").click());
+    const ids = vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.filter((call) => call[2] === "browser.annotation.read")
+      .map((call) => call[3]?.captureId);
+    expect(ids).toEqual(["capture-1", "capture-2"]);
+    expect(receive).toHaveBeenCalledTimes(2);
+  } finally {
+    stop();
+  }
+});
+
+it("does not resend an accepted capture after a later delivery fails", async () => {
+  let selected = 0;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _cap, method, params) => {
+    if (method === "browser.annotation.start") state.annotationId = "annotation";
+    const id =
+      method === "browser.annotation.select" ? `capture-${++selected}` : String(params?.captureId);
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 1280, height: 720 }
+        : {}),
+      ...(method === "browser.annotation.select" || method === "browser.annotation.read"
+        ? { selection: { ...selection, id } }
+        : {}),
+    };
+  });
+  const receive = vi
+    .fn()
+    .mockReturnValueOnce(true)
+    .mockReturnValueOnce(false)
+    .mockReturnValue(true);
+  const stop = registerBrowserComposer("/project", "shell", receive);
+  try {
+    await render();
+    await start();
+    await select();
+    await act(async () => button("Keep selection and select another").click());
+    await select();
+    await act(async () => button("Add selection to composer").click());
+    await act(async () => button("Retry adding selection").click());
+    const ids = vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.filter((call) => call[2] === "browser.annotation.read")
+      .map((call) => call[3]?.captureId);
+    expect(ids).toEqual(["capture-1", "capture-2", "capture-2"]);
+  } finally {
+    stop();
+  }
+});
 it("clears on remove, Escape, navigation and lease loss", async () => {
   await render();
   await start();
   await select();
   await act(async () => button("Remove selection").click());
-  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(document.body.querySelector(".host-browser-selection textarea")).toBeNull();
   await select();
   await act(async () =>
     container
@@ -143,7 +221,7 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
   // The shared overlay owns the first Escape; selection stays until explicitly cancelled.
-  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(document.body.querySelector(".host-browser-selection textarea")).toBeNull();
   expect(button("Cancel selection")).toBeDefined();
   await act(async () =>
     container
@@ -158,8 +236,8 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
   await act(async () => {
     vi.advanceTimersByTime(1000);
   });
-  expect(document.body.querySelector("textarea")).toBeNull();
-  expect(container.querySelector("img")).toBeNull();
+  expect(document.body.querySelector(".host-browser-selection textarea")).toBeNull();
+  expect(container.querySelector("img")?.tabIndex).toBe(-1);
   state.navigationId = "nav";
   await act(async () => button("Refresh frame").click());
   await start();
@@ -174,7 +252,7 @@ it("preserves the element and comment when its compact editor closes", async () 
   await render();
   await start();
   await select();
-  const textarea = document.body.querySelector("textarea")!;
+  const textarea = document.body.querySelector(".host-browser-selection textarea")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
       textarea,
@@ -185,10 +263,12 @@ it("preserves the element and comment when its compact editor closes", async () 
   await act(async () =>
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
-  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(document.body.querySelector(".host-browser-selection textarea")).toBeNull();
   expect(container.querySelector('[data-selected="true"]')).not.toBeNull();
   await act(async () => button("Selected browser element").click());
-  expect(document.body.querySelector("textarea")!.value).toBe("Make this action easier to find.");
+  expect(document.body.querySelector(".host-browser-selection textarea")!.value).toBe(
+    "Make this action easier to find.",
+  );
   expect(
     vi
       .mocked(hostFeatureRequest)
@@ -220,7 +300,7 @@ it("ignores a late capture after the target conversation changes", async () => {
   await act(async () => {
     finish({ ...state, selection });
   });
-  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(document.body.querySelector(".host-browser-selection textarea")).toBeNull();
   expect(button("Cancel selection")).toBeUndefined();
 });
 

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HostEngine } from "../../../../host/engine";
-import { createManagedWorkspaceRuntime } from "../../../../host/managed-workspace-runtime";
+import { createManagedWorkspaceRuntime } from "../../../../host/managed/managed-workspace-runtime";
 import { HostStore } from "../../../../host/store";
 import type { WorkspaceRpcRequest } from "../../../features/workspaces/model/contracts";
 import type {

@@ -1,4 +1,5 @@
-import { isRemoteProjectPath, REMOTE_PROJECT_PREFIX } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../../shared/lib/paths";
+import { REMOTE_PATH_PREFIX as REMOTE_PROJECT_PREFIX } from "../../../shared/lib/remotePaths";
 import type { HostProject } from "./protocol";
 
 /** A rail project whose folder lives on another machine. */
@@ -29,7 +30,12 @@ export function remotePath(environmentId: string, hostPath: string): string {
 }
 
 /** Git follows the tab's selected checkout, independently of the file/terminal cwd. */
-export function remoteSessionGitCwd(project: Pick<RemoteProject, "environmentId" | "cwd">, gitCwd: string, projectCwd: string, tabCwd?: string): string {
+export function remoteSessionGitCwd(
+  project: Pick<RemoteProject, "environmentId" | "cwd">,
+  gitCwd: string,
+  projectCwd: string,
+  tabCwd?: string,
+): string {
   const cwd = tabCwd ?? (gitCwd !== projectCwd ? gitCwd : project.cwd);
   return isRemoteProjectPath(cwd) ? cwd : remotePath(project.environmentId, cwd);
 }

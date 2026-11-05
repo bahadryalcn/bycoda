@@ -1,6 +1,6 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import type { SubmitTurnEvents } from "./submitTurnEvents";
-import { startNativeOutputSession } from "./prepareNativeOutputSession";
+import { requireRoomNativeOutput, startNativeOutputSession } from "./prepareNativeOutputSession";
 import { readableHarnessError } from "../../../../integrations/harness/core/readableError";
 
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
@@ -69,7 +69,10 @@ import { beginNativeManagedTurn } from "../../../../features/workspaces/model/na
 import { t } from "../../../../shared/i18n";
 import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
 import { getSendWorkspaceCapabilities } from "../../../../features/workspaces/model/workspaceClient";
-import { hostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
+import {
+  hostSessionBinding,
+  flushHostSessionBindings,
+} from "../../../../features/connections/model/sessionExecutionBinding";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -81,6 +84,7 @@ export async function runSubmitDispatch(
   events: SubmitTurnEvents,
 ): Promise<void> {
   const { sessionId, attachments, options } = input;
+  await flushHostSessionBindings(sessionId);
   if (hostSessionBinding(pre.current))
     throw new Error("Host-owned conversations cannot execute through Native.");
   const { enqueueHarnessEvent, flushHarnessEvents, deferWorkspaceWork } = ctx;
@@ -242,6 +246,8 @@ export async function runSubmitDispatch(
         startNativeOutputSession(sessionId, () => turnGen.current.get(sessionId) === gen);
       earlyNativeOutput = undefined;
       const nativeOutputSessionId = nativeOutput?.sessionId;
+      if (options?.appRequestId)
+        await requireRoomNativeOutput(nativeOutput, () => turnGen.current.get(sessionId) === gen);
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
       // A queued send waits for the provider from here on, not from its claim.
@@ -271,7 +277,9 @@ export async function runSubmitDispatch(
         attachments: turnAttachments,
         prepareText: nativeOutput
           ? async (text, runtimeInstructions) => {
-              await nativeOutput.ready;
+              const persisted = await nativeOutput.ready;
+              if (options?.appRequestId && !persisted)
+                throw new Error("Room submission could not be durably recorded before dispatch.");
               if (turnGen.current.get(sessionId) !== gen)
                 throw new Error("Turn changed before it started");
               return prepareText ? prepareText(text, runtimeInstructions) : text;

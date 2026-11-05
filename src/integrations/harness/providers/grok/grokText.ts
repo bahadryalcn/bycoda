@@ -14,7 +14,7 @@ import { AcpClient } from "../../core/acp";
 import {
   captureChildProcess,
   createChildProcessHandle,
-  execChild,
+  prepareUtilitySessionCleanup,
   resolveGrokBinary,
   spawnChild,
   watchChild,
@@ -201,7 +201,11 @@ async function startLive(
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  const textProcess = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(textProcess, operationContext, true);
   const acpRef: { session: LiveText | null } = { session: null };
   let admitted = false;
@@ -214,8 +218,10 @@ async function startLive(
       onNotification: (method, params) => {
         const session = acpRef.session;
         if (!session || method !== "session/update" || !session.collecting) return;
+        const update = messageFromUpdate(params);
+        if (!update) return;
         const previous = session.output;
-        session.output = mergeStream(previous, textFromUpdate(params));
+        session.output = update.delta ? previous + update.text : mergeStream(previous, update.text);
         const delta = session.output.slice(previous.length);
         if (delta) session.onEvent?.({ type: "message.delta", text: delta });
       },
@@ -289,11 +295,12 @@ async function startLive(
     return preserveProviderFailure(
       error,
       (async () => {
+        const cleanup = session ? await prepareTextSessionCleanup(session) : undefined;
         await settleProviderRetirements([
           stopping,
           ...(admitted ? [retirements.retire([textProcess])] : []),
         ]);
-        if (session) await deleteTextSession(session);
+        await finishTextSessionCleanup(cleanup);
       })(),
     );
   } finally {
@@ -352,22 +359,37 @@ async function dropLive(
     current.closed = true;
     current.acp.close();
   }
+  const cleanup = current ? await prepareTextSessionCleanup(current) : undefined;
   const originals = new Set([current?.process, pending]);
   await (expected
     ? retirements.retire(originals)
     : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(originals)]));
   // Stop the writer first so it cannot recreate the session after deletion.
-  if (current) await deleteTextSession(current);
+  await finishTextSessionCleanup(cleanup);
 }
 
-async function deleteTextSession(session: LiveText): Promise<void> {
-  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(session.acpSessionId)) return;
-  await execChild(
+async function prepareTextSessionCleanup(session: LiveText) {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(session.acpSessionId))
+    return undefined;
+  return prepareUtilitySessionCleanup(
+    session.process,
     session.binaryPath,
     ["--no-auto-update", "sessions", "delete", session.acpSessionId],
     session.cwd,
     "grok",
-  ).catch((error) => console.debug("[bycoda] Grok text session cleanup", error));
+  ).then(
+    (run) => ({ run }),
+    (error: unknown) => ({ error }),
+  );
+}
+async function finishTextSessionCleanup(
+  cleanup: Awaited<ReturnType<typeof prepareTextSessionCleanup>>,
+) {
+  if (cleanup && "run" in cleanup)
+    await cleanup
+      .run()
+      .catch((error) => console.debug("[bycoda] Grok text session cleanup", error));
+  else if (cleanup) console.debug("[bycoda] Grok text session cleanup grant", cleanup.error);
 }
 
 async function handleTextRequest(acp: AcpWriterView, id: number, method: string, params: unknown) {
@@ -399,7 +421,7 @@ function permissionOptionIds(params: unknown): string[] {
   });
 }
 
-function textFromUpdate(params: unknown): string {
+function messageFromUpdate(params: unknown): { text: string; delta: boolean } | undefined {
   const rec =
     params && typeof params === "object" && !Array.isArray(params)
       ? (params as Record<string, unknown>)
@@ -408,10 +430,13 @@ function textFromUpdate(params: unknown): string {
     rec?.update && typeof rec.update === "object" && !Array.isArray(rec.update)
       ? (rec.update as Record<string, unknown>)
       : rec;
-  if (!update) return "";
+  if (!update) return;
   const kind = String(update.sessionUpdate ?? update.session_update ?? update.type ?? "");
-  if (kind !== "agent_message_chunk" && kind !== "agent_message") return "";
-  return textFromContent(update.content ?? update.text);
+  if (kind !== "agent_message_chunk" && kind !== "agent_message") return;
+  return {
+    text: textFromContent(update.content ?? update.text),
+    delta: kind === "agent_message_chunk",
+  };
 }
 
 function textFromContent(content: unknown): string {

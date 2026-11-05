@@ -13,8 +13,8 @@ import { usePaneSession } from "../model/sessionsStore";
 import { PresentationVisibility } from "./presentationVisibility";
 import { HARNESS_TITLE, sessionDisplayTitle, sessionWorkCwd, type Session } from "../model/session";
 import { createNote, noteTitle } from "../../notes";
-import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
 import { Button } from "../../../shared/ui/Button";
@@ -46,11 +46,17 @@ function HostAgentTabView(props: AgentTabViewProps & { session: Session }) {
   const remote = useReadOnlyHostSession(props.session, props.visible);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {remote.error && <Alert tone="danger" role="alert">
-        {remote.error}
-        <Button type="button" variant="secondary" onClick={remote.retry}>{t("Retry")}</Button>
-      </Alert>}
-      <div className="min-h-0 flex-1"><LocalAgentTabView {...props} {...remote} remoteSession /></div>
+      {remote.error && (
+        <Alert tone="danger" role="alert">
+          {remote.error}
+          <Button type="button" variant="secondary" onClick={remote.retry}>
+            {t("Retry")}
+          </Button>
+        </Alert>
+      )}
+      <div className="min-h-0 flex-1">
+        <LocalAgentTabView {...props} {...remote} remoteSession />
+      </div>
     </div>
   );
 }
@@ -82,7 +88,7 @@ function LocalAgentTabView({
   // The shell's copy lags behind by streamed text; the store has the live one.
   // A hidden tab follows the shell and skips streamed frames.
   const live = usePaneSession(shellSession?.id, visible);
-  const session = remoteSession ? shellSession : live ?? shellSession;
+  const session = remoteSession ? shellSession : (live ?? shellSession);
   const navigateBlockRef = useRef<((blockId: string | null, query?: string) => boolean) | null>(
     null,
   );
@@ -105,9 +111,13 @@ function LocalAgentTabView({
     () => null,
   );
   useCitedTurnHistory({
-    visible, jump: jumpRequest, blocks: session?.blocks ?? [],
-    hasMore: remoteHistoryHasMore, loading: remoteHistoryLoading,
-    error: remoteHistoryError, load: onLoadRemoteHistory,
+    visible,
+    jump: jumpRequest,
+    blocks: session?.blocks ?? [],
+    hasMore: remoteHistoryHasMore,
+    loading: remoteHistoryLoading,
+    error: remoteHistoryError,
+    load: onLoadRemoteHistory,
   });
   useEffect(() => {
     if (!visible || !navigatorReady || !session || !jumpRequest) return;

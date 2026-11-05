@@ -2,7 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { Folder, FolderTree } from "../../../shared/ui/icons";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
@@ -72,8 +72,8 @@ export function QuickWorkspaceControls({
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    void listen<QuickGitResult>(QUICK_GIT_RESULT, ({ payload }) => {
-      if (payload.id !== active.current) return;
+    void listenWindowAsync<QuickGitResult>(QUICK_GIT_RESULT, ({ payload }) => {
+      if (disposed || payload.id !== active.current) return;
       closedByTrigger.current = payload.triggerKind ?? null;
       active.current = null;
       activeKind.current = null;

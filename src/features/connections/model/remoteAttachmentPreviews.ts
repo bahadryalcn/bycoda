@@ -1,5 +1,5 @@
 import type { HostSession } from "./protocol";
-import type { Attachment } from "../../sessions/model/session";
+import type { Attachment } from "../../sessions";
 
 type Chunk = { data: string; offset: number; size: number };
 type PreviewRead = (params: { sessionId: string; id: string; offset: number }) => Promise<Chunk>;

@@ -14,16 +14,18 @@ import { copyText } from "../../../platform/tauri/clipboard";
 import { basename, readBinaryFile, revealPath } from "../../../platform/tauri/fs";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
-import { resolveFileOpenRequest } from "../../files/model/fileIndex";
-import { sniffDocumentImageMime } from "../../files/model/filePreview";
-import { mediaKind } from "../../files/model/mediaPreview";
-import { REVEAL_LABEL } from "../../files/ui/explorerMenuItems";
+import { resolveFileOpenRequest } from "../../files/public/fileIndex";
+import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
+import { mediaKind } from "../../files/public/mediaPreview";
+import { REVEAL_LABEL } from "../../files/public/explorerMenuItems";
 
 /** Image formats a transcript file click previews in a dialog before any tab opens. */
 const PREVIEW_IMAGE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)$/i;
 
 const MediaView = lazySurface(
-  async () => ({ default: (await import("../../files/ui/MediaView")).MediaView }),
+  async () => ({
+    default: (await import("../../files").then((entry) => entry.loadMediaView())).MediaView,
+  }),
   { fallback: <SurfaceLoading /> },
 );
 
@@ -211,15 +213,24 @@ export function TranscriptImagePreview({
   }, [cwd, path, attempt]);
 
   const remote = resolved.startsWith(REMOTE_PATH_PREFIX) || !!cwd?.startsWith(REMOTE_PATH_PREFIX);
-  const canReveal = !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localExplorerPath(resolved));
+  const canReveal =
+    !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localExplorerPath(resolved));
   const revealLabel = t(REVEAL_LABEL);
   const name = basename(path);
 
   const actions = (
     <>
       <MediaToolbarButton
-        label={canReveal ? revealLabel : t("Only files on this computer can be shown in the file manager.")}
-        tooltip={canReveal ? revealLabel : t("Only files on this computer can be shown in the file manager.")}
+        label={
+          canReveal
+            ? revealLabel
+            : t("Only files on this computer can be shown in the file manager.")
+        }
+        tooltip={
+          canReveal
+            ? revealLabel
+            : t("Only files on this computer can be shown in the file manager.")
+        }
         disabled={!canReveal || reveal.pending}
         onClick={() => reveal.copy(() => revealPath(resolved))}
       >

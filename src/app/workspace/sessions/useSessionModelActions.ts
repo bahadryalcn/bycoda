@@ -85,7 +85,9 @@ export function useSessionModelActions({
         });
         showSubmitNotice(
           sessionId,
-          t("The provider handoff is still being prepared. Your pick applies as soon as it finishes."),
+          t(
+            "The provider handoff is still being prepared. Your pick applies as soon as it finishes.",
+          ),
         );
         return;
       }

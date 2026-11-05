@@ -37,7 +37,9 @@ export function GitCommitBlameView({
           onRetry={resource.refresh}
         />
       ) : null}
-      {resource.loading && !resource.data ? <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText> : null}
+      {resource.loading && !resource.data ? (
+        <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>
+      ) : null}
       {!sha ? (
         <EmptyState size="inline" className="px-3" description={t("No commits yet")} />
       ) : null}

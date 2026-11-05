@@ -15,6 +15,7 @@ export const SessionsPageParamsSchema = z.strictObject({
 });
 export const SessionsSyncParamsSchema = z.strictObject({
   sessionId: IdentifierSchema,
+  sourceEpoch: IdentifierSchema.optional(),
   preview: z.boolean().optional(),
   revision: SafeCounterSchema.optional(),
   waitMs: SafeCounterSchema.max(30_000).optional(),
@@ -48,17 +49,21 @@ const history = z.strictObject({
   totalBlocks: SafeCounterSchema,
 });
 const metadata = {
+  sourceEpoch: IdentifierSchema.optional(),
   authorityGeneration: SafeCounterSchema.min(1).optional(),
   history: history.optional(),
   historyLoading: z.boolean().optional(),
   projectId: IdentifierSchema,
   revision: SafeCounterSchema,
   runId: IdentifierSchema.optional(),
-  runActivity:z.strictObject({runId:IdentifierSchema,lastActivityAt:SafeCounterSchema}).optional(),
+  runActivity: z
+    .strictObject({ runId: IdentifierSchema, lastActivityAt: SafeCounterSchema })
+    .optional(),
   status: z.enum(["idle", "running", "interrupted"]),
   executionOwner: z.enum(["host", "desktop"]).optional(),
   createdAt: SafeCounterSchema.optional(),
   updatedAt: SafeCounterSchema,
+  lastActivityAt: SafeCounterSchema.optional(),
   archived: z.boolean().optional(),
   pinned: z.boolean().optional(),
   autoWorktreeBranch: z.string().optional(),
@@ -86,6 +91,14 @@ export const SessionSummarySchema = z.strictObject({
   id: IdentifierSchema,
   title: z.string(),
   harness: SessionProviderSchema,
+  providerHistory: z
+    .strictObject({
+      providers: z.array(SessionProviderSchema),
+      activeHarness: SessionProviderSchema,
+      activeModel: z.string().optional(),
+      handedOffFrom: SessionProviderSchema.optional(),
+    })
+    .optional(),
   issue: z.enum(["retrying", "failed"]).optional(),
   issueTurnId: z.string().optional(),
   issueMessage: z.string().optional(),
@@ -116,7 +129,11 @@ export const SessionsListResultSchema = z.union([
   z.strictObject({ etag: z.string(), sessions: z.array(SessionSummarySchema) }),
 ]);
 export const SessionSyncSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("unchanged"), revision: SafeCounterSchema }),
+  z.strictObject({
+    kind: z.literal("unchanged"),
+    revision: SafeCounterSchema,
+    sourceEpoch: IdentifierSchema.optional(),
+  }),
   z.strictObject({ kind: z.literal("snapshot"), value: SessionViewSchema }),
   z.strictObject({
     kind: z.literal("delta"),
@@ -133,6 +150,7 @@ export const SessionSyncSchema = z.discriminatedUnion("kind", [
 ]);
 export const SessionSyncTransferSchema = z.strictObject({
   kind: z.literal("chunked"),
+  sourceEpoch: IdentifierSchema.optional(),
   transfer: IdentifierSchema,
   length: SafeCounterSchema,
 });

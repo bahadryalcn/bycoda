@@ -8,8 +8,9 @@ const api = vi.hoisted(() => ({
   mac: true,
   native: true,
   callbacks: new Map<string, (event: { payload: string }) => void>(),
-  targets: new Map<string, unknown>(),
   releases: [] as ReturnType<typeof vi.fn>[],
+  targets: new Map<string, unknown>(),
+  gate: null as Promise<void> | null,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: api.invoke,
@@ -19,13 +20,15 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name, callback, options) => {
     api.callbacks.set(name, callback);
     api.targets.set(name, options);
+    if (name === "bycoda:tray-open-session" && api.gate) await api.gate;
     const release = vi.fn();
     api.releases.push(release);
     return release;
   }),
+  once: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "workspace-2" }),
+  getCurrentWebviewWindow: () => ({ label: "window-2" }),
 }));
 vi.mock("../../platform/tauri/platform", () => ({
   get IS_MAC() {
@@ -73,6 +76,7 @@ beforeEach(() => {
   api.native = true;
   api.callbacks.clear();
   api.targets.clear();
+  api.gate = null;
   api.releases = [];
   projectKeys = new Set(["/project"]);
   container = document.createElement("div");
@@ -109,10 +113,6 @@ it("publishes status and canonical ownership and routes only visible selections"
   api.callbacks.get(TRAY_OPEN_EVENT)?.({ payload: "local" });
   expect(onOpen).toHaveBeenCalledWith("local");
   onOpen.mockClear();
-  // The native menu addresses the window that published the row: both tray
-  // subscriptions are scoped to this window instead of a process-wide listener.
-  expect(api.targets.get(TRAY_OPEN_EVENT)).toEqual({ target: "workspace-2" });
-  expect(api.targets.get("bycoda:tray-notifications")).toEqual({ target: "workspace-2" });
   projectKeys = new Set();
   await act(async () => root.render(createElement(Probe)));
   api.callbacks.get(TRAY_OPEN_EVENT)?.({ payload: "local" });
@@ -137,6 +137,29 @@ it("publishes native snapshots on Windows and skips IPC in browsers", async () =
   await act(async () => root.render(createElement(Probe)));
   expect(api.invoke).not.toHaveBeenCalled();
   expect(api.callbacks.size).toBe(0);
+});
+
+it("registers both tray actions for the receiving window", async () => {
+  await act(async () => root.render(createElement(Probe)));
+  expect(api.targets.get(TRAY_OPEN_EVENT)).toEqual({ target: "window-2" });
+  expect(api.targets.get("bycoda:tray-notifications")).toEqual({ target: "window-2" });
+});
+
+it("ignores a tray action after unmount before registration resolves", async () => {
+  let registered!: () => void;
+  api.gate = new Promise<void>((resolve) => {
+    registered = resolve;
+  });
+  await act(async () => root.render(createElement(Probe)));
+  await act(async () => root.unmount());
+  api.callbacks.get(TRAY_OPEN_EVENT)?.({ payload: "local" });
+  expect(onOpen).not.toHaveBeenCalled();
+  await act(async () => {
+    registered();
+    await Promise.resolve();
+  });
+  expect(api.releases.every((release) => release.mock.calls.length === 1)).toBe(true);
+  root = createRoot(container);
 });
 
 it("publishes at most one native menu update per second, ending with the latest", async () => {

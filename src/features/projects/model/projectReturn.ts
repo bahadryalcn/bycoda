@@ -1,8 +1,8 @@
 import { leafIds, type WorkspaceTab } from "../../workspace/model/layout";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
 import { pathKey } from "../../../shared/lib/paths";
-import { sameProjectPath } from "./recents";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { sameProjectPath } from "../../../shared/lib/paths";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 
 export type ProjectReturnMemory = ReadonlyMap<string, string>;
 

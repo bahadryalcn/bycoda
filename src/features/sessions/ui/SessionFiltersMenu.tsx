@@ -30,6 +30,8 @@ type Props = {
   onChange: (filters: SessionSidebarFilters) => void;
   onClose: () => void;
   local?: boolean;
+  allowedTimeFilters?: readonly SessionTimeFilter[];
+  defaultFilters?: SessionSidebarFilters;
 };
 
 const DENSITY_OPTIONS: { id: SessionListDensity; label: string }[] = [
@@ -80,7 +82,17 @@ const TIME_OPTIONS: { id: SessionTimeFilter; label: string }[] = [
   },
 ];
 
-export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose, local = true }: Props) {
+export function SessionFiltersMenu({
+  x,
+  y,
+  harnesses,
+  filters,
+  onChange,
+  onClose,
+  local = true,
+  allowedTimeFilters,
+  defaultFilters = DEFAULT_SESSION_SIDEBAR_FILTERS,
+}: Props) {
   const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
   // View options are not filters: they never mark the trigger active or clear.
@@ -123,7 +135,11 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
       className="overflow-y-auto overscroll-none p-1"
     >
       <FilterItem label={t("Archived")} checked={filters.showArchived} onClick={toggleArchived} />
-      <ManagedFilter local={local} checked={filters.assistantManaged} onClick={() => onChange({ ...filters, assistantManaged: !filters.assistantManaged })} />
+      <ManagedFilter
+        local={local}
+        checked={filters.assistantManaged}
+        onClick={() => onChange({ ...filters, assistantManaged: !filters.assistantManaged })}
+      />
 
       <SectionLabel as="div" className="px-2">
         {t("Status")}
@@ -147,7 +163,9 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
       <SectionLabel as="div" className="px-2">
         {t("Time")}
       </SectionLabel>
-      {TIME_OPTIONS.map((option) => (
+      {TIME_OPTIONS.filter(
+        (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
+      ).map((option) => (
         <FilterItem
           key={option.id}
           label={option.label}
@@ -196,7 +214,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
         onClick={() => updateSessionListDisplay({ showBranch: !display.showBranch })}
       />
 
-      {hasActiveSessionFilters(filters) ? (
+      {hasActiveSessionFilters(filters, defaultFilters.time) ? (
         <>
           <Divider />
           <Button
@@ -205,7 +223,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
             type="button"
             role="menuitem"
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onChange(DEFAULT_SESSION_SIDEBAR_FILTERS)}
+            onClick={() => onChange(defaultFilters)}
             className="w-full text-left"
           >
             {t("Clear filters")}
@@ -216,12 +234,28 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
   );
 }
 
-function ManagedFilter({local,...props}:{local:boolean;checked:boolean;onClick:()=>void}) {
-  return local ? <NamedManagedFilter {...props}/> : <FilterItem {...props} label={t("Managed sessions")}/>;
+function ManagedFilter({
+  local,
+  ...props
+}: {
+  local: boolean;
+  checked: boolean;
+  onClick: () => void;
+}) {
+  return local ? (
+    <NamedManagedFilter {...props} />
+  ) : (
+    <FilterItem {...props} label={t("Managed sessions")} />
+  );
 }
-function NamedManagedFilter(props:{checked:boolean;onClick:()=>void}) {
-  const {name}=useAssistantIdentity();
-  return <FilterItem {...props} label={name?t("Managed by {p0}",{p0:name}):t("Managed sessions")}/>;
+function NamedManagedFilter(props: { checked: boolean; onClick: () => void }) {
+  const { name } = useAssistantIdentity();
+  return (
+    <FilterItem
+      {...props}
+      label={name ? t("Managed by {p0}", { p0: name }) : t("Managed sessions")}
+    />
+  );
 }
 
 function FilterItem({

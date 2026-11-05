@@ -217,7 +217,11 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
      beneath it. Keep the status hue and solid-action palette independent. */
   --ui-status-ink-strength: clamp(0%, calc((var(--theme-dark-lightness) - 4%) * 2.5), 50%);
   --ui-status-shade-strength: clamp(0%, calc((var(--theme-dark-lightness) - 4%) * 3.5), 65%);
-  --ui-status-surface: color-mix(in oklab, var(--ui-surface) calc(100% - var(--ui-status-shade-strength)), var(--palette-scrim));
+  --ui-status-surface: color-mix(
+    in oklab,
+    var(--ui-surface) calc(100% - var(--ui-status-shade-strength)),
+    var(--palette-scrim)
+  );
   --ui-control-disabled-fg: var(--ui-text-disabled);
   --ui-control-disabled-surface: var(--ui-surface-muted);
   --ui-control-disabled-border: var(--color-stroke);
@@ -279,7 +283,11 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-code-log-warning: color-mix(in srgb, var(--color-warning) 7%, transparent);
   --ui-code-log-info: color-mix(in srgb, var(--color-info) 5%, transparent);
   --ui-code-log-success: color-mix(in srgb, var(--color-success) 7%, transparent);
-  --ui-tone-info-fg: color-mix(in srgb, var(--color-info) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
+  --ui-tone-info-fg: color-mix(
+    in srgb,
+    var(--color-info) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-info-solid: var(--color-info);
   --ui-tone-info-on-solid: var(--ui-tone-status-on-solid);
   --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-status-surface));
@@ -303,20 +311,39 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
      band of light that sweeps across it. Translucent so custom row colours and states show through. */
   --ui-working-row-tint: color-mix(in srgb, var(--color-active) 8%, transparent);
   --ui-working-row-sweep: color-mix(in srgb, var(--color-active) 20%, transparent);
-  --ui-working-row-tint-layer: linear-gradient(var(--ui-working-row-tint), var(--ui-working-row-tint));
+  --ui-working-row-tint-layer: linear-gradient(
+    var(--ui-working-row-tint),
+    var(--ui-working-row-tint)
+  );
   --ui-working-row-sweep-layer: linear-gradient(
     100deg,
     transparent 30%,
     var(--ui-working-row-sweep) 50%,
     transparent 70%
   );
-  --ui-tone-success-fg: color-mix(in srgb, var(--color-success) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
+  --ui-tone-success-fg: color-mix(
+    in srgb,
+    var(--color-success) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-success-solid: var(--color-success);
   --ui-tone-success-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-success-subtle: color-mix(in srgb, var(--ui-tone-success-fg) 9%, var(--ui-status-surface));
+  --ui-tone-success-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-success-fg) 9%,
+    var(--ui-status-surface)
+  );
   --ui-tone-success-border: color-mix(in srgb, var(--ui-tone-success-fg) 60%, var(--color-stroke));
-  --ui-tone-success-hover: color-mix(in srgb, var(--ui-tone-success-fg) 14%, var(--ui-status-surface));
-  --ui-tone-success-pressed: color-mix(in srgb, var(--ui-tone-success-fg) 20%, var(--ui-status-surface));
+  --ui-tone-success-hover: color-mix(
+    in srgb,
+    var(--ui-tone-success-fg) 14%,
+    var(--ui-status-surface)
+  );
+  --ui-tone-success-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-success-fg) 20%,
+    var(--ui-status-surface)
+  );
   --ui-tone-success-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-success-solid) 94%,
@@ -330,13 +357,29 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-success-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-success-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-success-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-warning-fg: color-mix(in srgb, var(--color-warning) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
+  --ui-tone-warning-fg: color-mix(
+    in srgb,
+    var(--color-warning) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-warning-solid: var(--color-warning);
   --ui-tone-warning-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-warning-subtle: color-mix(in srgb, var(--ui-tone-warning-fg) 9%, var(--ui-status-surface));
+  --ui-tone-warning-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-warning-fg) 9%,
+    var(--ui-status-surface)
+  );
   --ui-tone-warning-border: color-mix(in srgb, var(--ui-tone-warning-fg) 60%, var(--color-stroke));
-  --ui-tone-warning-hover: color-mix(in srgb, var(--ui-tone-warning-fg) 14%, var(--ui-status-surface));
-  --ui-tone-warning-pressed: color-mix(in srgb, var(--ui-tone-warning-fg) 20%, var(--ui-status-surface));
+  --ui-tone-warning-hover: color-mix(
+    in srgb,
+    var(--ui-tone-warning-fg) 14%,
+    var(--ui-status-surface)
+  );
+  --ui-tone-warning-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-warning-fg) 20%,
+    var(--ui-status-surface)
+  );
   --ui-tone-warning-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-warning-solid) 94%,
@@ -350,13 +393,29 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-warning-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-warning-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-warning-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-danger-fg: color-mix(in srgb, var(--color-danger) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
+  --ui-tone-danger-fg: color-mix(
+    in srgb,
+    var(--color-danger) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-danger-solid: var(--color-danger);
   --ui-tone-danger-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-danger-subtle: color-mix(in srgb, var(--ui-tone-danger-fg) 9%, var(--ui-status-surface));
+  --ui-tone-danger-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) 9%,
+    var(--ui-status-surface)
+  );
   --ui-tone-danger-border: color-mix(in srgb, var(--ui-tone-danger-fg) 60%, var(--color-stroke));
-  --ui-tone-danger-hover: color-mix(in srgb, var(--ui-tone-danger-fg) 14%, var(--ui-status-surface));
-  --ui-tone-danger-pressed: color-mix(in srgb, var(--ui-tone-danger-fg) 20%, var(--ui-status-surface));
+  --ui-tone-danger-hover: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) 14%,
+    var(--ui-status-surface)
+  );
+  --ui-tone-danger-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) 20%,
+    var(--ui-status-surface)
+  );
   --ui-tone-danger-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-danger-solid) 94%,
@@ -375,7 +434,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 html.theme-light {
   --ui-status-ink-strength: 10%;
   --ui-status-shade-strength: 0%;
-  --ui-elevation-floating: 0 8px 24px color-mix(in oklab, var(--color-scrim) 10%, transparent),
+  --ui-elevation-floating:
+    0 8px 24px color-mix(in oklab, var(--color-scrim) 10%, transparent),
     0 1px 2px color-mix(in oklab, var(--color-scrim) 8%, transparent);
   --ui-tone-neutral-on-solid: var(--palette-solidInk);
   --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--ui-tint-base));
@@ -404,7 +464,8 @@ html.theme-light {
   --ui-icon-stroke: 1.75;
   /* One floating family for Popover, Modal, Select, Menu and Combobox surfaces. */
   --ui-radius-popup: 0.75rem;
-  --ui-elevation-floating: 0 8px 24px color-mix(in oklab, var(--color-scrim) 32%, transparent),
+  --ui-elevation-floating:
+    0 8px 24px color-mix(in oklab, var(--color-scrim) 32%, transparent),
     0 1px 3px color-mix(in oklab, var(--color-scrim) 24%, transparent);
   /* The pane owns the backdrop; growing history must not paint over it. */
   --ui-transcript-surface: transparent;
@@ -416,11 +477,7 @@ html.theme-light {
   );
   --ui-text-disabled: color-mix(in srgb, var(--color-content) 60%, var(--ui-tint-base));
   --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 82%, var(--ui-tint-base));
-  --ui-terminal-suggestion: color-mix(
-    in oklab,
-    var(--color-info) 55%,
-    var(--ui-tint-base)
-  );
+  --ui-terminal-suggestion: color-mix(in oklab, var(--color-info) 55%, var(--ui-tint-base));
   /* Canvas = navigation panel < reading/form surface < floating surface.
      Navigation shares the chat ground; existing borders separate panes (V3-033).
      Derive every layer from the user's tint rather than a second gray palette. Layers mix with
@@ -428,6 +485,29 @@ html.theme-light {
      the Pure background paints the canvas pure black or white (V3-039). */
   --ui-surface-panel: var(--ui-chat-canvas);
   --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--ui-tint-base));
+  /* Workspace panes share the owning canvas's glass instead of stacking opaque
+     fills. Floating overlays and embedded document/media pixels keep their roles. */
+  --ui-workspace-canvas: var(--color-background-base);
+  --ui-workspace-panel: var(--ui-surface-panel);
+  --ui-workspace-reading: var(--ui-surface);
+  --ui-workspace-reading-base: var(--color-background-base);
+  --ui-workspace-reading-chat: var(--ui-chat-canvas);
+  --ui-workspace-reading-panel: var(--ui-surface-panel);
+  --ui-workspace-reading-muted: var(--ui-surface-muted);
+  --ui-workspace-canvas-muted: var(--ui-surface-muted);
+  --ui-workspace-canvas-chat: var(--ui-chat-canvas);
+  --ui-workspace-canvas-surface: var(--ui-surface);
+  /* Navigation has its own glass gate: sidebar-only glass must not depend on
+     the user's independent main-pane preference. Controls keep readable fills. */
+  --ui-navigation-panel: var(--ui-surface-panel);
+  --ui-navigation-chrome: var(--color-background-base);
+  --ui-navigation-quiet: var(--ui-surface-quiet);
+  --ui-navigation-control: var(--ui-surface);
+  --ui-navigation-selected: var(--ui-surface-selected);
+  --ui-navigation-selected-layer: linear-gradient(
+    var(--ui-navigation-selected),
+    var(--ui-navigation-selected)
+  );
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
@@ -463,6 +543,8 @@ html.theme-light {
      distinct from the canvas (and from a background image behind it) without a hard jump.
      Popups, menus and modals use --ui-surface-floating. */
   --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
+  /* Reading has one quiet neutral step above navigation; artwork/glass retains its owner. */
+  --ui-chat-pane-canvas: color-mix(in srgb, var(--color-content) 4%, var(--ui-chat-canvas));
   --ui-composer-surface: var(--ui-surface);
   /* Chat cards (changed files, plan, task list, tool output) share the composer's quiet step:
      near black / near white on the pure canvas instead of a mid gray card (owner 2026-11-03). */
@@ -508,8 +590,16 @@ html.theme-light {
   --ui-editor-gutter-text: var(--ui-text-muted);
   --ui-editor-gutter-active-text: var(--color-content);
   --ui-editor-active-line: color-mix(in srgb, var(--color-content) 4%, transparent);
-  --ui-editor-search-match: color-mix(in srgb, var(--color-search, var(--color-warning)) 28%, transparent);
-  --ui-editor-search-match-current: color-mix(in srgb, var(--color-search, var(--color-warning)) 52%, transparent);
+  --ui-editor-search-match: color-mix(
+    in srgb,
+    var(--color-search, var(--color-warning)) 28%,
+    transparent
+  );
+  --ui-editor-search-match-current: color-mix(
+    in srgb,
+    var(--color-search, var(--color-warning)) 52%,
+    transparent
+  );
   --ui-selection-inactive: color-mix(in srgb, var(--color-content) 12%, transparent);
   /* Overview ruler marks follow the active diff palette. */
   --ui-diff-ruler-add: var(--color-diff-add);
@@ -519,7 +609,11 @@ html.theme-light {
   /* Merge conflict sides are tinted regions, not edge stripes. */
   --ui-conflict-current-marker: color-mix(in oklab, var(--color-conflict-ours) 22%, transparent);
   --ui-conflict-incoming-marker: color-mix(in oklab, var(--color-conflict-theirs) 22%, transparent);
-  --ui-pane-border: color-mix(in oklab, var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3), var(--ui-surface-muted));
+  --ui-pane-border: color-mix(
+    in oklab,
+    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3),
+    var(--ui-surface-muted)
+  );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
@@ -629,8 +723,8 @@ html.theme-light {
   --theme-hue: 216;
   --theme-saturation: 24%;
   --theme-dark-lightness: 4%;
-  --sidebar-opacity: 0.85;
-  --main-opacity: 0.85;
+  --sidebar-opacity: 1;
+  --main-opacity: 1;
   --chat-background-empty-opacity: 0.24;
   --chat-background-session-opacity: 0.24;
   --chat-background-blur: 0px;
@@ -757,7 +851,8 @@ html.theme-light {
   /* Light frosted cards: a milky veil that brightens what it blurs. */
   --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 36%, transparent);
   --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.6) brightness(1.05);
-  --ui-frosted-edge: inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 85%, transparent);
+  --ui-frosted-edge: inset 0 1px 0
+    color-mix(in oklab, var(--color-background-base) 85%, transparent);
   --ui-activity-dock-edge:
     inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
     inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 80%, transparent);
@@ -788,18 +883,26 @@ html[data-canvas-background="pure"] {
      stays near the pure ground instead of a mid gray slab; the pane border and floating elevation
      separate it, and controls inside keep their steps (fields stay one step lighter). */
   --ui-surface-floating: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
-  /* The composer sits one quiet step above the pure ground (about #0e0e0e on black, owner
-     2026-11-01: "1e1e1e bunun yerine 0e0e0e"); its border keeps the writing area distinct. */
-  --ui-composer-surface: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  /* Keep the writing area visibly above the dark chat canvas while retaining the user's tint. */
+  --ui-composer-surface: color-mix(in srgb, var(--color-content) 9%, var(--color-background-base));
+  /* A canvas-tinted veil vanishes on pure black, so the activity/queue glass is a faint light
+     veil over an undimmed blur here: translucent, yet distinct from the transcript
+     (owner 2026-11-04: "full siyahtı ... yarı saydam ve glass efektli olması gerekiyor"). */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-content) 8%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.6);
 }
 html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
+  --ui-chat-pane-canvas: var(--ui-chat-canvas);
   --ui-surface-floating: var(--ui-surface-raised);
   /* Mirror of the dark step: a faint off-white on the white ground. */
   --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
      bubbles, code and cards readable as surfaces. Hover/pressed/selected derive from it. */
   --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
+  /* Light mirror of the pure glass: a faint ink veil, so the pane still reads on white. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-content) 4%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.04);
 }
 
 /* Native ranges keep their text readable; transparent overlay editors below
@@ -940,6 +1043,33 @@ html.has-native-glass:not(.theme-light) #root {
   background: color-mix(in srgb, var(--color-background-base) 0%, transparent);
 }
 
+.app-canvas {
+  background: var(--color-background-base);
+}
+
+/* The root must not add another alpha layer above the native window. Sidebar
+   and main-pane settings each own exactly one canvas fill. */
+html.has-native-glass:not(.theme-light) .app-canvas {
+  background: transparent;
+}
+
+html.has-native-glass:not(.theme-light) {
+  --ui-navigation-panel: transparent;
+  --ui-navigation-chrome: color-mix(
+    in srgb,
+    var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
+    transparent
+  );
+  --ui-navigation-quiet: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  --ui-navigation-control: var(--ui-navigation-quiet);
+  --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 72%, transparent);
+}
+
+/* A header inside an already painted pane must not add another opacity layer. */
+html.has-native-glass:not(.theme-light) .body-glass .bycoda-titlebar {
+  background: transparent;
+}
+
 /* Layers are promoted only while moving. */
 .reorder-item:is([data-dragging], [data-settling]) {
   will-change: transform;
@@ -1077,7 +1207,7 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
 /* The calm canvas sits under the artwork layer, so images and scenes still cover it.
    Native glass keeps the window translucent: the main pane's glass owns that fill. */
 .chat-pane-background {
-  background-color: var(--ui-chat-canvas);
+  background-color: var(--ui-chat-pane-canvas);
 }
 
 html.has-native-glass:not(.theme-light) .chat-pane-background {
@@ -1308,6 +1438,13 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   background-color: color-mix(in srgb, var(--color-search) 46%, transparent);
 }
 
+::highlight(bycoda-chat-citation) {
+  background-color: var(--ui-text-selection-background);
+  color: var(--ui-text-selection-foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--ui-focus-ring-color);
+}
+
 ::highlight(bycoda-transcript-search-current) {
   background-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
 }
@@ -1324,24 +1461,6 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   mask-image: var(--tab-label-mask);
 }
 
-/* Fade a stationary layer, leaving the scroll surface unmasked. The session list shares
-   the chat canvas via the navigation role; fade into that same ground, not a raised card. */
-.sidebar-session-scroll {
-  --scroll-fade-surface: var(--ui-surface-panel);
-}
-.sidebar-session-scroll::after {
-  content: "";
-  display: block;
-  block-size: 2.5rem;
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--scroll-fade-surface));
-  z-index: 4;
-}
-.sidebar-session-scroll::after {
-  position: sticky;
-  inset-block-end: 0;
-  margin-block-start: -2.5rem;
-}
 .agent-transcript [data-transcript-search-current="true"] .user-message-bubble pre.line-clamp-4 {
   display: block;
   overflow: visible;
@@ -1378,6 +1497,13 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
     transition: opacity var(--motion-duration-fast) ease;
   }
 
+  /* Answer rows have no turn gap: reserve the action tray's real height so it
+   * cannot cover the next question, even when text or controls wrap. */
+  [data-question-answer] .user-message-actions {
+    position: static;
+    align-self: flex-end;
+  }
+
   .user-message-row:hover .user-message-actions,
   .user-message-row:focus-within .user-message-actions {
     opacity: 1;
@@ -1400,7 +1526,7 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
 
 /* Neutral reading surface: the accent never paints message bodies. */
 html.has-user-accent .user-message-bubble {
-  background: var(--ui-surface);
+  background: var(--ui-workspace-reading);
   border-color: var(--color-stroke);
 }
 
@@ -2021,6 +2147,20 @@ html.has-native-glass.glass-body:not(.theme-light) .body-glass {
   );
 }
 
+html.has-native-glass.glass-body:not(.theme-light) {
+  --ui-workspace-canvas: transparent;
+  --ui-workspace-panel: transparent;
+  --ui-workspace-reading: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  --ui-workspace-reading-base: var(--ui-workspace-reading);
+  --ui-workspace-reading-chat: var(--ui-workspace-reading);
+  --ui-workspace-reading-panel: var(--ui-workspace-reading);
+  --ui-workspace-reading-muted: var(--ui-workspace-reading);
+  --ui-workspace-canvas-muted: var(--ui-workspace-canvas);
+  --ui-workspace-canvas-chat: var(--ui-workspace-canvas);
+  --ui-workspace-canvas-surface: var(--ui-workspace-canvas);
+  --ui-composer-surface: var(--ui-workspace-reading);
+}
+
 /* The session sidebar keeps the main pane's opaque look, but its glass follows
    the sidebar setting and does not depend on the main pane glass toggle. */
 html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
@@ -2029,6 +2169,168 @@ html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
     var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
     transparent
   );
+}
+
+/* Opt-out belongs to the whole workspace, including the native-transparent
+   root. Keep overlays, fields, selection and content colors independently owned. */
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html.has-native-glass:not(.theme-light),
+  html.has-native-glass.glass-body:not(.theme-light) {
+    --ui-navigation-panel: var(--ui-surface-panel);
+    --ui-navigation-chrome: var(--color-background-base);
+    --ui-navigation-quiet: var(--ui-surface-quiet);
+    --ui-navigation-control: var(--ui-surface);
+    --ui-navigation-selected: var(--ui-surface-selected);
+    --ui-workspace-canvas: var(--color-background-base);
+    --ui-workspace-panel: var(--ui-surface-panel);
+    --ui-workspace-reading: var(--ui-surface);
+    --ui-workspace-reading-base: var(--color-background-base);
+    --ui-workspace-reading-chat: var(--ui-chat-canvas);
+    --ui-workspace-reading-panel: var(--ui-surface-panel);
+    --ui-workspace-reading-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-chat: var(--ui-chat-canvas);
+    --ui-workspace-canvas-surface: var(--ui-surface);
+    --ui-composer-surface: var(--ui-surface);
+  }
+
+  html.has-native-glass:not(.theme-light),
+  html.has-native-glass:not(.theme-light) body,
+  html.has-native-glass:not(.theme-light) #root,
+  html.has-native-glass:not(.theme-light) .app-canvas,
+  html.has-native-glass:not(.theme-light) .body-glass,
+  html.has-native-glass.glass-body:not(.theme-light) .body-glass,
+  html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+  html.has-native-glass:not(.theme-light) .sidebar-glass {
+    background: var(--color-background-base);
+  }
+}
+
+/* Workspace artwork is a single window-wide image behind the existing pane
+   hierarchy. The theme veil limits even a white/black stop to 32% contribution
+   so text remains readable; the user's strength scales that contribution. */
+.workspace-background-preview {
+  background-color: var(--color-background-base);
+}
+
+html.has-workspace-background,
+.workspace-background-preview {
+  --workspace-background-veil: color-mix(
+    in srgb,
+    var(--color-background-base)
+      calc(100% - clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
+    transparent
+  );
+}
+
+.workspace-background-preview {
+  background-image:
+    linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
+    var(--workspace-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+html.has-workspace-background,
+html.has-workspace-background.has-native-glass:not(.theme-light),
+html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
+  --ui-workspace-canvas: transparent;
+  --ui-workspace-panel: transparent;
+  --ui-workspace-reading: color-mix(in srgb, var(--ui-surface) 80%, transparent);
+  --ui-workspace-reading-base: var(--ui-workspace-reading);
+  --ui-workspace-reading-chat: var(--ui-workspace-reading);
+  --ui-workspace-reading-panel: var(--ui-workspace-reading);
+  --ui-workspace-reading-muted: var(--ui-workspace-reading);
+  --ui-workspace-canvas-muted: transparent;
+  --ui-workspace-canvas-chat: transparent;
+  --ui-workspace-canvas-surface: transparent;
+  --ui-navigation-panel: transparent;
+  --ui-navigation-chrome: transparent;
+  --ui-navigation-quiet: var(--ui-workspace-reading);
+  --ui-navigation-control: var(--ui-workspace-reading);
+  --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 80%, transparent);
+  --ui-composer-surface: var(--ui-workspace-reading);
+  background-color: var(--color-background-base);
+  background-image:
+    linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
+    var(--workspace-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+html.has-workspace-background body,
+html.has-workspace-background #root,
+html.has-workspace-background .app-canvas,
+html.has-workspace-background.has-native-glass:not(.theme-light) body,
+html.has-workspace-background.has-native-glass:not(.theme-light) #root,
+html.has-workspace-background.has-native-glass:not(.theme-light) .app-canvas,
+html.has-workspace-background .sidebar-glass,
+html.has-workspace-background .body-glass,
+html.has-workspace-background .bycoda-sidebar.body-glass,
+html.has-workspace-background.has-native-glass:not(.theme-light) .sidebar-glass,
+html.has-workspace-background.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) .body-glass {
+  background: transparent;
+}
+
+html.has-workspace-background .chat-pane-background,
+html.has-workspace-background.has-native-glass:not(.theme-light) .chat-pane-background {
+  background-color: transparent;
+}
+
+html.has-workspace-background .bycoda-sidebar [data-session-card][data-selected] {
+  --action-host-selected: var(--ui-navigation-selected-layer);
+}
+
+/* Unknown media features must not disable artwork; only explicit user opt-outs do. */
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html.has-workspace-background,
+  html.has-workspace-background.has-native-glass:not(.theme-light),
+  html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
+    --ui-workspace-canvas: var(--color-background-base);
+    --ui-workspace-panel: var(--ui-surface-panel);
+    --ui-workspace-reading: var(--ui-surface);
+    --ui-workspace-reading-base: var(--color-background-base);
+    --ui-workspace-reading-chat: var(--ui-chat-canvas);
+    --ui-workspace-reading-panel: var(--ui-surface-panel);
+    --ui-workspace-reading-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-chat: var(--ui-chat-canvas);
+    --ui-workspace-canvas-surface: var(--ui-surface);
+    --ui-navigation-panel: var(--ui-surface-panel);
+    --ui-navigation-chrome: var(--color-background-base);
+    --ui-navigation-quiet: var(--ui-surface-quiet);
+    --ui-navigation-control: var(--ui-surface);
+    --ui-navigation-selected: var(--ui-surface-selected);
+    --ui-composer-surface: var(--ui-surface);
+    background: var(--color-background-base);
+  }
+
+  .workspace-background-preview {
+    background-image: none;
+  }
+
+  html.has-workspace-background body,
+  html.has-workspace-background #root,
+  html.has-workspace-background .app-canvas,
+  html.has-workspace-background.has-native-glass:not(.theme-light) body,
+  html.has-workspace-background.has-native-glass:not(.theme-light) #root,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .app-canvas,
+  html.has-workspace-background .sidebar-glass,
+  html.has-workspace-background .body-glass,
+  html.has-workspace-background .bycoda-sidebar.body-glass,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .sidebar-glass,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+  html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) .body-glass {
+    background: var(--color-background-base);
+  }
+
+  html.has-workspace-background .chat-pane-background,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .chat-pane-background {
+    background-color: var(--ui-chat-pane-canvas);
+  }
 }
 
 textarea,
@@ -2240,6 +2542,8 @@ html.is-resizing {
 }
 
 .composer-field {
+  /* Match the absolute highlight layer without an inline textarea baseline gap. */
+  display: block;
   color: transparent;
   caret-color: var(--color-content);
   -webkit-text-fill-color: transparent;
@@ -4506,7 +4810,13 @@ html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot 
   animation-play-state: paused !important;
 }
 html[data-decorative-motion="off"]
-  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active, .context-speed-bolt) {
+  :is(
+    .activity-dock-waiting,
+    .zen-thinking-pulse,
+    .terminal-live-bar,
+    .bycoda-sigil-active,
+    .context-speed-bolt
+  ) {
   animation-play-state: paused !important;
 }
 /* Inactive session panes keep their DOM (only the pane root's visibility flag

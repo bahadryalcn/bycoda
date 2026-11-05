@@ -9,42 +9,145 @@
     width: 100%;
   }
 }
-.field { display: grid; align-content: start; }
-.field label { margin-bottom: var(--space-2); font-size: var(--text-sm); font-weight: 500; }
+.field {
+  display: grid;
+  align-content: start;
+}
+.field label {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
 /* FieldControl owns the shared border and focus; the native textarea owns resizing. */
-.control { min-height: 110px; resize: vertical; border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--space-3); background: var(--surface); color: var(--foreground); font: inherit; font-size: var(--text-sm); line-height: var(--leading-body); outline: none; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
-.control::placeholder { color: var(--text-muted); }
-@media (hover: hover) and (pointer: fine) { .control:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) { border-color: var(--ui-field-border-hover, var(--foreground)); } }
-.control:focus-visible { border-color: var(--ui-field-border-focus, var(--foreground)); }
-.control[aria-invalid="true"] { border-color: var(--danger); }
-.control:disabled { cursor: not-allowed; background: var(--surface-muted); opacity: var(--ui-disabled-opacity, 0.5); }
+.control {
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  background: var(--surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.control::placeholder {
+  color: var(--text-muted);
+}
+@media (hover: hover) and (pointer: fine) {
+  .control:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
+    border-color: var(--ui-field-border-hover, var(--foreground));
+  }
+}
+.control:focus-visible {
+  border-color: var(--ui-field-border-focus, var(--foreground));
+}
+.control[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.control:disabled {
+  cursor: not-allowed;
+  background: var(--surface-muted);
+  opacity: var(--ui-disabled-opacity, 0.5);
+}
 /* Read-only: normal ink on a quiet frame without hover cue (see Input). */
-.control[readonly]:not(:disabled) { --surface: transparent; --ui-field-border-hover: var(--ui-control-border); }
+.control[readonly]:not(:disabled) {
+  --surface: transparent;
+  --ui-field-border-hover: var(--ui-control-border);
+}
 /* The row's space is padding inside the clipped slot, so the height animates from a true zero. */
-.messageSlot { display: block; overflow: hidden; }
-.hint, .error { display: block; padding-top: var(--space-2); font-size: var(--text-xs); line-height: var(--leading-body); }
-.hint { color: var(--text-secondary); } .error { color: var(--danger); }
+.messageSlot {
+  display: block;
+  overflow: hidden;
+}
+.hint,
+.error {
+  display: block;
+  padding-top: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.hint {
+  color: var(--text-secondary);
+}
+.error {
+  color: var(--danger);
+}
 /* Words are measured against this box when they pop out to leave, so it must be the positioned parent. */
-.words { position: relative; display: block; }
-.word { display: inline-block; white-space: pre; }
+.words {
+  position: relative;
+  display: block;
+}
+.word {
+  display: inline-block;
+  white-space: pre;
+}
 /* One column per character of a count. Tabular digits keep columns equal, so only a gained or lost digit changes the width. */
-.column { position: relative; display: inline-flex; justify-content: center; font-variant-numeric: tabular-nums; }
-.column > span { display: inline-block; }
-.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-@media (prefers-reduced-motion: reduce) { .control { transition-duration: 0.01ms; } }
+.column {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.column > span {
+  display: inline-block;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .control {
+    transition-duration: 0.01ms;
+  }
+}
 
 /* Compact variant: caption label and a shorter minimum box for toolbar/inline editing. */
-.field[data-variant="compact"] label { margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--text-xs); }
-.field[data-variant="compact"] .control { min-height: 4.5rem; padding: var(--space-2) var(--space-3); }
-.field[data-variant="compact"] :is(.hint, .error) { padding-top: var(--space-1); }
+.field[data-variant="compact"] label {
+  margin-bottom: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.field[data-variant="compact"] .control {
+  min-height: 4.5rem;
+  padding: var(--space-2) var(--space-3);
+}
+.field[data-variant="compact"] :is(.hint, .error) {
+  padding-top: var(--space-1);
+}
 
 /* Box density, row bounds, autosize and monospace. Rows count the field's own line height (1lh) plus its block
    padding, so the bounds follow density, font and zoom. Autosize measures to the computed max-height. */
-.control { --textarea-pad-block: var(--space-3); }
+.control {
+  --textarea-pad-block: var(--space-3);
+}
 .field[data-variant="compact"] .control,
-.field .control[data-field-size="sm"] { --textarea-pad-block: var(--space-2); }
-.field .control[data-field-size="sm"] { min-height: 4.5rem; padding-block: var(--space-2); }
-.field .control[data-min-rows] { min-height: calc(var(--textarea-min-rows) * 1lh + 2 * var(--textarea-pad-block)); }
-.field .control[data-max-rows] { max-height: calc(var(--textarea-max-rows) * 1lh + 2 * var(--textarea-pad-block)); }
-.field .control[data-autosize] { resize: none; overflow-y: hidden; }
-.field .control[data-monospace] { font-family: var(--font-mono); font-variant-ligatures: none; }
+.field .control[data-field-size="sm"] {
+  --textarea-pad-block: var(--space-2);
+}
+.field .control[data-field-size="sm"] {
+  min-height: 4.5rem;
+  padding-block: var(--space-2);
+}
+.field .control[data-min-rows] {
+  min-height: calc(var(--textarea-min-rows) * 1lh + 2 * var(--textarea-pad-block));
+}
+.field .control[data-max-rows] {
+  max-height: calc(var(--textarea-max-rows) * 1lh + 2 * var(--textarea-pad-block));
+}
+.field .control[data-autosize] {
+  resize: none;
+  overflow-y: hidden;
+}
+.field .control[data-monospace] {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}

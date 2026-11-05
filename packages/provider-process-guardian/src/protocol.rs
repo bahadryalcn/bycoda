@@ -36,6 +36,8 @@ pub enum ParentCommand {
         args: Vec<String>,
         cwd: String,
         env: BTreeMap<String, String>,
+        #[serde(default)]
+        build_receipt: Option<crate::build_receipt::BuildReceipt>,
     },
     Write {
         version: u8,

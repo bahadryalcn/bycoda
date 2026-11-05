@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
-import { DesktopLive } from "../../../../host/desktopLive";
+import { DesktopLive } from "../../../../host/desktop/desktopLive";
 import { newSession, type Session } from "../../sessions/model/session";
 import { createApprovalIntentRegistry } from "../../sessions/model/approvalIntents";
 import { ParentInputRegistry } from "../../sessions/data/parentInputClosure";

@@ -231,7 +231,14 @@ it("keeps generated image previews separate and recovers a failed preview withou
 it("guides first campaign setup inline and preserves content while changing steps", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const { host, request } = await render(true, true, undefined, true, undefined, [
-    { id: "account", platform: "x", name: "Brand", connected: true, paused: false, grants: { a: ["draft"] } },
+    {
+      id: "account",
+      platform: "x",
+      name: "Brand",
+      connected: true,
+      paused: false,
+      grants: { a: ["draft"] },
+    },
   ]);
   expect(host.querySelector(".social-program-inline")).toBeTruthy();
   expect(host.querySelector(".social-composer-dialog")).toBeNull();
@@ -244,7 +251,9 @@ it("guides first campaign setup inline and preserves content while changing step
   const type = async (element: HTMLInputElement | HTMLTextAreaElement, value: string) =>
     act(async () => {
       Object.getOwnPropertyDescriptor(
-        element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+        element instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype,
         "value",
       )!.set!.call(element, value);
       element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -257,7 +266,8 @@ it("guides first campaign setup inline and preserves content while changing step
   expect(contentOptions.querySelector("[required]")).toBeNull();
   await type(name, "Launch week");
   const steps = host.querySelectorAll<HTMLButtonElement>(".social-program-steps button");
-  const step = (index: number) => host.querySelector<HTMLElement>(`[data-program-step="${index}"]`)!;
+  const step = (index: number) =>
+    host.querySelector<HTMLElement>(`[data-program-step="${index}"]`)!;
   // Later steps stay closed until the purpose step has its required content.
   await act(async () => steps[1].click());
   expect(step(0).hidden).toBe(false);
@@ -268,7 +278,9 @@ it("guides first campaign setup inline and preserves content while changing step
   expect(name.value).toBe("Launch week");
   await chooseSocialValue(
     host.querySelector<HTMLButtonElement>('button[aria-label^="Project:"]') ??
-      host.querySelector<HTMLButtonElement>('.social-program-field button[aria-haspopup="dialog"]')!,
+      host.querySelector<HTMLButtonElement>(
+        '.social-program-field button[aria-haspopup="dialog"]',
+      )!,
     "a",
   );
   await type(field("Topic"), "Launch");
@@ -385,7 +397,10 @@ it("shares unchanged polling data without rendering and refreshes after hidden t
   const { request, commits } = await render();
   await act(async () => vi.advanceTimersByTimeAsync(10));
   commits.mockClear();
-  for (let i = 0; i < 3; i++) await act(async () => vi.advanceTimersByTimeAsync(5_010));
+  await act(async () => vi.advanceTimersByTimeAsync(5_010));
+  expect(request).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTimeAsync(25_000));
+  for (let i = 0; i < 2; i++) await act(async () => vi.advanceTimersByTimeAsync(30_010));
   expect(request).toHaveBeenCalledTimes(4);
   expect(commits).not.toHaveBeenCalled();
   await act(async () => focusManager.setFocused(false));
@@ -440,7 +455,9 @@ it("shows the first listed program without an explicit selection and keeps revie
     nextSequence: 0,
   };
   const { host } = await render(true, true, undefined, false, { program, occurrences: [] });
-  await vi.waitFor(() => expect(host.querySelector(".social-program-detail h3")?.textContent).toBe("First program"));
+  await vi.waitFor(() =>
+    expect(host.querySelector(".social-program-detail h3")?.textContent).toBe("First program"),
+  );
   const activate = () =>
     Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "Activate reviewed campaign",

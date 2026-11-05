@@ -1,7 +1,7 @@
 # Security
 
 Do not disclose vulnerabilities in public issues. Send bycoda vulnerability
-reports privately to [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com).
+reports privately to [info@bycoda.codes](mailto:info@bycoda.codes).
 The [maintainer's profile](https://github.com/bahadryalcn) is available for general contact.
 
 Include the affected commit or version, platform, and reproduction steps.

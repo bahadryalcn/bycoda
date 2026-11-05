@@ -8,7 +8,7 @@ import { hash128, headOfDigests, type ConversationHead } from "./conversationHea
  *
  * Two copies of a transcript are compared by what each block says, never by
  * comparing a full block with the lossy projection another computer receives
- * (`host/transcriptPage.ts previewBlock`). The side that holds the full block
+ * (`host/sessions/transcriptPage.ts previewBlock`). The side that holds the full block
  * computes its digest; the projection carries it in `remoteContent.digest`.
  *
  * The hash is for equality between cooperating peers, not for security.

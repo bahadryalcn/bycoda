@@ -24,6 +24,14 @@ function setup(overrides: Partial<VoiceWorkspaceActionsDeps> = {}) {
 const args = { sessionId: "first", projectPath: "/project", requestId: "request-1" };
 
 describe("voice workspace owner actions", () => {
+  it("passes the native pending owner identity through session open", async () => {
+    const onOpen = vi.fn(async () => {});
+    const { execute } = setup({ onOpen });
+    await execute("workspace.sessions.open", args, "native-pending");
+    expect(onOpen).toHaveBeenCalledWith("first", "native-pending");
+    await execute("workspace.sessions.open", args, "native-pending");
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
   it("resolves the display/folder aliases but creates only at the exact listed cwd, preserving ambiguity and access", async () => {
     const path = "G:/Projects/my_projects/monocode",
       onCreate = vi.fn(async () => "exact-session");

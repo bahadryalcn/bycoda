@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { HostStore } from "../../store";
-import { HostSprints } from "../../sprints";
+import { HostSprints } from "../../sprints/sprints";
 import * as dto from "../../../src/shared/model/host-contracts/sprints";
 import { createHostSprintsService } from "./service";
 

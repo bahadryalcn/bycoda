@@ -14,7 +14,11 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import { retireProviderEpoch } from "../turnWriter";
+import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -275,6 +279,7 @@ export async function forgetFxSession(
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
   await stopFxSession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(sourceEpochByThread, turnsByThread, sessionId);
 }
 
 export function bindFxSession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -433,7 +438,10 @@ async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
         } catch (error) {
           if (!(error instanceof JsonRpcResponseError)) throw error;
           resumeByThread.delete(input.sessionId);
-          input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+          input.onEvent({
+            type: "status",
+            text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+          });
         } finally {
           muteGate.current = false;
         }

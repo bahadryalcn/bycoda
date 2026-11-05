@@ -534,6 +534,156 @@ fn result_capacity_is_reserved_before_dispatch_not_after_effect_completion() {
 }
 
 #[test]
+fn bounded_format_admission_isolated_from_legacy_uncertainty_and_control() {
+    let file = FileStore::new();
+    let store = file.open();
+    for index in 0..3 {
+        let original = prepare(
+            &store,
+            &format!("legacy-format-{index}"),
+            ROUTE,
+            FORMAT,
+            "{}",
+        )
+        .unwrap();
+        mark_possible(&store, &original).unwrap();
+    }
+    assert!(prepare(&store, "legacy-fourth", ROUTE, FORMAT, "{}")
+        .unwrap_err()
+        .contains("CAPACITY"));
+    let bounded = prepare_with_budget(
+        &store,
+        "bounded-format",
+        ROUTE,
+        FORMAT,
+        "{}",
+        FORMAT_RESULT_BYTES,
+    )
+    .unwrap();
+    assert_eq!(bounded.result_budget(), 4 * 1024 * 1024);
+    let bounded = mark_possible(&store, &bounded).unwrap();
+    let over_limit = format!("\"{}\"", "x".repeat(FORMAT_RESULT_BYTES));
+    assert!(record_result(&store, &bounded, &over_limit).is_err());
+    let bounded = record_result(&store, &bounded, "null").unwrap();
+    acknowledge(&store, &bounded).unwrap();
+    assert!(prepared(&store, "independent-control").can_dispatch());
+    drop(store);
+    let reopened = file.open();
+    let old = pending(&reopened, ROUTE, None, 32).unwrap().originals;
+    assert_eq!(
+        old.iter()
+            .filter(|row| row.method() == FORMAT
+                && row.phase() == Phase::Possible
+                && row.result_budget() == MAX_RESULT_BYTES)
+            .count(),
+        3
+    );
+    assert!(prepare_with_budget(
+        &reopened,
+        "after-restart",
+        ROUTE,
+        FORMAT,
+        "{}",
+        FORMAT_RESULT_BYTES
+    )
+    .is_ok());
+}
+
+#[test]
+fn unavailable_result_proof_releases_only_reservation_and_permanently_fences_result() {
+    let file = FileStore::new();
+    let store = file.open();
+    let mut originals = Vec::new();
+    for index in 0..3 {
+        let original =
+            prepare(&store, &format!("old-format-{index}"), ROUTE, FORMAT, "{}").unwrap();
+        originals.push(mark_possible(&store, &original).unwrap());
+    }
+    assert!(prepare(&store, "no-proof", ROUTE, FORMAT, "{}").is_err());
+    let rolled_back: Result<(), String> =
+        authority::with_full_projection_transaction(&store, |tx| {
+            release_unavailable_result_tx(tx.connection(), &originals[0])?;
+            Err("rollback".into())
+        });
+    assert!(rolled_back.is_err());
+    assert!(prepare(&store, "no-proof", ROUTE, FORMAT, "{}").is_err());
+    authority::with_full_projection_transaction(&store, |tx| {
+        release_unavailable_result_tx(tx.connection(), &originals[0])
+    })
+    .unwrap();
+    assert!(prepare(&store, "after-proof", ROUTE, FORMAT, "{}").is_ok());
+    assert_eq!(params_json(&store, &originals[0]).unwrap(), "{}");
+    assert!(record_result(&store, &originals[0], "null")
+        .unwrap_err()
+        .contains("RESULT_UNAVAILABLE"));
+    assert!(definitely_unsent(&store, &originals[0])
+        .unwrap_err()
+        .contains("RESULT_UNAVAILABLE"));
+    let id = originals[0].id().to_owned();
+    drop(store);
+    let reopened = file.open();
+    let original = pending(&reopened, ROUTE, None, 32)
+        .unwrap()
+        .originals
+        .into_iter()
+        .find(|item| item.id() == id)
+        .unwrap();
+    assert_eq!(original.phase(), Phase::Possible);
+    assert!(!original.can_dispatch());
+    assert!(record_result(&reopened, &original, "null")
+        .unwrap_err()
+        .contains("RESULT_UNAVAILABLE"));
+    let conn = reopened.lock_conn().unwrap();
+    assert!(conn
+        .execute("DELETE FROM native_delivery_unavailable_results", [])
+        .is_err());
+    assert!(conn
+        .execute(
+            "UPDATE native_delivery_unavailable_results SET original_id='other'",
+            []
+        )
+        .is_err());
+}
+
+#[test]
+fn bounded_formatter_lane_stays_bounded_without_starving_control_delivery() {
+    let store = SessionStore::open_in_memory().unwrap();
+    for index in 0..15 {
+        let original = prepare_with_budget(
+            &store,
+            &format!("bounded-{index}"),
+            ROUTE,
+            FORMAT,
+            "{}",
+            FORMAT_RESULT_BYTES,
+        )
+        .unwrap();
+        mark_possible(&store, &original).unwrap();
+    }
+    assert!(prepare_with_budget(
+        &store,
+        "full-bounded",
+        ROUTE,
+        FORMAT,
+        "{}",
+        FORMAT_RESULT_BYTES
+    )
+    .unwrap_err()
+    .contains("CAPACITY"));
+    assert_eq!(rows(&store), 15);
+    assert!(prepared(&store, "control-remains-available").can_dispatch());
+    assert_eq!(
+        pending(&store, ROUTE, None, 32)
+            .unwrap()
+            .originals
+            .iter()
+            .filter(|row| row.method() == FORMAT)
+            .count(),
+        15
+    );
+}
+
+#[test]
 fn schema_rejects_original_identity_rewrite_and_retained_metadata_delete() {
     let store = SessionStore::open_in_memory().unwrap();
     let original = prepared(&store, "buffer:owner:10:nonce");
@@ -1369,4 +1519,52 @@ fn corrupt_ack_lookahead_keeps_healthy_pages_usable_and_store_route_filters_inta
     assert_eq!(falsely_marked, 0);
     drop(conn);
     assert_eq!(rows(&store), 7);
+}
+
+#[test]
+fn proven_unavailable_results_do_not_exhaust_active_slots_but_keep_all_originals() {
+    let store = SessionStore::open_in_memory().unwrap();
+    for index in 0..=MAX_ACTIVE_ROWS {
+        let original = prepare_with_budget(
+            &store,
+            &format!("failed-format-{index}"),
+            ROUTE,
+            FORMAT,
+            "{}",
+            FORMAT_RESULT_BYTES,
+        )
+        .unwrap();
+        let original = mark_possible(&store, &original).unwrap();
+        authority::with_full_projection_transaction(&store, |tx| {
+            release_unavailable_result_tx(tx.connection(), &original)
+        })
+        .unwrap();
+    }
+    assert_eq!(rows(&store), (MAX_ACTIVE_ROWS + 1) as i64);
+    let conn = store.lock_conn().unwrap();
+    let retained: (i64,i64,i64) = conn.query_row("SELECT COUNT(*),SUM(payload_bytes),SUM(phase='possible') FROM native_delivery_originals", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+    assert_eq!(retained, (257, 514, 257));
+    drop(conn);
+    for index in 0..15 {
+        let original = prepare_with_budget(
+            &store,
+            &format!("unknown-format-{index}"),
+            ROUTE,
+            FORMAT,
+            "{}",
+            FORMAT_RESULT_BYTES,
+        )
+        .unwrap();
+        mark_possible(&store, &original).unwrap();
+    }
+    assert!(prepare_with_budget(
+        &store,
+        "unknown-still-bounded",
+        ROUTE,
+        FORMAT,
+        "{}",
+        FORMAT_RESULT_BYTES
+    )
+    .unwrap_err()
+    .contains("CAPACITY"));
 }

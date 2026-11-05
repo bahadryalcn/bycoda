@@ -1,9 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import {
-  ACCENT_READABILITY_DEFAULT,
-  type AccentReadability,
-} from "../model/accentContrast";
+import { ACCENT_READABILITY_DEFAULT, type AccentReadability } from "../model/accentContrast";
 import {
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,

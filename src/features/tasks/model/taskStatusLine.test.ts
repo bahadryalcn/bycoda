@@ -36,24 +36,31 @@ describe("firstSentence", () => {
 });
 
 describe("taskStatusLine", () => {
-  it("warns only for the current observed stalled run without changing its lifecycle",()=>{
-    const runStall={sessionId:"s",runId:"r",lastActivityAt:100,detectedAt:900_100};
-    const value=task({status:"running",sessionId:"s",runId:"r",runStall});
-    expect(taskStatusLine(value)).toMatchObject({kind:"stalled",tone:"warning",label:"Running · no recent output"});expect(value.status).toBe("running");
-    expect(taskStatusLine({...value,needsInput:true}).kind).toBe("needs_input");
-    expect(taskStatusLine({...value,runId:"new"}).kind).toBe("running");
-    expect(taskStatusLine({...value,status:"queued"}).kind).toBe("queued");
-    expect(taskStatusLine({...value,runStall:{...runStall,detectedAt:200}}).kind).toBe("running");
+  it("warns only for the current observed stalled run without changing its lifecycle", () => {
+    const runStall = { sessionId: "s", runId: "r", lastActivityAt: 100, detectedAt: 900_100 };
+    const value = task({ status: "running", sessionId: "s", runId: "r", runStall });
+    expect(taskStatusLine(value)).toMatchObject({
+      kind: "stalled",
+      tone: "warning",
+      label: "Running · no recent output",
+    });
+    expect(value.status).toBe("running");
+    expect(taskStatusLine({ ...value, needsInput: true }).kind).toBe("needs_input");
+    expect(taskStatusLine({ ...value, runId: "new" }).kind).toBe("running");
+    expect(taskStatusLine({ ...value, status: "queued" }).kind).toBe("queued");
+    expect(taskStatusLine({ ...value, runStall: { ...runStall, detectedAt: 200 } }).kind).toBe(
+      "running",
+    );
   });
   it("names active work calmly, including automatic correction", () => {
-    expect(pick({ status: "running" })).toMatchObject({ kind: "running", tone: "info" });
+    expect(pick({ status: "running" })).toMatchObject({ kind: "running", tone: "accent" });
     expect(pick({ status: "queued" })).toMatchObject({ kind: "queued", tone: "neutral" });
     expect(pick({ status: "verifying" })).toMatchObject({ kind: "verifying", label: "Verifying" });
     expect(
       pick({ status: "running", repairAttempts: 2, repairNote: "Test is red. More text." }),
     ).toEqual({
       kind: "correcting",
-      tone: "info",
+      tone: "accent",
       label: "Auto-correcting 2/3",
       detail: "Test is red.",
       notices: 0,

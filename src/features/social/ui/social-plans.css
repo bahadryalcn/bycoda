@@ -113,7 +113,7 @@
   margin: 0;
   padding: 0.5rem 0.75rem;
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
+  background: transparent;
   overflow-wrap: anywhere;
 }
 .social-plan-next strong {

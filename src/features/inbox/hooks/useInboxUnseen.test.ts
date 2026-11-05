@@ -9,12 +9,31 @@ import {
   isInboxEntryUnseen,
   markInboxItemSeen,
   seedInboxSeenIfNeeded,
+  subscribeInboxSeen,
 } from "../model/inboxSeen";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { markLinkedSessionUpdateSeen } from "../model/linkedSessionSeen";
 import { clearPendingInboxSelfActivity, recordInboxSelfActivity } from "../model/inboxSelfActivity";
 import { HIDDEN_POLL_MS, POLL_MS, useInboxActivity, type InboxActivity } from "./useInboxUnseen";
+
+it("shares storage listener and notifies subscribers of another window's seen update", () => {
+  const add = vi.spyOn(window, "addEventListener");
+  const remove = vi.spyOn(window, "removeEventListener");
+  const first = vi.fn(),
+    second = vi.fn();
+  const offFirst = subscribeInboxSeen(first),
+    offSecond = subscribeInboxSeen(second);
+  expect(add.mock.calls.filter(([type]) => type === "storage")).toHaveLength(1);
+  window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.inboxSeen", newValue: "{}" }));
+  expect(first).toHaveBeenCalledOnce();
+  expect(second).toHaveBeenCalledOnce();
+  offFirst();
+  offSecond();
+  expect(remove.mock.calls.filter(([type]) => type === "storage")).toHaveLength(1);
+  add.mockRestore();
+  remove.mockRestore();
+});
 
 const { githubWorkItem, listInboxItems, playCue } = vi.hoisted(() => ({
   githubWorkItem: vi.fn(),

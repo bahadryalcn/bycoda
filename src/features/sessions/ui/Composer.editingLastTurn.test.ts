@@ -58,10 +58,7 @@ describe("Composer edit-last-turn marker ownership", () => {
     const render = (editingLastTurn: boolean) =>
       act(async () =>
         root.render(
-          createElement(
-            Composer,
-            props({ editingLastTurn, onEditingLastTurnChange: onChange }),
-          ),
+          createElement(Composer, props({ editingLastTurn, onEditingLastTurnChange: onChange })),
         ),
       );
     await render(true);

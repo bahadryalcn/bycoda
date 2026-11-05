@@ -17,10 +17,8 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("temp/verification/2026-10-30-native-buffer-continuation/control/fixtures");
+        // Scratch admission requires a canonical child of the native temp root.
+        let base = std::env::temp_dir().join("bycoda-control-admission-fixtures");
         std::fs::create_dir_all(&base).unwrap();
         let base = base.canonicalize().unwrap();
         let root = base.join(format!("control-{}", uuid::Uuid::new_v4()));
@@ -39,6 +37,8 @@ impl Fixture {
                 session: "lead".into(),
                 cwd: comparison_path(&self.root),
                 token: "fixture-only-control-token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         inner.prepare_app_grant("worker", OWNER, &comparison_path(&self.root));
@@ -305,7 +305,7 @@ fn attach_preserves_actual_lead_window_check_private_scope_and_same_worker_retry
         Some("lead")
     );
     assert!(!inner.app_grants.contains_key("worker"));
-    assert_eq!(inner.scratch.get("worker"), Some(&scratch));
+    assert_eq!(inner.scratch.get("worker").map(|entry| entry.path()), Some(scratch.as_path()));
     assert!(!inner.workers.contains_key("foreign-worker"));
     drop(inner);
     assert!(barrier.try_close_idle_target_admission("cut").is_ok());
@@ -383,7 +383,7 @@ fn accepted_attach_keeps_original_buffers_admission_through_real_creation_after_
         inner.workers.get("worker").map(String::as_str),
         Some("lead")
     );
-    assert!(inner.scratch.get("worker").unwrap().is_dir());
+    assert!(inner.scratch.get("worker").unwrap().path().is_dir());
     assert_eq!(std::fs::read_dir(&fixture.root).unwrap().count(), 1);
     drop(inner);
     barrier.reopen_target_admission(closed).unwrap();

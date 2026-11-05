@@ -28,7 +28,8 @@ export function useDailySummary() {
     const reconcile = () => {
       if (!unsaved || deliveredAt == null) return;
       if (unsaved.sentAt && saveDailySummarySentAt(deliveredAt)) unsaved.sentAt = false;
-      if (unsaved.summary && saveStoredDailySummary(unsaved.summary) !== false) unsaved.summary = null;
+      if (unsaved.summary && saveStoredDailySummary(unsaved.summary) !== false)
+        unsaved.summary = null;
       if (!unsaved.sentAt && !unsaved.summary) unsaved = null;
     };
     const check = async () => {

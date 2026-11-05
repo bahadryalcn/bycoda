@@ -66,6 +66,69 @@ beforeEach(() => {
     attachments: [],
   }));
 });
+it("discovers and reads global Room tools without projects or a coding session", async () => {
+  const f = setup();
+  f.state.active = undefined;
+  f.state.projects = [];
+  f.state.sessions = [];
+  f.ports.getProjectPath = () => "";
+  f.ports.getThreadId = () => "room";
+  const receipt = { id: "context", environmentId: "host", receive: vi.fn() };
+  f.ports.causalContext = async () => receipt;
+  f.controller.captureTurn();
+  await f.controller.execute("app_tools_list", {});
+  expect(mock.discover).toHaveBeenCalledWith(
+    { cwd: "", threadId: "room", environmentId: "host" },
+    {},
+  );
+  await f.controller.execute("app_tool_call", {
+    family: "conversation",
+    action: "preferences.read",
+    input: {},
+    requestId: "global-read",
+  });
+  expect(mock.call).toHaveBeenCalledWith(
+    { cwd: "", threadId: "room", environmentId: "host", causalContext: receipt },
+    expect.objectContaining({ action: "preferences.read" }),
+  );
+  expect(f.source).not.toHaveBeenCalled();
+});
+it("keeps explicit project and composer targets gated when global management has no project", async () => {
+  const f = setup();
+  f.state.active = undefined;
+  f.state.projects = [];
+  f.ports.getProjectPath = () => "";
+  f.ports.getThreadId = () => "room";
+  f.controller.captureTurn();
+  await expect(
+    f.controller.execute("app_tool_call", {
+      family: "conversation",
+      action: "preferences.read",
+      input: {},
+      projectPath: "/locked",
+      requestId: "targeted",
+    }),
+  ).rejects.toThrow("hidden, locked");
+  await expect(f.controller.execute("composer_context", {})).rejects.toThrow("hidden, locked");
+  expect(mock.call).not.toHaveBeenCalled();
+});
+it("keeps global management available when an unrelated captured coding tab is private", async () => {
+  const f = setup();
+  f.state.projects = [];
+  f.ports.getThreadId = () => "room";
+  f.controller.captureTurn();
+  await f.controller.execute("app_tool_call", {
+    family: "conversation",
+    action: "preferences.read",
+    input: {},
+    requestId: "global-private-tab",
+  });
+  expect(mock.call).toHaveBeenCalledWith(
+    { cwd: "", threadId: "room" },
+    expect.objectContaining({ action: "preferences.read" }),
+  );
+  await expect(f.controller.execute("composer_context", {})).rejects.toThrow("hidden, locked");
+});
 it("reports a not-ready conversation before dispatch instead of claiming a failed result", async () => {
   const f = setup();
   f.ports.getThreadId = () => "thread";
@@ -205,21 +268,27 @@ it("does not let a later Global selection broaden a captured Project turn", asyn
   );
   expect(mock.call).not.toHaveBeenCalled();
 });
-it("requires a real focused session for working-copy tools even with a valid thread", async () => {
+it("routes Room file reads to the captured project without creating a coding session", async () => {
   const { controller, ports, state, source } = setup();
   ports.getThreadId = () => "thread-a";
   state.active = undefined;
   controller.captureTurn();
-  await expect(
-    controller.execute("app_tool_call", {
-      family: "conversation",
+  state.active = "b";
+  await controller.execute("app_tool_call", {
+    family: "conversation",
+    action: "files.read",
+    input: { path: "README.md" },
+    requestId: "thread-file",
+  });
+  expect(source).not.toHaveBeenCalled();
+  expect(mock.call).toHaveBeenCalledWith(
+    { cwd: "/a", threadId: "thread-a" },
+    expect.objectContaining({
       action: "files.read",
       input: { path: "README.md" },
       requestId: "thread-file",
     }),
-  ).rejects.toThrow("real focused session");
-  expect(source).not.toHaveBeenCalled();
-  expect(mock.call).not.toHaveBeenCalled();
+  );
 });
 
 it("captures a stable target for context, draft and catalog while the active tab changes", async () => {
@@ -325,8 +394,11 @@ it("uses an independent management session and preserves queued receipts", async
   );
 });
 
-it("retains the selected session for focused terminal and working-copy authority", async () => {
-  const { controller, source } = setup();
+it("routes Room terminal creation to its original project and thread", async () => {
+  const { controller, ports, state, source } = setup();
+  ports.getThreadId = () => "thread-a";
+  controller.captureTurn();
+  state.active = "b";
   await controller.execute("app_tool_call", {
     family: "conversation",
     action: "terminals.create",
@@ -335,7 +407,7 @@ it("retains the selected session for focused terminal and working-copy authority
   });
   expect(source).not.toHaveBeenCalled();
   expect(mock.call).toHaveBeenCalledWith(
-    { cwd: "/a", sessionId: "a" },
+    { cwd: "/a", threadId: "thread-a" },
     { family: "conversation", action: "terminals.create", input: {}, requestId: "terminal" },
   );
 });
@@ -564,4 +636,31 @@ it("honestly reports unsupported vision without inventing inspected image conten
   expect(
     await controller.execute("composer_attachment", { attachmentId: "picture" }),
   ).toMatchObject({ imageProvided: false, error: "This voice provider cannot inspect images." });
+});
+
+it("passes an exact social account target without inheriting the focused project", async () => {
+  const f = setup();
+  f.ports.getThreadId = () => "room";
+  f.controller.captureTurn();
+  await f.controller.execute("app_tool_call", {
+    family: "social",
+    action: "thread.read",
+    accountId: "account-a",
+    input: { id: "thread" },
+    requestId: "read",
+  });
+  expect(mock.call).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "", threadId: "room" }),
+    expect.objectContaining({ accountId: "account-a" }),
+  );
+  await expect(
+    f.controller.execute("app_tool_call", {
+      family: "social",
+      action: "thread.read",
+      accountId: "account-a",
+      projectPath: "/a",
+      input: { id: "thread" },
+      requestId: "other",
+    }),
+  ).rejects.toThrow("Global voice scope");
 });

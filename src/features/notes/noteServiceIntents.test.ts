@@ -11,14 +11,8 @@ const gates: NotesInputClosure[] = [];
 const settle: (() => void)[] = [];
 beforeEach(async () => {
   vi.resetModules();
-  Reflect.deleteProperty(
-    globalThis,
-    Symbol.for("bycoda.note-service-intents.v1"),
-  );
-  Reflect.deleteProperty(
-    globalThis,
-    Symbol.for("bycoda.mounted-notes-input-closure.v1"),
-  );
+  Reflect.deleteProperty(globalThis, Symbol.for("bycoda.note-service-intents.v1"));
+  Reflect.deleteProperty(globalThis, Symbol.for("bycoda.mounted-notes-input-closure.v1"));
   owners = await import("./notesInputOwners");
   facade = await import("./notesInputClosure");
   intents = await import("./noteServiceIntents");
@@ -54,9 +48,7 @@ function deferred<T>() {
 }
 async function captured() {
   const lease = await facade.captureNotesInputs("unrelated-target");
-  const service = lease.snapshots.find(
-    (row) => row.snapshot.surface === "service-intents",
-  )!;
+  const service = lease.snapshots.find((row) => row.snapshot.surface === "service-intents")!;
   expect(service.kind).toBe("note-editor");
   expect(service).not.toHaveProperty("sessionId");
   expect(service.snapshot).toMatchObject({
@@ -136,8 +128,7 @@ it("retains exact service-only original requests including CRLF and own undefine
   expect(records[0].args.note.untouched).toBeUndefined();
   expect(service.snapshot).not.toHaveProperty("nativeDraftReceipt");
   expect(lease.missingCoverage).toContain("notes-service-outcome-unverified");
-  const { encodeNativeProducerCapture } =
-    await import("../sessions/data/nativeProducerCapture");
+  const { encodeNativeProducerCapture } = await import("../sessions/data/nativeProducerCapture");
   const raw = JSON.parse(
     encodeNativeProducerCapture(
       "unrelated-target",
@@ -150,16 +141,8 @@ it("retains exact service-only original requests including CRLF and own undefine
     ),
   );
   expect(raw.version).toBe(3);
-  const wire = raw.producers.find(
-    (row: any) => row.snapshot.surface === "service-intents",
-  );
-  expect(wire.undefinedPaths).toContainEqual([
-    "records",
-    0,
-    "args",
-    "note",
-    "untouched",
-  ]);
+  const wire = raw.producers.find((row: any) => row.snapshot.surface === "service-intents");
+  expect(wire.undefinedPaths).toContainEqual(["records", 0, "args", "note", "untouched"]);
   expect(wire.snapshot.records[0].args.note.body).toBe(" \r\nç 😀\t");
   lease.release();
 });
@@ -190,8 +173,7 @@ it("keeps the genuine pending Native Promise charged after its original waiter s
   await expect(pending).resolves.toBe(value);
   const lease = await capture;
   expect(
-    lease.snapshots.find((row) => row.snapshot.surface === "service-intents")!
-      .snapshot.records,
+    lease.snapshots.find((row) => row.snapshot.surface === "service-intents")!.snapshot.records,
   ).toEqual([]);
   expect(gate.current()).toBe(true);
   expect(effect).toHaveBeenCalledOnce();
@@ -208,11 +190,7 @@ it("waits actual bookkeeping settlement without carrying ambient authority acros
     value = { path: "actual-image-path" };
   const gate = close();
   const pending = intents
-    .beginNoteServiceIntent(
-      "notes_image_path",
-      { asset: "/note-assets/original/image.png" },
-      work,
-    )
+    .beginNoteServiceIntent("notes_image_path", { asset: "/note-assets/original/image.png" }, work)
     .execute(
       () => Promise.resolve(value),
       async (result) => {
@@ -233,8 +211,7 @@ it("waits actual bookkeeping settlement without carrying ambient authority acros
   work();
   const lease = await capture;
   expect(
-    lease.snapshots.find((row) => row.snapshot.surface === "service-intents")!
-      .snapshot.records,
+    lease.snapshots.find((row) => row.snapshot.surface === "service-intents")!.snapshot.records,
   ).toEqual([]);
   lease.release();
 });
@@ -276,19 +253,12 @@ it("retains independent uncertain operations without merging or clearing them th
   });
   const work = original();
   const result = await intents
-    .beginNoteServiceIntent(
-      "notes_discard_recovery_assets",
-      { id: "different-original" },
-      work,
-    )
+    .beginNoteServiceIntent("notes_discard_recovery_assets", { id: "different-original" }, work)
     .execute(() => Promise.resolve(undefined));
   work();
   expect(result).toBeUndefined();
   const { lease, records } = await captured();
-  expect(records.map((row) => row.args.note.body)).toEqual([
-    "first original",
-    "second original",
-  ]);
+  expect(records.map((row) => row.args.note.body)).toEqual(["first original", "second original"]);
   expect(new Set(records.map((row) => row.id)).size).toBe(2);
   expect(new Set(records.map((row) => row.callId)).size).toBe(2);
   lease.release();
@@ -303,10 +273,10 @@ it("runs forged, raw-registry and already-settled work unrecorded instead of ref
     intents.beginNoteServiceIntent("notes_delete", { id: "forged" }, forged).execute(native),
   ).resolves.toBe("ran");
   expect(fakeApply).not.toHaveBeenCalled();
-  const registration = facade.registerNoteInput(
-    () => ({ snapshot: { surface: "unrelated" } }),
-    { canClose: () => true, close: () => {} },
-  );
+  const registration = facade.registerNoteInput(() => ({ snapshot: { surface: "unrelated" } }), {
+    canClose: () => true,
+    close: () => {},
+  });
   const raw = registration.operation("not-a-private-logical-owner")!;
   await intents.beginNoteServiceIntent("notes_delete", { id: "foreign" }, raw).execute(native);
   raw();
@@ -363,18 +333,16 @@ it("runs unsupported exact requests unrecorded and never invokes a request gette
 });
 
 it("evicts the oldest unverified original instead of refusing the 65th", async () => {
-  for (
-    let index = 0;
-    index < intents.NOTE_SERVICE_INTENT_LIMITS.records;
-    index++
-  )
+  for (let index = 0; index < intents.NOTE_SERVICE_INTENT_LIMITS.records; index++)
     await fail("notes_delete", {
       id: `original-${index}`,
       expectedUpdatedAt: index,
     });
   const native = vi.fn(() => Promise.resolve()),
     work = original();
-  await intents.beginNoteServiceIntent("notes_delete", { id: "new-admitted" }, work).execute(native);
+  await intents
+    .beginNoteServiceIntent("notes_delete", { id: "new-admitted" }, work)
+    .execute(native);
   work();
   expect(native).toHaveBeenCalledOnce();
   const { lease, records } = await captured();
@@ -468,9 +436,7 @@ it("bounds unverified diagnostics without reading error accessors or changing th
   await fail("notes_discard_recovery_assets", { id: "original-copy" }, error);
   expect(get).not.toHaveBeenCalled();
   const { lease, records } = await captured();
-  expect(
-    new TextEncoder().encode(records[0].error).byteLength,
-  ).toBeLessThanOrEqual(512);
+  expect(new TextEncoder().encode(records[0].error).byteLength).toBeLessThanOrEqual(512);
   expect(records[1].error).toBe("Native request outcome could not be verified");
   lease.release();
 });

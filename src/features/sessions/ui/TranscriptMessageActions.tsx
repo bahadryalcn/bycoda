@@ -6,7 +6,7 @@ import {
 } from "../../../shared/ui/FloatingButtonGroup";
 import { Check, Copy, FilePlusCorner, RotateCcw } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import { playCue } from "../../settings/model/sounds";
+import { playCue } from "../../settings/public/sounds";
 
 /** How long a confirmed result stays on the action that produced it. */
 export const MESSAGE_ACTION_CONFIRM_MS = 2000;
@@ -47,11 +47,7 @@ export function TurnOutputActions({
       ? [
           {
             id: "copy",
-            label: copy.copied
-              ? t("Copied")
-              : copy.failed
-                ? t("Retry copy")
-                : t("Copy response"),
+            label: copy.copied ? t("Copied") : copy.failed ? t("Retry copy") : t("Copy response"),
             icon: copy.copied ? <Check /> : copy.failed ? <RotateCcw /> : <Copy />,
             tone: copy.copied ? "success" : copy.failed ? "danger" : undefined,
             loading: copy.pending,

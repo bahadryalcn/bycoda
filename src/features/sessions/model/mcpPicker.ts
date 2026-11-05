@@ -1,5 +1,5 @@
 import type { HarnessId } from "./session";
-import { MCP_PROVIDER_LABELS, type McpConnection } from "../../settings/model/mcp";
+import { MCP_PROVIDER_LABELS, type McpConnection } from "../../settings/public/mcp";
 
 export type McpPickerServer = McpConnection & {
   availability: "available" | "authentication" | "unavailable";

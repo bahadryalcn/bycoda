@@ -194,7 +194,7 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
   ).toBeVisible();
   const created = (await calls(page)).find((call) => call.args.method === "tasks.save")!;
   expect(created.args.machineId).toBe("machine-remote");
-  expect((created.args.params?.task as Record<string, unknown>).projectId).toBe("remote-project");
+  expect((created.args.params!.task as Record<string, unknown>).projectId).toBe("remote-project");
   await expect
     .poll(
       async () => (await calls(page)).filter((call) => call.args.method === "sprints.plan").length,

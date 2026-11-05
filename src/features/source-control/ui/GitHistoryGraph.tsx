@@ -33,11 +33,11 @@ import {
   notifyGitChanged,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCapabilities";
-import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/model/remoteHealth";
-import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
+import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
+import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
 import { commitMenuItems, filterHistory, githubCommitUrl } from "../model/commitActions";
 import { layoutGitGraph } from "../model/gitGraph";
 import { GitGraphDialog } from "./GitGraphDialog";
@@ -276,7 +276,12 @@ export function GitHistoryGraph({
   const list = (variant: "compact" | "workspace") => {
     const empty =
       !cwd || cwd === "~" ? (
-        <EmptyState size="inline" kind="empty" className="px-3" description={t("No project folder")} />
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="px-3"
+          description={t("No project folder")}
+        />
       ) : commits.length === 0 ? (
         loading ? (
           <GitLoading text="Loading commit graph…" />
@@ -289,7 +294,12 @@ export function GitHistoryGraph({
             onRetry={refresh}
           />
         ) : (
-          <EmptyState size="inline" kind="empty" className="px-3" description={t("No commits yet")} />
+          <EmptyState
+            size="inline"
+            kind="empty"
+            className="px-3"
+            description={t("No commits yet")}
+          />
         )
       ) : items.length === 0 ? (
         <EmptyState

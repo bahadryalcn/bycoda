@@ -1,4 +1,21 @@
-import { pathKey, prettyCwd, slash } from "../../../shared/lib/paths";
+import {
+  requirePrivacyMutationToken,
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../group-lock/model/roomPrivacyProjection";
+import {
+  isRemoteProjectPath,
+  normalizeProjectPath,
+  pathKey,
+  prettyCwd,
+  sameProjectPath,
+  slash,
+} from "../../../shared/lib/paths";
+export {
+  isRemoteProjectPath,
+  normalizeProjectPath,
+  sameProjectPath,
+} from "../../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
 const KEY = "bycoda.recentProjects";
@@ -21,16 +38,8 @@ export type ArchivedProject = {
   archivedAt: number;
 };
 
-export function normalizeProjectPath(path: string): string {
-  return slash(path).replace(/\/+$/, "") || "/";
-}
-
 function normalize(path: string): string {
   return normalizeProjectPath(path);
-}
-
-export function sameProjectPath(a: string, b: string): boolean {
-  return pathKey(a) === pathKey(b);
 }
 
 export function loadRecents(): RecentProject[] {
@@ -57,18 +66,35 @@ export function loadRecents(): RecentProject[] {
 function save(next: RecentProject[]) {
   try {
     localStorage.setItem(KEY, JSON.stringify(next));
+    notifyProjectPathsChanged();
   } catch {
     // private mode / quota
   }
 }
 
-export function rememberProject(path: string): RecentProject[] {
+export function rememberProjectInMutation(
+  path: string,
+  token: PrivacyMutationToken,
+): RecentProject[] {
+  requirePrivacyMutationToken(token);
+  return rememberProjectNow(path);
+}
+
+export function rememberProject(path: string): Promise<RecentProject[]> {
+  return withRoomPrivacyMutation((token) => rememberProjectInMutation(path, token));
+}
+
+function rememberProjectNow(path: string): RecentProject[] {
   const normalized = normalize(path);
   if (normalized === "~") return loadRecents();
   dropArchived(normalized);
+  if (loadArchivedProjects().some((item) => sameProjectPath(item.path, normalized)))
+    throw new Error("Could not restore the project from archive.");
   const prev = loadRecents().filter((p) => !sameProjectPath(p.path, normalized));
   const next = [{ path: normalized, openedAt: Date.now() }, ...prev].slice(0, MAX);
   save(next);
+  if (localStorage.getItem(KEY) !== JSON.stringify(next))
+    throw new Error("Could not save recent projects.");
   return next;
 }
 
@@ -245,6 +271,7 @@ export function subscribeArchivedProjects(onChange: () => void): () => void {
 function saveArchived(next: ArchivedProject[]) {
   try {
     localStorage.setItem(ARCHIVED_KEY, JSON.stringify(next));
+    notifyProjectPathsChanged();
   } catch {
     // private mode / quota
   }
@@ -433,10 +460,6 @@ export function projectRailItems(recents: RecentProject[], currentCwd: string): 
 /** Projects on another machine use `remote://<host id>/<host path>` keys. They
  * appear in the rail like any project, but are never folders on this computer. */
 export const REMOTE_PROJECT_PREFIX = REMOTE_PATH_PREFIX;
-
-export function isRemoteProjectPath(path: string): boolean {
-  return slash(path).startsWith(REMOTE_PROJECT_PREFIX);
-}
 
 /** A project folder on this computer: safe to index, search, or run git and
  * terminals in. Use `looksLikeProject` where a remote project also counts. */

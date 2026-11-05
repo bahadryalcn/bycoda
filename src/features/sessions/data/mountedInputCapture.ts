@@ -1,19 +1,10 @@
 import {
   beginEditorInputClosure,
   captureEditorInputs,
-} from "../../files/data/mountedEditorClosure";
-import {
-  beginParentInputClosure,
-  captureParentInputs,
-} from "./parentInputClosure";
-import {
-  beginNotesInputClosure,
-  captureNotesInputs,
-} from "../../notes/notesInputClosure";
-import type {
-  NativeProducerInputs,
-  NativeProducerLease,
-} from "./nativeProducerCapture";
+} from "../../files/public/mountedEditorClosure";
+import { beginParentInputClosure, captureParentInputs } from "./parentInputClosure";
+import { beginNotesInputClosure, captureNotesInputs } from "../../notes/notesInputClosure";
+import type { NativeProducerInputs, NativeProducerLease } from "./nativeProducerCapture";
 
 export type NativeProducerInputLease = NativeProducerInputs & {
   missingCoverage: readonly string[];
@@ -92,11 +83,7 @@ async function captureAll(
   );
   let released = false;
   const current = () =>
-    !released &&
-    gateCurrent() &&
-    parent.current() &&
-    editor.current() &&
-    notes.current();
+    !released && gateCurrent() && parent.current() && editor.current() && notes.current();
   const release = () => {
     if (released) return;
     released = true;
@@ -110,18 +97,12 @@ async function captureAll(
 }
 
 /** Passive compatibility/data capture; never closes admission. */
-export function captureNativeProducerInputs(
-  sessionId: string,
-): Promise<NativeProducerInputLease> {
+export function captureNativeProducerInputs(sessionId: string): Promise<NativeProducerInputLease> {
   return captureAll(
     () => captureParentInputs(sessionId),
     () => captureEditorInputs(sessionId),
     () => captureNotesInputs(sessionId),
-    [
-      "parent-admission-closure",
-      "editor-admission-closure",
-      "notes-admission-closure",
-    ],
+    ["parent-admission-closure", "editor-admission-closure", "notes-admission-closure"],
   );
 }
 
@@ -152,13 +133,11 @@ export function beginNativeProducerInputClosure(
   let released = false;
   let captured: NativeProducerInputLease | undefined;
   let task: Promise<NativeProducerInputLease> | undefined;
-  const current = () =>
-    !released && parent.current() && editor.current() && notes.current();
+  const current = () => !released && parent.current() && editor.current() && notes.current();
   return {
     current,
     capture() {
-      if (released)
-        return Promise.reject(new Error("Producer admission was released"));
+      if (released) return Promise.reject(new Error("Producer admission was released"));
       return (task ??= captureAll(
         () => parent.capture(),
         () => editor.capture(),

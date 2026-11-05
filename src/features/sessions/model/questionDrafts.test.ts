@@ -213,6 +213,12 @@ describe("bounded question drafts", () => {
     expect(readQuestionDraft("semantic", changed)).toBeUndefined();
   });
 
+  it("does not reuse a question draft across distinct occurrences", () => {
+    const original = { ...prompt, occurrenceId: "occurrence-a" };
+    const replacement = { ...prompt, occurrenceId: "occurrence-b" };
+    expect(questionDraftKey("scope", original)).not.toBe(questionDraftKey("scope", replacement));
+  });
+
   it("retains original Parent ownership, exact oldest bytes and invalidates captures on discard", async () => {
     const stops: (() => void)[] = [];
     for (let requestId = 400; requestId < 464; requestId++) {

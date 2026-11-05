@@ -2354,6 +2354,8 @@
       "method": "devices.action",
       "params": {
         "deviceId": "emulator-5554",
+        "leaseId": "lease-id",
+        "requestId": "action-id",
         "action": {
           "type": "press",
           "x": 1,
@@ -2372,6 +2374,8 @@
       "method": "devices.action",
       "params": {
         "deviceId": "emulator-5554",
+        "leaseId": "lease-id",
+        "requestId": "action-id",
         "action": {
           "type": "press",
           "x": 1,

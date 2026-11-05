@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import type { RemoteDataState } from "../../connections/model/remoteDataState";
+import type { RemoteDataState } from "../../connections";
 import type { BoardTask } from "../model/taskClient";
 import type { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 
@@ -26,7 +26,7 @@ export function useTaskBoardOperations(refreshQueries: () => Promise<unknown>) {
 
   /** Runs one board action; the owner's other actions wait until it settles.
    * `commit` receives the host's confirmed answer before the refresh starts. */
-  const act = async <T,>(
+  const act = async <T>(
     task: Pick<BoardTask, "id"> & Partial<Pick<BoardTask, "machineId">>,
     action: () => Promise<T>,
     commit?: (saved: T) => void,
@@ -69,7 +69,7 @@ export function useBoardDataState(board: TaskBoard) {
     setState(({ data }) => {
       // Read when the update applies, not while rendering.
       const at = Date.now();
-      const updatedAt = board.hasTaskAnswer && !board.error ? at : data.updatedAt;
+      const updatedAt = board.hasTaskAnswer && !board.error && !board.pending ? at : data.updatedAt;
       return {
         now: at,
         data: {
@@ -80,7 +80,7 @@ export function useBoardDataState(board: TaskBoard) {
               ? "stale"
               : "error"
             : board.pending
-              ? updatedAt
+              ? updatedAt || board.hasTaskAnswer
                 ? "refreshing"
                 : "loading"
               : board.machines.length

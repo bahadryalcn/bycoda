@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostTasks } from "../../tasks";
+import { HostTasks } from "../../tasks/tasks";
 import { createHostTasksService } from "./service";
 import { HostTaskSchema, TaskPayloadSchema } from "../../../src/shared/model/host-contracts/tasks";
 

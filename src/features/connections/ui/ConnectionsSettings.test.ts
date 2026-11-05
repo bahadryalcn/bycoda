@@ -8,7 +8,13 @@ import { requestMachineAdd } from "../model/machineAdd";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
+// Connection setup fixtures contain no persisted commands; outbox recovery has
+// separate durable-storage coverage.
+vi.mock("../model/remoteOutbox", async (original) => ({
+  ...(await original<typeof import("../model/remoteOutbox")>()),
+  useDurableRemoteOutboxIssues: () => [],
+}));
 vi.mock("../../sync/model/useSyncStatus", () => ({ useSyncStatus: vi.fn() }));
 let container: HTMLDivElement;
 let root: Root;

@@ -2,6 +2,7 @@
 //! No credentials, network, command execution or fabricated application ACKs.
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Cursor {
@@ -73,8 +74,7 @@ impl Effects {
 }
 struct Member {
     waiting: bool,
-    /// Cursor the caller sent with its open; the resume point until it applies an event.
-    requested: Option<Cursor>,
+    ghost: bool,
     applied: Option<Cursor>,
     baseline: Option<Cursor>,
     delivered: BTreeSet<u64>,
@@ -99,10 +99,12 @@ struct Demand {
     tombstoned: bool,
     first: Option<Cursor>,
     last_ack: Option<Cursor>,
+    resume: Option<Cursor>,
     events: VecDeque<Value>,
     bytes: usize,
     recovery_attempts: usize,
     wire_sent: bool,
+    cohort_deadline: Option<Instant>,
 }
 pub(super) struct DemandUnion {
     demands: HashMap<String, Demand>,
@@ -139,6 +141,231 @@ impl DemandUnion {
     pub fn knows_wire(&self, wire: &str) -> bool {
         self.wire_keys.contains_key(wire)
     }
+    pub fn next_cohort_deadline(&self) -> Option<Instant> {
+        self.demands
+            .values()
+            .filter_map(|demand| demand.cohort_deadline)
+            .min()
+    }
+    pub fn is_ghost(&self, member: &MemberId) -> bool {
+        self.members
+            .get(member)
+            .and_then(|key| self.demands.get(key))
+            .and_then(|demand| demand.members.get(member))
+            .is_some_and(|entry| entry.ghost)
+    }
+    pub fn prune_missing(&mut self) {
+        self.members.retain(|id, key| {
+            self.demands
+                .get(key)
+                .is_some_and(|demand| demand.members.contains_key(id))
+        });
+    }
+    // Cut is taken from the actual union, not inferred from surviving proofs.
+    // Incomplete groups are excluded in their entirety.
+    pub fn retirement_cut(&self) -> Vec<(Value, Vec<(MemberId, Value)>)> {
+        self.demands
+            .values()
+            .filter_map(|demand| {
+                if demand.members.is_empty() {
+                    return None;
+                }
+                if demand.phase != Phase::Active
+                    || demand.tombstoned
+                    || demand
+                        .members
+                        .values()
+                        .any(|m| m.waiting || m.ghost || m.applied.is_none())
+                {
+                    return Some((demand.shape.clone(), Vec::new()));
+                }
+                let members: Vec<_> = demand
+                    .members
+                    .iter()
+                    .map(|(id, member)| (id.clone(), member.applied.as_ref().unwrap().value()))
+                    .collect();
+                let epoch = members[0].1["epoch"].as_str();
+                if members
+                    .iter()
+                    .any(|(_, cursor)| cursor["epoch"].as_str() != epoch)
+                {
+                    return Some((demand.shape.clone(), Vec::new()));
+                }
+                Some((demand.shape.clone(), members))
+            })
+            .collect()
+    }
+
+    pub fn open_cohort(
+        &mut self,
+        owner: &str,
+        params: &Value,
+        members: &[(MemberId, Value)],
+        deadline: Instant,
+    ) -> Result<(MemberId, Effects), &'static str> {
+        let id = MemberId::new(
+            owner,
+            params["subscriptionId"].as_str().ok_or("subscription")?,
+        );
+        if members.is_empty()
+            || !members.iter().any(|(member, _)| *member == id)
+            || self.members.len() + members.len() > self.max_members
+        {
+            return Err("cohort");
+        }
+        let mut parsed = Vec::with_capacity(members.len());
+        for (member, raw) in members {
+            let cursor = Cursor::parse(raw)?;
+            if self.members.contains_key(member)
+                || parsed
+                    .iter()
+                    .any(|(existing, _): &(MemberId, Cursor)| existing == member)
+            {
+                return Err("cohort");
+            }
+            parsed.push((member.clone(), cursor));
+        }
+        for (member, _) in &parsed {
+            if self
+                .members
+                .keys()
+                .filter(|id| id.owner == member.owner)
+                .count()
+                + parsed
+                    .iter()
+                    .filter(|(id, _)| id.owner == member.owner)
+                    .count()
+                > self.max_per_window
+            {
+                return Err("limit");
+            }
+        }
+        let minimum = parsed
+            .iter()
+            .map(|(_, cursor)| cursor.sequence)
+            .min()
+            .ok_or("cohort")?;
+        if parsed
+            .iter()
+            .any(|(_, cursor)| cursor.epoch != parsed[0].1.epoch)
+        {
+            return Err("cohort");
+        }
+        let base = Cursor {
+            epoch: parsed[0].1.epoch.clone(),
+            sequence: minimum,
+        };
+        let key = Self::shape(params).to_string();
+        if self.demands.contains_key(&key) {
+            return Err("cohort");
+        }
+        let (opened, effects) = self.open_resumable(owner, params, Some(&base.value()))?;
+        let demand = self.demands.get_mut(&key).ok_or("cohort")?;
+        for (member, cursor) in parsed {
+            if member == opened {
+                let entry = demand.members.get_mut(&member).unwrap();
+                entry.applied = Some(cursor.clone());
+                entry.baseline = Some(cursor);
+            } else {
+                self.members.insert(member.clone(), key.clone());
+                demand.members.insert(
+                    member,
+                    Member {
+                        waiting: true,
+                        ghost: true,
+                        applied: Some(cursor.clone()),
+                        baseline: Some(cursor),
+                        delivered: BTreeSet::new(),
+                    },
+                );
+            }
+        }
+        demand.cohort_deadline = Some(deadline);
+        Ok((opened, effects))
+    }
+
+    pub fn rejoin_cohort(
+        &mut self,
+        member: &MemberId,
+        params: &Value,
+        verified: &Value,
+    ) -> Result<Effects, &'static str> {
+        let key = self.members.get(member).ok_or("owner")?.clone();
+        if key != Self::shape(params).to_string() {
+            return Err("cohort");
+        }
+        let demand = self.demands.get_mut(&key).ok_or("owner")?;
+        let entry = demand.members.get_mut(member).ok_or("owner")?;
+        if !entry.ghost || entry.applied.as_ref() != Some(&Cursor::parse(verified)?) {
+            return Err("cohort");
+        }
+        entry.ghost = false;
+        let mut effects = Effects::default();
+        if demand.phase == Phase::Active {
+            entry.waiting = false;
+            effects.notices.push(Notice::Opened {
+                member: member.clone(),
+                stream: demand.virtual_stream.clone().ok_or("identity")?,
+            });
+            for event in &demand.events {
+                let cursor = Cursor::parse(&event["params"]["cursor"])?;
+                if entry.applied.as_ref().is_some_and(|applied| {
+                    applied.epoch == cursor.epoch && applied.sequence < cursor.sequence
+                }) {
+                    entry.delivered.insert(cursor.sequence);
+                    let mut event = event.clone();
+                    event["params"]["subscriptionId"] = member.logical_id.clone().into();
+                    event["params"]["streamId"] = demand.virtual_stream.clone().unwrap().into();
+                    effects.notices.push(Notice::Event {
+                        member: member.clone(),
+                        event,
+                    });
+                }
+            }
+        }
+        if demand.members.values().all(|m| !m.ghost) {
+            demand.cohort_deadline = None;
+        }
+        Ok(effects)
+    }
+
+    pub fn expire_cohorts(
+        &mut self,
+        now: Instant,
+        mut valid: impl FnMut(&MemberId) -> bool,
+    ) -> Effects {
+        let keys: Vec<_> = self
+            .demands
+            .iter()
+            .filter(|(_, demand)| {
+                demand
+                    .cohort_deadline
+                    .is_some_and(|deadline| now >= deadline)
+                    || demand
+                        .members
+                        .iter()
+                        .any(|(id, member)| member.ghost && !valid(id))
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        let mut effects = Effects::default();
+        for key in keys {
+            let demand = self.demands.get_mut(&key).unwrap();
+            let ghosts: Vec<_> = demand
+                .members
+                .iter()
+                .filter(|(_, member)| member.ghost)
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in ghosts {
+                demand.members.remove(&id);
+                self.members.remove(&id);
+            }
+            demand.cohort_deadline = None;
+            effects.append(Self::resync(&key, demand));
+        }
+        effects
+    }
     pub fn operation_current(&self, operation: &Operation) -> bool {
         self.demands
             .get(&operation.key)
@@ -157,7 +384,7 @@ impl DemandUnion {
             self.demands.get_mut(&operation.key).unwrap().wire_sent = true;
         }
     }
-    fn shape(params: &Value) -> Value {
+    pub(super) fn shape(params: &Value) -> Value {
         let mut shape = params.as_object().cloned().unwrap_or_default();
         shape.remove("subscriptionId");
         shape.remove("cursor");
@@ -185,37 +412,26 @@ impl DemandUnion {
         demand.phase = Phase::Opening;
         demand.wire_sent = false;
         demand.stream = None;
-        demand.first = None;
-        demand.last_ack = None;
+        demand.first = demand.resume.clone();
+        demand.last_ack = demand.resume.clone();
         demand.events.clear();
         demand.bytes = 0;
         for member in demand.members.values_mut() {
-            member.baseline = None;
+            member.baseline = demand.resume.clone();
+            member.applied = demand.resume.clone();
             member.delivered.clear();
         }
         let mut params = demand.shape.clone();
         params["subscriptionId"] = demand.wire.clone().into();
-        // Resume from the cursor every member already holds instead of
-        // re-downloading the stream; members that disagree get a full snapshot.
-        if let Some(cursor) = Self::shared_cursor(demand) {
+        if let Some(cursor) = &demand.resume {
             params["cursor"] = cursor.value();
         }
         Self::operation(key, demand, OperationKind::Open, params)
     }
-    /// The one cursor all members agree on, if any.
-    fn shared_cursor(demand: &Demand) -> Option<Cursor> {
-        let mut shared: Option<Cursor> = None;
-        for member in demand.members.values() {
-            let cursor = member.applied.as_ref().or(member.requested.as_ref())?;
-            match &shared {
-                Some(existing) if existing != cursor => return None,
-                Some(_) => {}
-                None => shared = Some(cursor.clone()),
-            }
-        }
-        shared
-    }
     fn begin_close(key: &str, demand: &mut Demand, refresh: bool, effects: &mut Effects) {
+        demand.resume = None;
+        demand.members.retain(|_, member| !member.ghost);
+        demand.cohort_deadline = None;
         demand.refresh |= refresh;
         if demand.phase == Phase::Closing {
             return;
@@ -234,6 +450,14 @@ impl DemandUnion {
         &mut self,
         owner: &str,
         params: &Value,
+    ) -> Result<(MemberId, Effects), &'static str> {
+        self.open_resumable(owner, params, None)
+    }
+    pub fn open_resumable(
+        &mut self,
+        owner: &str,
+        params: &Value,
+        verified: Option<&Value>,
     ) -> Result<(MemberId, Effects), &'static str> {
         let id = params["subscriptionId"].as_str().ok_or("subscription")?;
         let member_id = MemberId::new(owner, id);
@@ -270,10 +494,12 @@ impl DemandUnion {
                     tombstoned: false,
                     first: None,
                     last_ack: None,
+                    resume: verified.map(Cursor::parse).transpose()?,
                     events: VecDeque::new(),
                     bytes: 0,
                     recovery_attempts: 0,
                     wire_sent: false,
+                    cohort_deadline: None,
                 },
             );
         }
@@ -285,9 +511,7 @@ impl DemandUnion {
             member_id.clone(),
             Member {
                 waiting: true,
-                requested: params
-                    .get("cursor")
-                    .and_then(|value| Cursor::parse(value).ok()),
+                ghost: false,
                 applied: None,
                 baseline: None,
                 delivered: BTreeSet::new(),
@@ -295,7 +519,9 @@ impl DemandUnion {
         );
         self.members.insert(member_id.clone(), key.clone());
         let mut effects = Effects::default();
-        if demand.phase == Phase::Active && demand.first.is_none() {
+        if demand.phase == Phase::Opening && demand.resume.is_some() && demand.members.len() > 1 {
+            Self::begin_close(&key, demand, true, &mut effects);
+        } else if demand.phase == Phase::Active && demand.first.is_none() {
             if let Some(stream) = &demand.virtual_stream {
                 demand.members.get_mut(&member_id).unwrap().waiting = false;
                 effects.notices.push(Notice::Opened {
@@ -365,6 +591,11 @@ impl DemandUnion {
         let snapshot = event["params"]["kind"] == "snapshot";
         for (id, member) in &mut demand.members {
             if member.waiting {
+                continue;
+            }
+            if member.applied.as_ref().is_some_and(|applied| {
+                applied.epoch == cursor.epoch && applied.sequence >= cursor.sequence
+            }) {
                 continue;
             }
             if snapshot && member.baseline.is_none() {
@@ -497,7 +728,7 @@ impl DemandUnion {
                 demand.wire_sent = true;
                 demand.phase = Phase::Active;
                 for (id, member) in &mut demand.members {
-                    if member.waiting {
+                    if member.waiting && !member.ghost {
                         member.waiting = false;
                         effects.notices.push(Notice::Opened {
                             member: id.clone(),
@@ -571,7 +802,10 @@ impl DemandUnion {
             sequence: 0,
         });
         let event = json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":demand.wire,"streamId":demand.virtual_stream.clone().unwrap_or_else(|| "native-resync".into()),"cursor":cursor.value(),"kind":"resync-required"}});
-        for id in demand.members.keys() {
+        for (id, member) in &demand.members {
+            if member.ghost {
+                continue;
+            }
             effects.notices.push(Notice::Event {
                 member: id.clone(),
                 event: Self::rewrite(demand, id, &event),
@@ -579,7 +813,10 @@ impl DemandUnion {
         }
         if demand.recovery_attempts > 2 {
             demand.tombstoned = true;
-            for id in demand.members.keys() {
+            for (id, member) in &demand.members {
+                if member.ghost {
+                    continue;
+                }
                 effects
                     .notices
                     .push(Notice::Rejected { member: id.clone() });
@@ -625,6 +862,9 @@ impl DemandUnion {
         if kind == "closed" {
             demand.tombstoned = true;
             for (id, member) in &demand.members {
+                if member.ghost {
+                    continue;
+                }
                 if member.waiting {
                     effects
                         .notices
@@ -644,6 +884,9 @@ impl DemandUnion {
             return Ok(effects);
         }
         if kind == "resync-required" {
+            return Ok(Self::resync(&key, demand));
+        }
+        if kind == "snapshot" && demand.resume.is_some() {
             return Ok(Self::resync(&key, demand));
         }
         let bytes = event.to_string().len();
@@ -695,6 +938,34 @@ impl DemandUnion {
         }
         if demand.first.is_none() {
             demand.first = Some(cursor);
+        }
+        // Once retained history reaches half its budget, detach only members
+        // whose own applied cursor is behind a proven progressing peer. They
+        // receive resync and must reopen through the normal snapshot/proof path.
+        if demand.phase == Phase::Active && demand.members.len() > 1
+            && (demand.events.len() >= (self.max_events / 2).max(1)
+                || demand.bytes >= (self.max_group_bytes / 2).max(1)) {
+            let maximum = demand.members.values().filter_map(|member| member.applied.as_ref())
+                .filter(|cursor| demand.first.as_ref().is_some_and(|first| first.epoch == cursor.epoch))
+                .map(|cursor| cursor.sequence).max();
+            if let Some(maximum) = maximum {
+                let slow: Vec<_> = demand.members.iter().filter(|(_, member)| {
+                    member.applied.as_ref().is_none_or(|cursor| demand.first.as_ref().is_none_or(|first| cursor.epoch != first.epoch) || cursor.sequence < maximum)
+                }).map(|(id, _)| id.clone()).collect();
+                let cursor = demand.first.clone().unwrap();
+                let resync = json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":demand.wire,"streamId":demand.virtual_stream.clone().unwrap_or_else(|| "native-resync".into()),"cursor":cursor.value(),"kind":"resync-required"}});
+                for id in slow {
+                    if let Some(member) = demand.members.remove(&id) {
+                        self.members.remove(&id);
+                        if member.waiting { effects.notices.push(Notice::Rejected { member: id }); }
+                        else {
+                            effects.notices.push(Notice::Event { event: Self::rewrite(demand, &id, &resync), member: id.clone() });
+                            effects.notices.push(Notice::Rejected { member: id });
+                        }
+                    }
+                }
+                effects.append(Self::schedule_ack(&key, demand));
+            }
         }
         demand.events.push_back(event.clone());
         demand.bytes += bytes;

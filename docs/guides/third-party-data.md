@@ -1,6 +1,6 @@
 # Third-party services and data controls
 
-Last updated: 11 October 2026
+Last updated: 4 November 2026
 
 ## Choose what you connect
 
@@ -30,4 +30,4 @@ Social disconnection removes the local stored token and pauses the account. It r
 
 Delete conversations and other records with their available controls. Hiding and archiving retain data. Local databases, webview preferences, diagnostic logs, provider CLI history and host copies are separate stores. Uninstalling does not guarantee their removal. For a complete reset, stop the application and host, back up required data and remove their application data, including bycoda.db and the social credential vault where present. Also review provider storage, other paired devices and backups. Removing application data can erase all local sessions and settings; do not delete project folders merely to reset application preferences.
 
-Requests about information voluntarily shared with the maintainer can be sent to [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com). The maintainer has no remote access to your devices and cannot erase your local data or third-party records on your behalf.
+Requests about information voluntarily shared with the maintainer can be sent to [info@bycoda.codes](mailto:info@bycoda.codes). The maintainer has no remote access to your devices and cannot erase your local data or third-party records on your behalf.

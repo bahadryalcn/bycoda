@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -22,6 +24,7 @@ export type BufferReportRecoveryModel<R extends BufferReportDisplay> = {
   records: readonly R[];
   details: { record: R; buffers: readonly { path: string; dirty: boolean }[] } | null;
   loading: boolean;
+  partial?: string | null;
   loaded: boolean;
   error: boolean;
   readError: string | null;
@@ -38,6 +41,7 @@ export type BufferReportRecoveryModel<R extends BufferReportDisplay> = {
 type Props<R extends BufferReportDisplay> = {
   recovery: BufferReportRecoveryModel<R>;
   reportKey(record: R): string;
+  scopeKey?: string;
   onShowCopies?(paths: readonly string[]): void;
   /** Where the reports come from; the owner renders it, the view places it in its toolbar. */
   sourceControl?: ReactNode;
@@ -49,6 +53,7 @@ function readableTime(value: number | null): string | null {
 export function BufferReportRecoveryView<R extends BufferReportDisplay>({
   recovery,
   reportKey,
+  scopeKey = "reports",
   onShowCopies,
   sourceControl,
 }: Props<R>) {
@@ -56,7 +61,6 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"held" | "all">("held");
   const [pathQuery, setPathQuery] = useState("");
-  const [pathPage, setPathPage] = useState(0);
   if (!recovery.visible)
     return (
       <p role="status" className="p-3 text-ui-secondary text-(--ui-text-secondary)">
@@ -80,7 +84,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
     const matched = details.buffers.filter((buffer) =>
       buffer.path.toLocaleLowerCase().includes(pathQuery.trim().toLocaleLowerCase()),
     );
-    const page = matched.slice(pathPage * 50, (pathPage + 1) * 50);
+    const pathRows = matched.map((buffer, index) => ({ buffer, index }));
     return (
       <section className="recovery-pane" aria-label={t("Earlier file report details")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -104,7 +108,6 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             value={pathQuery}
             onChange={(event) => {
               setPathQuery(event.target.value);
-              setPathPage(0);
             }}
             aria-label={t("Search reported files")}
             placeholder={t("Search reported files")}
@@ -115,22 +118,24 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           {pathQuery ? <span>{t("{p0} match", { p0: matched.length })}</span> : null}
         </div>
         <div className="recovery-body">
-          {page.length ? (
-            <ul className="divide-y divide-stroke" aria-label={t("Reported files")}>
-              {page.map((buffer, index) => (
-                <li
-                  key={`${pathPage * 50 + index}:${buffer.path}`}
-                  className="flex flex-wrap items-start gap-2 py-2"
-                >
+          {pathRows.length ? (
+            <ContinuousList
+              items={pathRows}
+              stateKey={`buffer-recovery:${scopeKey}:paths:${reportKey(details.record)}:${pathQuery.trim()}`}
+              itemKey={({ buffer, index }) => `${index}:${buffer.path}`}
+              estimateSize={56}
+              label={t("Reported files")}
+              renderItem={({ buffer }) => (
+                <div role="listitem" className="flex flex-wrap items-start gap-2 py-2">
                   <span className="min-w-0 flex-1 select-text text-ui-secondary [overflow-wrap:anywhere]">
                     {buffer.path}
                   </span>
                   <span className="text-ui-caption text-(--ui-text-secondary)">
                     {buffer.dirty ? t("Unsaved changes reported") : t("No changes reported")}
                   </span>
-                </li>
-              ))}
-            </ul>
+                </div>
+              )}
+            />
           ) : (
             <p role="status" className="py-3 text-ui-secondary text-(--ui-text-secondary)">
               {pathQuery
@@ -146,22 +151,6 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             )}
           </p>
           <div className="recovery-actions">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pathPage === 0}
-              onClick={() => setPathPage((old) => Math.max(0, old - 1))}
-            >
-              {t("Previous")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={(pathPage + 1) * 50 >= matched.length}
-              onClick={() => setPathPage((old) => old + 1)}
-            >
-              {t("Next")}
-            </Button>
             {onShowCopies && details.buffers.length ? (
               <Button
                 className="recovery-actions-end"
@@ -199,8 +188,8 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             focusOwner="group"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            aria-label={t("Search reports on this page")}
-            placeholder={t("Search reports on this page")}
+            aria-label={t("Search loaded reports")}
+            placeholder={t("Search loaded reports")}
           />
         </SearchInputGroup>
         <Button
@@ -217,7 +206,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
         {recovery.loaded ? (
           <>
             <span>
-              {t("{p0} reports on this page · {p1} need recovery", {
+              {t("{p0} loaded reports · {p1} need recovery", {
                 p0: recovery.records.length,
                 p1: heldCount,
               })}
@@ -230,29 +219,20 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           <span>{t("Reports are not loaded yet.")}</span>
         )}
       </div>
-      {recovery.error ? (
-        <Alert tone="danger" role="alert">
-          <span>
-            {t("Earlier reports could not be loaded. The previous page is kept; refresh to retry.")}
-          </span>{" "}
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={recovery.loading}
-            onClick={() => void recovery.refresh()}
-          >
-            {t("Retry")}
-          </Button>
-        </Alert>
-      ) : null}
       <div className="recovery-body">
         {rows.length ? (
-          <ul className="divide-y divide-stroke" aria-label={t("Earlier file reports")}>
-            {rows.map((row) => {
+          <ContinuousList
+            items={rows}
+            stateKey={`buffer-recovery:${scopeKey}:reports:${filter}:${query.trim()}`}
+            itemKey={reportKey}
+            requiredKey={recovery.pending}
+            estimateSize={112}
+            label={t("Earlier file reports")}
+            renderItem={(row) => {
               const key = reportKey(row);
               const time = readableTime(row.updatedAt);
               return (
-                <li key={key} className="flex flex-wrap items-start gap-2 py-2">
+                <div role="listitem" className="flex flex-wrap items-start gap-2 py-2">
                   <div className="min-w-0 basis-48 flex-1">
                     <p className="break-words text-ui-secondary font-medium">
                       {row.windowLabel ?? t("Earlier window")} · {t("Report")} {row.reportVersion}
@@ -291,16 +271,15 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
                     loading={recovery.pending === key}
                     onClick={() => {
                       setPathQuery("");
-                      setPathPage(0);
                       void recovery.inspect(row);
                     }}
                   >
                     {recovery.readError === key ? t("Retry inspection") : t("Inspect report")}
                   </Button>
-                </li>
+                </div>
               );
-            })}
-          </ul>
+            }}
+          />
         ) : !recovery.loaded ? (
           <EmptyState
             context="panel"
@@ -315,7 +294,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             context="panel"
             kind="filtered"
             title={t("No matching reports")}
-            description={t("No report on this page matches “{p0}”.", { p0: query.trim() })}
+            description={t("No loaded report matches “{p0}”.", { p0: query.trim() })}
             action={
               <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
                 {t("Clear search")}
@@ -326,8 +305,8 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           <EmptyState
             context="panel"
             kind="filtered"
-            title={t("No reports needing recovery on this page.")}
-            description={t("{p0} other reports on this page are available.", {
+            title={t("No reports needing recovery.")}
+            description={t("{p0} other loaded reports are available.", {
               p0: recovery.records.length,
             })}
             action={
@@ -336,18 +315,11 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
               </Button>
             }
           />
-        ) : filter === "held" && (recovery.hasNext || recovery.hasPrevious) ? (
-          <EmptyState
-            context="panel"
-            kind="filtered"
-            title={t("No reports needing recovery on this page.")}
-            description={t("Use Next or Previous to check other pages.")}
-          />
         ) : (
           <EmptyState
             context="panel"
             kind="empty"
-            title={t("No earlier reports on this page.")}
+            title={t("No earlier file reports.")}
             description={t("Inspecting a report never changes files or removes its protection.")}
           />
         )}
@@ -356,24 +328,18 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
         <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("Inspect earlier file reports without changing files or removing their protection.")}
         </p>
-        <div className="recovery-actions">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!recovery.hasPrevious || recovery.loading}
-            onClick={() => void recovery.previous()}
-          >
-            {t("Previous")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!recovery.hasNext || recovery.loading}
-            onClick={() => void recovery.next()}
-          >
-            {t("Next")}
-          </Button>
-        </div>
+        <CollectionFooter
+          loading={recovery.loading}
+          error={
+            recovery.error
+              ? t("Earlier reports could not be loaded. Loaded reports remain available.")
+              : null
+          }
+          partial={recovery.partial}
+          onRetry={() => void recovery.refresh()}
+          hasMore={recovery.hasNext}
+          onLoadMore={() => void recovery.next()}
+        />
       </div>
     </section>
   );

@@ -98,20 +98,21 @@
   border-radius: var(--radius-pill);
   background: var(--badge-foreground);
 }
-/* A count is a filled number, not an outlined status: the label variant keeps the border. */
+/* Counts follow caption height; their shared tone stays quiet and borderless. */
 .count {
-  border-color: transparent;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   justify-content: center;
   flex-shrink: 0;
-  min-inline-size: 1.125rem;
-  min-block-size: 1.125rem;
-  padding-block: 0.0625rem;
-  padding-inline: var(--space-1);
-  line-height: 1;
+  min-inline-size: 1ch;
+  min-block-size: 0;
+  padding: 0;
+  line-height: inherit;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 .count.sm {
-  min-inline-size: 1rem;
-  min-block-size: 1rem;
+  min-inline-size: 1ch;
+  min-block-size: 0;
 }

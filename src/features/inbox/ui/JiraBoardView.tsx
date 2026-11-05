@@ -1,6 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
+import { Badge } from "../../../shared/ui/Badge";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -17,7 +19,7 @@ import {
   setGrabbing,
   type DropPlacement,
 } from "../../../shared/lib/drag";
-import { useEffect, useRef, useState, type PointerEvent, type UIEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -39,7 +41,6 @@ import {
 } from "../model/jiraBoard";
 import "./jira-board.css";
 import { JIRA_CHANGE_EVENT, readHiddenJiraProjectIds } from "../model/jira";
-
 type Group = {
   id: string;
   name: string;
@@ -568,7 +569,11 @@ export function JiraBoardView({
       same = group.issues.some((i) => i.identifier === issue.identifier);
     }
     if (same && !canRank)
-      return { label: t("Already in {p0}", { p0: name }), element: container, placement: "blocked" };
+      return {
+        label: t("Already in {p0}", { p0: name }),
+        element: container,
+        placement: "blocked",
+      };
     const label = same ? t("Reorder in {p0}", { p0: name }) : t("Move to {p0}", { p0: name });
     // Ranking lands before the card under the pointer; otherwise the whole column or sprint receives.
     return before !== undefined && canRank
@@ -866,13 +871,6 @@ export function JiraBoardView({
     }
   }
 
-  function demand(event: UIEvent<HTMLElement>, group: Group) {
-    const surface = event.currentTarget;
-    if (surface.scrollHeight - surface.scrollTop - surface.clientHeight > 120) return;
-    if (group.token && !group.error && !group.autoPaused && !search.trim() && !locked)
-      void loadMore(group);
-  }
-
   function groupRecovery(group: Group) {
     return (
       <div className="flex flex-wrap items-center gap-2 py-2">
@@ -897,6 +895,23 @@ export function JiraBoardView({
           </Button>
         ) : null}
       </div>
+    );
+  }
+
+  function issueList(group: Group, issues: JiraBoardIssue[], column?: JiraColumn) {
+    const filtered = visible(issues);
+    if (!filtered.length) return null;
+    return (
+      <ContinuousList
+        fill={mode === "kanban"}
+        className="px-1 overscroll-none"
+        items={filtered}
+        stateKey={`jira-board:${boardId}:${scope}:${group.id}:${column?.name ?? "all"}`}
+        itemKey={(issue) => issue.id}
+        requiredKey={selectedIssueId}
+        estimateSize={150}
+        renderItem={(issue) => card(issue, group, column)}
+      />
     );
   }
 
@@ -1092,8 +1107,7 @@ export function JiraBoardView({
             return (
               <section
                 key={index}
-                className="jira-board-column min-h-0 flex-1 basis-60 overflow-y-auto"
-                onScroll={(event) => demand(event, group)}
+                className="jira-board-column flex min-h-0 flex-1 basis-60 flex-col overflow-hidden"
                 aria-label={column.name}
                 data-jira-drop={id}
                 data-jira-group={group.id}
@@ -1103,12 +1117,12 @@ export function JiraBoardView({
                   <h2 className="min-w-0 flex-1 break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
                     {column.name}
                   </h2>
-                  <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                  <Badge variant="count" size="xs">
                     {group.loaded
                       ? t("{p0} loaded", { p0: visible(issues).length })
                       : t("Not loaded")}
                     {group.token ? "+" : ""}
-                  </span>
+                  </Badge>
                 </header>
                 {!column.statusIds.length ? (
                   <EmptyState
@@ -1118,7 +1132,7 @@ export function JiraBoardView({
                     className="px-1"
                   />
                 ) : null}
-                {visible(issues).map((issue) => card(issue, group, column))}
+                {issueList(group, issues, column)}
                 {group.loaded &&
                 !group.stale &&
                 !group.error &&
@@ -1141,38 +1155,23 @@ export function JiraBoardView({
             (i) => !configuration?.columns.some((c) => c.statusIds.includes(i.statusId)),
           ) ? (
             <section
-              className="jira-board-column min-h-0 flex-1 basis-60 overflow-y-auto"
+              className="jira-board-column flex min-h-0 flex-1 basis-60 flex-col overflow-hidden"
               aria-label={t("Unmapped statuses")}
-              onScroll={(event) => demand(event, groups[0])}
             >
               <header className="sticky top-0 z-1 mb-2 bg-(--color-background-base) px-1 py-2">
                 <h2 className="text-ui-secondary font-medium">{t("Unmapped statuses")}</h2>
               </header>
-              {visible(
+              {issueList(
+                groups[0],
                 groups[0].issues.filter(
                   (i) => !configuration?.columns.some((c) => c.statusIds.includes(i.statusId)),
                 ),
-              ).map((i) => card(i, groups[0]))}
+              )}
             </section>
           ) : null}
         </div>
       ) : (
-        <div
-          className="jira-board-planning min-h-0 flex-1 overflow-auto px-3 pb-3 pt-2"
-          onScroll={(event) => {
-            const surface = event.currentTarget;
-            const active = Array.from(
-              surface.querySelectorAll<HTMLElement>("[data-jira-expanded]"),
-            ).find((element) => {
-              const rect = element.getBoundingClientRect();
-              const parent = surface.getBoundingClientRect();
-              return rect.bottom >= parent.top && rect.bottom <= parent.bottom + 120;
-            });
-            const group = groups.find((candidate) => candidate.id === active?.dataset.jiraGroup);
-            if (group?.token && !group.error && !group.autoPaused && !search.trim() && !locked)
-              void loadMore(group);
-          }}
-        >
+        <div className="jira-board-planning min-h-0 flex-1 overflow-auto px-3 pb-3 pt-2">
           {groups.map((group, index) => {
             const open = expanded ? expanded.includes(group.id) : index === 0;
             const contentId = `jira-group-${boardId}-${group.id.replace(":", "-")}`;
@@ -1217,12 +1216,12 @@ export function JiraBoardView({
                       {group.state === "active" ? t("Active sprint") : t("Future sprint")}
                     </span>
                   ) : null}
-                  <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                  <Badge variant="count" size="xs">
                     {group.loaded
                       ? t("{p0} loaded", { p0: visible(group.issues).length }) +
                         (group.token ? "+" : "")
                       : t("Not loaded")}
-                  </span>
+                  </Badge>
                 </header>
                 {open ? (
                   <div id={contentId}>
@@ -1231,7 +1230,7 @@ export function JiraBoardView({
                         {group.goal}
                       </p>
                     ) : null}
-                    {visible(group.issues).map((issue) => card(issue, group))}
+                    {issueList(group, group.issues)}
                     {group.loaded && !visible(group.issues).length ? (
                       <EmptyState
                         size="inline"
@@ -1257,7 +1256,7 @@ export function JiraBoardView({
       ) : null}
       {groups.some((group) => group.token || !group.loaded) ? (
         <p className="jira-board-hint">
-          {t("Showing loaded issues. Scroll for more or use Load more issues.")}
+          {t("Showing loaded issues. Use Load more issues to continue.")}
         </p>
       ) : null}
     </section>

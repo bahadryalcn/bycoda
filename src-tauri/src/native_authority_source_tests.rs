@@ -550,6 +550,15 @@ fn retained_cancellation_releases_bytes_after_actual_worker_settlement_without_m
 #[test]
 fn retained_aggregate_two_fixed_reservations_block_third_until_real_close() {
     let _serial = test_lock();
+    // Full workspace runs can delay this test between handshakes for more than
+    // the shared three-second endpoint lifetime. This test is about live
+    // reservation capacity, not timeout expiry; the deadline test above owns
+    // that separate contract.
+    let start = |store| SourceEndpoint::start(
+        binding(store),
+        PipeCancellation::default(),
+        SourceEndpointOptions { io_timeout: Duration::from_secs(30) },
+    ).unwrap();
     let mut held = Vec::new();
     for _ in 0..MAX_RETAINED_EXPORTS {
         let (store, _) = retained_store("preserved");
@@ -573,6 +582,8 @@ fn retained_aggregate_two_fixed_reservations_block_third_until_real_close() {
     let endpoint = start(store);
     let mut third = client(&endpoint);
     let initial = hello(&endpoint, &mut third);
+    assert!(held.iter().all(|(endpoint, _, _, _)| !endpoint.observation().unwrap().thread_finished), "a held source expired before the capacity assertion");
+    assert_eq!(retained_exports().lock().unwrap().len(), MAX_RETAINED_EXPORTS);
     assert!(retained_open(&mut third, initial["sourceEpoch"].as_str().unwrap(), 1).is_err());
     assert_eq!(endpoint.join(), Ok(SourceExit::RetainedCapacity));
     assert_eq!(

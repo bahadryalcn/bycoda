@@ -10,39 +10,40 @@ import { request } from "node:http";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { createHostServer } from "./server";
-import { BrowserRuntime } from "./browser-runtime";
-import { DeviceHost } from "./device-host";
-import * as expoGo from "./expo-go";
-import { RuntimeLogsService } from "./runtime-logs";
+import { BrowserRuntime } from "./browser/browser-runtime";
+import { DeviceHost } from "./devices/device-host";
+import * as expoGo from "./devices/expo-go";
+import { RuntimeLogsService } from "./execution/runtime-logs";
 import { HostChildBackend } from "./child-backend";
-import { HostTasks } from "./tasks";
-import { HostCrews } from "./crews";
-import { HostGoals } from "./goals";
-import { DesktopSessions } from "./desktopSessions";
-import { HostTerminals } from "./terminals";
+import { HostTasks } from "./tasks/tasks";
+import { HostCrews } from "./crews/crews";
+import { HostGoals } from "./goals/goals";
+import { DesktopSessions } from "./desktop/desktopSessions";
+import { HostTerminals } from "./terminals/terminals";
+import { mockWorkspaceTerminal } from "./workspaces/terminal-test-fixture";
 import { AsyncHostNotes } from "./host-notes-async";
-import { GenericAcpService } from "./generic-acp";
-import * as accessCenter from "./access-center";
-import { ConversationDesktopRelay } from "./conversation-tools";
-import { DevicePreviews } from "./device-preview";
-import { ProviderInboxBridge } from "./provider-inbox";
-import { VoiceSetupService } from "./voice-setup";
-import { LocalVoiceService } from "./voice-local";
+import { GenericAcpService } from "./providers/generic-acp";
+import * as accessCenter from "./security/access/access-center";
+import { ConversationDesktopRelay } from "./conversation/conversation-tools";
+import { DevicePreviews } from "./devices/device-preview";
+import { ProviderInboxBridge } from "./providers/provider-inbox";
+import { VoiceSetupService } from "./voice/voice-setup";
+import { LocalVoiceService } from "./voice/voice-local";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { requireWorkspaceCapability } from "../src/features/connections/model/protocol";
 import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
 import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
-import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
-import { AttachmentOwnership } from "./attachment-ownership";
-import { SocialService } from "./social";
-import * as accountCatalog from "./provider-accounts";
+import { CLAIM_GRACE_MS, SessionQueues } from "./sessions/session-queue";
+import { AttachmentOwnership } from "./attachments/attachment-ownership";
+import { SocialService } from "./social/social";
+import * as accountCatalog from "./providers/provider-accounts";
 
 const modelProbe = vi.hoisted(() => vi.fn());
 // Model-discovery fixtures never inspect the developer's real account profiles.
-vi.mock("./provider-accounts", async (original) => {
-  const module = await original<typeof import("./provider-accounts")>();
+vi.mock("./providers/provider-accounts", async (original) => {
+  const module = await original<typeof import("./providers/provider-accounts")>();
   return {
     ...module,
     hostProviderAccounts: (roots?: string[]) => module.hostProviderAccounts(roots ?? []),
@@ -57,6 +58,88 @@ const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("resolves uploaded question files before forwarding answers to the owning desktop", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "desktop-file-create",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "gpt",
+    runtimeMode: "supervised",
+  });
+  const sessionId = created.sessionId;
+  const saved = await s.store.session(sessionId);
+  await s.store.save(
+    { ...saved, desktop: { updatedAt: 1 }, revision: saved.revision + 1 },
+    { type: "desktop-fixture" },
+  );
+  const stamp = vi
+    .spyOn(DesktopSessions.prototype, "stampAsync")
+    .mockResolvedValue({ updatedAt: 1, running: true });
+  cleanups.push(async () => {
+    stamp.mockRestore();
+  });
+  const question = {
+    requestId: 7,
+    occurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
+    questions: [
+      { id: "q", prompt: "Attach report", allowCustom: true, multiSelect: false, options: [] },
+    ],
+  };
+  const beat = () =>
+    s.call("sessions.desktopLive", {
+      clientId: "desktop-file-owner",
+      pageToken: "7e1c4dc0-6f53-4a8c-b8d8-000000000010",
+      sessions: [
+        {
+          id: sessionId,
+          turnReceipt: { version: 1, sessionId, turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000011" },
+          busy: true,
+          patch: { pendingQuestion: question },
+        },
+      ],
+    });
+  await beat();
+  const file = {
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    name: "report.txt",
+    mimeType: "text/plain",
+    kind: "file",
+    size: 3,
+  };
+  await s.call("attachments.upload", {
+    id: file.id,
+    size: 3,
+    offset: 0,
+    data: "YWJj",
+    questionSessionId: sessionId,
+    questionRunId: "desktop",
+    questionRequestId: 7,
+  });
+  const dispatched = await s.call("commands.dispatch", {
+    type: "answer",
+    commandId: "desktop-file-answer",
+    sessionId,
+    runId: "desktop",
+    requestId: 7,
+    reply: {
+      kind: "answered",
+      answers: {},
+      attachments: { q: [file] },
+    },
+  });
+  expect(dispatched.value.error).toBeUndefined();
+  const response = (await beat()).value.result;
+  const command = response.commands.find(
+    (item: { id: string }) => item.id === "desktop-file-answer",
+  );
+  expect(command.reply.attachments.q[0]).toMatchObject(file);
+  expect(command.reply.attachments.q[0].path).toContain(file.id);
+  expect(command.reply.attachments.q[0].path).not.toContain("wrong-machine");
+});
 
 it("exposes safe Host account catalog only to owner model discovery, preserving scoped tool inventory", async () => {
   const actual = accountCatalog.hostProviderAccounts;
@@ -85,6 +168,7 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
     );
     const capabilities = (await s.call("environment.describe")).value.result.capabilities;
     expect(capabilities).toContain("sessions.configure.providerAccount.v1");
+    expect(capabilities).toContain("sessions.questionAttachments");
     expect(capabilities).toContain("models.providerAccounts.v1");
     const created = await s.engine.command({
       type: "create",
@@ -359,21 +443,7 @@ describe("managed workspace owner RPCs", () => {
       createdAt: Date.now(),
       exitCode: null,
     };
-    const terminalList = vi.spyOn(HostTerminals.prototype, "list").mockImplementation((id) => ({
-      terminals: id === alias.id ? [terminal] : [],
-      writable: true,
-      profiles: [],
-    }));
-    const terminalWrite = vi
-      .spyOn(HostTerminals.prototype, "write")
-      .mockResolvedValue({ written: true });
-    const terminalRead = vi.spyOn(HostTerminals.prototype, "read").mockImplementation(() => ({
-      terminal,
-      cursor: 1,
-      output: "done",
-      truncated: false,
-      hasMore: false,
-    }));
+    const restoreTerminal = mockWorkspaceTerminal(terminal, workspace.path);
     try {
       const writeFailure = vi
         .spyOn(s.store, "updateManagedWorkspace")
@@ -388,7 +458,7 @@ describe("managed workspace owner RPCs", () => {
               text: "echo test",
             })
           ).value.result,
-        ).toEqual({ written: true });
+        ).toEqual({ accepted: true });
         expect(warning).toHaveBeenCalledWith(
           "Managed workspace activity metadata could not be recorded",
         );
@@ -425,9 +495,7 @@ describe("managed workspace owner RPCs", () => {
         (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.state,
       ).toBe("idle");
     } finally {
-      terminalList.mockRestore();
-      terminalWrite.mockRestore();
-      terminalRead.mockRestore();
+      restoreTerminal();
     }
     const afterTerminal = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
       .result;
@@ -1614,6 +1682,8 @@ it("joins an accepted listening phase before resource shutdown and prevents late
   try {
     const s = await setup([]);
     await started;
+    const startsBeforeClose = socialStart.mock.calls.length;
+    expect(startsBeforeClose).toBe(1);
     const closing = s.server.closeResources();
     expect(s.server.closeResources()).toBe(closing);
     let closed = false;
@@ -1624,7 +1694,7 @@ it("joins an accepted listening phase before resource shutdown and prevents late
     expect(closed).toBe(false);
     release();
     await closing;
-    expect(socialStart).not.toHaveBeenCalled();
+    expect(socialStart).toHaveBeenCalledTimes(startsBeforeClose);
   } finally {
     release?.();
     attachmentStart.mockRestore();
@@ -1959,6 +2029,102 @@ it("advertises individual Claude stopping only with an installed provider hook",
 });
 
 describe("scoped Conversation Tools RPC", () => {
+  it("routes reviewed management mutations through native approval and retains their receipt", async () => {
+    const s = await sessionTools();
+    await s.call("conversation.desktop.take");
+    const input = { requestId: "reviewed-sprint", sprintId: "sprint-one", name: "Reviewed sprint" };
+    const pending = s.tool("sprints.create", input);
+    let requests: any[] = [];
+    for (let attempt = 0; attempt < 30 && !requests.length; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      requests = (await s.call("conversation.desktop.take")).value.result;
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      action: "management.write.authorize",
+      sessionId: s.created.sessionId,
+      input: { operation: { action: "sprints.create", input } },
+    });
+    expect((await s.tool("sprints.list")).value.result.items).toEqual([]);
+    await s.call("conversation.desktop.finish", {
+      id: requests[0].id,
+      result: { approved: true, operationHash: requests[0].input.operation.operationHash },
+    });
+    expect((await pending).value.result).toMatchObject({
+      state: "completed",
+      result: { id: "sprint-one", name: "Reviewed sprint" },
+    });
+    expect((await s.tool("sprints.create", input)).value.result.state).toBe("completed");
+    expect((await s.call("conversation.desktop.take")).value.result).toEqual([]);
+    expect((await s.tool("sprints.create", { ...input, name: "Different" })).value.error).toContain(
+      "different input",
+    );
+    expect((await s.tool("sprints.list", { limit: 1 })).value.result).toMatchObject({
+      total: 1,
+      nextOffset: null,
+    });
+  });
+  it("forwards focused desktop management with native-owned identity and reviewed organization changes", async () => {
+    const s = await sessionTools();
+    await s.call("conversation.desktop.take");
+    const take = async () => {
+      let requests: any[] = [];
+      await vi.waitFor(async () => {
+        requests = (await s.call("conversation.desktop.take")).value.result;
+        expect(requests).toHaveLength(1);
+      });
+      return requests[0];
+    };
+    for (const [action, nativeAction, args, fields] of [
+      ["preferences.read", "preferences.read", { offset: 2, limit: 1 }, {}],
+      ["providers.status", "providerManagement.read", {}, {}],
+      ["projects.organization.read", "organization.read", { offset: 0, memberOffset: 2 }, {}],
+      [
+        "history.import.status",
+        "historyImport.status",
+        { operationId: "existing" },
+        { operationId: "existing" },
+      ],
+    ] as const) {
+      const pending = s.tool(action, args);
+      const request = await take();
+      expect(request.action).toBe(nativeAction);
+      expect(request.input).toEqual({ ...fields, sessionId: s.created.sessionId });
+      await s.call("conversation.desktop.finish", {
+        id: request.id,
+        result: { revision: "revision", state: "unknown" },
+      });
+      expect((await pending).value.error).toBeUndefined();
+    }
+    const input = {
+      requestId: "organization-change",
+      expectedRevision: "a".repeat(64),
+      change: { kind: "projectName", name: "Reviewed name" },
+    };
+    const pending = s.tool("projects.organization.patch", input);
+    const review = await take();
+    expect(review.action).toBe("management.write.authorize");
+    await s.call("conversation.desktop.finish", {
+      id: review.id,
+      result: { approved: true, operationHash: review.input.operation.operationHash },
+    });
+    const effect = await take();
+    expect(effect.action).toBe("organization.patch");
+    expect(effect.input).toEqual({
+      operationId: input.requestId,
+      expectedRevision: input.expectedRevision,
+      change: input.change,
+      sessionId: s.created.sessionId,
+    });
+    await s.call("conversation.desktop.finish", {
+      id: effect.id,
+      result: { state: "applied", snapshot: { name: "Reviewed name" } },
+    });
+    expect((await pending).value.result).toMatchObject({
+      state: "completed",
+      result: { state: "applied", snapshot: { name: "Reviewed name" } },
+    });
+  });
   it("routes preview jobs through scoped RPC and rejects foreign ownership and protected input", async () => {
     const spies = [
       vi.spyOn(DeviceHost.prototype, "preflight").mockResolvedValue({
@@ -2469,37 +2635,48 @@ describe("scoped Conversation Tools RPC", () => {
       setup: expect.stringContaining("Set up host browser"),
     });
   });
-  it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
+  it("keeps canonical conversation leases separate from the legacy owner-wide browser", async () => {
     const s = await sessionTools();
     const agent = (await s.tool("browser.claim")).value.result;
-    const blocked = await s.call("browser.claim");
-    expect(blocked.value.error).toContain("Another client");
-    const owner = (await s.call("browser.claim", { takeover: true })).value.result;
+    const owner = (await s.call("browser.claim")).value.result;
     expect(owner.controlling).toBe(true);
     expect(owner.leaseId).not.toBe(agent.leaseId);
-    expect((await s.tool("browser.claim")).value.error).toContain("Another client");
-    expect((await s.tool("browser.claim", { takeover: true })).value.error).toBeTruthy();
-    expect((await s.call("browser.status")).value.result).toMatchObject({
-      controlling: true,
-      leaseId: owner.leaseId,
+    const scoped = await s.call("browser.claim", {
+      projectId: s.project.id,
+      sessionId: s.created.sessionId,
     });
+    expect(scoped.value.error).toContain("Another client");
+    const takeover = await s.call("browser.claim", {
+      projectId: s.project.id,
+      sessionId: s.created.sessionId,
+      takeover: true,
+    });
+    expect(takeover.value.result.controlling).toBe(true);
+    expect((await s.tool("browser.claim", { takeover: true })).value.error).toBeTruthy();
   });
-  it("serves the owner browser for a conversation this host cannot read, without its label", async () => {
+  it("rejects unknown native sessions and supports explicit owner presentation scopes", async () => {
     const s = await sessionTools();
     const unknown = await s.call("browser.status", {
       projectId: s.project.id,
       sessionId: crypto.randomUUID(),
     });
-    expect(unknown.value.error).toBeUndefined();
-    expect(unknown.value.result).toMatchObject({ open: false });
+    expect(unknown.value.error).toBeTruthy();
     const known = await s.call("browser.status", {
       projectId: s.project.id,
       sessionId: s.created.sessionId,
     });
     expect(known.value.error).toBeUndefined();
+    const alternate = await s.call("browser.status", {
+      ownerPresentationScope: "origin-workspace",
+    });
+    expect(alternate.value.result).toMatchObject({ open: false });
     expect(
-      (await s.call("browser.status", { projectId: "missing-project", sessionId: s.created.sessionId }))
-        .value.error,
+      (
+        await s.call("browser.status", {
+          projectId: "missing-project",
+          sessionId: s.created.sessionId,
+        })
+      ).value.error,
     ).toBeTruthy();
   });
 
@@ -2732,7 +2909,7 @@ describe("scoped Conversation Tools RPC", () => {
     ).value.result;
     expect(own.id).toBe("own-task");
     await s.call("tasks.save", { task: { ...input, id: "foreign-task", projectId: other.id } });
-    expect((await s.tool("tasks.list")).value.result.map((task: any) => task.id)).toEqual([
+    expect((await s.tool("tasks.list")).value.result.items.map((task: any) => task.id)).toEqual([
       "own-task",
     ]);
     expect((await s.tool("tasks.start", { taskId: "foreign-task" })).value.error).toContain(
@@ -3565,7 +3742,8 @@ describe("shared queued messages", () => {
       } finally {
         vi.useRealTimers();
       }
-    });
+      // Real SQLite store and three provider turns; explicit budget for loaded hosts.
+    }, 30_000);
 
     it("keeps an older client's queue its own while it keeps asking, and drains it when it goes quiet", async () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -3658,11 +3836,22 @@ describe("shared queued messages", () => {
       const s = await setup();
       const observe = vi.spyOn(HostTasks.prototype, "tick");
       try {
-        const saved = await s.call("tasks.save", { task: {
-          id: "blocked-review-continuation", title: "Review continuation", prompt: "Prepare report",
-          projectId: s.project.id, harness: "codex", model: "codex:test", modelSettings: {},
-          runtimeMode: "supervised", maxRunMinutes: 0, isolate: false, review: true, status: "todo",
-        } });
+        const saved = await s.call("tasks.save", {
+          task: {
+            id: "blocked-review-continuation",
+            title: "Review continuation",
+            prompt: "Prepare report",
+            projectId: s.project.id,
+            harness: "codex",
+            model: "codex:test",
+            modelSettings: {},
+            runtimeMode: "supervised",
+            maxRunMinutes: 0,
+            isolate: false,
+            review: true,
+            status: "todo",
+          },
+        });
         expect(saved.value.error).toBeUndefined();
         const started = await s.call("tasks.start", { taskId: "blocked-review-continuation" });
         expect(started.value.error).toBeUndefined();
@@ -3673,18 +3862,30 @@ describe("shared queued messages", () => {
         await s.engine.waitForRun(worker.session.id, worker.runId);
         await scheduler.tick();
         await scheduler.idle();
-        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({ status: "verifying" });
+        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
+          status: "verifying",
+        });
         await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
         const reviewing = (await scheduler.get("blocked-review-continuation"))!;
         const sessionId = reviewing.reviewer!.sessionId!;
-        s.turn().onEvent({ type: "session.providerBound", providerSessionId: "original-review-thread" });
-        s.turn().onEvent({ type: "message.delta", text: "Report is incomplete." });
+        s.turn().onEvent({
+          type: "session.providerBound",
+          providerSessionId: "original-review-thread",
+        });
+        s.turn().onEvent({
+          type: "message.delta",
+          text: "Report is incomplete.\nVERDICT: FAIL - Report is incomplete.",
+        });
         s.turn().onEvent({ type: "message.completed" });
         s.finish();
         await s.engine.waitForRun(sessionId, reviewing.reviewer!.runId);
-        await scheduler.tick();
+        // Ordinary failed reviews now start correction. Owner stop establishes
+        // the blocked continuation case without changing that repair policy.
+        await scheduler.move("blocked-review-continuation", "blocked");
         await scheduler.idle();
-        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({ status: "blocked" });
+        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
+          status: "blocked",
+        });
         expect(s.engine.hasRetainedProviderWriter(sessionId)).toBe(true);
         // A lapsed desktop heartbeat is observation, never takeover authority.
         expect((await beat(s, sessionId, "win1", 1))[sessionId]).toBeNull();
@@ -3694,7 +3895,9 @@ describe("shared queued messages", () => {
         expect(lease.value.result.lease.holder).toBe("desktop:win1");
         expect(transfer).toHaveBeenCalledWith(sessionId, expect.any(Function));
         expect(s.engine.hasRetainedProviderWriter(sessionId)).toBe(false);
-        expect((await s.store.session(sessionId)).session.providerSessionId).toBe("original-review-thread");
+        expect((await s.store.session(sessionId)).session.providerSessionId).toBe(
+          "original-review-thread",
+        );
       } finally {
         observe.mockRestore();
       }
@@ -4232,7 +4435,9 @@ describe("remote host API", () => {
       { type: "test" },
     );
     const loadedBlockIds = loaded.session.blocks.map((block) => block.id);
+    const baseline = await s.call("sessions.sync", { sessionId: created.sessionId });
     const delta = await s.call("sessions.sync", {
+      sourceEpoch: baseline.value.result.value.sourceEpoch,
       sessionId: created.sessionId,
       revision: base.revision,
       partial: true,
@@ -4255,6 +4460,7 @@ describe("remote host API", () => {
     expect(
       (
         await s.call("sessions.sync", {
+          sourceEpoch: baseline.value.result.value.sourceEpoch,
           sessionId: created.sessionId,
           partial: true,
           loadedBlockIds: ["not-present"],
@@ -4346,7 +4552,9 @@ describe("remote host API", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
+    const baseline = await s.call("sessions.sync", { sessionId: created.sessionId });
     const waiting = s.call("sessions.sync", {
+      sourceEpoch: baseline.value.result.value.sourceEpoch,
       sessionId: created.sessionId,
       revision: created.revision,
       waitMs: 10_000,

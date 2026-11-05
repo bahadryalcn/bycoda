@@ -31,6 +31,8 @@ pub struct PutDraft {
     pub path: String,
     pub text: String,
     pub eol: DraftEol,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serialized_text: Option<String>,
     pub disk_baseline: String,
     pub revision: u64,
     pub expected_revision: Option<u64>,
@@ -42,6 +44,8 @@ pub struct DraftPayload {
     pub path: String,
     pub text: String,
     pub eol: DraftEol,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serialized_text: Option<String>,
     pub disk_baseline: String,
     pub revision: u64,
 }
@@ -187,12 +191,18 @@ fn validate_payload(payload: &DraftPayload) -> Result<(), String> {
         || payload.text.len() > MAX_TEXT
         || payload.disk_baseline.len() > MAX_TEXT
         || payload.text.contains('\r')
+        || payload.serialized_text.as_ref().is_some_and(|raw| {
+            raw.len() > MAX_TEXT || raw.replace("\r\n", "\n").replace('\r', "\n") != payload.text
+        })
     {
         return Err(failure("INVALID_CAPTURE"));
     }
     Ok(())
 }
 fn serialized_text(payload: &DraftPayload) -> String {
+    if let Some(raw) = &payload.serialized_text {
+        return raw.clone();
+    }
     match payload.eol {
         DraftEol::Lf => payload.text.clone(),
         DraftEol::Crlf => payload.text.replace('\n', "\r\n"),
@@ -402,6 +412,7 @@ fn put(
         path: input.path,
         text: input.text,
         eol: input.eol,
+        serialized_text: input.serialized_text,
         disk_baseline: input.disk_baseline,
         revision: input.revision,
     };

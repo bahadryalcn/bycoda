@@ -10,12 +10,19 @@ import {
 import * as store from "../../features/sessions/data/sessionStore";
 import { invoke } from "@tauri-apps/api/core";
 import { loadResumedWorkspace } from "./appLifecycle";
+vi.mock("./sessionWindowOwnership", () => ({
+  claimRestoredSession: vi.fn().mockResolvedValue(true),
+  abortRestoredSession: vi.fn().mockResolvedValue(undefined),
+  remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "main" }) }));
 vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
   ...(await original<typeof import("../../features/sessions/data/sessionStore")>()),
   loadWorkspaceSnapshot: vi.fn(),
   listInFlightSessions: vi.fn().mockResolvedValue([]),
+  listDeletedSessionIds: vi.fn().mockResolvedValue([]),
   getSession: vi.fn(),
 }));
 

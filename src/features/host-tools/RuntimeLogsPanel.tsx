@@ -1,3 +1,5 @@
+import { ObjectInspector } from "./ui/RuntimeLogObjectInspector";
+import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
@@ -14,16 +16,7 @@ import { Button } from "../../shared/ui/Button";
 import { FilterTrigger } from "../../shared/ui/FilterTrigger";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { SurfaceSelection } from "../sessions/ui/SurfaceSelection";
@@ -53,16 +46,23 @@ import {
   groupRuntimeLogs,
   MAX_RENDERED_RUNTIME_LOGS,
   mergeRuntimeLogs,
-  runtimeLogDetailsText,
   runtimeLogFileTarget,
   runtimeLogsAgentPrompt,
   type RuntimeLogGroup,
 } from "./runtimeLogsModel";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
+import {
+  peekToolsDraftPart,
+  subscribeToolsDraftTransfer,
+  writeToolsDraftPart,
+  type ToolsDraftScope,
+} from "./toolsDraftTransfer";
 import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "./runtimeLogPresentation";
 import "./runtime-logs.css";
 
 type Props = {
+  transferScope?: ToolsDraftScope;
+  active?: boolean;
   cwd: string;
   sessionId: string;
   composerSessionId?: string;
@@ -108,6 +108,7 @@ export function RuntimeLogsPanel(props: Props) {
 }
 
 function ScopedRuntimeLogsPanel({
+  active = true,
   cwd,
   sessionId,
   composerSessionId,
@@ -115,15 +116,19 @@ function ScopedRuntimeLogsPanel({
   target = PROJECT_TARGET,
   hostLabel,
   onOpenFile,
+  transferScope,
 }: Props) {
   useLocale();
-  const [buffer, setBuffer] = useState(createRuntimeLogsBuffer);
+  const saved = transferScope ? peekToolsDraftPart(transferScope, "logs") : undefined;
+  const [buffer, setBuffer] = useState(() => saved?.buffer ?? createRuntimeLogsBuffer());
   const bufferRef = useRef(buffer);
   const targetRef = useRef(target);
-  const [paused, setPaused] = useState(false);
-  const pausedRef = useRef(false);
-  const [started, setStarted] = useState(true);
-  const [monitorUrl, setMonitorUrl] = useState("");
+  const terminalMonitorId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`).current;
+  const terminalMonitorSequence = useRef(0);
+  const [paused, setPaused] = useState(saved?.paused ?? false);
+  const pausedRef = useRef(saved?.paused ?? false);
+  const [started, setStarted] = useState(saved?.started ?? true);
+  const [monitorUrl, setMonitorUrl] = useState(saved?.monitorUrl ?? "");
   const [monitors, setMonitors] = useState<{ id: string; url: string; sourceId?: string }[]>([]);
   const [monitorBusy, setMonitorBusy] = useState(false);
   const [monitorOperation, setMonitorOperation] = useState<{
@@ -144,21 +149,94 @@ function ScopedRuntimeLogsPanel({
   const [inspecting, setInspecting] = useState(false);
   const inspectingRef = useRef(false);
   const stateKey = `runtime-logs:${JSON.stringify([cwd, sessionId, hostToolTargetKey(target)])}`;
-  const [search, setSearch] = useRetainedState(`${stateKey}:search`, "");
+  const [search, setSearch] = useRetainedState(`${stateKey}:search`, saved?.search ?? "");
   const [source, setSource] = useRetainedState<RuntimeLogEntry["source"] | "all">(
     `${stateKey}:source`,
-    "all",
+    saved?.source ?? "all",
   );
-  const [sourceIds, setSourceIds] = useRetainedState<string[]>(`${stateKey}:source-ids`, []);
+  const [sourceIds, setSourceIds] = useRetainedState<string[]>(
+    `${stateKey}:source-ids`,
+    saved?.sourceIds ?? [],
+  );
   const filterTrigger = useRef<HTMLButtonElement>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [level, setLevel] = useRetainedState(`${stateKey}:level`, "all");
-  const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, true);
-  const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, true);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [level, setLevel] = useRetainedState(`${stateKey}:level`, saved?.level ?? "all");
+  const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, saved?.grouped ?? true);
+  const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, saved?.follow ?? true);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(saved?.selected));
+  const [scrollTop, setScrollTop] = useState(saved?.scrollTop ?? 0);
+  const restoreScroll = useRef<number | undefined>(saved?.scrollTop);
+  useLayoutEffect(() => {
+    if (!saved) return;
+    setSearch(saved.search);
+    setSource(saved.source);
+    setSourceIds(saved.sourceIds);
+    setLevel(saved.level);
+    setGrouped(saved.grouped);
+    setFollow(saved.follow);
+    // Snapshot owns the destination's retained filter values on initial mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!transferScope) return;
+    return subscribeToolsDraftTransfer(transferScope, ({ logs }) => {
+      if (!logs) return;
+      bufferRef.current = logs.buffer;
+      setBuffer(logs.buffer);
+      pausedRef.current = logs.paused;
+      setPaused(logs.paused);
+      restoreScroll.current = logs.scrollTop;
+      setScrollTop(logs.scrollTop ?? 0);
+      setStarted(logs.started);
+      setMonitorUrl(logs.monitorUrl);
+      setSearch(logs.search);
+      setSource(logs.source);
+      setSourceIds(logs.sourceIds);
+      setLevel(logs.level);
+      setGrouped(logs.grouped);
+      setFollow(logs.follow);
+      setSelected(new Set(logs.selected));
+    });
+  }, [transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
+    if (active && transferScope)
+      writeToolsDraftPart(transferScope, "logs", {
+        buffer,
+        search,
+        source,
+        sourceIds,
+        level,
+        grouped,
+        follow,
+        paused,
+        started,
+        monitorUrl,
+        selected: [...selected],
+        scrollTop,
+      });
+  }, [
+    active,
+    transferScope?.cwd,
+    transferScope?.sessionId,
+    transferScope?.targetValue,
+    buffer,
+    search,
+    source,
+    sourceIds,
+    level,
+    grouped,
+    follow,
+    paused,
+    started,
+    monitorUrl,
+    selected,
+    scrollTop,
+  ]);
   const alive = useRef(false);
+  const visible = useRef(active);
+  visible.current = active;
   const pending = useRef(false);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -166,7 +244,7 @@ function ScopedRuntimeLogsPanel({
 
   const read = useCallback(
     async (showBusy = true): Promise<void> => {
-      if (!alive.current || pending.current || document.hidden) return;
+      if (!alive.current || !visible.current || pending.current || document.hidden) return;
       clearTimeout(timer.current);
       pending.current = true;
       const revision = generation.current;
@@ -181,10 +259,19 @@ function ScopedRuntimeLogsPanel({
             ...(current.cursor ? { after: current.cursor } : {}),
             ...(current.streamId ? { streamId: current.streamId } : {}),
             limit: 1_000,
+            ...(!pausedRef.current
+              ? {
+                  terminalMonitor: {
+                    id: terminalMonitorId,
+                    active: true,
+                    sequence: ++terminalMonitorSequence.current,
+                  },
+                }
+              : {}),
           },
           targetRef.current,
         );
-        if (!alive.current || revision !== generation.current) return;
+        if (!alive.current || !visible.current || revision !== generation.current) return;
         const next = mergeRuntimeLogs(bufferRef.current, snapshot);
         if (next !== bufferRef.current) {
           bufferRef.current = next;
@@ -209,12 +296,12 @@ function ScopedRuntimeLogsPanel({
         pending.current = false;
         if (alive.current) {
           if (showBusy) setBusy(false);
-          if (!pausedRef.current && !document.hidden)
+          if (visible.current && !pausedRef.current && !document.hidden)
             timer.current = setTimeout(() => void read(false), POLL_INTERVAL);
         }
       }
     },
-    [cwd, sessionId],
+    [cwd, sessionId, terminalMonitorId],
   );
 
   useEffect(() => {
@@ -235,6 +322,17 @@ function ScopedRuntimeLogsPanel({
       document.removeEventListener("visibilitychange", visibilityChanged);
     };
   }, [read]);
+
+  useRuntimeTerminalMonitor(
+    cwd,
+    targetRef.current,
+    active,
+    paused,
+    terminalMonitorId,
+    terminalMonitorSequence,
+    timer,
+    read,
+  );
 
   const filtered = useMemo(
     () =>
@@ -272,6 +370,10 @@ function ScopedRuntimeLogsPanel({
 
   useLayoutEffect(() => {
     const area = timeline.current;
+    if (area && restoreScroll.current !== undefined && !follow) {
+      area.scrollTop = restoreScroll.current;
+      restoreScroll.current = undefined;
+    }
     if (!follow || paused || !area) return;
     // Reading/copying selected output must not be pulled away by the next poll.
     const selection = window.getSelection();
@@ -465,40 +567,41 @@ function ScopedRuntimeLogsPanel({
   };
   // Each empty state offers the one local action that resolves it; the source
   // of captured output stays in the toolbar (website monitors) and the servers tool.
-  const emptyAction = !started && !busy ? (
-    <Button variant="secondary" size="sm" onClick={togglePause}>
-      {t("Read logs")}
-    </Button>
-  ) : error && !loaded ? undefined : paused && !buffer.entries.length ? (
-    <Button variant="secondary" size="sm" onClick={togglePause}>
-      {t("Resume")}
-    </Button>
-  ) : buffer.entries.length && !filtered.length ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={() => {
-        setSource("all");
-        setSourceIds([]);
-        setLevel("all");
-        setSearch("");
-      }}
-    >
-      {t("Reset filters")}
-    </Button>
-  ) : target.kind === "project" && loaded && !buffer.entries.length ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={() => {
-        setFiltersOpen(false);
-        setMoreOpen(false);
-        setMonitorsOpen(true);
-      }}
-    >
-      {t("Capture a website")}
-    </Button>
-  ) : undefined;
+  const emptyAction =
+    !started && !busy ? (
+      <Button variant="secondary" size="sm" onClick={togglePause}>
+        {t("Read logs")}
+      </Button>
+    ) : error && !loaded ? undefined : paused && !buffer.entries.length ? (
+      <Button variant="secondary" size="sm" onClick={togglePause}>
+        {t("Resume")}
+      </Button>
+    ) : buffer.entries.length && !filtered.length ? (
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          setSource("all");
+          setSourceIds([]);
+          setLevel("all");
+          setSearch("");
+        }}
+      >
+        {t("Reset filters")}
+      </Button>
+    ) : target.kind === "project" && loaded && !buffer.entries.length ? (
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          setFiltersOpen(false);
+          setMoreOpen(false);
+          setMonitorsOpen(true);
+        }}
+      >
+        {t("Capture a website")}
+      </Button>
+    ) : undefined;
   const emptyRetry =
     started && !(buffer.entries.length && !filtered.length) ? () => void read() : undefined;
 
@@ -886,6 +989,7 @@ function ScopedRuntimeLogsPanel({
         tabIndex={0}
         onScroll={(event) => {
           const area = event.currentTarget;
+          setScrollTop(area.scrollTop);
           const atEnd = area.scrollHeight - area.scrollTop - area.clientHeight < 32;
           if (atEnd !== follow) setFollow(atEnd);
         }}
@@ -1054,9 +1158,7 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
             </time>
             <span className="runtime-log-level">{LEVEL_LABELS[runtimeLogDisplayLevel(entry)]}</span>
             <OverflowTooltip label={sourceLabel}>
-              <span className="runtime-log-source-label">
-                {sourceLabel}
-              </span>
+              <span className="runtime-log-source-label">{sourceLabel}</span>
             </OverflowTooltip>
             {group.entries.length > 1 ? (
               <Tooltip label={t("{p0} repeated events", { p0: group.entries.length })}>
@@ -1130,37 +1232,3 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
     </li>
   );
 });
-
-function ObjectInspector({ value }: { value: unknown }) {
-  const budget = { remaining: 160 };
-  const seen = new WeakSet<object>();
-  const render = (item: unknown, depth: number): ReactNode => {
-    if (--budget.remaining < 0) return <code>…</code>;
-    if (!item || typeof item !== "object") return <code>{runtimeLogDetailsText(item, 2_000)}</code>;
-    if (seen.has(item)) return <code>[Circular]</code>;
-    seen.add(item);
-    if (depth >= 5) return <pre>{runtimeLogDetailsText(item, 3_000)}</pre>;
-    const entries = Object.entries(item);
-    return (
-      <details open={depth === 0} className="runtime-log-object-node">
-        <summary>
-          {Array.isArray(item) ? t("Array") : t("Object")} ({entries.length})
-        </summary>
-        <ul>
-          {entries.slice(0, 30).map(([key, child]) => (
-            <li key={key}>
-              <code className="runtime-log-object-key">{key}:</code>
-              {render(child, depth + 1)}
-            </li>
-          ))}
-          {entries.length > 30 ? (
-            <li>
-              <code>…</code>
-            </li>
-          ) : null}
-        </ul>
-      </details>
-    );
-  };
-  return <div className="runtime-log-object-tree">{render(value, 0)}</div>;
-}

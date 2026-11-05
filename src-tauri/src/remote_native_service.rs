@@ -30,6 +30,7 @@ pub(crate) struct NativeServiceChannel {
     delivery_supported: bool,
     delivery_ack_supported: bool,
     delivery_epochs_supported: bool,
+    bounded_format_supported: bool,
     journal: Option<delivery::JournalAccess>,
     delivery_cursor: Mutex<Option<String>>,
     delivery_ack_cursor: Mutex<Option<String>>,
@@ -43,18 +44,41 @@ pub(crate) struct NativeServiceReply {
     related_guards: Vec<NativeProfileGuard>,
     result_charge: Option<delivery::ResultCharge>,
     consumed: Mutex<bool>,
+    format_owner: Option<delivery::FormatOwner>,
+}
+
+fn legacy_method<'a>(method: &'a str, wire: &'a str) -> &'a str {
+    if ["assistant.presence.", "assistant.visibility.", "assistant.delegation.", "assistant.browser.", "assistant.workspace.", "assistant.notification."].iter().any(|prefix| method.starts_with(prefix)) { wire } else { method }
 }
 
 fn wire_method(method: &str) -> Option<String> {
     matches!(
         method,
         "runtimeLogs.bridge.describe"
+            | "assistant.delegation.publicKey"
+            | "assistant.delegation.origin"
+            | "assistant.delegation.nativeChallenge"
+            | "assistant.delegation.attest"
+            | "assistant.delegation.issue"
+            | "assistant.delegation.issue.status"
+            | "assistant.delegation.challenge"
+            | "assistant.delegation.call"
+            | "assistant.delegation.revoke"
+            | "assistant.visibility.epoch"
+            | "assistant.visibility.revoke"
+            | "assistant.visibility.reopen"
+            | "assistant.notification.authorize"
+            | "assistant.workspace.authorize"
+            | "assistant.browser.panel"
+            | "assistant.observations.ingest"
             | "desktop.stop"
             | "desktop.status"
+            | "desktop.status.wait"
             | "assistant.presence.get"
             | "assistant.presence.set"
             | "runtimeLogs.access.issue"
             | "runtimeLogs.terminals.append"
+            | "runtimeLogs.terminals.demand"
             | "conversation.bridge.describe"
             | "conversation.access.issue"
             | "conversation.desktop.take"
@@ -107,6 +131,7 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            bounded_format_supported: false,
             journal: None,
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -173,6 +198,7 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            bounded_format_supported: false,
             journal: delivery::JournalAccess::capture(app),
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -215,6 +241,8 @@ impl NativeServiceChannel {
             channel.delivery_supported && delivery::supports_ack_host(&descriptor);
         channel.delivery_epochs_supported =
             channel.delivery_ack_supported && super::native_delivery_epochs::supports(&descriptor);
+        channel.bounded_format_supported =
+            channel.delivery_supported && delivery::supports_bounded_format_host(&descriptor);
         let channel = Arc::new(channel);
         if channel.journal.is_some() && channel.delivery_supported {
             // Startup recovery is status-only. Ordinary helper reads remain
@@ -318,6 +346,7 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            bounded_format_supported: false,
             journal: None,
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -466,6 +495,7 @@ impl NativeServiceChannel {
             related_guards: Vec::new(),
             result_charge: None,
             consumed: Mutex::new(false),
+            format_owner: None,
         })
     }
 
@@ -507,6 +537,7 @@ impl NativeServiceChannel {
             related_guards: Vec::new(),
             result_charge: None,
             consumed: Mutex::new(false),
+            format_owner: None,
         })
     }
 
@@ -577,11 +608,7 @@ impl NativeServiceChannel {
             &selection.endpoint,
             &selection.machine.token,
             Some(&selection.machine.environment_id),
-            if method.starts_with("assistant.presence.") {
-                wire
-            } else {
-                method
-            },
+            legacy_method(method, wire),
             params,
             deadline,
         )?;
@@ -594,6 +621,7 @@ impl NativeServiceChannel {
             related_guards: Vec::new(),
             result_charge: None,
             consumed: Mutex::new(false),
+            format_owner: None,
         })
     }
 
@@ -771,6 +799,7 @@ impl NativeServiceChannel {
             delivery_supported: false,
             delivery_ack_supported: false,
             delivery_epochs_supported: false,
+            bounded_format_supported: false,
             journal: None,
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -927,6 +956,7 @@ mod tests {
                 delivery_supported: false,
                 delivery_ack_supported: false,
                 delivery_epochs_supported: false,
+                bounded_format_supported: false,
                 journal: None,
                 delivery_cursor: Mutex::new(None),
                 delivery_ack_cursor: Mutex::new(None),
@@ -1026,6 +1056,7 @@ mod tests {
             related_guards: Vec::new(),
             result_charge: None,
             consumed: Mutex::new(false),
+            format_owner: None,
         };
         assert!(reply.check().is_ok());
         let selection = fixture.channel.selection.as_ref().unwrap();
@@ -1059,6 +1090,15 @@ mod tests {
             wire_method("assistant.presence.set").as_deref(),
             Some("native.services.assistant.presence.set")
         );
+        assert_eq!(wire_method("assistant.notification.authorize").as_deref(), Some("native.services.assistant.notification.authorize"));
+        assert_eq!(wire_method("assistant.workspace.authorize").as_deref(), Some("native.services.assistant.workspace.authorize"));
+        assert_eq!(wire_method("assistant.browser.panel").as_deref(), Some("native.services.assistant.browser.panel"));
+        for method in ["assistant.browser.panel", "assistant.workspace.authorize", "assistant.notification.authorize"] {
+            let wire = wire_method(method).unwrap();
+            assert_eq!(legacy_method(method, &wire), wire);
+            assert!(!crate::host_ws::native_profile::NativeProfileBroker::supports_service_params(&wire, &serde_json::json!({})));
+        }
+        assert!(wire_method("assistant.notification.deliver").is_none());
         assert!(wire_method("assistant.request").is_none());
         assert_eq!(
             wire_method("conversation.desktop.finish").as_deref(),

@@ -5,10 +5,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Session } from "../model/session";
 import type { ComposerDraft } from "../model/draftPersistence";
-import type {
-  NativeProducerInputClosure,
-  NativeProducerInputLease,
-} from "./mountedInputCapture";
+import type { NativeProducerInputClosure, NativeProducerInputLease } from "./mountedInputCapture";
 import type {
   NativeProjectionPrepare,
   NativeProjectionCheckpointOptions,
@@ -39,8 +36,7 @@ function deferred<T = unknown>() {
   });
   return { promise, resolve, reject };
 }
-const prepareId = (value = 1) =>
-  `10000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
+const prepareId = (value = 1) => `10000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
 async function fixture(mount = true) {
   vi.resetModules();
   vi.stubGlobal("crypto", webcrypto);
@@ -48,12 +44,10 @@ async function fixture(mount = true) {
   mocks.listen.mockReset();
   mocks.globalListen.mockReset();
   const model = await import("../model/sessionsStore");
-  const output =
-    await import("../../../integrations/harness/core/nativeOutputDelivery");
+  const output = await import("../../../integrations/harness/core/nativeOutputDelivery");
   const projection = await import("./sessionOutputProjection");
   const persistence = await import("./sessionStore");
-  const { rendererPersistenceDrain: drain } =
-    await import("./persistenceDrain");
+  const { rendererPersistenceDrain: drain } = await import("./persistenceDrain");
   const { createMountedComposerRegistry } = await import("./composerClosure");
   const receiver = await import("./nativeProjectionCheckpoint");
   const initial: Session = {
@@ -102,9 +96,7 @@ async function fixture(mount = true) {
         Promise.resolve({ version: 1, qualified: false, status: "unknown" })
       );
     if (command === "native_projection_checkpoint_release")
-      return (
-        controls.release?.(args) ?? Promise.resolve({ releaseReady: true })
-      );
+      return controls.release?.(args) ?? Promise.resolve({ releaseReady: true });
     return Promise.resolve();
   });
   const publish = vi.fn(async () => {});
@@ -126,9 +118,7 @@ async function fixture(mount = true) {
         composing: () => composing,
       })
     : undefined!;
-  const services: ReturnType<
-    typeof receiver.createNativeProjectionCheckpointService
-  >[] = [];
+  const services: ReturnType<typeof receiver.createNativeProjectionCheckpointService>[] = [];
   const create = (options: NativeProjectionCheckpointOptions = {}) => {
     const service = receiver.createNativeProjectionCheckpointService({
       mountedBegin: mounted.beginComposerClosure,
@@ -149,9 +139,7 @@ async function fixture(mount = true) {
       await service.dispose();
     }
   });
-  const scope = (
-    overrides: Partial<NativeProjectionPrepare> = {},
-  ): NativeProjectionPrepare => ({
+  const scope = (overrides: Partial<NativeProjectionPrepare> = {}): NativeProjectionPrepare => ({
     version: 1,
     qualified: false,
     prepareId: prepareId(),
@@ -172,34 +160,29 @@ async function fixture(mount = true) {
   function emit() {
     const event = { type: "context" as const, used: ++sequence };
     const lines = [JSON.stringify(event)];
-    const tokens = output.observeNativeOutputBatch(
-      initial.id,
-      "stdout",
-      lines,
-      {
-        version: 1,
-        qualified: false,
-        processEpoch: "11111111-1111-4111-8111-111111111111",
-        streamEpoch: "22222222-2222-4222-8222-222222222222",
-        streamKind: "process",
-        sessionId: initial.id,
-        sourceStoreId: "fixture-store",
-        sourceProfileId: "fixture-profile",
-        storeInstance: "33333333-3333-4333-8333-333333333333",
-        processId: 42,
-        ownerEpoch: scope().windowEpoch,
-        sequence,
-        channel: "stdout",
-        itemCount: 1,
-        utf8Bytes: Buffer.byteLength(lines[0]),
-        payloadSha256: createHash("sha256")
-          .update(output.frameNativeOutputItems("stdout", lines))
-          .digest("hex"),
-        digestEncoding: "bycoda-output-items-le/v1",
-        available: true,
-        unavailableReason: null,
-      },
-    )!;
+    const tokens = output.observeNativeOutputBatch(initial.id, "stdout", lines, {
+      version: 1,
+      qualified: false,
+      processEpoch: "11111111-1111-4111-8111-111111111111",
+      streamEpoch: "22222222-2222-4222-8222-222222222222",
+      streamKind: "process",
+      sessionId: initial.id,
+      sourceStoreId: "fixture-store",
+      sourceProfileId: "fixture-profile",
+      storeInstance: "33333333-3333-4333-8333-333333333333",
+      processId: 42,
+      ownerEpoch: scope().windowEpoch,
+      sequence,
+      channel: "stdout",
+      itemCount: 1,
+      utf8Bytes: Buffer.byteLength(lines[0]),
+      payloadSha256: createHash("sha256")
+        .update(output.frameNativeOutputItems("stdout", lines))
+        .digest("hex"),
+      digestEncoding: "bycoda-output-items-le/v1",
+      available: true,
+      unavailableReason: null,
+    })!;
     output.deliverNativeOutputItem(tokens[0], () =>
       output.captureNativeOutputEvent(initial.id, event),
     );
@@ -212,8 +195,7 @@ async function fixture(mount = true) {
     projection.recordAppliedSessionOutput(session, [event]);
     return session;
   }
-  const calls = (command: string) =>
-    mocks.invoke.mock.calls.filter(([name]) => name === command);
+  const calls = (command: string) => mocks.invoke.mock.calls.filter(([name]) => name === command);
   const retainedRaw = (args: {
     nonce: string;
     rawCaptureJson: string;
@@ -236,16 +218,12 @@ async function fixture(mount = true) {
         generation: scope().generation,
         rawCapture: {
           version: 1,
-          sha256: createHash("sha256")
-            .update(args.rawCaptureJson)
-            .digest("hex"),
+          sha256: createHash("sha256").update(args.rawCaptureJson).digest("hex"),
           byteLength: Buffer.byteLength(args.rawCaptureJson),
           snapshotCount:
             JSON.parse(args.rawCaptureJson).snapshots.length +
             (JSON.parse(args.rawCaptureJson).producers?.length ?? 0),
-          comparisonSha256: createHash("sha256")
-            .update(args.comparisonJson)
-            .digest("hex"),
+          comparisonSha256: createHash("sha256").update(args.comparisonJson).digest("hex"),
         },
       },
     },
@@ -320,12 +298,12 @@ it("prepares real mounted drafts and a real covering save before observing the p
   await service.handleChallenge(f.challenge());
   await service.handleChallenge(f.challenge());
   expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1);
-  expect(
-    f.calls("native_projection_checkpoint_verify")[0][1].comparisonJson,
-  ).toBe(prepared.comparisonJson);
-  expect(
-    f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson,
-  ).toBe(prepared.rawCaptureJson);
+  expect(f.calls("native_projection_checkpoint_verify")[0][1].comparisonJson).toBe(
+    prepared.comparisonJson,
+  );
+  expect(f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson).toBe(
+    prepared.rawCaptureJson,
+  );
   expect(f.lease.canMutate()).toBe(false);
   service.handleFinished({
     version: 1,
@@ -351,9 +329,7 @@ it("forces only one actual full replacement when an earlier normal ACK supplied 
   const service = f.create({ save: force });
   await service.handlePrepare(f.scope());
   expect(force).toHaveBeenCalledOnce();
-  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe(
-    "prepared",
-  );
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe("prepared");
 });
 
 it("reports a missing original candidate as unverified after at most one save and never creates an origin or verifies", async () => {
@@ -365,12 +341,8 @@ it("reports a missing original candidate as unverified after at most one save an
   expect(f.calls("native_projection_checkpoint_prepared")[0][1]).toMatchObject({
     status: "unverified",
   });
-  expect(
-    f.calls("native_projection_checkpoint_prepared")[0][1].comparisonJson,
-  ).toBeUndefined();
-  expect(
-    f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson,
-  ).toBeUndefined();
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].comparisonJson).toBeUndefined();
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson).toBeUndefined();
   await service.handleChallenge(f.challenge());
   expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(0);
   expect(f.lease.canMutate()).toBe(true);
@@ -381,12 +353,8 @@ it("rejects busy sessions before closing composers or admitting a save", async (
   f.model.setSessions([{ ...f.initial, busy: true }]);
   const service = f.create();
   await service.handlePrepare(f.scope());
-  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe(
-    "busy",
-  );
-  expect(
-    f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson,
-  ).toBeUndefined();
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe("busy");
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson).toBeUndefined();
   expect(f.gate).not.toHaveBeenCalledWith(true);
   expect(f.publish).not.toHaveBeenCalled();
   expect(f.calls("session_upsert")).toHaveLength(0);
@@ -400,9 +368,7 @@ it("does not consume foreign scope/nonces or duplicate a prepare while its real 
   f.controls.prepared = () => held.promise;
   const service = f.create();
   const preparing = service.handlePrepare(f.scope());
-  await vi.waitFor(() =>
-    expect(f.calls("native_projection_checkpoint_prepared")).toHaveLength(1),
-  );
+  await vi.waitFor(() => expect(f.calls("native_projection_checkpoint_prepared")).toHaveLength(1));
   const replay = service.handlePrepare(f.scope({ expiresInMs: 29_000 }));
   expect(replay).toBe(preparing);
   for (const changes of [
@@ -428,12 +394,8 @@ it("revokes the prepared boundary on later accepted-model mutation without stopp
   f.emit();
   const service = f.create();
   await service.handlePrepare(f.scope());
-  f.model.setSessions([
-    { ...f.model.getSessions()[0], title: "new accepted title" },
-  ]);
-  await vi.waitFor(() =>
-    expect(f.calls("native_projection_checkpoint_release")).toHaveLength(1),
-  );
+  f.model.setSessions([{ ...f.model.getSessions()[0], title: "new accepted title" }]);
+  await vi.waitFor(() => expect(f.calls("native_projection_checkpoint_release")).toHaveLength(1));
   await service.handleChallenge(f.challenge());
   expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(0);
   expect(f.model.getSessions()[0].title).toBe("new accepted title");
@@ -536,9 +498,7 @@ it("captures actual sessionless Quick work without manufacturing a Session candi
   const service = f.create({ quickBegin: begin });
   await service.handlePrepare(f.scope());
   expect(begin).toHaveBeenCalledOnce();
-  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe(
-    "unverified",
-  );
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe("unverified");
   expect(f.calls("session_upsert")).toHaveLength(0);
   expect(owner.currentPrompt()).toBe("retained quick");
   expect(gate).toHaveBeenCalledWith(true);
@@ -574,9 +534,7 @@ it("installs finished/challenge first and retains finished delivery during dispo
   expect(mocks.globalListen).not.toHaveBeenCalled();
   await installed.service.handlePrepare(f.scope());
   const disposing = installed.dispose();
-  await vi.waitFor(() =>
-    expect(unlistened).toContain("native-projection-prepare"),
-  );
+  await vi.waitFor(() => expect(unlistened).toContain("native-projection-prepare"));
   expect(handlers.has("native-projection-finished")).toBe(true);
   handlers.get("native-projection-finished")!({
     payload: {
@@ -600,9 +558,7 @@ it("retains the real Native verification promise after cancellation and finished
   f.controls.verify = () => held.promise;
   f.controls.release = async () => ({ releaseReady: false });
   const verifying = service.handleChallenge(f.challenge());
-  await vi.waitFor(() =>
-    expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1),
-  );
+  await vi.waitFor(() => expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1));
   await service.cancel(prepareId());
   await verifying;
   expect(service.observation().actualJobs).toBe(1);
@@ -629,9 +585,7 @@ it("never reopens another owner's composer closure when preparation is refused",
   const service = f.create();
   try {
     await service.handlePrepare(f.scope());
-    expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe(
-      "unverified",
-    );
+    expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe("unverified");
     expect(f.lease.canMutate()).toBe(false);
     expect(f.calls("session_upsert")).toHaveLength(0);
   } finally {
@@ -755,9 +709,9 @@ it("distinguishes an actual zero-mount roster from a producer that supplied no r
   expect(prepared.status).toBe("prepared");
   expect(JSON.parse(prepared.rawCaptureJson).snapshots).toEqual([]);
   await service.handleChallenge(f.challenge());
-  expect(
-    f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson,
-  ).toBe(prepared.rawCaptureJson);
+  expect(f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson).toBe(
+    prepared.rawCaptureJson,
+  );
   service.handleFinished({
     version: 1,
     qualified: false,
@@ -839,17 +793,13 @@ it("retains the actual restored-file undefined optional and nested MCP option th
     id: "real-restored",
     path: "/fixture/restored.txt",
   });
-  expect(Object.hasOwn(retained.snapshot.attachments[0], "missing")).toBe(
-    false,
-  );
-  expect(Object.hasOwn(retained.snapshot.mcpTags[0].server, "enabled")).toBe(
-    false,
-  );
+  expect(Object.hasOwn(retained.snapshot.attachments[0], "missing")).toBe(false);
+  expect(Object.hasOwn(retained.snapshot.mcpTags[0].server, "enabled")).toBe(false);
   expect(Object.hasOwn(retained.snapshot, "mode")).toBe(false);
   await service.handleChallenge(f.challenge());
-  expect(
-    f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson,
-  ).toBe(prepared.rawCaptureJson);
+  expect(f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson).toBe(
+    prepared.rawCaptureJson,
+  );
 });
 
 it.each([false, true])(
@@ -868,9 +818,7 @@ it.each([false, true])(
     f.emit();
     const service = f.create();
     await service.handlePrepare(f.scope());
-    expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe(
-      "prepared",
-    );
+    expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe("prepared");
     if (present) delete file.missing;
     else file.missing = undefined;
     await service.handleChallenge(f.challenge());
@@ -889,9 +837,7 @@ it("detects a silent DOM value change without relying on a cache or input notifi
   await service.handleChallenge(f.challenge());
   expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(0);
   expect(f.calls("native_projection_checkpoint_release")).toHaveLength(1);
-  expect(JSON.parse(prepared.rawCaptureJson).snapshots[0].snapshot.text).toBe(
-    " \n retained draft",
-  );
+  expect(JSON.parse(prepared.rawCaptureJson).snapshots[0].snapshot.text).toBe(" \n retained draft");
   expect(f.input.value).toBe("silent unpublished DOM value");
   expect(f.calls("session_upsert")).toHaveLength(1);
 });
@@ -904,9 +850,7 @@ it("rechecks the actual mount after a held Native verify settles without replayi
   const service = f.create();
   await service.handlePrepare(f.scope());
   const verifying = service.handleChallenge(f.challenge());
-  await vi.waitFor(() =>
-    expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1),
-  );
+  await vi.waitFor(() => expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1));
   f.input.value = "late silent DOM mutation";
   held.resolve({ qualified: false });
   await verifying;
@@ -952,9 +896,9 @@ it("captures an already admitted preparation's late raw result only after its ac
     snapshot: { text: "late original attachment intent" },
   });
   await service.handleChallenge(f.challenge());
-  expect(
-    f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson,
-  ).toBe(prepared.rawCaptureJson);
+  expect(f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson).toBe(
+    prepared.rawCaptureJson,
+  );
 });
 
 it("does not revive raw verification after an accepted model changes and returns to its old object", async () => {
@@ -1000,9 +944,9 @@ it("never retries raw prepare or verify after the original prepared acknowledgem
   f.controls.release = async () => ({ releaseReady: false });
   const service = f.create();
   await service.handlePrepare(f.scope());
-  expect(
-    f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson,
-  ).toBeTypeOf("string");
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson).toBeTypeOf(
+    "string",
+  );
   await service.handlePrepare(f.scope());
   await service.handleChallenge(f.challenge());
   expect(f.calls("native_projection_checkpoint_prepared")).toHaveLength(1);
@@ -1050,43 +994,37 @@ it.each([
   "comparison-hash",
   "count",
   "pending",
-])(
-  "does not upgrade failed verification from a %s raw status response",
-  async (kind) => {
-    const f = await fixture();
-    f.emit();
-    f.controls.verify = async () => {
-      throw new Error("verify outcome unknown");
-    };
-    f.controls.release = async () => ({ releaseReady: false });
-    f.controls.rawStatus = async (args) => {
-      const result: any = f.retainedRaw(args);
-      if (kind === "missing-receipt") delete result.receipt;
-      if (kind === "qualified") result.qualified = true;
-      if (kind === "nonce")
-        result.receipt.sql.nonce = "99999999-9999-4999-8999-999999999999";
-      if (kind === "raw-hash")
-        result.receipt.sql.rawCapture.sha256 = "0".repeat(64);
-      if (kind === "comparison-hash")
-        result.receipt.sql.rawCapture.comparisonSha256 = "0".repeat(64);
-      if (kind === "count") result.receipt.sql.rawCapture.snapshotCount++;
-      if (kind === "pending") result.status = "pending";
-      return result;
-    };
-    const service = f.create();
-    await service.handlePrepare(f.scope());
-    await service.handleChallenge(f.challenge());
-    expect(service.observation()).toMatchObject({
-      retainedRaw: false,
-      qualified: false,
-      releasing: 1,
-    });
-    expect(f.calls("native_projection_checkpoint_raw_status")).toHaveLength(1);
-    expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1);
-    expect(f.calls("native_projection_checkpoint_release")).toHaveLength(1);
-    expect(f.calls("session_upsert")).toHaveLength(1);
-  },
-);
+])("does not upgrade failed verification from a %s raw status response", async (kind) => {
+  const f = await fixture();
+  f.emit();
+  f.controls.verify = async () => {
+    throw new Error("verify outcome unknown");
+  };
+  f.controls.release = async () => ({ releaseReady: false });
+  f.controls.rawStatus = async (args) => {
+    const result: any = f.retainedRaw(args);
+    if (kind === "missing-receipt") delete result.receipt;
+    if (kind === "qualified") result.qualified = true;
+    if (kind === "nonce") result.receipt.sql.nonce = "99999999-9999-4999-8999-999999999999";
+    if (kind === "raw-hash") result.receipt.sql.rawCapture.sha256 = "0".repeat(64);
+    if (kind === "comparison-hash") result.receipt.sql.rawCapture.comparisonSha256 = "0".repeat(64);
+    if (kind === "count") result.receipt.sql.rawCapture.snapshotCount++;
+    if (kind === "pending") result.status = "pending";
+    return result;
+  };
+  const service = f.create();
+  await service.handlePrepare(f.scope());
+  await service.handleChallenge(f.challenge());
+  expect(service.observation()).toMatchObject({
+    retainedRaw: false,
+    qualified: false,
+    releasing: 1,
+  });
+  expect(f.calls("native_projection_checkpoint_raw_status")).toHaveLength(1);
+  expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1);
+  expect(f.calls("native_projection_checkpoint_release")).toHaveLength(1);
+  expect(f.calls("session_upsert")).toHaveLength(1);
+});
 
 it("bounds the status waiter while retaining its actual IO through a late read result", async () => {
   const f = await fixture();
@@ -1156,9 +1094,7 @@ it("does not start raw recovery after cancellation wins over an actual still-pen
   const service = f.create();
   await service.handlePrepare(f.scope());
   const verifying = service.handleChallenge(f.challenge());
-  await vi.waitFor(() =>
-    expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1),
-  );
+  await vi.waitFor(() => expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1));
   await service.cancel(prepareId());
   await verifying;
   held.reject(new Error("late actual verify rejection"));
@@ -1249,16 +1185,14 @@ it("captures Parent/editor inputs after the existing drain and binds identical b
   const prepared = f.calls("native_projection_checkpoint_prepared")[0][1];
   const body = JSON.parse(prepared.rawCaptureJson);
   expect(body.producerEpochs).toEqual({ parent: 3, editor: 4 });
-  expect(body.producers.map((entry: { id: number }) => entry.id)).toEqual([
-    2, 3,
-  ]);
+  expect(body.producers.map((entry: { id: number }) => entry.id)).toEqual([2, 3]);
   expect(body.producers[0].snapshot.answer).toBe(" unsent ");
   expect(body.producers[1].snapshot.text).toBe(" unsaved\r\n");
   expect(body.producerCoverage).toBe("unknown");
   await service.handleChallenge(f.challenge());
-  expect(
-    f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson,
-  ).toBe(prepared.rawCaptureJson);
+  expect(f.calls("native_projection_checkpoint_verify")[0][1].rawCaptureJson).toBe(
+    prepared.rawCaptureJson,
+  );
   expect(captureInputs).toHaveBeenCalledOnce();
   expect(service.observation().qualified).toBe(false);
   await service.cancel(prepareId());
@@ -1359,13 +1293,9 @@ it.each(["", " \r\nunsaved note\t"])(
     const raw = JSON.parse(prepared.rawCaptureJson);
     expect(raw.version).toBe(3);
     expect(raw.producerEpochs).toEqual({ parent: 3, editor: 4, notes: 8 });
-    expect(raw.producers.map((item: { id: number }) => item.id)).toEqual([
-      3, 4, 5,
-    ]);
+    expect(raw.producers.map((item: { id: number }) => item.id)).toEqual([3, 4, 5]);
     expect(raw.producers[2].snapshot.edits.body).toBe(body);
-    expect(raw.producers[2].snapshot.originalSourceSessionId).toBe(
-      "another-original-session",
-    );
+    expect(raw.producers[2].snapshot.originalSourceSessionId).toBe("another-original-session");
     expect(raw.producers[2].undefinedPaths).toEqual([["savedRelation"]]);
     await service.handleChallenge(f.challenge());
     expect(f.calls("native_projection_checkpoint_verify")).toHaveLength(1);
@@ -1407,12 +1337,8 @@ it("closes actual producer admission before Composer/drain and keeps it closed u
     },
   });
   await service.handlePrepare(f.scope());
-  expect(events.indexOf("close-inputs")).toBeLessThan(
-    events.indexOf("close-composer"),
-  );
-  expect(events.indexOf("drain")).toBeLessThan(
-    events.indexOf("capture-inputs"),
-  );
+  expect(events.indexOf("close-inputs")).toBeLessThan(events.indexOf("close-composer"));
+  expect(events.indexOf("drain")).toBeLessThan(events.indexOf("capture-inputs"));
   await service.cancel(prepareId());
   expect(releaseGate).not.toHaveBeenCalled();
   expect(producers.release).not.toHaveBeenCalled();
@@ -1452,8 +1378,7 @@ it("waits for original Parent/editor/Notes work and descendants while rejecting 
   const f = await fixture();
   f.emit();
   const { registerParentInput } = await import("./parentInputClosure");
-  const { registerMountedEditor } =
-    await import("../../files/data/mountedEditorClosure");
+  const { registerMountedEditor } = await import("../../files/data/mountedEditorClosure");
   const { registerNoteInput } = await import("../../notes/notesInputClosure");
   let answer = "before";
   let text = "before";
@@ -1523,12 +1448,8 @@ it("waits for original Parent/editor/Notes work and descendants while rejecting 
   });
   child();
   await preparing;
-  const raw = JSON.parse(
-    f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson,
-  );
-  expect(
-    raw.producers.map((producer: { snapshot: unknown }) => producer.snapshot),
-  ).toEqual(
+  const raw = JSON.parse(f.calls("native_projection_checkpoint_prepared")[0][1].rawCaptureJson);
+  expect(raw.producers.map((producer: { snapshot: unknown }) => producer.snapshot)).toEqual(
     expect.arrayContaining([
       { answer: "late original answer" },
       { text: "late original document\r\n" },
@@ -1559,13 +1480,10 @@ it("does not start Composer or persistence when an actual Notes input still has 
   f.emit();
   const { registerNoteInput } = await import("../../notes/notesInputClosure");
   const close = vi.fn();
-  const note = registerNoteInput(
-    () => ({ snapshot: { body: "unfinished composition" } }),
-    {
-      canClose: () => false,
-      close,
-    },
-  );
+  const note = registerNoteInput(() => ({ snapshot: { body: "unfinished composition" } }), {
+    canClose: () => false,
+    close,
+  });
   cleanups.push(async () => {
     note.unregister();
   });
@@ -1577,9 +1495,7 @@ it("does not start Composer or persistence when an actual Notes input still has 
   expect(flush).not.toHaveBeenCalled();
   expect(close).not.toHaveBeenCalled();
   expect(f.calls("session_upsert")).toHaveLength(0);
-  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe(
-    "unverified",
-  );
+  expect(f.calls("native_projection_checkpoint_prepared")[0][1].status).toBe("unverified");
   expect(note.allowed()).toBe(true);
   expect(f.lease.canMutate()).toBe(true);
 });
@@ -1587,8 +1503,7 @@ it("does not start Composer or persistence when an actual Notes input still has 
 it("invalidates the actual editor gate after an external ABA update without discarding that update", async () => {
   const f = await fixture();
   f.emit();
-  const { registerMountedEditor } =
-    await import("../../files/data/mountedEditorClosure");
+  const { registerMountedEditor } = await import("../../files/data/mountedEditorClosure");
   let text = "same bytes";
   const editor = registerMountedEditor(() => ({ snapshot: { text } }), {
     canClose: () => true,

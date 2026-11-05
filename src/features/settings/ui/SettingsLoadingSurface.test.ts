@@ -21,7 +21,9 @@ afterEach(async () => {
 });
 
 it("keeps the known section title visible and announces one loading status", async () => {
-  await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "appearance" })));
+  await act(async () =>
+    root.render(createElement(SettingsLoadingSurface, { section: "appearance" })),
+  );
   expect(node.querySelector("h1")?.textContent).toBe("Appearance");
   const statuses = node.querySelectorAll('[role="status"]');
   expect(statuses).toHaveLength(1);
@@ -40,7 +42,9 @@ it("says so after a long wait and stops its timer when the dialog closes", async
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
   expect(node.textContent).not.toContain("taking longer");
   await act(async () => vi.advanceTimersByTime(10_000));
-  expect(node.textContent).toContain("Settings is taking longer to load. You can return to the workspace.");
+  expect(node.textContent).toContain(
+    "Settings is taking longer to load. You can return to the workspace.",
+  );
   await act(async () => root.render(createElement("div")));
   expect(vi.getTimerCount()).toBe(0);
 });

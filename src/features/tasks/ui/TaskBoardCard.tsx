@@ -3,6 +3,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Modal } from "../../../shared/ui/Modal";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -40,23 +41,14 @@ import {
   Undo2,
   X,
 } from "../../../shared/ui/icons";
-import { taskStatusLine, type TaskStatusKind } from "../model/taskStatusLine";
-import {AssistantTaskBadge} from "./AssistantTaskBadge";
+import { taskStatusLine, QUIET_TASK_STATUS } from "../model/taskStatusLine";
+import { AssistantTaskBadge } from "./AssistantTaskBadge";
 import { TaskStatusText } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { resolveModel } from "../../sessions/model/models";
 import { taskInstructionsSummary } from "../model/taskInstructions";
 import { isStewardProposal } from "../model/stewardClient";
-
-const QUIET_STATUS: ReadonlySet<TaskStatusKind> = new Set([
-  "todo",
-  "queued",
-  "running",
-  "finished",
-  "done",
-  "blocked",
-]);
 
 export const TaskCard = memo(function TaskCard({
   task,
@@ -138,7 +130,8 @@ function TaskCardBody({
     task.error || task.mergeError || task.budgetStop || task.repairStop || task.verification,
   );
   // The column already names plain states; the line names everything else.
-  const showStatus = !QUIET_STATUS.has(status.kind) || (status.kind === "blocked" && hasFailureDetails);
+  const showStatus =
+    !QUIET_TASK_STATUS.has(status.kind) || (status.kind === "blocked" && hasFailureDetails);
   const statusBadges =
     task.source === "steward" || task.autoMerged ? (
       <>
@@ -168,7 +161,7 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2"
+      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-transparent px-2.5 py-2"
     >
       {goal ? (
         <p
@@ -188,10 +181,13 @@ function TaskCardBody({
           <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
         ) : null}
         <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
+        {status.tone === "accent" ? (
+          <StatusDot tone="accent" label={status.label} className="me-1 inline-block" />
+        ) : null}
         {task.title}
       </h3>
       {planning ? <p className="task-planning-caption">{planning}</p> : null}
-      <AssistantTaskBadge task={task}/>
+      <AssistantTaskBadge task={task} />
       {statusBadges ? (
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">{statusBadges}</div>
       ) : null}
@@ -275,18 +271,20 @@ function TaskCardBody({
         {task.crewDefinitionId && <span>{t("Crew")} · </span>}
         <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
         <OverflowTooltip label={model.name}>
-          <span  className="min-w-0 truncate">
-            {model.name}
-          </span>
+          <span className="min-w-0 truncate">{model.name}</span>
         </OverflowTooltip>
         <span className="ml-auto shrink-0 tabular-nums">{taskTimeLabel(task, now)}</span>
       </p>
       {task.branch ? (
-        <p
-          className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)"
-        >
+        <p className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)">
           <GitBranch className="icon-xs shrink-0" strokeWidth={1.75} />
-          <OverflowTooltip label={task.merged ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch }) : task.branch}>
+          <OverflowTooltip
+            label={
+              task.merged
+                ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
+                : task.branch
+            }
+          >
             <span className="min-w-0 truncate">
               {task.merged
                 ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
@@ -616,9 +614,7 @@ export function TaskActions({
           items={visible.map(groupItem)}
         />
       ) : null}
-      {reviewError ? (
-        <InlineError className="basis-full">{reviewError}</InlineError>
-      ) : null}
+      {reviewError ? <InlineError className="basis-full">{reviewError}</InlineError> : null}
       {compact && overflow.length > 0 ? (
         <>
           {/* A compact action inside the card: the card keeps its own hover, the action only

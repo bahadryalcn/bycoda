@@ -1,3 +1,11 @@
+import { captureCodeDisclosure, stableCodeDisclosureIdentity } from "./stableCodeDisclosureIdentity";
+import { flushSync } from "react-dom";
+import { TranscriptVirtualRows, type TranscriptVirtualRow } from "./TranscriptVirtualRows";
+import {
+  TranscriptVirtualization,
+  TranscriptVirtualizationContext,
+  useTranscriptActiveBlocksVersion,
+} from "./transcriptVirtualization";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -55,6 +63,8 @@ import {
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentTokenText } from "./AttachmentTokenText";
+import { ChatCitationList } from "./ChatCitationText";
+import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
 import { UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
@@ -87,11 +97,15 @@ import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Attachment } from "../model/session";
 import type { ShellRun } from "../model/shellRun";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
-import { playCue } from "../../settings/model/sounds";
+import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
 import { useResolvedModelName } from "../model/reactiveReads";
 import { harnessesForTurns } from "../model/secondOpinion";
-import { streamingTextUpdate } from "../model/stableBlocks";
+import { sameBlocksIgnoringStreamingText, streamingTextUpdate } from "../model/stableBlocks";
+import {
+  projectTranslatedBlocks,
+  type TranslationProjection,
+} from "../model/translationProjection";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
@@ -113,7 +127,7 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useTranscriptLayout } from "../hooks/useTranscriptLayout";
 import { useTranscriptAnchor } from "../hooks/useTranscriptAnchor";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
-import type { TranscriptLayout } from "../../settings/model/appearance";
+import type { TranscriptLayout } from "../../settings";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { parseUserMessageLink } from "../model/linkPreview";
@@ -150,7 +164,6 @@ import {
   InterjectionDivider,
 } from "./AgentTranscriptActivity";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
-
 type Props = {
   /** Travels with the element when TranscriptPool renders it in its outlet. */
   approvalContext?: {
@@ -189,6 +202,7 @@ type Props = {
   onAddToChat?: (text: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onSaveSelectionNote?: (text: string) => void | Promise<void>;
   onOpenFile?: (path: string) => void;
@@ -205,7 +219,6 @@ type Props = {
   onJumpToBottomChange?: (show: boolean) => void;
   /** The reader scrolled away from the end (latched), as opposed to content growing. */
   onReadingChange?: (reading: boolean) => void;
-
   onJumpToBottomReady?: (jump: (() => void) | null) => void;
   /** Passes a function that renders the turn that holds a block. The render completes before the function returns. */
   onRevealReady?: (reveal: ((blockId: string) => boolean) | null) => void;
@@ -222,7 +235,6 @@ type Props = {
   /** A worker's transcript: show the orchestrator's turns instead of hiding them. */
   managed?: boolean;
 };
-
 function filterAuthErrors(harness: HarnessId | undefined, sourceBlocks: Block[]): Block[] {
   if (!harness || !supportsHarnessLogin(harness)) return sourceBlocks;
   const visibleBlocks = sourceBlocks.filter((block) => !isHarnessAuthBlock(block));
@@ -257,6 +269,7 @@ function AgentTranscriptComponent({
   onAddToChat,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   onSaveSelectionNote,
   onOpenFile,
@@ -297,15 +310,29 @@ function AgentTranscriptComponent({
     Record<string, TranslationHistory & { source: string; translatedVisible: boolean }>
   >({});
   const [activeTranslation, setActiveTranslation] = useState<string | null>(null);
-  const sourceBlocks = useMemo(() => {
-    if (!Object.keys(translations).length) return persistedBlocks;
-    return persistedBlocks.map((block) => {
-      const entry = translations[block.id];
-      return entry && entry.source === block.text
-        ? { ...block, text: entry.translatedVisible ? entry.translated : entry.original }
-        : block;
-    });
-  }, [persistedBlocks, translations]);
+  const translationCopy = useCopyFeedback({
+    resetKeys: [activeTranslation, translations[activeTranslation ?? ""]?.translatedVisible],
+  });
+  const translationProjection = useRef<TranslationProjection | null>(null);
+  const sourceBlocks = useMemo(
+    () => projectTranslatedBlocks(persistedBlocks, translations, translationProjection.current),
+    [persistedBlocks, translations],
+  );
+  useLayoutEffect(() => {
+    translationProjection.current = { source: persistedBlocks, translations, blocks: sourceBlocks };
+  }, [persistedBlocks, translations, sourceBlocks]);
+  const translateSelection = useStableCallback(
+    canOfferTranslation(translationContext)
+      ? (selection: TranscriptSelection, target: TextActionTarget) => {
+          const sourceBlock = persistedBlocks.find((block) => block.id === selection.responseId);
+          if (target === "reprompt" && sourceBlock?.role !== "user") return;
+          const source = sourceBlock?.text;
+          const displayed = sourceBlocks.find((block) => block.id === selection.responseId)?.text;
+          if (source !== undefined && displayed !== undefined)
+            setTranslationRequest({ selection, target, source, displayed });
+        }
+      : undefined,
+  );
   const activeVersion = activeTranslation ? translations[activeTranslation] : undefined;
   const activeVersionValid =
     activeTranslation &&
@@ -347,6 +374,8 @@ function AgentTranscriptComponent({
   const editableUserBlockId = useMemo(() => lastUserTurnBlock(blocks)?.id, [blocks]);
   const retention = useContext(TranscriptRetentionContext);
   const retained = retention?.read();
+  const virtualization = useContext(TranscriptVirtualizationContext)!;
+  useTranscriptActiveBlocksVersion();
   const seenOutput = useRef<Set<string> | null>(null);
   const seenBlocks = useRef<Block[] | null>(null);
   if (!seenOutput.current)
@@ -406,30 +435,111 @@ function AgentTranscriptComponent({
     if (mounting && !(busy && userTurnCount(blocks, managed) === 1)) return;
     return riseIntoAnchor(el, lastUserId);
   });
+  const pagingJumpRef = useRef<(() => void) | null>(null);
+  const followJumpRef = useRef<(() => void) | null>(null);
+  const jumpToLatest = useCallback(() => {
+    pagingJumpRef.current?.();
+    followJumpRef.current?.();
+  }, []);
+  const registerBottomJump = useCallback(
+    (jump: (() => void) | null) => {
+      followJumpRef.current = jump;
+      onJumpToBottomReady?.(jump ? jumpToLatest : null);
+    },
+    [onJumpToBottomReady, jumpToLatest],
+  );
   const follow = useTranscriptFollow({
     visible,
     parked,
     lastUserId,
     onPromptChange: introducePrompt,
     onJumpToBottomChange,
-    onJumpToBottomReady,
+    onJumpToBottomReady: registerBottomJump,
     onReadingChange,
     onScrollerChange,
+    virtualization,
   });
   const { scroller, scrollerEl, setScroller, wasVisible } = follow;
-  const { visibleTurnCount, firstVisibleTurn, visibleTurns, loadEarlier, revealBlock, findTurn } =
-    useTranscriptPaging({
-      turns,
-      blockCount: blocks.length,
-      openWork,
-      scroller,
-      stickToBottom: follow.stickToBottom,
-      distanceFromBottom: follow.distanceFromBottom,
-      prependHeight: follow.prependHeight,
-      remoteHistoryHasMore,
-      onLoadRemoteHistory,
-      onRevealReady,
+  const {
+    visibleTurnCount,
+    firstVisibleTurn,
+    lastVisibleTurn,
+    visibleTurns,
+    loadEarlier,
+    loadNewer,
+    jumpLatest,
+    revealBlock: pagingRevealBlock,
+    findTurn,
+    pagingLoading,
+    pagingError,
+  } = useTranscriptPaging({
+    turns,
+    blockCount: blocks.length,
+    openWork,
+    scroller,
+    stickToBottom: follow.stickToBottom,
+    distanceFromBottom: follow.distanceFromBottom,
+    prependHeight: follow.prependHeight,
+    remoteHistoryHasMore,
+    onLoadRemoteHistory,
+  });
+  virtualization.adjusted = (element) => {
+    if (element === scroller.current) follow.rememberScroll(element);
+  };
+  const revealBlock = useCallback(
+    (blockId: string) => {
+      if (!findTurn(blockId)) return false;
+      flushSync(() => virtualization.reveal(blockId));
+      return pagingRevealBlock(blockId);
+    },
+    [findTurn, pagingRevealBlock, virtualization],
+  );
+  useEffect(() => {
+    onRevealReady?.(revealBlock);
+    return () => onRevealReady?.(null);
+  }, [onRevealReady, revealBlock]);
+  const registerNavigate = useCallback(
+    (navigate: ((blockId: string | null, query?: string) => boolean) | null) => {
+      onNavigateReady?.(
+        navigate
+          ? (blockId, query) => {
+              if (blockId === null) virtualization.reveal(null);
+              return navigate(blockId, query);
+            }
+          : null,
+      );
+    },
+    [onNavigateReady, virtualization],
+  );
+  pagingJumpRef.current = jumpLatest;
+  const renderedTurns = visibleTurns.map((turn, index) => ({
+    turn,
+    index: firstVisibleTurn + index,
+  }));
+  // Active execution and unresolved approval controls are never evicted with settled history.
+  if (waitingForApproval || virtualization.activeBlocks.size)
+    turns.forEach((turn, index) => {
+      if (
+        (index < firstVisibleTurn || index >= lastVisibleTurn) &&
+        (hasPendingApproval(turn) ||
+          turn.some((block) => virtualization.activeBlocks.has(block.id)))
+      )
+        renderedTurns.push({ turn, index });
     });
+  const latestIndex = turns.length - 1;
+  if (
+    latestIndex >= lastVisibleTurn &&
+    (busy ||
+      pendingQuestion ||
+      editingLastTurn ||
+      latestTurnAccessory ||
+      !!backgroundTasks?.length ||
+      !!backgroundAgents) &&
+    !renderedTurns.some((entry) => entry.index === latestIndex)
+  )
+    renderedTurns.push({ turn: turns[latestIndex], index: latestIndex });
+  renderedTurns.sort((a, b) => a.index - b.index);
+  const renderTurns = renderedTurns.map((entry) => entry.turn);
   const { searchCurrent } = useTranscriptSearch({
     scroller,
     visible,
@@ -442,15 +552,15 @@ function AgentTranscriptComponent({
     setOpenWork,
     revealBlock,
     findTurn,
-    onNavigateReady,
+    onNavigateReady: registerNavigate,
   });
-  const turnHarnesses = harness ? harnessesForTurns(blocks, visibleTurns, harness) : undefined;
+  const turnHarnesses = harness ? harnessesForTurns(blocks, renderTurns, harness) : undefined;
   const stableLoadRemoteBlock = useStableCallback(onLoadRemoteBlock);
   const stableApproval = useStableCallback(onApproval);
   const stableSaveNote = useStableCallback(onSaveNote);
   const stableSendDraft = useStableCallback(onSendDraft);
+  const stableEditDraft = useStableCallback(onEditDraft);
   const stableRemoveDraft = useStableCallback(onRemoveDraft);
-  // Image files preview in a dialog first (Ctrl/Cmd+click skips it); every other file opens a tab.
   const imageOpen = useTranscriptImageOpen(cwd, onOpenFile);
   const stableOpenFile = imageOpen.open;
   const stableOpenDiff = useStableCallback(onOpenDiff);
@@ -460,6 +570,7 @@ function AgentTranscriptComponent({
   const stableHandoff = useStableCallback(onHandoff);
   const stableEditLastTurn = useStableCallback(onEditLastTurn);
   const stableRewindMessage = useStableCallback(onRewindMessage);
+  const stableAddToChat = useStableCallback(onAddToChat), stableSaveSelectionNote = useStableCallback(onSaveSelectionNote);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -470,19 +581,37 @@ function AgentTranscriptComponent({
       const disclosures = retention.read().disclosures;
       if (!disclosures) return;
       for (const turn of el.querySelectorAll<HTMLElement>("[data-transcript-turn]")) {
-        [...turn.querySelectorAll<HTMLElement>(".markdown-code-shell")].forEach((shell, index) => {
-          const collapsed = disclosures[`code:${turn.dataset.transcriptTurn}:${index}`];
+        stableCodeDisclosureIdentity([...turn.querySelectorAll<HTMLElement>(".markdown-code-shell")]).forEach((identity, shell) => {
+          const collapsed = disclosures[`code:${turn.dataset.transcriptTurn}:${identity}`];
           if (typeof collapsed === "boolean" && collapsed !== (shell.dataset.collapsed === "true"))
             shell.querySelector<HTMLButtonElement>(".markdown-code-toggle")?.click();
         });
       }
     };
     restoreCodeFolds();
-    const observer = new MutationObserver(restoreCodeFolds);
+    let frame: number | undefined;
+    const observer = new MutationObserver((records) => {
+      if (frame !== undefined || !retention.read().disclosures) return;
+      if (
+        !records.some((record) =>
+          [...record.addedNodes].some(
+            (node) =>
+              node instanceof Element &&
+              (node.matches(".markdown-code-shell") || node.querySelector(".markdown-code-shell")),
+          ),
+        )
+      )
+        return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        restoreCodeFolds();
+      });
+    });
     observer.observe(el, { childList: true, subtree: true });
     const timeout = setTimeout(() => observer.disconnect(), 1000);
     return () => {
       observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
       clearTimeout(timeout);
     };
   }, [retention, scroller, scrollerEl, visible]);
@@ -493,20 +622,11 @@ function AgentTranscriptComponent({
     <PerformanceTraceContext.Provider value={performanceTraceId}>
       <div
         ref={setScroller}
+        data-chat-citation-session={sessionId}
         tabIndex={-1}
         onClickCapture={(event) => {
           imageOpen.noteClick(event);
-          const control = (event.target as HTMLElement).closest<HTMLButtonElement>(
-            ".markdown-code-toggle, .markdown-code-summary",
-          );
-          const shell = control?.closest<HTMLElement>(".markdown-code-shell");
-          const turn = shell?.closest<HTMLElement>("[data-transcript-turn]");
-          if (!control || !shell || !turn || !retention) return;
-          const index = [...turn.querySelectorAll(".markdown-code-shell")].indexOf(shell);
-          retention.setDisclosure(
-            `code:${turn.dataset.transcriptTurn}:${index}`,
-            control.matches(".markdown-code-summary") ? false : shell.dataset.collapsed !== "true",
-          );
+          captureCodeDisclosure(event.target, retention);
         }}
         onPointerDown={(event) => {
           const id = (event.target as HTMLElement)
@@ -534,12 +654,13 @@ function AgentTranscriptComponent({
       >
         {activeVersionValid ? (
           // z-10: in-pane sticky bar over the scrolling rows; no in-pane layer scale exists, so the literal stays.
-          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-(--ui-surface) px-4 py-2 font-sans text-ui-caption text-(--ui-text-secondary)">
-            <span>{t("After applying: ↑ original, ↓ translation.")}</span>
+          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-1 bg-(--ui-surface) px-3 py-1 font-sans text-ui-caption text-(--ui-text-secondary)">
             <Button
               motion="none"
+              size="sm"
               variant="ghost"
               type="button"
+              tooltip={t("After applying: ↑ original, ↓ translation.")}
               aria-pressed={!activeVersion.translatedVisible}
               onClick={() => showTranslation(false)}
             >
@@ -547,6 +668,7 @@ function AgentTranscriptComponent({
             </Button>
             <Button
               motion="none"
+              size="sm"
               variant="ghost"
               type="button"
               aria-pressed={activeVersion.translatedVisible}
@@ -554,6 +676,41 @@ function AgentTranscriptComponent({
             >
               {t("Translation")}
             </Button>
+            <Button
+              motion="none"
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={translationCopy.copied ? t("Copied") : t("Copy")}
+              loading={translationCopy.pending}
+              onClick={() =>
+                translationCopy.copy(() =>
+                  copyMessage(
+                    activeVersion.translatedVisible
+                      ? activeVersion.translated
+                      : activeVersion.original,
+                  ),
+                )
+              }
+            >
+              {translationCopy.copied ? <Check /> : <Copy />}
+            </Button>
+            <Button
+              motion="none"
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={t("Close translation")}
+              onClick={() => setActiveTranslation(null)}
+            >
+              <X />
+            </Button>
+            {translationCopy.failed ? (
+              <InlineError>
+                {t("Could not complete this action. ")}
+                {translationCopy.error}
+              </InlineError>
+            ) : null}
           </div>
         ) : null}
         <div
@@ -578,13 +735,14 @@ function AgentTranscriptComponent({
               {remoteHistoryError}
             </Alert>
           ) : null}
+          {pagingError ? <Alert tone="danger">{pagingError}</Alert> : null}
           {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
             <div className="flex justify-center px-4 py-3">
               <Button
                 motion="none"
                 variant="ghost"
                 type="button"
-                disabled={remoteHistoryLoading}
+                disabled={remoteHistoryLoading || pagingLoading}
 
                 onClick={() => void loadEarlier()}
               >
@@ -592,8 +750,8 @@ function AgentTranscriptComponent({
               </Button>
             </div>
           ) : null}
-          {visibleTurns.map((turn, turnIndex) => {
-            const turnNumber = firstVisibleTurn + turnIndex + 1;
+          {renderedTurns.map(({ turn, index }, turnIndex) => {
+            const turnNumber = index + 1;
             const isLastTurn = turnNumber === turns.length;
             const settled = !(busy && isLastTurn);
             const live = visible && !settled && !preparingHandoff;
@@ -641,7 +799,9 @@ function AgentTranscriptComponent({
                 activitySessionId={activityOwnsClock ? sessionId : undefined}
                 anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
                 latestTurnAccessory={isLastTurn && !parked ? latestTurnAccessory : undefined}
-                workOpen={openWork[turnId] ?? false}
+                workOpen={
+                  (openWork[turnId] ?? false) || (waitingForApproval && hasPendingApproval(turn))
+                }
                 searchCurrent={
                   searchCurrent && turn.some((block) => block.id === searchCurrent)
                     ? searchCurrent
@@ -659,6 +819,7 @@ function AgentTranscriptComponent({
                 onApproval={stableApproval}
                 onSaveNote={stableSaveNote}
                 onSendDraft={stableSendDraft}
+                onEditDraft={stableEditDraft}
                 onRemoveDraft={stableRemoveDraft}
                 onOpenFile={stableOpenFile}
                 onOpenDiff={stableOpenDiff}
@@ -674,26 +835,25 @@ function AgentTranscriptComponent({
             );
           })}
         </div>
+        {lastVisibleTurn < turns.length ? (
+          <div className="flex justify-center gap-2 px-4 py-3">
+            <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
+              {t("Load newer messages")}
+            </Button>
+            <Button motion="none" variant="ghost" type="button" onClick={jumpToLatest}>
+              {t("Jump to latest")}
+            </Button>
+          </div>
+        ) : null}
         {onAddToChat || onSaveSelectionNote || canOfferTranslation(translationContext) ? (
           <TranscriptSelectionActions
             root={scrollerEl}
             enabled={visible}
-            onAddToChat={onAddToChat}
-            onAddToNotes={onSaveSelectionNote}
-            onTranslate={
-              canOfferTranslation(translationContext)
-                ? (selection, target) => {
-                    const source = persistedBlocks.find(
-                      (block) => block.id === selection?.responseId,
-                    )?.text;
-                    const displayed = sourceBlocks.find(
-                      (block) => block.id === selection?.responseId,
-                    )?.text;
-                    if (selection && source !== undefined && displayed !== undefined)
-                      setTranslationRequest({ selection, target, source, displayed });
-                  }
-                : undefined
-            }
+            sessionId={sessionId}
+            blocks={persistedBlocks}
+            onAddToChat={stableAddToChat}
+            onAddToNotes={stableSaveSelectionNote}
+            onTranslate={translateSelection}
           />
         ) : null}
         {imageOpen.preview}
@@ -750,15 +910,30 @@ function AgentTranscriptComponent({
   );
 }
 
+function VirtualizedTranscriptComponent(props: Props) {
+  const retained = useContext(TranscriptRetentionContext)?.read();
+  const [virtualization] = useState(
+    () =>
+      new TranscriptVirtualization(
+        retained?.bottomFollow === false ? (retained.virtualAnchorBlockId ?? null) : null,
+      ),
+  );
+  return (
+    <TranscriptVirtualizationContext.Provider value={virtualization}>
+      <AgentTranscriptComponent {...props} />
+    </TranscriptVirtualizationContext.Provider>
+  );
+}
+
 // Activity preserves local state while suspending hidden work and effects.
 export const AgentTranscript = memo(function AgentTranscript(props: Props) {
   const transcript =
     props.cwd && props.harness ? (
       <TranscriptSkills cwd={props.cwd} harness={props.harness} sessionId={props.sessionId}>
-        <AgentTranscriptComponent {...props} />
+        <VirtualizedTranscriptComponent {...props} />
       </TranscriptSkills>
     ) : (
-      <AgentTranscriptComponent {...props} />
+      <VirtualizedTranscriptComponent {...props} />
     );
   return (
     <Activity mode={props.visible === false ? "hidden" : "visible"}>
@@ -813,6 +988,7 @@ type TurnProps = {
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
@@ -871,6 +1047,7 @@ const Turn = memo(function Turn({
   onApproval,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   onOpenFile,
   onOpenDiff,
@@ -1009,6 +1186,7 @@ const Turn = memo(function Turn({
           onApproval={onApproval}
           onSaveNote={onSaveNote}
           onSendDraft={onSendDraft}
+          onEditDraft={onEditDraft}
           onRemoveDraft={onRemoveDraft}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
@@ -1061,6 +1239,73 @@ const Turn = memo(function Turn({
       />
     </TurnRow>
   );
+  const itemBlocks = (item: TurnItem) => (item.type === "block" ? [item.block] : item.blocks);
+  const pinnedItem = (item: TurnItem, index: number) =>
+    (live && index === items.length - 1) ||
+    itemBlocks(item).some(
+      (block) =>
+        !!block.streaming ||
+        !!block.inlineVisual ||
+        (!!block.approval && !block.approval.decided) ||
+        (block.role === "user" &&
+          (anchorPrompt || (editingLastTurn && block.id === editableUserBlockId))),
+    );
+  const itemRow = (
+    item: TurnItem,
+    index: number,
+    rail = false,
+    tail = false,
+  ): TranscriptVirtualRow => ({
+    id: turnItemKey(item),
+    blockIds: itemBlocks(item).map((block) => block.id),
+    pinned: pinnedItem(item, index),
+    render: () => (
+      <div
+        data-transcript-search-item
+        data-transcript-search-current={isCurrentItem(item) || undefined}
+        className={
+          rail
+            ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} pl-5 zen-fold-rail`
+            : "flow-root pb-1"
+        }
+      >
+        {renderItem(item, index)}
+      </div>
+    ),
+  });
+  const lineRow: TranscriptVirtualRow = {
+    id: "work-fold",
+    blockIds: [],
+    estimate: showFoldLine ? undefined : 0,
+    render: () => foldLineRow,
+  };
+  const workRows = foldWork.map(({ entry, index }, offset) =>
+    itemRow(entry, index, true, offset === foldWork.length - 1),
+  );
+  const virtualRows = items.flatMap((item, itemIndex): TranscriptVirtualRow[] => {
+    const inFold = !!fold && itemIndex >= fold.start && itemIndex <= fold.end;
+    if (inFold) {
+      if (itemIndex !== fold.start) return [];
+      return [
+        lineRow,
+        {
+          id: "work-details",
+          blockIds: workRows.flatMap((row) => row.blockIds),
+          pinned: workRows.some((row) => row.pinned),
+          estimate: workOpen ? undefined : 0,
+          render: () => (
+            <TurnRow folded={!workOpen}>
+              {() => <TranscriptVirtualRows rows={workRows} listId={`turn:${turnId}:work`} />}
+            </TurnRow>
+          ),
+        },
+        ...foldVisible.map(({ entry, index }) => itemRow(entry, index)),
+      ];
+    }
+    const row = itemIndex === initialThinkingInLine ? [] : [itemRow(item, itemIndex)];
+    return itemIndex === foldLineAt ? [lineRow, ...row] : row;
+  });
+  if (foldLineAt >= items.length) virtualRows.push(lineRow);
   return (
     <div
       key={turn[0].id}
@@ -1069,55 +1314,7 @@ const Turn = memo(function Turn({
         isLastTurn ? " transcript-turn-live" : ""
       }${anchorPrompt && userBlock ? " transcript-turn-anchor" : ""}`}
     >
-      {items.flatMap((item, itemIndex) => {
-        const inFold = !!fold && itemIndex >= fold.start && itemIndex <= fold.end;
-        if (inFold) {
-          if (itemIndex !== fold.start) return [];
-          return [
-            foldLineRow,
-            <TurnRow key="work-details" folded={!workOpen}>
-              {() =>
-                foldWork.map(({ entry, index }, offset) => (
-                  <div
-                    key={turnItemKey(entry)}
-                    data-transcript-search-item
-                    data-transcript-search-current={isCurrentItem(entry) || undefined}
-                    className={`flow-root pb-1 last:pb-0 pl-5 zen-fold-rail ${
-                      offset === foldWork.length - 1 ? "zen-fold-tail" : ""
-                    }`}
-                  >
-                    {renderItem(entry, index)}
-                  </div>
-                ))
-              }
-            </TurnRow>,
-            ...foldVisible.map(({ entry, index }) => (
-              <div
-                key={turnItemKey(entry)}
-                data-transcript-search-item
-                data-transcript-search-current={isCurrentItem(entry) || undefined}
-                className="flow-root pb-1"
-              >
-                {renderItem(entry, index)}
-              </div>
-            )),
-          ];
-        }
-        const row =
-          itemIndex === initialThinkingInLine ? null : (
-            <div
-              key={turnItemKey(item)}
-              data-transcript-search-item
-              data-transcript-search-current={isCurrentItem(item) || undefined}
-              className="flow-root pb-1"
-            >
-              {renderItem(item, itemIndex)}
-            </div>
-          );
-        if (itemIndex !== foldLineAt) return row ?? [];
-        return row ? [foldLineRow, row] : [foldLineRow];
-      })}
-      {foldLineAt >= items.length ? foldLineRow : null}
+      <TranscriptVirtualRows rows={virtualRows} listId={`turn:${turnId}:items`} />
       {activityPhase && activityLabel ? (
         <TurnActivityLine
           phase={activityPhase}
@@ -1129,14 +1326,22 @@ const Turn = memo(function Turn({
           sessionId={activitySessionId}
         />
       ) : null}
-      {settled &&
-        proposals
-          .filter((block) => block.orchestration?.status !== "planning")
-          .map((block) => (
-            <div key={block.id} className="px-4 pt-1 pb-2" data-orchestration-result>
-              <OrchestrationPreview block={block} busy={busy} />
-            </div>
-          ))}
+      {settled ? (
+        <TranscriptVirtualRows
+          listId={`turn:${turnId}:proposals`}
+          rows={proposals
+            .filter((block) => block.orchestration?.status !== "planning")
+            .map((block) => ({
+              id: block.id,
+              blockIds: [block.id],
+              render: () => (
+                <div className="px-4 pt-1 pb-2" data-orchestration-result>
+                  <OrchestrationPreview block={block} busy={busy} />
+                </div>
+              ),
+            }))}
+        />
+      ) : null}
       {/* The accessory keeps the pane's props, which go stale once parked. */}
       {latestTurnAccessory ? latestTurnAccessory : null}
       {durationMs != null && settled ? (
@@ -1274,22 +1479,33 @@ function RemoteBlockLoad({
   onLoad: (blockId: string, revision: number) => Promise<void> | void;
 }) {
   const t = useT();
-  const [state, setState] = useState<"idle" | "pending" | "failed">("idle");
+  const owner = useContext(TranscriptVirtualizationContext);
+  const key = JSON.stringify([blockId, revision]);
+  const [state, setState] = useState<"idle" | "pending" | "failed">(
+    () => owner?.remoteLoads.get(key) ?? "idle",
+  );
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
+    setState(owner?.remoteLoads.get(key) ?? "idle");
     return () => {
       mounted.current = false;
     };
-  }, []);
+  }, [owner, key]);
   const load = async () => {
     if (state === "pending") return;
     setState("pending");
+    owner?.remoteLoads.set(key, "pending");
+    const release = owner?.holdBlock(blockId);
     try {
       await onLoad(blockId, revision);
+      owner?.remoteLoads.set(key, "idle");
       if (mounted.current) setState("idle");
     } catch {
+      owner?.remoteLoads.set(key, "failed");
       if (mounted.current) setState("failed");
+    } finally {
+      release?.();
     }
   };
   return (
@@ -1435,9 +1651,7 @@ function TurnDuration({
           <span className="flex min-w-0 items-center gap-1.5">
             {harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : null}
             <OverflowTooltip label={label}>
-              <span className="min-w-0 truncate">
-                {label}
-              </span>
+              <span className="min-w-0 truncate">{label}</span>
             </OverflowTooltip>
           </span>
         </span>
@@ -1712,18 +1926,16 @@ function MessageEditMenu({
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const label = t("Message actions");
-  const items: DropdownMenuItem[] = [
-    ...(onEdit
-      ? [
-          {
-            kind: "item",
-            id: "resend",
-            label: editing ? t("Cancel edit") : t("Edit and resend"),
-            icon: <Pencil />,
-          } satisfies DropdownMenuItem,
-        ]
-      : []),
-  ];
+  const items: DropdownMenuItem[] = onEdit
+    ? [
+        {
+          kind: "item",
+          id: "resend",
+          label: editing ? t("Cancel edit") : t("Edit and resend"),
+          icon: <Pencil />,
+        } satisfies DropdownMenuItem,
+      ]
+    : [];
   return (
     <>
       <Button
@@ -1775,6 +1987,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   onApproval,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   onOpenFile,
   onOpenDiff,
@@ -1802,6 +2015,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
@@ -1875,6 +2089,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
         editing={editing}
         onSaveNote={onSaveNote}
         onSendDraft={onSendDraft}
+        onEditDraft={onEditDraft}
         onRemoveDraft={onRemoveDraft}
       />
     );
@@ -2051,6 +2266,7 @@ function UserMessageBlock({
   cwd,
   onSaveNote,
   onSendDraft,
+  onEditDraft,
   onRemoveDraft,
   busy = false,
   questionAnswer = false,
@@ -2066,6 +2282,7 @@ function UserMessageBlock({
   cwd?: string;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
+  onEditDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   busy?: boolean;
   questionAnswer?: boolean;
@@ -2101,10 +2318,11 @@ function UserMessageBlock({
       ? deliveryDescription
       : t("Wait for the active turn to finish before retrying or removing this follow-up.");
   const bycoda = isOperatorUserTurn(block);
-  const text =
+  const rawText =
     card && card.kind !== "handoff"
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
+  const { text, citations } = useMemo(() => extractChatCitations(rawText), [rawText]);
   const messageLink = text ? parseUserMessageLink(text) : null;
   const displayText = messageLink ? `${messageLink.beforeText}${messageLink.afterText}` : text;
   const chat = layout === "chat";
@@ -2180,7 +2398,28 @@ function UserMessageBlock({
       data-editing-last-turn={editing ? "true" : undefined}
       className={`user-message-row group/usermsg flex min-w-0 flex-col overflow-visible ${questionAnswer ? "" : "items-end pbs-1.5 pe-4 pbe-5 ps-14"}`}
     >
-      <SessionMessageAuthor author={block.author} onOpen={block.author?.kind === "assistant"||block.author?.kind==="assistant-manual" ? () => window.dispatchEvent(new CustomEvent("bycoda:open-assistant",{detail:{tab:"history",...(block.author?.kind === "assistant"?{jobId:block.author.jobId}:block.author?.kind==="assistant-manual"?{supervisionId:block.author.supervisionId}:{})}})) : undefined} />
+      <SessionMessageAuthor
+        author={block.author}
+        onOpen={
+          block.author?.kind === "assistant" ||
+          block.author?.kind === "assistant-manual" ||
+          block.author?.kind === "assistant-room"
+            ? () =>
+                window.dispatchEvent(
+                  new CustomEvent("bycoda:open-assistant", {
+                    detail: {
+                      tab: "history",
+                      ...(block.author?.kind === "assistant"
+                        ? { jobId: block.author.jobId }
+                        : block.author?.kind === "assistant-manual"
+                          ? { supervisionId: block.author.supervisionId }
+                          : {}),
+                    },
+                  }),
+                )
+            : undefined
+        }
+      />
       {/* Give actions the pane width while the bubble keeps its content width. */}
       <div
         className={`user-message-hover-zone flex w-full min-w-0 max-w-full flex-col overflow-visible ${questionAnswer ? "" : "items-end"}`}
@@ -2195,11 +2434,12 @@ function UserMessageBlock({
               : `user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
                   block.draft
                     ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-                    : "bg-(--ui-surface)"
+                    : "bg-(--ui-workspace-reading)"
                 } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`
           }
           style={{ zIndex: stickyIndex }}
         >
+          <ChatCitationList citations={citations} />
           {block.turnOutcome === "stopped" ? (
             <Badge tone="neutral" className="mb-1">
               {t("Stopped by you")}
@@ -2212,12 +2452,7 @@ function UserMessageBlock({
               className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
             >
               {block.attachments.map((file, index) => (
-                <AttachmentChip
-                  key={file.id}
-                  attachment={file}
-                  token={referencedTokens[index]}
-                  tokenLabelPlacement="overlay"
-                />
+                <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
               ))}
             </div>
           ) : null}
@@ -2303,6 +2538,20 @@ function UserMessageBlock({
                 {deliveryLabel}
               </span>
               <span className="flex items-center gap-1">
+                {onEditDraft ? (
+                  <Button
+                    motion="none"
+                    variant="ghost"
+                    type="button"
+                    tooltip={deliveryActive ? heldActionTitle : t("Edit draft")}
+                    aria-label={t("Edit draft")}
+                    disabled={deliveryActive}
+                    onClick={() => onEditDraft(block)}
+                  >
+                    <Pencil className="icon-sm" strokeWidth={1.75} />
+                    {t("Edit")}
+                  </Button>
+                ) : null}
                 <Button
                   motion="none"
                   variant="ghost"
@@ -2575,29 +2824,50 @@ function riseIntoAnchor(scroller: HTMLElement | null, blockId: string) {
 }
 
 /** Selection gestures update the floating actions, never regroup the transcript. */
-const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
-  root,
-  enabled,
-  onAddToChat,
-  onAddToNotes,
-  onTranslate,
-}: {
-  root: HTMLElement | null;
-  enabled: boolean;
-  onAddToChat?: (text: string) => void;
-  onAddToNotes?: (text: string) => void | Promise<void>;
-  onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
-}) {
-  const { selection, dismissSelection } = useTranscriptSelection(root, enabled);
-  return (
-    <TranscriptSelectionMenu
-      selection={selection}
-      onDismiss={dismissSelection}
-      onAddToChat={onAddToChat}
-      onAddToNotes={onAddToNotes}
-      onTranslate={
-        onTranslate && selection ? (target) => onTranslate(selection, target) : undefined
-      }
-    />
-  );
-});
+const TranscriptSelectionActions = memo(
+  function TranscriptSelectionActions({
+    root,
+    enabled,
+    onAddToChat,
+    onAddToNotes,
+    onTranslate,
+    sessionId,
+    blocks,
+  }: {
+    root: HTMLElement | null;
+    enabled: boolean;
+    sessionId?: string;
+    blocks: Block[];
+    onAddToChat?: (text: string) => void;
+    onAddToNotes?: (text: string) => void | Promise<void>;
+    onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
+  }) {
+    const { selection, dismissSelection } = useTranscriptSelection(root, enabled);
+    const translate = useStableCallback(
+      onTranslate && selection
+        ? (target: TextActionTarget) => onTranslate(selection, target)
+        : undefined,
+    );
+    return (
+      <TranscriptSelectionMenu
+        selection={selection}
+        sessionId={sessionId}
+        allowReprompt={blocks.some(
+          (block) => block.id === selection?.responseId && block.role === "user",
+        )}
+        onDismiss={dismissSelection}
+        onAddToChat={onAddToChat}
+        onAddToNotes={onAddToNotes}
+        onTranslate={translate}
+      />
+    );
+  },
+  (previous, next) =>
+    previous.root === next.root &&
+    previous.enabled === next.enabled &&
+    previous.sessionId === next.sessionId &&
+    previous.onAddToChat === next.onAddToChat &&
+    previous.onAddToNotes === next.onAddToNotes &&
+    previous.onTranslate === next.onTranslate &&
+    sameBlocksIgnoringStreamingText(previous.blocks, next.blocks),
+);

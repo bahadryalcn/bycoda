@@ -53,7 +53,12 @@ export function useTurnScrollAnchor(
         const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
         const previous = heights.get(entry.target);
         heights.set(entry.target, height);
-        if (previous === undefined || stickToBottom.current) continue;
+        if (
+          previous === undefined ||
+          stickToBottom.current ||
+          (entry.target as HTMLElement).dataset.transcriptVirtualizedTurn === "true"
+        )
+          continue;
         // Only turns that sat wholly above the view. A turn the reader is
         // looking at grows downward from where they are reading.
         const top = entry.target.getBoundingClientRect().top - precedingDelta;
@@ -92,12 +97,18 @@ export function useTurnScrollAnchor(
     };
     let liveTurn = inner.querySelector(".transcript-turn-live");
     const mutations = new MutationObserver((records) => {
-      if (!liveTurn || !liveTurn.classList.contains("transcript-turn-live") ||
-        records.some((record) => record.target === inner))
+      if (
+        !liveTurn ||
+        !liveTurn.classList.contains("transcript-turn-live") ||
+        records.some((record) => record.target === inner)
+      )
         liveTurn = inner.querySelector(".transcript-turn-live");
-      const relevant = records.filter((record) =>
-        !liveTurn?.contains(record.target) ||
-        (record.target === liveTurn && record.type === "attributes" && record.attributeName === "class"),
+      const relevant = records.filter(
+        (record) =>
+          !liveTurn?.contains(record.target) ||
+          (record.target === liveTurn &&
+            record.type === "attributes" &&
+            record.attributeName === "class"),
       );
       if (!relevant.length) return;
       const listChanged = relevant.some(

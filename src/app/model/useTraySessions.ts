@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { t, useLocale } from "../../shared/i18n";
 import { listenWindow } from "../../platform/tauri/listenWindow";
+import { t, useLocale } from "../../shared/i18n";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
 import { traySessions } from "./traySessions";
 
@@ -34,8 +34,6 @@ export function useTraySessions(
 
   useEffect(() => {
     if (!enabled) return;
-    // Window-scoped: the native menu addresses the window that published the
-    // session row, so other windows must not open it as well.
     return listenWindow<string>(TRAY_OPEN_EVENT, ({ payload }) => {
       // Check current visibility again: a menu click can race a group lock.
       if (currentRows.current.some((row) => row.id === payload)) onOpen.current(payload);

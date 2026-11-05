@@ -149,7 +149,12 @@ it("uses the caller's reset and retry labels and shows no actions when none are 
 it("blocks a second retry press while the retry is pending", async () => {
   const onRetry = vi.fn();
   const { container, done } = await mount(
-    createElement(EmptyState, { kind: "unavailable", description: "Offline", onRetry, retrying: true }),
+    createElement(EmptyState, {
+      kind: "unavailable",
+      description: "Offline",
+      onRetry,
+      retrying: true,
+    }),
   );
   try {
     const button = container.querySelector("button")!;
@@ -175,7 +180,7 @@ it("picks a kind-specific default icon and still honors an explicit icon or null
   const unavailable = await icon({ kind: "unavailable" });
   expect(new Set([empty, filtered, unavailable]).size).toBe(3);
   expect(await icon({ kind: "unavailable", icon: null })).toBeNull();
-  expect(await icon({ kind: "filtered", icon: createElement("svg", { className: "custom" }) })).toBe(
-    "custom",
-  );
+  expect(
+    await icon({ kind: "filtered", icon: createElement("svg", { className: "custom" }) }),
+  ).toBe("custom");
 });

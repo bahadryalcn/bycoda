@@ -1,11 +1,16 @@
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
-import { useLocale, useT } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { HarnessIcon } from "./HarnessIcon";
+import { useHoverCard } from "../../../shared/ui/HoverCard";
+import { Popover } from "../../../shared/ui/Popover";
 import {
   Check,
-  CheckList,
+  Info,
   ChevronRight,
   ChevronUp,
   CircleAlert,
@@ -13,22 +18,37 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
-import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
+import {
+  dockCountParts,
+  type ActivityDock as ActivityDockModel,
+  type DockAgent,
+} from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
-import { hasPendingApproval, type Block } from "../model/session";
+import { hasPendingApproval, type Block, type HarnessId } from "../model/session";
 import { executionUserIndex } from "../model/executionTurn";
 import { turnClockOrigin, useTurnClockInTranscript } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
+import { SubagentStatusSummary } from "./SubagentAnatomy";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
 import "./chat-controls.css";
 
-/** Expanded or not, per session, for as long as the app is open. */
 const expandedBySession = new Map<string, boolean>();
+const activeSessions = new Map<string, number>();
+function trimExpandedSessions() {
+  let retired = [...expandedBySession.keys()].filter((key) => !activeSessions.has(key)).length;
+  for (const key of expandedBySession.keys()) {
+    if (retired <= 256) break;
+    if (activeSessions.has(key)) continue;
+    expandedBySession.delete(key);
+    retired--;
+  }
+}
 
 type Props = {
   sessionId: string;
+  harness?: HarnessId;
   blocks: Block[];
   busy: boolean;
   pendingQuestion: boolean;
@@ -61,6 +81,7 @@ type Props = {
  */
 export const ActivityDock = memo(function ActivityDock({
   sessionId,
+  harness,
   blocks,
   busy,
   pendingQuestion,
@@ -149,6 +170,7 @@ export const ActivityDock = memo(function ActivityDock({
         <DockBody
           key={dock.state === "done" ? "done" : "live"}
           sessionId={sessionId}
+          harness={harness}
           dock={dock}
           visible={visible}
           label={displayLabel}
@@ -175,6 +197,7 @@ type DockStop = ReturnType<typeof useStopRequests> & {
 
 function DockBody({
   sessionId,
+  harness,
   dock,
   visible,
   label,
@@ -184,6 +207,7 @@ function DockBody({
   stop,
 }: {
   sessionId: string;
+  harness?: HarnessId;
   dock: ActivityDockModel;
   visible: boolean;
   label: string;
@@ -194,11 +218,21 @@ function DockBody({
 }) {
   const t = useT();
   const [expanded, setExpandedState] = useState(() => expandedBySession.get(sessionId) ?? false);
-  const lockList = useLockOverscroll<HTMLDivElement>();
+  useEffect(() => {
+    activeSessions.set(sessionId, (activeSessions.get(sessionId) ?? 0) + 1);
+    return () => {
+      const remaining = (activeSessions.get(sessionId) ?? 1) - 1;
+      if (remaining) activeSessions.set(sessionId, remaining);
+      else activeSessions.delete(sessionId);
+      trimExpandedSessions();
+    };
+  }, [sessionId]);
   const setExpanded = (next: boolean) => {
+    expandedBySession.delete(sessionId);
     expandedBySession.set(sessionId, next);
     setExpandedState(next);
   };
+  const lockList = useLockOverscroll<HTMLDivElement>();
   const hasAgents = dock.agents.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
@@ -264,28 +298,31 @@ function DockBody({
             </Button>
           ) : null}
           {hasAgents ? (
-            <Button
-              variant="ghost"
-              type="button"
-              aria-expanded={open}
-              aria-controls={listId}
-              aria-label={t(
-                open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
-                { p0: counts },
-              )}
-              tooltip={open ? t("Hide background work") : t("Show background work")}
-              onClick={() => setExpanded(!open)}
-              className="shrink-0"
-            >
-              <CheckList className="icon-sm" strokeWidth={1.75} />
-              <span className="tabular-nums">{counts}</span>
-              <ChevronUp
-                className={`icon-xs transition-transform duration-150 motion-reduce:transition-none ${
-                  open ? "" : "rotate-180"
-                }`}
-                strokeWidth={1.75}
-              />
-            </Button>
+            <>
+              <DockAgentInfo dock={dock} />
+              <Button
+                variant="ghost"
+                type="button"
+                aria-expanded={open}
+                aria-controls={listId}
+                data-dock-toggle=""
+                label={t(
+                  open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
+                  { p0: counts },
+                )}
+                tooltip={open ? t("Hide background work") : t("Show background work")}
+                onClick={() => setExpanded(!open)}
+                className="shrink-0"
+                iconOnly
+              >
+                <ChevronUp
+                  className={`icon-xs shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
+                    open ? "" : "rotate-180"
+                  }`}
+                  strokeWidth={1.75}
+                />
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -300,11 +337,77 @@ function DockBody({
           {[...dock.agents]
             .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
             .map((agent) => (
-              <DockAgentRow key={agent.blockId} agent={agent} onOpen={onOpenAgent} stop={stop} />
+              <DockAgentRow
+                key={agent.blockId}
+                agent={agent}
+                harness={harness}
+                onOpen={onOpenAgent}
+                stop={stop}
+              />
             ))}
         </div>
       ) : null}
     </section>
+  );
+}
+
+function DockAgentInfo({ dock }: { dock: ActivityDockModel }) {
+  const t = useT();
+  const [pinned, setPinned] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const label = t("Background work");
+  const hover = useHoverCard({
+    side: "top",
+    align: "end",
+    width: 200,
+    disabled: pinned,
+    "aria-label": label,
+    className: "flex flex-col gap-1 p-3 text-ui-caption",
+  });
+  const content = dockCountParts(dock).map((part) => (
+    <div key={part.text} className="tabular-nums">
+      <SubagentStatusSummary parts={[part]} />
+    </div>
+  ));
+  return (
+    <>
+      <Button
+        ref={anchor}
+        variant="ghost"
+        type="button"
+        iconOnly
+        label={label}
+        tooltip=""
+        title=""
+        aria-haspopup="dialog"
+        aria-expanded={pinned || hover.open}
+        {...hover.trigger}
+        onClick={() => {
+          hover.close();
+          setPinned((open) => !open);
+        }}
+      >
+        <Info className="icon-sm" aria-hidden strokeWidth={1.75} />
+      </Button>
+      {pinned ? (
+        <Popover
+          anchor={anchor}
+          side="top"
+          align="end"
+          width={200}
+          role="dialog"
+          aria-label={label}
+          autoFocus
+          tabIndex={-1}
+          onDismiss={() => setPinned(false)}
+          className="flex flex-col gap-1 p-3 text-ui-caption"
+        >
+          {content}
+        </Popover>
+      ) : (
+        hover.card(content)
+      )}
+    </>
   );
 }
 
@@ -335,21 +438,22 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
     );
   }
   return (
-    <span
+    <StatusDot
+      label={t(state === "working" ? "Working" : "Waiting")}
       aria-hidden
-      className={`size-1.5 shrink-0 rounded-full bg-(--ui-tone-accent-subtle) ${
-        state === "working" ? "" : "activity-dock-waiting"
-      }`}
+      tone={state === "working" ? "accent" : "neutral"}
     />
   );
 }
 
 function DockAgentRow({
   agent,
+  harness,
   onOpen,
   stop,
 }: {
   agent: DockAgent;
+  harness?: HarnessId;
   onOpen: (agent: DockAgent) => void;
   stop: DockStop;
 }) {
@@ -371,33 +475,45 @@ function DockAgentRow({
         variant="item"
         type="button"
         aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
-        tooltip={agent.name}
-        tooltipWhen="overflow"
+        tooltip={summary}
         data-dock-agent={agent.blockId}
+        data-dock-agent-state={agent.status}
         onClick={() => onOpen(agent)}
-        className="min-w-0 flex-1 items-start text-left"
+        className="activity-dock-agent min-w-0 flex-1 items-center text-left"
       >
-        <span className="mt-1 flex shrink-0">
+        <span className="flex shrink-0" aria-hidden="true">
           <AgentStatusDot status={agent.status} />
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="activity-dock-agent-identity min-w-0 flex-1">
+          {agent.kind === "agent" ? (
+            <span className="flex min-w-0 items-center gap-1.5 text-(--ui-text-secondary)">
+              {harness ? <HarnessIcon harness={harness} size="xs" className="shrink-0" /> : null}
+              <span className="truncate">{agent.model ?? t("Subagent")}</span>
+            </span>
+          ) : null}
           <span className="line-clamp-2 block whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
             {agent.name}
           </span>
-          <span className="flex flex-wrap items-center gap-x-2 text-(--ui-text-secondary) [overflow-wrap:anywhere]">
-            {agent.model ? <span className="min-w-0">{agent.model}</span> : null}
-            {agent.detail ? <span className="min-w-0">{agent.detail}</span> : null}
-            <AgentClock
-              startedAt={agent.startedAt}
-              endedAt={agent.endedAt}
-              live={agent.status === "running"}
-            />
-          </span>
         </span>
-        <ChevronRight
-          className="mt-1 icon-xs shrink-0 text-(--ui-text-secondary)"
-          strokeWidth={1.75}
-        />
+        <span className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2 text-(--ui-text-secondary)">
+          {agent.detail ? (
+            <span
+              className={`min-w-0 ${agent.status === "failed" ? "text-(--ui-tone-danger-fg)" : agent.status === "stopped" || agent.status === "interrupted" ? "text-(--ui-tone-warning-fg)" : ""}`}
+            >
+              {agent.detailParts ? (
+                <SubagentStatusSummary parts={agent.detailParts} />
+              ) : (
+                agent.detail
+              )}
+            </span>
+          ) : null}
+          <AgentClock
+            startedAt={agent.startedAt}
+            endedAt={agent.endedAt}
+            live={agent.status === "running"}
+          />
+        </span>
+        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       </Button>
       {stoppable ? (
         <Button
@@ -431,6 +547,9 @@ function DockAgentRow({
 
 function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   useLocale();
+  if (status === "running") return <WorkingIndicator size="xs" />;
+  if (status === "done")
+    return <Check className="icon-xs shrink-0 text-(--ui-tone-success-fg)" strokeWidth={2} />;
   if (status === "failed") {
     return <X className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
@@ -440,12 +559,5 @@ function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   if (status === "interrupted") {
     return <CircleAlert className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
   }
-  return (
-    <span
-      aria-hidden
-      className={`size-1.5 shrink-0 rounded-full ${
-        status === "running" ? "bg-(--ui-tone-accent-subtle)" : "bg-(--ui-tone-success-subtle)"
-      }`}
-    />
-  );
+  return null;
 }

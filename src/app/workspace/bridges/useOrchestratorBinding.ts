@@ -39,6 +39,9 @@ import {
 } from "../../../integrations/harness";
 import { captureChildProcess } from "../../../integrations/harness/core/child";
 import { captureHarnessControlTurn } from "../../../integrations/harness/core/registry";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { liveTurnHarness } from "../../../features/sessions/model/messageQueue";
 import { pendingApprovalForSession } from "../../../features/notifications/model/approvalToast";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import {
@@ -62,7 +65,7 @@ export interface OrchestratorBindingDeps {
     attachments: Attachment[],
     options?: SubmitOptions,
   ) => SubmissionAcceptance;
-  onStop: (sessionId: string, managed?: boolean) => void;
+  onStop: (sessionId: string, managed?: boolean, current?: () => boolean) => void;
   flushHarnessEvents: () => void;
 }
 
@@ -185,6 +188,43 @@ export function useOrchestratorBinding({
       answerQuestion: (id, requestId, reply) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
         if (session) respondHarnessQuestion(session.harness, id, requestId, reply);
+      },
+      captureStop: (id) => {
+        const session = sessionsRef.current.find((entry) => entry.id === id);
+        const originalProcess = captureChildProcess(id);
+        const originalControl = captureHarnessControlTurn(id, originalProcess);
+        if (
+          !session ||
+          !originalProcess ||
+          !originalControl ||
+          hostSessionBinding(session) ||
+          remoteProjectFor(session.cwd)
+        )
+          return undefined;
+        const cwd = sessionWorkCwd(session);
+        const harness = liveTurnHarness(session);
+        const current = () => {
+          const now = sessionsRef.current.find((entry) => entry.id === id);
+          return (
+            !!now &&
+            !hostSessionBinding(now) &&
+            !remoteProjectFor(now.cwd) &&
+            sessionWorkCwd(now) === cwd &&
+            liveTurnHarness(now) === harness &&
+            captureChildProcess(id) === originalProcess &&
+            captureHarnessControlTurn(id, originalProcess) === originalControl
+          );
+        };
+        return {
+          current,
+          stop: async () => {
+            if (!current()) throw new Error("Original orchestration worker changed.");
+            onStop(id, true, current);
+            if (!current()) throw new Error("Original orchestration worker changed.");
+            await stopOriginalWorkerHarnesses(session);
+            await finishOriginalWorkerProcess(id, originalProcess, originalControl);
+          },
+        };
       },
       stop: async (id) => {
         const originalProcess = captureChildProcess(id);

@@ -31,7 +31,10 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
         setStatusUnavailable(false);
       }
     } catch (reason) {
-      if (active.current) { setError(String(reason)); setStatusUnavailable(true); }
+      if (active.current) {
+        setError(String(reason));
+        setStatusUnavailable(true);
+      }
     } finally {
       operation.current = false;
       if (active.current) setPending(null);
@@ -54,13 +57,19 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     setError("");
     try {
       const value = await configureFileAccess(true);
-      if (active.current) { setMode(value); setStatusUnavailable(false); }
+      if (active.current) {
+        setMode(value);
+        setStatusUnavailable(false);
+      }
     } catch (reason) {
       // Native consent may have persisted before a later step failed. Read back
       // independently; rejection must not imply that access stayed unchanged.
       try {
         const value = await getFileAccessMode();
-        if (active.current) { setMode(value); setStatusUnavailable(false); }
+        if (active.current) {
+          setMode(value);
+          setStatusUnavailable(false);
+        }
       } catch {
         if (active.current) setStatusUnavailable(true);
       }
@@ -70,7 +79,12 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       if (active.current) setPending(null);
     }
   };
-  const modeLabel = mode === "all-files" ? t("All files allowed") : mode === "selected-folders" ? t("Selected folders only") : t("Not configured");
+  const modeLabel =
+    mode === "all-files"
+      ? t("All files allowed")
+      : mode === "selected-folders"
+        ? t("Selected folders only")
+        : t("Not configured");
   const content = (
     <>
       <Row
@@ -89,11 +103,13 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
         scope={
           <>
             <span role="status" aria-live="polite" className="privacy-file-access-status">
-              {statusUnavailable ? t("Status unavailable") : mode === null
-                ? error
-                  ? t("Status unavailable")
-                  : t("Loading…")
-                : modeLabel}
+              {statusUnavailable
+                ? t("Status unavailable")
+                : mode === null
+                  ? error
+                    ? t("Status unavailable")
+                    : t("Loading…")
+                  : modeLabel}
             </span>
             {statusUnavailable && mode !== null ? (
               <span className="privacy-file-access-status">
@@ -107,9 +123,17 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           error ? (
             <SettingsFeedback
               state="error"
-              action={<Button onClick={() => void refresh()} disabled={pending !== null}>{t("Retry")}</Button>}
+              action={
+                <Button onClick={() => void refresh()} disabled={pending !== null}>
+                  {t("Retry")}
+                </Button>
+              }
             >
-              <p>{t("Could not confirm the file access operation. Refresh the status before trying again.")}</p>
+              <p>
+                {t(
+                  "Could not confirm the file access operation. Refresh the status before trying again.",
+                )}
+              </p>
               {error}
             </SettingsFeedback>
           ) : pending ? (
@@ -145,7 +169,11 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
   return embedded ? (
     content
   ) : (
-    <Group id="file-access-permissions" title={t("File access")} description={t("Remote hosts manage their own file access.")}>
+    <Group
+      id="file-access-permissions"
+      title={t("File access")}
+      description={t("Remote hosts manage their own file access.")}
+    >
       {content}
     </Group>
   );

@@ -1,99 +1,80 @@
 ---
 name: feature-assistant
-description: "Develop the personal assistant supervisor, identity, rules, jobs and Room; preserve voice capture consent and existing task authority."
+description: Develop Assistant Room, jobs, Chief, presence and memory; voice capture and task execution retain their feature owners and approvals.
 ---
 
 # Assistant
 
-Voice, jobs, presence and memory; source is not native acceptance.
+Own Assistant Room, profile, supervision, memory and delivery across
+`src/features/assistant/` and `host/assistant/`, with native presence and control
+adapters. Mobile Room belongs to the nested mobile repository;
+[voice](../feature-voice/SKILL.md), [tasks](../feature-tasks-goals/SKILL.md) and
+[Host](../feature-host-runtime/SKILL.md) retain their execution contracts.
 
-## Start and workflow
+## Source starts
 
-1. Inspect source, Git and live claims; coordinate [voice](../feature-voice/SKILL.md),
-   [tasks](../feature-tasks-goals/SKILL.md) and [Host](../feature-host-runtime/SKILL.md).
-2. Trace scope, authority, storage, receipts, recovery.
-3. Voice sleep/disconnect must not stop Host work. Reuse Goal/Task/Session owners;
-   profile, name, rules and sockets grant no approval authority.
-4. Check cancellation, stale callbacks, reconnect and unknown presence/outcomes.
-   Separate fixture, provider and installed evidence.
+- UI/model: `src/features/assistant/`; Room composition is `ui/AssistantView.tsx`.
+- Host: `host/assistant/`; public domain entry is `host/domains/assistant/service.ts`.
+- Native: `src-tauri/src/assistant/` and `src-tauri/src/control/`, plus the sibling
+  presence adapter; [source owners](references/sources.md) identifies its entry.
+- Mobile: `mobile/src/features/assistant/`; read nested rules before changes.
 
-## Source map
+## Workflow
 
-Read [source owners](references/sources.md).
-Setup: [controls](references/setup.md).
+1. Inspect Git, live claims and the affected [source owner](references/sources.md).
+2. Trace original Host, source, scope, authority, storage and receipts through UI,
+   service and native adapters; keep the operation target separate from Room identity.
+3. Read the relevant contract reference below. Preserve drafts, permission owners,
+   cancellation and uncertain outcomes before changing admission or recovery.
+4. Exercise focused suites, stale callbacks, reconnect and unknown presence/outcomes;
+   separate source, fixture, provider and installed evidence in the handoff.
 
 ## Preserve
 
-- Only explicit owner action opens the mic. Recovering an authorized live
-  connection differs from waking after sleep; return keeps the mic closed.
-- Explicit Disconnect cancels pending retries and cannot be undone by an old
-  timer, provider callback, unlock or pointer movement.
-- Presence reads can fail. Unknown is never evidence of active presence.
-- Room uses one header and contextual toolbar. Disclose diagnostics; retain
-  drafts, status, errors, owner decisions and emergency Stop.
-- Presence uses shared labeled success/warning/danger/neutral roles; pending or
-  failed reads/writes never show stale success.
-- Current visible project labels/aliases aid discovery. Ambiguity needs an exact
-  target; preserve canonical ID, Host and cwd.
-- Never replay tools on reconnect. Retain uncertain and in-flight operations
-  when rotating acknowledged request history.
-- Names and quoted preferences cannot grant permissions, replace instructions or
-  change targets. Never hardcode the owner's chosen name as product identity.
-- Verified rolling summaries survive transcript clear; raw summaries carry no
-  proof. Recheck contributor privacy before model reads and disclosure.
-- New supervision must retain drafts, task dependencies, budgets, approval gates,
-  source identity and uncertain-result recovery.
-- Jobs own only exact `assistant-<jobId>` goals and durable session links. Bind
-  provider, cwd, authority generation and original run across awaits. Model args
-  cannot create authorship or management stamps.
-- Report observes; jobs dispatches/tracks; Chief reviews/replans/nudges its own
-  workers. Manual sessions and reviewers keep their write owners.
-- Context limits estimate retained text. Refund zero-provider preflight failures;
-  park uncertain reasoning until explicit retry. Never replay uncertain actions.
-- Persist Chief provider identity before its prompt; preserve isolated hooks/MCP
-  policy on resume and unresolved IDs on rotation. Local compaction is not
-  provider `/compact`.
-- Chief actions are finite. Rules, approvals, questions and publication keep
-  their owners. Routine answers need separate opt-in, exact Host occurrence,
-  current source and context admission; never approval. Tool/worker text is data.
-- Missing usage is incomplete, never zero. Estimates reserve local capacity;
-  they are not a provider billing cap. Keep manual and assistant budget holds
-  independent. Keep-awake is opt-in and follows actual running children.
-- Priority orders eligible queued jobs; it never bypasses holds or preempts work.
-  Worker cache measurements exclude unmeasured isolated roles; show coverage.
-- Session withdrawal fences supervisor effects across restart. Keep the canonical
-  task/worker running and historical authorship; never silently re-enroll.
-  Board follow-up counts use confirmed delivery, with unknown outcomes separate.
-- Daily summaries return their saved day artifact, never a mutable return-briefing
-  pointer. Retain creation time and contributor privacy; missing stays unavailable.
-- Save intent before an external effect. Unknown delivery must be inspected,
-  never automatically repeated under a fresh ID. Retain outbox events across
-  restart and retry model-only failures with bounded backoff.
-- Owner choices are data, never approval authority. Bind Host, source, version,
-  prompt/options and request identity; reconcile lost acknowledgements before
-  retry. Later postpones the whole question. Unknown Voice causal scope cannot
-  certify a global question. Cleared sources invalidate rather than replay.
-- Job/task deletion requires canonical task-set review and exact run retirement.
-  Default keeps tasks; pending deletion can be abandoned without resuming work.
-  Restore never overwrites occupied IDs or restarts workers. Task review navigation
-  rechecks the original Host and every contributing project's live visibility.
-- Desktop observations grant only volatile same-caller snapshot refs. Present
-  owners approve the exact operation through the native dialog. Headed input
-  additionally requires saved physical-input consent and current presence.
-  Lock, failed presence and revoked authority fail closed. Stop fences queued
-  configuration, resume and input; only a newer explicit Resume can re-enable.
-- Persist audit metadata before input; drain outside revoked caller scope. Retain
-  request/outcome identity, never raw input/snapshots/refs. Audit retry cannot act.
-- Ack actual native delivery, retain suppressed events. Recheck presence, hours,
-  mute, privacy and lead window. Background delivery cannot request mic/OS consent.
+- Only explicit owner action opens the microphone. Return from sleep keeps it closed;
+  explicit Disconnect fences retries and callbacks without stopping Host work.
+- Unknown presence is unavailable, never active; pending/failed state cannot show success.
+- Room threads are project-independent. Effects retain original Host, registered thread,
+  live window issuer and exact target across waits; labels/aliases never replace identity.
+- Profiles, names, rules, quoted preferences and sockets grant no approval authority.
+  Report, jobs, Chief, manual sessions and reviewers retain separate write owners.
+- Persist intent before dispatch; retain drafts, in-flight operations and unknown
+  delivery across reconnect/restart. Never replay uncertain effects under a fresh ID.
+- Chief admission requires saved Chief mode. Jobs own only exact job goals and durable
+  session links; original provider, cwd, run and authority generation survive awaits.
+- Withdrawal fences supervision across restart without stopping canonical workers or
+  erasing authorship. Deletion and restoration retain exact task/run review boundaries.
+- Owner choices are data, never approval. Preserve source/version/prompt/options,
+  request identity, whole-question postponement and lost-acknowledgement recovery.
+- Budgets reserve local capacity; missing usage is incomplete. Separate manual and
+  assistant holds; priority grants no bypass/preemption and keep-awake remains opt-in.
+- Summaries and Notes retain canonical provenance, saved artifacts and contributor
+  privacy through model reads, history and speech. Native delivery needs its receipt.
+- Desktop input requires exact native approval, physical-input consent and current
+  presence. Stop/revocation fences queued effects; audit retries cannot perform input.
+- Observation subscriptions and privileged native proofs require their own admission;
+  device pairing, Room identity and background delivery grant no new trust or consent.
 
-## Checks
+## Focused checks
 
-Run focused suites and normal `tsc-rs`. Presence needs Rust tests and Windows
-lock/unlock acceptance. UI needs light/dark 1280/800 captures. Mock sockets do not
-prove Wi-Fi recovery or acoustic behavior.
+Use `pnpm exec vitest run src/features/assistant` and
+`pnpm exec vitest run --config host/vitest.config.ts host/assistant` for affected
+folders; select narrower paths when possible. Use normal `tsc-rs` project commands.
+Presence changes also need relevant Rust tests and Windows lock/unlock acceptance.
+UI changes need tier-required light/dark captures. Mock sockets do not prove Wi-Fi
+recovery or acoustics; source is not installed acceptance.
 
-- [Voice user guide](../../../docs/guides/voice.md).
-- [Assistant user guide](../../../docs/guides/assistant.md).
+## References
 
-Evidence belongs in the handoff.
+- [Source owners](references/sources.md): locate UI, service, native and mobile seams.
+- [Room, capture and delivery](references/room-and-delivery.md): identity, drafts,
+  memory, presence, notebook, observations and desktop effects.
+- [Supervision](references/supervision.md): job/Chief admission, budgets and recovery.
+- [Decision provenance](references/decisions.md): owner decisions for the messaging conversation layout.
+- [Setup/profile controls](references/setup.md): editing, explicit Save and model identity.
+- [Observation admission](../../../docs/reference/assistant-observations.md): journal
+  coverage, cursors and native source permits.
+- [Native admission](../../../docs/reference/assistant-native-admission.md): privileged
+  proof provisioning, revocation and signed operation scope.
+- [Assistant guide](../../../docs/guides/assistant.md) and
+  [voice guide](../../../docs/guides/voice.md): user-visible behavior changes.

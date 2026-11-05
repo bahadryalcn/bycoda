@@ -16,13 +16,13 @@ import {
 } from "../../../platform/tauri/fs";
 import { ChevronDown, ChevronRight, FolderTree, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 import { isEqualOrInside, projectKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { loadRepositorySelection, saveRepositorySelection } from "../model/repositorySelection";
-import { subscribeProjectPathsChanged } from "../../projects/model/recents";
+import { subscribeProjectPathsChanged } from "../../projects/public/recents";
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -154,7 +154,9 @@ export function WorkspaceSourceControl({
   // Checkout, path and session ownership are stated once, in the target selector
   // (visible label plus this tooltip), instead of a second "Reviewing" row.
   const targetTitle = active
-    ? [name(active), !checkouts && own(active) ? t("This session") : "", active].filter(Boolean).join(" · ")
+    ? [name(active), !checkouts && own(active) ? t("This session") : "", active]
+        .filter(Boolean)
+        .join(" · ")
     : `${checkouts ? t("Working copy") : t("Repository")} · ${
         checkouts ? t("All checkouts") : t("All repositories")
       }`;
@@ -174,7 +176,11 @@ export function WorkspaceSourceControl({
               aria-controls={repositoryListId}
               onClick={() => setListOpen((open) => !open)}
             >
-              {listOpen ? <ChevronDown className="icon-xs" /> : <ChevronRight className="icon-xs" />}
+              {listOpen ? (
+                <ChevronDown className="icon-xs" />
+              ) : (
+                <ChevronRight className="icon-xs" />
+              )}
               {t("Repository")}
             </Button>
           ) : null}

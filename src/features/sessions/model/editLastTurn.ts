@@ -116,22 +116,23 @@ export function createEditedResendAttempt(
 
 export type EditedResendCoordinator = {
   isActive(sessionId: string): boolean;
-  start(sessionId: string): boolean;
-  finish(sessionId: string): void;
+  start(sessionId: string): symbol | undefined;
+  finish(sessionId: string, token: symbol): void;
 };
 
 /** Keeps concurrent submissions out while a provider rewind is in progress. */
 export function createEditedResendCoordinator(): EditedResendCoordinator {
-  const active = new Set<string>();
+  const active = new Map<string, symbol>();
   return {
     isActive: (sessionId) => active.has(sessionId),
     start(sessionId) {
-      if (active.has(sessionId)) return false;
-      active.add(sessionId);
-      return true;
+      if (active.has(sessionId)) return undefined;
+      const token = Symbol(sessionId);
+      active.set(sessionId, token);
+      return token;
     },
-    finish(sessionId) {
-      active.delete(sessionId);
+    finish(sessionId, token) {
+      if (active.get(sessionId) === token) active.delete(sessionId);
     },
   };
 }
@@ -143,7 +144,12 @@ export type LastTurnRecall = {
 
 export function lastTurnRecall(session: Session): LastTurnRecall | null {
   const block = lastUserTurnBlock(session.blocks);
-  if (!block?.text.trim() && !block?.attachments?.length) return null;
+  return block ? userBlockRecall(block) : null;
+}
+
+/** A user message as composer input, e.g. a saved draft taken back for editing. */
+export function userBlockRecall(block: Block): LastTurnRecall | null {
+  if (!block.text.trim() && !block.attachments?.length) return null;
   return {
     text: isOperatorUserTurn(block) ? `/operator ${operatorUserPrompt(block)}` : block.text,
     attachments: block.attachments ?? [],

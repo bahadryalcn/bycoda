@@ -55,7 +55,10 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   const { path } = await flavor.resolveBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${flavor.probeChildId}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId), flavor.probeChildId);
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    flavor.probeChildId,
+  );
   const rpc = new PiRpc(probeProcess, () => undefined, flavor.label);
   const models = new Map<string, AgentModel>();
   const collectedModels = () =>

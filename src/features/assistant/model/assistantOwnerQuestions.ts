@@ -34,6 +34,7 @@ const draftSchema = z.strictObject({
   step: z.number().int().min(0).max(3),
   answers,
   custom: z.record(z.string(), text),
+  notes: z.record(z.string(), text).optional(),
   delivery: z.enum(["sending", "unknown"]).optional(),
   pendingAction: z.enum(["answer", "dismiss"]).optional(),
 });
@@ -163,7 +164,7 @@ export class AssistantOwnerQuestionDraft {
         format: 1,
         environmentId,
         question: captured,
-        draft: { step: 0, answers: {}, custom: {} },
+        draft: { step: 0, answers: {}, custom: {}, notes: {} },
       };
   }
   get question(): AssistantOwnerQuestion {
@@ -233,7 +234,7 @@ export class AssistantOwnerQuestionDraft {
     this.record = {
       ...this.record,
       intent: undefined,
-      draft: { step: 0, answers: {}, custom: {} },
+      draft: { step: 0, answers: {}, custom: {}, notes: {} },
     };
     try {
       const keys = readIndex(this.storage, this.environmentId, true);
@@ -300,6 +301,7 @@ export class AssistantOwnerQuestionDraft {
               ...validateAssistantOwnerAnswer(question.prompt.questions, {
                 answers: reply.answers,
                 ...(reply.custom ? { custom: reply.custom } : {}),
+                ...(reply.notes ? { notes: reply.notes } : {}),
               }),
             });
     } catch (error) {

@@ -90,7 +90,10 @@ export default function PdfViewer({
     );
   if (!doc) {
     return (
-      <div role="status" className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)">
+      <div
+        role="status"
+        className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
+      >
         {t("Loading PDF…")}
       </div>
     );
@@ -290,7 +293,7 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+      <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-pane-border) bg-(--ui-workspace-panel) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
         <TextField
           hideLabel
           label={t("Page number")}
@@ -306,13 +309,25 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
         />
         <span className="tabular-nums">/ {doc.numPages}</span>
         <span className="flex-1" />
-        <Button size="sm" variant="ghost" iconOnly label={t("Zoom out")} onClick={() => zoomBy(1 / ZOOM_STEP)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Zoom out")}
+          onClick={() => zoomBy(1 / ZOOM_STEP)}
+        >
           <Minus className="icon-xs" strokeWidth={1.75} />
         </Button>
         <span ref={percentRef} className="w-10 text-center tabular-nums">
           {formatZoomPercent(scale)}
         </span>
-        <Button size="sm" variant="ghost" iconOnly label={t("Zoom in")} onClick={() => zoomBy(ZOOM_STEP)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Zoom in")}
+          onClick={() => zoomBy(ZOOM_STEP)}
+        >
           <Plus className="icon-xs" strokeWidth={1.75} />
         </Button>
         <Button
@@ -334,7 +349,7 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
         tabIndex={0}
         role="region"
         aria-label={t("PDF preview")}
-        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--ui-surface-muted) py-3"
+        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--ui-workspace-canvas-muted) py-3"
         style={{ overflowAnchor: "none" }}
       >
         <div className="relative w-full" style={{ height: pages.getTotalSize() }}>

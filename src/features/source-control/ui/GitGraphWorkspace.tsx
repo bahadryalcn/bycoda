@@ -31,11 +31,11 @@ import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
 import { setGitFeedback, useGitPanelState, withGitOperation } from "../model/gitPanelState";
 import { invalidateGitIndex } from "../model/gitIndexStore";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { confirmNative } from "../model/gitConfirmation";
 import { GitGraphBranches } from "./GitGraphBranches";
 import { GitGraphCommitInspector } from "./GitGraphCommitInspector";
@@ -302,7 +302,7 @@ export function GitGraphWorkspace({
   return (
     <div
       ref={workspaceRef}
-      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface-panel) text-content"
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-workspace-panel) text-content"
     >
       <PaneHeader
         leading={

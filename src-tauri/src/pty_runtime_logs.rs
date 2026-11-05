@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -30,6 +30,9 @@ struct AltScreenFilter {
 impl AltScreenFilter {
     /// The bytes outside the alternate screen, and whether any were dropped.
     fn filter(&mut self, bytes: &[u8]) -> (Vec<u8>, bool) {
+        if self.pending.is_empty() && !bytes.contains(&0x1b) {
+            return if self.inside { (Vec::new(), !bytes.is_empty()) } else { (bytes.to_vec(), false) };
+        }
         let mut data = std::mem::take(&mut self.pending);
         data.extend_from_slice(bytes);
         let mut kept = Vec::with_capacity(data.len());
@@ -69,12 +72,14 @@ impl AltScreenFilter {
 /// Logging never blocks the PTY reader, renderer or keyboard input.
 pub(crate) struct TerminalLogSender {
     sender: SyncSender<(u64, Vec<u8>)>,
-    sequence: AtomicU64,
+    sequence: Arc<AtomicU64>,
+    capture: Arc<AtomicBool>,
 }
 
 trait LogService {
     fn is_current(&self) -> bool;
     fn append(&self, params: serde_json::Value) -> Result<(), String>;
+    fn demand(&self, _cwd: &str, _terminal_id: &str) -> Result<bool, String> { Ok(true) }
 }
 impl LogService for Arc<crate::remote::NativeServiceChannel> {
     fn is_current(&self) -> bool {
@@ -82,6 +87,14 @@ impl LogService for Arc<crate::remote::NativeServiceChannel> {
     }
     fn append(&self, params: serde_json::Value) -> Result<(), String> {
         self.project("runtimeLogs.terminals.append", params, |_| Ok(()))
+    }
+    fn demand(&self, cwd: &str, terminal_id: &str) -> Result<bool, String> {
+        self.project_until("runtimeLogs.terminals.demand", serde_json::json!({ "cwd": cwd, "terminalId": terminal_id }), Instant::now() + Duration::from_secs(5), |value| {
+            value.get("enabled").and_then(|v| v.as_bool()).ok_or_else(|| "Invalid terminal log demand".to_string())
+        }).or_else(|error| {
+            // Older Hosts expose only the documented always-on capture mode.
+            if error.contains("Unsupported host method") { Ok(true) } else { Err(error) }
+        })
     }
 }
 
@@ -100,10 +113,14 @@ impl<S: LogService, F: Fn() -> Result<S, String>> LogService for PinnedLogServic
             let selected = (self.select)()?;
             let _ = self.selected.set(selected);
         }
-        self.selected
-            .get()
-            .ok_or("Terminal log issuer is unavailable")?
-            .append(params)
+        self.selected.get().ok_or("Terminal log issuer is unavailable")?.append(params)
+    }
+    fn demand(&self, cwd: &str, terminal_id: &str) -> Result<bool, String> {
+        if self.selected.get().is_none() {
+            let selected = (self.select)()?;
+            let _ = self.selected.set(selected);
+        }
+        self.selected.get().ok_or("Terminal log issuer is unavailable")?.demand(cwd, terminal_id)
     }
 }
 
@@ -112,7 +129,14 @@ fn forward_logs(
     receiver: Receiver<(u64, Vec<u8>)>,
     cwd: &str,
     terminal_id: &str,
+    capture: Option<&AtomicBool>,
+    observed_chunks: Option<&AtomicU64>,
 ) {
+    struct ClearCapture<'a>(Option<&'a AtomicBool>);
+    impl Drop for ClearCapture<'_> {
+        fn drop(&mut self) { if let Some(value) = self.0 { value.store(false, Ordering::Release); } }
+    }
+    let _clear_capture = ClearCapture(capture);
     let mut packet_sequence = 0_u64;
     let mut expected_chunk = 0_u64;
     let mut alt_screen = AltScreenFilter::default();
@@ -123,10 +147,23 @@ fn forward_logs(
         packet_sequence += 1;
         let _ = result;
     };
-    while let Ok(first) = receiver.recv() {
+    let mut next_demand = Instant::now();
+    loop {
+        if let Some(capture) = capture {
+            if Instant::now() >= next_demand {
+                capture.store(service.demand(cwd, terminal_id).unwrap_or(false), Ordering::Release);
+                next_demand = Instant::now() + Duration::from_secs(2);
+            }
+        }
+        let first = match receiver.recv_timeout(Duration::from_secs(1)) {
+            Ok(first) => first,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
         if !service.is_current() {
             return;
         }
+        if capture.is_some_and(|value| !value.load(Ordering::Acquire)) { continue; }
         let mut size = first.1.len();
         let mut packets = vec![first];
         let deadline = Instant::now() + LOG_FLUSH;
@@ -159,13 +196,18 @@ fn forward_logs(
         }
     }
     // The close uses this same pinned service; an unknown append is not replayed.
-    send(&[], false, true);
+    let interrupted = observed_chunks.is_some_and(|count| count.load(Ordering::Acquire) != expected_chunk);
+    send(&[], interrupted, true);
 }
 
 impl TerminalLogSender {
     pub(crate) fn new(app: &AppHandle, cwd: &Path) -> Self {
         let (sender, receiver) = sync_channel::<(u64, Vec<u8>)>(32);
         let app = app.clone();
+        let capture = Arc::new(AtomicBool::new(false));
+        let worker_capture = capture.clone();
+        let sequence = Arc::new(AtomicU64::new(0));
+        let worker_sequence = sequence.clone();
         let cwd = cwd.to_string_lossy().into_owned();
         let terminal_id = uuid::Uuid::new_v4().to_string();
         std::thread::spawn(move || {
@@ -176,11 +218,12 @@ impl TerminalLogSender {
                 selected: OnceLock::new(),
                 select: || crate::remote::NativeServiceChannel::connect(&app),
             };
-            forward_logs(&service, receiver, &cwd, &terminal_id);
+            forward_logs(&service, receiver, &cwd, &terminal_id, Some(&worker_capture), Some(&worker_sequence));
         });
         Self {
             sender,
-            sequence: AtomicU64::new(0),
+            sequence,
+            capture,
         }
     }
 
@@ -188,7 +231,8 @@ impl TerminalLogSender {
         if bytes.is_empty() {
             return;
         }
-        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        let sequence = self.sequence.fetch_add(1, Ordering::AcqRel);
+        if !self.capture.load(Ordering::Acquire) { return; }
         // A gap lets the host discard partial lines instead of joining fragments.
         let _ = self.sender.try_send((sequence, bytes.to_vec()));
     }
@@ -217,6 +261,28 @@ mod tests {
             }
             Err("delivery may be unknown".into())
         }
+    }
+
+    #[test]
+    fn capture_gate_skips_chunks_without_allocating_and_preserves_gap_sequence() {
+        let (sender, receiver) = sync_channel(4);
+        let capture = Arc::new(AtomicBool::new(false));
+        let logs = TerminalLogSender { sender, sequence: Arc::new(AtomicU64::new(0)), capture: capture.clone() };
+        logs.push(b"missed\n");
+        assert!(receiver.try_recv().is_err());
+        capture.store(true, Ordering::Release);
+        logs.push(b"visible\n");
+        let (sequence, bytes) = receiver.try_recv().unwrap();
+        assert_eq!(sequence, 1);
+        assert_eq!(bytes, b"visible\n");
+    }
+
+    #[test]
+    fn alternate_filter_fast_path_keeps_normal_chunks_and_discards_fullscreen() {
+        let mut filter = AltScreenFilter::default();
+        assert_eq!(filter.filter(b"a\r\nb\n"), (b"a\r\nb\n".to_vec(), false));
+        filter.inside = true;
+        assert_eq!(filter.filter(b"screen"), (Vec::new(), true));
     }
 
     #[test]
@@ -277,7 +343,7 @@ mod tests {
         sender.send((0, b"first".to_vec())).unwrap();
         sender.send((1, b"second".to_vec())).unwrap();
         drop(sender);
-        forward_logs(&logs, receiver, "/fixture", "original-terminal");
+        forward_logs(&logs, receiver, "/fixture", "original-terminal", None, None);
         let packets = logs.packets.borrow();
         assert_eq!(packets.len(), 2);
         assert_eq!(packets[0]["sequence"], 0);
@@ -306,7 +372,7 @@ mod tests {
         sender.send((0, vec![b'x'; LOG_BATCH_BYTES])).unwrap();
         sender.send((1, b"remaining".to_vec())).unwrap();
         drop(sender);
-        forward_logs(&logs, receiver, "/fixture", "original-terminal");
+        forward_logs(&logs, receiver, "/fixture", "original-terminal", None, None);
         let packets = logs.packets.borrow();
         assert_eq!(packets.len(), 1);
         assert_eq!(packets[0]["sequence"], 0);

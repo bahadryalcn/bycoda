@@ -25,6 +25,9 @@ Use for Chat Settings composition, conversation display preferences, continuatio
 - Slash and trigger expansion insert without sending; preserve cursor placeholders, ordinary draft/attachments/IME and reviewed SSH snippet identity.
 - Continuation preference changes do not expand recovery/send authority. Runtime idle/reset/grace/queue and remote fresh-identity gates remain with recovery owners.
 - Translation and reprompt inherit independently; preserve action account/model/project/machine identity and explain unsupported choices without silent substitution.
+- Conversation title generation has its own model/account preference. Automatic
+  selection uses an enabled economical catalog entry, never the conversation's
+  expensive model as an implicit fallback; unsupported catalogs require a choice.
 - Voice enabled is saved intent, not runtime readiness. Settings must preserve setup job identity and visible recovery; audio/install/locality gates belong to voice owners.
 - Keep same-/sibling preference updates, failed-edit retry and local outcome truth; a later external write must not silently erase a dirty editor.
 

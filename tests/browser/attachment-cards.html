@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bycoda attachment component fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      localStorage.setItem("bycoda.language", "en");
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command) => (command === "plugin:event|listen" ? 1 : undefined),
+      };
+    </script>
+    <script type="module" src="./attachment-cards.tsx"></script>
+  </body>
+</html>

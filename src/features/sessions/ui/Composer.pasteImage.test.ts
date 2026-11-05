@@ -7,7 +7,7 @@ import { Composer } from "./Composer";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
     onDragDropEvent: async () => () => undefined,
@@ -128,6 +128,7 @@ beforeEach(() => {
   invoke.mockReset();
   invoke.mockImplementation(async (command: string, args?: { paths?: string[] }) => {
     if (command === "clipboard_file_paths") return clipboardPaths;
+    if (command === "write_attachment") return "/attachments/image.png";
     if (command === "clipboard_image") return PNG_BYTES.buffer;
     if (command === "inspect_paths")
       return (args?.paths ?? []).map((path) => ({
@@ -264,6 +265,7 @@ it("sends a screenshot that is still being read when the turn is sent", async ()
   let release: (() => void) | undefined;
   invoke.mockImplementation(async (command: string) => {
     if (command === "clipboard_file_paths") return [];
+    if (command === "write_attachment") return "/attachments/image.png";
     if (command === "clipboard_image") {
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -300,6 +302,7 @@ it("shows attachment waiting on Queue without blocking Stop or sending twice", a
   let release!: () => void;
   invoke.mockImplementation(async (command: string) => {
     if (command === "clipboard_file_paths") return [];
+    if (command === "write_attachment") return "/attachments/image.png";
     if (command === "clipboard_image") {
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -330,6 +333,7 @@ it.each(["button", "keyboard", "parent"])(
     let release!: () => void;
     invoke.mockImplementation(async (command: string) => {
       if (command === "clipboard_file_paths") return [];
+      if (command === "write_attachment") return "/attachments/image.png";
       if (command === "clipboard_image") {
         await new Promise<void>((resolve) => {
           release = resolve;
@@ -367,6 +371,7 @@ it("allows an explicit retry after Stop while the original attachment read is st
   let release!: () => void;
   invoke.mockImplementation(async (command: string) => {
     if (command === "clipboard_file_paths") return [];
+    if (command === "write_attachment") return "/attachments/image.png";
     if (command === "clipboard_image") {
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -426,6 +431,7 @@ it("does not attach a file that finishes reading after the draft was reset", asy
 it("stays quiet when an empty paste has nothing to attach", async () => {
   invoke.mockImplementation(async (command: string) => {
     if (command === "clipboard_file_paths") return [];
+    if (command === "write_attachment") return "/attachments/image.png";
     if (command === "clipboard_image") throw "The clipboard does not contain an image.";
     return [];
   });
@@ -587,6 +593,7 @@ it("reports a clipboard it could not read instead of trying the image", async ()
 
 it("reports why a clipboard image could not be attached", async () => {
   invoke.mockImplementation(async (command: string) => {
+    if (command === "write_attachment") return "/attachments/image.png";
     if (command === "clipboard_image")
       throw "Clipboard image is too large to attach (maximum 20 MB).";
     return [];

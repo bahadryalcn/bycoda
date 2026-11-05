@@ -1,11 +1,12 @@
-import { remoteRequest } from "../../connections/model/connections";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
+import { remoteRequest } from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
 import {
   isRemoteProvider,
   type HostProject,
   type RemoteMachine,
-} from "../../connections/model/protocol";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+} from "../../connections/public/protocol";
+
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   backgroundMachines,
   hostProjectCwd,

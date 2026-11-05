@@ -366,8 +366,19 @@ export function prepareSubmittedTurn(
     });
     return { settled: true, value: true };
   }
+  let editToken: symbol | undefined;
   if (editedResend && canRewindHarnessLastTurn(current.harness)) {
-    editedResends.start(sessionId);
+    editToken = editedResends.start(sessionId);
+    if (!editToken) {
+      endActiveSubmit(sessionId, gen);
+      editedResend.reject();
+      options?.onSettled?.({
+        status: "failed",
+        text: "",
+        error: "Another change to this conversation is still finishing.",
+      });
+      return { settled: true, value: false };
+    }
     const locked = sessionsRef.current.map((session) =>
       session.id === sessionId ? { ...session, busy: true } : session,
     );
@@ -393,6 +404,7 @@ export function prepareSubmittedTurn(
   return {
     settled: false,
     setup: {
+      editToken,
       traceId,
       gen,
       proposalId,

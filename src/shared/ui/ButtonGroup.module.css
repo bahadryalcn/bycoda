@@ -17,6 +17,10 @@
   background: var(--ui-surface);
 }
 
+.group[data-surface="navigation"] {
+  background: var(--ui-navigation-control);
+}
+
 .group::after {
   content: "";
   position: absolute;

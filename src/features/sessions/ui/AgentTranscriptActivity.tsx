@@ -1,3 +1,5 @@
+import { TranscriptVirtualRows, type TranscriptVirtualElement } from "./TranscriptVirtualRows";
+import { useTranscriptRevealTarget } from "./transcriptVirtualization";
 import { blockForStep } from "./agentStepBlocks";
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import {
@@ -28,8 +30,8 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { FilePreview } from "../../files/ui/FilePreview";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FilePreview } from "../../files/public/FilePreview";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -40,7 +42,7 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
   isEditTool,
@@ -132,18 +134,30 @@ export const ActivityPhases = memo(function ActivityPhases({
   const phases = useMemo(() => buildActivityPhases(blocks), [blocks]);
 
   return (
-    <div className={`flex min-w-0 flex-col gap-1 ${padded ? "px-4" : ""}`}>
-      {phases.map((phase, index) => (
-        <ActivityPhaseGroup
-          key={phase.id}
-          phase={phase}
-          cwd={cwd}
-          active={!done && index === phases.length - 1}
-          onApproval={onApproval}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-        />
-      ))}
+    <div className={`flex min-w-0 flex-col ${padded ? "px-4" : ""}`}>
+      <TranscriptVirtualRows
+        listId={`phases:${blocks[0]?.id}`}
+        rows={phases.map((phase, index) => ({
+          id: phase.id,
+          blockIds: [
+            ...(phase.headline ? [phase.headline.id] : []),
+            ...phase.steps.map((block) => block.id),
+          ],
+          pinned: (!done && index === phases.length - 1) || phase.steps.some(needsApproval),
+          render: () => (
+            <div className={index < phases.length - 1 ? "pb-1" : undefined}>
+              <ActivityPhaseGroup
+                phase={phase}
+                cwd={cwd}
+                active={!done && index === phases.length - 1}
+                onApproval={onApproval}
+                onOpenFile={onOpenFile}
+                onOpenDiff={onOpenDiff}
+              />
+            </div>
+          ),
+        }))}
+      />
     </div>
   );
 }, sameActivity);
@@ -223,7 +237,10 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   const needsAttention =
     waiting ||
     phase.steps.some((step) => step.role === "tool" && toolCallState(step) === "rejected");
-  const open = waiting || (override ?? active);
+  const reveal = useTranscriptRevealTarget();
+  const revealed =
+    !!reveal && (phase.headline?.id === reveal || phase.steps.some((step) => step.id === reveal));
+  const open = waiting || revealed || (override ?? active);
   const [liveScroller, setLiveScroller] = useState<HTMLDivElement | null>(null);
   // A step's own growth is followed by the hook's resize observer; the layout
   // pass is only needed when a step arrives, so a rebuilt array is not a trigger.
@@ -241,7 +258,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   const title = activityPhaseTitle(phase, active);
   const bycodaPhase = !!bycodaWorkSummary(phase.steps, active);
   let compactCommand: Block | undefined;
-  if (active && override !== true && !needsAttention) {
+  if (active && override !== true && !revealed && !needsAttention) {
     for (let index = phase.steps.length - 1; index >= 0; index -= 1) {
       const step = phase.steps[index];
       if (step.role === "tool" && step.tool?.kind === "shell") {
@@ -256,7 +273,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   // whole. The auto-open while it runs is a live view, not a reading one, and
   // a one-line note the header already shows in full has nothing to add.
   const headline =
-    override === true && phase.headline && headlineHasMore(phase.headline)
+    (override === true || revealed) && phase.headline && headlineHasMore(phase.headline)
       ? phase.headline
       : undefined;
   const inert = phase.steps.length === 0 && !headlineHasMore(phase.headline);
@@ -355,7 +372,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
             <div
               ref={setLiveScroller}
               className={
-                active && override !== true && !needsAttention
+                active && override !== true && !revealed && !needsAttention
                   ? "zen-phase-live zen-phase-summary"
                   : undefined
               }
@@ -371,31 +388,49 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                     />
                   </div>
                 ) : null}
-                {phase.steps.map((block) => {
-                  const arriving = active && !settled.current?.has(block.id);
-                  return (
-                    <PhaseStep
-                      key={block.id}
-                      live={active}
-                      turn={arriving ? turnFor(block.id) : undefined}
-                    >
-                      <ActivityRow
-                        block={block}
-                        cwd={cwd}
+                <TranscriptVirtualRows
+                  listId={`steps:${phase.id}`}
+                  rows={phase.steps.map((block, index) => {
+                    const arriving = active && !settled.current?.has(block.id);
+                    const render = (virtual?: TranscriptVirtualElement) => (
+                      <PhaseStep
+                        virtual={virtual}
                         live={active}
-                        onApproval={onApproval}
-                        onOpenFile={onOpenFile}
-                        onOpenDiff={onOpenDiff}
-                      />
-                    </PhaseStep>
-                  );
-                })}
+                        turn={arriving ? turnFor(block.id) : undefined}
+                      >
+                        <ActivityRow
+                          block={block}
+                          cwd={cwd}
+                          live={active}
+                          onApproval={onApproval}
+                          onOpenFile={onOpenFile}
+                          onOpenDiff={onOpenDiff}
+                        />
+                      </PhaseStep>
+                    );
+                    return {
+                      id: block.id,
+                      blockIds: [block.id],
+                      pinned:
+                        needsApproval(block) ||
+                        (active && index === phase.steps.length - 1) ||
+                        !!block.streaming,
+                      render: () => render(),
+                      renderElement: render,
+                    };
+                  })}
+                />
               </div>
             </div>
           </>
         ) : null}
       </div>
-      {open && active && override !== true && !needsAttention && phase.steps.length > 3 ? (
+      {open &&
+      active &&
+      override !== true &&
+      !revealed &&
+      !needsAttention &&
+      phase.steps.length > 3 ? (
         <Button variant="link" motion="none" onClick={() => setOverride(true)}>
           {t("Show more")}
         </Button>
@@ -448,11 +483,13 @@ function PhaseStep({
   live,
   turn: arrival,
   children,
+  virtual,
 }: {
   live: boolean;
   /** Set only on the render a step arrives in; later renders drop it. */
   turn?: StepTurn;
   children: ReactNode;
+  virtual?: TranscriptVirtualElement;
 }) {
   useLocale();
   const [turn] = useState(arrival);
@@ -468,6 +505,7 @@ function PhaseStep({
 
   return (
     <div
+      {...virtual}
       className="zen-phase-step"
       style={turn ? ({ "--step-ms": `${Math.round(turn.pace)}ms` } as CSSProperties) : undefined}
       data-live={live || undefined}
@@ -515,16 +553,26 @@ export function SubagentStack({
   useLocale();
   return (
     <div className={`flex min-w-0 flex-col ${embedded ? "" : "px-4"}`}>
-      {blocks.map((block) => (
-        <SubagentRow
-          key={block.id}
-          block={block}
-          cwd={cwd}
-          live={live}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-        />
-      ))}
+      <TranscriptVirtualRows
+        listId={`agents:${blocks[0]?.id}`}
+        rows={blocks.map((block) => ({
+          id: block.id,
+          blockIds: [block.id],
+          pinned:
+            needsApproval(block) ||
+            !!block.streaming ||
+            (live && toolCallState(block) === "pending"),
+          render: () => (
+            <SubagentRow
+              block={block}
+              cwd={cwd}
+              live={live}
+              onOpenFile={onOpenFile}
+              onOpenDiff={onOpenDiff}
+            />
+          ),
+        }))}
+      />
     </div>
   );
 }
@@ -551,7 +599,8 @@ function SubagentRow({
 }) {
   useLocale();
   const [override, setOverride] = useRetainedDisclosure<boolean | null>(`agent:${block.id}`, null);
-  const open = override ?? toolCallState(block) === "rejected";
+  const reveal = useTranscriptRevealTarget();
+  const open = reveal === block.id || (override ?? toolCallState(block) === "rejected");
   // The composer's activity dock opens a run from outside the transcript. The
   // row may only mount after the transcript reveals it, so check on mount too.
   useEffect(() => {
@@ -613,7 +662,7 @@ function SubagentPanel({
 
   // Identity row: the name takes the room it needs and gives the rest back, so
   // a provider that names a run with its whole brief cannot push the row off the
-  // pane. State, clock and model sit on the line below, as in the detached sheet.
+  // pane. State, clock and model share the row before its disclosure control.
   const label = active ? (
     <Shimmer className="min-w-0 flex-1 truncate text-start font-sans text-ui-body" duration={1.6}>
       {name}
@@ -635,7 +684,8 @@ function SubagentPanel({
       busy={live}
       steps={steps}
       model={model}
-      className="pb-0.5 ps-6"
+      inline
+      className="max-w-[65%] shrink-0"
     />
   );
 
@@ -655,9 +705,9 @@ function SubagentPanel({
         >
           <SubagentMascot name={name} state={state} active={active} />
           {label}
+          {stateLine}
           <span className="icon-sm shrink-0" />
         </Button>
-        {stateLine}
       </div>
     );
   }
@@ -682,6 +732,7 @@ function SubagentPanel({
         >
           <SubagentMascot name={name} state={state} active={active} />
           {label}
+          {stateLine}
           <ChevronRight
             className={`icon-sm shrink-0 text-(--ui-text-secondary) transition-transform duration-200 group-hover:text-(--ui-text-secondary) ${
               open ? "rotate-90" : ""
@@ -703,7 +754,6 @@ function SubagentPanel({
           <ExternalLink className="icon-sm" aria-hidden />
         </Button>
       </div>
-      {stateLine}
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           /*

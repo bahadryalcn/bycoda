@@ -1,8 +1,7 @@
-import type { Block, Session } from "../../sessions/model/session";
-import type { ApprovalRequestToken } from "../../sessions/model/approvalIntents";
+import type { Block, Session, ApprovalRequestToken, UserQuestionReply } from "../../sessions";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
-import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { DesktopProjectDirectory } from "./protocol";
+import type { NativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
 import {
   isRemoteJiraOperation,
   type RemoteJiraOperation,
@@ -37,6 +36,7 @@ export type DesktopLiveSession = {
   busy: boolean;
   pending?: Block[];
   patch?: Partial<Session>;
+  turnReceipt?: NativeControlTurnReceipt;
 };
 
 export type DesktopLivePayload = {
@@ -46,6 +46,7 @@ export type DesktopLivePayload = {
   projectDirectoryRevision?: string;
   deletions?: { version: 1; replies: { id: string; error?: string }[] };
   clientId?: string;
+  pageToken?: string;
   sessions: DesktopLiveSession[];
   acked?: string[];
   inbox?: DesktopInboxPayload;
@@ -155,12 +156,15 @@ export type DesktopLiveCommand = {
   approvalOccurrenceId?: string;
   decision?: "allow" | "deny";
   reply?: UserQuestionReply;
+  pageToken?: string;
+  turnReceipt?: NativeControlTurnReceipt;
 };
+export type DesktopControlGuard = (() => boolean) & { stopOrchestration?: () => Promise<void> };
 
 export type DesktopLiveHandlers = {
   retireWriter?: (sessionId: string) => Promise<void>;
   delete?: (sessionId: string, cwd: string) => Promise<void>;
-  stop: (sessionId: string) => void;
+  stop: (sessionId: string, current?: DesktopControlGuard) => void;
   captureApproval?: (
     session: Session,
     requestId: number,
@@ -173,7 +177,12 @@ export type DesktopLiveHandlers = {
     decision: "allow" | "deny",
     expected?: ApprovalRequestToken,
   ) => void | boolean | Promise<boolean>;
-  answer: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
+  answer: (
+    sessionId: string,
+    requestId: number,
+    reply: UserQuestionReply,
+    current?: () => boolean,
+  ) => void;
 };
 
 /** Drops functions/undefined so the value survives the JSON bridge. */
@@ -314,13 +323,15 @@ function dispatchDesktopLiveCommand(
   handlers: DesktopLiveHandlers,
   originalApprovals?: readonly DesktopApprovalSource[],
   approvalOccurrenceSupported = true,
+  current?: DesktopControlGuard,
 ): DesktopCommandOutcome {
   const session = sessions.find((candidate) => candidate.id === command.sessionId);
   if (!session || session.worktreeRemoved) return "stale";
   const id = command.requestId;
   if (command.type === "cancel") {
     if (!session.busy) return "stale";
-    handlers.stop(session.id);
+    if (current) handlers.stop(session.id, current);
+    else handlers.stop(session.id);
     return "applied";
   }
   if (id === undefined || id === null || !Number.isFinite(Number(id))) return "stale";
@@ -367,7 +378,8 @@ function dispatchDesktopLiveCommand(
   if (command.type === "answer") {
     if (!command.reply) return "stale";
     if (String(session.pendingQuestion?.requestId) !== String(requestId)) return "stale";
-    handlers.answer(session.id, requestId, command.reply);
+    if (current) handlers.answer(session.id, requestId, command.reply, current);
+    else handlers.answer(session.id, requestId, command.reply);
     return "applied";
   }
   return "stale";
@@ -401,6 +413,19 @@ export async function runDesktopLiveTick(deps: {
   beat?: DesktopLiveBeat;
   now?: () => number;
   clientId?: string;
+  controlGuard?: {
+    pageToken: () => Promise<string>;
+    verify: (token: string) => Promise<void>;
+    capture: (session: Session) =>
+      | {
+          receipt: NativeControlTurnReceipt;
+          current: () => boolean;
+          question: unknown;
+          ready?: Promise<void>;
+          stopOrchestration?: () => Promise<void>;
+        }
+      | undefined;
+  };
   request: (payload: DesktopLivePayload) => Promise<DesktopLiveResult | undefined>;
   sessions: () => readonly Session[];
   writers?: () => string[];
@@ -432,7 +457,22 @@ export async function runDesktopLiveTick(deps: {
   const acked = [...deps.unacked];
   const now = deps.now ?? Date.now;
   const originalSessions = deps.sessions();
-  const live = buildDesktopLiveSessions(originalSessions);
+  const originalControls = new Map(
+    originalSessions.map((session) => [session.id, deps.controlGuard?.capture(session)]),
+  );
+  const pageToken = deps.controlGuard ? await deps.controlGuard.pageToken() : undefined;
+  for (const [id, original] of originalControls) {
+    if (!original?.ready) continue;
+    try {
+      await original.ready;
+    } catch {
+      originalControls.set(id, undefined);
+    }
+  }
+  const live = buildDesktopLiveSessions(originalSessions).map((entry) => {
+    const original = originalControls.get(entry.id);
+    return original ? { ...entry, turnReceipt: original.receipt } : entry;
+  });
   const projectDirectory = deps.projectDirectory?.();
   let directoryFingerprint: string | undefined;
   let directoryRevision: string | undefined;
@@ -496,6 +536,7 @@ export async function runDesktopLiveTick(deps: {
         }
       : {}),
     ...(deps.clientId ? { clientId: deps.clientId } : {}),
+    ...(pageToken ? { pageToken } : {}),
     sessions: live,
     ...(acked.length > 0 ? { acked } : {}),
     ...(deps.beat?.queueSeq !== undefined ? { queueSeq: deps.beat.queueSeq } : {}),
@@ -638,6 +679,28 @@ export async function runDesktopLiveTick(deps: {
       continue;
     }
     try {
+      let current: DesktopControlGuard | undefined;
+      if (command.type !== "retire-writer" && deps.controlGuard) {
+        const original = originalControls.get(command.sessionId);
+        if (
+          !pageToken ||
+          command.pageToken !== pageToken ||
+          !original ||
+          !command.turnReceipt ||
+          command.turnReceipt.version !== 1 ||
+          command.turnReceipt.sessionId !== original.receipt.sessionId ||
+          command.turnReceipt.turnId !== original.receipt.turnId
+        )
+          continue;
+        await deps.controlGuard.verify(pageToken);
+        current = () =>
+          original.current() &&
+          (command.type !== "answer" ||
+            deps.sessions().find((session) => session.id === command.sessionId)?.pendingQuestion ===
+              original.question);
+        if (original.stopOrchestration) current.stopOrchestration = original.stopOrchestration;
+        if (!current()) continue;
+      }
       if (command.type === "retire-writer") {
         if (!deps.handlers.retireWriter)
           throw new Error("Desktop writer retirement is unavailable. Reopen the updated app.");
@@ -693,11 +756,20 @@ export async function runDesktopLiveTick(deps: {
             deps.handlers,
             original ? [original.source] : originalApprovals,
             deps.approvalOccurrenceSupported === true,
+            current,
           );
           if (outcome === "held") continue;
           retained.records.delete(command.id);
         }
-      } else dispatchDesktopLiveCommand(command, deps.sessions(), deps.handlers);
+      } else
+        dispatchDesktopLiveCommand(
+          command,
+          deps.sessions(),
+          deps.handlers,
+          undefined,
+          true,
+          current,
+        );
     } catch (error) {
       console.error(error);
       continue; // Keep the command pending if its handler failed.

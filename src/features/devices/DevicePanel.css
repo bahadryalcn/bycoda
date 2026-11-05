@@ -20,7 +20,7 @@
   padding: 2px 4px;
   min-block-size: 2rem;
   min-inline-size: 0;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
 }
 .device-panel-toolbar {
   border-block-end: 1px solid var(--color-stroke);
@@ -49,7 +49,7 @@
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-  background: var(--ui-surface);
+  background: var(--ui-workspace-canvas-surface);
 }
 .device-panel-viewport {
   inline-size: 100%;
@@ -57,6 +57,7 @@
   overflow: auto;
 }
 .device-panel-canvas {
+  position: relative;
   container-type: size;
   display: flex;
   align-items: center;
@@ -65,7 +66,15 @@
   min-block-size: 0;
   padding: 3px;
 }
-.device-panel-canvas > img {
+.device-panel-preview-control {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.device-panel-preview-control img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
   display: block;
   max-inline-size: 100%;
   max-block-size: 100%;
@@ -73,7 +82,7 @@
   block-size: min(100cqh, calc(100cqw / var(--device-aspect, 0.46)));
   object-fit: contain;
 }
-.device-panel-canvas > img.host-frame-interactive {
+.device-panel-preview-control img.host-frame-interactive {
   touch-action: none;
   cursor: pointer;
   user-select: none;
@@ -234,7 +243,7 @@
 }
 .device-panel-summary {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: baseline;
   gap: 8px;
   min-inline-size: 0;
@@ -250,6 +259,7 @@
   text-overflow: ellipsis;
 }
 .device-panel-summary strong {
+  flex-shrink: 0;
   font-weight: 500;
   color: var(--color-content);
 }
@@ -285,4 +295,67 @@
   padding: 2px 10px 4px;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
+}
+.device-panel-coordinate-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.device-panel-swipe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.device-panel-inspector {
+  display: grid;
+  gap: 8px;
+}
+.device-panel-nodes {
+  max-block-size: 18rem;
+  overflow: auto;
+  border-block: 1px solid var(--color-stroke);
+}
+.device-panel-node-label {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.device-panel-node-label small {
+  display: block;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+}
+.device-panel-node-detail {
+  display: grid;
+  gap: 6px;
+  font-size: var(--ui-font-caption);
+}
+.device-panel-node-layer {
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+}
+.device-panel-node-layer svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
+.device-panel-node-layer rect {
+  fill: none;
+  stroke: var(--ui-tone-info-fg);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.device-panel-node-caption {
+  position: absolute;
+  inset-block-end: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  max-inline-size: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-surface-raised);
+  color: var(--ui-tone-info-fg);
+  font-size: var(--ui-font-caption);
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import {
   claimDueAutomations,
   recoverAutomationRuns,
@@ -12,14 +13,8 @@ export interface AutomationRecoveryDeps {
 
 // Startup recovery of pending automation runs and the 30s due-run scheduler.
 // Verbatim from Workspace.
-//
-// Recovery settles runs left over from an earlier process. Rust performs that
-// pass once per process: the first window to mount gets the pending runs to
-// relaunch, and every later window (a pop-out, a reload) gets an empty list,
-// so the runs live in other windows are neither cancelled nor started twice.
 export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDeps) {
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
-  // Only bounds the cutoff from below; Rust uses its process epoch.
   const automationRecoveryCutoffRef = useRef(Date.now());
 
   const ensureAutomationRecovery = useCallback(() => {
@@ -51,9 +46,11 @@ export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDe
     const evaluate = async () => {
       if (disposed || evaluating) return;
       evaluating = true;
-      // Materialize review intents only. SSH execution always needs a new owner review.
-      void refreshSshRunbookQueue();
       try {
+        if (!(await isLeadWindow()) || disposed) return;
+        // Keep one background scheduler alive even with hidden workspaces.
+        // Explicit recovery callers still use their original admission path.
+        void refreshSshRunbookQueue().catch(() => undefined);
         await ensureAutomationRecovery();
         const due = await claimDueAutomations();
         for (const item of due) {

@@ -111,11 +111,31 @@
   margin-inline-start: auto;
   flex-shrink: 0;
 }
-.actionSlot { display: flex; justify-content: flex-end; min-inline-size: 0; }
+.actionSlot {
+  display: flex;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
 
-.branchHeader { display: flex; min-block-size: 36px; align-items: center; gap: 4px; padding-inline: 6px; }
-.branchSlots { display: grid; grid-template-columns: repeat(3, var(--ui-control-height-compact)); align-items: center; gap: 4px; flex-shrink: 0; }
-.branchSlot { display: flex; justify-content: center; min-inline-size: 0; }
+.branchHeader {
+  display: flex;
+  min-block-size: 36px;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 6px;
+}
+.branchSlots {
+  display: grid;
+  grid-template-columns: repeat(3, var(--ui-control-height-compact));
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.branchSlot {
+  display: flex;
+  justify-content: center;
+  min-inline-size: 0;
+}
 
 @container changes (max-width: 340px) {
   .summary {

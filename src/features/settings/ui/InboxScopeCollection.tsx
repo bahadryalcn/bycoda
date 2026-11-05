@@ -77,7 +77,12 @@ export function InboxScopeCollection({
           variant="ghost"
           size="sm"
           disabled={disabled || matching.length === 0}
-          onClick={() => select(matching.map((item) => item.id), true)}
+          onClick={() =>
+            select(
+              matching.map((item) => item.id),
+              true,
+            )
+          }
         >
           {t("Select all")}
         </Button>
@@ -85,7 +90,12 @@ export function InboxScopeCollection({
           variant="ghost"
           size="sm"
           disabled={disabled || matching.length === 0}
-          onClick={() => select(matching.map((item) => item.id), false)}
+          onClick={() =>
+            select(
+              matching.map((item) => item.id),
+              false,
+            )
+          }
         >
           {t("Clear")}
         </Button>

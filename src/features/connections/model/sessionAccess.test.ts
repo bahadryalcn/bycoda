@@ -34,11 +34,20 @@ it("propagates owner failures without trying another adapter", async () => {
   expect(request).toHaveBeenCalledOnce();
 });
 
-it.each([localHostSessionAccess, remoteHostSessionAccess])("preserves explicit canonical page preview and digest choices", async (factory) => {
-  const request = vi.fn().mockResolvedValue({});
-  await factory(request).page("chat", 5, 8, true, false);
-  expect(request).toHaveBeenCalledWith("sessions.page", { sessionId: "chat", before: 5, revision: 8, preview: false, digests: true });
-});
+it.each([localHostSessionAccess, remoteHostSessionAccess])(
+  "preserves explicit canonical page preview and digest choices",
+  async (factory) => {
+    const request = vi.fn().mockResolvedValue({});
+    await factory(request).page("chat", 5, 8, true, false);
+    expect(request).toHaveBeenCalledWith("sessions.page", {
+      sessionId: "chat",
+      before: 5,
+      revision: 8,
+      preview: false,
+      digests: true,
+    });
+  },
+);
 
 it("passes caller-bound update/delete provenance and leaves legacy deletion unbound", async () => {
   const request = vi.fn().mockResolvedValue(undefined);

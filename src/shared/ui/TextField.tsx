@@ -17,14 +17,25 @@ export type TextFieldProps = InputProps & {
  * Arc field visuals with bycoda typography, focus and appearance roles. `hideLabel` keeps `label` as the
  * accessible name for editor-like fields whose visible context is elsewhere.
  */
-export function TextField({ fieldClassName, monospace = false, numeric = false, className, inputMode, ...props }: TextFieldProps) {
+export function TextField({
+  fieldClassName,
+  monospace = false,
+  numeric = false,
+  className,
+  inputMode,
+  ...props
+}: TextFieldProps) {
   return (
     <ArcInput
       {...props}
       inputMode={inputMode ?? (numeric ? "numeric" : undefined)}
       data-monospace={monospace ? "" : undefined}
       data-numeric={numeric ? "" : undefined}
-      className={[monospace && styles.monospace, numeric && styles.numeric, className].filter(Boolean).join(" ") || undefined}
+      className={
+        [monospace && styles.monospace, numeric && styles.numeric, className]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
       fieldClassName={["bycoda-arc bycoda-arc-field", fieldClassName].filter(Boolean).join(" ")}
     />
   );

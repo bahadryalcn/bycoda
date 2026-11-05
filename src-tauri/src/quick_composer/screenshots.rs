@@ -1,7 +1,7 @@
 use super::QuickAttachment;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 #[cfg(target_os = "macos")]
@@ -73,7 +73,7 @@ pub fn quick_composer_release_capture(
 
 // Stage copies first. If any copy fails the draft's originals remain usable.
 fn persist_to(
-    owned: &mut HashSet<PathBuf>,
+    owned: &HashSet<PathBuf>,
     files: &mut [QuickAttachment],
     destination: &Path,
 ) -> Result<(), String> {
@@ -111,6 +111,25 @@ fn persist_to(
     Ok(())
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn persist_snapshot(
+    owned: &Mutex<HashSet<PathBuf>>,
+    files: &mut [QuickAttachment],
+    destination: &Path,
+    persist: impl FnOnce(&HashSet<PathBuf>, &mut [QuickAttachment], &Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let snapshot = {
+        let owned = owned.lock().map_err(|err| err.to_string())?;
+        files.iter().filter_map(|file| {
+            let path = PathBuf::from(&file.path);
+            owned.contains(&path).then_some(path)
+        }).collect()
+    };
+    // Copy/fsync never holds the shared capture lock: explicit release and new
+    // captures remain responsive while this original request persists its bytes.
+    persist(&snapshot, files, destination)
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn persist(app: &AppHandle, files: &mut [QuickAttachment]) -> Result<(), String> {
     let destination = app
@@ -118,14 +137,11 @@ pub(crate) fn persist(app: &AppHandle, files: &mut [QuickAttachment]) -> Result<
         .app_data_dir()
         .map_err(|err| err.to_string())?
         .join("attachments/quick-captures");
-    persist_to(
-        &mut *app
-            .state::<Captures>()
-            .0
-            .lock()
-            .map_err(|err| err.to_string())?,
+    persist_snapshot(
+        &app.state::<Captures>().0,
         files,
         &destination,
+        persist_to,
     )
 }
 
@@ -241,6 +257,57 @@ mod tests {
             size: 4,
             path: path.to_string_lossy().into_owned(),
         }
+    }
+    #[test]
+    fn persistence_releases_capture_mutex_before_blocking_copy_and_keeps_exact_bytes() {
+        let root = temp();
+        let capture = root.join("capture/Screenshot.png");
+        std::fs::create_dir_all(capture.parent().unwrap()).unwrap();
+        let bytes = [0, 137, 80, 78, 71, 255, 10, 0];
+        std::fs::write(&capture, bytes).unwrap();
+        let owned = std::sync::Arc::new(Mutex::new(HashSet::from([capture.clone()])));
+        let original = owned.clone();
+        let input = capture.clone();
+        let destination = root.join("persistent");
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let work = std::thread::spawn(move || {
+            let mut file = attachment(&input);
+            file.size = 8;
+            let mut files = vec![file];
+            persist_snapshot(&original, &mut files, &destination, |snapshot, files, destination| {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                persist_to(snapshot, files, destination)
+            }).unwrap();
+            files
+        });
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(owned.try_lock().is_ok(), "copy/fsync must not hold the UI capture mutex");
+        release_tx.send(()).unwrap();
+        let files = work.join().unwrap();
+        assert_eq!(std::fs::read(&files[0].path).unwrap(), bytes);
+        assert!(owned.lock().unwrap().contains(&capture));
+        assert!(capture.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_original_release_during_preparation_cannot_publish_a_partial_attachment() {
+        let root = temp();
+        let capture = root.join("capture/Screenshot.png");
+        std::fs::create_dir_all(capture.parent().unwrap()).unwrap();
+        std::fs::write(&capture, b"test").unwrap();
+        let owned = Mutex::new(HashSet::from([capture.clone()]));
+        let mut files = vec![attachment(&capture)];
+        let result = persist_snapshot(&owned, &mut files, &root.join("persistent"), |snapshot, files, destination| {
+            release(&mut owned.lock().unwrap(), &[capture.to_string_lossy().into_owned()]);
+            persist_to(snapshot, files, destination)
+        });
+        assert!(result.is_err());
+        assert_eq!(files[0].path, capture.to_string_lossy());
+        assert!(!capture.exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn release_only_deletes_owned_captures_and_promotion_retains_session_copy() {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
 import { WorkspaceSourceControl } from "./WorkspaceSourceControl";

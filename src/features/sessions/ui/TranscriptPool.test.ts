@@ -216,7 +216,9 @@ describe("transcript pool", () => {
     const host = pool.getSnapshot()[0].host!;
     act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: false })));
     const hidden = pool.getSnapshot();
-    act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: false, parked: false })));
+    act(() =>
+      pool.show("a", host, createElement(Probe, { id: "a", visible: false, parked: false })),
+    );
     // Same outlet snapshot: no re-render of the hidden transcript.
     expect(pool.getSnapshot()).toBe(hidden);
     act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: true })));

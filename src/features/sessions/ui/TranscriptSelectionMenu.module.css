@@ -1,0 +1,45 @@
+.menu {
+  padding: 4px;
+}
+.toolbar {
+  inline-size: max-content;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+.rail {
+  max-block-size: min(20rem, 60vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.comment {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  font-family: var(--font-sans);
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.quote {
+  margin: 0;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--ui-interaction-ink);
+  max-block-size: 112px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.65;
+}
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

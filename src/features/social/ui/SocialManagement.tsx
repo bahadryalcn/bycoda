@@ -22,12 +22,15 @@ import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SocialContactHistory } from "./SocialHistoryPage";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { JobHistory } from "./SocialHistory";
+import { socialQueryScope } from "../model/socialQuery";
 import type { SocialContact, SocialSnapshot, SocialThread } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { SocialModelField } from "./SocialModelField";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { DEFAULT_SOCIAL_POLICIES, effectiveSocialPolicy } from "../model/socialPolicy";
 import { DraftList } from "./SocialDrafts";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { SocialAudienceContactRow } from "./SocialAudienceContactRow";
 import {
   CONTACT_IMPORT_MAX_BYTES,
   previewContactImport,
@@ -81,7 +84,10 @@ export function Audience({
     /** Tags added to the draft rows from accepted AI suggestions (not saved until the import). */
     suggested?: number;
   }>();
-  const [tagReview, setTagReview] = useState<{ mode: "import" | "contacts"; subjects: ContactTagSubject[] }>();
+  const [tagReview, setTagReview] = useState<{
+    mode: "import" | "contacts";
+    subjects: ContactTagSubject[];
+  }>();
   useEffect(() => {
     if (importOpen) importSection.current?.scrollIntoView({ block: "nearest" });
   }, [importOpen]);
@@ -337,67 +343,31 @@ export function Audience({
           ) : null}
           {contacts.length ? (
             <div className="social-list">
-              {contacts.map((contact) => (
-                <div className="social-selection-row" key={contact.id}>
-                  <label>
-                    <Checkbox
-                      disabled={socialLocked}
-                      aria-label={t("Select contact {p0}", { p0: contact.name })}
-                      checked={checkedIds.includes(contact.id)}
-                      onChange={(event) =>
-                        setCheckedIds((current) =>
-                          event.target.checked
-                            ? [...current, contact.id]
-                            : current.filter((id) => id !== contact.id),
-                        )
-                      }
-                    />
-                  </label>
-                  <Button
+              <ContinuousList
+                items={contacts}
+                itemKey={(contact) => contact.id}
+                stateKey={`social-audience:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${accountFilter}:${segment}:${query}`}
+                requiredKey={selectedId}
+                estimateSize={108}
+                renderItem={(contact) => (
+                  <SocialAudienceContactRow
+                    contact={contact}
+                    snapshot={snapshot}
+                    projects={projects}
+                    selected={contact.id === selectedId}
+                    checked={checkedIds.includes(contact.id)}
                     disabled={socialLocked}
-                    type="button"
-                    variant="tab"
-                    layout="stacked"
-                    className="social-row"
-                    aria-label={contact.name}
-                    aria-pressed={contact.id === selectedId}
-                    onClick={() => setSelectedId(contact.id)}
-                  >
-                    <strong>{contact.name}</strong>
-                    <span>
-                      {snapshot.accounts.find((account) => account.id === contact.accountId)
-                        ?.name ?? t("Account not found")}{" "}
-                      · {contact.platformId}
-                    </span>
-                    <span>
-                      {contact.projectIds
-                        .map(
-                          (id) =>
-                            projects.find((project) => project.id === id)?.name ??
-                            t("Inaccessible project"),
-                        )
-                        .join(", ")}
-                      {contact.tags.length ? ` · ${contact.tags.join(", ")}` : ""}
-                    </span>
-                    <StatusBadge
-                      status={
-                        contact.optedOut
-                          ? "cancelled"
-                          : contact.consent?.allowed
-                            ? "available"
-                            : "review"
-                      }
-                      label={
-                        contact.optedOut
-                          ? t("Contact closed")
-                          : contact.consent?.allowed
-                            ? t("Messaging allowed")
-                            : t("No messaging consent")
-                      }
-                    />
-                  </Button>
-                </div>
-              ))}
+                    onCheckedChange={(checked) =>
+                      setCheckedIds((current) =>
+                        checked
+                          ? [...current, contact.id]
+                          : current.filter((id) => id !== contact.id),
+                      )
+                    }
+                    onSelect={() => setSelectedId(contact.id)}
+                  />
+                )}
+              />
             </div>
           ) : (
             <Empty
@@ -406,22 +376,56 @@ export function Audience({
                   ? t("No contacts found")
                   : t("Build your audience")
               }
-            action={<div className="mt-2 flex flex-wrap gap-2">
-                {query || segment || accountFilter ? <Button variant="ghost" onClick={() => { setQuery(""); setSegment(""); setAccountFilter(""); }}>{t("Clear filters")}</Button> : <>
-                  <Button onClick={() => setCreateRequest((value) => value + 1)} disabled={socialLocked}>{t("Add contact")}</Button>
-                  <Button variant="ghost" onClick={() => setImportOpen(true)} disabled={socialLocked}>{t("Import contacts")}</Button>
-                </>}
-              </div>}
-              >
+              action={
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {query || segment || accountFilter ? (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setQuery("");
+                        setSegment("");
+                        setAccountFilter("");
+                      }}
+                    >
+                      {t("Clear filters")}
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={() => setCreateRequest((value) => value + 1)}
+                        disabled={socialLocked}
+                      >
+                        {t("Add contact")}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setImportOpen(true)}
+                        disabled={socialLocked}
+                      >
+                        {t("Import contacts")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              }
+            >
               {query || segment || accountFilter
                 ? t("No contact matches your search.")
                 : t("Add a contact or import your contact list.")}
-              
             </Empty>
           )}
-          <details ref={importSection} className="social-settings" open={importOpen} onToggle={(event) => setImportOpen(event.currentTarget.open)}>
+          <details
+            ref={importSection}
+            className="social-settings"
+            open={importOpen}
+            onToggle={(event) => setImportOpen(event.currentTarget.open)}
+          >
             <summary>{t("Import contacts")}</summary>
-            <p className="text-ui-caption text-(--ui-text-secondary)">{t("Choose a JSON file. You review every row before anything is imported, and importing never grants permission to message anyone.")}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t(
+                "Choose a JSON file. You review every row before anything is imported, and importing never grants permission to message anyone.",
+              )}
+            </p>
             <TextField
               key={importPreview?.name ?? "no-file"}
               disabled={socialLocked || pendingUi.is("contacts.import")}
@@ -443,123 +447,161 @@ export function Audience({
                 })();
               }}
             />
-            {importPreview ? (() => {
-              const { preview } = importPreview;
-              const valid = preview.rows.filter((row) => row.contact);
-              const invalid = preview.rows.filter((row) => !row.contact);
-              const ignored = [...new Set(preview.rows.flatMap((row) => row.ignored))];
-              return (
-                <div className="social-import-preview" role="group" aria-label={t("Import preview")}>
-                  {preview.error ? (
-                    <Notice kind="error" title={t("This file cannot be imported")}>{preview.error}</Notice>
-                  ) : (
-                    <>
-                      <p>
-                        <strong>{importPreview.name}</strong> · {t("{p0} contacts ready", { p0: valid.length })}
-                        {invalid.length ? " · " + t("{p0} rows need attention", { p0: invalid.length }) : ""}
-                      </p>
-                      {invalid.length ? (
-                        <Notice kind="warning" title={t("These rows will be skipped")}>
-                          <ul>
-                            {invalid.slice(0, 8).map((row) => (
-                              <li key={row.row}>{t("Row {p0}", { p0: row.row })}: {row.issues.join(" ")}</li>
-                            ))}
-                          </ul>
-                          {invalid.length > 8 ? <p>{t("And {p0} more rows.", { p0: invalid.length - 8 })}</p> : null}
+            {importPreview
+              ? (() => {
+                  const { preview } = importPreview;
+                  const valid = preview.rows.filter((row) => row.contact);
+                  const invalid = preview.rows.filter((row) => !row.contact);
+                  const ignored = [...new Set(preview.rows.flatMap((row) => row.ignored))];
+                  return (
+                    <div
+                      className="social-import-preview"
+                      role="group"
+                      aria-label={t("Import preview")}
+                    >
+                      {preview.error ? (
+                        <Notice kind="error" title={t("This file cannot be imported")}>
+                          {preview.error}
                         </Notice>
-                      ) : null}
-                      {ignored.length ? (
-                        <p className="text-ui-caption text-(--ui-text-secondary)">
-                          {t("Not imported: {p0}. Consent and eligibility are never taken from a file.", { p0: ignored.join(", ") })}
-                        </p>
-                      ) : null}
-                      {valid.length ? (
-                        <details className="social-import-tags">
-                          <summary>
-                            {importPreview.suggested
-                              ? t("Tags in this import · {p0} added from AI suggestions", { p0: importPreview.suggested })
-                              : t("Tags in this import")}
-                          </summary>
-                          <ul>
-                            {valid.slice(0, 50).map((row) => (
-                              <li key={row.row}>
-                                <strong>{row.contact?.name}</strong>
-                                {" · "}
-                                {row.contact?.tags?.length ? row.contact.tags.join(", ") : t("No tags")}
-                              </li>
-                            ))}
-                          </ul>
-                          {valid.length > 50 ? <p>{t("And {p0} more rows.", { p0: valid.length - 50 })}</p> : null}
-                        </details>
-                      ) : null}
-                    </>
-                  )}
-                  <div className="social-actions">
-                    {!preview.error && valid.length ? (
-                      <Button
-                        loading={pendingUi.is("contacts.import")}
-                        disabled={socialLocked}
-                        onClick={() =>
-                          void (async () => {
-                            if (
-                              await pendingUi.run("contacts.import", () =>
-                                run(
-                                  () => client.request("contacts.import", { contacts: valid.map((row) => row.contact) }),
-                                  t("{p0} contacts imported. They have no messaging consent yet.", { p0: valid.length }),
+                      ) : (
+                        <>
+                          <p>
+                            <strong>{importPreview.name}</strong> ·{" "}
+                            {t("{p0} contacts ready", { p0: valid.length })}
+                            {invalid.length
+                              ? " · " + t("{p0} rows need attention", { p0: invalid.length })
+                              : ""}
+                          </p>
+                          {invalid.length ? (
+                            <Notice kind="warning" title={t("These rows will be skipped")}>
+                              <ul>
+                                {invalid.slice(0, 8).map((row) => (
+                                  <li key={row.row}>
+                                    {t("Row {p0}", { p0: row.row })}: {row.issues.join(" ")}
+                                  </li>
+                                ))}
+                              </ul>
+                              {invalid.length > 8 ? (
+                                <p>{t("And {p0} more rows.", { p0: invalid.length - 8 })}</p>
+                              ) : null}
+                            </Notice>
+                          ) : null}
+                          {ignored.length ? (
+                            <p className="text-ui-caption text-(--ui-text-secondary)">
+                              {t(
+                                "Not imported: {p0}. Consent and eligibility are never taken from a file.",
+                                { p0: ignored.join(", ") },
+                              )}
+                            </p>
+                          ) : null}
+                          {valid.length ? (
+                            <details className="social-import-tags">
+                              <summary>
+                                {importPreview.suggested
+                                  ? t("Tags in this import · {p0} added from AI suggestions", {
+                                      p0: importPreview.suggested,
+                                    })
+                                  : t("Tags in this import")}
+                              </summary>
+                              <ul>
+                                {valid.slice(0, 50).map((row) => (
+                                  <li key={row.row}>
+                                    <strong>{row.contact?.name}</strong>
+                                    {" · "}
+                                    {row.contact?.tags?.length
+                                      ? row.contact.tags.join(", ")
+                                      : t("No tags")}
+                                  </li>
+                                ))}
+                              </ul>
+                              {valid.length > 50 ? (
+                                <p>{t("And {p0} more rows.", { p0: valid.length - 50 })}</p>
+                              ) : null}
+                            </details>
+                          ) : null}
+                        </>
+                      )}
+                      <div className="social-actions">
+                        {!preview.error && valid.length ? (
+                          <Button
+                            loading={pendingUi.is("contacts.import")}
+                            disabled={socialLocked}
+                            onClick={() =>
+                              void (async () => {
+                                if (
+                                  await pendingUi.run("contacts.import", () =>
+                                    run(
+                                      () =>
+                                        client.request("contacts.import", {
+                                          contacts: valid.map((row) => row.contact),
+                                        }),
+                                      t(
+                                        "{p0} contacts imported. They have no messaging consent yet.",
+                                        { p0: valid.length },
+                                      ),
+                                    ),
+                                  )
+                                )
+                                  setImportPreview(undefined);
+                              })()
+                            }
+                          >
+                            {invalid.length
+                              ? t("Import {p0} valid contacts", { p0: valid.length })
+                              : t("Import {p0} contacts", { p0: valid.length })}
+                          </Button>
+                        ) : null}
+                        {!preview.error && valid.length ? (
+                          <Button
+                            variant="secondary"
+                            startIcon={<Sparkles aria-hidden="true" />}
+                            disabled={socialLocked || pendingUi.is("contacts.import")}
+                            onClick={() =>
+                              setTagReview({
+                                mode: "import",
+                                subjects: valid.flatMap((row) =>
+                                  row.contact
+                                    ? [
+                                        {
+                                          ref: String(row.row),
+                                          accountId: row.contact.accountId,
+                                          platformId: row.contact.platformId,
+                                          projectIds: row.contact.projectIds,
+                                          name: row.contact.name,
+                                          profileUrl: row.contact.profileUrl,
+                                          language: row.contact.language,
+                                          tags: row.contact.tags ?? [],
+                                        },
+                                      ]
+                                    : [],
                                 ),
-                              )
-                            )
-                              setImportPreview(undefined);
-                          })()
-                        }
-                      >
-                        {invalid.length ? t("Import {p0} valid contacts", { p0: valid.length }) : t("Import {p0} contacts", { p0: valid.length })}
-                      </Button>
-                    ) : null}
-                    {!preview.error && valid.length ? (
-                      <Button
-                        variant="secondary"
-                        startIcon={<Sparkles aria-hidden="true" />}
-                        disabled={socialLocked || pendingUi.is("contacts.import")}
-                        onClick={() =>
-                          setTagReview({
-                            mode: "import",
-                            subjects: valid.flatMap((row) =>
-                              row.contact
-                                ? [
-                                    {
-                                      ref: String(row.row),
-                                      accountId: row.contact.accountId,
-                                      platformId: row.contact.platformId,
-                                      projectIds: row.contact.projectIds,
-                                      name: row.contact.name,
-                                      profileUrl: row.contact.profileUrl,
-                                      language: row.contact.language,
-                                      tags: row.contact.tags ?? [],
-                                    },
-                                  ]
-                                : [],
-                            ),
-                          })
-                        }
-                      >
-                        {t("Suggest tags")}
-                      </Button>
-                    ) : null}
-                    <Button variant="ghost" disabled={socialLocked || pendingUi.is("contacts.import")} onClick={() => setImportPreview(undefined)}>
-                      {t("Choose another file")}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })() : null}
+                              })
+                            }
+                          >
+                            {t("Suggest tags")}
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          disabled={socialLocked || pendingUi.is("contacts.import")}
+                          onClick={() => setImportPreview(undefined)}
+                        >
+                          {t("Choose another file")}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })()
+              : null}
             {pendingUi.is("contacts.import") ? (
               <Progress label={t("Operation in progress…")} />
             ) : null}
             <details>
               <summary>{t("File format")}</summary>
               <p className="text-ui-caption text-(--ui-text-secondary)">
-                {t("JSON array, up to 1 MiB and 500 contacts. Fields: accountId, platformId, name, projectIds, tags, language, profileUrl.")}
+                {t(
+                  "JSON array, up to 1 MiB and 500 contacts. Fields: accountId, platformId, name, projectIds, tags, language, profileUrl.",
+                )}
               </p>
             </details>
           </details>
@@ -620,7 +662,6 @@ export function Audience({
                 />
               </details>
               <SocialContactHistory contact={selected} client={client} />
-
               <DraftList
                 drafts={snapshot.drafts.filter(
                   (draft) => draft.contactId === selected.id && !draft.threadId,
@@ -628,6 +669,7 @@ export function Audience({
                 client={client}
                 run={run}
                 snapshot={snapshot}
+                scopeKey={`contact:${selected.id}`}
               />
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
                 <Button
@@ -1184,7 +1226,8 @@ export function Rules({
                     <option
                       value="comment"
                       disabled={snapshot.capabilities[accountId]?.some(
-                        (item) => item.operation === "comments.read" && item.status === "unsupported",
+                        (item) =>
+                          item.operation === "comments.read" && item.status === "unsupported",
                       )}
                     >
                       {t("Incoming comment")}
@@ -1371,7 +1414,10 @@ export function Rules({
                           label={t("Stop phrases")}
                           max={6}
                           rows={2}
-                          items={stopWords.map((word, index) => ({ id: `${index}:${word}`, label: word }))}
+                          items={stopWords.map((word, index) => ({
+                            id: `${index}:${word}`,
+                            label: word,
+                          }))}
                         />
                       ) : (
                         t("None")
@@ -1493,26 +1539,35 @@ export function Rules({
             />
           </div>
           <div className="social-list">
-            {visibleRules.map((rule) => (
-              <Button
-                disabled={socialLocked}
-                key={rule.id}
-                type="button"
-                variant="tab"
-                layout="stacked"
-                className="social-row"
-                aria-pressed={selectedRule?.id === rule.id}
-                onClick={() => setSelectedRuleId(rule.id)}
-              >
-                <strong>{rule.name}</strong>
-                <span>
-                  {snapshot.accounts.find((item) => item.id === rule.accountId)?.name ??
-                    t("Account not found")}{" "}
-                  · {rule.trigger === "comment" ? t("Comment") : t("Message")}
-                </span>
-                <StatusBadge status={rule.enabled ? "active" : "paused"} />
-              </Button>
-            ))}
+            {visibleRules.length ? (
+              <ContinuousList
+                items={visibleRules}
+                itemKey={(rule) => rule.id}
+                stateKey={`social-rules:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${ruleQuery}`}
+                requiredKey={selectedRule?.id}
+                estimateSize={92}
+                renderItem={(rule) => (
+                  <Button
+                    disabled={socialLocked}
+                    key={rule.id}
+                    type="button"
+                    variant="tab"
+                    layout="stacked"
+                    className="social-row"
+                    aria-pressed={selectedRule?.id === rule.id}
+                    onClick={() => setSelectedRuleId(rule.id)}
+                  >
+                    <strong>{rule.name}</strong>
+                    <span>
+                      {snapshot.accounts.find((item) => item.id === rule.accountId)?.name ??
+                        t("Account not found")}{" "}
+                      · {rule.trigger === "comment" ? t("Comment") : t("Message")}
+                    </span>
+                    <StatusBadge status={rule.enabled ? "active" : "paused"} />
+                  </Button>
+                )}
+              />
+            ) : null}
             {!visibleRules.length ? (
               <Empty
                 title={snapshot.rules.length ? t("No rules found") : t("Prepare replies with AI")}
@@ -1563,7 +1618,10 @@ export function Rules({
                     <StatusBadge status={rule.enabled ? "active" : "paused"} />
                     <BadgeList
                       label={t("Topics")}
-                      items={rule.topics.map((topic, index) => ({ id: `${index}:${topic}`, label: topic }))}
+                      items={rule.topics.map((topic, index) => ({
+                        id: `${index}:${topic}`,
+                        label: topic,
+                      }))}
                     />
                     {rule.pausedReason ? (
                       <Notice kind="warning" title={t("Rule paused")}>
@@ -1642,7 +1700,13 @@ export function Rules({
             : null}
           <h2>{t("Replies to review")}</h2>
 
-          <DraftList drafts={snapshot.drafts} client={client} run={run} snapshot={snapshot} />
+          <DraftList
+            drafts={snapshot.drafts}
+            client={client}
+            run={run}
+            snapshot={snapshot}
+            scopeKey={`rules:${ruleQuery}`}
+          />
           {!snapshot.drafts.length ? (
             <p className="social-muted">{t("No reply drafts to review.")}</p>
           ) : null}

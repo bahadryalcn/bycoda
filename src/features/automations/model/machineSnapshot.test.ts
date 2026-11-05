@@ -16,7 +16,11 @@ vi.mock("../../connections/model/connections", async (original) => ({
 }));
 
 import { listHostAutomations, probeMachines } from "./hostAutomationClient";
-import { MACHINE_SNAPSHOT_TTL_MS, invalidateMachineSnapshot } from "./machineSnapshot";
+import {
+  MACHINE_SNAPSHOT_TTL_MS,
+  invalidateMachineSnapshot,
+  machineCapabilities,
+} from "./machineSnapshot";
 import { goalMachines, listBoardGoals } from "../../tasks/model/goalClient";
 import { listBoardTasks, probeTaskMachines } from "../../tasks/model/taskClient";
 
@@ -54,6 +58,23 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("machine snapshot", () => {
+  it("evicts stalled discovery and ignores its late cache write", async () => {
+    let release!: (value: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = machineCapabilities(mac);
+    const failure = expect(pending).rejects.toThrow("Machine discovery timed out");
+    await vi.advanceTimersByTimeAsync(20_001);
+    await failure;
+    expect(await machineCapabilities(mac)).toContain("tasks");
+    release({ capabilities: ["obsolete"] });
+    await Promise.resolve();
+    expect(await machineCapabilities(mac)).toContain("tasks");
+  });
   it("shares Tasks and Goals metadata, then binds fresh automation reads to the original Host", async () => {
     // What TasksView does: three probes, then the task and goal lists.
     const [reach, goalHosts] = await Promise.all([
@@ -61,10 +82,7 @@ describe("machine snapshot", () => {
       goalMachines(),
       probeMachines(),
     ]);
-    await Promise.all([
-      listBoardTasks(reach.capable),
-      listBoardGoals(goalHosts),
-    ]);
+    await Promise.all([listBoardTasks(reach.capable), listBoardGoals(goalHosts)]);
     for (const machine of [mac, mini]) {
       expect(calls("environment.describe", machine.id)).toBe(1);
       expect(calls("projects.list", machine.id)).toBe(1);
@@ -72,11 +90,25 @@ describe("machine snapshot", () => {
     // Automation reveal needs a fresh, paired project/list read on the captured
     // environment; the shared Tasks/Goals cache cannot certify this source.
     await listHostAutomations(reach.capable);
-    for(const machine of [mac,mini]){
-      expect(calls("environment.describe",machine.id)).toBe(1);
-      expect(calls("projects.list",machine.id)).toBe(2);
-      expect(request).toHaveBeenCalledWith(machine.id,"projects.list",{},false,false,machine.environmentId);
-      expect(request).toHaveBeenCalledWith(machine.id,"automations.list",{},false,false,machine.environmentId);
+    for (const machine of [mac, mini]) {
+      expect(calls("environment.describe", machine.id)).toBe(1);
+      expect(calls("projects.list", machine.id)).toBe(2);
+      expect(request).toHaveBeenCalledWith(
+        machine.id,
+        "projects.list",
+        {},
+        false,
+        false,
+        machine.environmentId,
+      );
+      expect(request).toHaveBeenCalledWith(
+        machine.id,
+        "automations.list",
+        {},
+        false,
+        false,
+        machine.environmentId,
+      );
     }
   });
 

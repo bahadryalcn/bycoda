@@ -6,7 +6,7 @@ export type ToolWorkflowAvailability = {
 };
 
 /** Change when routing or recovery instructions change; delivery fingerprints include this text. */
-export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-01.1";
+export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-04.2";
 
 /** Keep these routes aligned with the host registry; exact schemas and permissions stay host-owned. */
 export const CONVERSATION_TOOL_WORKFLOWS = [
@@ -24,7 +24,7 @@ export const CONVERSATION_TOOL_WORKFLOWS = [
   ],
   [
     "devices",
-    "machines.list, devices.status/list, then preflight/open or preview; verify the matching device/preview result.",
+    "machines.list, devices.status/list and preflight for the exact target. Before input claim devices.control.claim with a unique requestId, keep its leaseId, renew before expiry, and release when done. Inspect with devices.inspect; pressNode requires its fresh inspectionId and nodeId. Bind every action to the leaseId and a unique requestId; reconcile uncertain outcomes without sending again. Preview and capture results do not prove app behavior.",
   ],
   [
     "machines",
@@ -32,7 +32,7 @@ export const CONVERSATION_TOOL_WORKFLOWS = [
   ],
   [
     "servers",
-    "list/get saved SSH records before permitted changes; saved configuration is not a live connection or trust approval.",
+    "list/get saved SSH records before permitted changes. For commands use servers.ssh.execute with native owner approval, then servers.ssh.status for output/exitCode; reuse requestId after uncertain completion and inspect status before retrying. servers.ssh.cancel stops local SSH only; remote outcome may remain unknown. Manual Servers terminals stay private. Saved configuration is not a live connection or trust approval; do not switch to raw ssh to bypass these gates.",
   ],
   [
     "terminals",
@@ -124,7 +124,7 @@ export const CONVERSATION_TOOL_WORKFLOWS = [
   ],
   [
     "visuals",
-    "Preview before rendering a requested inline visual; verify the result; a local screenshot is not a published inline visual.",
+    "Use visuals proactively when a diagram, comparison, UI concept or interactive example makes an answer clearer; no explicit HTML request is needed. Keep simple answers as text. Discover visuals.preview/render, preview and inspect the screenshot before rendering the same source. Use a short subject-based title, compact content and a fitted height; omit format labels such as 'interactive HTML', repeated headings and empty space. Verify the result; a local screenshot is not a published inline visual. These are explanations, not app changes or new operation authority.",
   ],
 ] as const;
 

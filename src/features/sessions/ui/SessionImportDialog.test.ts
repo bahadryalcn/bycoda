@@ -9,6 +9,7 @@ import type { SessionImportContext } from "../import/importModel";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke,
   convertFileSrc: (path: string) => path,
 }));

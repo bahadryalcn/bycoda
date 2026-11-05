@@ -7,7 +7,7 @@ import { MessageSquarePlus, X } from "../../../shared/ui/icons";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { diffCommentLocation, formatDiffComment } from "../model/diffComment";
 import { MOD } from "../../../platform/tauri/platform";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import type { UnifiedLine } from "../model/unifiedDiff";
 
 export type DiffCommentComposerTarget = {

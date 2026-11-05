@@ -1,8 +1,9 @@
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { useEffect, useRef } from "react";
 import { message } from "@tauri-apps/plugin-dialog";
 import { listDir, readTextFile } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
-import { watchFile } from "../../files/model/fileWatch";
+import { watchFile } from "../../files/public/fileWatch";
 import { parseCodeWorkspace } from "../model/codeWorkspace";
 import { saveWorkspaceProjectNames } from "../../workspace/model/tabGroups";
 import { reconcileLinkedWorkspace, setLinkedGroupStatus } from "../model/linkedWorkspace";
@@ -79,17 +80,27 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
     const added = result.toAdd.filter((_, index) => present[index]);
     const missing = new Set(result.toAdd.filter((_, index) => !present[index]).map(pathKey));
 
-    if (added.length > 0) {
-      rememberImportedProjects(added.map((path) => ({ path, lastUsedAt: Date.now() })));
-      onProjectsAdded();
-    }
-    changeProjectGroupMembers(groupId, added, result.toDetach);
-    // A folder that does not exist yet is retried at the next sync.
-    const linked = result.linked.filter((path) => !missing.has(pathKey(path)));
-    saveWorkspaceProjectNames(linked, names);
-    updateProjectGroup(groupId, (item) =>
-      item.workspaceFile === file ? { ...item, workspaceFolders: linked } : item,
-    );
+    // Recheck the group after Host drain; another window may have relinked it.
+    await withRoomPrivacyMutation(() => {
+      const latest = loadProjectGroups().find((item) => item.id === groupId);
+      if (
+        !latest ||
+        latest.workspaceFile !== file ||
+        JSON.stringify(latest.workspaceFolders ?? []) !==
+          JSON.stringify(current.workspaceFolders ?? [])
+      )
+        throw new Error("Workspace group changed while synchronizing. Refresh and try again.");
+      if (added.length > 0) {
+        rememberImportedProjects(added.map((path) => ({ path, lastUsedAt: Date.now() })));
+        onProjectsAdded();
+      }
+      changeProjectGroupMembers(groupId, added, result.toDetach);
+      const linked = result.linked.filter((path) => !missing.has(pathKey(path)));
+      saveWorkspaceProjectNames(linked, names);
+      updateProjectGroup(groupId, (item) =>
+        item.workspaceFile === file ? { ...item, workspaceFolders: linked } : item,
+      );
+    });
     setLinkedGroupStatus(groupId, null);
 
     if (result.toDetach.length > 0) {
@@ -98,6 +109,11 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
         { title: "Workspace group updated", kind: "info" },
       );
     }
+  } catch (error) {
+    setLinkedGroupStatus(groupId, {
+      state: "invalid",
+      message: error instanceof Error ? error.message : String(error),
+    });
   } finally {
     syncing.delete(groupId);
   }

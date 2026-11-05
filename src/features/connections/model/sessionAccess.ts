@@ -16,6 +16,11 @@ export type HostSessionList =
   | { unchanged: true; etag: string }
   | { etag: string; sessions: HostSessionSummary[] };
 export type HostSessionRequest = <T>(method: string, params: unknown) => Promise<T>;
+export type HostPinReceipt = {
+  state: "current" | "applied" | "superseded" | "refused";
+  version: number;
+  pinned: boolean | null;
+};
 
 /** Both adapters address the owner host. A transport failure never routes the
  * operation to the other host or creates a writable local copy. */
@@ -34,6 +39,7 @@ export interface SessionAccess {
     sessionId: string,
     options?: {
       revision?: number;
+      sourceEpoch?: string;
       waitMs?: number;
       partial?: boolean;
       loadedBlockIds?: string[];
@@ -46,6 +52,24 @@ export interface SessionAccess {
   dispatch(command: HostCommand): Promise<CommandReceipt>;
   status(commandId: string): Promise<CommandReceipt | null>;
   update(sessionId: string, patch: Record<string, unknown>): Promise<unknown>;
+  pinState(
+    sessionId: string,
+    projectId: string,
+    authorityGeneration?: number,
+  ): Promise<HostPinReceipt>;
+  pinApply(
+    sessionId: string,
+    projectId: string,
+    operationId: string,
+    desiredPinned: boolean,
+    expectedVersion: number,
+    authorityGeneration?: number,
+  ): Promise<HostPinReceipt>;
+  pinReceipt(
+    sessionId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<HostPinReceipt | null>;
   delete(sessionId: string, projectId: string, authorityGeneration?: number): Promise<unknown>;
 }
 
@@ -71,6 +95,26 @@ function hostAccess(kind: SessionAccess["kind"], request: HostSessionRequest): S
     dispatch: (command) => request("commands.dispatch", command),
     status: (commandId) => request("commands.status", { commandId }),
     update: (sessionId, patch) => request("sessions.update", { ...patch, sessionId }),
+    pinState: (sessionId, projectId, authorityGeneration) =>
+      request("sessions.pin.state", { sessionId, projectId, authorityGeneration }),
+    pinApply: (
+      sessionId,
+      projectId,
+      operationId,
+      desiredPinned,
+      expectedVersion,
+      authorityGeneration,
+    ) =>
+      request("sessions.pin.apply", {
+        sessionId,
+        projectId,
+        operationId,
+        desiredPinned,
+        expectedVersion,
+        authorityGeneration,
+      }),
+    pinReceipt: (sessionId, projectId, operationId) =>
+      request("sessions.pin.receipt", { sessionId, projectId, operationId }),
     delete: (sessionId, projectId, authorityGeneration) =>
       request("sessions.delete", {
         sessionId,

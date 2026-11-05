@@ -6,7 +6,7 @@
   --settings-column: 80rem;
   --settings-column-maximized: 96rem;
   --settings-group-gap: 28px;
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   container-type: inline-size;
   container-name: settings-workbench;
 }
@@ -27,6 +27,7 @@
   inset-block-start: 0;
   z-index: 2;
   flex-shrink: 0;
+  /* Sticky text must occlude the form while it scrolls underneath. */
   background: var(--color-background-base);
 }
 .settings-page-bar-inner {
@@ -72,7 +73,7 @@
   flex-shrink: 0;
   width: 200px;
   padding: 12px 8px 24px;
-  background: var(--ui-surface-panel);
+  background: var(--ui-workspace-panel);
   border-inline-end: 1px solid var(--ui-pane-border);
   overflow-y: auto;
   overscroll-behavior: contain;

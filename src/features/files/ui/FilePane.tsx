@@ -4,7 +4,7 @@ import { lazySurface } from "../../../shared/ui/lazySurface";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { memo, useSyncExternalStore } from "react";
-import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
+import { MarkdownViewShell, useMarkdownMode } from "../../sessions/public/MarkdownModeToggle";
 import { SurfaceTabs } from "../../workspace/ui/SurfaceTabs";
 import type { WindowMovePosition } from "../../../app/model/windowTransferPopout";
 import {
@@ -27,25 +27,28 @@ import { mediaKind } from "../model/mediaPreview";
 import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
 import type { EditorNavigationTarget, OpenFileFn } from "../../search/model/search";
 import { editorPathsEqual } from "../../search/model/search";
-import type { PlanBuildTarget, Session } from "../../sessions/model/session";
+import type { PlanBuildTarget, Session } from "../../sessions";
 import { Play } from "../../../shared/ui/icons";
-import { BuildTargetButton } from "../../sessions/ui/SecondOpinionButton";
-import { loadDiffViewer, subscribeDiffViewer } from "../../settings/model/settings";
-import { AgentTabView } from "../../sessions/ui/AgentTabView";
-import { usePaneSession } from "../../sessions/model/sessionsStore";
-import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
+import { BuildTargetButton } from "../../sessions/public/SecondOpinionButton";
+import { loadDiffViewer, subscribeDiffViewer } from "../../settings/public/settings";
+import { AgentTabView } from "../../sessions/public/AgentTabView";
+import { usePaneSession } from "../../sessions/public/sessionsStore";
+import { MarkdownPreview } from "../../sessions/public/AgentMarkdown";
 import { BinaryFileView } from "./BinaryFileView";
 import { DocumentView } from "./DocumentView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { PlanSelection } from "./PlanSelection";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 
 /** A pane that is still loading keeps its place with an indeterminate placeholder, not a blank area. */
 const paneLoading = { fallback: <SurfaceLoading /> };
 
 const CommitDiff = lazySurface(
-  async () => ({ default: (await import("../../source-control/ui/CommitDiff")).CommitDiff }),
+  async () => ({
+    default: (await import("../../source-control").then((entry) => entry.loadCommitDiff()))
+      .CommitDiff,
+  }),
   paneLoading,
 );
 const FileEditor = lazySurface(
@@ -62,7 +65,8 @@ const DelimitedFileView = lazySurface(
 );
 const SessionChangesDiff = lazySurface(
   async () => ({
-    default: (await import("../../source-control/ui/SessionChangesDiff")).SessionChangesDiff,
+    default: (await import("../../source-control").then((entry) => entry.loadSessionChangesDiff()))
+      .SessionChangesDiff,
   }),
   paneLoading,
 );
@@ -72,7 +76,8 @@ const TerminalView = lazySurface(
 );
 const WorkingTreeDiff = lazySurface(
   async () => ({
-    default: (await import("../../source-control/ui/WorkingTreeDiff")).WorkingTreeDiff,
+    default: (await import("../../source-control").then((entry) => entry.loadWorkingTreeDiff()))
+      .WorkingTreeDiff,
   }),
   paneLoading,
 );

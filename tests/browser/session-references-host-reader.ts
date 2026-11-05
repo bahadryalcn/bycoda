@@ -28,8 +28,7 @@ export function useReadOnlyHostSession(
       blocks: state === "ready" ? shell.blocks : [],
       historyLoading: state === "loading",
     },
-    error:
-      state === "error" ? "Local Host is temporarily unavailable." : undefined,
+    error: state === "error" ? "Local Host is temporarily unavailable." : undefined,
     retry: () => setFixtureWorkerMode("ready"),
     remoteHistoryHasMore: false,
     remoteHistoryLoading: false,

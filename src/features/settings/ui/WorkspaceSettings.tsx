@@ -109,7 +109,10 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
     loadLiveAgentsEnabled,
     subscribeLiveAgentsEnabled,
   );
-  const [fileTabMode, setFileTabMode] = useStoredPreferenceState(loadFileTabMode, subscribeFileTabMode);
+  const [fileTabMode, setFileTabMode] = useStoredPreferenceState(
+    loadFileTabMode,
+    subscribeFileTabMode,
+  );
   const [fileTabError, setFileTabError] = useState(false);
   const [liveAgentsError, setLiveAgentsError] = useState(false);
 
@@ -168,9 +171,11 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           id="file-tabs"
           label={t("File tabs")}
           description={t("Choose where files open. Both layouts support split panes.")}
-          feedback={fileTabError ? (
-            <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
-          ) : undefined}
+          feedback={
+            fileTabError ? (
+              <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+            ) : undefined
+          }
         >
           <Segmented
             label={t("File tabs")}
@@ -198,14 +203,20 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
       <Group
         title={t("Workspace tools")}
         info={<WorkspaceToolsHelp />}
-        scope={t("Controls navigation visibility. Hiding this tool does not stop work or change permissions.")}
+        scope={t(
+          "Controls navigation visibility. Hiding this tool does not stop work or change permissions.",
+        )}
       >
         <WorkspaceFeatureSettings />
         <Row
           id="working-agents"
           label={t("Working agents")}
           description={t("Show running and recently finished chats in the project rail.")}
-          feedback={liveAgentsError ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
+          feedback={
+            liveAgentsError ? (
+              <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+            ) : undefined
+          }
         >
           <Toggle
             label={t("Working agents")}
@@ -214,35 +225,37 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           />
         </Row>
       </Group>
-      {IS_MAC ? <Group title={t("Session access")}>
-        {IS_MAC && (
-          <Row
-            id="quick-composer"
-            label={t("Quick composer")}
-            feedback={
-              quickComposerError ? (
-                <SettingsFeedback state="error">{quickComposerError}</SettingsFeedback>
-              ) : quickComposerSaving ? (
-                <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
-              ) : undefined
-            }
-            description={t(
-              "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.",
-              {
-                p0: quickComposerShortcutLabel(loadQuickComposerShortcut()),
-                p1: PRODUCT_IDENTITY.displayName,
-              },
-            )}
-          >
-            <Toggle
+      {IS_MAC ? (
+        <Group title={t("Session access")}>
+          {IS_MAC && (
+            <Row
+              id="quick-composer"
               label={t("Quick composer")}
-              on={quickComposerEnabled}
-              disabled={quickComposerSaving}
-              onChange={onQuickComposerEnabled}
-            />
-          </Row>
-        )}
-      </Group> : null}
+              feedback={
+                quickComposerError ? (
+                  <SettingsFeedback state="error">{quickComposerError}</SettingsFeedback>
+                ) : quickComposerSaving ? (
+                  <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
+                ) : undefined
+              }
+              description={t(
+                "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.",
+                {
+                  p0: quickComposerShortcutLabel(loadQuickComposerShortcut()),
+                  p1: PRODUCT_IDENTITY.displayName,
+                },
+              )}
+            >
+              <Toggle
+                label={t("Quick composer")}
+                on={quickComposerEnabled}
+                disabled={quickComposerSaving}
+                onChange={onQuickComposerEnabled}
+              />
+            </Row>
+          )}
+        </Group>
+      ) : null}
       <Group
         title={t("Experimental settings")}
         scope={t("Applies to new turns on this computer's Host.")}

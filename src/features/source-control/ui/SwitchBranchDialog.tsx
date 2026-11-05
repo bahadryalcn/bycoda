@@ -160,29 +160,29 @@ export function SwitchBranchDialog({
             }}
           />
           <div className="flex items-center justify-end gap-1">
-          {generating ? <WorkingIndicator label={t("Working")} /> : null}
-          <Button
-            iconOnly
-            variant="ghost"
-            size="sm"
-            motion="none"
-            type="button"
-            label={
-              generating ? t("Cancel commit message generation") : t("Generate commit message")
-            }
-            tooltip={
-              generating ? t("Cancel commit message generation") : t("Generate commit message")
-            }
-            disabled={Boolean(busy)}
-            onClick={() => (generating ? cancelGenerate() : void generate())}
-            className="self-end"
-          >
-            {generating ? (
+            {generating ? <WorkingIndicator label={t("Working")} /> : null}
+            <Button
+              iconOnly
+              variant="ghost"
+              size="sm"
+              motion="none"
+              type="button"
+              label={
+                generating ? t("Cancel commit message generation") : t("Generate commit message")
+              }
+              tooltip={
+                generating ? t("Cancel commit message generation") : t("Generate commit message")
+              }
+              disabled={Boolean(busy)}
+              onClick={() => (generating ? cancelGenerate() : void generate())}
+              className="self-end"
+            >
+              {generating ? (
                 <X className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <WandSparkles className="icon-sm" strokeWidth={1.75} />
-            )}
-          </Button>
+              ) : (
+                <WandSparkles className="icon-sm" strokeWidth={1.75} />
+              )}
+            </Button>
           </div>
         </div>
 

@@ -48,7 +48,15 @@ export type RuleSimplifyInput = {
 /** The fields `automations.create` reads (always saved paused). */
 export type RuleDraft = Pick<
   SocialRule,
-  "name" | "accountId" | "projectId" | "mode" | "trigger" | "topics" | "dailyLimit" | "stopWords" | "answers"
+  | "name"
+  | "accountId"
+  | "projectId"
+  | "mode"
+  | "trigger"
+  | "topics"
+  | "dailyLimit"
+  | "stopWords"
+  | "answers"
 > & { agent?: SocialAgent };
 
 export type RuleChangeField = "name" | "mode" | "topics" | "dailyLimit" | "stopWords" | "answers";

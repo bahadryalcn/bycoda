@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { projectFilesTruncated } from "../../../platform/tauri/fs";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
@@ -26,14 +27,14 @@ import {
   type RankedFile,
 } from "../model/fileIndex";
 import { fuzzyMatch, type FuzzyHit } from "../../../shared/lib/fuzzy";
-import { isRemoteProjectPath, looksLikeProject } from "../../projects/model/recents";
+import { isRemoteProjectPath, looksLikeProject } from "../../projects/public/recents";
 import type { OpenFileFn } from "../../search/model/search";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ALT, MOD, SHIFT } from "../../../platform/tauri/platform";
-import { keybindingShortcutLabel, loadNotesEnabled } from "../../settings/model/settings";
+import { keybindingShortcutLabel, loadNotesEnabled } from "../../settings/public/settings";
 import { NOTES_PANEL_COMMAND } from "../../notes/notesPanel";
 import { LAYOUT_PRESETS } from "../../workspace/model/layoutPresets";
 type Action = {
@@ -370,6 +371,16 @@ export function FilePicker({
               {t("Retry")}
             </Button>
           </div>
+        ) : null}
+        {!paletteMode &&
+        !loading &&
+        looksLikeProject(cwd) &&
+        projectFilesTruncated(files) !== false ? (
+          <p className="px-3 pb-2 text-ui-caption text-[var(--ui-text-secondary)]">
+            {projectFilesTruncated(files)
+              ? t("File index is incomplete; some files may not appear.")
+              : t("File index completeness is unknown; some files may not appear.")}
+          </p>
         ) : null}
         {empty && !(error && !files.length) ? (
           <p

@@ -1,24 +1,35 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
+import { createProbeGrantWarningFilter } from "./security/probe-grant-warning";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import {
   SessionToolsRelay,
   type SessionToolGroup,
   type SessionToolCapability,
-} from "./session-tools-relay";
-import { authorizeSocialAcpFrame } from "./social-tools";
-import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
-import { authorizeConversationAcpFrame } from "./conversation-tools";
-import { join, basename, dirname, extname, isAbsolute } from "node:path";
-import { readFile, stat, mkdtemp, mkdir, writeFile, open, realpath, rm } from "node:fs/promises";
-import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
+} from "./sessions/session-tools-relay";
+import { authorizeSocialAcpFrame } from "./social/social-tools";
+import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./execution/runtime-log-tools";
+import { authorizeConversationAcpFrame } from "./conversation/conversation-tools";
+import { join, basename, dirname, extname, isAbsolute, relative } from "node:path";
+import {
+  readFile,
+  stat,
+  lstat,
+  rm,
+  rename,
+  mkdtemp,
+  mkdir,
+  writeFile,
+  open,
+  realpath,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { homedir, tmpdir } from "node:os";
-import { GenericAcpService } from "./generic-acp";
+import { GenericAcpService } from "./providers/generic-acp";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
-import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./generated-images";
+import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./files/generated-images";
 import type { ChildBackend } from "../src/integrations/harness/core/child";
 import {
   isHarnessConstructionId,
@@ -27,30 +38,30 @@ import {
 } from "../src/shared/model/harnessProcess";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { binaryNames, providerLaunch, resolveProvider } from "./process";
-import { providerAccountEnvironment } from "./provider-accounts";
-import { providerAuthStatus } from "./provider-auth";
+import { providerAccountEnvironment } from "./providers/provider-accounts";
+import { providerAuthStatus } from "./providers/provider-auth";
 import {
   ProviderLines,
   PROVIDER_STDOUT_LINE_BYTES,
   PROVIDER_STDERR_LINE_BYTES,
-} from "./provider-lines";
+} from "./providers/provider-lines";
 import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
-import type { ProviderChild } from "./provider-child";
+import type { ProviderChild } from "./providers/provider-child";
 import { NativeGuardianChild, ProviderGuardianError } from "./provider-guardian";
 import { prepareProviderGuardian } from "./provider-guardian-deployment";
-import { ProviderConstructions } from "./provider-constructions";
+import { ProviderConstructions } from "./providers/provider-constructions";
 import {
   HostRunWriters,
   type HostRunProcessReservation,
   type HostRunProcessSource,
   type HostRunCwdGrant,
-} from "./run-writers";
-import { canonicalWorkspacePath, workspacePathKey } from "./workspace-paths";
+} from "./execution/run-writers";
+import { canonicalWorkspacePath, workspacePathKey } from "./workspaces/workspace-paths";
 import {
   HostRunHttpTargets,
   type HostHttpOrigin,
   type HostHttpSourceHint,
-} from "./run-http-targets";
+} from "./execution/run-http-targets";
 import { parseServerUrlFromOutput } from "../src/integrations/harness/providers/opencode/opencodeProtocol";
 import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 
@@ -161,22 +172,16 @@ export async function readProviderBinaryOverrides(
   }
 }
 
-/** A text sandbox nobody started a provider in is released after this long. */
-export const TEXT_WORKSPACE_TTL_MS = 60 * 60 * 1000;
-type TextWorkspace = {
-  /** The mkdtemp path as returned to the caller; removed on release. */
-  cwd: string;
-  /** Raw and canonical path keys a provider start may use to name this directory. */
-  keys: Set<string>;
-  /** Host-run ownership grant; only a granted sandbox is discoverable by a provider start. */
-  grant?: HostRunCwdGrant;
-  slot?: object;
-  /** Monotonic reading taken at creation, for the unused-sandbox TTL. */
-  createdAt: number;
-  /** The provider running inside; its lifecycle completion releases the sandbox. */
-  child?: ProviderChild;
-};
 type PreparedTool = { env: NodeJS.ProcessEnv; mcpUrl?: string };
+type TextWorkspaceSlot = {
+  run: HostRunHandle;
+  cwd?: string;
+  key?: string;
+  cleanupPath?: string;
+  grant?: HostRunCwdGrant;
+  identity?: { dev: number; ino: number };
+  preparing: boolean;
+};
 type ToolPreparation = {
   live: boolean;
   owner?: object;
@@ -188,6 +193,7 @@ type ToolPreparation = {
 };
 
 export class HostChildBackend implements ChildBackend {
+  private readonly reportGrantWarning = createProbeGrantWarningFilter();
   private readonly toolRelay = new SessionToolsRelay();
   private readonly preparedTools = new Map<string, ToolPreparation>();
   private readonly activeTools = new Map<string, ToolPreparation>();
@@ -202,8 +208,8 @@ export class HostChildBackend implements ChildBackend {
   setRuntimeLogAccess(service: RuntimeLogAccess, endpoint: string): void {
     this.runtimeLogAccess = { service, endpoint };
   }
-  private socialAccess?: { service: import("./social").SocialService; endpoint: string };
-  setSocialAccess(service: import("./social").SocialService, endpoint: string): void {
+  private socialAccess?: { service: import("./social/social").SocialService; endpoint: string };
+  setSocialAccess(service: import("./social/social").SocialService, endpoint: string): void {
     this.socialAccess = { service, endpoint };
   }
   private genericAcp?: GenericAcpService;
@@ -217,9 +223,9 @@ export class HostChildBackend implements ChildBackend {
   );
   private readonly processLifecycles = new ProviderProcessLifecycle();
   private readonly processCwds = new WeakMap<ProviderChild, string>();
-  /** Text sandboxes keyed by their mkdtemp path; released on provider exit or TTL. */
-  private readonly textWorkspaces = new Map<string, TextWorkspace>();
-  private readonly textWorkspaceSlots = new Set<object>();
+  private readonly textWorkspaces = new Map<string, HostRunCwdGrant>();
+  private readonly textWorkspaceSlots = new Set<TextWorkspaceSlot>();
+  private textWorkspaceReap?: Promise<void>;
   private readonly httpTargets = new HostRunHttpTargets();
   private starts = new Map<string, object>();
   private readonly pendingStarts = new Map<string, Set<object>>();
@@ -233,59 +239,66 @@ export class HostChildBackend implements ChildBackend {
     private readonly artifactDirectory = join(homedir(), ".bycoda-host", "attachments"),
     private readonly guardianDirectory = fileURLToPath(new URL("./", import.meta.url)),
     private readonly runWriters?: HostRunWriters,
-    /** Monotonic clock; injected by tests so TTL release never sleeps. */
-    private readonly now: () => number = monotonicNow,
+    private readonly removeTextWorkspace: (path: string) => Promise<void> = (path) =>
+      rm(path, { recursive: true }),
   ) {
     this.events.setMaxListeners(0);
   }
 
-  /** The sandbox registered for a provider cwd, by its raw or canonical spelling. */
-  private findTextWorkspace(cwd: string): TextWorkspace | undefined {
-    const key = workspacePathKey(cwd);
-    for (const workspace of this.textWorkspaces.values())
-      if (workspace.keys.has(key)) return workspace;
-    return undefined;
-  }
-
-  private async createTextWorkspace(content: string, slot?: object): Promise<TextWorkspace> {
-    const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
-    const workspace: TextWorkspace = {
-      cwd,
-      keys: new Set([workspacePathKey(cwd)]),
-      slot,
-      createdAt: this.now(),
-    };
-    this.textWorkspaces.set(cwd, workspace);
-    try {
-      workspace.keys.add(workspacePathKey(await canonicalWorkspacePath(cwd)));
-      const profile = join(cwd, ".agents", "agents");
-      await mkdir(profile, { recursive: true });
-      await writeFile(join(profile, "bycoda-text.md"), content, "utf8");
-    } catch (error) {
-      await this.releaseTextWorkspace(workspace);
-      throw error;
-    }
-    return workspace;
-  }
-
-  /** Free the ownership slot and grant lookup, then remove the directory from disk. */
-  private async releaseTextWorkspace(workspace: TextWorkspace): Promise<void> {
-    if (this.textWorkspaces.get(workspace.cwd) === workspace)
-      this.textWorkspaces.delete(workspace.cwd);
-    if (workspace.slot) this.textWorkspaceSlots.delete(workspace.slot);
-    try {
-      await rm(workspace.cwd, { recursive: true, force: true });
-    } catch (error) {
-      console.warn("Text sandbox directory could not be removed:", error);
-    }
-  }
-
-  /** A sandbox no provider ever started in is released after its TTL. */
-  private evictTextWorkspaces(): void {
-    const now = this.now();
-    for (const workspace of [...this.textWorkspaces.values()])
-      if (!workspace.child && elapsedSince(workspace.createdAt, now) >= TEXT_WORKSPACE_TTL_MS)
-        void this.releaseTextWorkspace(workspace).catch(() => {});
+  private reapTextWorkspaces(writers: HostRunWriters): Promise<void> {
+    if (this.textWorkspaceReap) return this.textWorkspaceReap;
+    const reap = (async () => {
+      const root = await realpath(tmpdir());
+      for (const slot of this.textWorkspaceSlots) {
+        if (slot.preparing || !writers.isFinished(slot.run)) continue;
+        if (slot.grant && !writers.retireTextGrant(slot.run, slot.grant)) continue;
+        if (!slot.cwd) continue;
+        if (!slot.identity || !slot.identity.ino) continue;
+        try {
+          const matches = async (path: string) => {
+            const current = await lstat(path);
+            const canonical = await realpath(path);
+            const child = relative(root, canonical);
+            return (
+              current.isDirectory() &&
+              !current.isSymbolicLink() &&
+              current.dev === slot.identity!.dev &&
+              current.ino === slot.identity!.ino &&
+              !!child &&
+              !child.startsWith("..") &&
+              !isAbsolute(child) &&
+              dirname(canonical) === root &&
+              workspacePathKey(canonical) === workspacePathKey(path)
+            );
+          };
+          slot.cleanupPath ??= join(root, `bycoda-text-cleanup-${randomUUID()}`);
+          let candidateExists = true;
+          try {
+            await lstat(slot.cleanupPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            candidateExists = false;
+          }
+          if (!candidateExists) {
+            if (!(await matches(slot.cwd))) continue;
+            await rename(slot.cwd, slot.cleanupPath);
+          }
+          if (!(await matches(slot.cleanupPath))) continue;
+          await this.removeTextWorkspace(slot.cleanupPath);
+          if (slot.key) this.textWorkspaces.delete(slot.key);
+          this.textWorkspaceSlots.delete(slot);
+        } catch (error) {
+          console.warn("Text sandbox cleanup failed; retained for retry:", error);
+        }
+      }
+    })();
+    this.textWorkspaceReap = reap;
+    void reap
+      .finally(() => {
+        if (this.textWorkspaceReap === reap) this.textWorkspaceReap = undefined;
+      })
+      .catch(() => {});
+    return reap;
   }
 
   async resolve(provider: RemoteProvider): Promise<string> {
@@ -387,34 +400,43 @@ export class HostChildBackend implements ChildBackend {
           throw new Error("Invalid text agent profile");
         const content = args.content;
         const hostRun = args.hostRun as HostRunHandle | undefined;
-        const describe = (workspace: TextWorkspace) => ({
-          cwd: workspace.cwd,
-          logPath: join(workspace.cwd, "agent.log"),
-        });
-        this.evictTextWorkspaces();
-        if (hostRun === undefined) return describe(await this.createTextWorkspace(content)) as T;
+        const create = async (created?: (cwd: string) => Promise<void>) => {
+          const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
+          await created?.(cwd);
+          const profile = join(cwd, ".agents", "agents");
+          await mkdir(profile, { recursive: true });
+          await writeFile(join(profile, "bycoda-text.md"), content, "utf8");
+          return { cwd, logPath: join(cwd, "agent.log") };
+        };
+        if (hostRun === undefined) return (await create()) as T;
         const writers = this.requireRunWriters();
         if (!writers.executionSource(hostRun).auxiliary)
           throw new Error("An original auxiliary Host scope is required for a text sandbox.");
+        await this.reapTextWorkspaces(writers);
         if (this.textWorkspaceSlots.size >= 512)
           throw new Error("Host text sandbox ownership capacity is full.");
-        const slot = {};
+        const slot: TextWorkspaceSlot = { run: hostRun, preparing: true };
         this.textWorkspaceSlots.add(slot);
-        let workspace: TextWorkspace | undefined;
+        let started = false;
         try {
           return (await writers.runWork(hostRun, async () => {
-            workspace = await this.createTextWorkspace(content, slot);
+            started = true;
+            const workspace = await create(async (cwd) => {
+              slot.cwd = cwd;
+              const identity = await lstat(cwd);
+              slot.identity = { dev: identity.dev, ino: identity.ino };
+            });
             const grant = await writers.grantCwd(hostRun, workspace.cwd, "text-sandbox");
+            slot.grant = grant;
+            const canonical = await canonicalWorkspacePath(workspace.cwd);
             writers.assertOpen(hostRun);
-            // Only a granted sandbox is discoverable by a later provider start.
-            workspace.grant = grant;
-            return describe(workspace);
+            slot.key = workspacePathKey(canonical);
+            this.textWorkspaces.set(slot.key, grant);
+            return workspace;
           })) as T;
-        } catch (error) {
-          // No grant was published, so nothing can still refer to this directory.
-          if (workspace) await this.releaseTextWorkspace(workspace);
-          else this.textWorkspaceSlots.delete(slot);
-          throw error;
+        } finally {
+          slot.preparing = false;
+          if (!started) this.textWorkspaceSlots.delete(slot);
         }
       }
       case "harness_save_generated_image":
@@ -775,6 +797,7 @@ export class HostChildBackend implements ChildBackend {
     let admitted = false;
     let failed = false;
     let failure: unknown;
+    let outcome: HarnessProcessReceipt | undefined;
     let httpOrigin: HostHttpOrigin | undefined;
     let httpChildObserved = false;
     const constructionSlot = this.constructions.reserve(id);
@@ -822,7 +845,7 @@ export class HostChildBackend implements ChildBackend {
           cwdGrant =
             workspacePathKey(requestedCwd) === workspacePathKey(launcherCwd)
               ? await runWriters.grantCwd(hostRun, launcherCwd, "antigravity-launcher")
-              : this.findTextWorkspace(requestedCwd)?.grant;
+              : this.textWorkspaces.get(workspacePathKey(requestedCwd));
         }
         runPreparation = await runWriters.prepareProcess(hostRun, {
           sessionId: id,
@@ -968,6 +991,8 @@ export class HostChildBackend implements ChildBackend {
         child,
         child instanceof NativeGuardianChild ? child.retirement : undefined,
       );
+      if (runWriters && runPreparation)
+        runWriters.observePreparedProcess(runPreparation, this.processLifecycles.completion(child));
       ownedChild = child;
       const guardianCleanup = guardian?.dispose();
       const constructionId = randomUUID();
@@ -1001,13 +1026,6 @@ export class HostChildBackend implements ChildBackend {
           this.processLifecycles.completion(child),
         );
         httpChildObserved = true;
-      }
-      const sandbox = this.findTextWorkspace(cwd);
-      if (sandbox && !sandbox.child) {
-        // The sandbox lives exactly as long as the provider that runs inside it.
-        sandbox.child = child;
-        const release = () => this.releaseTextWorkspace(sandbox).catch(() => {});
-        void this.processLifecycles.completion(child).then(release, release);
       }
       const httpScope =
         httpOrigin && hostRun && runWriters ? runWriters.executionSource(hostRun) : undefined;
@@ -1077,39 +1095,38 @@ export class HostChildBackend implements ChildBackend {
         "host",
       );
       published = true;
-      return receipt;
+      outcome = receipt;
     } catch (error) {
       failed = true;
       failure = error;
-      throw error;
-    } finally {
-      try {
-        this.constructions.release(constructionSlot);
-        if (!published && tools) {
-          if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
-          this.retireTools(tools);
-          if (ownedChild) await this.retireChild(id, ownedChild);
-        }
-      } catch (error) {
-        failure = failed
-          ? new AggregateError([failure, error], "Original provider startup and cleanup failed.")
-          : error;
-        failed = true;
-        throw failure;
-      } finally {
-        if (runPreparation) {
-          if (failed) runWriters!.completeProcess(runPreparation, failure);
-          else runWriters!.completeProcess(runPreparation);
-        }
-        if (httpOrigin && !httpChildObserved) {
-          if (ownedChild) this.httpTargets.retainUnknown(httpOrigin);
-          else this.httpTargets.releaseUnused(httpOrigin);
-        }
-        if (this.starts.get(id) === attempt) this.starts.delete(id);
-        pending.delete(attempt);
-        if (!pending.size && this.pendingStarts.get(id) === pending) this.pendingStarts.delete(id);
-      }
     }
+    try {
+      this.constructions.release(constructionSlot);
+      if (!published && tools) {
+        if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
+        this.retireTools(tools);
+        if (ownedChild) await this.retireChild(id, ownedChild);
+      }
+    } catch (error) {
+      failure = failed
+        ? new AggregateError([failure, error], "Original provider startup and cleanup failed.")
+        : error;
+      failed = true;
+    } finally {
+      if (runPreparation) {
+        if (failed) runWriters!.completeProcess(runPreparation, failure);
+        else runWriters!.completeProcess(runPreparation);
+      }
+      if (httpOrigin && !httpChildObserved) {
+        if (ownedChild) this.httpTargets.retainUnknown(httpOrigin);
+        else this.httpTargets.releaseUnused(httpOrigin);
+      }
+      if (this.starts.get(id) === attempt) this.starts.delete(id);
+      pending.delete(attempt);
+      if (!pending.size && this.pendingStarts.get(id) === pending) this.pendingStarts.delete(id);
+    }
+    if (failed) throw failure;
+    return outcome as HarnessProcessReceipt;
   }
 
   private grantPruning?: ReturnType<typeof setInterval>;
@@ -1264,10 +1281,11 @@ export class HostChildBackend implements ChildBackend {
         check();
         // Helpers without an authoritative session must not inherit any access.
         if (error instanceof ProviderStartupCancelled) throw error;
-        console.warn(
-          `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
-          error,
-        );
+        if (this.reportGrantWarning(sessionId, group))
+          console.warn(
+            `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
+            error,
+          );
         return undefined;
       }
     })();
@@ -1492,10 +1510,6 @@ export class HostChildBackend implements ChildBackend {
         if (error instanceof AggregateError) errors.push(...error.errors);
         else errors.push(error);
       }
-      // Every provider is gone now; no sandbox directory may outlive the host.
-      await Promise.allSettled(
-        [...this.textWorkspaces.values()].map((workspace) => this.releaseTextWorkspace(workspace)),
-      );
       if (errors.length)
         throw new AggregateError(errors, "Provider shutdown could not drain every operation.");
     });

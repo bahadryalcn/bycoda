@@ -7,8 +7,10 @@ export async function generateClaudeSessionTitle(input: {
   sessionId: string;
   cwd: string;
   message: string;
-  operationContext?: HarnessOperationContext;
+  model?: string;
+  modelSettings?: Record<string, string>;
   providerAccountId?: string;
+  operationContext?: HarnessOperationContext;
 }): Promise<GeneratedSessionTitle | null> {
   return generateSessionTitle(input, runClaudeTextPrompt);
 }

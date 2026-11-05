@@ -12,6 +12,8 @@ import {
   subagentModelName,
   subagentName,
   subagentStatusLine,
+  subagentStatusParts,
+  type SubagentStatusPart,
   toolCallLabel,
   toolCallState,
 } from "./transcriptActivity";
@@ -75,6 +77,7 @@ export type DockAgent = {
   model?: string;
   /** "46 steps, 1 failed", worded exactly as on the transcript row. */
   detail: string;
+  detailParts?: SubagentStatusPart[];
   /** Epoch ms the run began and ended; absent on older sessions. */
   startedAt?: number;
   endedAt?: number;
@@ -126,9 +129,10 @@ export function deriveActivityDock({
   // Provider handoffs still fence activity, including imported/recovered data.
   let handoff = execution.length - 1;
   while (handoff >= 0 && execution[handoff].role !== "handoff") handoff--;
-  const turn = handoff < 0
-    ? execution
-    : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
+  const turn =
+    handoff < 0
+      ? execution
+      : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
   const agents = turn.flatMap((block) => dockAgent(block, busy));
   const running = agents.filter((agent) => agent.status === "running").length;
   const failed = agents.filter((agent) => agent.status === "failed").length;
@@ -181,13 +185,17 @@ function dockAgent(block: Block, busy: boolean): DockAgent[] {
       kind: agent ? "agent" : "command",
       status,
       model: agent ? subagentModelName(block) : undefined,
-      detail: status === "interrupted"
-        ? t("Interrupted")
-        : agent
-        ? subagentStatusLine(block, block.agentRun?.steps ?? [])
-        : status === "stopped"
-          ? STOPPED_BY_YOU
-          : "",
+      ...(agent && status !== "interrupted"
+        ? { detailParts: subagentStatusParts(block, block.agentRun?.steps ?? []) }
+        : {}),
+      detail:
+        status === "interrupted"
+          ? t("Interrupted")
+          : agent
+            ? subagentStatusLine(block, block.agentRun?.steps ?? [])
+            : status === "stopped"
+              ? STOPPED_BY_YOU
+              : "",
       ...(agent && block.agentRun?.startedAt !== undefined
         ? { startedAt: block.agentRun.startedAt }
         : {}),
@@ -210,15 +218,29 @@ export function nextUnseenDone(unseen: boolean, wasBusy: boolean, busy: boolean)
 
 /** "2 running · 1 done · 1 failed", leaving out what is zero. */
 export function dockCountLabel(dock: ActivityDock): string {
-  return [
-    dock.running ? t("{p0} running", { p0: dock.running }) : "",
-    dock.finished ? t("{p0} done", { p0: dock.finished }) : "",
-    dock.failed ? t("{p0} failed", { p0: dock.failed }) : "",
-    dock.stopped ? t("{p0} stopped", { p0: dock.stopped }) : "",
-    dock.interrupted ? t("{p0} interrupted", { p0: dock.interrupted }) : "",
-  ]
-    .filter(Boolean)
+  return dockCountParts(dock)
+    .map((part) => part.text)
     .join(" · ");
+}
+
+export function dockCountParts(dock: ActivityDock): SubagentStatusPart[] {
+  return [
+    ...(dock.running
+      ? [{ text: t("{p0} running", { p0: dock.running }), tone: "accent" as const }]
+      : []),
+    ...(dock.finished
+      ? [{ text: t("{p0} done", { p0: dock.finished }), tone: "success" as const }]
+      : []),
+    ...(dock.failed
+      ? [{ text: t("{p0} failed", { p0: dock.failed }), tone: "danger" as const }]
+      : []),
+    ...(dock.stopped
+      ? [{ text: t("{p0} stopped", { p0: dock.stopped }), tone: "warning" as const }]
+      : []),
+    ...(dock.interrupted
+      ? [{ text: t("{p0} interrupted", { p0: dock.interrupted }), tone: "warning" as const }]
+      : []),
+  ];
 }
 
 /** The state line's words, without the clock. */

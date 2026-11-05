@@ -33,6 +33,26 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+.browser-inspector-navigation {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.browser-inspector-relatives,
+.browser-inspector-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.browser-inspector-relatives > :last-child {
+  min-inline-size: 0;
+}
+.browser-inspector-breadcrumbs code {
+  padding-inline: 6px;
+  color: var(--ui-text-secondary);
+}
 .browser-annotation-details dl {
   display: grid;
   gap: 4px;

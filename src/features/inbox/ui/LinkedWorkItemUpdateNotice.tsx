@@ -1,7 +1,8 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { t, useLocale } from "../../../shared/i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useState } from "react";
 import {
   linkedWorkItemActivityPrompt,
@@ -111,7 +112,7 @@ export function LinkedWorkItemUpdateNotice({
       onOpenDiscussion();
       return;
     }
-    void openUrl(latest?.url || card.url);
+    openUrlSafely(latest?.url || card.url);
   };
   const dismiss = () => {
     onAcknowledge();
@@ -147,7 +148,7 @@ export function LinkedWorkItemUpdateNotice({
           type="button"
           onClick={() => {
             onAcknowledge();
-            void openUrl(card.url);
+            openUrlSafely(card.url);
           }}
           className="block w-full text-left"
         >
@@ -173,7 +174,7 @@ export function LinkedWorkItemUpdateNotice({
                 onClick={() => {
                   if (entry.url) {
                     onAcknowledge();
-                    void openUrl(entry.url);
+                    openUrlSafely(entry.url);
                   }
                 }}
                 className="w-full text-left"
@@ -207,15 +208,14 @@ export function LinkedWorkItemUpdateNotice({
         {terminalState ? (
           <div className="border-t border-(--ui-tone-neutral-border) pt-2">
             <div className="flex items-center gap-2 text-ui-micro">
-              <TerminalIcon
-                className={
-                  terminalState === "pr_merged"
-                    ? "icon-sm shrink-0 text-(--ui-tone-accent-fg)"
-                    : "icon-sm shrink-0 text-(--ui-tone-success-fg)"
-                }
-                strokeWidth={1.75}
-              />
-              <span className="font-medium text-(--ui-text-secondary)">{terminalLabel}</span>
+              <Badge
+                tone={terminalState === "pr_merged" ? "accent" : "success"}
+                size="xs"
+                appearance="subtle"
+                icon={<TerminalIcon strokeWidth={1.75} />}
+              >
+                {terminalLabel}
+              </Badge>
               <span className="text-(--ui-text-secondary)">{t("Clean up this session")}</span>
             </div>
             <div className="mt-2 flex items-center gap-1.5">

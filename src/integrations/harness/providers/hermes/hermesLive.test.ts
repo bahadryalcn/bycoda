@@ -539,6 +539,88 @@ describe("Hermes live ACP sequence", () => {
     expect(settled).toBe(true);
     await stopHermesSession("hermes-live-background");
   });
+
+  it.each([false, true])(
+    "bounds background waiting without certifying completion (held read: %s)",
+    async (holdRead) => {
+      const sessionId = `hermes-background-deadline-${holdRead}`;
+      const events: HarnessEvent[] = [];
+      const turn = sendHermesTurn({
+        sessionId,
+        cwd: "/repo",
+        model: "hermes:nous:hermes-4",
+        runtimeMode: "supervised",
+        text: "investigate",
+        attachments: [],
+        onEvent: (event) => events.push(event),
+      });
+      const outcome = turn.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await initialize();
+      await newSession();
+      await waitFor(() => parse().some((message) => message.method === "session/set_mode"), "mode");
+      reply(parse().find((message) => message.method === "session/set_mode")!.id, {});
+      await waitFor(() => parse().some((message) => message.method === "session/prompt"), "prompt");
+      let release: ((text: string) => void) | undefined;
+      if (holdRead)
+        heldFileRead = () =>
+          new Promise<string>((resolve) => {
+            release = resolve;
+          });
+      vi.useFakeTimers();
+      try {
+        onLine!(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: {
+              sessionId: "hermes-session-1",
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: "deadline-delegate",
+                kind: "agent",
+                status: "completed",
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      status: "dispatched",
+                      mode: "background",
+                      delegation_id: "deadline",
+                      live_transcripts: ["/tmp/hermes-deadline/task-0.log"],
+                    }),
+                  },
+                ],
+              },
+            },
+          }),
+        );
+        reply(parse().find((message) => message.method === "session/prompt")!.id, {
+          stopReason: "end_turn",
+        });
+        await vi.advanceTimersByTimeAsync(30 * 60_000);
+        expect(await outcome).toBeInstanceOf(Error);
+        expect(String(await outcome)).toContain("Their completion is unknown.");
+        expect(parse().filter((message) => message.method === "session/prompt")).toHaveLength(1);
+        expect(
+          events
+            .filter(
+              (event) => event.type === "tool.updated" && event.callId === "deadline-delegate",
+            )
+            .at(-1),
+        ).toMatchObject({ status: "in_progress" });
+        release?.(JSON.stringify({ completed: true, tasks: [{ status: "completed" }] }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(parse().filter((message) => message.method === "session/prompt")).toHaveLength(1);
+      } finally {
+        heldFileRead = null;
+        vi.useRealTimers();
+        await stopHermesSession(sessionId);
+      }
+    },
+  );
 });
 
 it("retains hermes completion lineage from the real RPC response across its await", async () => {

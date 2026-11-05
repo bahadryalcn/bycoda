@@ -28,9 +28,11 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   return {
     ...original,
     invoke: (command: string, args?: unknown) =>
-      command === "mcp_discover" || command === "claude_mcp_list"
-        ? mcpInvoke(command, args)
-        : original.invoke(command, args),
+      command === "write_attachment"
+        ? Promise.resolve(`/attachments/${(args as { name: string }).name}`)
+        : command === "mcp_discover" || command === "claude_mcp_list"
+          ? mcpInvoke(command, args)
+          : command === "list_question_attachment_drafts" ? Promise.resolve([]) : original.invoke(command, args),
   };
 });
 

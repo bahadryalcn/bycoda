@@ -9,6 +9,9 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: nativeEnabled,
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 
 const socialBridgeMock = vi.hoisted(() =>
   vi.fn<(_sessionId: string) => Promise<{ command: string; args: string[] } | null>>(
@@ -63,7 +66,6 @@ import {
   cancelHarnessTurn,
   captureHarnessControlTurn,
   stopHarnessBackgroundWork,
-  stopHarnessSession,
   retainedHarnessWriters,
   retireHarnessWriter,
   type HarnessAdapter,
@@ -92,11 +94,30 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
-  function nativeReceipts() {
+  function nativeReceipts(
+    skills: Array<{ name: string; path: string; installProvider: string }> = [],
+  ) {
     nativeEnabled.mockReturnValue(true);
     let next = 0;
     nativeInvoke.mockImplementation(async (command, raw) => {
+      // Protocol fixture: explicitly model the canonical owner admission seam.
+      if (command === "canonical_store_page_token") return "00000000-0000-4000-8000-000000000001";
+      if (command === "canonical_store_session_guard_ready") return true;
+      if (command === "canonical_store_get")
+        return (raw as { scope: string }).scope === "host-session-bindings-migration.v1"
+          ? { key: "legacy-import", version: 1, value: true }
+          : null;
+      if (command === "canonical_store_list") return { entries: [], revision: 0 };
+      if (command === "canonical_store_transaction") return { applied: true, entries: [] };
+      if (command === "canonical_store_settle") return true;
       if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
+      if (command === "list_skills") {
+        const provider = (raw as { provider?: string }).provider;
+        return skills.filter(
+          (skill) =>
+            !provider || skill.installProvider === "all" || skill.installProvider === provider,
+        );
+      }
       if (command === "control_authorize_turn") {
         const args = raw as { sessionId: string };
         return {
@@ -131,6 +152,33 @@ describe("harness registry", () => {
       return undefined;
     });
   }
+
+  it("carries installed provider scope to native adapter without changing machine policy", async () => {
+    nativeReceipts([
+      { name: "targeted", path: "/skills/targeted/SKILL.md", installProvider: "codex" },
+    ]);
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    registerHarness(stub("claude", { sendTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "native-skill-scope",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "Continue.",
+      onEvent: vi.fn(),
+    };
+    await sendHarnessTurn(input);
+    expect(sendTurn.mock.calls[0][0].skillPolicy).toEqual({
+      disabledNames: ["targeted"],
+      disabledPaths: ["/skills/targeted/SKILL.md"],
+    });
+    await expect(sendHarnessTurn({ ...input, text: "$targeted inspect" })).rejects.toThrow(
+      "disabled in bycoda",
+    );
+    expect(sendTurn).toHaveBeenCalledOnce();
+    expect(nativeInvoke.mock.calls.some(([command]) => command === "skill_policy_set")).toBe(false);
+  });
 
   it("refuses a queued follow-up after its original preparation fails without entering the provider", async () => {
     let fail!: (error: Error) => void;

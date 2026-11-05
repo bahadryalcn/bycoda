@@ -259,8 +259,7 @@ export function loadHiddenJiraProjectIds(): string[] {
 /** Fails closed so an unreadable saved scope never widens what Jira fetches. */
 export function requireHiddenJiraProjectIds(): string[] {
   const ids = readHiddenJiraProjectIds();
-  if (!ids)
-    throw new Error("Saved Jira project scope is unavailable, so Jira results are paused.");
+  if (!ids) throw new Error("Saved Jira project scope is unavailable, so Jira results are paused.");
   return ids;
 }
 

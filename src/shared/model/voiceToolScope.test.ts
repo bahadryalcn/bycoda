@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { voiceThreadToolAllowed } from "./voiceToolScope";
+import { voiceGlobalToolAllowed, voiceThreadToolAllowed } from "./voiceToolScope";
 it("permits only the finite desktop approval path for a real assistant thread and retains working-copy scope", () => {
   for (const action of [
     "desktop.launch",
@@ -16,11 +16,17 @@ it("permits only the finite desktop approval path for a real assistant thread an
     "desktop.configure",
     "desktop.resume",
     "desktop.stop",
-    "files.write",
     "shell.run",
-    "browser.open",
     "desktop.arbitrary",
+    "workspaces.delivery.merge",
+    "workspaces.delivery.publish",
+    "workspaces.cleanup.apply",
+    "sprints.ingest",
   ])
     expect(voiceThreadToolAllowed("conversation", action)).toBe(false);
+  for (const action of ["files.write", "browser.open"]) {
+    expect(voiceThreadToolAllowed("conversation", action), action).toBe(true);
+    expect(voiceGlobalToolAllowed("conversation", action), action).toBe(false);
+  }
   expect(voiceThreadToolAllowed("shell", "desktop.launch")).toBe(false);
 });

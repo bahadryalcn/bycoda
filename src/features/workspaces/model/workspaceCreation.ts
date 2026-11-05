@@ -202,10 +202,7 @@ export function useWorkspaceCreation(
     };
   }, [cwd, managedActive, choice, base, reload]);
   const current =
-    managedActive &&
-    result?.cwd === cwd &&
-    result.choice === choice &&
-    result.base === base
+    managedActive && result?.cwd === cwd && result.choice === choice && result.base === base
       ? result
       : undefined;
   return {

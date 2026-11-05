@@ -31,6 +31,7 @@ export function GithubStarPrompt({
   if (!visible && !action) return null;
   return (
     <ButtonGroup
+      surface="navigation"
       aria-label={t("Actions")}
       data-github-star-prompt
       className={visible ? "w-full" : "self-end"}

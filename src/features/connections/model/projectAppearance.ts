@@ -37,7 +37,7 @@ export function parseProjectAppearance(input: unknown): HostProjectAppearance | 
     rawIcon &&
     typeof rawIcon.path === "string" &&
     rawIcon.path.length <= 4096 &&
-    /^[MmLlHhVvCcSsQqTtAaZz\d\s.,+\-]+$/.test(rawIcon.path) &&
+    /^[MmLlHhVvCcSsQqTtAaZz\d\s.,+-]+$/.test(rawIcon.path) &&
     highlight
       ? { path: rawIcon.path, highlight }
       : undefined;

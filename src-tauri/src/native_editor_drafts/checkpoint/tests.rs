@@ -52,6 +52,28 @@ impl Fixture {
             _directory: directory,
         }
     }
+    fn put_exact(&self, text: &str, serialized: &str) -> DraftMetadata {
+        let (owner, operation) =
+            test_buffer_owner(&self.resources, self.store.native_instance_id()).unwrap();
+        operation
+            .finish(put(
+                &self.store,
+                &owner,
+                PutDraft {
+                    owner_epoch: owner.key(),
+                    document_id: "document".into(),
+                    path: self.root.join("document.rs").to_string_lossy().into_owned(),
+                    text: text.into(),
+                    eol: DraftEol::Crlf,
+                    serialized_text: Some(serialized.into()),
+                    disk_baseline: "original\r\n".into(),
+                    revision: 1,
+                    expected_revision: None,
+                },
+            ))
+            .unwrap()
+            .record
+    }
     fn put(&self, revision: u64, text: &str) -> DraftMetadata {
         let (owner, operation) =
             test_buffer_owner(&self.resources, self.store.native_instance_id()).unwrap();
@@ -65,6 +87,7 @@ impl Fixture {
                     path: self.root.join("document.rs").to_string_lossy().into_owned(),
                     text: text.into(),
                     eol: DraftEol::Crlf,
+                    serialized_text: None,
                     disk_baseline: "original\r\n".into(),
                     revision,
                     expected_revision: (revision > 1).then_some(revision - 1),
@@ -229,6 +252,21 @@ fn exact_current_row_and_original_capture_are_validated_in_actual_file_store_ful
             .unwrap(),
         1
     );
+}
+
+#[test]
+fn checkpoint_requires_exact_mixed_serialized_body() {
+    let f = Fixture::new();
+    let text = "a\nb\n";
+    let metadata = f.put_exact(text, "a\r\nb\n");
+    let mut value = captured(&metadata, text);
+    value["producers"][0]["snapshot"]["serializedText"] = json!("a\r\nb\n");
+    assert_eq!(
+        f.validate(&raw(value.clone())).unwrap().unwrap()["validatedCount"],
+        1
+    );
+    value["producers"][0]["snapshot"]["serializedText"] = json!("a\r\nb\r\n");
+    assert!(f.validate(&raw(value)).is_err());
 }
 
 #[test]

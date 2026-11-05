@@ -3,13 +3,15 @@ import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
-import { attachmentPreviewSrc, isAttachmentFolder } from "../model/attachments";
 import { tokenLabel } from "../model/attachmentTokens";
+import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
+import { AttachmentIdentity } from "./AttachmentIdentity";
+import styles from "./AttachmentChip.module.css";
 import type { Attachment } from "../model/session";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { BrowserAnnotationDetails } from "../../host-tools/BrowserAnnotationDetails";
 import { useAttachmentPreview } from "./useAttachmentPreview";
+import { useNearViewport } from "./useNearViewport";
 import { useState } from "react";
 import {
   AttachmentFilePreview,
@@ -22,23 +24,19 @@ type Props = {
   onRemove?: () => void;
   /** The token that refers to this attachment in the message text. */
   token?: string;
-  /** Transcript thumbnails keep their reference inside the image, saving a caption row. */
-  tokenLabelPlacement?: "below" | "overlay";
   /** Puts the token into the message text again. */
   onInsertToken?: () => void;
 };
 
-export function AttachmentChip({
-  attachment,
-  onRemove,
-  token,
-  tokenLabelPlacement = "below",
-  onInsertToken,
-}: Props) {
+export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: Props) {
   const t = useT();
+  const presentation = attachmentPresentation(attachment);
+  const [failedThumbnail, setFailedThumbnail] = useState<string>();
+  const size = formatAttachmentSize(attachment.size);
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   const canOpenFile = canOpenFileAttachment(attachment);
+  const [thumbnailBox, nearViewport] = useNearViewport<HTMLDivElement>();
   const {
     src: preview,
     canOpen,
@@ -47,56 +45,29 @@ export function AttachmentChip({
     error: previewError,
     show,
     close,
-  } = useAttachmentPreview(attachment);
+  } = useAttachmentPreview(attachment, nearViewport);
   // A gone image has no picture worth showing; it reads as a marked file chip.
-  const image =
-    attachment.kind === "image" && !attachment.missing && attachmentPreviewSrc(attachment);
+  const image = attachment.kind === "image" && canOpen;
   const label = token ? tokenLabel(token) : null;
-  const labelClass = image
-    ? "block max-w-14 truncate text-center text-ui-caption leading-5 text-(--ui-text-secondary)"
-    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary)";
-  const labelNode =
-    image && label && onInsertToken ? (
-      <Button
-        motion="none"
-        variant={image ? "link" : "ghost"}
-        layout={image ? "text" : undefined}
-        className={image ? "block w-14 max-w-14 truncate text-center" : undefined}
-        type="button"
-        tooltip={t("Insert {p0} into the message", { p0: token })}
-        aria-label={t("Insert {p0} into the message", { p0: token })}
-        // Keeps focus, and so the caret, in the message box.
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onInsertToken();
-        }}
-      >
-        <span className={image ? "text-ui-caption leading-5" : undefined}>{label}</span>
-      </Button>
-    ) : label ? (
-      <span
-        className={
-          image && tokenLabelPlacement === "overlay" ? "attachment-token-overlay" : labelClass
-        }
-      >
-        {label}
-      </span>
-    ) : null;
+  const labelNode = label ? (
+    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
+      {label}
+    </span>
+  ) : null;
+  // An image card is only its thumbnail; the message text names it as `image1 113 KB`.
+  const imageDetails = [label, attachment.name, size].filter(Boolean).join(" · ");
 
   const chip = (
     <>
       <div
+        ref={thumbnailBox}
         data-attachment-chip={image ? "image" : "file"}
-        className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
-          image
-            ? "w-14 shrink-0 flex-col gap-0"
-            : "shrink-0 self-center max-w-full bg-(--ui-surface-raised) py-0.5 px-1"
-        }`}
-        title={attachment.path ?? attachment.name}
+        data-attachment-kind={presentation.kind}
+        className={`group ${styles.card} ${image ? styles.image : styles.file}`}
+        title={image ? undefined : (attachment.path ?? attachment.name)}
       >
         {image ? (
-          <span className="relative flex w-full shrink-0 flex-col items-center">
+          <span className="relative flex size-full shrink-0">
             <Button
               motion="none"
               layout="media"
@@ -105,20 +76,54 @@ export function AttachmentChip({
               variant="ghost"
               type="button"
               aria-label={t("Open {p0} full screen", { p0: attachment.name })}
-              tooltip={t("Open {p0} full screen", { p0: attachment.name })}
+              tooltip={imageDetails}
+              disabled={loading}
+              loading={loading}
+              aria-busy={loading}
+              aria-haspopup="dialog"
               onClick={(event) => {
                 event.stopPropagation();
                 void show();
               }}
-              className="size-14 shrink-0 overflow-clip"
+              className={styles.thumbnail}
             >
-              <img src={preview} alt="" draggable={false} className="size-full object-cover" />
+              {preview && failedThumbnail !== preview ? (
+                <img
+                  src={preview}
+                  alt=""
+                  draggable={false}
+                  onError={() => setFailedThumbnail(preview)}
+                  className="size-full object-cover"
+                />
+              ) : (
+                <AttachmentIdentity attachment={attachment} />
+              )}
             </Button>
-            {labelNode}
+            {token && onInsertToken ? (
+              <Button
+                motion="none"
+                className="absolute bottom-0.5 left-0.5 shrink-0"
+                iconOnly
+                label={t("Insert {p0} into the message", { p0: token })}
+                variant="secondary"
+                shape="pill"
+                type="button"
+                tooltip={t("Insert {p0} into the message", { p0: token })}
+                aria-label={t("Insert {p0} into the message", { p0: token })}
+                // Keeps focus, and so the caret, in the message box.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInsertToken();
+                }}
+              >
+                <Link className="icon-xs" />
+              </Button>
+            ) : null}
           </span>
         ) : (
           <>
-            <span className="min-w-0 max-w-48 text-ui-caption text-(--ui-text-secondary)">
+            <span className={styles.fileBody}>
               {canOpen || canOpenFile ? (
                 <Button
                   motion="none"
@@ -126,6 +131,7 @@ export function AttachmentChip({
                   className="min-w-0 max-w-full"
                   type="button"
                   disabled={loading}
+                  loading={loading}
                   aria-busy={loading}
                   aria-haspopup="dialog"
                   aria-label={t("Open {p0} full screen", { p0: attachment.name })}
@@ -139,24 +145,30 @@ export function AttachmentChip({
                   }}
                 >
                   {labelNode}
-                  <FileTypeIcon
-                    name={attachment.name}
-                    isDir={isAttachmentFolder(attachment)}
-                    size="md"
-                  />
-                  <span className="min-w-0 truncate">
-                    {loading ? t("Loading…") : attachment.name}
+                  <span className={styles.fileIcon}>
+                    <AttachmentIdentity attachment={attachment} />
+                  </span>
+                  <span className={styles.fileDetails}>
+                    <span className={styles.name}>{loading ? t("Loading…") : attachment.name}</span>
+                    <span className={styles.metadata}>
+                      {t(presentation.label)}
+                      {size ? ` · ${size}` : ""}
+                    </span>
                   </span>
                 </Button>
               ) : (
                 <span className="flex min-w-0 items-center gap-1.5">
                   {labelNode}
-                  <FileTypeIcon
-                    name={attachment.name}
-                    isDir={isAttachmentFolder(attachment)}
-                    size="md"
-                  />
-                  <span className="truncate">{attachment.name}</span>
+                  <span className={styles.fileIcon}>
+                    <AttachmentIdentity attachment={attachment} />
+                  </span>
+                  <span className={styles.fileDetails}>
+                    <span className={styles.name}>{attachment.name}</span>
+                    <span className={styles.metadata}>
+                      {t(presentation.label)}
+                      {size ? ` · ${size}` : ""}
+                    </span>
+                  </span>
                 </span>
               )}
             </span>
@@ -175,11 +187,6 @@ export function AttachmentChip({
               >
                 <Link className="icon-xs" />
               </Button>
-            ) : null}
-            {previewError ? (
-              <InlineMessage tone="warning" live="assertive">
-                {t("Preview unavailable. Try again.")}
-              </InlineMessage>
             ) : null}
             {attachment.missing ? (
               <span className="shrink-0 text-ui-caption leading-4 text-(--ui-tone-warning-fg)">
@@ -219,6 +226,11 @@ export function AttachmentChip({
           </InlineAction>
         ) : null}
       </div>
+      {previewError ? (
+        <InlineMessage tone="warning" live="assertive">
+          {t("Preview unavailable. Try again.")}
+        </InlineMessage>
+      ) : null}
       {attachment.browserAnnotation ? (
         <details className="browser-annotation-chip">
           <summary>{t("Inspect browser element")}</summary>

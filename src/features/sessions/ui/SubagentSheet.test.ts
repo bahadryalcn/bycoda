@@ -88,7 +88,7 @@ afterEach(() => {
 it("arka plan komutuna tıklayınca detayını açar ve gelen çıktıyı günceller", async () => {
   const onStop = vi.fn().mockResolvedValue(undefined);
   act(() => root.render(createElement(Harness, { block: command, onStop })));
-  const toggle = container.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  const toggle = container.querySelector<HTMLButtonElement>("[data-dock-toggle]");
   if (toggle?.getAttribute("aria-expanded") === "false") act(() => toggle.click());
   act(() => container.querySelector<HTMLButtonElement>("[data-dock-agent]")?.click());
   const dialog = container.querySelector('[role="dialog"]');

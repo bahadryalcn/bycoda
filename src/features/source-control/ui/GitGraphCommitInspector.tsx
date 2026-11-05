@@ -15,7 +15,7 @@ import { useGitResource } from "../hooks/useGitResource";
 import { buildUnifiedFile } from "../model/unifiedDiff";
 import { UnifiedDiffView } from "./UnifiedDiffView";
 import { GitFeedback, GitLoading } from "./GitFeedback";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { GitCommitBlameView } from "./GitCommitBlameView";
 
 export function GitGraphCommitInspector({
@@ -88,7 +88,9 @@ export function GitGraphCommitInspector({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="shrink-0 border-b border-(--ui-pane-border) p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <code className="select-all text-ui-caption text-(--ui-tone-accent-fg)">{commit.shortSha}</code>
+          <code className="select-all text-ui-caption text-(--ui-tone-accent-fg)">
+            {commit.shortSha}
+          </code>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"

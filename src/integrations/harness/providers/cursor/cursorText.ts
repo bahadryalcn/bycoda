@@ -208,7 +208,11 @@ async function startLive(
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  const textProcess = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(textProcess, operationContext, true);
   const acpRef: { session: LiveText | null } = { session: null };
   let admitted = false;
@@ -221,8 +225,10 @@ async function startLive(
       onNotification: (method, params) => {
         const session = acpRef.session;
         if (!session || method !== "session/update" || !session.collecting) return;
+        const update = messageFromUpdate(params);
+        if (!update) return;
         const previous = session.output;
-        session.output = mergeStream(previous, textFromUpdate(params));
+        session.output = update.delta ? previous + update.text : mergeStream(previous, update.text);
         const delta = session.output.slice(previous.length);
         if (delta) session.onEvent?.({ type: "message.delta", text: delta });
       },
@@ -467,13 +473,16 @@ function extractModelConfigId(raw: unknown): string {
   return "model";
 }
 
-function textFromUpdate(params: unknown): string {
+function messageFromUpdate(params: unknown): { text: string; delta: boolean } | undefined {
   const rec = asRecord(params);
   const update = asRecord(rec?.update) ?? rec;
-  if (!update) return "";
+  if (!update) return;
   const kind = String(update.sessionUpdate ?? update.session_update ?? update.type ?? "");
-  if (kind !== "agent_message_chunk" && kind !== "agent_message") return "";
-  return textFromContent(update.content ?? update.text);
+  if (kind !== "agent_message_chunk" && kind !== "agent_message") return;
+  return {
+    text: textFromContent(update.content ?? update.text),
+    delta: kind === "agent_message_chunk",
+  };
 }
 
 function textFromContent(content: unknown): string {

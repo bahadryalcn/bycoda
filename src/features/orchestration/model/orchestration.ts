@@ -47,6 +47,12 @@ export type WorkerPreparation = {
   scratchDir?: string;
   workspace: OrchestrationWorkspace;
 };
+export type OriginalOrchestrationStop = { current(): boolean; stop(): Promise<void> };
+export type DesktopOrchestrationControl = {
+  ready: Promise<void>;
+  current(): boolean;
+  stop(): Promise<void>;
+};
 export type OrchestrationHost = {
   session(id: string): Session | undefined;
   sessions(): Session[];
@@ -64,6 +70,7 @@ export type OrchestrationHost = {
   ): Promise<boolean>;
   submit(id: string, text: string, done: (outcome: ControlOutcome) => void): void;
   stop(id: string): Promise<void>;
+  captureStop?(id: string): OriginalOrchestrationStop | undefined;
   /** Redirect a worker mid-turn, without discarding what it has already done. */
   steer(id: string, text: string): Promise<void>;
   /** Answer on a worker's behalf; the lead, not the user, decides. */
@@ -80,6 +87,8 @@ type Storage = {
   load(id: string): Promise<OrchestrationRun | null>;
   enable(id: string, cwd: string): Promise<string>;
   disable(id: string): Promise<void>;
+  captureGrant?(id: string): Promise<string>;
+  disableCaptured?(id: string, generation: string): Promise<void>;
   scopes(cwd: string, files: string[]): Promise<string[]>;
   resolvePath(path: string): Promise<string>;
 };
@@ -95,6 +104,9 @@ const storage: Storage = {
   },
   enable: (sessionId, cwd) => invoke("control_enable", { sessionId, cwd }),
   disable: (sessionId) => invoke("control_disable", { sessionId }),
+  captureGrant: (sessionId) => invoke("control_grant_capture", { sessionId }),
+  disableCaptured: (sessionId, generation) =>
+    invoke("control_disable_captured", { sessionId, generation }),
   scopes: (cwd, files) => invoke("control_scopes", { cwd, files }),
   resolvePath: (path) => invoke("control_write_path", { path }),
 };
@@ -254,6 +266,7 @@ const listed = (values: string[], max = 12) =>
 
 export class Orchestrator {
   private runs: OrchestrationRun[] = [];
+  private readonly incarnations = new Map<string, object>();
   private listeners = new Set<() => void>();
   private loaded = new Set<string>();
   private deleted = new Set<string>();
@@ -312,7 +325,9 @@ export class Orchestrator {
   private emit() {
     for (const listener of this.listeners) listener();
   }
-  private async commit(run: OrchestrationRun) {
+  private async commit(run: OrchestrationRun, guard?: () => boolean) {
+    if (guard && !guard()) throw new Error("Original orchestration changed.");
+    if (!this.incarnations.has(run.leadId)) this.incarnations.set(run.leadId, {});
     run = normalizeOrchestrationRun(run);
     this.runs = [...this.runs.filter((entry) => entry.leadId !== run.leadId), run];
     this.emit();
@@ -326,6 +341,7 @@ export class Orchestrator {
     try {
       await saved;
     } catch (error) {
+      if (guard && !guard()) throw error;
       const current = this.run(run.leadId)!;
       const running = current.tasks.filter(activeTask);
       this.runs = this.runs.map((entry) =>
@@ -679,6 +695,7 @@ export class Orchestrator {
         : [];
     try {
       await this.host!.stop(leadId); // Refresh the child environment before its next turn.
+      this.incarnations.set(leadId, {});
       await this.commit({
         version: 2,
         leadId,
@@ -1310,7 +1327,9 @@ export class Orchestrator {
         const timer = setTimeout(finish, seconds * 1000);
       });
     }
-    return this.view(this.run(leadId)!);
+    const current = this.run(leadId);
+    if (!current) throw new Error("No orchestration run was found for this lead");
+    return this.view(current);
   }
   private async pump() {
     if (this.pumping) {
@@ -1745,6 +1764,184 @@ export class Orchestrator {
     const task = run.tasks.find((entry) => entry.sessionId === id)!;
     return this.cancelTask(run.leadId, task.id);
   }
+
+  /** Snapshot exact local run, dispatches and process owners before an external wait. */
+  captureDesktopControl(id: string): DesktopOrchestrationControl | undefined {
+    const run = this.forSession(id);
+    if (
+      !run ||
+      !this.host?.captureStop ||
+      !this.store.captureGrant ||
+      !this.store.disableCaptured ||
+      this.starting.has(run.leadId)
+    )
+      return undefined;
+    const incarnation = this.incarnations.get(run.leadId);
+    if (!incarnation) return undefined;
+    const originalStatus = run.status;
+    const lead = run.leadId === id;
+    const tasks = run.tasks.filter((task) =>
+      lead ? activeTask(task) : task.sessionId === id && activeTask(task),
+    );
+    if (!lead && tasks.length !== 1) return undefined;
+    if (tasks.some((task) => !task.activeDispatchId)) return undefined;
+    const snapshots = tasks.map((task) => ({
+      id: task.id,
+      sessionId: task.sessionId,
+      dispatchId: task.activeDispatchId!,
+    }));
+    const queuedIds = lead
+      ? run.tasks.filter((task) => task.status === "queued").map((task) => task.id)
+      : [];
+    const ids = lead
+      ? [run.leadId, ...snapshots.map((task) => task.sessionId)]
+      : snapshots.map((task) => task.sessionId);
+    const targets = ids.map((sessionId) => this.host!.captureStop!(sessionId));
+    if (targets.some((target) => !target)) return undefined;
+    const original = targets as OriginalOrchestrationStop[];
+    let stopping = false;
+    const sameRun = () =>
+      this.incarnations.get(run.leadId) === incarnation && !this.starting.has(run.leadId);
+    const current = () => {
+      const latest = this.run(run.leadId);
+      return (
+        !!latest &&
+        sameRun() &&
+        (stopping && lead ? latest.status === "stopped" : latest.status === originalStatus) &&
+        (!lead || latest.tasks.filter(activeTask).length === snapshots.length) &&
+        snapshots.every((task) =>
+          latest.tasks.some(
+            (entry) =>
+              entry.id === task.id &&
+              entry.sessionId === task.sessionId &&
+              entry.activeDispatchId === task.dispatchId &&
+              activeTask(entry),
+          ),
+        ) &&
+        original.every((target) => target.current())
+      );
+    };
+    let generation: string | undefined;
+    const ready = this.store.captureGrant(run.leadId).then((value) => {
+      if (!value || !current()) throw new Error("Original orchestration changed.");
+      generation = value;
+    });
+    void ready.catch(() => {});
+    return {
+      ready,
+      current,
+      stop: async () => {
+        await ready;
+        if (!generation) throw new Error("Original orchestration grant unavailable.");
+        await this.stopDesktopControl(
+          run.leadId,
+          snapshots,
+          queuedIds,
+          original,
+          lead,
+          sameRun,
+          current,
+          generation,
+          () => {
+            stopping = true;
+          },
+        );
+      },
+    };
+  }
+
+  private async stopDesktopControl(
+    leadId: string,
+    tasks: { id: string; sessionId: string; dispatchId: string }[],
+    queuedIds: string[],
+    targets: OriginalOrchestrationStop[],
+    lead: boolean,
+    sameRun: () => boolean,
+    current: () => boolean,
+    generation: string,
+    markStopping: () => void,
+  ): Promise<void> {
+    if (!current()) throw new Error("Original orchestration changed.");
+    const run = this.run(leadId)!;
+    const selected = new Set(tasks.map((task) => task.id));
+    const queued = new Set(queuedIds);
+    markStopping();
+    await this.commit(
+      {
+        ...run,
+        ...(lead ? { status: "stopped" as const } : {}),
+        tasks: run.tasks.map((task) =>
+          selected.has(task.id) ? { ...task, status: "cancelling" as const } : task,
+        ),
+      },
+      sameRun,
+    );
+    if (!current()) throw new Error("Original orchestration changed while stopping.");
+    const outcomes = await Promise.allSettled(
+      targets.map(async (target) => {
+        if (!sameRun() || !target.current())
+          throw new Error("Original orchestration changed while stopping.");
+        await target.stop();
+      }),
+    );
+    const failed = outcomes.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
+    );
+    if (failed.length) throw new Error("Original orchestration stop remains unconfirmed.");
+    if (!sameRun()) throw new Error("Original orchestration changed while stopping.");
+    const latest = this.run(leadId);
+    if (
+      !latest ||
+      tasks.some(
+        (task) =>
+          !latest.tasks.some(
+            (entry) =>
+              entry.id === task.id &&
+              entry.sessionId === task.sessionId &&
+              (entry.activeDispatchId === task.dispatchId ||
+                (!entry.activeDispatchId &&
+                  entry.lastDispatchId === task.dispatchId &&
+                  !activeTask(entry))),
+          ),
+      )
+    )
+      throw new Error("Original orchestration dispatch changed while stopping.");
+    const dispatches = new Set(tasks.map((task) => task.dispatchId));
+    await this.commit(
+      {
+        ...latest,
+        ...(lead ? { status: "stopped" as const } : {}),
+        tasks: latest.tasks.map((task) =>
+          selected.has(task.id) || queued.has(task.id)
+            ? {
+                ...task,
+                status: "cancelled" as const,
+                accepted: false,
+                delivered: lead,
+                activeDispatchId: undefined,
+                ...(!lead ? { recoveryPrompt: undefined } : {}),
+                ...(task.activeDispatchId ? { lastDispatchId: task.activeDispatchId } : {}),
+              }
+            : task,
+        ),
+        dispatches: (latest.dispatches ?? []).map((dispatch) =>
+          dispatches.has(dispatch.id)
+            ? {
+                ...dispatch,
+                state: "cancelled" as const,
+                stage: "settled" as const,
+                updatedAt: Date.now(),
+              }
+            : dispatch,
+        ),
+      },
+      sameRun,
+    );
+    if (!sameRun()) throw new Error("Original orchestration changed after stopping.");
+    for (const dispatch of dispatches) this.writeChecks.delete(dispatch);
+    if (lead) await this.store.disableCaptured!(leadId, generation);
+    else void this.pump().catch(console.error);
+  }
   /** Drain control writes before the database removes a lead or one of its workers. */
   deleteSession(id: string, remove: () => Promise<void>): Promise<void> {
     // Ordinary history has no orchestration writes to drain. A slow control
@@ -1769,6 +1966,7 @@ export class Orchestrator {
         this.deleted.add(id);
         if (!run) return;
         this.runs = this.runs.filter((entry) => entry.leadId !== run.leadId);
+        this.incarnations.delete(run.leadId);
         this.persisted.delete(run.leadId);
         this.blocked.delete(run.leadId);
         this.announced.delete(run.leadId);
@@ -1782,6 +1980,7 @@ export class Orchestrator {
           });
           if (updated) {
             const normalized = normalizeOrchestrationRun(updated);
+            this.incarnations.set(normalized.leadId, {});
             this.runs = [...this.runs, normalized];
             this.persisted.set(run.leadId, normalized);
             this.emit();

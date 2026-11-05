@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
 import { readBuildIdentity } from "./build-info.mjs";
 import { verifyNativeIdentity } from "./dev-shot.mjs";
-import { nativeDevDesktopDataPath } from "../../host/workspace-bootstrap.ts";
+import { nativeDevDesktopDataPath } from "../../host/workspaces/workspace-bootstrap.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));

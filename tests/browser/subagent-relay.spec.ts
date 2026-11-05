@@ -1,6 +1,68 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`compact activity identities and state icons at ${width}px ${theme}`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width, height: 720 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/subagent-relay.html?status-colors&theme=${theme}`);
+      const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+      await dock.locator("button[data-dock-toggle]").click();
+      const rows = dock.locator("[data-dock-agent]");
+      await expect(rows).toHaveCount(5);
+      for (const state of ["running", "done", "failed", "stopped", "interrupted"]) {
+        const row = dock.locator(`[data-dock-agent="status-${state}"]`);
+        await expect(row).toHaveAttribute(
+          "aria-label",
+          new RegExp(
+            state === "stopped" ? "Stopped by you" : state[0].toUpperCase() + state.slice(1),
+          ),
+        );
+        await expect(row).toHaveAttribute("data-dock-agent-state", state);
+        await expect(row.locator(":scope > span").first()).toBeVisible();
+      }
+      const running = dock.locator('[data-dock-agent="status-running"]');
+      const geometry = await running.evaluate((node) => {
+        const identity = node.querySelector(".activity-dock-agent-identity > span")!;
+        const metrics = node.querySelector(".activity-dock-agent-metrics")!;
+        const title = node.querySelector(".whitespace-pre-wrap")!;
+        const arrow = node.lastElementChild!;
+        return {
+          modelAboveTitle:
+            identity.getBoundingClientRect().bottom <= title.getBoundingClientRect().top + 1,
+          metricsAfterTitle:
+            metrics.getBoundingClientRect().left >= title.getBoundingClientRect().right,
+          metricsBeforeArrow:
+            metrics.getBoundingClientRect().right <= arrow.getBoundingClientRect().left,
+          fits: node.scrollWidth <= node.clientWidth,
+        };
+      });
+      expect(geometry).toEqual({
+        modelAboveTitle: true,
+        metricsAfterTitle: true,
+        metricsBeforeArrow: true,
+        fits: true,
+      });
+      await expect(running.locator(".activity-dock-agent-identity > span").first()).toContainText(
+        /gpt-6.1-sol/i,
+      );
+      await expect(running.locator(".activity-dock-agent-metrics")).toContainText(
+        "3 steps, 1 failed",
+      );
+      await running.focus();
+      await expect(running).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await dock.screenshot({ path: info.outputPath(`compact-dock-${theme}-${width}.png`) });
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
   for (const width of [320, 542]) {
     test(`long trail and resized composer stay within ${width}px ${theme} panel`, async ({
       page,

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -38,8 +39,10 @@ export function useHistoryRefresh({
   setLoadedProjects,
   setHistoryErrorCwd,
 }: HistoryRefreshDeps): HistoryRefresh {
+  const refreshSequence = useRef(0);
   const refreshHistory = useCallback(async (cwd: string) => {
     if (!cwd || cwd === "~") return;
+    const sequence = ++refreshSequence.current;
     // `history` holds every visited project's rows and the sidebar filters it
     // by cwd, so a project loaded once paints from cache on the way back and
     // revalidates quietly underneath the cards already on screen. Whether the
@@ -50,11 +53,11 @@ export function useHistoryRefresh({
     setHistoryErrorCwd((prev) => (prev === key ? null : prev));
     try {
       const rows = await listSessionsByProject(cwd);
-      if (cwd !== sidebarCwdRef.current) return;
+      if (sequence !== refreshSequence.current || cwd !== sidebarCwdRef.current) return;
       setHistory((current) => replaceProjectHistory(current, cwd, rows));
       setLoadedProjects((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     } catch {
-      if (cwd !== sidebarCwdRef.current) return;
+      if (sequence !== refreshSequence.current || cwd !== sidebarCwdRef.current) return;
       // A failed revalidate keeps the cached cards rather than replacing a
       // good list with an error.
       if (!loadedProjectsRef.current.has(key)) setHistoryErrorCwd(key);

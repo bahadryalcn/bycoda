@@ -115,6 +115,36 @@ it("recognizes only complete saved JSON collections", () => {
     expect(inspectionJson(text)).toBeNull();
 });
 
+it("parses saved JSON once across render and copy feedback, then refreshes changed output", async () => {
+  const text = '{"result":{"cached":true}}';
+  const changed = '{"result":{"cached":false}}';
+  const block: Block = {
+    id: "json-cache",
+    role: "tool",
+    text: "Result",
+    tool: { output: text, status: "completed" },
+  };
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+    await act(async () => container.querySelector("button")!.click());
+    await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+    expect(parse.mock.calls.filter(([value]) => value === text)).toHaveLength(1);
+    expect(clipboard.copy).toHaveBeenCalledWith(text);
+    await act(async () =>
+      root.render(
+        createElement(ToolInspectionPanel, {
+          block: { ...block, tool: { ...block.tool, output: changed } },
+        }),
+      ),
+    );
+    expect(parse.mock.calls.filter(([value]) => value === changed)).toHaveLength(1);
+    expect(container.querySelector('[role="tree"]')).not.toBeNull();
+  } finally {
+    parse.mockRestore();
+  }
+});
+
 it("renders JSON output as a tree while truncated output and commands retain their exact text", async () => {
   const text = '{"result":{"ok":true}}';
   const block: Block = {

@@ -7,7 +7,11 @@ import {
   type EditorFileClose,
   type EditorFileCloseDeps,
 } from "./useEditorFileClose";
-import { newEditorWorkspaceTab, newFileTab, newTerminalFile } from "../../../features/workspace/model/layout";
+import {
+  newEditorWorkspaceTab,
+  newFileTab,
+  newTerminalFile,
+} from "../../../features/workspace/model/layout";
 const confirms = vi.hoisted(() => ({ run: vi.fn(async () => true) }));
 vi.mock("../../model/closeConfirmation", () => ({ confirmWorkspaceClose: confirms.run }));
 vi.mock("../../../platform/tauri/fs", () => ({ basename: (path: string) => path }));
@@ -46,7 +50,8 @@ it.each(["left", "right", undefined] as const)(
       isMovingPane: () => false,
       onCloseTab: vi.fn(),
       setDirtyFiles: (update) => {
-        dirtyFilesRef.current = typeof update === "function" ? update(dirtyFilesRef.current) : update;
+        dirtyFilesRef.current =
+          typeof update === "function" ? update(dirtyFilesRef.current) : update;
       },
       setSessions: vi.fn(),
       setTabs: (update) => {
@@ -66,14 +71,24 @@ it.each(["left", "right", undefined] as const)(
       await act(async () => actions.onCloseOtherFiles(pane.id, selected.id, direction));
       expect(tabsRef.current[0].editorPanes[0].files).toEqual([left, selected, right, terminal]);
       expect(dirtyFilesRef.current.size).toBe(3);
-      expect(confirms.run).toHaveBeenLastCalledWith(expect.any(Function), direction === "left" ? undefined : expect.any(Function));
+      expect(confirms.run).toHaveBeenLastCalledWith(
+        expect.any(Function),
+        direction === "left" ? undefined : expect.any(Function),
+      );
       confirms.run.mockResolvedValue(true);
       await act(async () => actions.onCloseOtherFiles(pane.id, selected.id, direction));
-      const remaining = direction === "left" ? [selected, right, terminal] : direction === "right" ? [left, selected] : [selected];
+      const remaining =
+        direction === "left"
+          ? [selected, right, terminal]
+          : direction === "right"
+            ? [left, selected]
+            : [selected];
       expect(tabsRef.current[0].editorPanes[0].files).toEqual(remaining);
       expect(tabsRef.current[0].editorPanes[0].activeFileId).toBe(selected.id);
       expect(tabsRef.current[1]).toBe(otherTab);
-      expect(dirtyFilesRef.current).toEqual(new Set(remaining.filter((file) => !file.terminal).map((file) => file.id)));
+      expect(dirtyFilesRef.current).toEqual(
+        new Set(remaining.filter((file) => !file.terminal).map((file) => file.id)),
+      );
     } finally {
       await act(async () => root.unmount());
     }

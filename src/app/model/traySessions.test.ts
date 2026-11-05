@@ -34,6 +34,15 @@ const options = {
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 describe("session menu rows", () => {
+  it("keeps interrupted conversations compatible with native tray status and activity order", () => {
+    const rows = traySessions({
+      ...options,
+      stored: [stored("cut", { updatedAt: 100, lastActivityAt: 20 }), stored("newer")],
+      live: [live("cut", "interrupted")],
+    });
+    expect(rows.map((row) => row.id)).toEqual(["newer", "cut"]);
+    expect(rows[1]).toMatchObject({ status: "active", updatedAt: 20 });
+  });
   it("keeps project and provider readable when a title is long or multiline", () => {
     const [row] = traySessions({
       ...options,

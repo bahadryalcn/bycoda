@@ -176,19 +176,17 @@ if (query.has("managedDelivery"))
       autoMerge: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      ...{
-        workspaceId: managedWorkspace.id,
-        finalization: {
-          branch: managedWorkspace.branchRef.replace(/^refs\/heads\//, ""),
-          head: "b".repeat(40),
-          status: "",
-          diff: "",
-          fingerprint: "managed-task-finished",
-          clean: true,
-        },
-        deliveryState: "awaitingOwner" as const,
-        deliveryApprovalRequired: true,
+      workspaceId: managedWorkspace.id,
+      finalization: {
+        branch: managedWorkspace.branchRef.replace(/^refs\/heads\//, ""),
+        head: "b".repeat(40),
+        status: "",
+        diff: "",
+        fingerprint: "managed-task-finished",
+        clean: true,
       },
+      deliveryState: "awaitingOwner" as const,
+      deliveryApprovalRequired: true,
     },
   ];
 // ?autonomy: one task per owner-facing status line (fixture data only).
@@ -215,7 +213,13 @@ if (query.has("autonomy")) {
       repairAttempts: 2,
       repairNote: "The seek test still fails on resume. It expects 4 seconds but gets 0.",
     },
-    { ...base, id: "auto-verifying", title: "Add export button", status: "verifying", startedAt: at - 300_000 },
+    {
+      ...base,
+      id: "auto-verifying",
+      title: "Add export button",
+      status: "verifying",
+      startedAt: at - 300_000,
+    },
     {
       ...base,
       id: "auto-notes",
@@ -224,11 +228,27 @@ if (query.has("autonomy")) {
       startedAt: at - 3_000_000,
       completedAt: at - 60_000,
       completedWithFindings: true,
-      diffStat: " src/onboarding.tsx | 40 ++++---\n src/i18n/tr.json | 12 +++\n 2 files changed, 44 insertions(+), 8 deletions(-)",
+      diffStat:
+        " src/onboarding.tsx | 40 ++++---\n src/i18n/tr.json | 12 +++\n 2 files changed, 44 insertions(+), 8 deletions(-)",
       ownerNotices: [
-        { id: "n1", kind: "remaining_finding", message: "The Japanese welcome title still wraps on narrow screens.", at },
-        { id: "n2", kind: "external_check", message: "Check the onboarding flow on a physical iPhone.", at },
-        { id: "n3", kind: "auto_continued", message: "The run limit was reached once and the task continued automatically.", at },
+        {
+          id: "n1",
+          kind: "remaining_finding",
+          message: "The Japanese welcome title still wraps on narrow screens.",
+          at,
+        },
+        {
+          id: "n2",
+          kind: "external_check",
+          message: "Check the onboarding flow on a physical iPhone.",
+          at,
+        },
+        {
+          id: "n3",
+          kind: "auto_continued",
+          message: "The run limit was reached once and the task continued automatically.",
+          at,
+        },
       ],
       attemptHistory: [
         {
@@ -271,17 +291,49 @@ if (query.has("autonomy")) {
       status: "blocked",
       completedAt: at - 400_000,
       continueUntilDone: true,
-      repairStop: { reason: "external", message: "Provide an Android device to test TalkBack reset. The emulator does not expose the gesture." },
+      repairStop: {
+        reason: "external",
+        message:
+          "Provide an Android device to test TalkBack reset. The emulator does not expose the gesture.",
+      },
       error: "Review failed: TalkBack reset was not verified.",
     },
   ];
 }
 const limits = new Map<string, { maxRunningTasks: number; dailyAgentMinutes: number }>();
-if(query.has("stalled")){
-  const at=Date.now();tasks["machine-local"]=[{
-    id:"stalled-task",title:"Inspect delayed worker",prompt:"Fixture only, no live work",projectId:"local-project",harness:"claude",model:"claude:fixture",modelSettings:{},runtimeMode:"auto",maxRunMinutes:0,isolate:false,review:false,status:"running",sessionId:"worker-stalled",runId:"run-stalled",createdAt:at-3600_000,updatedAt:at,startedAt:at-3600_000,
-    ...(query.has("cleared")?{}:{runStall:{sessionId:"worker-stalled",runId:"run-stalled",lastActivityAt:at-16*60_000,detectedAt:at}}),
-  }];
+if (query.has("stalled")) {
+  const at = Date.now();
+  tasks["machine-local"] = [
+    {
+      id: "stalled-task",
+      title: "Inspect delayed worker",
+      prompt: "Fixture only, no live work",
+      projectId: "local-project",
+      harness: "claude",
+      model: "claude:fixture",
+      modelSettings: {},
+      runtimeMode: "auto",
+      maxRunMinutes: 0,
+      isolate: false,
+      review: false,
+      status: "running",
+      sessionId: "worker-stalled",
+      runId: "run-stalled",
+      createdAt: at - 3600_000,
+      updatedAt: at,
+      startedAt: at - 3600_000,
+      ...(query.has("cleared")
+        ? {}
+        : {
+            runStall: {
+              sessionId: "worker-stalled",
+              runId: "run-stalled",
+              lastActivityAt: at - 16 * 60_000,
+              detectedAt: at,
+            },
+          }),
+    },
+  ];
 }
 if (query.has("boardControls")) {
   const defaults: HostTaskInput = {

@@ -39,6 +39,7 @@ export type VoiceSessionCreate = {
   prompt: string;
   /** Creating a session never submits work unless explicitly requested. */
   submit: boolean;
+  workspaceRequestId?: string;
 };
 
 export type VoiceWorkspaceActionsDeps = {
@@ -49,9 +50,9 @@ export type VoiceWorkspaceActionsDeps = {
   getProjectPath: () => string;
   resolveSession?: (id: string) => Promise<VoiceWorkspaceSession | null>;
   listSessions?: (projectPath: string) => Promise<readonly VoiceWorkspaceSession[]>;
-  onSelectProject?: (path: string) => void | Promise<void>;
+  onSelectProject?: (path: string, workspaceRequestId?: string) => void | Promise<void>;
   onCreate?: (request: VoiceSessionCreate) => Promise<string>;
-  onOpen?: (sessionId: string) => void | Promise<void>;
+  onOpen?: (sessionId: string, workspaceRequestId?: string) => void | Promise<void>;
   /** Must delegate the existing close action, including dirty-file/terminal prompts. */
   onClose?: (sessionId: string) => void | boolean | Promise<void | boolean>;
   onRename?: (sessionId: string, title: string) => void | Promise<void>;
@@ -60,6 +61,7 @@ export type VoiceWorkspaceActionsDeps = {
   onDelete?: (sessionId: string) => void | boolean | Promise<void | boolean>;
   onSubmit?: (sessionId: string, text: string) => boolean | Promise<boolean>;
   onStop?: (sessionId: string) => void | Promise<void>;
+  onStopForRoom?: (sessionId: string) => Promise<void>;
 };
 
 const text = { type: "string", minLength: 1, maxLength: 4096 };

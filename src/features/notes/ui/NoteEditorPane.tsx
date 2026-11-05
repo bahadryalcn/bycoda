@@ -29,10 +29,13 @@ export function NoteEditorPane({
   const retainedViewport = useRetainedScroll<HTMLDivElement>(scrollKey ?? `note-pane:${paneId}`, {
     ready: !hidden,
   });
-  const setViewport = useCallback((node: HTMLDivElement | null) => {
-    viewport.current = node;
-    retainedViewport(node);
-  }, [retainedViewport]);
+  const setViewport = useCallback(
+    (node: HTMLDivElement | null) => {
+      viewport.current = node;
+      retainedViewport(node);
+    },
+    [retainedViewport],
+  );
   const content = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(false);
 
@@ -52,7 +55,12 @@ export function NoteEditorPane({
   }, [hidden, scrollKey]);
 
   return (
-    <div hidden={hidden} data-split={split || undefined} data-document={readingPane || undefined} className={hidden ? "hidden" : "note-editor-pane"}>
+    <div
+      hidden={hidden}
+      data-split={split || undefined}
+      data-document={readingPane || undefined}
+      className={hidden ? "hidden" : "note-editor-pane"}
+    >
       {split ? <div className="note-pane-label">{label}</div> : null}
       <div
         ref={setViewport}

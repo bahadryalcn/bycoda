@@ -304,11 +304,10 @@ it("keeps the actual canvas policy when SSH typography overrides change without 
       lineHeight: 1.35,
       minimumContrastRatio: 7,
     });
-    expect(instance.options).toHaveProperty(
-      "theme.background",
-      "rgba(17, 34, 51, 0)",
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
+    expect(host.querySelector("[data-terminal-canvas]")?.getAttribute("data-terminal-canvas")).toBe(
+      "resolved",
     );
-    expect(host.querySelector("[data-terminal-canvas]")?.getAttribute("data-terminal-canvas")).toBe("resolved");
     // Omitting lineHeight changes typography only, never contrast/transparency.
     await act(async () => root.render(render(20)));
     expect(xterm.instances).toHaveLength(1);
@@ -320,6 +319,48 @@ it("keeps the actual canvas policy when SSH typography overrides change without 
     expect(pty.killPty).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("updates the retained terminal when accessibility transparency changes", async () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const listeners = new Map<string, EventListener>();
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: (_type: string, listener: EventListener) => listeners.set(query, listener),
+    removeEventListener: (_type: string, listener: EventListener) => {
+      if (listeners.get(query) === listener) listeners.delete(query);
+    },
+  }));
+  const { host, root } = setup();
+  host.style.backgroundColor = "rgb(17, 34, 51)";
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "transparency-change",
+          cwd: "",
+          sshConnectionId: "saved",
+          active: true,
+        }),
+      ),
+    );
+    const instance = xterm.instances[0];
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
+    host.style.backgroundColor = "rgb(68, 85, 102)";
+    await act(async () => {
+      listeners.get("(prefers-reduced-transparency: reduce)")?.(new Event("change"));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect(instance.options).toHaveProperty("theme.background", "rgba(68, 85, 102, 0)");
+    expect(xterm.instances).toHaveLength(1);
+    expect(pty.killPty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    expect(listeners.size).toBe(0);
     host.remove();
   }
 });

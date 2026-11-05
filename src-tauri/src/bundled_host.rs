@@ -25,14 +25,7 @@ struct RetryState {
     package: String,
     failures: u32,
     next_attempt: u64,
-    /// When the installed runtime was first seen damaged or mismatched. A repair
-    /// needs a second failed check at least `REPAIR_CONFIRMATION` later.
-    #[serde(default)]
-    unhealthy_since: Option<u64>,
 }
-
-/// Two failed health checks this far apart are required before a repair.
-const REPAIR_CONFIRMATION: Duration = Duration::from_secs(5 * 60);
 
 fn retry_delay(failures: u32) -> Duration {
     RETRY_INTERVAL
@@ -66,14 +59,6 @@ impl RetryState {
             })
     }
 
-    /// The saved state regardless of package, so health tracking survives between installs.
-    fn load_any(path: &Path) -> Self {
-        std::fs::read(path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
-            .unwrap_or_default()
-    }
-
     fn failed(&mut self, now: u64) -> Duration {
         self.failures = self.failures.saturating_add(1);
         let delay = retry_delay(self.failures);
@@ -86,7 +71,6 @@ impl RetryState {
     }
 }
 /// Another window's or a crashed run's lock is ignored after this long.
-const STALE_LOCK: Duration = Duration::from_secs(10 * 60);
 /// A coordinator job that has not changed for this long is not running.
 const STALE_JOB: Duration = Duration::from_secs(30 * 60);
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -112,21 +96,6 @@ enum Plan {
     Deferred(&'static str),
 }
 
-/// What the installed host looks like. Only `Damaged` can justify a repair: a
-/// stopped, starting or slow host is left alone, because repairing is an
-/// uninstall and reinstall that would interrupt the owner's work.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Health {
-    Healthy,
-    /// The runtime entry point is missing, or the running host reports another
-    /// version or runtime than the installed pointer.
-    Damaged,
-    /// The lifecycle probe found no listener; this may be a deliberate stop.
-    Stopped,
-    /// The probe could not decide (slow, busy, record being replaced).
-    Unconfirmed,
-}
-
 /// What to do with this computer's host. Never downgrades, and never
 /// interrupts running work: a failed activity read means wait, not idle.
 fn plan(
@@ -134,9 +103,7 @@ fn plan(
     bundled: &str,
     busy: Result<bool, ()>,
     job_pending: bool,
-    health: Health,
-    unhealthy_since: Option<u64>,
-    now: u64,
+    healthy: bool,
 ) -> Plan {
     if job_pending {
         return Plan::Deferred("Another host update is being installed.");
@@ -150,30 +117,19 @@ fn plan(
             Err(()) => Plan::Deferred("Could not check whether the host is busy."),
         };
     };
-    if !is_newer(bundled, installed) && health == Health::Healthy {
+    if !is_newer(bundled, installed) && healthy {
         return Plan::Current;
     }
-    // An unconfirmed probe means activity is unknown, never idle.
-    let busy = if health == Health::Unconfirmed {
-        Err(())
-    } else {
-        busy
-    };
     match busy {
-        Ok(false) => {}
-        Ok(true) => return Plan::Deferred("The host update waits until running sessions finish."),
-        Err(()) => return Plan::Deferred("Could not check whether the host is busy."),
-    }
-    if health == Health::Stopped {
-        // A host that is not listening may have been stopped on purpose.
-        return Plan::Deferred("The host is stopped; it is left stopped.");
-    }
-    if is_newer(bundled, installed) {
-        return Plan::Upgrade;
-    }
-    match unhealthy_since {
-        Some(first) if now.saturating_sub(first) >= REPAIR_CONFIRMATION.as_secs() => Plan::Repair,
-        _ => Plan::Deferred("The host looks damaged; it will be checked again before repair."),
+        Ok(false) => {
+            if is_newer(bundled, installed) {
+                Plan::Upgrade
+            } else {
+                Plan::Repair
+            }
+        }
+        Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+        Err(()) => Plan::Deferred("Could not check whether the host is busy."),
     }
 }
 
@@ -210,12 +166,56 @@ fn read_lifecycle_response(
     serde_json::from_slice(&bytes).map_err(|_| LifecycleProbeError::Unconfirmed)
 }
 
+/// The Node owner keeps this SQLite transaction open for its entire lifetime.
+/// A legacy PID, corrupt record, or unavailable witness cannot prove a stop.
+fn owner_verified_stopped(base: &Path) -> bool {
+    let database = base.join("owner.db");
+    let has_database = match std::fs::metadata(&database) {
+        Ok(info) if info.is_file() => true,
+        Ok(_) => return false,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return false,
+    };
+    let connection = if has_database {
+        let Ok(connection) = rusqlite::Connection::open_with_flags(
+            &database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            return false;
+        };
+        if connection.busy_timeout(Duration::ZERO).is_err()
+            || connection.execute_batch("BEGIN EXCLUSIVE").is_err()
+        {
+            return false;
+        }
+        Some(connection)
+    } else {
+        None
+    };
+    let result = match std::fs::read_to_string(base.join("owner.lock")) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .is_some_and(|value| {
+                has_database
+                    && value.get("version").and_then(serde_json::Value::as_u64) == Some(2)
+                    && value
+                        .get("pid")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|pid| pid > 0)
+            }),
+    };
+    drop(connection);
+    result
+}
+
 pub(crate) fn probe_lifecycle_status(
     base: &Path,
 ) -> Result<(serde_json::Value, serde_json::Value), LifecycleProbeError> {
     use LifecycleProbeError::{Stopped, Unconfirmed};
     let record = std::fs::read_to_string(base.join("running.json")).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
+        if error.kind() == std::io::ErrorKind::NotFound && owner_verified_stopped(base) {
             Stopped
         } else {
             Unconfirmed
@@ -246,7 +246,11 @@ pub(crate) fn probe_lifecycle_status(
                     .downcast_ref::<std::io::Error>()
                     .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused)
                 {
-                    return Stopped;
+                    return if owner_verified_stopped(base) {
+                        Stopped
+                    } else {
+                        Unconfirmed
+                    };
                 }
                 source = cause.source();
             }
@@ -258,52 +262,29 @@ pub(crate) fn probe_lifecycle_status(
 
 // A pointer records installed files, not the executable serving requests. Verify
 // the private lifecycle endpoint and the actual entry point before saying current.
-fn host_health(base: &Path) -> Health {
-    let Ok(runtime) = std::fs::read_to_string(base.join("runtime-path")) else {
-        return Health::Damaged;
-    };
-    let runtime = PathBuf::from(runtime.trim());
-    let Some(version) = installed_version(base) else {
-        return Health::Damaged;
-    };
-    if !runtime.join("host.mjs").exists() {
-        return Health::Damaged;
-    }
-    // A busy host can miss a probe; repairing (restarting) a healthy but slow
-    // host would interrupt the owner's work, so retry before calling it unconfirmed.
-    let mut probe = probe_lifecycle_status(base);
-    for _ in 0..2 {
-        if probe != Err(LifecycleProbeError::Unconfirmed) {
-            break;
-        }
-        std::thread::sleep(Duration::from_secs(1));
-        probe = probe_lifecycle_status(base);
-    }
-    let (state, response) = match probe {
-        Ok(pair) => pair,
-        Err(LifecycleProbeError::Stopped) => return Health::Stopped,
-        Err(LifecycleProbeError::Unconfirmed) => return Health::Unconfirmed,
-    };
-    let (Some(response_pid), Some(state_pid), Some(response_runtime), Some(response_version)) = (
-        response.get("pid").and_then(serde_json::Value::as_u64),
-        state.get("pid").and_then(serde_json::Value::as_u64),
-        response.get("runtime").and_then(serde_json::Value::as_str),
-        response.get("version").and_then(serde_json::Value::as_str),
-    ) else {
-        return Health::Unconfirmed;
-    };
-    if response_pid != state_pid {
-        // The running record is being replaced; try again later.
-        return Health::Unconfirmed;
-    }
-    if Path::new(response_runtime) != runtime.join("host.mjs") || response_version != version {
-        return Health::Damaged;
-    }
-    Health::Healthy
-}
-
 fn host_healthy(base: &Path) -> bool {
-    host_health(base) == Health::Healthy
+    let probe = || -> Option<bool> {
+        let runtime = std::fs::read_to_string(base.join("runtime-path")).ok()?;
+        let version = installed_version(base)?;
+        // A busy host can miss a probe; repairing (restarting) a healthy but slow
+        // host would interrupt the owner's work, so retry before calling it unhealthy.
+        let mut probe = probe_lifecycle_status(base);
+        for _ in 0..2 {
+            if probe != Err(LifecycleProbeError::Unconfirmed) {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            probe = probe_lifecycle_status(base);
+        }
+        let (state, response) = probe.ok()?;
+        Some(
+            response.get("pid")?.as_u64()? == state.get("pid")?.as_u64()?
+                && Path::new(response.get("runtime")?.as_str()?)
+                    == PathBuf::from(runtime.trim()).join("host.mjs")
+                && response.get("version")?.as_str()? == version,
+        )
+    };
+    probe().unwrap_or(false)
 }
 
 /// The service may still be starting when the installer returns.
@@ -409,6 +390,37 @@ fn host_busy(base: &Path) -> Result<bool, ()> {
         .map_err(|_| ())
 }
 
+// Existing installations have no durable stop-intent or complete process-tree
+// idle proof. The explicit installer remains available to the owner; automatic
+// maintenance only admits a genuinely fresh profile.
+fn automatic_activity(base: &Path) -> Result<bool, ()> {
+    if !owner_verified_stopped(base) {
+        return Err(());
+    }
+    let entries = std::fs::read_dir(base).map_err(|_| ())?;
+    for entry in entries {
+        let entry = entry.map_err(|_| ())?;
+        if entry.file_name() != "app-install.lock" {
+            return Err(());
+        }
+    }
+    for name in [
+        "runtime-path",
+        "running.json",
+        "service.ps1",
+        "host.db",
+        "owner.db",
+        "owner.lock",
+    ] {
+        match std::fs::metadata(base.join(name)) {
+            Ok(_) => return Err(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(()),
+        }
+    }
+    host_busy(base)
+}
+
 /// A local update coordinator job for the host that is still in progress.
 pub(crate) fn job_pending(base: &Path) -> bool {
     let job = base.join("update-jobs").join("host.json");
@@ -458,38 +470,19 @@ struct InstallLock(PathBuf);
 
 /// Whether this app's own host installer holds its lock right now.
 pub(crate) fn install_running(base: &Path) -> bool {
-    std::fs::metadata(base.join("app-install.lock"))
-        .and_then(|meta| meta.modified())
-        .ok()
-        .and_then(|time| SystemTime::now().duration_since(time).ok())
-        .is_some_and(|age| age <= STALE_LOCK)
+    match std::fs::metadata(base.join("app-install.lock")) {
+        Ok(_) => true,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
 }
 
 impl InstallLock {
     fn acquire(base: &Path) -> Option<Self> {
         std::fs::create_dir_all(base).ok()?;
         let path = base.join("app-install.lock");
-        for _ in 0..2 {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(_) => return Some(Self(path)),
-                Err(_) => {
-                    let stale = std::fs::metadata(&path)
-                        .and_then(|meta| meta.modified())
-                        .ok()
-                        .and_then(|time| SystemTime::now().duration_since(time).ok())
-                        .is_some_and(|age| age > STALE_LOCK);
-                    if !stale {
-                        return None;
-                    }
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
-        }
-        None
+        // Age alone cannot prove that a slow or orphaned installer retired.
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&path).ok()?;
+        Some(Self(path))
     }
 }
 
@@ -500,7 +493,7 @@ impl Drop for InstallLock {
 }
 
 /// Runs the bootstrap script against the bundled archive.
-fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Result<(), String> {
+fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool, lock: std::sync::Arc<InstallLock>) -> Result<(), String> {
     let windows = cfg!(windows);
     let platform = if windows {
         HostPlatform::Windows
@@ -553,15 +546,14 @@ fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Re
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let result = run_with_timeout(command, SCRIPT_TIMEOUT);
-    let _ = std::fs::remove_file(&script);
-    result
+    run_with_timeout(command, SCRIPT_TIMEOUT, lock, script)
 }
 
-fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), String> {
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Could not start the host installer: {error}"))?;
+fn run_with_timeout(mut command: Command, timeout: Duration, lock: std::sync::Arc<InstallLock>, script: std::path::PathBuf) -> Result<(), String> {
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => { let _ = std::fs::remove_file(&script); return Err(format!("Could not start the host installer: {error}")); }
+    };
     let mut stderr = child.stderr.take();
     let reader = std::thread::spawn(move || {
         let mut text = String::new();
@@ -575,6 +567,7 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), Strin
         match child.try_wait() {
             Ok(Some(status)) => {
                 let errors = reader.join().unwrap_or_default();
+                let _ = std::fs::remove_file(&script);
                 if status.success() {
                     return Ok(());
                 }
@@ -585,11 +578,35 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), Strin
                     .to_string());
             }
             Ok(None) if started.elapsed() > timeout => {
-                let _ = child.kill();
+                std::thread::spawn(move || {
+                    let _lock = lock;
+                    crate::harness::terminate_all(&[child.id()]);
+                    let _ = child.kill();
+                    // Keep the lock and script until actual process and pipe retirement.
+                    if child.wait().is_ok() {
+                        let _ = reader.join();
+                        let _ = std::fs::remove_file(&script);
+                    }
+                    // Parent exit and closed stderr do not prove every descendant
+                    // retired after a bounded tree-kill attempt.
+                    std::mem::forget(_lock);
+                });
                 return Err("The host installer did not finish in time.".into());
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(200)),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => {
+                std::thread::spawn(move || {
+                    let _lock = lock;
+                    crate::harness::terminate_all(&[child.id()]);
+                    let _ = child.kill();
+                    if child.wait().is_ok() {
+                        let _ = reader.join();
+                        let _ = std::fs::remove_file(&script);
+                    }
+                    std::mem::forget(_lock);
+                });
+                return Err(error.to_string());
+            }
         }
     }
 }
@@ -624,34 +641,17 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
         });
         return None;
     };
-    let Some(_lock) = InstallLock::acquire(&base) else {
+    let Some(lock) = InstallLock::acquire(&base) else {
         return Some(RETRY_INTERVAL);
     };
+    let lock = std::sync::Arc::new(lock);
     let installed = installed_version(&base);
-    let retry_path = base.join("bundled-host-retry.json");
-    let health = host_health(&base);
-    let now = unix_now();
-    // Remember when the damage was first seen; any other result clears it.
-    let mut tracked = RetryState::load_any(&retry_path);
-    let unhealthy_since = if health == Health::Damaged {
-        Some(tracked.unhealthy_since.unwrap_or(now))
-    } else {
-        None
-    };
-    if tracked.unhealthy_since != unhealthy_since {
-        tracked.unhealthy_since = unhealthy_since;
-        if let Ok(bytes) = serde_json::to_vec(&tracked) {
-            let _ = std::fs::write(&retry_path, bytes);
-        }
-    }
     let decision = plan(
         installed.as_deref(),
         &bundled,
-        host_busy(&base),
+        automatic_activity(&base),
         job_pending(&base),
-        health,
-        unhealthy_since,
-        now,
+        host_healthy(&base),
     );
     let status = |state: &str, message: Option<String>| BundledHostStatus {
         state: state.into(),
@@ -672,6 +672,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
             Some(RETRY_INTERVAL)
         }
         Plan::Install | Plan::Upgrade | Plan::Repair => {
+            let retry_path = base.join("bundled-host-retry.json");
             let package = match package_identity(&archive) {
                 Ok(package) => package,
                 Err(error) => {
@@ -700,7 +701,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
             // downgrading a newer installed release. Bootstrap reuses intact
             // extracted bytes on later attempts.
             let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
-            let result = run_installer(&base, &archive, replace, repair).and_then(|()| {
+            let result = run_installer(&base, &archive, replace, repair, lock.clone()).and_then(|()| {
                 if installation_confirmed(
                     installed_version(&base).as_deref(),
                     &bundled,
@@ -773,15 +774,7 @@ mod tests {
     #[test]
     fn missing_version_metadata_does_not_bypass_the_activity_gate() {
         assert_eq!(
-            plan(
-                None,
-                "0.6.75",
-                Ok(true),
-                false,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
+            plan(None, "0.6.75", Ok(true), false, false),
             Plan::Deferred("The host update waits until running sessions finish.")
         );
         assert_eq!(
@@ -895,6 +888,73 @@ mod tests {
     }
 
     #[test]
+    fn missing_or_refused_lifecycle_never_overrides_live_or_unknown_owner() {
+        let base = scratch("owner-probe");
+        let db = rusqlite::Connection::open(base.join("owner.db")).unwrap();
+        db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        std::fs::write(base.join("owner.lock"), r#"{"version":2,"pid":123}"#).unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        std::fs::write(
+            base.join("running.json"),
+            format!(r#"{{"port":{port},"secret":"test"}}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        drop(db);
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Stopped)
+        );
+        std::fs::write(base.join("owner.lock"), "not valid").unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::write(base.join("owner.lock"), "123").unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn automatic_updates_admit_fresh_only_and_preserve_installed_stop_intent() {
+        let base = scratch("automatic-authority");
+        assert_eq!(automatic_activity(&base), Ok(false));
+        assert_eq!(
+            plan(None, "0.6.75", automatic_activity(&base), false, false),
+            Plan::Install
+        );
+        std::fs::write(base.join("runtime-path"), "stopped-runtime").unwrap();
+        for installed in [None, Some("0.6.74"), Some("0.6.75")] {
+            assert!(matches!(
+                plan(installed, "0.6.75", automatic_activity(&base), false, false),
+                Plan::Deferred(_)
+            ));
+        }
+        // Owner-directed repair/upgrade retains the existing verified-idle plan.
+        assert_eq!(
+            plan(Some("0.6.75"), "0.6.75", Ok(false), false, false),
+            Plan::Repair
+        );
+        assert_eq!(
+            plan(Some("0.6.74"), "0.6.75", Ok(false), false, false),
+            Plan::Upgrade
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn lifecycle_probe_does_not_report_a_slow_host_as_stopped() {
         use std::net::TcpListener;
         let base = std::env::temp_dir().join(format!("bycoda-probe-{}", uuid::Uuid::new_v4()));
@@ -974,40 +1034,13 @@ mod tests {
 
     #[test]
     fn installs_a_missing_host_and_upgrades_only_an_idle_older_one() {
+        assert_eq!(plan(None, "0.5.54", Ok(false), false, false), Plan::Install);
         assert_eq!(
-            plan(
-                None,
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
-            Plan::Install
-        );
-        assert_eq!(
-            plan(
-                Some("0.5.53"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Healthy,
-                None,
-                0
-            ),
+            plan(Some("0.5.53"), "0.5.54", Ok(false), false, true),
             Plan::Upgrade
         );
         assert!(matches!(
-            plan(
-                Some("0.5.53"),
-                "0.5.54",
-                Ok(true),
-                false,
-                Health::Healthy,
-                None,
-                0
-            ),
+            plan(Some("0.5.53"), "0.5.54", Ok(true), false, true),
             Plan::Deferred(_)
         ));
     }
@@ -1015,39 +1048,15 @@ mod tests {
     #[test]
     fn never_downgrades_or_reinstalls_the_same_version() {
         assert_eq!(
-            plan(
-                Some("0.5.54"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Healthy,
-                None,
-                0
-            ),
+            plan(Some("0.5.54"), "0.5.54", Ok(false), false, true),
             Plan::Current
         );
         assert_eq!(
-            plan(
-                Some("0.6.0"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Healthy,
-                None,
-                0
-            ),
+            plan(Some("0.6.0"), "0.5.54", Ok(false), false, true),
             Plan::Current
         );
         assert_eq!(
-            plan(
-                Some("0.5.100"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Healthy,
-                None,
-                0
-            ),
+            plan(Some("0.5.100"), "0.5.54", Ok(false), false, true),
             Plan::Current
         );
     }
@@ -1059,15 +1068,7 @@ mod tests {
             Plan::Deferred(_)
         ));
         assert!(matches!(
-            plan(
-                None,
-                "0.5.54",
-                Ok(false),
-                true,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
+            plan(None, "0.5.54", Ok(false), true, false),
             Plan::Deferred(_)
         ));
         // Same version stays current even when the database cannot be read.
@@ -1080,27 +1081,11 @@ mod tests {
     #[test]
     fn repairs_an_unhealthy_current_host_only_after_activity_is_known_idle() {
         assert_eq!(
-            plan(
-                Some("0.5.54"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
+            plan(Some("0.5.54"), "0.5.54", Ok(false), false, false),
             Plan::Repair
         );
         assert_eq!(
-            plan(
-                Some("0.6.0"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
+            plan(Some("0.6.0"), "0.5.54", Ok(false), false, false),
             Plan::Repair
         );
         assert!(matches!(
@@ -1108,93 +1093,11 @@ mod tests {
             Plan::Deferred(_)
         ));
         assert!(matches!(
-            plan(
-                Some("0.5.54"),
-                "0.5.54",
-                Ok(true),
-                false,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
+            plan(Some("0.5.54"), "0.5.54", Ok(true), false, false),
             Plan::Deferred(_)
         ));
         assert!(matches!(
-            plan(
-                Some("0.5.54"),
-                "0.5.54",
-                Ok(false),
-                true,
-                Health::Damaged,
-                Some(0),
-                600
-            ),
-            Plan::Deferred(_)
-        ));
-    }
-
-    #[test]
-    fn repairs_only_after_two_damaged_checks_at_least_five_minutes_apart() {
-        let repair = |since, now| {
-            plan(
-                Some("0.5.54"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Damaged,
-                since,
-                now,
-            )
-        };
-        // First observation and a too-early second one only defer.
-        assert!(matches!(repair(None, 1000), Plan::Deferred(_)));
-        assert!(matches!(repair(Some(1000), 1000), Plan::Deferred(_)));
-        assert!(matches!(repair(Some(1000), 1299), Plan::Deferred(_)));
-        assert_eq!(repair(Some(1000), 1300), Plan::Repair);
-    }
-
-    #[test]
-    fn never_repairs_a_stopped_slow_or_starting_host() {
-        for health in [Health::Stopped, Health::Unconfirmed] {
-            for installed in ["0.5.54", "0.6.0"] {
-                assert!(matches!(
-                    plan(
-                        Some(installed),
-                        "0.5.54",
-                        Ok(false),
-                        false,
-                        health,
-                        Some(0),
-                        10_000
-                    ),
-                    Plan::Deferred(_)
-                ));
-            }
-        }
-        // A deliberately stopped host is not upgraded either.
-        assert!(matches!(
-            plan(
-                Some("0.5.53"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Stopped,
-                None,
-                0
-            ),
-            Plan::Deferred(_)
-        ));
-        // An unconfirmed probe makes activity unknown even when the database says idle.
-        assert!(matches!(
-            plan(
-                Some("0.5.53"),
-                "0.5.54",
-                Ok(false),
-                false,
-                Health::Unconfirmed,
-                None,
-                0
-            ),
+            plan(Some("0.5.54"), "0.5.54", Ok(false), true, false),
             Plan::Deferred(_)
         ));
     }

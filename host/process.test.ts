@@ -139,7 +139,10 @@ it("launches npm cmd-shim targets without a shell and rejects unsafe shims", asy
     });
     for (const unsafe of [
       shim("nested/escape", '"%dp0%\\..\\node_modules\\grok\\bin\\grok.exe" %*'),
-      shim("sh", 'SET "_prog=%dp0%\\sh.exe"\r\n"%_prog%" "%dp0%\\node_modules\\opencode-ai\\bin\\opencode.js" %*'),
+      shim(
+        "sh",
+        'SET "_prog=%dp0%\\sh.exe"\r\n"%_prog%" "%dp0%\\node_modules\\opencode-ai\\bin\\opencode.js" %*',
+      ),
       shim("custom", "powershell -File run.ps1 %*"),
     ])
       await expect(providerLaunch(unsafe, [], "win32")).rejects.toThrow(

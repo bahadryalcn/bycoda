@@ -25,6 +25,8 @@ import {
 } from "../model/socialProgram";
 import {
   localDateTimeInput,
+  formatScheduledDate,
+  programSetupMissing,
   programConfigFromProgram,
   PROGRAM_STEP_LABELS,
   PROGRAM_SUGGESTION_FIELD_LABELS,
@@ -36,6 +38,9 @@ import { SocialMultiSelect } from "./SocialMultiSelect";
 import { Notice, closeComposer, names, type Props } from "./socialShared";
 import { SocialSetupEditor } from "./SocialSetupEditor";
 import { useSocialPending } from "./useSocialPending";
+import { useSocialMediaEditor } from "./useSocialMediaEditor";
+import { useSocialMediaEditRequest } from "./useSocialMediaEditRequest";
+import { uploadForSocialEditor } from "../model/socialMediaEditor";
 import "./social-programs.css";
 
 /** A request from the program detail to load that program into the setup form. */
@@ -61,6 +66,7 @@ export function ProgramSetupForm({
   editRequest?: ProgramEditRequest;
   onError: (message: string) => void;
 }) {
+  const mediaEditor = useSocialMediaEditor(client);
   const pendingUi = useSocialPending();
   const socialLocked = useContext(SocialBusyContext);
   const busy = socialLocked;
@@ -73,21 +79,23 @@ export function ProgramSetupForm({
     [instructions, setInstructions] = useState(""),
     [questions, setQuestions] = useState<string[]>([]),
     [preview, setPreview] = useState<number[]>([]);
-  const [suggestion, setSuggestion] = useState<{ config: ProgramConfig; questions: string[]; base: string }>();
-  const [appliedEdit, setAppliedEdit] = useState(0);
-  // Loading a program into the form is a one-shot request identified by its version.
-  if (editRequest && editRequest.version !== appliedEdit) {
-    setAppliedEdit(editRequest.version);
-    setConfig(programConfigFromProgram(editRequest.program));
-    setEdit(editRequest.program);
-  }
-  const displayDate = (at: number) =>
-    dateTimeFormat(locale, {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: config.schedule.timeZone,
-    }).format(at);
+  const [suggestion, setSuggestion] = useState<{
+    config: ProgramConfig;
+    questions: string[];
+    base: string;
+  }>();
+  useSocialMediaEditRequest(
+    editRequest,
+    mediaEditor,
+    (request) => {
+      setConfig(programConfigFromProgram(request.program));
+      setEdit(request.program);
+    },
+    () => onError(t("Unable to retain media for this draft.")),
+  );
+  const displayDate = (at: number) => formatScheduledDate(locale, config.schedule.timeZone, at);
   const set = <K extends keyof ProgramConfig>(key: K, value: ProgramConfig[K]) => {
+    mediaEditor.invalidate();
     setConfig((c) => ({
       ...c,
       [key]: value,
@@ -109,17 +117,20 @@ export function ProgramSetupForm({
     key: K,
     value: ProgramConfig["schedule"][K],
   ) => set("schedule", { ...config.schedule, [key]: value });
-  const purposeMissing = !config.name.trim() || !config.projectId || !config.brief.topic.trim() ||
-    !config.brief.description.trim() || !config.accountIds.length ||
-    config.accountIds.some((id) => !snapshot.accounts.find((account) => account.id === id)?.grants[config.projectId]?.includes("draft"));
-  const scheduleMissing = !config.schedule.timeZone || !Number.isFinite(config.schedule.startsAt) || !config.schedule.days.length ||
-    (config.schedule.mode === "times" && !config.schedule.times.length);
-  const stepReason = setupStep === 0 && purposeMissing
-    ? t("Complete the name, project, brief and eligible target accounts before continuing.")
-    : setupStep === 1 && scheduleMissing ? t("Complete the time zone, start date, days and publishing times before continuing.") : "";
+  const { purposeMissing, scheduleMissing } = programSetupMissing(config, snapshot);
+  const stepReason =
+    setupStep === 0 && purposeMissing
+      ? t("Complete the name, project, brief and eligible target accounts before continuing.")
+      : setupStep === 1 && scheduleMissing
+        ? t("Complete the time zone, start date, days and publishing times before continuing.")
+        : "";
   const goToStep = (next: number) => {
     if (next > setupStep && (purposeMissing || (next > 1 && scheduleMissing))) {
-      onError(purposeMissing ? t("Complete the name, project, brief and eligible target accounts before continuing.") : t("Complete the time zone, start date, days and publishing times before continuing."));
+      onError(
+        purposeMissing
+          ? t("Complete the name, project, brief and eligible target accounts before continuing.")
+          : t("Complete the time zone, start date, days and publishing times before continuing."),
+      );
       return;
     }
     onError("");
@@ -150,7 +161,9 @@ export function ProgramSetupForm({
           if (!Number.isFinite(config.schedule.startsAt)) {
             // The shared date field does not block submit natively: send the owner back to the schedule step.
             setSetupStep(1);
-            onError(t("Complete the time zone, start date, days and publishing times before continuing."));
+            onError(
+              t("Complete the time zone, start date, days and publishing times before continuing."),
+            );
             return;
           }
           const form = e.currentTarget;
@@ -183,48 +196,130 @@ export function ProgramSetupForm({
             ),
           )}
         </nav>
-        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-ui-caption text-(--ui-text-secondary)" aria-label={t("Content readiness")}>
-          <span>{t("Text model")}: {config.textAgent?.model || t("Use project defaults")}</span>
-          <span>{t("Media")}: {t(config.image.mode === "none" ? "No media" : config.image.mode === "generate" ? "Generate image" : "Existing media")}</span>
-          <span>{features ? t("Model and platform availability loaded") : t("Availability has not been checked")}</span>
-              <Button
-                loading={pendingUi.is("programs.check-model-and-platform-availability")}
-                disabled={socialLocked}
-                variant="secondary"
-                type="button"
-                onClick={() =>
-                  void pendingUi.run("programs.check-model-and-platform-availability", () =>
-                    run(async () =>
-                      setFeatures(await client.request<ProgramFeatures>("programs.features")),
-                    ),
-                  )
-                }
-              >
-                {t("Check model and platform availability")}
-              </Button>
+        <div
+          className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-ui-caption text-(--ui-text-secondary)"
+          aria-label={t("Content readiness")}
+        >
+          <span>
+            {t("Text model")}: {config.textAgent?.model || t("Use project defaults")}
+          </span>
+          <span>
+            {t("Media")}:{" "}
+            {t(
+              config.image.mode === "none"
+                ? "No media"
+                : config.image.mode === "generate"
+                  ? "Generate image"
+                  : "Existing media",
+            )}
+          </span>
+          <span>
+            {features
+              ? t("Model and platform availability loaded")
+              : t("Availability has not been checked")}
+          </span>
+          <Button
+            loading={pendingUi.is("programs.check-model-and-platform-availability")}
+            disabled={socialLocked}
+            variant="secondary"
+            type="button"
+            onClick={() =>
+              void pendingUi.run("programs.check-model-and-platform-availability", () =>
+                run(async () =>
+                  setFeatures(await client.request<ProgramFeatures>("programs.features")),
+                ),
+              )
+            }
+          >
+            {t("Check model and platform availability")}
+          </Button>
         </div>
-        {config.accountIds.length ? <ul className="m-0 flex min-w-0 list-none flex-col gap-2 p-0 text-ui-caption" aria-label={t("Account readiness")}>
-          {config.accountIds.map((id) => {
-            const account = snapshot.accounts.find((item) => item.id === id);
-            const formats = features?.formats[id];
-            const override = config.mediaOverrides?.[id];
-            const generating = override === undefined && config.image.mode === "generate";
-            const media = override ?? (config.image.mode === "existing" ? config.image.media : []);
-            const requiredFormats = generating ? ["image"] : media.length ? [...new Set(media.map((item) => item.kind))] : ["text"];
-            const unsupported = formats ? requiredFormats.filter((format) => !formats.formats.includes(format)) : [];
-            const imageCapability = features?.images.filter((image) => config.image.provider === "automatic" || image.provider === config.image.provider);
-            return <li key={id} className="min-w-0 break-words border-b border-(--ui-pane-border) pb-2">
-              <strong className="font-medium">{account?.name ?? t("Removed account")}</strong> · {account ? names[account.platform] : ""}
-              <p>{account?.grants[config.projectId]?.includes("draft") ? t("Draft access available") : t("Draft access to the selected project is required.")} · {account?.connected ? account.paused ? t("Account paused") : t("Connected") : t("Connect this account before publishing.")}</p>
-              <p>{t("Supported formats")}: {formats ? formats.formats.join(", ") || t("No supported formats reported") : t("Unknown — check model and platform availability.")} {unsupported.length ? `${t("Selected media is not supported")}: ${unsupported.join(", ")}` : formats ? t("Selected media matches the reported formats.") : ""}</p>
-              {formats?.reason ? <p>{formats.reason}</p> : null}
-              {formats?.requiresReview ? <p>{t("Publication review is required for this account.")}</p> : null}
-              {formats && !formats.allowsRepeat && config.strategy === "repeat" ? <p>{t("Repeated content is not allowed for this account.")}</p> : null}
-              {generating ? <p>{t("Image generation")}: {imageCapability ? imageCapability.some((image) => image.available) ? t("Provider available; generated media still requires review.") : imageCapability.map((image) => image.reason).join(" · ") || t("No image provider is available.") : t("Unknown — check model and platform availability.")}</p> : <p>{t("Media")}: {media.length ? media.map((item) => item.kind).join(", ") : t("No media")}</p>}
-              <p>{t("Text model availability is checked when generation starts. These format checks do not authorize publishing.")}</p>
-            </li>;
-          })}
-        </ul> : null}
+        {config.accountIds.length ? (
+          <ul
+            className="m-0 flex min-w-0 list-none flex-col gap-2 p-0 text-ui-caption"
+            aria-label={t("Account readiness")}
+          >
+            {config.accountIds.map((id) => {
+              const account = snapshot.accounts.find((item) => item.id === id);
+              const formats = features?.formats[id];
+              const override = config.mediaOverrides?.[id];
+              const generating = override === undefined && config.image.mode === "generate";
+              const media =
+                override ?? (config.image.mode === "existing" ? config.image.media : []);
+              const requiredFormats = generating
+                ? ["image"]
+                : media.length
+                  ? [...new Set(media.map((item) => item.kind))]
+                  : ["text"];
+              const unsupported = formats
+                ? requiredFormats.filter((format) => !formats.formats.includes(format))
+                : [];
+              const imageCapability = features?.images.filter(
+                (image) =>
+                  config.image.provider === "automatic" || image.provider === config.image.provider,
+              );
+              return (
+                <li
+                  key={id}
+                  className="min-w-0 break-words border-b border-(--ui-pane-border) pb-2"
+                >
+                  <strong className="font-medium">{account?.name ?? t("Removed account")}</strong> ·{" "}
+                  {account ? names[account.platform] : ""}
+                  <p>
+                    {account?.grants[config.projectId]?.includes("draft")
+                      ? t("Draft access available")
+                      : t("Draft access to the selected project is required.")}{" "}
+                    ·{" "}
+                    {account?.connected
+                      ? account.paused
+                        ? t("Account paused")
+                        : t("Connected")
+                      : t("Connect this account before publishing.")}
+                  </p>
+                  <p>
+                    {t("Supported formats")}:{" "}
+                    {formats
+                      ? formats.formats.join(", ") || t("No supported formats reported")
+                      : t("Unknown — check model and platform availability.")}{" "}
+                    {unsupported.length
+                      ? `${t("Selected media is not supported")}: ${unsupported.join(", ")}`
+                      : formats
+                        ? t("Selected media matches the reported formats.")
+                        : ""}
+                  </p>
+                  {formats?.reason ? <p>{formats.reason}</p> : null}
+                  {formats?.requiresReview ? (
+                    <p>{t("Publication review is required for this account.")}</p>
+                  ) : null}
+                  {formats && !formats.allowsRepeat && config.strategy === "repeat" ? (
+                    <p>{t("Repeated content is not allowed for this account.")}</p>
+                  ) : null}
+                  {generating ? (
+                    <p>
+                      {t("Image generation")}:{" "}
+                      {imageCapability
+                        ? imageCapability.some((image) => image.available)
+                          ? t("Provider available; generated media still requires review.")
+                          : imageCapability.map((image) => image.reason).join(" · ") ||
+                            t("No image provider is available.")
+                        : t("Unknown — check model and platform availability.")}
+                    </p>
+                  ) : (
+                    <p>
+                      {t("Media")}:{" "}
+                      {media.length ? media.map((item) => item.kind).join(", ") : t("No media")}
+                    </p>
+                  )}
+                  <p>
+                    {t(
+                      "Text model availability is checked when generation starts. These format checks do not authorize publishing.",
+                    )}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         <div className="social-program-step" data-program-step="0" hidden={setupStep !== 0}>
           <details className="social-program-advanced social-program-assistant">
             <summary>{t("Describe the campaign to AI")}</summary>
@@ -236,43 +331,92 @@ export function ProgramSetupForm({
               maxRows={10}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              toolbarTrailing={<Button
-              variant="secondary"
-              loading={pendingUi.is("programs.fill-settings-with-ai")}
-              type="button"
-              disabled={socialLocked || busy || !instructions.trim()}
-              onClick={() =>
-                void pendingUi.run("programs.fill-settings-with-ai", () =>
-                  run(async () => {
-                    const result = await client.request<{
-                      config: ProgramConfig;
-                      questions: string[];
-                    }>("programs.suggest", { config, instructions });
-                    setSuggestion({ config: result.config, questions: result.questions, base: JSON.stringify(config) });
-                  }),
-                )
+              toolbarTrailing={
+                <Button
+                  variant="secondary"
+                  loading={pendingUi.is("programs.fill-settings-with-ai")}
+                  type="button"
+                  disabled={socialLocked || busy || !instructions.trim()}
+                  onClick={() =>
+                    void pendingUi.run("programs.fill-settings-with-ai", () =>
+                      run(async () => {
+                        const result = await client.request<{
+                          config: ProgramConfig;
+                          questions: string[];
+                        }>("programs.suggest", { config, instructions });
+                        setSuggestion({
+                          config: result.config,
+                          questions: result.questions,
+                          base: JSON.stringify(config),
+                        });
+                      }),
+                    )
+                  }
+                >
+                  {t("Fill settings with AI")}
+                </Button>
               }
-            >
-              {t("Fill settings with AI")}
-            </Button>}
             />
             {questions.map((q, i) => (
               <p key={i}>{q}</p>
             ))}
           </details>
-          {suggestion ? <Notice kind="info" title={t("Review suggested settings")}>
-            <p>{t("Your current brief is unchanged until you apply these settings.")}</p>
-            <dl className="grid min-w-0 gap-2 text-ui-caption">
-              {Object.keys(suggestion.config).filter((key) => JSON.stringify(suggestion.config[key as keyof ProgramConfig]) !== JSON.stringify(config[key as keyof ProgramConfig])).map((key) => (
-                <div key={key} className="min-w-0"><dt className="font-medium">{t(PROGRAM_SUGGESTION_FIELD_LABELS[key] ?? key)}</dt>
-                  <dd className="m-0 whitespace-pre-wrap break-words">{summarizeProgramSuggestion(key, suggestion.config, { locale, snapshot, projects })}<details className="mt-1"><summary>{t("Exact settings")}</summary><pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words">{JSON.stringify(suggestion.config[key as keyof ProgramConfig], null, 2)}</pre></details></dd>
-                </div>
-              ))}
-            </dl>
-            {suggestion.base !== JSON.stringify(config) ? <p>{t("Settings changed while the suggestion was prepared. Request a new suggestion to preserve your edits.")}</p> : null}
-            <div className="social-actions"><Button disabled={socialLocked || suggestion.base !== JSON.stringify(config)} onClick={() => { setConfig(suggestion.config); setQuestions(suggestion.questions); setPreview([]); setSuggestion(undefined); }}>{t("Apply suggested settings")}</Button>
-              <Button variant="ghost" onClick={() => setSuggestion(undefined)}>{t("Keep current settings")}</Button></div>
-          </Notice> : null}
+          {suggestion ? (
+            <Notice kind="info" title={t("Review suggested settings")}>
+              <p>{t("Your current brief is unchanged until you apply these settings.")}</p>
+              <dl className="grid min-w-0 gap-2 text-ui-caption">
+                {Object.keys(suggestion.config)
+                  .filter(
+                    (key) =>
+                      JSON.stringify(suggestion.config[key as keyof ProgramConfig]) !==
+                      JSON.stringify(config[key as keyof ProgramConfig]),
+                  )
+                  .map((key) => (
+                    <div key={key} className="min-w-0">
+                      <dt className="font-medium">
+                        {t(PROGRAM_SUGGESTION_FIELD_LABELS[key] ?? key)}
+                      </dt>
+                      <dd className="m-0 whitespace-pre-wrap break-words">
+                        {summarizeProgramSuggestion(key, suggestion.config, {
+                          locale,
+                          snapshot,
+                          projects,
+                        })}
+                        <details className="mt-1">
+                          <summary>{t("Exact settings")}</summary>
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words">
+                            {JSON.stringify(suggestion.config[key as keyof ProgramConfig], null, 2)}
+                          </pre>
+                        </details>
+                      </dd>
+                    </div>
+                  ))}
+              </dl>
+              {suggestion.base !== JSON.stringify(config) ? (
+                <p>
+                  {t(
+                    "Settings changed while the suggestion was prepared. Request a new suggestion to preserve your edits.",
+                  )}
+                </p>
+              ) : null}
+              <div className="social-actions">
+                <Button
+                  disabled={socialLocked || suggestion.base !== JSON.stringify(config)}
+                  onClick={() => {
+                    setConfig(suggestion.config);
+                    setQuestions(suggestion.questions);
+                    setPreview([]);
+                    setSuggestion(undefined);
+                  }}
+                >
+                  {t("Apply suggested settings")}
+                </Button>
+                <Button variant="ghost" onClick={() => setSuggestion(undefined)}>
+                  {t("Keep current settings")}
+                </Button>
+              </div>
+            </Notice>
+          ) : null}
           <fieldset>
             <legend>{t("Purpose and content")}</legend>
             <div className="social-program-grid">
@@ -331,7 +475,13 @@ export function ProgramSetupForm({
               options={snapshot.accounts.map((a) => ({
                 value: a.id,
                 label: `${names[a.platform]} · ${a.name}`,
-                description: !config.projectId ? t("Select a project first.") : !a.grants[config.projectId]?.includes("draft") ? t("Draft access to the selected project is required.") : !a.connected ? t("Content can be prepared; connect this account before publishing.") : undefined,
+                description: !config.projectId
+                  ? t("Select a project first.")
+                  : !a.grants[config.projectId]?.includes("draft")
+                    ? t("Draft access to the selected project is required.")
+                    : !a.connected
+                      ? t("Content can be prepared; connect this account before publishing.")
+                      : undefined,
                 disabled: !a.grants[config.projectId]?.includes("draft"),
               }))}
             />
@@ -438,7 +588,6 @@ export function ProgramSetupForm({
                     p.facts.map((f) => ({ value: f.id, label: f.topic, description: f.text })),
                   )}
               />
-
 
               {features ? (
                 <ul>
@@ -599,7 +748,12 @@ export function ProgramSetupForm({
                             .flatMap((c) => c.variants)
                             .flatMap((v) => v.media)
                             .find((m) => (m.uploadId ?? m.url) === nextValue);
-                          if (media) set("image", { ...config.image, media: [media] });
+                          if (media)
+                            void run(async () => {
+                              if (media.uploadId) await mediaEditor.claimExisting(media.uploadId);
+                              if (!mediaEditor.isClosed())
+                                set("image", { ...config.image, media: [media] });
+                            }).catch(() => onError(t("Unable to retain media for this draft.")));
                         }}
                         searchLocale={getLocale()}
                       />
@@ -614,9 +768,7 @@ export function ProgramSetupForm({
                         if (file)
                           void pendingUi.run("program.upload-media", () =>
                             run(async () => {
-                              const asset = file.type.startsWith("video/")
-                                ? await client.uploadVideo(file)
-                                : await client.upload(file);
+                              const asset = await uploadForSocialEditor(mediaEditor, client, file);
                               set("image", {
                                 ...config.image,
                                 media: [
@@ -672,9 +824,7 @@ export function ProgramSetupForm({
                       ),
                     },
                   ]}
-                  onChange={(nextValue) =>
-                    set("strategy", nextValue as ProgramConfig["strategy"])
-                  }
+                  onChange={(nextValue) => set("strategy", nextValue as ProgramConfig["strategy"])}
                   searchLocale={getLocale()}
                 />
               </ProgramLabel>
@@ -693,9 +843,7 @@ export function ProgramSetupForm({
                         if (file)
                           void pendingUi.run(`program.upload-override:${id}`, () =>
                             run(async () => {
-                              const asset = file.type.startsWith("video/")
-                                ? await client.uploadVideo(file)
-                                : await client.upload(file);
+                              const asset = await uploadForSocialEditor(mediaEditor, client, file);
                               setConfig((c) => ({
                                 ...c,
                                 mediaOverrides: {
@@ -862,8 +1010,14 @@ export function ProgramSetupForm({
                 disabled={socialLocked}
                 label={t("Campaign start (device local time)")}
                 required
-                value={Number.isFinite(config.schedule.startsAt) ? localDateTimeInput(config.schedule.startsAt) : ""}
-                onChange={(next) => schedule("startsAt", next ? new Date(next).getTime() : Number.NaN)}
+                value={
+                  Number.isFinite(config.schedule.startsAt)
+                    ? localDateTimeInput(config.schedule.startsAt)
+                    : ""
+                }
+                onChange={(next) =>
+                  schedule("startsAt", next ? new Date(next).getTime() : Number.NaN)
+                }
               />
               <DateTimeField
                 disabled={socialLocked}
@@ -995,7 +1149,7 @@ export function ProgramSetupForm({
                   run(async () => {
                     const result = await client.request<{ dates: number[] }>(
                       "programs.preview-schedule",
-                      { config },
+                      { config, ...(edit ? { id: edit.id } : {}) },
                     );
                     setPreview(result.dates);
                   }),
@@ -1144,7 +1298,11 @@ export function ProgramSetupForm({
           </fieldset>
         </div>
         <footer className="social-program-setup-actions">
-          {stepReason ? <p role="status" className="w-full text-ui-caption text-(--ui-text-secondary)">{stepReason}</p> : null}
+          {stepReason ? (
+            <p role="status" className="w-full text-ui-caption text-(--ui-text-secondary)">
+              {stepReason}
+            </p>
+          ) : null}
           {setupStep > 0 ? (
             <Button
               disabled={socialLocked}
@@ -1180,6 +1338,9 @@ export function ProgramSetupForm({
               variant="secondary"
               type="button"
               onClick={() => {
+                void mediaEditor
+                  .discard()
+                  .catch(() => onError(t("Unable to release media for this draft.")));
                 setEdit(undefined);
                 setConfig(defaultProgram(initialProject));
               }}

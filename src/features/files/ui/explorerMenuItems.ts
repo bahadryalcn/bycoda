@@ -234,7 +234,12 @@ export function explorerHeaderItems(
     ...(narrow
       ? [
           { kind: "sep" as const },
-          { kind: "item" as const, id: "collapse", label: t("Collapse All"), icon: icon("collapse") },
+          {
+            kind: "item" as const,
+            id: "collapse",
+            label: t("Collapse All"),
+            icon: icon("collapse"),
+          },
           ...(canSearch
             ? [
                 {
@@ -256,7 +261,13 @@ export function explorerHeaderItems(
       disabled: Boolean(busyReason),
       icon: icon("reveal"),
     },
-    { kind: "item", id: "excluded", label: t("Show excluded files"), checked: showExcluded, selectionRole: "checkbox" },
+    {
+      kind: "item",
+      id: "excluded",
+      label: t("Show excluded files"),
+      checked: showExcluded,
+      selectionRole: "checkbox",
+    },
     { kind: "item", id: "reset", label: t("Reset"), disabled: showExcluded === excludedDefault },
   ];
 }

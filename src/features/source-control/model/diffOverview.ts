@@ -1,4 +1,4 @@
-import type { RulerKind, RulerMark } from "../../files/editor/overviewRuler";
+import type { RulerKind, RulerMark } from "../../files";
 import type { SplitRow } from "./splitRows";
 import type { DiffViewRow, RowLayout, SizedRow } from "./unifiedDiffWindow";
 

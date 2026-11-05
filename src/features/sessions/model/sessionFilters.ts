@@ -76,12 +76,15 @@ export function saveSessionSidebarFilters(filters: SessionSidebarFilters) {
   }
 }
 
-export function hasActiveSessionFilters(filters: SessionSidebarFilters): boolean {
+export function hasActiveSessionFilters(
+  filters: SessionSidebarFilters,
+  defaultTime: SessionTimeFilter = "all",
+): boolean {
   return (
     filters.showArchived ||
     filters.assistantManaged ||
     filters.hiddenHarnesses.length > 0 ||
-    filters.time !== "all" ||
+    filters.time !== defaultTime ||
     filters.status.working ||
     filters.status.needsApproval ||
     filters.status.done
@@ -98,8 +101,11 @@ export function filterSessionsByHarness(
 }
 
 /** Management is read from the Host stamp, never inferred from titles/authors. */
-export function filterAssistantManagedSessions(rows: SessionSummary[], managedOnly: boolean): SessionSummary[] {
-  return managedOnly ? rows.filter(row => row.managedBy?.assistant === true) : rows;
+export function filterAssistantManagedSessions(
+  rows: SessionSummary[],
+  managedOnly: boolean,
+): SessionSummary[] {
+  return managedOnly ? rows.filter((row) => row.managedBy?.assistant === true) : rows;
 }
 
 export function filterSessionsByTime(
@@ -109,7 +115,7 @@ export function filterSessionsByTime(
 ): SessionSummary[] {
   if (time === "all") return rows;
   const start = timeFilterStart(time, now);
-  return rows.filter((row) => row.updatedAt >= start);
+  return rows.filter((row) => (row.lastActivityAt ?? row.updatedAt) >= start);
 }
 
 export function filterSessionsByStatus(

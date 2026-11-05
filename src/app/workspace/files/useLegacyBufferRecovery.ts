@@ -26,6 +26,7 @@ export function useLegacyBufferRecovery(options: Options) {
   const reading = useRef<string | null>(null);
   const listing = useRef(false);
   const [page, setPage] = useState<Page>({ records: [], next: null, after: null });
+  const [loadedRecords, setLoadedRecords] = useState<readonly LegacyBufferReport[]>([]);
   const [previous, setPrevious] = useState<readonly (number | null)[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -43,6 +44,7 @@ export function useLegacyBufferRecovery(options: Options) {
       setDetails(null);
       setReadError(null);
       setPage({ records: [], next: null, after: null });
+      setLoadedRecords([]);
       setPrevious([]);
       setChecked(false);
     }
@@ -86,6 +88,15 @@ export function useLegacyBufferRecovery(options: Options) {
         if (direction === "refresh") setPrevious([]);
         else if (direction === "next") setPrevious((old) => [...old.slice(-31), page.after]);
         else setPrevious((old) => old.slice(0, -1));
+        if (direction === "refresh") setLoadedRecords(result.records);
+        else
+          setLoadedRecords((old) => {
+            const known = new Set(old.map(legacyBufferReportKey));
+            const added = result.records.filter(
+              (record) => !known.has(legacyBufferReportKey(record)),
+            );
+            return direction === "previous" ? [...added, ...old] : [...old, ...added];
+          });
         setPage({ ...result, after });
         setChecked(true);
       } catch {
@@ -126,7 +137,7 @@ export function useLegacyBufferRecovery(options: Options) {
   return {
     available,
     visible,
-    records: visible ? page.records : [],
+    records: visible ? loadedRecords : [],
     details: visible ? details : null,
     pending: visible ? pending : null,
     readError: visible ? readError : null,

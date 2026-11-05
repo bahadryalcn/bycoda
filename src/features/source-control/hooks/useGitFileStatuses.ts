@@ -1,15 +1,38 @@
+import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { subscribeGitChanged, type GitDiffIndex } from "../../../platform/tauri/fs";
 import { fetchGitIndex } from "../model/gitIndexStore";
-import { subscribeDirsChanged } from "../../files/model/fileTree";
+import { subscribeDirsChanged } from "../../files/public/fileTree";
 import { parentPath } from "../../../shared/lib/paths";
-import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { IS_MAC } from "../../../platform/tauri/platform";
 
 export type GitStatusMap = {
   files: Map<string, string>;
   dirs: Map<string, string>;
 };
+
+const normalizedStatuses = new WeakMap<Map<string, string>, Map<string, string | null>>();
+
+/** Match decomposed native macOS names without changing the actual operation path. */
+export function gitStatusForPath(
+  map: Map<string, string> | undefined,
+  path: string,
+): string | undefined {
+  const exact = map?.get(path);
+  if (exact !== undefined || !map || !IS_MAC || isRemoteProjectPath(path)) return exact;
+  let aliases = normalizedStatuses.get(map);
+  if (!aliases) {
+    aliases = new Map();
+    for (const [key, status] of map) {
+      const normalized = key.normalize("NFC");
+      aliases.set(normalized, aliases.has(normalized) ? null : status);
+    }
+    normalizedStatuses.set(map, aliases);
+  }
+  return aliases.get(path.normalize("NFC")) ?? undefined;
+}
 
 const STATUS_PRIORITY: Record<string, number> = {
   modified: 3,
@@ -31,7 +54,10 @@ type Entry = {
   onResume: (() => void) | null;
 };
 
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.data,
+);
 
 function entryFor(cwd: string): Entry {
   const existing = entries.get(cwd);
@@ -87,10 +113,12 @@ function sameData(a: GitStatusMap, b: GitStatusMap): boolean {
 function publish(entry: Entry, data: GitStatusMap) {
   if (sameData(entry.data, data)) return;
   entry.data = data;
+  entries.refresh(entry.cwd);
   for (const listener of entry.listeners) listener();
 }
 
 async function load(entry: Entry, force = false) {
+  if (entries.get(entry.cwd) !== entry) return;
   if (entry.inFlight) {
     entry.pending = true;
     return;
@@ -112,6 +140,7 @@ async function load(entry: Entry, force = false) {
       entry.pending = false;
       void load(entry, true);
     }
+    entries.prune();
   }
 }
 
@@ -154,6 +183,7 @@ export function useGitFileStatuses(cwd: string, enabled: boolean): GitStatusMap 
       return () => {
         entry.listeners.delete(listener);
         if (entry.listeners.size === 0) stop(entry);
+        entries.prune();
       };
     },
     [active, cwd],

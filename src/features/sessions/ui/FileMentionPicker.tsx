@@ -2,10 +2,10 @@ import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { StickyNote } from "../../../shared/ui/icons";
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
-import type { RankedFile } from "../../files/model/fileIndex";
+import type { RankedFile } from "../../files";
 import { isNoteMentionPath } from "../../notes";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
 
 type Props = {

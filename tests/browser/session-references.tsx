@@ -12,10 +12,7 @@ import { buildLocalSessionLink } from "../../src/features/sessions/model/localSe
 import { NoteEditablePreview } from "../../src/features/notes/ui/NoteEditablePreview";
 import { AgentTabView } from "../../src/features/sessions/ui/AgentTabView";
 import { newDefaultSession } from "../../src/features/sessions/model/session";
-import {
-  setFixtureWorkerMode,
-  type WorkerMode,
-} from "./session-references-host-reader";
+import { setFixtureWorkerMode, type WorkerMode } from "./session-references-host-reader";
 import { languageReady } from "../../src/shared/i18n";
 import "../../src/styles/index.css";
 
@@ -26,23 +23,19 @@ document.documentElement.classList.toggle(
   new URLSearchParams(location.search).get("theme") === "light",
 );
 const clipboardFailure = () =>
-  !!(window as unknown as { fixtureClipboardFailure?: boolean })
-    .fixtureClipboardFailure;
+  !!(window as unknown as { fixtureClipboardFailure?: boolean }).fixtureClipboardFailure;
 Object.defineProperty(navigator, "clipboard", {
   configurable: true,
   value: {
     async writeText(text: string) {
-      if (clipboardFailure())
-        throw new Error("Clipboard temporarily unavailable");
+      if (clipboardFailure()) throw new Error("Clipboard temporarily unavailable");
       Object.assign(window, { fixtureCopiedText: text });
     },
   },
 });
 const execCommand = document.execCommand.bind(document);
 document.execCommand = (command, ...args) =>
-  command === "copy" && clipboardFailure()
-    ? false
-    : execCommand(command, ...args);
+  command === "copy" && clipboardFailure() ? false : execCommand(command, ...args);
 Object.assign(window, {
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
@@ -52,15 +45,9 @@ Object.assign(window, {
     },
     transformCallback: () => 1,
     unregisterCallback: () => {},
-    invoke: async (
-      command: string,
-      args?: { sessionId?: string; text?: string },
-    ) => {
+    invoke: async (command: string, args?: { sessionId?: string; text?: string }) => {
       if (command === "plugin:event|listen") return 1;
-      if (
-        command === "session_reference_get" ||
-        command === "session_reference_resolve"
-      )
+      if (command === "session_reference_get" || command === "session_reference_resolve")
         return {
           locator: {
             kind: "native",
@@ -77,8 +64,7 @@ Object.assign(window, {
         command === "plugin:clipboard-manager|write_text" ||
         command === "copy_text_to_clipboard"
       ) {
-        if (clipboardFailure())
-          throw new Error("Clipboard temporarily unavailable");
+        if (clipboardFailure()) throw new Error("Clipboard temporarily unavailable");
         Object.assign(window, { fixtureCopiedText: args?.text });
         return;
       }
@@ -153,10 +139,7 @@ function Fixture() {
         return {
           title: "Current renamed title — investigation and recovery",
           project: "G:/Projects/example-project",
-          origin:
-            reference.locator.kind === "host"
-              ? "Local Host"
-              : "Local Native profile",
+          origin: reference.locator.kind === "host" ? "Local Host" : "Local Native profile",
           status: "idle",
           archived: reference.locator.kind === "native",
         };
@@ -182,8 +165,7 @@ function Fixture() {
       <main>
         <h1>Local session references</h1>
         <p className="fixture-caption">
-          Browser fixture · real Markdown, shared controls and Notes · in-memory
-          metadata/navigation
+          Browser fixture · real Markdown, shared controls and Notes · in-memory metadata/navigation
         </p>
         <div className="fixture-controls">
           <label>
@@ -295,9 +277,7 @@ function Fixture() {
             <select
               aria-label="Worker state"
               defaultValue="ready"
-              onChange={(event) =>
-                setFixtureWorkerMode(event.target.value as WorkerMode)
-              }
+              onChange={(event) => setFixtureWorkerMode(event.target.value as WorkerMode)}
             >
               <option value="ready">Ready</option>
               <option value="loading">Loading</option>
@@ -312,12 +292,7 @@ function Fixture() {
               background: "var(--ui-surface)",
             }}
           >
-            <AgentTabView
-              title="Linked Host worker"
-              session={worker}
-              visible
-              focused={false}
-            />
+            <AgentTabView title="Linked Host worker" session={worker} visible focused={false} />
           </div>
         </section>
       </main>

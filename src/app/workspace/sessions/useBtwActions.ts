@@ -1,8 +1,16 @@
 import { type MutableRefObject, useCallback } from "react";
 import { type Block, type BtwThread, type Session } from "../../../features/sessions/model/session";
 import { harnessForTurn } from "../../../features/sessions/model/secondOpinion";
-import { btwTurnHarness, sealBtwResponseBlocks, supportsBtwHarness } from "../../../features/sessions/model/btw";
-import { nativeModelId, preferredModelSettings, resolveModel } from "../../../features/sessions/model/models";
+import {
+  btwTurnHarness,
+  sealBtwResponseBlocks,
+  supportsBtwHarness,
+} from "../../../features/sessions/model/btw";
+import {
+  nativeModelId,
+  preferredModelSettings,
+  resolveModel,
+} from "../../../features/sessions/model/models";
 import type { BtwThreadActions, BtwThreadsDeps } from "./useBtwThreads";
 
 export interface BtwActionsDeps extends BtwThreadActions {

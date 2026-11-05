@@ -1,7 +1,31 @@
 import { useEffect, useState } from "react";
+import { withTimeout } from "../../../shared/lib/withTimeout";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 
 export type VoicePresence = "active" | "idle" | "away" | "unknown";
 export type UserPresence = { idleMs: number; locked: boolean; supported: boolean };
+
+/** Speech can extend an already-authorized capture through mouse/keyboard idle,
+ * but cannot establish computer presence or override a manual absence. Callers
+ * must discard receipts when capture authority or its generation changes. */
+export function deriveCapturePresence(
+  rawPresence: VoicePresence,
+  manualPresence: string | undefined,
+  latestAdmittedSpeechAt: number | null,
+  idleSleepMinutes: number,
+  now = Date.now(),
+): VoicePresence {
+  if (manualPresence === "away" || manualPresence === "dnd") return "away";
+  if (rawPresence !== "idle") return rawPresence;
+  const age = latestAdmittedSpeechAt === null ? NaN : now - latestAdmittedSpeechAt;
+  return Number.isFinite(idleSleepMinutes) &&
+    idleSleepMinutes > 0 &&
+    Number.isFinite(age) &&
+    age >= 0 &&
+    age < idleSleepMinutes * 60_000
+    ? "active"
+    : rawPresence;
+}
 
 export function classifyVoicePresence(value: UserPresence, minutes: number): VoicePresence {
   if (!value.supported || !Number.isFinite(value.idleMs) || value.idleMs < 0) return "unknown";
@@ -13,7 +37,10 @@ export async function readNativeVoicePresence(minutes: number): Promise<VoicePre
   if (!("__TAURI_INTERNALS__" in window)) return "unknown";
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    return classifyVoicePresence(await invoke<UserPresence>("get_user_presence"), minutes);
+    return classifyVoicePresence(
+      await withTimeout(invoke<UserPresence>("get_user_presence"), 3000, "Native presence"),
+      minutes,
+    );
   } catch {
     return "unknown";
   }
@@ -27,23 +54,22 @@ export function useVoicePresence(enabled: boolean, minutes: number): VoicePresen
     if (!enabled) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
-    let lastInput = Date.now();
+    let lastInput = monotonicNow();
     const input = () => {
-      lastInput = Date.now();
+      lastInput = monotonicNow();
       if (!("__TAURI_INTERNALS__" in window)) setPresence("active");
     };
     const poll = async () => {
       let next: VoicePresence = "unknown";
       if ("__TAURI_INTERNALS__" in window) {
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
-          next = classifyVoicePresence(await invoke<UserPresence>("get_user_presence"), minutes);
+          next = await readNativeVoicePresence(minutes);
         } catch {
           /* Missing/failed native evidence is unknown, never active. */
         }
       } else if (document.visibilityState !== "hidden") {
         next = classifyVoicePresence(
-          { idleMs: Date.now() - lastInput, locked: false, supported: true },
+          { idleMs: elapsedSince(lastInput), locked: false, supported: true },
           minutes,
         );
       }

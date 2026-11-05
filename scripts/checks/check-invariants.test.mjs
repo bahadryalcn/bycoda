@@ -18,6 +18,7 @@ import {
   checkInvariants,
   formatRegressions,
   oxlintConfig,
+  parseOxlintOutput,
   scanAll,
   writeBaseline,
 } from "./check-invariants.mjs";
@@ -26,12 +27,18 @@ const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 /** A throwaway repository with the real rule set, configs and installed tools. */
 function fixtureRoot(t) {
-  const root = mkdtempSync(join(tmpdir(), "bycoda-invariants-"));
+  // Exercise direct process invocation with spaces in the working directory.
+  const root = mkdtempSync(join(tmpdir(), "bycoda invariants-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   cpSync(join(repoRoot, dirname(astGrepConfig)), join(root, dirname(astGrepConfig)), {
     recursive: true,
   });
   cpSync(join(repoRoot, oxlintConfig), join(root, oxlintConfig));
+  mkdirSync(join(root, "scripts", "checks"), { recursive: true });
+  cpSync(
+    join(repoRoot, "scripts", "checks", "privacy-writer-exceptions.json"),
+    join(root, "scripts", "checks", "privacy-writer-exceptions.json"),
+  );
   symlinkSync(
     join(repoRoot, "node_modules"),
     join(root, "node_modules"),
@@ -127,4 +134,37 @@ test("shared helpers and tests are exempt, and only counts above the baseline fa
   assert.match(formatRegressions(result.regressions), /ast-grep-ignore/);
   write(root, "src/features/demo/sample.ts", "void tasks.tick().catch(() => {});\n");
   assert.equal(checkInvariants({ root }).improvements.length, 1);
+});
+
+test("oxlint tool diagnostics and malformed output fail with useful detail", () => {
+  const global = { message: "Failed to open file: invalid UTF-8", severity: "error", labels: [] };
+  assert.throws(
+    () => parseOxlintOutput(JSON.stringify({ diagnostics: [global] }), 1),
+    /Failed to open file: invalid UTF-8/,
+  );
+  assert.throws(() => parseOxlintOutput("{", 1), /invalid JSON/);
+  assert.throws(() => parseOxlintOutput("{}", 1), /missing diagnostics array/);
+  assert.throws(() => parseOxlintOutput('{"diagnostics":[]}', 1), /without diagnostics/);
+  assert.throws(
+    () => parseOxlintOutput('{"diagnostics":[{"filename":"x.ts"}]}', 1),
+    /tool diagnostic/,
+  );
+  assert.deepEqual(
+    parseOxlintOutput(
+      JSON.stringify({
+        diagnostics: [{ filename: "src\\x.ts", code: "eslint(no-test)", message: "finding" }],
+      }),
+      1,
+    ),
+    [{ file: "src/x.ts", rule: "oxlint/no-test", line: 0, text: "finding", message: "finding" }],
+  );
+});
+
+test("privacy writer violations fail the invariant pipeline even with an empty baseline", (t) => {
+  const root = fixtureRoot(t);
+  write(root, "src/features/demo/privacy.ts", "setProjectGroupAssignment('/private', null);\n");
+  writeBaseline(root, {});
+  const result = checkInvariants({ root });
+  assert.equal(result.success, false);
+  assert.ok(result.regressions.some((item) => item.rule === "privacy-writer-outside-fence"));
 });

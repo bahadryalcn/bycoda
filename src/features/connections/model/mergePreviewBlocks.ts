@@ -1,5 +1,5 @@
 import { isEqual } from "es-toolkit";
-import type { Block } from "../../sessions/model/session";
+import type { Block } from "../../sessions";
 
 const indexes = new WeakMap<Block[], Map<string, number>>();
 /** Preview deltas preserve durable text and reuse unchanged blocks/attachment data. */

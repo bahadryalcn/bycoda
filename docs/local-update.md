@@ -96,7 +96,7 @@ an unknown launch or an ambiguous installation state.
 
 When another session is editing the checkout, apply only completed files to a
 verified earlier snapshot with
-`-BaseSnapshot <coordinator-request.json> -SourcePaths host/device-host.ts,host/device-host.test.ts`.
+`-BaseSnapshot <coordinator-request.json> -SourcePaths host/devices/device-host.ts,host/devices/device-host.test.ts`.
 The archive checksum and fingerprint are checked before applying the selected
 repository paths. This option cannot be combined with `-SnapshotRequest`,
 `-InstallOnly`, or a version change.
@@ -114,8 +114,7 @@ repository paths. This option cannot be combined with `-SnapshotRequest`,
   `pnpm install --frozen-lockfile --prefer-offline` in the managed build directory.
   Missing build artifacts and `-ForceBuild` do not force dependency installation.
   Older cache markers refresh dependencies once because they did not track all
-  pnpm lock/workspace inputs. `package-lock.json` remains version metadata; pnpm does not use it
-  for dependency resolution.
+  pnpm lock/workspace inputs.
 - `verifyDepsBeforeRun: false` prevents pnpm from automatically installing before
   `run`/`exec`; the coordinator owns installation decisions.
 - Web, Host compilation, Host packaging, and native inputs are tracked separately.
@@ -216,6 +215,10 @@ recovery from an exited host whose state file remains.
 If the registered Windows host PID has already exited, installation may proceed
 after idle database and stopped-service checks. If the PID still runs, a lifecycle
 failure blocks installation. A connection error is not evidence that the host is idle.
+The desktop's automatic bundled-Host installer admits a fresh, empty profile only.
+For an existing profile it cannot prove all activity owners or distinguish an
+intentional stop from a failure, so it defers automatic repair and upgrades. The
+owner-directed update coordinator retains its separate admission and recovery checks.
 
 Database backups have a 15-second limit and release their connections. The app
 closes after its active turn ends. Verify the macOS bundle signature/version,
@@ -270,8 +273,7 @@ python -B scripts/local-update/test_local_update.py
 These validate the scripts and plan without starting a build, installation, or SSH
 session. They do not establish actual build or end-to-end installation acceptance.
 
-Local updates and CI use `pnpm-lock.yaml`. `package-lock.json` is retained for the
-existing version script and legacy metadata; it does not drive installation.
+Local updates and CI use `pnpm-lock.yaml`; no npm lockfile is read or written.
 
 ## Installation identity and publishing
 

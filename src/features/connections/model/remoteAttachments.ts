@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Attachment } from "../../sessions/model/session";
+import type { Attachment } from "../../sessions";
 import type { RemoteAttachment } from "./protocol";
 import { remoteRequest as requestHost } from "./connections";
 import {
@@ -23,12 +23,16 @@ export async function uploadRemoteAttachments(
     resumable?: boolean;
     ownership?: AttachmentOwnership;
     ownershipSource?: string;
+    questionSessionId?: string;
+    questionRequestId?: number;
+    questionRunId?: string;
     onProgress?: (id: string, offset: number, size: number) => void;
   } = {},
 ): Promise<RemoteAttachment[]> {
-  const remoteRequest = <T>(id: string, method: string, params: unknown): Promise<T> => options.environmentId
-    ? requestHost<T>(id, method, params, false, false, options.environmentId)
-    : requestHost<T>(id, method, params);
+  const remoteRequest = <T>(id: string, method: string, params: unknown): Promise<T> =>
+    options.environmentId
+      ? requestHost<T>(id, method, params, false, false, options.environmentId)
+      : requestHost<T>(id, method, params);
   if (attachments.length > 20) throw new Error("Too many attachments");
   if (options.ownership) {
     if (!options.ownershipSource) throw new Error("Missing attachment ownership source");
@@ -52,6 +56,14 @@ export async function uploadRemoteAttachments(
       const owner = options.ownership
         ? { ownerId: options.ownership.ownerId, claimId: options.ownership.claimId(file.id) }
         : {};
+      const question =
+        options.questionSessionId === undefined
+          ? {}
+          : {
+              questionSessionId: options.questionSessionId,
+              questionRequestId: options.questionRequestId,
+              questionRunId: options.questionRunId,
+            };
       if (file.hostEnvironmentId && file.hostEnvironmentId === options.environmentId) {
         const { id, name, mimeType, kind, size, browserAnnotation } = file;
         uploaded[indexInBatch] = {
@@ -101,7 +113,7 @@ export async function uploadRemoteAttachments(
         const status = await remoteRequest<{ offset: number; hash?: string }>(
           machineId,
           "attachments.status",
-          { id: file.id, size: file.size, ...owner },
+          { id: file.id, size: file.size, ...owner, ...question },
         );
         if (!Number.isSafeInteger(status.offset) || status.offset < 0 || status.offset > file.size)
           throw new Error("Invalid upload status");
@@ -131,6 +143,7 @@ export async function uploadRemoteAttachments(
           size: file.size,
           data: "",
           ...owner,
+          ...question,
         });
         if (reply.offset !== 0) throw new Error("Invalid upload acknowledgement");
         options.onProgress?.(file.id, 0, 0);
@@ -143,6 +156,7 @@ export async function uploadRemoteAttachments(
           size: file.size,
           data: chunk.data,
           ...owner,
+          ...question,
         });
         if (reply.offset !== chunk.offset || reply.offset > file.size)
           throw new Error("Invalid upload acknowledgement");

@@ -1,3 +1,7 @@
+import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
+import { InlineError } from "../../shared/ui/InlineError";
+import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
@@ -45,6 +49,7 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   Zap,
   DashboardSquare,
   Server,
@@ -111,6 +116,8 @@ import {
   projectGroupIdForPath,
   projectGroupParentId,
   projectGroupWorkspaceRoot,
+  projectGroupWorkspaceRootKeys,
+  addListedWorkspaceRoots,
   reorderProjectGroups,
   updateProjectGroup,
   type ProjectGroup,
@@ -135,6 +142,10 @@ import {
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
 import { DevModeIndicator, TabVisitNav } from "./TitleBar";
+import {
+  openAssistantRoom,
+  useAssistantRoomLabel,
+} from "../../features/assistant/model/assistantClient";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
@@ -231,6 +242,7 @@ type Props = {
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
+  assistantActive?: boolean;
   onOpenServers?: () => void;
   serversActive?: boolean;
   onTogglePanel?: () => void;
@@ -251,6 +263,13 @@ type Props = {
   /** Opens a crew's coordinator; the Crews section needs it to open running crews. */
   onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
+  onOpenLastSessions?: () => void;
+  lastSessionsOpen?: boolean;
+  onSelectListedSession?: (
+    sessionId: string,
+    cwd: string,
+    options?: { keepOpen?: boolean },
+  ) => void;
   settingsOpen?: boolean;
   /** Settings dialog is open over the rail: selects the Settings tool without hiding rail chrome. */
   settingsDialogOpen?: boolean;
@@ -291,6 +310,7 @@ export function ProjectRail({
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
+  assistantActive = false,
   onOpenServers,
   serversActive = false,
   onTogglePanel,
@@ -305,6 +325,9 @@ export function ProjectRail({
   onPreviewSession,
   onOpenCrewSession,
   recentSessions,
+  onOpenLastSessions,
+  lastSessionsOpen = false,
+  onSelectListedSession,
   settingsOpen = false,
   settingsDialogOpen = false,
   onOpenSettings,
@@ -321,7 +344,7 @@ export function ProjectRail({
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
   const automationsShortcut = useKeybindingShortcut("App: Open Automations");
   const tasksShortcut = useKeybindingShortcut("App: Open Tasks");
-  const settingsShortcut = useKeybindingShortcut("App: Settings");
+  const assistantLabel = useAssistantRoomLabel();
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
@@ -340,6 +363,7 @@ export function ProjectRail({
     projectGroupAssignments,
     remoteOnly,
   } = useProjectRailData();
+  const [groupMutationError, setGroupMutationError] = useState(false);
   const [lastSessionsShown, setLastSessionsShown] = useState(false);
   const [crewsShown, setCrewsShown] = useState(false);
   const [inboxMenu, setInboxMenu] = useState<{
@@ -347,9 +371,7 @@ export function ProjectRail({
     y: number;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // The compact flyout is a dialog whose popover frame is measured hidden first, so the row can only take
-  // focus once the frame is placed. Landing on the active project (or the first row) lets PageDown/End scroll the
-  // list; the popover returns focus to its trigger on close.
+  // Focus after flyout placement; active/first-row focus enables paging. Closing restores trigger focus.
   useEffect(() => {
     if (!navigator || !visible) return;
     let frame = 0;
@@ -364,13 +386,13 @@ export function ProjectRail({
         list.querySelector<HTMLElement>("[data-project-path] button[aria-current]") ??
         list.querySelector<HTMLElement>("[data-project-path] button");
       target?.focus();
-      if (document.activeElement !== target && ++attempts < 12) frame = requestAnimationFrame(focusRow);
+      if (document.activeElement !== target && ++attempts < 12)
+        frame = requestAnimationFrame(focusRow);
     };
     frame = requestAnimationFrame(focusRow);
     return () => cancelAnimationFrame(frame);
   }, [navigator, visible]);
-  // Scrolls a project's row into view. A row inside a collapsed group is not
-  // rendered, so this does nothing there and never expands anything.
+  // Scroll mounted rows into view without expanding collapsed groups.
   const revealProject = (path: string) => {
     requestAnimationFrame(() => {
       const root = scrollRef.current;
@@ -387,8 +409,7 @@ export function ProjectRail({
       }
     });
   };
-  // The folder picker reports nothing back, so compare the remembered projects
-  // before and after: a cancelled pick adds none and changes nothing.
+  // Detect picker additions by comparing remembered projects; cancellation changes nothing.
   const addProjectToGroup = (groupId: string) => {
     const before = loadRecents().map((item) => item.path);
     void (async () => {
@@ -402,10 +423,13 @@ export function ProjectRail({
         loadRecents().map((item) => item.path),
       );
       if (added.length === 0) return;
-      changeProjectGroupMembers(groupId, added, []);
-      updateProjectGroup(groupId, (current) => ({ ...current, collapsed: false }));
+      await withRoomPrivacyMutation(() => {
+        changeProjectGroupMembers(groupId, added, []);
+        updateProjectGroup(groupId, (current) => ({ ...current, collapsed: false }));
+      });
+      setGroupMutationError(false);
       revealProject(added[added.length - 1]);
-    })();
+    })().catch(() => setGroupMutationError(true));
   };
   const busy = useMemo(() => {
     const set = new Set<string>();
@@ -462,13 +486,7 @@ export function ProjectRail({
     [cwd, pinnedPaths, railOrder, recents],
   );
   const workspaceRootKeys = useMemo(
-    () =>
-      new Set(
-        projectGroups.flatMap((group) => {
-          const root = projectGroupWorkspaceRoot(group);
-          return root ? [pathKey(root)] : [];
-        }),
-      ),
+    () => projectGroupWorkspaceRootKeys(projectGroups),
     [projectGroups],
   );
   const filterQuery = projectFilter.trim().toLocaleLowerCase();
@@ -511,6 +529,14 @@ export function ProjectRail({
       if (items) items.push(project);
       else ungrouped.push(project);
     }
+    addListedWorkspaceRoots(
+      projectGroups,
+      sections,
+      byGroup,
+      (project, groupId) =>
+        !isProjectLockedIn(lock, project.path) &&
+        (projectMatches(project.path) || groupNameMatches(groupId)),
+    );
     const workspaceItemsOf = (groupId: string) =>
       [...sections.pinned, ...sections.projects].filter(
         (project) =>
@@ -574,14 +600,12 @@ export function ProjectRail({
     if (synced.join("\0") === railOrder.join("\0")) return;
     commitProjectRailOrder(synced);
   }, [allProjects, railOrder]);
-
   useEffect(() => {
     // Saving announces the change, which reloads `pinnedPaths`.
     const pinned = loadPinnedProjects();
     const next = pinned.filter((path) => allProjects.has(path));
     if (next.length !== pinned.length) savePinnedProjects(next);
   }, [allProjects]);
-
   // Follow the active project. Adding a project makes it the active one, so a
   // new row (it lands in "Projects", below every group) is brought into view
   // too. Keyed on the project, so scrolling by hand is left alone.
@@ -589,7 +613,6 @@ export function ProjectRail({
     if (!visible || !cwd) return;
     revealProject(cwd);
   }, [cwd, visible]);
-
   const closeProjectMenu = useStableCallback(projectMenu.close);
   useEffect(() => {
     if (!projectMenu.isOpen) return;
@@ -599,7 +622,6 @@ export function ProjectRail({
     scrollParent.addEventListener("scroll", onScroll, true);
     return () => scrollParent.removeEventListener("scroll", onScroll, true);
   }, [projectMenu.isOpen, closeProjectMenu]);
-
   const reorderSubset = (fullOrder: string[], subsetOrder: string[], subsetPaths: Set<string>) => {
     const next: string[] = [];
     let subsetIndex = 0;
@@ -721,12 +743,14 @@ export function ProjectRail({
       step,
     );
   const searchOrPageActive =
+    lastSessionsOpen ||
     searchActive ||
     inboxActive ||
     notesActive ||
     automationsActive ||
     tasksActive ||
     socialActive ||
+    assistantActive ||
     serversActive;
   const brand = (
     <div
@@ -809,11 +833,16 @@ export function ProjectRail({
       <div className="shrink-0 @max-[140px]/rail:hidden">
         <LastSessionsSection
           source={recentSessions}
+          onOpenLastSessions={onOpenLastSessions}
+          lastSessionsOpen={lastSessionsOpen}
           projectKeys={railProjectKeys}
           enabled={visible}
           activeSessionId={activeSessionId}
           searchActive={searchOrPageActive}
-          onOpenSession={onPreviewSession ?? onSelectAgent}
+          onOpenSession={
+            onSelectListedSession ??
+            ((id, _cwd, options) => (onPreviewSession ?? onSelectAgent)?.(id, options))
+          }
           onOpenProject={onSelectProject}
           drag={rail.drag("last-sessions")}
           onShownChange={setLastSessionsShown}
@@ -938,6 +967,7 @@ export function ProjectRail({
       <div className="shrink-0 @max-[140px]/rail:hidden">
         <LiveAgentsPreview
           agents={visibleLiveAgents}
+          currentProject={lastSessionsOpen ? undefined : cwd}
           activeSessionId={activeSessionId}
           onSelect={onSelectAgent}
           collapsible
@@ -966,6 +996,9 @@ export function ProjectRail({
       aria-label={t("Projects")}
       className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5 ${visible ? "flex" : "hidden"}`}
     >
+      {groupMutationError && (
+        <InlineError>{t("Could not add projects to the group. Please try again.")}</InlineError>
+      )}
       {!navigator ? (
         <div
           className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
@@ -994,10 +1027,9 @@ export function ProjectRail({
         </div>
       ) : null}
 
-      {/* The fixed sections (tools, live summary, update and Development footers) can exceed a short window. Above
-          the short-height query the ledger is the only scroll owner and the footers stay pinned. At or below it the
-          ledger grows to its content and this column becomes the only scroll owner, so every bottom item stays
-          reachable without nested scrollbars. The popup keeps the ledger as its one scroll owner. */}
+      {/* Tools, live summary and update notices can exceed a short window. Above the short-height query the
+          ledger is the only scroll owner; below it this column scrolls without nested scrollbars. Settings
+          stays outside this column so it remains visible at every height. The popup scrolls only its ledger. */}
       <div
         className={`flex min-h-0 flex-1 flex-col ${
           navigator
@@ -1044,7 +1076,9 @@ export function ProjectRail({
                                 ? "social"
                                 : tasksActive
                                   ? "tasks"
-                                  : null
+                                  : assistantActive
+                                    ? "assistant"
+                                    : null
                     }
                     items={[
                       {
@@ -1069,9 +1103,10 @@ export function ProjectRail({
                                 <span className="relative">
                                   <Inbox />
                                   {inboxUnseen ? (
-                                    <span
+                                    <StatusDot
+                                      label={t("New items")}
                                       aria-hidden
-                                      className="absolute size-1.5 rounded-full bg-accent [inset-inline-end:-3px] [inset-block-start:-2px]"
+                                      className="absolute [inset-inline-end:-3px] [inset-block-start:-2px]"
                                     />
                                   ) : null}
                                 </span>
@@ -1144,14 +1179,11 @@ export function ProjectRail({
                           ]
                         : []),
                       {
-                        id: "settings",
-                        label: t("Settings"),
-                        icon: <Settings />,
-                        // Only a real open page or dialog is selected; opening the label never paints selection.
-                        active: settingsOpen || settingsDialogOpen,
-                        shortcut: settingsShortcut,
-                        onSelect: onOpenSettings,
-                        disabled: !onOpenSettings,
+                        id: "assistant",
+                        label: assistantLabel,
+                        icon: <Sparkles />,
+                        active: assistantActive,
+                        onSelect: () => openAssistantRoom(),
                       },
                     ]}
                   />
@@ -1231,12 +1263,11 @@ export function ProjectRail({
                     />
                   </WorkspaceFeatureGate>
                   <RailAction
-                    label={t("Settings")}
-                    icon={Settings}
-                    onClick={onOpenSettings}
-                    active={settingsOpen || settingsDialogOpen}
-                    command="App: Settings"
-                    guide="rail-settings"
+                    label={assistantLabel}
+                    icon={Sparkles}
+                    onClick={() => openAssistantRoom()}
+                    active={assistantActive}
+                    guide="rail-assistant"
                   />
                 </nav>
               </>
@@ -1294,11 +1325,11 @@ export function ProjectRail({
                     onDismissUpdate={onDismissUpdate}
                   />
                 </div>
-                <div className="flex shrink-0 flex-col gap-px p-2">
-                  <div className="@max-[140px]/rail:hidden">
+                <div className="flex shrink-0 flex-col gap-px px-2 pt-2 empty:hidden">
+                  <div className="empty:hidden @max-[140px]/rail:hidden">
                     <SidebarUpdateFooter repositoryPrompt />
                   </div>
-                  <div className="hidden items-center gap-1 @max-[140px]/rail:flex @max-[140px]/rail:flex-col">
+                  <div className="hidden items-center gap-1 empty:hidden @max-[140px]/rail:flex @max-[140px]/rail:flex-col">
                     <SidebarUpdateFooter />
                   </div>
                 </div>
@@ -1308,6 +1339,22 @@ export function ProjectRail({
           </>
         )}
       </div>
+      {!navigator && !settingsOpen ? (
+        <nav
+          aria-label={t("Settings")}
+          className="bycoda-rail-tools bycoda-rail-tools--footer @container/rail shrink-0"
+        >
+          <RailAction
+            label={t("Settings")}
+            icon={Settings}
+            onClick={onOpenSettings}
+            // Only a real open page or dialog is selected; opening the label never paints selection.
+            active={settingsOpen || settingsDialogOpen}
+            command="App: Settings"
+            guide="rail-settings"
+          />
+        </nav>
+      ) : null}
       {visible ? projectMenu.element : null}
       {visible ? rail.element : null}
       {visible && inboxMenu ? (
@@ -1400,11 +1447,7 @@ function ProjectSection({
 }) {
   useLocale();
   return (
-    <div
-      ref={drag.setRef}
-      className={RAIL_SECTION_BLOCK}
-      data-collapsed={collapsed || undefined}
-    >
+    <div ref={drag.setRef} className={RAIL_SECTION_BLOCK} data-collapsed={collapsed || undefined}>
       <ProjectSectionHeader
         label={label}
         onAdd={onAdd}
@@ -1921,7 +1964,9 @@ function ProjectGroupSection({
                     : t("Linked to {p0}", { p0: group.workspaceFile })
                 }
                 className={`grid size-4 shrink-0 place-items-center ${
-                  linkStatus ? "text-warning" : "text-(--ui-text-secondary) opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[selected]:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
+                  linkStatus
+                    ? "text-warning"
+                    : "text-(--ui-text-secondary) opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[selected]:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
                 } @max-[140px]/rail:hidden`}
               >
                 {linkStatus ? (
@@ -1938,9 +1983,9 @@ function ProjectGroupSection({
             never moves the name or the count. */}
         {gitSummary.dirty > 0 ? (
           <Tooltip label={group.name} details={[gitTitle]}>
-            <span className="my-auto shrink-0 tabular-nums text-ui-caption text-warning @max-[140px]/rail:hidden">
+            <Badge variant="count" size="xs" className="my-auto shrink-0 @max-[140px]/rail:hidden">
               {gitSummary.dirty}
-            </span>
+            </Badge>
           </Tooltip>
         ) : null}
         <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
@@ -2348,15 +2393,17 @@ function ProjectCard({
             className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden"
           >
             <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-            <span
+            <StatusDot
+              label={connection}
               aria-hidden="true"
-              className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-1 ring-background-base ${
+              tone={
                 indicator.tone === "connected"
-                  ? "bg-success"
+                  ? "success"
                   : indicator.tone === "connecting"
-                    ? "bg-warning"
-                    : "bg-danger"
-              }`}
+                    ? "warning"
+                    : "danger"
+              }
+              className="absolute right-0 bottom-0"
             />
           </span>
         ) : null}
@@ -2371,9 +2418,10 @@ function ProjectCard({
         ) : null}
       </Button>
       {change ? (
-        <span
+        <StatusDot
+          label={t("Changes")}
           aria-hidden
-          className="pointer-events-none absolute right-1.5 top-1.5 hidden size-1.5 rounded-full bg-success @max-[140px]/rail:block"
+          className="pointer-events-none absolute right-1.5 top-1.5 hidden @max-[140px]/rail:block"
         />
       ) : null}
       {!multi?.active ? (
@@ -2493,11 +2541,7 @@ function CompactLiveAgents({
           {summary.headline === "attention" ? (
             <CircleAlert className="icon-xs text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
           ) : (
-            <span
-              className={`size-1.5 rounded-full ${
-                working > 0 ? "bg-accent" : "bg-(--ui-text-muted)"
-              }`}
-            />
+            <StatusDot label={heading} aria-hidden tone={working > 0 ? "accent" : "neutral"} />
           )}
         </div>
       </Tooltip>
@@ -2542,9 +2586,11 @@ function CompactLiveAgents({
                 active={!agent.needsApproval && !agent.done}
               />
               {agent.needsApproval ? (
-                <span
+                <StatusDot
+                  label={activity}
+                  tone="warning"
                   aria-hidden
-                  className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-warning"
+                  className="absolute right-1.5 top-1.5"
                 />
               ) : null}
             </Button>
@@ -2592,9 +2638,9 @@ function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
       >
         <FileDiff className="icon-xs shrink-0" strokeWidth={1.75} />
         {change.files > 0 ? (
-          <span data-git-count="" className="text-ui-micro font-medium tabular-nums">
+          <Badge data-git-count="" variant="count" size="xs">
             {projectGitCountLabel(change.files)}
-          </span>
+          </Badge>
         ) : null}
       </span>
     </>

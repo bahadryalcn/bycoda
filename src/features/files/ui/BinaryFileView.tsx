@@ -250,7 +250,13 @@ function ImageView({
             )}
           </Button>
         ) : null}
-        <Button size="sm" variant="ghost" iconOnly label={t("Zoom out")} onClick={() => imageZoom.zoom(1 / 1.5)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Zoom out")}
+          onClick={() => imageZoom.zoom(1 / 1.5)}
+        >
           <Minus className="icon-xs" strokeWidth={1.75} />
         </Button>
         <Button
@@ -266,7 +272,13 @@ function ImageView({
             ? t("Fit")
             : `${Math.round(zoom * (natural && imageRef.current?.offsetWidth ? imageRef.current.offsetWidth / natural.w : 1) * 100)}%`}
         </Button>
-        <Button size="sm" variant="ghost" iconOnly label={t("Zoom in")} onClick={() => imageZoom.zoom(1.5)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Zoom in")}
+          onClick={() => imageZoom.zoom(1.5)}
+        >
           <Plus className="icon-xs" strokeWidth={1.75} />
         </Button>
       </footer>
@@ -342,8 +354,8 @@ function FileCard({
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           {onRetry ? (
             <Button
-            size="sm"
-            variant="ghost"
+              size="sm"
+              variant="ghost"
               onClick={onRetry}
               disabled={pending !== null}
               startIcon={<RotateCcw className="icon-xs" strokeWidth={1.75} />}

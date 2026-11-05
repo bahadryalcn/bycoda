@@ -3,7 +3,11 @@ import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../src/features/sessions/ui/AgentTranscript";
 import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
 import { newSession, type Block } from "../../src/features/sessions/model/session";
-import { appendSteerUser, applyHarnessEvent, stopStreaming } from "../../src/integrations/harness/core/apply";
+import {
+  appendSteerUser,
+  applyHarnessEvent,
+  stopStreaming,
+} from "../../src/integrations/harness/core/apply";
 import { Button } from "../../src/shared/ui/Button";
 import {
   saveTranscriptAnchor,
@@ -271,20 +275,42 @@ function WorkingFollowupFixture() {
     initial = {
       ...initial,
       busy: true,
-      blocks: [{ id: "working-owner", role: "user", text: "Research the feature and keep the development server running.", startedAt: Date.now() - 30_000 }],
+      blocks: [
+        {
+          id: "working-owner",
+          role: "user",
+          text: "Research the feature and keep the development server running.",
+          startedAt: Date.now() - 30_000,
+        },
+      ],
     };
     initial = applyHarnessEvent(initial, {
-      type: "tool.started", callId: "research-agent", title: "Product research", kind: "agent", status: "in_progress",
+      type: "tool.started",
+      callId: "research-agent",
+      title: "Product research",
+      kind: "agent",
+      status: "in_progress",
     });
     initial = applyHarnessEvent(initial, {
-      type: "tool.started", callId: "development-server", title: "Run pnpm dev", kind: "execute", status: "in_progress", background: true,
+      type: "tool.started",
+      callId: "development-server",
+      title: "Run pnpm dev",
+      kind: "execute",
+      status: "in_progress",
+      background: true,
     });
     return initial;
   });
   return (
     <div className="flex h-dvh min-w-0 flex-col bg-background-base text-content">
       <div className="min-h-0 min-w-0 flex-1">
-        <AgentTranscript blocks={session.blocks} busy={session.busy} liveStatusInDock harness="codex" model="gpt-6.1" />
+        <AgentTranscript
+          blocks={session.blocks}
+          busy={session.busy}
+          liveStatusInDock
+          harness="codex"
+          model="gpt-6.1"
+        />
       </div>
       <div data-composer className="mx-auto w-full max-w-4xl px-4 py-2">
         <ActivityDock
@@ -296,7 +322,11 @@ function WorkingFollowupFixture() {
           onOpenAgent={() => {}}
           onStopAll={async () => setSession((current) => stopStreaming(current))}
         />
-        <Button onClick={() => setSession((current) => appendSteerUser(current, "Also check the API behavior."))}>
+        <Button
+          onClick={() =>
+            setSession((current) => appendSteerUser(current, "Also check the API behavior."))
+          }
+        >
           Send follow-up
         </Button>
       </div>
@@ -309,6 +339,9 @@ function MessageBubblesFixture() {
     <div className="h-full min-w-0">
       <AgentTranscript
         onSaveNote={() => {}}
+        onSendDraft={() => true}
+        onEditDraft={() => true}
+        onRemoveDraft={() => true}
         blocks={[
           { id: "short-user", role: "user", text: "Merhaba", startedAt: 1792612800000 },
           { id: "short-reply", role: "assistant", text: "Merhaba, nasıl yardımcı olabilirim?" },

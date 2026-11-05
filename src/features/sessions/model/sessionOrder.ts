@@ -1,4 +1,4 @@
-import { normalizeProjectPath } from "../../projects/model/recents";
+import { normalizeProjectPath } from "../../projects/public/recents";
 
 /**
  * Hand-arranged order of the sidebar's ungrouped rows, per project. A list

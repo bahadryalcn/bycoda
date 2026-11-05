@@ -130,11 +130,24 @@ it("shows note failures without losing the diagnostic and allows retry", async (
 
 it("does not attach an older copy completion to a replacement diagnostic", async () => {
   let resolveCopy!: () => void;
-  vi.mocked(copyText).mockImplementationOnce(() => new Promise<void>((resolve) => { resolveCopy = resolve; }));
-  await act(async () => root.render(createElement(GitFeedback, { title: "First", detail: "old output", cwd: "/first" })));
+  vi.mocked(copyText).mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        resolveCopy = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(
+      createElement(GitFeedback, { title: "First", detail: "old output", cwd: "/first" }),
+    ),
+  );
   await click("Details");
   await click("Copy output");
-  await act(async () => root.render(createElement(GitFeedback, { title: "Second", detail: "new output", cwd: "/second" })));
+  await act(async () =>
+    root.render(
+      createElement(GitFeedback, { title: "Second", detail: "new output", cwd: "/second" }),
+    ),
+  );
   await click("Details");
   await act(async () => resolveCopy());
   expect(document.querySelector("pre")?.textContent).toBe("new output");
@@ -144,12 +157,19 @@ it("does not attach an older copy completion to a replacement diagnostic", async
 
 it("does not attach an old note failure when the original diagnostic returns", async () => {
   let rejectNote!: (reason: Error) => void;
-  vi.mocked(createNote).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectNote = reject; }));
+  vi.mocked(createNote).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectNote = reject;
+      }),
+  );
   const first = { title: "First", detail: "old output", cwd: "/first" };
   await act(async () => root.render(createElement(GitFeedback, first)));
   await click("Details");
   await click("Add to notes");
-  await act(async () => root.render(createElement(GitFeedback, { title: "Second", detail: "new output" })));
+  await act(async () =>
+    root.render(createElement(GitFeedback, { title: "Second", detail: "new output" })),
+  );
   await act(async () => root.render(createElement(GitFeedback, first)));
   await click("Details");
   await act(async () => rejectNote(new Error("Old notes failure")));

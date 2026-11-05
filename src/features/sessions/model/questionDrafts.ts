@@ -1,4 +1,5 @@
 import type { UserQuestionPrompt } from "./userQuestion";
+import type { QuestionDraftAttachment } from "./questionAttachments";
 import { registerParentInput, canPublishParentInput } from "../data/parentInputClosure";
 import { copyNativeCaptureData } from "../../../shared/lib/native-capture-json";
 
@@ -6,6 +7,8 @@ export type QuestionDraft = {
   step: number;
   answers: Record<string, string[]>;
   custom: Record<string, string>;
+  notes?: Record<string, string>;
+  attachments?: Record<string, QuestionDraftAttachment[]>;
   /** A void decision callback is not proof that the provider consumed it. */
   delivery?: "sending" | "unknown";
   pendingAction?: "answer" | "dismiss";
@@ -95,6 +98,7 @@ export function subscribeQuestionDraftCapacity(listener: () => void) {
 export function questionDraftKey(scope: string | undefined, prompt: UserQuestionPrompt): string {
   return JSON.stringify([
     scope ?? null,
+    ...(prompt.occurrenceId ? [prompt.occurrenceId] : []),
     prompt.providerTurnId ?? null,
     prompt.callId ?? null,
     prompt.requestId,
@@ -118,7 +122,12 @@ export function questionDraftKey(scope: string | undefined, prompt: UserQuestion
   ]);
 }
 function sourceKey(prompt: UserQuestionPrompt) {
-  return JSON.stringify([prompt.providerTurnId ?? null, prompt.callId ?? null, prompt.requestId]);
+  return JSON.stringify([
+    ...(prompt.occurrenceId ? [prompt.occurrenceId] : []),
+    prompt.providerTurnId ?? null,
+    prompt.callId ?? null,
+    prompt.requestId,
+  ]);
 }
 function pending(entry: Entry) {
   return (
@@ -131,8 +140,10 @@ function pending(entry: Entry) {
 function nonempty(entry: Entry) {
   return (
     pending(entry) ||
+    Object.values(entry.draft.attachments ?? {}).some((files) => files.length > 0) ||
     entry.draft.step > 0 ||
     Object.values(entry.draft.answers).some((value) => value.length > 0) ||
+    Object.values(entry.draft.notes ?? {}).some((value) => value.length > 0) ||
     Object.values(entry.draft.custom).some((value) => value.length > 0)
   );
 }
@@ -222,6 +233,11 @@ function packet(
         (answer) => !Array.isArray(answer) || answer.some((text) => typeof text !== "string"),
       ) ||
       Object.values(draft.custom).some((text) => typeof text !== "string") ||
+      (draft.notes !== undefined &&
+        (typeof draft.notes !== "object" ||
+          draft.notes === null ||
+          Array.isArray(draft.notes) ||
+          Object.values(draft.notes).some((text) => typeof text !== "string"))) ||
       (draft.delivery !== undefined &&
         draft.delivery !== "sending" &&
         draft.delivery !== "unknown") ||

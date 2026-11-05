@@ -900,7 +900,12 @@ Object.assign(window, {
         history: [],
       })),
     );
-    snapshot.segments.push({ id: "press-group", name: "Press list", projectIds: ["demo"], tags: ["press"] });
+    snapshot.segments.push({
+      id: "press-group",
+      name: "Press list",
+      projectIds: ["demo"],
+      tags: ["press"],
+    });
   },
   socialFixtureSeedAi: () => {
     snapshot.campaigns.push(
@@ -1483,7 +1488,10 @@ Object.assign(window, {
             const ids = ((params.input ?? {}).factIds as string[]) ?? [];
             const facts = snapshot.profiles.flatMap((profile) => profile.facts);
             return {
-              text: `Fixture reply: ${facts.filter((fact) => ids.includes(fact.id)).map((fact) => fact.text).join(" ")}`,
+              text: `Fixture reply: ${facts
+                .filter((fact) => ids.includes(fact.id))
+                .map((fact) => fact.text)
+                .join(" ")}`,
               factIds: ids,
               agent: { provider: "codex", model: "fixture-model" },
             };
@@ -1511,7 +1519,8 @@ Object.assign(window, {
                 minIntervalMinutes: 360,
                 maxIntervalMinutes: 720,
               },
-              rationale: "Fixture rationale: one post per working-day window, oldest approved content first.",
+              rationale:
+                "Fixture rationale: one post per working-day window, oldest approved content first.",
               excluded: pool.slice(3).map((campaign) => ({
                 campaignId: campaign.id,
                 reason: "Fixture reason: similar to an earlier pool entry.",
@@ -1557,13 +1566,8 @@ Object.assign(window, {
               answers: first.answers.slice(0, 1),
               ...(first.agent ? { agent: first.agent } : {}),
             };
-            const changes = (
-              ["name", "topics", "dailyLimit", "stopWords", "answers"] as const
-            )
-              .filter(
-                (field) =>
-                  JSON.stringify(proposed[field]) !== JSON.stringify(first[field]),
-              )
+            const changes = (["name", "topics", "dailyLimit", "stopWords", "answers"] as const)
+              .filter((field) => JSON.stringify(proposed[field]) !== JSON.stringify(first[field]))
               .map((field) => ({ field, before: first[field], after: proposed[field] }));
             return {
               accountId: input.accountId,
@@ -1588,10 +1592,17 @@ Object.assign(window, {
           if (params.action === "contacts.suggestTags") {
             const input = params.input ?? {};
             const subjects = (
-              (input.rows as { ref: string; name: string; language?: string; tags?: string[] }[] | undefined) ??
+              (input.rows as
+                | { ref: string; name: string; language?: string; tags?: string[] }[]
+                | undefined) ??
               (input.contactIds as string[]).map((id) => {
                 const contact = snapshot.contacts.find((item) => item.id === id)!;
-                return { ref: contact.id, name: contact.name, language: contact.language, tags: contact.tags };
+                return {
+                  ref: contact.id,
+                  name: contact.name,
+                  language: contact.language,
+                  tags: contact.tags,
+                };
               })
             ).slice(0, 100);
             const known = new Set(snapshot.contacts.flatMap((contact) => contact.tags));
@@ -1605,7 +1616,12 @@ Object.assign(window, {
                   ? [{ tag: "retail", reason: `“${subject.name}” looks like a shop.` }]
                   : []),
                 ...(subject.language
-                  ? [{ tag: `lang-${subject.language}`, reason: `The contact’s language is ${subject.language}.` }]
+                  ? [
+                      {
+                        tag: `lang-${subject.language}`,
+                        reason: `The contact’s language is ${subject.language}.`,
+                      },
+                    ]
                   : []),
               ]
                 .filter((entry) => !have.has(entry.tag))
@@ -1952,7 +1968,8 @@ Object.assign(window, {
             if (params.action === "contacts.upsert") {
               // Fixture of the normal contact update: only the fields sent change; consent stays.
               const contact = snapshot.contacts.find(
-                (item) => item.accountId === input.accountId && item.platformId === input.platformId,
+                (item) =>
+                  item.accountId === input.accountId && item.platformId === input.platformId,
               );
               if (!contact) throw new Error("Fixture contact not found.");
               if (input.tags) contact.tags = input.tags as string[];
@@ -1997,11 +2014,13 @@ Object.assign(window, {
                 projectId: String(input.projectId),
                 productName: String(input.productName),
                 brandVoice: String(input.brandVoice),
-                facts: (input.facts as SocialSnapshot["profiles"][number]["facts"]).map((fact, index) => ({
-                  ...fact,
-                  id: fact.id || `saved-fact-${index}`,
-                  verifiedAt: Date.now(),
-                })),
+                facts: (input.facts as SocialSnapshot["profiles"][number]["facts"]).map(
+                  (fact, index) => ({
+                    ...fact,
+                    id: fact.id || `saved-fact-${index}`,
+                    verifiedAt: Date.now(),
+                  }),
+                ),
               };
               snapshot.profiles = [
                 ...snapshot.profiles.filter((item) => item.projectId !== profile.projectId),

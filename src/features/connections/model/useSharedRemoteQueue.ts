@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { remoteBackoffDelay } from "./remotePollingPolicy";
-import { loadStoredQueue, setSessionQueue } from "../../sessions/data/sessionStore";
-import type { Attachment } from "../../sessions/model/session";
+import { loadStoredQueue, setSessionQueue } from "../../sessions/public/sessionStore";
+import type { Attachment } from "../../sessions";
 import { SharedQueueClient } from "./sharedQueueClient";
 import { sameQueueValue, sharedQueueStorageId, type SharedQueue } from "./sharedQueue";
 import {
@@ -20,7 +20,7 @@ import { useRemoteQueue } from "./useRemoteQueue";
 import {
   setQueueHoldReason,
   type DeliveryReviewOutcome,
-} from "../../sessions/model/deliveryReview";
+} from "../../sessions/public/deliveryReview";
 
 /**
  * The queue is read when something says it may have changed (the session's

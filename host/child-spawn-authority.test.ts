@@ -3,20 +3,20 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, access } from "node:fs/promise
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
-import type { SocialService } from "./social";
+import type { SocialService } from "./social/social";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:child_process")>();
   return { ...original, spawn: vi.fn(original.spawn) };
 });
-vi.mock("./provider-accounts", () => ({
+vi.mock("./providers/provider-accounts", () => ({
   providerAccountEnvironment: vi.fn(async () => ({
     set: { PROBE_ACCOUNT_SECRET: "fixture-only-secret" },
     remove: [],
   })),
 }));
 import { spawn } from "node:child_process";
-import { providerAccountEnvironment } from "./provider-accounts";
+import { providerAccountEnvironment } from "./providers/provider-accounts";
 import { HostChildBackend } from "./child-backend";
 
 function deferred<T = void>() {

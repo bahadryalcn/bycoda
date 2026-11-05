@@ -20,14 +20,26 @@ import {
   placeSessionInFolder,
   saveSessionFolders,
 } from "../../sessions/model/sessionFolders";
+import {
+  executeOrganizationOperation,
+  organizationFoldersForProject,
+} from "../../sessions/model/sessionOrganizationOperations";
+import {
+  hydrateSessionOrganization,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+} from "../../sessions/model/sessionOrganizationStore";
 import { normalizeNoteTags, noteTitle, type Note, type NoteUpsert } from "../../notes";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import type { Worktree, Worktrees } from "../../source-control/model/worktrees";
 import { pathKey } from "../../../shared/lib/paths";
+import { conversationSessionPage } from "../../../shared/model/conversationSessionPage";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage, sessionConversationTurn } from "./sessionConversation";
-import { localSessionLinkFields, type LocalSessionLocator } from "../../sessions/model/localSessionReference";
+import {
+  localSessionLinkFields,
+  type LocalSessionLocator,
+} from "../../sessions/model/localSessionReference";
 
 export type AppSessionListing = {
   id: string;
@@ -36,6 +48,8 @@ export type AppSessionListing = {
   model: string;
   busy: boolean;
   hasDraft: boolean;
+  lastActivityAt?: number;
+  updatedAt?: number;
 };
 
 export type AppSessionPlacement = {
@@ -64,7 +78,7 @@ export type AgentAppHost = {
 
 const FIELDS = new Map<string, readonly string[]>([
   ["models.list", []],
-  ["sessions.list", []],
+  ["sessions.list", ["limit", "cursor", "state"]],
   ["sessions.read", ["sessionId", "before", "limit", "maxChars"]],
   ["sessions.send", ["sessionId", "prompt"]],
   ["sessions.wait", ["sessionId", "sentRequestId", "timeoutSeconds", "maxChars"]],
@@ -284,17 +298,16 @@ export async function handleAgentApp(
         })),
       };
     case "sessions.list": {
-      const sessions = await host.sessions(requireProject(source));
+      const page = conversationSessionPage(await host.sessions(requireProject(source)), input);
       return {
         cwd: requireProject(source),
+        ...page,
         sessions: await Promise.all(
-          sessions.map(async (session) => {
+          page.sessions.map(async (session) => {
             const locator = await host.sessionReference?.(session.id);
             return {
               ...session,
-              ...(locator
-                ? localSessionLinkFields(locator, session.title)
-                : {}),
+              ...(locator ? localSessionLinkFields(locator, session.title) : {}),
             };
           }),
         ),
@@ -422,9 +435,12 @@ export async function handleAgentApp(
     }
     case "folders.list": {
       const cwd = requireProject(source);
+      const folders = NATIVE_SESSION_ORGANIZATION_ACTIVE
+        ? organizationFoldersForProject(await hydrateSessionOrganization(), cwd)
+        : loadSessionFolders(cwd);
       return {
         cwd,
-        folders: loadSessionFolders(cwd).map(({ id, name, sessionIds }) => ({
+        folders: folders.map(({ id, name, sessionIds }) => ({
           id,
           name,
           sessionIds,
@@ -440,6 +456,40 @@ export async function handleAgentApp(
         throw new Error("Supply exactly one of folderId or newFolderName");
       if (!(await host.sessions(cwd)).some((session) => session.id === sessionId))
         throw new Error("Session was not found in this project");
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        const createdId = crypto.randomUUID();
+        const result = await executeOrganizationOperation(
+          crypto.randomUUID(),
+          folderId
+            ? {
+                kind: "batch",
+                cwd,
+                operations: [
+                  { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
+                  { kind: "folderCollapsed", cwd, folderId, collapsed: false },
+                ],
+              }
+            : {
+                kind: "create",
+                cwd,
+                folderId: createdId,
+                sessionIds: [sessionId],
+                name: newFolderName!,
+              },
+        );
+        if (result.state !== "applied")
+          throw new Error(
+            result.state === "unknown"
+              ? `Folder change outcome is unknown: ${result.operationId}`
+              : result.state === "applied-unavailable"
+                ? `Folder change was applied, but refresh failed: ${result.operationId}`
+                : "Folder change conflicted; refresh before retrying.",
+          );
+        const folder = organizationFoldersForProject(result.value, cwd).find((entry) =>
+          entry.sessionIds.includes(sessionId),
+        );
+        return { sessionId, folderId: folder?.id, folderName: folder?.name };
+      }
       const folders = loadSessionFolders(cwd);
       if (folderId && !folders.some((folder) => folder.id === folderId))
         throw new Error("Folder was not found in this project");

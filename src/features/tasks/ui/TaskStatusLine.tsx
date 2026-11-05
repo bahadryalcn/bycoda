@@ -2,29 +2,10 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { CheckCircle, CircleAlert, CircleDashed, CircleDot, CircleX } from "../../../shared/ui/icons";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import type { HostTask, TaskOwnerNotice } from "../model/hostTasks";
-import {
-  finishedOwnerNotices,
-  type TaskStatusLine,
-  type TaskStatusTone,
-} from "../model/taskStatusLine";
-
-const TONE_TEXT: Record<TaskStatusTone, string> = {
-  neutral: "text-(--ui-text-secondary)",
-  info: "text-(--ui-tone-info-fg)",
-  success: "text-(--ui-tone-success-fg)",
-  warning: "text-(--ui-tone-warning-fg)",
-  danger: "text-(--ui-tone-danger-fg)",
-};
-const TONE_ICON = {
-  neutral: CircleDashed,
-  info: CircleDot,
-  success: CheckCircle,
-  warning: CircleAlert,
-  danger: CircleX,
-} as const;
+import { finishedOwnerNotices, type TaskStatusLine } from "../model/taskStatusLine";
 
 /** The task's one-line state: tone glyph, label and a clamped reason. With
  * `onOpen`, the whole line opens the full details. */
@@ -38,10 +19,9 @@ export function TaskStatusText({
   className?: string;
 }) {
   useLocale();
-  const Icon = TONE_ICON[status.tone];
   const content = (
     <>
-      <Icon aria-hidden="true" className="icon-xs me-1 inline-block shrink-0 align-[-0.125em]" />
+      <StatusDot tone={status.tone} label={status.label} className="me-1 inline-block" />
       <span className="font-medium">{status.label}</span>
       {status.detail ? (
         <span className="text-(--ui-text-secondary)">
@@ -51,7 +31,7 @@ export function TaskStatusText({
       ) : null}
     </>
   );
-  const shared = `line-clamp-2 break-words text-start text-ui-micro ${TONE_TEXT[status.tone]} ${className}`;
+  const shared = `line-clamp-2 break-words text-start text-ui-micro text-(--ui-text-secondary) ${className}`;
   return onOpen ? (
     <Button
       variant="link"
@@ -59,7 +39,7 @@ export function TaskStatusText({
       align="start"
       data-no-drag=""
       data-task-status-line={status.kind}
-      title={t("Show details")}
+      tooltip={t("Show details")}
       className={shared}
       onClick={(event) => {
         event.stopPropagation();
@@ -86,7 +66,10 @@ const NOTICE_GROUPS: readonly { kind: TaskOwnerNotice["kind"]; label: () => stri
 export function TaskOwnerNotices({ task }: { task: HostTask }) {
   useLocale();
   const notices = finishedOwnerNotices(task);
-  if (notices.length === 0 && !(task.completedWithFindings && ["review", "done"].includes(task.status)))
+  if (
+    notices.length === 0 &&
+    !(task.completedWithFindings && ["review", "done"].includes(task.status))
+  )
     return null;
   return (
     <section
@@ -108,10 +91,7 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
             <p className="text-ui-micro text-(--ui-text-muted)">{group.label()}</p>
             <ul className="space-y-0.5">
               {rows.map((notice) => (
-                <li
-                  key={notice.id}
-                  className="text-(--ui-text-secondary)"
-                >
+                <li key={notice.id} className="text-(--ui-text-secondary)">
                   <OverflowTooltip label={notice.message}>
                     <span className="line-clamp-2 break-words">{notice.message}</span>
                   </OverflowTooltip>
@@ -197,10 +177,7 @@ export function TaskOutcomeSummary({ task }: { task: HostTask }) {
         {t("What was done")}
       </h3>
       {summary ? <ClampedMarkdown text={summary} /> : null}
-      {diff ? (
-        <p className="font-mono text-ui-micro text-(--ui-text-muted)">{diff}</p>
-      ) : null}
+      {diff ? <p className="font-mono text-ui-micro text-(--ui-text-muted)">{diff}</p> : null}
     </section>
   );
 }
-

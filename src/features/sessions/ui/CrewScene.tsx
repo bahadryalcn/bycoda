@@ -3,7 +3,7 @@ import { valueHash } from "../../../shared/lib/valueHash";
 import { t, useT } from "../../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import {
   createCodeArtPainter,
   loadCrewSignLogo,
@@ -17,7 +17,7 @@ import {
   subscribeCrewGrowthEnabled,
   loadCrewTheme,
   subscribeCrewTheme,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import { crewCharge } from "./starWarsCrew";
 import { riggedCrewTheme } from "./crewThemes";
 import "./CrewScene.css";

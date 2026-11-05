@@ -1,3 +1,5 @@
+import { extractChatCitations, withChatCitations } from "./chatCitation";
+
 export const ADD_TO_CHAT_EVENT = "bycoda:add-to-chat";
 
 export type AddToChatMode = "quote" | "plain";
@@ -80,8 +82,14 @@ export function consumeQuoteRequest(
     return { draft, consumedId, changed: false };
   }
 
-  const next =
-    request.mode === "plain"
+  const incoming = extractChatCitations(request.text);
+  const existing = extractChatCitations(draft);
+  const next = incoming.citations.length
+    ? withChatCitations(
+        incoming.text ? appendComposerInsert(existing.text, incoming.text) : existing.text,
+        [...existing.citations, ...incoming.citations],
+      )
+    : request.mode === "plain"
       ? appendComposerInsert(draft, request.text)
       : appendSelectionQuote(draft, request.text);
   return {

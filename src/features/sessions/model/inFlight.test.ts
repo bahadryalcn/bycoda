@@ -10,6 +10,7 @@ import {
   markTurnInterrupted,
   quitWhileBusyMessage,
   shouldWriteInFlightSnapshot,
+  wasTurnInterrupted,
   workspaceFromResumed,
 } from "./inFlight";
 import { newSession, type Session } from "./session";
@@ -23,7 +24,15 @@ function chat(cwd: string, patch: Partial<Session> = {}): Session {
 describe("isInFlightSession", () => {
   it("leaves explicit local Host work running when its client detaches", () => {
     const session = chat("/tmp/local", { busy: true });
-    session.hostBinding = { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: session.id, authorityGeneration: null, created: true };
+    session.hostBinding = {
+      kind: "local-host",
+      machineId: "local",
+      environmentId: "home",
+      projectId: "project",
+      sessionId: session.id,
+      authorityGeneration: null,
+      created: true,
+    };
     expect(isInFlightSession(session)).toBe(false);
     expect(inFlightRefs([session], [newTab(session.id)])).toEqual([]);
   });
@@ -120,6 +129,64 @@ describe("inFlightRefs", () => {
 });
 
 describe("markTurnInterrupted", () => {
+  it("keeps legacy Stop plus quit-marker bytes without advertising interruption", () => {
+    const session = chat("/tmp/a", {
+      providerSessionId: "p1",
+      blocks: [
+        { id: "u1", role: "user", text: "hello" },
+        { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+        { id: "quit", role: "system", notice: "interrupt", text: INTERRUPT_MESSAGE },
+      ],
+    });
+    expect(wasTurnInterrupted(session)).toBe(false);
+    expect(canAutoContinue(session)).toBe(false);
+    expect(markTurnInterrupted(session).blocks).toEqual(session.blocks);
+  });
+
+  it("retains real Host interruption and a new interrupted turn after owner Stop", () => {
+    const stopped = {
+      id: "stop",
+      role: "system" as const,
+      notice: "interrupt" as const,
+      text: "Stopped by you.",
+    };
+    const host = chat("/tmp/a", {
+      blocks: [
+        stopped,
+        {
+          id: "host",
+          role: "system",
+          notice: "interrupt",
+          text: "Host restarted while this turn was running.",
+        },
+      ],
+    });
+    expect(wasTurnInterrupted(host)).toBe(true);
+    const laterTurn = chat("/tmp/a", {
+      blocks: [
+        stopped,
+        { id: "new", role: "user", text: "Continue" },
+        { id: "quit", role: "system", notice: "interrupt", text: INTERRUPT_MESSAGE },
+      ],
+    });
+    expect(wasTurnInterrupted(laterTurn)).toBe(true);
+  });
+  it.each(["Stopped by you.", "  Stopped by you.\n"])(
+    "does not replace an explicit owner Stop from stale in-flight recovery: %s",
+    (text) => {
+      const session = chat("/tmp/a", {
+        providerSessionId: "p1",
+        blocks: [
+          { id: "u1", role: "user", text: "hello" },
+          { id: "stop", role: "system", notice: "interrupt", text },
+        ],
+      });
+      const recovered = markTurnInterrupted(session);
+      expect(recovered.blocks).toEqual(session.blocks);
+      expect(wasTurnInterrupted(recovered)).toBe(false);
+      expect(canAutoContinue(recovered)).toBe(false);
+    },
+  );
   it("seals the stream, cancels open tools, and appends a system note", () => {
     const interrupted = markTurnInterrupted(
       chat("/tmp/a", {
@@ -148,7 +215,7 @@ describe("markTurnInterrupted", () => {
     expect(interrupted.blocks).toEqual([
       expect.objectContaining({
         id: "u1",
-        durationMs: expect.any(Number),
+        startedAt: 1_000,
       }),
       expect.objectContaining({
         id: "a1",
@@ -165,12 +232,21 @@ describe("markTurnInterrupted", () => {
         text: INTERRUPT_MESSAGE,
       }),
     ]);
+    expect(interrupted.blocks[0].durationMs).toBeUndefined();
   });
 
   it("does not append the interrupt note twice for the same turn", () => {
     const once = markTurnInterrupted(chat("/tmp/a", { busy: true }));
     const twice = markTurnInterrupted(once);
     expect(twice.blocks.filter((block) => block.text === INTERRUPT_MESSAGE)).toHaveLength(1);
+  });
+
+  it("keeps recorded turn duration when recovery seals an already timed turn", () => {
+    const session = chat("/tmp/a", {
+      busy: true,
+      blocks: [{ id: "u1", role: "user", text: "hello", startedAt: 1_000, durationMs: 250 }],
+    });
+    expect(markTurnInterrupted(session).blocks[0].durationMs).toBe(250);
   });
 
   it("appends a new note when a later turn is quit after Continue", () => {
@@ -241,6 +317,37 @@ describe("workspaceFromResumed", () => {
 });
 
 describe("canAutoContinue", () => {
+  it.each(["Stopped by you.", "  Stopped by you.\n"])(
+    "does not warn or auto-continue an owner stop saved with the old interrupt kind: %s",
+    (text) => {
+      const session = chat("/tmp/a", {
+        providerSessionId: "p1",
+        blocks: [
+          { id: "u1", role: "user", text: "hello" },
+          { id: "stop", role: "system", notice: "interrupt", text },
+        ],
+      });
+      expect(wasTurnInterrupted(session)).toBe(false);
+      expect(canAutoContinue(session)).toBe(false);
+      expect(session.blocks.at(-1)?.notice).toBe("interrupt");
+    },
+  );
+  it("keeps unexpected Host interruption eligible for recovery", () => {
+    const session = chat("/tmp/a", {
+      providerSessionId: "p1",
+      blocks: [
+        { id: "u1", role: "user", text: "hello" },
+        {
+          id: "restart",
+          role: "system",
+          notice: "interrupt",
+          text: "Host restarted. This turn was interrupted; inspect its work before continuing.",
+        },
+      ],
+    });
+    expect(wasTurnInterrupted(session)).toBe(true);
+    expect(canAutoContinue(session)).toBe(true);
+  });
   it("resumes legacy interrupted sessions without adding a duplicate notice", () => {
     const legacy = chat("/tmp/a", {
       providerSessionId: "p1",

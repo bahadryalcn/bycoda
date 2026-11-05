@@ -6,7 +6,5 @@ const native = loadPhysicalStoreAdmission(artifact),
   binding = registry.bindFile(file);
 const held = binding.tryWriter();
 if (!held) throw new Error("fixture writer unavailable");
-console.log(
-  JSON.stringify({ acquired: true, identity: binding.identity().nativeFormat }),
-);
+console.log(JSON.stringify({ acquired: true, identity: binding.identity().nativeFormat }));
 createInterface({ input: process.stdin }).once("line", () => process.exit(0));

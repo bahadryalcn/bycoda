@@ -37,7 +37,9 @@ it("offers Markdown selection near the text, adds its path to chat and dismisses
       });
     };
     await select();
-    const button = document.querySelector<HTMLButtonElement>('[role="toolbar"] button')!;
+    const button = document.querySelector<HTMLButtonElement>(
+      '[role="toolbar"] button[aria-label="Add to chat"]',
+    )!;
     expect(button.textContent).toContain("Add to chat");
     expect(onAdd).not.toHaveBeenCalled();
     await act(async () => button.click());

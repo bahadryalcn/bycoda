@@ -28,7 +28,7 @@
   min-inline-size: 0;
   padding: 0.625rem 0.75rem;
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
+  background: transparent;
 }
 .social-tag-contact[data-state="done"] {
   opacity: 0.7;

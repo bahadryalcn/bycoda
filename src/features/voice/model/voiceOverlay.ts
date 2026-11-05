@@ -1,6 +1,7 @@
 import type { VoiceVisualState } from "./voiceVisualState";
 import type { VoiceChoice } from "./voiceChoices";
-import type {VoiceJobReviewState} from "./voiceJobs";
+import type { VoiceJobReviewState } from "./voiceJobs";
+import type { VoiceToolActivityEntry } from "./voiceToolActivity";
 
 /**
  * Floating voice window protocol.
@@ -16,23 +17,30 @@ export type VoiceOverlayState = {
   statusText: string;
   title: string;
   muted: boolean;
+  speakerMuted?: boolean;
   working: boolean;
+  workingStatus?: string;
+  activity?: readonly VoiceToolActivityEntry[];
   canStart: boolean;
   transcript: string;
   message: string;
   error: string;
-  notice?:string;
-  manualTurnEnd?:boolean;
+  notice?: string;
+  manualTurnEnd?: boolean;
   /** Text describing local or cloud audio handling, shown before starting. */
   privacy: string;
   choice?: VoiceChoice | null;
-  jobReview?:VoiceJobReviewState|null;
+  jobReview?: VoiceJobReviewState | null;
 };
 
 export const VOICE_OVERLAY_COMMANDS = [
   "sync",
   "start",
   "toggleMute",
+  "toggleSpeaker",
+  "beginPushToTalk",
+  "endPushToTalk",
+  "cancelPushToTalk",
   "finishTurn",
   "manualTurnEnd",
   "automaticTurnEnd",
@@ -48,6 +56,7 @@ export const VOICE_OVERLAY_LEVEL_EVENT = "voice_overlay_level";
 export const VOICE_OVERLAY_COMMAND_EVENT = "voice_overlay_command";
 export const VOICE_OVERLAY_CHOICE_EVENT = "voice_overlay_choice";
 export const VOICE_OVERLAY_JOB_EVENT = "voice_overlay_job_review";
+export const VOICE_OVERLAY_ACTIVITY_EVENT = "voice_overlay_activity_stop_waiting";
 /** Emitted by the native side when the overlay window is gone for any reason. */
 export const VOICE_OVERLAY_CLOSED_EVENT = "voice_overlay_closed";
 export const VOICE_OVERLAY_PREFIX = "voice-overlay-";

@@ -178,7 +178,10 @@ describe("local references in the actual Markdown pipeline", () => {
   it("guards repeated activation synchronously and keeps preview reads from cancelling opening feedback", async () => {
     let finish!: () => void;
     vi.mocked(navigation.open).mockImplementationOnce(
-      () => new Promise<void>((resolve) => { finish = resolve; }),
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
     );
     await render(`[Target](${href})`);
     const link = host.querySelector<HTMLAnchorElement>("a")!;
@@ -202,14 +205,18 @@ describe("local references in the actual Markdown pipeline", () => {
   it("shows pending feedback on Open beside and preserves recovery after a failed open", async () => {
     let fail!: (error: Error) => void;
     vi.mocked(navigation.open).mockImplementationOnce(
-      () => new Promise<void>((_resolve, reject) => { fail = reject; }),
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
     );
     await render(`[Target](${href})`);
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Session details"]')!.click(),
     );
     const dialog = document.querySelector('[role="dialog"][aria-label="Session details"]')!;
-    const button = (label: string) => [...dialog.querySelectorAll("button")].find((entry) => entry.textContent === label)!;
+    const button = (label: string) =>
+      [...dialog.querySelectorAll("button")].find((entry) => entry.textContent === label)!;
     const beside = button("Open beside");
     const openSession = button("Open session");
     await act(async () => beside.click());

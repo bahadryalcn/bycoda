@@ -1,6 +1,20 @@
+import { SessionReadProcesses } from "./session-read-process";
+import {
+  compactCommandReceipts,
+  initializeCommandReceiptRetention,
+  readCommandReceipt,
+  readWorkspaceReceipt,
+} from "./storage/command-receipt-retention";
+import {
+  initializeWorkspaceSessionProbe,
+  startupSessionStates,
+} from "./storage/workspace-session-probe";
+import { dispatchCommittedEffect, TransactionEffects } from "./storage/transaction-effects";
+import { ProjectIdentityFence } from "./projects/project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
-import {assistantJobSessionBelongs} from "./assistant-job-scope";
-import type {AssistantJob} from "../src/shared/model/host-contracts/assistant";
+import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
+import { assistantJobSessionBelongs } from "./assistant/work/assistant-job-scope";
+import type { AssistantJob } from "../src/shared/model/host-contracts/assistant";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   assertHostAuthority,
@@ -13,10 +27,10 @@ import {
   captureHostSnapshot,
   type HostSnapshotManifest,
 } from "./storage/snapshots";
-import { normalizeProjectPath } from "./desktopSessions";
+import { normalizeProjectPath } from "./desktop/desktopSessions";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { StoreDatabase, type StoreStatement } from "./store-db";
-import { initializeNativeDeliveryStore } from "./native-delivery-store";
+import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import type {
@@ -32,22 +46,26 @@ import { sessionNeedsInput, type Block } from "../src/features/sessions/model/se
 import { changedBlocks } from "../src/features/sessions/model/blockChanges";
 import { streamingTextUpdate } from "../src/features/sessions/model/stableBlocks";
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
-import { blockRevisions } from "./block-revisions";
+import { blockRevisions } from "./sessions/block-revisions";
 import type { BlockChanges } from "../src/features/sessions/model/blockChanges";
-import type { UsageMetadataPage, UsageTurnMetadata } from "./usage-report";
+import type { UsageMetadataPage, UsageTurnMetadata } from "./usage/usage-report";
 import type {
   ManagedWorkspace,
   WorkspaceFeatureClaim,
   WorkspaceOperation,
   WorkspacePolicyOverride,
   WorkspaceState,
-} from "./workspace-contracts";
-import type { WorkspaceActivityPersistence } from "./workspace-activity-store";
-export { blockRevisions } from "./block-revisions";
+} from "./workspaces/workspace-contracts";
+import type { WorkspaceActivityPersistence } from "./workspaces/workspace-activity-store";
+import { replaceControlCharacters } from "../src/shared/lib/controlCharacters";
+import type { DesktopCommandAcceptance } from "./domains/commands/service";
+export type { DesktopCommandAcceptance } from "./domains/commands/service";
+export { blockRevisions } from "./sessions/block-revisions";
 const CACHED_SESSIONS = 32;
-// Retried commands are deduplicated by receipt; a week far outlives any retry.
+// Original request signatures compact after a week; replay answers never expire.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
+const MAX_DESKTOP_COMMAND_RECEIPTS = 4096;
 /** Sync replay needs only a recent suffix of a session's events: a client further behind
  * gets the snapshot. Streaming `tool.updated` events carry whole tool blocks, so the row
  * count alone let one busy session keep megabytes (all of host.db: 185 MB of events). */
@@ -88,7 +106,7 @@ interface SummaryBlocks {
 }
 interface BlockIndex {
   positions: Map<string, number>;
-  authors:Map<string,NonNullable<Block["author"]>>;
+  authors: Map<string, NonNullable<Block["author"]>>;
   root: SummaryBlocks;
 }
 const blockIndexes = new WeakMap<Block[], BlockIndex>();
@@ -120,12 +138,12 @@ function indexBlocks(blocks: Block[]): BlockIndex {
   const cached = blockIndexes.get(blocks);
   if (cached) return cached;
   const positions = new Map<string, number>();
-  const authors=new Map<string,NonNullable<Block["author"]>>();
+  const authors = new Map<string, NonNullable<Block["author"]>>();
   const build = (start: number, end: number): SummaryBlocks => {
     if (end - start <= 1) {
       const block = blocks[start];
       if (block) positions.set(block.id, start);
-      if(block?.author)authors.set(block.id,block.author);
+      if (block?.author) authors.set(block.id, block.author);
       return blockSummary(block);
     }
     const middle = (start + end) >>> 1;
@@ -164,11 +182,13 @@ function patchBlockIndex(previous: Block[], blocks: Block[], changes?: BlockChan
       : aggregate(node.left!, patch(node.right!, middle, end, position));
   };
   let root = before.root;
-  let authors=before.authors;
-  for(const [id,block] of changes)if(block?.author!==before.authors.get(id)) {
-    if(authors===before.authors)authors=new Map(before.authors);
-    if(block?.author)authors.set(id,block.author);else authors.delete(id);
-  }
+  let authors = before.authors;
+  for (const [id, block] of changes)
+    if (block?.author !== before.authors.get(id)) {
+      if (authors === before.authors) authors = new Map(before.authors);
+      if (block?.author) authors.set(id, block.author);
+      else authors.delete(id);
+    }
   for (const id of changes.keys()) root = patch(root, 0, blocks.length, before.positions.get(id)!);
   blockIndexes.set(blocks, { positions: before.positions, authors, root });
   return false;
@@ -182,6 +202,7 @@ export type HostAuthorityChange = Readonly<{
 }>;
 
 export class HostStore {
+  private readonly desktopCommandInstance = randomUUID();
   private readonly authorityContexts = new AsyncLocalStorage<ReadonlyMap<string, number>>();
   assertAuthority(sessionId: string, expectedGeneration?: number): Promise<boolean> {
     return this.db.scope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
@@ -223,6 +244,27 @@ export class HostStore {
     return this.transaction(() => this.sessionWrite(sessionId, expectedGeneration, work));
   }
   readonly db: StoreDatabase;
+  private readonly projectIdentityFence = new ProjectIdentityFence();
+  /** Project identity writers must acquire their lease before SQL ownership. */
+  withProjectIdentityWrite<T>(effect: () => Promise<T>): Promise<T> {
+    if (this.db.ownsScope)
+      return Promise.reject(
+        new Error("Project identity write lease must be acquired before database ownership."),
+      );
+    return this.projectIdentityFence.write(effect);
+  }
+  withProjectIdentityRead<T>(
+    proofs: { projectId: string; cwd: string }[],
+    effect: (valid: () => boolean) => Promise<T>,
+  ): Promise<T> {
+    return this.projectIdentityFence.read(async (valid) => {
+      for (const proof of proofs)
+        if ((await this.project(proof.projectId)).cwd !== proof.cwd)
+          throw new Error("Room project identity changed.");
+      if (!valid()) throw new Error("Room project identity changed.");
+      return effect(valid);
+    });
+  }
   readonly ready: Promise<void>;
   private closePromise?: Promise<void>;
   environmentId = "";
@@ -247,15 +289,23 @@ export class HostStore {
   private snapshotPending(id: string): void {
     if (!this.pendingBefore || this.pendingBefore.has(id)) return;
     const entry = this.pending.get(id);
-    this.pendingBefore.set(id, entry ? {
-      ...entry, events: [...entry.events], changed: new Map(entry.changed), timer: undefined,
-    } : undefined);
+    this.pendingBefore.set(
+      id,
+      entry
+        ? {
+            ...entry,
+            events: [...entry.events],
+            changed: new Map(entry.changed),
+            timer: undefined,
+          }
+        : undefined,
+    );
   }
   // Write-behind state, consulted before the cache and SQLite by every read.
   // Kept apart from the LRU cache so eviction can never drop unwritten data.
   private pending = new Map<string, PendingWrite>();
   private inTransaction = false;
-  private commitEffects: Array<() => void | Promise<void>> = [];
+  private readonly transactionEffects = new TransactionEffects();
   private flushedInTransaction: PendingWrite[] = [];
   /** Snapshot upserts issued so far; lets tests count checkpoints. */
   snapshotWrites = 0;
@@ -319,7 +369,9 @@ export class HostStore {
   private authorizationListeners = new Set<() => void>();
   subscribeAuthorizationChanges(listener: () => void): () => void {
     this.authorizationListeners.add(listener);
-    return () => { this.authorizationListeners.delete(listener); };
+    return () => {
+      this.authorizationListeners.delete(listener);
+    };
   }
   private changeWakeQueued = false;
   /** Commit wake only; consumers must reload an authorized authoritative view. */
@@ -346,7 +398,9 @@ export class HostStore {
       }
     });
   }
-  get unattributedChangeVersion(): number { return this.db.unattributedMutationVersion; }
+  get unattributedChangeVersion(): number {
+    return this.db.unattributedMutationVersion;
+  }
   private projectVersions = new Map<string, number>();
   private summaryRows = new Map<
     string,
@@ -401,7 +455,14 @@ export class HostStore {
       this.publishChanges();
     }
   }
+  private readonly sessionReadSignals = new AsyncLocalStorage<AbortSignal>();
+  private readonly sessionReadProcesses = new SessionReadProcesses();
+  private readonly sessionReadPath: string;
+  withReadCancellation<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+    return this.sessionReadSignals.run(signal, () => this.db.scope(work, signal));
+  }
   constructor(path: string) {
+    this.sessionReadPath = path;
     this.attachmentDir = join(dirname(path), "attachments");
     this.db = new StoreDatabase(path);
     this.db.onMutation = (sql) => this.externalMutation(sql);
@@ -423,14 +484,14 @@ export class HostStore {
   }
   private externalMutation(sql: string): void {
     if (
-      /\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO)\s+["`\[]?devices\b/i.test(
+      /\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO)\s+["`[]?devices\b/i.test(
         sql,
       )
     ) {
       this.clearAuthCache();
     }
     if (
-      !/\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO)\s+["`\[]?(?:sessions|session_state|session_journal|session_journal_blocks)\b/i.test(
+      !/\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO)\s+["`[]?(?:sessions|session_state|session_journal|session_journal_blocks)\b/i.test(
         sql,
       )
     )
@@ -455,9 +516,20 @@ export class HostStore {
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, cwd TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), snapshot TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS deleted_sessions (id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS prevent_deleted_session_insert BEFORE INSERT ON sessions
+        WHEN EXISTS (SELECT 1 FROM deleted_sessions WHERE id=NEW.id)
+        BEGIN SELECT RAISE(ABORT, 'Session was deleted; start a new conversation.'); END;
       CREATE TABLE IF NOT EXISTS session_journal (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, revision INTEGER NOT NULL, metadata TEXT NOT NULL, block_ids TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_journal_blocks (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, block_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id,block_id));
       CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, signature TEXT NOT NULL, receipt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_pin_receipts (operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL, request_hash TEXT NOT NULL, result TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS desktop_command_delivery (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, signature TEXT NOT NULL,
+        principal_id TEXT NOT NULL, owner_id TEXT NOT NULL, delivery TEXT NOT NULL,
+        host_instance TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('accepted','offered_unknown','acknowledged'))
+      );
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
@@ -481,8 +553,12 @@ export class HostStore {
       );
       CREATE TABLE IF NOT EXISTS workspace_mutation_receipts (
         scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, signature TEXT NOT NULL,
-        response TEXT NOT NULL, PRIMARY KEY(scope, idempotency_key)
+        response TEXT NOT NULL, created_at INTEGER, PRIMARY KEY(scope, idempotency_key)
       );
+      CREATE INDEX IF NOT EXISTS workspace_operations_workspace_order
+        ON workspace_operations(workspace_id, id);
+      CREATE INDEX IF NOT EXISTS workspace_operations_recovery_lookup
+        ON workspace_operations(workspace_id, phase, kind);
       CREATE TABLE IF NOT EXISTS workspace_policies (
         project_id TEXT NOT NULL, environment_id TEXT NOT NULL, revision INTEGER NOT NULL,
         payload TEXT NOT NULL, PRIMARY KEY(project_id, environment_id)
@@ -536,7 +612,7 @@ export class HostStore {
           session_cwd = json_extract(snapshot, '$.session.cwd'),
           shell_running = EXISTS (
             SELECT 1 FROM json_each(snapshot, '$.session.blocks')
-            WHERE COALESCE(json_extract(value, '$.shell.running'), 0) <> 0
+            WHERE COALESCE(json_extract(value, '$.shell.running'), 0) <> 0 OR json_extract(value, '$.shell.terminationFailed') IS NOT NULL
           );
         COMMIT;`);
     }
@@ -549,6 +625,25 @@ export class HostStore {
         UPDATE receipts SET created_at = ${Date.now()};
         COMMIT;`);
     }
+    await this.db.exec("CREATE INDEX IF NOT EXISTS receipts_created_at ON receipts(created_at)");
+    const workspaceReceiptColumns = await this.db
+      .prepare("PRAGMA table_info(workspace_mutation_receipts)")
+      .all();
+    if (!workspaceReceiptColumns.some((column) => column.name === "created_at")) {
+      await this.db.exec(`ALTER TABLE workspace_mutation_receipts ADD COLUMN created_at INTEGER`);
+    }
+    // These three receipts are created atomically with their complete SQLite
+    // mutations. Legacy rows get a full retention window; operation receipts
+    // and unknown delivery evidence have no age-based deletion here.
+    await this.db
+      .prepare(`UPDATE workspace_mutation_receipts SET created_at=?
+      WHERE created_at IS NULL AND (scope LIKE 'workspace-policy:%' OR
+        scope LIKE 'workspace-feature-acquire:%' OR scope LIKE 'workspace-feature-release:%')`)
+      .run(Date.now());
+    await this.db.exec(
+      "CREATE INDEX IF NOT EXISTS workspace_receipts_created_at ON workspace_mutation_receipts(created_at)",
+    );
+    await initializeCommandReceiptRetention(this.db);
     await this.pruneReceipts();
     await this.migrateSessionState();
     // Covering partial index: adopted() is answered from the index alone.
@@ -589,7 +684,11 @@ export class HostStore {
       session_cwd TEXT,
       shell_running INTEGER NOT NULL DEFAULT 0
     );
-    CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);`);
+    CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);
+    CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);
+    CREATE INDEX IF NOT EXISTS session_state_workspace_probe ON session_state(json_extract(summary, '$.workspaceId')) WHERE json_valid(summary);
+    CREATE INDEX IF NOT EXISTS session_state_worktree_probe ON session_state(json_extract(summary, '$.worktreeCwd')) WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL;`);
+    await initializeWorkspaceSessionProbe(this.db);
     // An older host binary only knows `sessions`; these keep the side table
     // current when it writes there after a rollback.
     await this.db
@@ -645,7 +744,7 @@ export class HostStore {
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
           this.flushedInTransaction = [];
-          const effects = this.commitEffects.splice(0);
+          const effects = this.transactionEffects.committed();
           this.db.outsideScope(() => {
             if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
             try {
@@ -653,15 +752,7 @@ export class HostStore {
             } catch (error) {
               console.error("Committed change notification failed:", error);
             }
-            for (const effect of effects) {
-              try {
-                void Promise.resolve(effect()).catch((error) =>
-                  console.error("Committed command dispatch failed:", error),
-                );
-              } catch (error) {
-                console.error("Committed command dispatch failed:", error);
-              }
-            }
+            for (const effect of effects) dispatchCommittedEffect(effect);
           });
           return value;
         } catch (error) {
@@ -674,7 +765,7 @@ export class HostStore {
           this.cacheWeights.clear();
           this.stateMetadata.clear();
           this.clearAuthCache();
-          this.commitEffects = [];
+          this.transactionEffects.commit = [];
           this.flushedInTransaction = [];
           for (const [id, entry] of pendingBefore) {
             clearTimeout(this.pending.get(id)?.timer);
@@ -686,6 +777,7 @@ export class HostStore {
           } catch (rollbackError) {
             console.error("Could not roll back host transaction:", rollbackError);
           }
+          this.transactionEffects.rolledBack();
           throw error;
         }
       };
@@ -697,18 +789,16 @@ export class HostStore {
   get transactionActive(): boolean {
     return this.db.ownsScope && this.inTransaction;
   }
+  /** Restore synchronous process-local observations if the owning SQL batch fails. */
+  afterRollback(effect: () => void): void {
+    if (this.transactionActive) this.transactionEffects.afterRollback(effect);
+  }
   /** Provider side effects must never escape an uncommitted command batch. */
   afterCommit(effect: () => void | Promise<void>): void {
-    if (this.transactionActive) this.commitEffects.push(effect);
+    if (this.transactionActive) this.transactionEffects.commit.push(effect);
     else {
       this.db.outsideScope(() => {
-        try {
-          void Promise.resolve(effect()).catch((error) =>
-            console.error("Committed command dispatch failed:", error),
-          );
-        } catch (error) {
-          console.error("Committed command dispatch failed:", error);
-        }
+        dispatchCommittedEffect(effect);
       });
     }
   }
@@ -915,6 +1005,32 @@ export class HostStore {
       return rows.map((row) => JSON.parse(String(row.payload)));
     });
   }
+  /** Check recovery without transferring or parsing settled operation history. */
+  async workspaceHasPendingOperations(
+    workspaceId: string,
+    except?: string,
+    includeUnfinalizedRewinds = true,
+  ): Promise<boolean> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare(`SELECT 1 AS pending FROM workspace_operations
+        WHERE workspace_id=? AND CASE
+          WHEN json_valid(payload)=0 THEN 1
+          WHEN json_extract(payload, '$.phase') IS NOT phase OR
+            json_extract(payload, '$.kind') IS NOT kind THEN 1
+          WHEN ? IS NOT NULL AND id=? THEN 0
+          WHEN phase <> 'complete' THEN 1
+          WHEN ? AND kind='rewind' THEN CASE json_type(payload, '$.finalized')
+            WHEN 'null' THEN 1 WHEN 'false' THEN 1
+            WHEN 'integer' THEN json_extract(payload, '$.finalized')=0
+            WHEN 'real' THEN json_extract(payload, '$.finalized')=0
+            WHEN 'text' THEN json_extract(payload, '$.finalized')=''
+            ELSE json_type(payload, '$.finalized') IS NULL END
+          ELSE 0 END LIMIT 1`)
+        .get(workspaceId, except ?? null, except ?? null, includeUnfinalizedRewinds ? 1 : 0);
+      return !!row;
+    });
+  }
   async findWorkspaceOperation(request: {
     workspaceId: string;
     kind: WorkspaceOperation["kind"];
@@ -1016,20 +1132,9 @@ export class HostStore {
   /** Receipts deliberately have no age-based pruning: retries after retirement
    * or restart must not repeat Git mutations. Scope is a host-selected namespace. */
   async workspaceReceipt<T>(scope: string, key: string, request: unknown): Promise<T | null> {
-    return this.db.storeScope(async () => {
-      const row = await this.db
-        .prepare(
-          "SELECT signature, response FROM workspace_mutation_receipts WHERE scope=? AND idempotency_key=?",
-        )
-        .get(scope, key);
-      if (!row) return null;
-      if (row.signature !== canonicalWorkspaceJson(request))
-        throw Object.assign(
-          new Error("Idempotency key was already used with a different request"),
-          { code: "WORKSPACE_IDEMPOTENCY_CONFLICT" },
-        );
-      return JSON.parse(String(row.response)) as T;
-    });
+    return this.db.storeScope(() =>
+      readWorkspaceReceipt<T>(this.db, scope, key, canonicalWorkspaceJson(request)),
+    );
   }
   async saveWorkspaceReceipt(
     scope: string,
@@ -1041,9 +1146,9 @@ export class HostStore {
       await this.db.checkAuthorization();
       await this.db
         .prepare(
-          "INSERT INTO workspace_mutation_receipts (scope, idempotency_key, signature, response) VALUES (?, ?, ?, ?)",
+          "INSERT INTO workspace_mutation_receipts (scope, idempotency_key, signature, response, created_at) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(scope, key, canonicalWorkspaceJson(request), JSON.stringify(response));
+        .run(scope, key, canonicalWorkspaceJson(request), JSON.stringify(response), Date.now());
     });
   }
   async workspacePolicy(
@@ -1218,6 +1323,23 @@ export class HostStore {
         await assertHostAuthority(this.db, id, cached.authorityGeneration);
       return this.remember(cached);
     }
+    const readSignal = this.sessionReadSignals.getStore();
+    if (readSignal && this.sessionReadPath !== ":memory:") {
+      readSignal.throwIfAborted();
+      const value = await this.sessionReadProcesses.read<HostSession | undefined>(
+        { kind: "host", path: this.sessionReadPath, sessionId: id },
+        readSignal,
+      );
+      readSignal.throwIfAborted();
+      if (!value) return undefined;
+      const source = await this.db.prepare("SELECT revision FROM session_state WHERE id=?").get(id);
+      if (!source || Number(source.revision) !== value.revision || value.session.id !== id)
+        throw new Error("Host session source changed while reading.");
+      if (value.authorityGeneration !== undefined)
+        await assertHostAuthority(this.db, id, value.authorityGeneration);
+      readSignal.throwIfAborted();
+      return this.remember(value);
+    }
     const row = await this.db.prepare("SELECT snapshot FROM sessions WHERE id=?").get(id);
     if (!row) return undefined;
     let value = JSON.parse(String(row.snapshot)) as HostSession;
@@ -1252,7 +1374,8 @@ export class HostStore {
     }
     return this.remember(value);
   }
-  async session(id: string): Promise<HostSession> {
+  async session(id: string, signal?: AbortSignal): Promise<HostSession> {
+    if (signal) return this.withReadCancellation(signal, () => this.session(id));
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
@@ -1280,9 +1403,50 @@ export class HostStore {
       return String(row.status);
     });
   }
+  /** Fresh durable or pending identity for deferred startup binding. */
+  async sessionStartupIdentity(id: string): Promise<
+    | {
+        projectId: string;
+        revision: number;
+        workspaceId?: string;
+        providerSessionId: string | null;
+        harness: string | null;
+        cwd: string | null;
+      }
+    | undefined
+  > {
+    return this.db.storeScope(async () => {
+      const pending = this.pending.get(id)?.value;
+      if (pending)
+        return {
+          projectId: pending.projectId,
+          revision: pending.revision,
+          workspaceId: pending.session.workspaceId,
+          providerSessionId: pending.session.providerSessionId || null,
+          harness: pending.session.harness ?? null,
+          cwd: pending.session.cwd ?? null,
+        };
+      const row = await this.db
+        .prepare(
+          "SELECT project_id,revision,provider_session_id,harness,session_cwd,json_extract(summary,'$.workspaceId') AS workspace_id FROM session_state WHERE id=?",
+        )
+        .get(id);
+      return row
+        ? {
+            projectId: String(row.project_id),
+            revision: Number(row.revision),
+            workspaceId: row.workspace_id == null ? undefined : String(row.workspace_id),
+            providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
+            harness: row.harness == null ? null : String(row.harness),
+            cwd: row.session_cwd == null ? null : String(row.session_cwd),
+          }
+        : undefined;
+    });
+  }
   async summaries(projectId: string): Promise<HostSessionSummary[]> {
     return this.db.storeScope(async () => {
       const external = await this.dataVersion();
+      const version = this.projectVersion(projectId);
       const entry = this.summaryRows.get(projectId);
       if (
         !this.inTransaction &&
@@ -1292,13 +1456,16 @@ export class HostStore {
         entry.sorted ??= [...entry.rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
         return entry.sorted.slice();
       }
-      const list = (
-        await Promise.all(
-          (
-            await this.db
-              .prepare("SELECT id, summary FROM session_state WHERE project_id=?")
-              .all(projectId)
-          ).map(async (row) => {
+      const rows = await this.db
+        .prepare("SELECT id, revision, summary FROM session_state WHERE project_id=?")
+        .all(projectId);
+      const list: HostSessionSummary[] = [];
+      let refreshComplete = true;
+      // Bound concurrent transcript reads and write legacy projections in small CAS batches.
+      for (let offset = 0; offset < rows.length; offset += 32) {
+        const updates: { id: string; revision: number; old: string | null; value: string }[] = [];
+        const batch = await Promise.all(
+          rows.slice(offset, offset + 32).map(async (row) => {
             const unwritten = this.pending.get(String(row.id));
             if (unwritten) {
               if (unwritten.value.authorityGeneration !== undefined)
@@ -1317,26 +1484,48 @@ export class HostStore {
             if (
               typeof cached?.model === "string" &&
               cached.needsInput !== undefined &&
-              cached.providerSessionId !== undefined
+              cached.providerSessionId !== undefined &&
+              cached.providerHistory !== undefined
             )
               return cached;
             const fresh = summary(await this.session(String(row.id)));
-            if (
-              !(await this.db
-                .prepare("SELECT 1 FROM host_authority_heads WHERE session_id=?")
-                .get(String(row.id)))
-            )
-              await this.db
-                .prepare("UPDATE session_state SET summary=? WHERE id=?")
-                .run(JSON.stringify(fresh), String(row.id));
+            updates.push({
+              id: String(row.id),
+              revision: Number(row.revision),
+              old: row.summary == null ? null : String(row.summary),
+              value: JSON.stringify(fresh),
+            });
             return fresh;
           }),
-        )
-      ).sort((a, b) => b.updatedAt - a.updatedAt);
-      if (!this.inTransaction && list.length <= 100000) {
+        );
+        list.push(...batch);
+        const safe = updates.filter((update) => !this.pending.has(update.id));
+        if (safe.length !== updates.length) refreshComplete = false;
+        if (safe.length) {
+          const placeholders = safe.map(() => "(?,?,?,?)").join(",");
+          const result = await this.db
+            .prepare(`WITH refreshed(id, revision, old_summary, new_summary) AS (VALUES ${placeholders})
+            UPDATE session_state SET summary=(SELECT new_summary FROM refreshed WHERE refreshed.id=session_state.id)
+            WHERE EXISTS (SELECT 1 FROM refreshed WHERE refreshed.id=session_state.id
+              AND refreshed.revision=session_state.revision AND refreshed.old_summary IS session_state.summary)
+              AND NOT EXISTS (SELECT 1 FROM host_authority_heads WHERE session_id=session_state.id)`)
+            .run(
+              ...safe.flatMap((update) => [update.id, update.revision, update.old, update.value]),
+            );
+          if (Number(result.changes) !== safe.length) refreshComplete = false;
+        }
+      }
+      list.sort((a, b) => b.updatedAt - a.updatedAt);
+      if (
+        !this.inTransaction &&
+        refreshComplete &&
+        list.length <= 100000 &&
+        version === this.projectVersion(projectId) &&
+        external === (await this.dataVersion())
+      ) {
         this.summaryRows.delete(projectId);
         this.summaryRows.set(projectId, {
-          version: this.projectVersion(projectId),
+          version,
           external,
           rows: new Map(list.map((item) => [item.id, item])),
           sorted: list,
@@ -1363,7 +1552,8 @@ export class HostStore {
       return false;
     });
   }
-  async sync(id: string, revision?: number): Promise<SessionSync> {
+  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
+    if (signal) return this.withReadCancellation(signal, () => this.sync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
       const { blockRevisions, ...snapshot } = value;
@@ -1443,50 +1633,17 @@ export class HostStore {
     });
   }
   /** Everything startup needs per session, without parsing transcripts. */
-  async startupStates(): Promise<
-    {
-      id: string;
-      hasDesktop: boolean;
-      running: boolean;
-      shellRunning: boolean;
-      workspaceId?: string;
-      providerSessionId: string | null;
-      harness: string | null;
-      cwd: string | null;
-    }[]
-  > {
-    return this.db.storeScope(async () => {
-      return (
-        await this.db
-          .prepare(`SELECT id, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
-          json_extract(summary, '$.workspaceId') AS workspace_id
-        FROM session_state ORDER BY updated_at DESC`)
-          .all()
-      ).map((row) => {
-        const unwritten = this.pending.get(String(row.id))?.value;
-        if (unwritten)
-          return {
-            id: unwritten.session.id,
-            hasDesktop: unwritten.desktop != null,
-            running: unwritten.status === "running",
-            shellRunning: unwritten.session.blocks.some((block) => block.shell?.running),
-            workspaceId: unwritten.session.workspaceId,
-            providerSessionId: unwritten.session.providerSessionId || null,
-            harness: unwritten.session.harness ?? null,
-            cwd: unwritten.session.cwd ?? null,
-          };
-        return {
-          id: String(row.id),
-          hasDesktop: !!Number(row.has_desktop),
-          running: row.status === "running",
-          shellRunning: !!Number(row.shell_running),
-          workspaceId: row.workspace_id == null ? undefined : String(row.workspace_id),
-          providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
-          harness: row.harness == null ? null : String(row.harness),
-          cwd: row.session_cwd == null ? null : String(row.session_cwd),
-        };
-      });
-    });
+  async startupStates(candidateWorkspaceId?: string, candidatePath?: string) {
+    return this.db.storeScope(() =>
+      startupSessionStates(
+        this.db,
+        [...this.pending.keys()],
+        (id) => this.pending.get(id)?.value,
+        (id) => this.session(id),
+        candidateWorkspaceId,
+        candidatePath,
+      ),
+    );
   }
   async sessions(projectId?: string): Promise<HostSession[]> {
     return this.db.storeScope(async () => {
@@ -1496,6 +1653,27 @@ export class HostStore {
       return (await Promise.all(rows.map(async (row) => await this.session(String(row.id))))).sort(
         (a, b) => b.updatedAt - a.updatedAt,
       );
+    });
+  }
+  /** Candidate metadata is bounded before loading any transcript. */
+  async recentSessionIds(projectId: string, limit: number): Promise<string[]> {
+    return this.db.storeScope(async () => {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new Error("Invalid candidate limit");
+      const pending = [...this.pending.values()]
+        .map(({ value }) => value)
+        .filter((value) => value.projectId === projectId);
+      const rows = await this.db
+        .prepare(
+          "SELECT id,updated_at FROM session_state WHERE project_id=? ORDER BY updated_at DESC,id ASC LIMIT ?",
+        )
+        .all(projectId, limit + pending.length);
+      const candidates = new Map(rows.map((row) => [String(row.id), Number(row.updated_at)]));
+      for (const value of pending) candidates.set(value.session.id, value.updatedAt);
+      return [...candidates]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, limit)
+        .map(([id]) => id);
     });
   }
   /** Usage reads expose only timing/token metadata. SQLite projects persisted JSON;
@@ -1663,7 +1841,7 @@ export class HostStore {
         status: value.status,
         desktop: value.desktop != null,
       });
-    if (this.inTransaction) this.commitEffects.push(update);
+    if (this.inTransaction) this.transactionEffects.commit.push(update);
     else update();
   }
   /** Returns the saved value, stamped with per-block change revisions.
@@ -1690,27 +1868,62 @@ export class HostStore {
               const previous = await this.find(input.session.id);
               // Legacy mirrors may omit display provenance. They cannot erase
               // or replace a Host-accepted author on the same block identity.
-              const previousIndex=previous?indexBlocks(previous.session.blocks):undefined;
-              let provenanceChanged=false;
-              let blocks=input.session.blocks;
-              const repaired=new Map<string,Block>();
-              let positions:Map<string,number>|undefined;
-              for(const [id,author] of previousIndex?.authors??[]) {
-                const oldPosition=previousIndex!.positions.get(id)!;
-                const position=blocks[oldPosition]?.id===id?oldPosition:(positions??=new Map(blocks.map((block,index)=>[block.id,index]))).get(id);
-                if(position===undefined)continue;
-                const block=blocks[position];
-                if(block.author&&JSON.stringify(block.author)!==JSON.stringify(author))throw new Error("Host message authorship cannot be replaced.");
-                if(block.author)continue;
-                if(!provenanceChanged)blocks=blocks.slice();
-                provenanceChanged=true;
-                blocks[position]={...block,author};repaired.set(id,blocks[position]);
+              const previousIndex = previous ? indexBlocks(previous.session.blocks) : undefined;
+              let provenanceChanged = false;
+              let blocks = input.session.blocks;
+              const repaired = new Map<string, Block>();
+              let positions: Map<string, number> | undefined;
+              for (const [id, author] of previousIndex?.authors ?? []) {
+                const oldPosition = previousIndex!.positions.get(id)!;
+                const position =
+                  blocks[oldPosition]?.id === id
+                    ? oldPosition
+                    : (positions ??= new Map(blocks.map((block, index) => [block.id, index]))).get(
+                        id,
+                      );
+                if (position === undefined) continue;
+                const block = blocks[position];
+                if (block.author && JSON.stringify(block.author) !== JSON.stringify(author))
+                  throw new Error("Host message authorship cannot be replaced.");
+                if (block.author) continue;
+                if (!provenanceChanged) blocks = blocks.slice();
+                provenanceChanged = true;
+                blocks[position] = { ...block, author };
+                repaired.set(id, blocks[position]);
               }
-              let managedBy=input.session.managedBy??input.managedBy??previous?.session.managedBy??previous?.managedBy;
-              const previousManagement=previous?.session.managedBy??previous?.managedBy;
-              if(previousManagement?.detachedAt!==undefined&&managedBy&&((previousManagement.jobId&&previousManagement.jobId===managedBy.jobId)||(previousManagement.supervisionId&&previousManagement.supervisionId===managedBy.supervisionId)))managedBy={...managedBy,detachedAt:previousManagement.detachedAt};
-              const accepted=managedBy||provenanceChanged?{...input,...(managedBy?{managedBy}:{}),session:{...input.session,...(managedBy?{managedBy}:{}),blocks:provenanceChanged?blocks:input.session.blocks}}:input;
-              if(provenanceChanged&&options.blockChanges)options={...options,blockChanges:new Map([...options.blockChanges].map(([id,block])=>[id,repaired.get(id)??block]))};
+              let managedBy =
+                input.session.managedBy ??
+                input.managedBy ??
+                previous?.session.managedBy ??
+                previous?.managedBy;
+              const previousManagement = previous?.session.managedBy ?? previous?.managedBy;
+              if (
+                previousManagement?.detachedAt !== undefined &&
+                managedBy &&
+                ((previousManagement.jobId && previousManagement.jobId === managedBy.jobId) ||
+                  (previousManagement.supervisionId &&
+                    previousManagement.supervisionId === managedBy.supervisionId))
+              )
+                managedBy = { ...managedBy, detachedAt: previousManagement.detachedAt };
+              const accepted =
+                managedBy || provenanceChanged
+                  ? {
+                      ...input,
+                      ...(managedBy ? { managedBy } : {}),
+                      session: {
+                        ...input.session,
+                        ...(managedBy ? { managedBy } : {}),
+                        blocks: provenanceChanged ? blocks : input.session.blocks,
+                      },
+                    }
+                  : input;
+              if (provenanceChanged && options.blockChanges)
+                options = {
+                  ...options,
+                  blockChanges: new Map(
+                    [...options.blockChanges].map(([id, block]) => [id, repaired.get(id) ?? block]),
+                  ),
+                };
               if (previous && previous.projectId !== input.projectId)
                 this.touchProject(previous.projectId);
               const value = {
@@ -1886,7 +2099,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
         );
       await this.db
         .prepare(`INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1903,10 +2120,18 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
-      const eventRows = rows.map((row) => [value.session.id, row.revision, JSON.stringify(row.event)]);
+      const eventRows = rows.map((row) => [
+        value.session.id,
+        row.revision,
+        JSON.stringify(row.event),
+      ]);
       await insert.runMany(eventRows);
       await this.db
         .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
@@ -1983,7 +2208,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
@@ -1998,6 +2227,104 @@ export class HostStore {
     if (this.inTransaction) await guarded();
     else await this.transaction(guarded, "checkpoint");
   }
+  async pinState(
+    id: string,
+    projectId: string,
+    authorityGeneration?: number,
+  ): Promise<{ state: "current"; version: number; pinned: boolean }> {
+    await this.assertAuthority(id, authorityGeneration);
+    const current = await this.session(id);
+    if (current.projectId !== projectId) throw new Error("Session does not belong to this project");
+    if (!Number.isSafeInteger(current.revision) || current.revision < 0)
+      throw new Error("Invalid session revision");
+    return { state: "current", version: current.revision, pinned: !!current.pinned };
+  }
+  async pinReceipt(
+    id: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<{
+    state: "applied" | "superseded" | "refused";
+    version: number;
+    pinned: boolean | null;
+  } | null> {
+    return this.db.scope(async () => {
+      const row = await this.db
+        .prepare(
+          "SELECT result FROM session_pin_receipts WHERE operation_id=? AND session_id=? AND project_id=?",
+        )
+        .get(operationId, id, projectId);
+      return row ? JSON.parse(String(row.result)) : null;
+    });
+  }
+  async pinApply(
+    id: string,
+    projectId: string,
+    operationId: string,
+    desiredPinned: boolean,
+    expectedVersion: number,
+    authorityGeneration?: number,
+  ): Promise<{
+    state: "applied" | "superseded" | "refused";
+    version: number;
+    pinned: boolean | null;
+  }> {
+    const hash = createHash("sha256")
+      .update(
+        JSON.stringify([
+          id,
+          projectId,
+          desiredPinned,
+          expectedVersion,
+          authorityGeneration ?? null,
+        ]),
+      )
+      .digest("hex");
+    return this.transaction(
+      () =>
+        this.sessionWrite(id, authorityGeneration, async () => {
+          const prior = await this.db
+            .prepare("SELECT request_hash,result FROM session_pin_receipts WHERE operation_id=?")
+            .get(operationId);
+          if (prior) {
+            if (prior.request_hash !== hash)
+              throw new Error("Pin operation ID reused with different request");
+            return JSON.parse(String(prior.result));
+          }
+          const current = await this.find(id);
+          if (current && current.projectId !== projectId)
+            throw new Error("Session does not belong to this project");
+          let result: {
+            state: "applied" | "superseded" | "refused";
+            version: number;
+            pinned: boolean | null;
+          };
+          if (!current) result = { state: "refused", version: 0, pinned: null };
+          else if (
+            !Number.isSafeInteger(current.revision) ||
+            current.revision < 0 ||
+            current.revision >= Number.MAX_SAFE_INTEGER
+          )
+            result = { state: "refused", version: 0, pinned: null };
+          else if (current.revision !== expectedVersion)
+            result = { state: "superseded", version: current.revision, pinned: !!current.pinned };
+          else {
+            const next = await this.save(
+              { ...current, revision: current.revision + 1, pinned: desiredPinned },
+              { type: "session.metadata", patch: { pinned: desiredPinned } },
+            );
+            result = { state: "applied", version: next.revision, pinned: !!next.pinned };
+          }
+          await this.db
+            .prepare(
+              "INSERT INTO session_pin_receipts(operation_id,session_id,project_id,request_hash,result) VALUES(?,?,?,?,?)",
+            )
+            .run(operationId, id, projectId, hash, JSON.stringify(result));
+          return result;
+        }),
+      "critical",
+    );
+  }
   async updateSession(
     id: string,
     patch: {
@@ -2008,7 +2335,12 @@ export class HostStore {
     },
     authorityGeneration?: number,
   ): Promise<HostSessionSummary> {
-    if(Object.keys(patch).some(key=>!["title","archived","pinned","linkedWorkItem"].includes(key)))throw new Error("Unsupported client-editable session metadata.");
+    if (
+      Object.keys(patch).some(
+        (key) => !["title", "archived", "pinned", "linkedWorkItem"].includes(key),
+      )
+    )
+      throw new Error("Unsupported client-editable session metadata.");
     return this.db.storeScope(async () => {
       return await this.withAuthorityGeneration(id, authorityGeneration, async () => {
         const current = await this.session(id);
@@ -2035,33 +2367,108 @@ export class HostStore {
     });
   }
   /** Internal Host attribution only. Client-editable metadata never calls this. */
-  async markAssistantManagedSession(id:string,jobId:string):Promise<HostSessionSummary> {
-    return this.transaction(async()=>{
-      const row=await this.db.prepare("SELECT value FROM assistant_jobs WHERE id=? AND deleted_at IS NULL").get(jobId);
-      const job=row?JSON.parse(row.value) as AssistantJob:undefined;
-      const current=await this.session(id);
-      if(!job||!await assistantJobSessionBelongs(this,job,id,current.projectId))throw new Error("Session does not belong to the selected assistant job's canonical goal/task scope.");
-      const existing=current.session.managedBy??current.managedBy;
-      if(existing&&(!("jobId" in existing)||existing.jobId!==jobId))throw new Error("Session already belongs to another assistant scope.");
-      const detached=job.kind!=="quick"&&job.detachedSessionIds?.includes(id)===true;
-      const managedBy=detached?{...(existing??{assistant:true as const,jobId,managedAt:Date.now()}),detachedAt:existing?.detachedAt??Date.now()}:existing??{assistant:true as const,jobId,managedAt:Date.now()};
-      if(current.session.managedBy&&current.managedBy&&(!detached||current.session.managedBy.detachedAt&&current.managedBy.detachedAt))return summary(current);
-      const saved=await this.save({...current,managedBy,session:{...current.session,managedBy},revision:current.revision+1,updatedAt:Math.max(Date.now(),current.updatedAt+1)},{type:"session.managed",managedBy});
+  async markAssistantManagedSession(id: string, jobId: string): Promise<HostSessionSummary> {
+    return this.transaction(async () => {
+      const row = await this.db
+        .prepare("SELECT value FROM assistant_jobs WHERE id=? AND deleted_at IS NULL")
+        .get(jobId);
+      const job = row ? (JSON.parse(row.value) as AssistantJob) : undefined;
+      const current = await this.session(id);
+      if (!job || !(await assistantJobSessionBelongs(this, job, id, current.projectId)))
+        throw new Error(
+          "Session does not belong to the selected assistant job's canonical goal/task scope.",
+        );
+      const existing = current.session.managedBy ?? current.managedBy;
+      if (existing && (!("jobId" in existing) || existing.jobId !== jobId))
+        throw new Error("Session already belongs to another assistant scope.");
+      const detached = job.kind !== "quick" && job.detachedSessionIds?.includes(id) === true;
+      const managedBy = detached
+        ? {
+            ...(existing ?? { assistant: true as const, jobId, managedAt: Date.now() }),
+            detachedAt: existing?.detachedAt ?? Date.now(),
+          }
+        : (existing ?? { assistant: true as const, jobId, managedAt: Date.now() });
+      if (
+        current.session.managedBy &&
+        current.managedBy &&
+        (!detached || (current.session.managedBy.detachedAt && current.managedBy.detachedAt))
+      )
+        return summary(current);
+      const saved = await this.save(
+        {
+          ...current,
+          managedBy,
+          session: { ...current.session, managedBy },
+          revision: current.revision + 1,
+          updatedAt: Math.max(Date.now(), current.updatedAt + 1),
+        },
+        { type: "session.managed", managedBy },
+      );
       return summary(saved);
-    },"critical");
+    }, "critical");
   }
   /** Internal enrollment attribution. A display stamp never substitutes for its live grant. */
-  async markAssistantManualSession(id:string,supervisionId:string):Promise<HostSessionSummary>{
-    return this.transaction(async()=>{
-      const row=await this.db.prepare("SELECT value FROM assistant_manual_supervision WHERE session_id=? AND id=?").get(id,supervisionId);
-      const grant=row?JSON.parse(row.value) as {active:boolean;sessionId:string;source:{projectId:string;executionCwd:string;authorityGeneration?:number;harness:string;model:string;modelSettings:Record<string,string>;runtimeMode:string;providerAccountId?:string}}:undefined;
-      const current=await this.session(id),session=current.session;
-      if(!grant?.active||grant.sessionId!==id||grant.source.projectId!==current.projectId||grant.source.executionCwd!==(session.worktreeCwd??session.cwd)||grant.source.authorityGeneration!==current.authorityGeneration||grant.source.harness!==session.harness||grant.source.model!==session.model||grant.source.runtimeMode!==session.runtimeMode||grant.source.providerAccountId!==session.providerAccountId||Object.keys(grant.source.modelSettings).length!==Object.keys(session.modelSettings).length||Object.entries(grant.source.modelSettings).some(([key,value])=>session.modelSettings[key]!==value))throw new Error("The manual supervision grant does not match this exact Host session source.");
-      const existing=session.managedBy??current.managedBy;if(existing&&"jobId" in existing)throw new Error("A job-owned session cannot receive a manual supervision stamp.");
-      if(existing?.supervisionId===supervisionId&&session.managedBy&&current.managedBy)return summary(current);
-      const managedBy={assistant:true as const,supervisionId,managedAt:Date.now()};
-      return summary(await this.save({...current,managedBy,session:{...session,managedBy},revision:current.revision+1,updatedAt:Math.max(Date.now(),current.updatedAt+1)},{type:"session.manualSupervision",managedBy}));
-    },"critical");
+  async markAssistantManualSession(id: string, supervisionId: string): Promise<HostSessionSummary> {
+    return this.transaction(async () => {
+      const row = await this.db
+        .prepare("SELECT value FROM assistant_manual_supervision WHERE session_id=? AND id=?")
+        .get(id, supervisionId);
+      const grant = row
+        ? (JSON.parse(row.value) as {
+            active: boolean;
+            sessionId: string;
+            source: {
+              projectId: string;
+              executionCwd: string;
+              authorityGeneration?: number;
+              harness: string;
+              model: string;
+              modelSettings: Record<string, string>;
+              runtimeMode: string;
+              providerAccountId?: string;
+            };
+          })
+        : undefined;
+      const current = await this.session(id),
+        session = current.session;
+      if (
+        !grant?.active ||
+        grant.sessionId !== id ||
+        grant.source.projectId !== current.projectId ||
+        grant.source.executionCwd !== (session.worktreeCwd ?? session.cwd) ||
+        grant.source.authorityGeneration !== current.authorityGeneration ||
+        grant.source.harness !== session.harness ||
+        grant.source.model !== session.model ||
+        grant.source.runtimeMode !== session.runtimeMode ||
+        grant.source.providerAccountId !== session.providerAccountId ||
+        Object.keys(grant.source.modelSettings).length !==
+          Object.keys(session.modelSettings).length ||
+        Object.entries(grant.source.modelSettings).some(
+          ([key, value]) => session.modelSettings[key] !== value,
+        )
+      )
+        throw new Error(
+          "The manual supervision grant does not match this exact Host session source.",
+        );
+      const existing = session.managedBy ?? current.managedBy;
+      if (existing && "jobId" in existing)
+        throw new Error("A job-owned session cannot receive a manual supervision stamp.");
+      if (existing?.supervisionId === supervisionId && session.managedBy && current.managedBy)
+        return summary(current);
+      const managedBy = { assistant: true as const, supervisionId, managedAt: Date.now() };
+      return summary(
+        await this.save(
+          {
+            ...current,
+            managedBy,
+            session: { ...session, managedBy },
+            revision: current.revision + 1,
+            updatedAt: Math.max(Date.now(), current.updatedAt + 1),
+          },
+          { type: "session.manualSupervision", managedBy },
+        ),
+      );
+    }, "critical");
   }
   /** The committed fence generation when Host owns the session (to repair a stale caller value). */
   async currentAuthorityGeneration(id: string): Promise<number | undefined> {
@@ -2080,11 +2487,16 @@ export class HostStore {
   ): Promise<void> {
     return this.db.storeScope(async () => {
       const purge = async (projectId: string) => {
+        // Retained provider snapshots and desktop adoption may arrive after this
+        // commit or a restart. Keep deletion authority independently of the row.
+        await this.db
+          .prepare("INSERT OR IGNORE INTO deleted_sessions (id, deleted_at) VALUES (?, ?)")
+          .run(id, Date.now());
         this.take(id);
         await this.db.prepare("DELETE FROM events WHERE session_id=?").run(id);
         await this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
         this.cache.delete(id);
-        this.commitEffects.push(() => {
+        this.transactionEffects.commit.push(() => {
           this.stateMetadata.delete(id);
         });
         this.bumpChangeVersion();
@@ -2095,7 +2507,9 @@ export class HostStore {
         .get(id);
       // A native-owned head cannot be fenced; deleting only drops the Host's copy.
       if (head?.phase === "native-aborted" || head?.phase === "native-fenced") {
-        const row = await this.db.prepare("SELECT project_id FROM session_state WHERE id=?").get(id);
+        const row = await this.db
+          .prepare("SELECT project_id FROM session_state WHERE id=?")
+          .get(id);
         if (!row) throw new Error("Session not found on this machine");
         await this.transaction(() => purge(String(row.project_id)));
         return;
@@ -2109,19 +2523,10 @@ export class HostStore {
     });
   }
   async receipt(id: string, signature: string): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(async () => {
-      const row = await this.db.prepare("SELECT * FROM receipts WHERE id=?").get(id);
-      if (!row) return undefined;
-      if (row.signature !== signature)
-        throw new Error("Command ID was already used with a different payload");
-      return JSON.parse(String(row.receipt)) as CommandReceipt;
-    });
+    return this.db.storeScope(() => readCommandReceipt(this.db, id, signature));
   }
   async receiptStatus(id: string): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(async () => {
-      const row = await this.db.prepare("SELECT receipt FROM receipts WHERE id=?").get(id);
-      return row ? (JSON.parse(String(row.receipt)) as CommandReceipt) : undefined;
-    });
+    return this.db.storeScope(() => readCommandReceipt(this.db, id));
   }
   async recordReceipt(signature: string, receipt: CommandReceipt): Promise<void> {
     return this.db.storeScope(() =>
@@ -2131,6 +2536,152 @@ export class HostStore {
           .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
           .run(receipt.commandId, signature, JSON.stringify(receipt), Date.now());
         if (++this.receiptWrites % RECEIPT_PRUNE_EVERY === 0) await this.pruneReceipts();
+      }, "critical"),
+    );
+  }
+
+  /** Atomically preserve the exact accepted command and its global receipt. */
+  async acceptDesktopCommand(
+    input: DesktopCommandAcceptance,
+    revalidate: () => Promise<void>,
+  ): Promise<CommandReceipt> {
+    input = { ...input, receipt: JSON.parse(JSON.stringify(input.receipt)) as CommandReceipt };
+    if (
+      !input.commandId ||
+      !input.sessionId ||
+      !input.signature ||
+      !input.principalId ||
+      !input.ownerId ||
+      !input.delivery ||
+      input.delivery.length > 1024 * 1024 ||
+      input.receipt.commandId !== input.commandId ||
+      input.receipt.sessionId !== input.sessionId
+    )
+      throw new Error("Invalid desktop command identity.");
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        const existing = await this.db
+          .prepare("SELECT * FROM desktop_command_delivery WHERE id=?")
+          .get(input.commandId);
+        const receipt = await this.db
+          .prepare("SELECT signature, receipt FROM receipts WHERE id=?")
+          .get(input.commandId);
+        await revalidate();
+        if (existing) {
+          if (
+            !receipt ||
+            existing.session_id !== input.sessionId ||
+            existing.signature !== input.signature ||
+            existing.principal_id !== input.principalId ||
+            existing.owner_id !== input.ownerId ||
+            existing.delivery !== input.delivery ||
+            receipt.signature !== input.signature
+          )
+            throw new Error("Command ID already belongs to a different desktop control.");
+          return JSON.parse(String(receipt.receipt)) as CommandReceipt;
+        }
+        if (receipt) throw new Error("Command ID already belongs to another command.");
+        const count = await this.db
+          .prepare("SELECT COUNT(*) AS count FROM desktop_command_delivery")
+          .get();
+        if (Number(count?.count) >= MAX_DESKTOP_COMMAND_RECEIPTS)
+          throw new Error("Desktop command receipt storage is full.");
+        await this.db
+          .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
+          .run(input.commandId, input.signature, JSON.stringify(input.receipt), Date.now());
+        await this.db
+          .prepare(
+            "INSERT INTO desktop_command_delivery (id, session_id, signature, principal_id, owner_id, delivery, host_instance, state) VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted')",
+          )
+          .run(
+            input.commandId,
+            input.sessionId,
+            input.signature,
+            input.principalId,
+            input.ownerId,
+            input.delivery,
+            this.desktopCommandInstance,
+          );
+        return input.receipt;
+      }, "critical"),
+    );
+  }
+
+  async desktopCommandStatus(
+    commandId: string,
+    principalId: string | undefined,
+    signature?: string,
+  ): Promise<CommandReceipt | undefined> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare(
+          "SELECT d.principal_id, d.signature, r.receipt FROM desktop_command_delivery d LEFT JOIN receipts r ON r.id=d.id WHERE d.id=?",
+        )
+        .get(commandId);
+      if (!row) return undefined;
+      if (!principalId) throw new Error("Authenticated desktop command principal is required.");
+      if (row.principal_id !== principalId)
+        throw new Error("Desktop command belongs to another principal.");
+      if (signature !== undefined && row.signature !== signature)
+        throw new Error("Command ID already belongs to a different desktop control.");
+      if (typeof row.receipt !== "string")
+        throw new Error("Desktop command receipt is unavailable.");
+      return JSON.parse(row.receipt) as CommandReceipt;
+    });
+  }
+
+  /** The offer marker commits before its payload leaves this method. */
+  async offerDesktopCommand(
+    commandId: string,
+    ownerId: string,
+    revalidate: () => Promise<void>,
+  ): Promise<string | undefined> {
+    if (!ownerId) throw new Error("Original desktop owner is required.");
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        const row = await this.db
+          .prepare(
+            "SELECT owner_id, delivery, state, host_instance FROM desktop_command_delivery WHERE id=?",
+          )
+          .get(commandId);
+        if (!row || row.owner_id !== ownerId)
+          throw new Error("Original desktop command owner is unavailable.");
+        if (row.state !== "accepted") return undefined;
+        if (row.host_instance !== this.desktopCommandInstance) return undefined;
+        await revalidate();
+        await this.db
+          .prepare(
+            "UPDATE desktop_command_delivery SET state='offered_unknown' WHERE id=? AND state='accepted'",
+          )
+          .run(commandId);
+        return String(row.delivery);
+      }, "critical"),
+    );
+  }
+
+  async ackDesktopCommand(
+    commandId: string,
+    ownerId: string,
+    revalidate: () => Promise<void>,
+  ): Promise<void> {
+    if (!ownerId) throw new Error("Original desktop owner is required.");
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        const row = await this.db
+          .prepare("SELECT owner_id, state FROM desktop_command_delivery WHERE id=?")
+          .get(commandId);
+        if (!row || row.owner_id !== ownerId)
+          throw new Error("Original desktop command owner is unavailable.");
+        await revalidate();
+        if (row.state === "offered_unknown")
+          await this.db
+            .prepare(
+              "UPDATE desktop_command_delivery SET state='acknowledged' WHERE id=? AND state='offered_unknown'",
+            )
+            .run(commandId);
       }, "critical"),
     );
   }
@@ -2150,7 +2701,8 @@ export class HostStore {
       return;
     }
     this.eventBytes.set(id, 0);
-    while (this.eventBytes.size > 1024) this.eventBytes.delete(this.eventBytes.keys().next().value!);
+    while (this.eventBytes.size > 1024)
+      this.eventBytes.delete(this.eventBytes.keys().next().value!);
     const over = await this.db
       .prepare(
         `SELECT revision FROM (
@@ -2166,11 +2718,12 @@ export class HostStore {
         .run(id, Number(over.revision));
   }
   async pruneReceipts(now = Date.now()): Promise<void> {
-    return this.db.storeScope(async () => {
-      await this.db
-        .prepare("DELETE FROM receipts WHERE created_at IS NULL OR created_at < ?")
-        .run(now - RECEIPT_RETENTION_MS);
-    });
+    return this.db.storeScope(() =>
+      this.transaction(
+        () => compactCommandReceipts(this.db, now - RECEIPT_RETENTION_MS),
+        "critical",
+      ),
+    );
   }
   async events(
     id: string,
@@ -2249,10 +2802,7 @@ export class HostStore {
         devices: rows.slice(0, 256).map((row) => ({
           id: String(row.id),
           name:
-            String(row.name)
-              .replace(/[\u0000-\u001f\u007f]/g, " ")
-              .trim()
-              .slice(0, 160) || String(row.id),
+            replaceControlCharacters(String(row.name), " ").trim().slice(0, 160) || String(row.id),
           isCurrent: Number(row.is_current) === 1,
         })),
         devicesTruncated: rows.length > 256,
@@ -2329,6 +2879,7 @@ export class HostStore {
     this.authorityListeners.clear();
     this.authorizationListeners.clear();
     this.authCache.clear();
+    void this.sessionReadProcesses.close().catch(() => undefined);
     const closing = this.db.close(() => this.flushAll());
     if (this.db.ownsScope) return closing;
     this.closePromise = closing.finally(() => {
@@ -2356,6 +2907,7 @@ export function summary(value: HostSession): HostSessionSummary {
     .sort((a, b) => positions.get(a.id)! - positions.get(b.id)!);
   return {
     ...summaryFromBlocks({ ...value, session: { ...value.session, blocks: representatives } }),
+    providerHistory: sessionProviderHistory(value.session),
     draft: root.draft > 0,
     needsInput:
       !value.session.worktreeRemoved &&
@@ -2366,7 +2918,9 @@ function summaryFromBlocks(value: HostSession): HostSessionSummary {
   const issue = sessionIssue({ ...value.session, busy: value.status === "running" });
   const turn = value.session.blocks.findLast((block) => block.role === "user" && !block.draft);
   return {
-    ...((value.session.managedBy??value.managedBy)?{managedBy:value.session.managedBy??value.managedBy}:{}),
+    ...((value.session.managedBy ?? value.managedBy)
+      ? { managedBy: value.session.managedBy ?? value.managedBy }
+      : {}),
     ...(value.authorityGeneration === undefined
       ? {}
       : { authorityGeneration: value.authorityGeneration }),

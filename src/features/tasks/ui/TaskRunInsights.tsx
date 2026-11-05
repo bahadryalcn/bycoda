@@ -149,9 +149,7 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
           "Saving an evaluation does not complete, approve or publish the task. Comparisons include only completed results you accepted.",
         )}
       </p>
-      {error ? (
-        <InlineError>{error}</InlineError>
-      ) : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {message ? (
         <p role="status" className="text-ui-caption">
           {message}

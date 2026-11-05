@@ -84,23 +84,25 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
       ) : (
         <ul className="min-h-0 overflow-y-auto p-2">
           {visible.map((path) => (
-              <li key={pathKey(path)}>
-                <ActionHost>
+            <li key={pathKey(path)}>
+              <ActionHost>
                 <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-1.5">
                   <Checkbox
                     checked={selectedKeys.has(pathKey(path))}
                     onChange={() => toggle(path)}
                   />
                   <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-ui-secondary text-content">{basename(path)}</span>
+                    <span className="truncate text-ui-secondary text-content">
+                      {basename(path)}
+                    </span>
                     <span className="truncate text-ui-micro text-(--ui-text-muted)">
                       {prettyCwd(path)}
                     </span>
                   </span>
                 </label>
-                </ActionHost>
-              </li>
-            ))}
+              </ActionHost>
+            </li>
+          ))}
         </ul>
       )}
     </Modal>

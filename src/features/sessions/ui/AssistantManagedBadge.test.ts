@@ -31,20 +31,14 @@ it("renders only Host-managed metadata and updates the chosen name without creat
       jobId: "job-one",
       managedAt: 1,
     };
-    await act(async () =>
-      root.render(createElement(AssistantManagedBadge, { management })),
-    );
+    await act(async () => root.render(createElement(AssistantManagedBadge, { management })));
     expect(container.textContent).toBe("Managed by Arif");
     expect(container.querySelector("button")).toBeNull();
     identity.name = "Ayşe";
     await act(async () =>
-      root.render(
-        createElement(AssistantManagedBadge, { management, compact: true }),
-      ),
+      root.render(createElement(AssistantManagedBadge, { management, compact: true })),
     );
-    expect(
-      container.querySelector('[aria-label="Managed by Ayşe"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[aria-label="Managed by Ayşe"]')).not.toBeNull();
     expect(container.querySelector("svg")).not.toBeNull();
     identity.read.mockClear();
     await act(async () =>
@@ -56,9 +50,7 @@ it("renders only Host-managed metadata and updates the chosen name without creat
         }),
       ),
     );
-    expect(
-      container.querySelector('[aria-label="Managed session"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[aria-label="Managed session"]')).not.toBeNull();
     expect(identity.read).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());

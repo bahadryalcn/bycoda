@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const native = vi.hoisted(() => ({
-  invoke: vi.fn(async () => []),
-  listen: vi.fn(async () => vi.fn()),
-}));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: native.listen }));
+const native = vi.hoisted(() => ({ invoke: vi.fn(async () => []) }));
+const events = vi.hoisted(() => ({ listen: vi.fn(), label: "main" }));
+vi.mock("@tauri-apps/api/core", () => native);
+vi.mock("@tauri-apps/api/event", () => ({ listen: events.listen }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "workspace-6" }),
+  getCurrentWebviewWindow: () => ({ label: events.label }),
 }));
 import {
   cancelSftp,
@@ -16,34 +14,37 @@ import {
   sftpPath,
   uploadSftp,
   validSftpProgress,
+  subscribeSftpProgress,
   resumeSftp,
   discardSftp,
-  subscribeSftpProgress,
 } from "./sshSftp";
 beforeEach(() => vi.clearAllMocks());
 
-it("subscribes to transfer progress on this window only and forwards valid events", async () => {
-  const release = vi.fn();
-  let deliver!: (payload: unknown) => void;
-  native.listen.mockImplementationOnce(
-    async (_name: string, callback: (event: { payload: unknown }) => void) => {
-      deliver = (payload) => callback({ payload });
-      return release;
-    },
-  );
-  const callback = vi.fn();
-  const unlisten = await subscribeSftpProgress(callback);
-  // Rust emits progress to the window that started the transfer; a process-wide
-  // listener showed every window the same bytes.
-  expect(native.listen).toHaveBeenCalledExactlyOnceWith("ssh-sftp-progress", expect.any(Function), {
-    target: "workspace-6",
+it("routes progress to its target window and exposes registration failure", async () => {
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  events.listen.mockImplementation(async (_name, callback, options) => {
+    handlers.set(options.target, callback);
+    return () => handlers.delete(options.target);
   });
+  const first = vi.fn();
+  const second = vi.fn();
+  events.label = "main";
+  const releaseFirst = await subscribeSftpProgress(first);
+  events.label = "other";
+  const releaseSecond = await subscribeSftpProgress(second);
   const progress = { operationId: "op", phase: "upload", transferredBytes: 1, state: "running" };
-  deliver(progress);
-  deliver({ ...progress, transferredBytes: -1 });
-  expect(callback).toHaveBeenCalledExactlyOnceWith(progress);
-  unlisten();
-  expect(release).toHaveBeenCalledOnce();
+  handlers.get("main")?.({ payload: progress });
+  expect(first).toHaveBeenCalledExactlyOnceWith(progress);
+  expect(second).not.toHaveBeenCalled();
+  releaseFirst();
+  releaseSecond();
+  events.listen.mockRejectedValueOnce(new Error("registration failed"));
+  await expect(subscribeSftpProgress(vi.fn())).rejects.toThrow("registration failed");
+  events.label = "";
+  events.listen.mockClear();
+  await expect(subscribeSftpProgress(vi.fn())).rejects.toThrow("window identity");
+  expect(events.listen).not.toHaveBeenCalled();
+  events.label = "main";
 });
 
 describe("SFTP literal remote paths", () => {

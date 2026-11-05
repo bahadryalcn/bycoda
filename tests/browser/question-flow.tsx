@@ -40,6 +40,20 @@ import "../../src/styles/index.css";
 
 // Entirely local fixture. No provider processes, host mutations or network sends.
 const query = new URLSearchParams(location.search);
+if (query.has("attachments")) {
+  mockWindows("main");
+  mockIPC((command, args) => {
+    const input = args as Record<string, unknown>;
+    if (command === "write_attachment") return `C:/fixture-attachments/${input.name}`;
+    if (command === "plugin:dialog|open") return ["C:/fixture-attachments/picked.txt"];
+    if (command === "inspect_paths")
+      return [
+        { path: "C:/fixture-attachments/picked.txt", name: "picked.txt", size: 12, isDir: false },
+      ];
+    if (command === "plugin:event|listen") return 1;
+    return [];
+  });
+}
 applyThemePreference(query.get("theme") === "light" ? "light" : "dark");
 document.body.style.margin = "0";
 await setLanguagePreference(query.get("lang") === "tr" ? "tr" : "en");
@@ -534,6 +548,9 @@ function Fixture() {
         boxSizing: "border-box",
       }}
     >
+      {query.has("attachments") ? (
+        <output aria-label="Question reply">{JSON.stringify(reply)}</output>
+      ) : null}
       <div
         style={{
           maxWidth: "56rem",

@@ -1,8 +1,8 @@
-import { Spinner } from "../../../shared/ui/Spinner";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Surface } from "../../../shared/ui/Surface";
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { useT } from "../../../shared/i18n";
-import { Check, ListEnd, Minus } from "../../../shared/ui/icons";
+import { ListEnd, Minus } from "../../../shared/ui/icons";
 import type { TaskListItem, TaskListItemStatus } from "../model/session";
 import { taskListProgressLabel } from "../model/taskList";
 
@@ -31,7 +31,7 @@ export function TaskListPreview({ items, explanation }: Props) {
             <h3 className="font-mono text-ui-caption font-medium text-(--ui-text-secondary)">
               {t("Tasks")}
             </h3>
-            <Badge tone="neutral" className="shrink-0">
+            <Badge variant="count" size="xs" className="shrink-0">
               {taskListProgressLabel(items)}
             </Badge>
           </div>
@@ -71,40 +71,27 @@ export function TaskListPreview({ items, explanation }: Props) {
 
 function TaskState({ status }: { status: TaskListItemStatus }) {
   const t = useT();
-  if (status === "completed") {
+  if (status === "completed" || status === "in_progress") {
     return (
-      <span
-        aria-label={t("Completed")}
-        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-tone-success-subtle) text-on-solid"
-      >
-        <Check className="size-2.5" strokeWidth={2} />
-      </span>
-    );
-  }
-  if (status === "in_progress") {
-    return (
-      <span
-        aria-label={t("In progress")}
-        className="mt-px grid size-4 shrink-0 place-items-center text-(--ui-tone-info-fg)"
-      >
-        <Spinner size="md" />
-      </span>
+      <StatusBadge
+        status={status === "completed" ? "done" : "running"}
+        iconOnly
+        size="xs"
+        className="mt-px"
+      />
     );
   }
   if (status === "cancelled") {
     return (
-      <span
-        aria-label={t("Cancelled")}
-        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-text-secondary)"
-      >
-        <Minus className="size-2.5" strokeWidth={2} />
-      </span>
+      <Badge
+        tone="neutral"
+        size="xs"
+        label={t("Cancelled")}
+        role="img"
+        icon={<Minus />}
+        className="mt-px"
+      />
     );
   }
-  return (
-    <span
-      aria-label={t("Pending")}
-      className="mt-px size-4 shrink-0 rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.02]"
-    />
-  );
+  return <StatusDot tone="neutral" label={t("Pending")} className="mt-1" />;
 }

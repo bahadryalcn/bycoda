@@ -11,9 +11,10 @@ Own the typed inline snapshot and its isolated renderer. Ordinary HTML attachmen
 
 Code paths below are repository-root relative.
 
-- `host/conversation-visual-tools.ts`
+- `host/conversation/conversation-visual-tools.ts`
 - `src/features/sessions/model/inlineVisual.ts`
 - `src/features/sessions/ui/InlineVisual.tsx`
+- `src/features/files/ui/HtmlPreview.tsx` and `src-tauri/src/html_preview.rs`
 
 ## Workflow
 
@@ -24,10 +25,15 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Keep the inline frame compact with one toolbar of accessible icon actions for source, reload, side-panel opening and expansion. Reuse the shared resizable Sheet for the side panel, keep the conversation usable, and retain the mounted preview during source disclosure.
+- Keep proactive visual guidance in `src/integrations/harness/core/toolWorkflowGuidance.ts` and Host tool descriptions aligned: use visuals when they clarify an answer, with short subject-based titles and fitted content; simple replies stay text.
+
 - Accept exactly one inline HTML source or confined workspace HTML path. Recheck the original principal before returning a capture.
 - Preview uses an isolated offline context; network/WebSocket/subresource requests, same-origin privileges, nested frames, forms, native APIs and top navigation remain denied.
 - Snapshot images contain their own bounded data, never mutable local/remote asset paths. Read the current serialized/tool-output limits before changing payload size.
 - Keep the original result/source accessible, shared Modal/overlay focus/Escape and local loading/error/retry. Generated content retains its authored appearance.
+- HTML preview creation and cleanup share a renderer-chosen UUID and exact native page issuer. Unmount or a lost creation reply closes that same token; close-before-create cannot resurrect it. Retire proven old pages and fence closed tokens, but never age out a live iframe or unknown creation merely to admit new work.
+- HTML asset reads use bounded background admission and release the preview registry during filesystem I/O. Recheck the original live issuer and token before returning bytes; overload and read failure retain no-store and sandbox headers.
 - Mobile needs its own nonprivileged WebView contract and source fallback; desktop support cannot silently enable a native bridge or establish device acceptance.
 
 ## Verification and references

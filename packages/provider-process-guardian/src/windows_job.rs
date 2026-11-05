@@ -306,6 +306,14 @@ impl OwnedProcessJob {
             }
         }
     }
+    /// Wait for job activity before the next census. A bounded wait also lets
+    /// the supervisor react to stop requests that do not post job packets.
+    pub fn wait_for_activity(&self, wait_ms: u32) {
+        if self.observe_notifications(wait_ms).is_err() {
+            self.uncertain.store(true, Ordering::Release);
+            self.operational_failure.store(true, Ordering::Release);
+        }
+    }
     fn observe_notifications(&self, wait_ms: u32) -> Result<(), OwnedJobError> {
         self.notifications
             .lock()

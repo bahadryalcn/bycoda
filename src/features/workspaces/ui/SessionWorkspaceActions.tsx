@@ -37,7 +37,8 @@ export function SessionWorkspaceActions({
 }) {
   const t = useT();
   const session = useSession(sessionId);
-  const environmentId = parseRemotePath(cwd)?.environmentId ?? (session && hostSessionBinding(session)?.environmentId);
+  const environmentId =
+    parseRemotePath(cwd)?.environmentId ?? (session && hostSessionBinding(session)?.environmentId);
   const connection = useRemoteConnection(environmentId);
   const workspaceId = (session as ManagedIdentity | undefined)?.workspaceId;
   const [workspace, setWorkspace] = useState<ManagedWorkspace | null>(null);
@@ -52,10 +53,11 @@ export function SessionWorkspaceActions({
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const managedCandidate = enabled && !!cwd && (!!workspaceId || !!session?.worktreeCwd);
   useEffect(
-    () => subscribeRemoteRecovered((recovered) => {
-      if (managedCandidate && environmentId && (!recovered || recovered === environmentId))
-        setRetry((value) => value + 1);
-    }),
+    () =>
+      subscribeRemoteRecovered((recovered) => {
+        if (managedCandidate && environmentId && (!recovered || recovered === environmentId))
+          setRetry((value) => value + 1);
+      }),
     [environmentId, managedCandidate],
   );
   useEffect(() => {
@@ -158,7 +160,8 @@ export function SessionWorkspaceActions({
     !!environmentId &&
     connection.status !== "connected" &&
     (connection.status !== "connecting" || connection.reconnecting) &&
-    !!error && isConnectionFailure(classifyRemoteError(error));
+    !!error &&
+    isConnectionFailure(classifyRemoteError(error));
   if (!workspace && connectionIssueHandled) return null;
   if (!workspace && !error && !pending) return null;
   const removed = workspace?.directoryState === "removed";

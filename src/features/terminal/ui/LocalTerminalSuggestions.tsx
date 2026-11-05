@@ -260,9 +260,7 @@ export function LocalTerminalSuggestions({
                 onClick={() => accept(value)}
               >
                 <OverflowTooltip label={value}>
-                  <span className={styles.text}>
-                    {value}
-                  </span>
+                  <span className={styles.text}>{value}</span>
                 </OverflowTooltip>
               </Button>
             ))}

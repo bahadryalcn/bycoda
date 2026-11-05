@@ -183,7 +183,7 @@ export function automationFromHost(
     updatedAt: host.updatedAt,
     host: {
       machineId: machine.id,
-      environmentId:machine.environmentId,
+      environmentId: machine.environmentId,
       machineName: isLocalSyncMachine(machine) ? "this computer" : machine.name,
       projectId: host.projectId,
       ...(host.needsInput ? { needsInput: true } : {}),
@@ -239,8 +239,22 @@ export function listHostAutomationResults(
     machines,
     async (machine) => {
       const [automations, projects] = await Promise.all([
-        remoteRequest<HostAutomation[]>(machine.id, "automations.list",{},false,false,machine.environmentId),
-        remoteRequest<HostProject[]>(machine.id,"projects.list",{},false,false,machine.environmentId),
+        remoteRequest<HostAutomation[]>(
+          machine.id,
+          "automations.list",
+          {},
+          false,
+          false,
+          machine.environmentId,
+        ),
+        remoteRequest<HostProject[]>(
+          machine.id,
+          "projects.list",
+          {},
+          false,
+          false,
+          machine.environmentId,
+        ),
       ]);
       return automations.flatMap((automation) => {
         const project = projects.find((entry) => entry.id === automation.projectId);

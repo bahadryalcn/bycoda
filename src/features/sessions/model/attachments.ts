@@ -258,7 +258,10 @@ export async function attachmentsFromPaths(paths: string[]): Promise<Attachment[
   return out;
 }
 
-export async function attachmentsFromFiles(files: File[]): Promise<Attachment[]> {
+export async function attachmentsFromFiles(
+  files: File[],
+  options?: { persistBlobs?: boolean },
+): Promise<Attachment[]> {
   const out: Attachment[] = [];
   const pathFiles: string[] = [];
   const blobs: File[] = [];
@@ -271,7 +274,7 @@ export async function attachmentsFromFiles(files: File[]): Promise<Attachment[]>
     out.push(...(await attachmentsFromPaths(pathFiles)));
   }
   for (const file of blobs) {
-    const item = await attachmentFromBlob(file);
+    const item = await attachmentFromBlob(file, options?.persistBlobs !== false);
     if (item) out.push(item);
   }
   return out;
@@ -320,37 +323,35 @@ async function attachmentFromPath(info: PathInfo): Promise<Attachment | null> {
   return file;
 }
 
-async function attachmentFromBlob(file: File): Promise<Attachment | null> {
+async function attachmentFromBlob(file: File, persist = true): Promise<Attachment | null> {
   if (skipName(file.name) || file.size < 0) return null;
   const mimeType = mimeFromFile(file);
   const kind = kindFromMime(mimeType);
   const name = file.name.trim() || fallbackName(mimeType);
   const previewUrl = kind === "image" ? URL.createObjectURL(file) : undefined;
   const data = await readBlobBase64(file);
-  if (kind === "image" && isVisionImage(mimeType) && data) {
-    return {
-      id: crypto.randomUUID(),
-      name,
-      mimeType: normalizeImageMime(mimeType),
-      kind,
-      size: file.size,
-      data,
-      previewUrl,
-    };
-  }
   if (data === null) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     return null;
   }
+  // Notes owns each temporary write and its partial-success cleanup. Other
+  // attachment callers keep the durable saved-path default.
+  if (!persist)
+    return { id: crypto.randomUUID(), name, mimeType, kind, size: file.size, data, previewUrl };
   try {
     const path = await invoke<string>("write_attachment", { name, data });
+    if (!path?.trim()) throw new Error("Attachment storage returned no file path");
+    const visionImage = kind === "image" && isVisionImage(mimeType);
     return {
       id: crypto.randomUUID(),
       name,
-      mimeType,
+      mimeType: visionImage ? normalizeImageMime(mimeType) : mimeType,
       kind,
       size: file.size,
       path,
+      // Inline bytes feed vision providers; the saved path survives transcript
+      // sanitization and reopening after the process and blob URL are gone.
+      ...(visionImage ? { data } : {}),
       previewUrl,
     };
   } catch (error) {

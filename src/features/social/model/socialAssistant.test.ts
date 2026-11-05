@@ -59,7 +59,13 @@ describe("assistant starting configuration", () => {
 });
 
 describe("proposal review helpers", () => {
-  const base = assistantBaseConfig({ request: "x", context, language: "en", useFacts: true, now: 1 });
+  const base = assistantBaseConfig({
+    request: "x",
+    context,
+    language: "en",
+    useFacts: true,
+    now: 1,
+  });
 
   it("warns when a suggestion removes review steps or facts", () => {
     const proposal = {

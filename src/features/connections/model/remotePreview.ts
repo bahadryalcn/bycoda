@@ -1,7 +1,7 @@
-import type { Block } from "../../sessions/model/session";
+import type { Block } from "../../sessions";
 
 /**
- * The wire form of a transcript block (`host/transcriptPage.ts previewBlock`).
+ * The wire form of a transcript block (`host/sessions/transcriptPage.ts previewBlock`).
  * Another computer, or this desktop reading its own host, sees a block that
  * carries a file attachment, a preview image or a large payload in a shrunk
  * form: attachment `path`/`data`/`previewUrl`/`loadPreview` and top-level
@@ -22,7 +22,7 @@ const DROPPED_BY_PREVIEW = new Set(["path", "data", "previewUrl", "loadPreview",
 /** Attachment fields the projection drops and a desktop can restore locally. */
 const LOCAL_ONLY_ATTACHMENT_KEYS = ["path", "data", "previewUrl", "loadPreview", "copyFromPath"];
 /** Beyond this size the projection also omits whatever did not fit its budget
- * (`host/transcriptPage.ts`: 64 KiB per block, with a margin). A smaller block
+ * (`host/sessions/transcriptPage.ts`: 64 KiB per block, with a margin). A smaller block
  * loses nothing but the fields above and clipped strings. */
 const BUDGET_BYTES = 60 * 1024;
 /** Attachments past this count are cut off the end. */

@@ -51,7 +51,13 @@ export type SocialInbound = {
   optedOut?: boolean;
   replyAllowed?: boolean;
 };
+export type SocialOwnedPostPage = (after?: string) => Promise<{
+  posts: string[];
+  next?: string;
+}>;
 export interface SocialAdapter {
+  /** Fetch bounded owned-publication pages only when the pending scan drains. */
+  ownedPostPages?: true;
   creatorInfo?(
     account: SocialAccount,
     token: string,
@@ -70,6 +76,7 @@ export interface SocialAdapter {
     token: string,
     posts: string[],
     cursor?: string,
+    ownedPosts?: SocialOwnedPostPage,
   ): Promise<{
     events: SocialInbound[];
     cursor?: string;
@@ -91,6 +98,25 @@ export function retryAfter(headers: Headers, now: number): number {
     now + 1000,
     Number.isFinite(seconds) ? now + seconds : reset > now ? reset : now + 60_000,
   );
+}
+
+/** Allow upload transfer time at 128 KiB/s, plus latency; every request stays bounded. */
+function requestTimeout(
+  body: BodyInit | ArrayBufferView | null | undefined,
+  minimum = 30_000,
+): number {
+  const size = (value: FormDataEntryValue): number =>
+    typeof value === "string" ? new TextEncoder().encode(value).byteLength : value.size;
+  let bytes = 0;
+  if (typeof body === "string") bytes = new TextEncoder().encode(body).byteLength;
+  else if (body instanceof Blob) bytes = body.size;
+  else if (body instanceof ArrayBuffer) bytes = body.byteLength;
+  else if (ArrayBuffer.isView(body)) bytes = body.byteLength;
+  else if (body instanceof FormData) {
+    for (const [key, value] of body) bytes += size(key) + size(value);
+  } else if (body instanceof URLSearchParams)
+    bytes = new TextEncoder().encode(body.toString()).byteLength;
+  return Math.min(15 * 60_000, minimum + Math.ceil(bytes / (128 * 1024)) * 1000);
 }
 
 /** Requests never follow redirects or return platform error bodies containing secrets. */
@@ -116,12 +142,13 @@ export class SocialHttp {
     if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) throw new SocialPlatformError("denied");
     let response: Response;
     try {
+      const requestBody = body instanceof FormData ? body : JSON.stringify(body);
       response = await this.fetcher(`https://api.telegram.org/bot${token}/${method}`, {
         method: "POST",
         ...(body instanceof FormData ? {} : { headers: { "Content-Type": "application/json" } }),
-        body: body instanceof FormData ? body : JSON.stringify(body),
+        body: requestBody,
         redirect: "error",
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(requestTimeout(requestBody)),
       });
     } catch {
       throw new SocialPlatformError("unknown");
@@ -170,9 +197,13 @@ export class SocialHttp {
         headers: { Authorization: `Bearer ${token}`, ...options.headers },
         redirect: "error",
         signal: AbortSignal.timeout(
-          parsed.hostname === "www.googleapis.com" && parsed.pathname.startsWith("/upload/youtube/")
-            ? 120_000
-            : 30_000,
+          requestTimeout(
+            options.body,
+            parsed.hostname === "www.googleapis.com" &&
+              parsed.pathname.startsWith("/upload/youtube/")
+              ? 120_000
+              : 30_000,
+          ),
         ),
       });
     } catch {
@@ -332,7 +363,7 @@ export class SocialHttp {
           },
           body: new Uint8Array(bytes),
           redirect: "error",
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(requestTimeout(bytes, 120_000)),
         },
       );
     } catch {
@@ -370,7 +401,7 @@ export class SocialHttp {
         },
         body: new Uint8Array(bytes),
         redirect: "error",
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(requestTimeout(bytes)),
       });
     } catch {
       throw new SocialPlatformError("unknown");

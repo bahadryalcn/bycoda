@@ -1,8 +1,16 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { t, useT } from "../../../shared/i18n";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
 import type { AgentStep, Block } from "../model/session";
-import { subagentReport, subagentStatusLine, toolCallState } from "../model/transcriptActivity";
+import {
+  subagentReport,
+  subagentStatusLine,
+  subagentStatusParts,
+  toolCallState,
+  type SubagentStatusPart,
+} from "../model/transcriptActivity";
 import { AgentClock } from "./AgentClock";
 import { AgentMarkdown } from "./AgentMarkdown";
 
@@ -33,6 +41,23 @@ export function runLabel(block: Block, busy: boolean): string {
   return lifecycleLabel(blockLifecycle(block, busy));
 }
 
+export function SubagentStatusSummary({
+  parts,
+  separator = ", ",
+}: {
+  parts: SubagentStatusPart[];
+  separator?: string;
+}) {
+  return parts.map((part, index) => (
+    <span key={index}>
+      {index ? separator : ""}
+      <Badge size="xs" appearance="subtle" tone={part.tone ?? "neutral"}>
+        {part.text}
+      </Badge>
+    </span>
+  ));
+}
+
 /**
  * State and time lead; agent type, model and the step summary are quiet and
  * truncate. `busy` is whether the owning session is working, as for the dock.
@@ -42,12 +67,14 @@ export function SubagentStateLine({
   busy,
   steps,
   model,
+  inline = false,
   className = "",
 }: {
   block: Block;
   busy: boolean;
   steps: AgentStep[];
   model?: string;
+  inline?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -56,27 +83,31 @@ export function SubagentStateLine({
   const running = lifecycle === "running";
   const failed = toolCallState(block) === "rejected";
   const summary = lifecycle === "stopped" ? "" : subagentStatusLine(block, steps);
-  const quietMeta = [run?.agentType, model, summary && !failed ? summary : undefined]
-    .filter(Boolean)
-    .join(" · ");
+  const identity = [run?.agentType, model].filter(Boolean).join(" · ");
+  const visibleSummary = summary && !failed ? summary : undefined;
+  const quietMeta = [identity, visibleSummary].filter(Boolean).join(" · ");
+  const Container = inline ? "span" : "div";
   return (
-    <div
+    <Container
       data-subagent-state
-      className={`flex min-w-0 items-center gap-x-2 text-ui-caption text-(--ui-text-secondary) ${className}`}
+      className={`flex min-w-0 items-center gap-x-2 whitespace-nowrap text-ui-caption text-(--ui-text-secondary) ${className}`}
     >
-      <span
-        className={`shrink-0 font-medium ${
+      <Badge
+        size="xs"
+        appearance="subtle"
+        tone={
           failed
-            ? "text-(--ui-tone-danger-fg)"
+            ? "danger"
             : running
-              ? "text-(--ui-tone-accent-fg)"
-              : lifecycle === "interrupted"
-                ? "text-(--ui-tone-warning-fg)"
-                : "text-(--ui-tone-neutral-fg)"
-        }`}
+              ? "accent"
+              : lifecycle === "interrupted" || lifecycle === "stopped"
+                ? "warning"
+                : "success"
+        }
+        icon={running ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
       >
         {lifecycleLabel(lifecycle)}
-      </span>
+      </Badge>
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {quietMeta ? (
         <Tooltip
@@ -84,11 +115,15 @@ export function SubagentStateLine({
           when={model ? "always" : "overflow"}
         >
           <span className="min-w-0 flex-1 truncate">
-            {quietMeta}
+            {identity}
+            {identity && visibleSummary ? " · " : ""}
+            {visibleSummary ? (
+              <SubagentStatusSummary parts={subagentStatusParts(block, steps)} />
+            ) : null}
           </span>
         </Tooltip>
       ) : null}
-    </div>
+    </Container>
   );
 }
 

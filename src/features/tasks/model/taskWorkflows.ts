@@ -1,4 +1,4 @@
-import { isRemoteProvider } from "../../connections/model/protocol";
+import { isRemoteProvider } from "../../connections/public/protocol";
 import type { HostTaskInput } from "./hostTasks";
 import { readTaskInstructions, type TaskInstructions } from "./taskInstructions";
 import { parseTaskPreflightRequirements, type TaskPreflightRequirement } from "./taskPreflight";

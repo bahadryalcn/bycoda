@@ -134,10 +134,16 @@
   padding-top: var(--space-1);
 }
 
-.field[data-field-size="sm"] .input { min-height: var(--ui-field-height-sm); }
-.field[data-field-size="md"] .input { min-height: var(--ui-field-height-md); }
+.field[data-field-size="sm"] .input {
+  min-height: var(--ui-field-height-sm);
+}
+.field[data-field-size="md"] .input {
+  min-height: var(--ui-field-height-md);
+}
 .field[data-field-appearance="quiet"] .input:not(:focus-visible, [aria-invalid="true"]) {
   border-color: transparent;
   background: transparent;
 }
-.field[data-field-appearance="quiet"] .input:hover:not(:focus-visible, :disabled) { background: var(--ui-surface-hover); }
+.field[data-field-appearance="quiet"] .input:hover:not(:focus-visible, :disabled) {
+  background: var(--ui-surface-hover);
+}

@@ -110,8 +110,12 @@ describe("contactTagBlockedReason", () => {
   it("explains each blocker and is empty when the ask can go ahead", () => {
     expect(contactTagBlockedReason(base)).toBe("");
     expect(contactTagBlockedReason({ ...base, hostOnline: false })).toContain("offline");
-    expect(contactTagBlockedReason({ ...base, account: undefined })).toContain("account and project");
-    expect(contactTagBlockedReason({ ...base, account: { grants: { p: ["read"] } } })).toContain("draft access");
+    expect(contactTagBlockedReason({ ...base, account: undefined })).toContain(
+      "account and project",
+    );
+    expect(contactTagBlockedReason({ ...base, account: { grants: { p: ["read"] } } })).toContain(
+      "draft access",
+    );
     expect(contactTagBlockedReason({ ...base, count: 0 })).toContain("at least one contact");
     expect(contactTagBlockedReason({ ...base, agent: "missing" })).toContain("text agent");
     expect(contactTagBlockedReason({ ...base, agent: "checking" })).toBe("");

@@ -12,7 +12,7 @@ import {
   useSettingsPageReset,
 } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayName } from "../../projects/public/projectNames";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, Globe, RefreshCw } from "../../../shared/ui/icons";
 import {
@@ -59,21 +59,21 @@ import {
   subscribeModels,
   subscribePickerVisibility,
   type AgentModel,
-} from "../../sessions/model/models";
-import { offeredDelegationSetting } from "../../sessions/model/claudeAdvisor";
-import { pickerSettings } from "../../sessions/model/modelPickerData";
+} from "../../sessions/public/models";
+import { HARNESSES, HARNESS_TITLE } from "../../sessions";
+import { offeredDelegationSetting } from "../../sessions/public/claudeAdvisor";
+import { pickerSettings } from "../../sessions/public/modelPickerData";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
 
-import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
+import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
+
 import {
-  HARNESSES,
-  HARNESS_TITLE,
-  type HarnessId,
-  type RuntimeMode,
   RUNTIME_MODES,
   RUNTIME_MODE_LABEL,
   runtimeModeUnavailableReason,
-} from "../../sessions/model/session";
+  type HarnessId,
+  type RuntimeMode,
+} from "../../sessions/public/session";
 import {
   clearProjectModelChoice,
   loadProjectProviderSettings,
@@ -88,14 +88,14 @@ import {
   resetProjectSessionPreferences,
   type ProjectProviderSettings,
   type ProviderSessionDefaults,
-} from "../../sessions/model/projectProviders";
+} from "../../sessions/public/projectProviders";
 import {
   loadGlobalSessionDefaults,
   providerSessionDefaults,
   providerSessionDefaultsSnapshot,
   saveGlobalSessionDefaults,
   subscribeProviderSessionDefaults,
-} from "../../sessions/model/providerSessionDefaults";
+} from "../../sessions/public/providerSessionDefaults";
 
 import { refreshProviderCatalog } from "../../providers/model/catalogReceipts";
 import { persistProviderPreference } from "../../providers/model/providerPreferenceOutcome";
@@ -128,9 +128,9 @@ import {
   resolveTabGroupLogo,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
+import { ProjectLogoIcon } from "../../projects/public/ProjectLogoIcon";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 
 import { GLOBAL_PROVIDER_SCOPE, ProviderBinaryControl } from "./ProviderBinarySettings";

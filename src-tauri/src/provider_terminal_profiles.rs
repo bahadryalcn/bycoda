@@ -41,7 +41,11 @@ fn read_registry(path: &Path) -> Result<Registry, String> {
     match std::fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map_err(|e| format!("Could not read terminal profile references: {e}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Registry::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => match std::fs::symlink_metadata(path)
+        {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Registry::new()),
+            _ => Err("Could not read terminal profile references".into()),
+        },
         Err(e) => Err(e.to_string()),
     }
 }
@@ -49,13 +53,10 @@ fn read_registry(path: &Path) -> Result<Registry, String> {
 fn write_registry(path: &Path, registry: &Registry) -> Result<(), String> {
     std::fs::create_dir_all(path.parent().ok_or("Invalid registry path")?)
         .map_err(|e| e.to_string())?;
-    let pending = path.with_extension(format!("{}.tmp", std::process::id()));
-    std::fs::write(
-        &pending,
-        serde_json::to_vec_pretty(registry).map_err(|e| e.to_string())?,
+    crate::file_access::durable_write(
+        path,
+        &serde_json::to_vec_pretty(registry).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| e.to_string())?;
-    std::fs::rename(pending, path).map_err(|e| e.to_string())
 }
 
 pub(crate) fn is_terminal_id(id: &str) -> bool {
@@ -235,6 +236,50 @@ pub fn provider_terminal_profile_connect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn corrupt_registry_stays_unavailable_and_preserves_evidence() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-profile-corrupt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("registry.json");
+        std::fs::write(&path, "broken").unwrap();
+        assert!(read_registry(&path).is_err());
+        assert!(read_registry(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_registry_symlink_is_not_an_empty_registry() {
+        use std::os::unix::fs::symlink;
+        let root =
+            std::env::temp_dir().join(format!("bycoda-profile-dangling-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("registry.json");
+        symlink(root.join("missing"), &path).unwrap();
+        assert!(read_registry(&path).is_err());
+        assert!(std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_registry_replacement_preserves_existing_target() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-profile-failure-{}", uuid::Uuid::new_v4()));
+        let path = root.join("registry.json");
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("original"), "keep").unwrap();
+        assert!(write_registry(&path, &Registry::new()).is_err());
+        assert_eq!(
+            std::fs::read_to_string(path.join("original")).unwrap(),
+            "keep"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn saved_profile_paths_recovers_managed_and_linked_locations_without_browser_metadata() {
         let stamp = std::time::SystemTime::now()

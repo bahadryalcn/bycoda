@@ -187,7 +187,9 @@ export class OverviewRuler {
     const style = getComputedStyle(this.dom);
     const forcedColors = window.matchMedia("(forced-colors: active)").matches;
     for (const span of this.spans) {
-      context.fillStyle = forcedColors ? "CanvasText" : style.getPropertyValue(RULER_COLORS[span.kind]);
+      context.fillStyle = forcedColors
+        ? "CanvasText"
+        : style.getPropertyValue(RULER_COLORS[span.kind]);
       context.fillRect(left, span.top, inner, span.bottom - span.top);
     }
   }
@@ -203,7 +205,14 @@ export class OverviewRuler {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (!editorSurfaceActive(this.dom) || event.defaultPrevented || event.pointerType === "touch" || event.button !== 0 || this.pointerId !== null) return;
+    if (
+      !editorSurfaceActive(this.dom) ||
+      event.defaultPrevented ||
+      event.pointerType === "touch" ||
+      event.button !== 0 ||
+      this.pointerId !== null
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     const tick = this.tickAt(event.clientY);
@@ -238,12 +247,22 @@ export class OverviewRuler {
   private releasePointer() {
     const pointer = this.pointerId;
     this.pointerId = null;
-    if (pointer !== null && this.dom.hasPointerCapture?.(pointer)) this.dom.releasePointerCapture(pointer);
+    if (pointer !== null && this.dom.hasPointerCapture?.(pointer))
+      this.dom.releasePointerCapture(pointer);
   }
 
   /** The strip sits beside the scroller, so the wheel has to be handed over. */
   private readonly onWheel = (event: WheelEvent) => {
-    if (!editorSurfaceActive(this.dom) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.deltaY === 0) return;
+    if (
+      !editorSurfaceActive(this.dom) ||
+      event.defaultPrevented ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      event.deltaY === 0
+    )
+      return;
     const geometry = this.host.geometry();
     if (geometry.contentHeight <= geometry.viewportHeight) return;
     const scale = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? geometry.viewportHeight : 1;

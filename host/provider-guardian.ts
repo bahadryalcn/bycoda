@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
-import type { GuardianProviderChild } from "./provider-child";
+import type { GuardianProviderChild } from "./providers/provider-child";
 
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_DATA_BYTES = 64 * 1024;
@@ -22,6 +22,7 @@ export type GuardianLaunch = {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  buildReceipt?: { nonce: string; path: string };
 };
 
 export class ProviderGuardianError extends Error {
@@ -83,15 +84,19 @@ export class NativeGuardianChild extends EventEmitter implements GuardianProvide
   private stopWork?: Promise<void>;
   private readonly blockedStreams = new Set<"stdout" | "stderr">();
   private readonly raw: ChildProcessWithoutNullStreams;
+  private readonly beforeStart?: () => Promise<void>;
+  private readonly commitStart?: () => void;
   private startupTimer: ReturnType<typeof setTimeout>;
 
   constructor(
     executable: string,
     launch: GuardianLaunch,
-    private readonly beforeStart?: () => Promise<void>,
-    private readonly commitStart?: () => void,
+    beforeStart?: () => Promise<void>,
+    commitStart?: () => void,
   ) {
     super();
+    this.beforeStart = beforeStart;
+    this.commitStart = commitStart;
     this.started = this.startResult.promise;
     this.retirement = this.retireResult.promise;
     // The guardian receives no provider credentials/environment in argv or env.
@@ -107,6 +112,8 @@ export class NativeGuardianChild extends EventEmitter implements GuardianProvide
       ),
       stdio: "pipe",
       windowsHide: true,
+      // Keep the supervisor alive after Node exits so its own job can drain.
+      detached: process.platform === "win32",
     });
     this.on("error", () => {});
     this.stdin = new Writable({

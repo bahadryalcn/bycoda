@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "../model/session";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), commands: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), commands: vi.fn(), label: "main" }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: mocks.label }) }));
 vi.mock("../../../platform/tauri/fs", async (original) => ({
   ...(await original<typeof import("../../../platform/tauri/fs")>()),
   claudeShellCommands: mocks.commands,
@@ -39,6 +40,7 @@ const summary = (id = "target", revision = 1) => ({
 const attempts: { abandon(): void }[] = [];
 async function fixture() {
   vi.resetModules();
+  mocks.label = "main";
   mocks.invoke.mockReset();
   mocks.commands.mockReset();
   const store = await import("./sessionStore");
@@ -273,6 +275,18 @@ describe("actual session data persistence drains", () => {
     await observation;
     expect(mocks.invoke.mock.calls.map(([command]) => command)).not.toContain(
       "session_take_in_flight",
+    );
+  });
+
+  it("allows secondary in-flight updates while suppressing their layout writes", async () => {
+    const { store } = await fixture();
+    mocks.label = "secondary";
+    mocks.invoke.mockResolvedValue(null);
+    await store.replaceInFlightSessions([{ sessionId: "target", cwd: "/repo" }]);
+    await store.saveWorkspaceSnapshot({ sessionRecovery: {} });
+    expect(mocks.invoke.mock.calls.map(([command]) => command)).toContain("session_set_in_flight");
+    expect(mocks.invoke.mock.calls.map(([command]) => command)).not.toContain(
+      "workspace_set_snapshot",
     );
   });
 

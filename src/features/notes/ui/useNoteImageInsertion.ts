@@ -40,7 +40,8 @@ const HAS_EXTENSION = /\.[a-z0-9]{1,5}$/i;
 
 /** A drag is refused only when every file is known not to be an image (folders stay unknown). */
 function onlyNonImages(kinds: { types?: string[]; paths?: string[] }): boolean {
-  if (kinds.types?.length) return kinds.types.every((type) => type !== "" && !type.startsWith("image/"));
+  if (kinds.types?.length)
+    return kinds.types.every((type) => type !== "" && !type.startsWith("image/"));
   if (kinds.paths?.length)
     return kinds.paths.every((path) => HAS_EXTENSION.test(path) && !IMAGE_PATH.test(path));
   return false;
@@ -215,8 +216,7 @@ export function useNoteImageInsertion({
         return { kind: "blocked", reason: t("Only images can be inserted here") };
       return {
         kind: "accept",
-        label:
-          kinds.count > 1 ? t("Insert {p0} images", { p0: kinds.count }) : t("Insert image"),
+        label: kinds.count > 1 ? t("Insert {p0} images", { p0: kinds.count }) : t("Insert image"),
       };
     },
     [inputOwner],

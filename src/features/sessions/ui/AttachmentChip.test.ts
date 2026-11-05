@@ -26,9 +26,20 @@ const attachment: Attachment = {
 
 let container: HTMLDivElement;
 let root: Root;
+let intersect: IntersectionObserverCallback;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -47,6 +58,151 @@ function render(onRemove?: () => void) {
 }
 
 describe("AttachmentChip image preview", () => {
+  async function enterViewport() {
+    await act(async () =>
+      intersect(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+  }
+
+  it("loads a persisted thumbnail near the viewport and retains it across lightbox close", async () => {
+    vi.mocked(fs.readBinaryFile).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:thumbnail");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: { ...attachment, previewUrl: undefined, path: "/saved/diagram.png" },
+        }),
+      ),
+    );
+    expect(fs.readBinaryFile).not.toHaveBeenCalled();
+    expect(container.querySelector("img")).toBeNull();
+
+    await enterViewport();
+    expect(fs.readBinaryFile).toHaveBeenCalledExactlyOnceWith("/saved/diagram.png");
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:thumbnail");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open diagram.png full screen"]',
+    )!;
+    await act(async () => trigger.click());
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+      "blob:thumbnail",
+    );
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:thumbnail");
+    expect(revoke).not.toHaveBeenCalled();
+    await act(async () => trigger.click());
+    expect(fs.readBinaryFile).toHaveBeenCalledOnce();
+    act(() => root.render(null));
+    expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:thumbnail");
+  });
+
+  it("drops a loaded thumbnail when the same attachment exceeds the preview budget", async () => {
+    const persisted = { ...attachment, previewUrl: undefined, path: "/saved/diagram.png" };
+    vi.mocked(fs.readBinaryFile).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:within-budget");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    act(() => root.render(createElement(AttachmentChip, { attachment: persisted })));
+    await enterViewport();
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:within-budget");
+
+    await act(async () =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: { ...persisted, size: 26 * 1024 * 1024 },
+        }),
+      ),
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).toBeNull();
+    expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:within-budget");
+    expect(fs.readBinaryFile).toHaveBeenCalledOnce();
+  });
+
+  it("preloads remote thumbnails through their owning Host without opening a dialog", async () => {
+    const loadPreview = vi.fn(async () => btoa("remote"));
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: {
+            ...attachment,
+            previewUrl: undefined,
+            path: "/host/diagram.png",
+            loadPreview,
+          },
+        }),
+      ),
+    );
+    expect(loadPreview).not.toHaveBeenCalled();
+    await enterViewport();
+    expect(loadPreview).toHaveBeenCalledOnce();
+    expect(fs.readBinaryFile).not.toHaveBeenCalled();
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      `data:image/png;base64,${btoa("remote")}`,
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("ignores an old thumbnail result after the source changes", async () => {
+    let finish!: (data: string) => void;
+    const loadPreview = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: { ...attachment, previewUrl: undefined, loadPreview },
+        }),
+      ),
+    );
+    await enterViewport();
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: { ...attachment, previewUrl: "blob:replacement" },
+        }),
+      ),
+    );
+    await act(async () => finish(btoa("old")));
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:replacement");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("allows click retry after a thumbnail preload fails", async () => {
+    const loadPreview = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(btoa("retry"));
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: { ...attachment, previewUrl: undefined, loadPreview },
+        }),
+      ),
+    );
+    await enterViewport();
+    expect(loadPreview).toHaveBeenCalledOnce();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open diagram.png full screen"]',
+    )!;
+    expect(trigger.disabled).toBe(false);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => trigger.click());
+    expect(loadPreview).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+      `data:image/png;base64,${btoa("retry")}`,
+    );
+  });
+
   it("does not fall back to a bare path for an image outside the host preview limit", () => {
     act(() =>
       root.render(
@@ -300,7 +456,7 @@ describe("AttachmentChip image preview", () => {
     const label = container.querySelector<HTMLButtonElement>(
       '[aria-label="Insert [image2] into the message"]',
     )!;
-    expect(label.textContent).toBe("image2");
+    expect(label).not.toBeNull();
 
     act(() => label.click());
 
@@ -308,14 +464,18 @@ describe("AttachmentChip image preview", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("shows a plain label when the token cannot be inserted", () => {
+  it("shows only the thumbnail and keeps the details in its tooltip", () => {
     act(() => root.render(createElement(AttachmentChip, { attachment, token: "[image1]" })));
-    expect(container.textContent).toContain("image1");
+    // The message text names the image; the card repeats nothing.
+    expect(container.textContent).toBe("");
     expect(container.querySelector('[aria-label^="Insert "]')).toBeNull();
+    expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).not.toBeNull();
   });
 
-  it("shows no label without a token", () => {
+  it("falls back to an image identity when thumbnail decoding fails", () => {
     render();
-    expect(container.textContent).toBe("");
+    act(() => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).not.toBeNull();
   });
 });

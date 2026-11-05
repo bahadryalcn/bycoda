@@ -1,10 +1,6 @@
 import { t } from "../../../shared/i18n";
 import type { SocialAccount, SocialProjectProfile } from "./social";
-import {
-  defaultProgram,
-  programApprovalSteps,
-  type ProgramConfig,
-} from "./socialProgram";
+import { defaultProgram, programApprovalSteps, type ProgramConfig } from "./socialProgram";
 
 /** What the owner selected before asking; the assistant never widens it. */
 export type AssistantContext = {
@@ -73,14 +69,28 @@ export function proposalRisks(proposal: ProgramConfig, base: ProgramConfig): Pro
   if (proposal.approval.mode === "automatic" && base.approval.mode !== "automatic")
     risks.push({
       id: "approval-automatic",
-      text: t("The suggestion turns off review steps. Choose a stricter approval mode below if you want to review each post."),
+      text: t(
+        "The suggestion turns off review steps. Choose a stricter approval mode below if you want to review each post.",
+      ),
     });
-  if (proposal.approval.steps.length < base.approval.steps.length && proposal.approval.mode !== "automatic")
-    risks.push({ id: "approval-fewer", text: t("The suggestion asks for fewer review steps than your starting point.") });
+  if (
+    proposal.approval.steps.length < base.approval.steps.length &&
+    proposal.approval.mode !== "automatic"
+  )
+    risks.push({
+      id: "approval-fewer",
+      text: t("The suggestion asks for fewer review steps than your starting point."),
+    });
   if (proposal.totalPosts === null || (proposal.totalPosts ?? 0) > 60)
-    risks.push({ id: "posts-many", text: t("The suggestion plans many posts. Check the count before saving.") });
+    risks.push({
+      id: "posts-many",
+      text: t("The suggestion plans many posts. Check the count before saving."),
+    });
   if (!proposal.brief.factIds.length && base.brief.factIds.length)
-    risks.push({ id: "facts-dropped", text: t("The suggestion does not use the verified facts you provided.") });
+    risks.push({
+      id: "facts-dropped",
+      text: t("The suggestion does not use the verified facts you provided."),
+    });
   return risks;
 }
 
@@ -89,7 +99,9 @@ export function weeklyPostBound(config: ProgramConfig): number | undefined {
   const { schedule } = config;
   if (schedule.mode === "times") return schedule.times.length * schedule.days.length;
   if (schedule.mode === "frequency")
-    return schedule.period === "day" ? schedule.frequency * schedule.days.length : schedule.frequency;
+    return schedule.period === "day"
+      ? schedule.frequency * schedule.days.length
+      : schedule.frequency;
   return undefined;
 }
 

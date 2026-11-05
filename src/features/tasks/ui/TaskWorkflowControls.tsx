@@ -383,9 +383,7 @@ function ScopedTaskWorkflowControls({
             {message}
           </p>
         ) : null}
-        {error ? (
-          <InlineError>{error}</InlineError>
-        ) : null}
+        {error ? <InlineError>{error}</InlineError> : null}
       </div>
     </details>
   );

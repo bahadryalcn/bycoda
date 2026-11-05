@@ -1,4 +1,4 @@
-import type { BuildIdentity } from "../../host/workspace-contracts";
+import type { BuildIdentity } from "../../host/workspaces/workspace-contracts";
 export function parseBuildIdentity(value: unknown): BuildIdentity | null;
 export function readBuildIdentity(path: string): Promise<BuildIdentity | null>;
 export function sourceFiles(

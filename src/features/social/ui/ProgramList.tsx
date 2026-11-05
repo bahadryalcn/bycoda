@@ -42,8 +42,8 @@ export function ProgramList({
         >
           <strong>{p.name}</strong>
           <span>
-            {p.enabled ? t("Active") : p.cancelled ? t("Cancelled") : t("Paused")} · {p.nextSequence}/
-            {p.totalPosts ?? "∞"}
+            {p.enabled ? t("Active") : p.cancelled ? t("Cancelled") : t("Paused")} ·{" "}
+            {p.nextSequence}/{p.totalPosts ?? "∞"}
           </span>
         </Button>
       ))}

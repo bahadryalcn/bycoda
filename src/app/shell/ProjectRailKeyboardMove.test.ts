@@ -161,7 +161,11 @@ it("moves a project group with Alt+Arrow through the shared path and announces i
     const header = container.querySelector<HTMLElement>(
       '[data-project-group="alpha"] [aria-keyshortcuts]',
     )!;
-    const plain = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true });
+    const plain = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    });
     act(() => {
       header.dispatchEvent(plain);
     });
@@ -187,10 +191,11 @@ it("moves a project group with Alt+Arrow through the shared path and announces i
 it("moves a rail section with Alt+Arrow and its menu, announcing the section by name", async () => {
   await withGroupsRail(({ container }) => {
     const header = (name: string) =>
-      [...container.querySelectorAll<HTMLElement>('[title="Drag to reorder"]')].find(
-        (node) => node.textContent?.trim().startsWith(name),
+      [...container.querySelectorAll<HTMLElement>('[title="Drag to reorder"]')].find((node) =>
+        node.textContent?.trim().startsWith(name),
       )!;
-    const order = () => loadRailSectionOrder().filter((id) => ["pinned", "groups", "projects"].includes(id));
+    const order = () =>
+      loadRailSectionOrder().filter((id) => ["pinned", "groups", "projects"].includes(id));
     expect(order()).toEqual(["pinned", "groups", "projects"]);
     const event = altArrow(header("Pinned"), "ArrowDown");
     expect(event.defaultPrevented).toBe(true);

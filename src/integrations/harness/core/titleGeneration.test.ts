@@ -1,8 +1,48 @@
 import type { HostRunHandle } from "./hostRun";
 import { describe, expect, it, vi } from "vitest";
 import { generateSessionTitle } from "./titleGeneration";
+import {
+  setHarnessModels,
+  resetHarnessModelOverlays,
+} from "../../../features/sessions/model/models";
 
 describe("ortak oturum başlığı üretimi", () => {
+  it("resolves the selected catalog key to its exact provider-native model", async () => {
+    setHarnessModels("codex", [
+      {
+        id: "codex:cheap-terra",
+        harness: "codex",
+        name: "Terra",
+        nativeId: "provider-terra-model",
+      },
+    ]);
+    try {
+      const run = vi.fn().mockResolvedValue('{"title":"Fix links"}');
+      await generateSessionTitle(
+        { sessionId: "s", cwd: "/p", message: "Fix links", model: "codex:cheap-terra" },
+        run,
+      );
+      expect(run).toHaveBeenCalledWith(expect.objectContaining({ model: "provider-terra-model" }));
+    } finally {
+      resetHarnessModelOverlays();
+    }
+  });
+  it("forwards the selected title model and settings without substituting conversation defaults", async () => {
+    const run = vi.fn().mockResolvedValue('{"title":"Fix links"}');
+    await generateSessionTitle(
+      {
+        sessionId: "s",
+        cwd: "/p",
+        message: "Fix links",
+        model: "selected-terra",
+        modelSettings: { effort: "low" },
+      },
+      run,
+    );
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "selected-terra", modelSettings: { effort: "low" } }),
+    );
+  });
   it("kaynak mesajdaki iş referansını ve hesap seçimini korur", async () => {
     const run = vi
       .fn()

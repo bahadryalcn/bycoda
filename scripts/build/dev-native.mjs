@@ -10,14 +10,16 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
+import { access, cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { delimiter, dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DevPortLeases } from "../../host/dev-port-leases.ts";
+import { DevPortLeases } from "../../host/dev-servers/dev-port-leases.ts";
+import { prepareProviderGuardian } from "../../host/provider-guardian-deployment.ts";
 import {
   WorkspaceBootstrapService,
+  BuildCacheSettledFailure,
   workspaceEnvironmentVariables,
-} from "../../host/workspace-bootstrap.ts";
+} from "../../host/workspaces/workspace-bootstrap.ts";
 import { sourceIdentity, fingerprintFiles, parseBuildIdentity } from "./build-info.mjs";
 import { chromium } from "@playwright/test";
 import { verifyNativeIdentity } from "./dev-shot.mjs";
@@ -115,15 +117,18 @@ export function supervisedChild(command, args, { cwd, env, children }) {
 }
 
 function childFailureDetail(child) {
-  return String(child.failure ?? "")
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[redacted]")
-    .replace(
-      /((?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',;]+/gi,
-      "$1[redacted]",
-    )
-    .trim()
-    .slice(-4000);
+  return (
+    String(child.failure ?? "")
+      // oxlint-disable-next-line no-control-regex -- strip ANSI escape sequences
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+      .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[redacted]")
+      .replace(
+        /((?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',;]+/gi,
+        "$1[redacted]",
+      )
+      .trim()
+      .slice(-4000)
+  );
 }
 
 function childFailureMessage(child, summary) {
@@ -160,9 +165,33 @@ export async function completed(child) {
   return child.failure.trim();
 }
 
+export async function completedCargoBuild(child) {
+  try {
+    const output = await completed(child);
+    if (child.retirement) await child.retirement;
+    return output;
+  } catch (error) {
+    // A numeric, unsignalled Cargo exit after stdio close is the same command
+    // completion boundary used on success. Spawn failures and interrupted
+    // commands retain the unknown-effect fence.
+    if (
+      !child.spawnError &&
+      child.signalCode === null &&
+      Number.isInteger(child.exitCode) &&
+      (!child.retirement || child.retirementVerified)
+    )
+      throw new BuildCacheSettledFailure(error);
+    throw error;
+  }
+}
+
 export async function stopChildren(children) {
   await Promise.all(
     [...children].map(async (child) => {
+      if (child.retirement) {
+        await child.stop();
+        return;
+      }
       if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
         await child.closed;
         return;
@@ -238,7 +267,10 @@ export async function waitForNativePage(
         const url = new URL(page.url());
         // Native utility webviews share the app's origin and build identity.
         // Admit the main document, never the hidden desktop controller.
-        const mainPaths = new Set([expected.pathname, expected.pathname === "/" ? "/index.html" : expected.pathname]);
+        const mainPaths = new Set([
+          expected.pathname,
+          expected.pathname === "/" ? "/index.html" : expected.pathname,
+        ]);
         if (url.origin !== expected.origin || !mainPaths.has(url.pathname)) continue;
       } catch {
         continue;
@@ -292,17 +324,36 @@ export async function frozenSourceIdentity(root) {
   const canonicalRoot = await realpath(root);
   const record = JSON.parse(await readFile(join(root, "frozen-source.json"), "utf8"));
   const identity = parseBuildIdentity(record.identity);
-  if (record.schemaVersion !== 1 || !identity || identity.channel !== "dev" || !Array.isArray(record.files) || !record.files.length)
+  if (
+    record.schemaVersion !== 1 ||
+    !identity ||
+    identity.channel !== "dev" ||
+    !Array.isArray(record.files) ||
+    !record.files.length
+  )
     throw new Error("Invalid frozen source manifest");
   const files = new Map();
   for (const entry of record.files) {
     const name = entry?.path;
-    if (typeof name !== "string" || !name || name.includes("\\") || isAbsolute(name) || name.split("/").some((part) => !part || part === "." || part === "..") || files.has(name))
+    if (
+      typeof name !== "string" ||
+      !name ||
+      name.includes("\\") ||
+      isAbsolute(name) ||
+      name.split("/").some((part) => !part || part === "." || part === "..") ||
+      files.has(name)
+    )
       throw new Error("Invalid frozen source path");
     const path = join(root, name);
     const actual = await realpath(path);
     const rel = relative(canonicalRoot, actual);
-    if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !(await lstat(path)).isFile())
+    if (
+      !rel ||
+      rel === ".." ||
+      rel.startsWith(`..${sep}`) ||
+      isAbsolute(rel) ||
+      !(await lstat(path)).isFile()
+    )
       throw new Error("Frozen source escapes its root or is not a regular file");
     const bytes = await readFile(path);
     if (hash(bytes) !== entry.sha256) throw new Error(`Frozen source changed: ${name}`);
@@ -316,8 +367,10 @@ export async function frozenSourceIdentity(root) {
 
 export async function runNativeDev(args = process.argv.slice(2)) {
   const frozenRoot = option(args, "--frozen-source");
-  const root = await realpath(frozenRoot ? resolve(frozenRoot) : resolve(dirname(fileURLToPath(import.meta.url)), "../.."));
-  const readSource = () => frozenRoot ? frozenSourceIdentity(root) : sourceIdentity(root);
+  const root = await realpath(
+    frozenRoot ? resolve(frozenRoot) : resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+  );
+  const readSource = () => (frozenRoot ? frozenSourceIdentity(root) : sourceIdentity(root));
   // Validate the frozen receipt before installing dependencies or starting children.
   if (frozenRoot) await readSource();
   const explicitCargoTarget = option(args, "--cargo-target", process.env.CARGO_TARGET_DIR);
@@ -327,9 +380,11 @@ export async function runNativeDev(args = process.argv.slice(2)) {
   const runId = option(args, "--run-id", randomUUID());
   const previousRecord = option(args, "--reuse-profile-run");
   const previousRootOption = option(args, "--reuse-profile-root");
-  if(previousRootOption&&!previousRecord)throw new Error("--reuse-profile-root requires --reuse-profile-run");
-  const previousRoot=previousRootOption?await realpath(resolve(previousRootOption)):root;
-  if(previousRootOption)assertReusableNativeDevSource(await readSource(),await frozenSourceIdentity(previousRoot));
+  if (previousRootOption && !previousRecord)
+    throw new Error("--reuse-profile-root requires --reuse-profile-run");
+  const previousRoot = previousRootOption ? await realpath(resolve(previousRootOption)) : root;
+  if (previousRootOption)
+    assertReusableNativeDevSource(await readSource(), await frozenSourceIdentity(previousRoot));
   const previousRun = previousRecord
     ? (
         await (
@@ -343,7 +398,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
     supervisedChild(command, parameters, { cwd: root, env, children });
   const cancel = () => {
     abort.abort();
-    void stopChildren(children);
+    void stopChildren(children).catch((error) =>
+      console.warn("Development child retirement is unknown:", error),
+    );
   };
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
@@ -414,7 +471,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         ...source,
         capturedAt: Date.now(),
         components: { web: buildId, native: buildId, host: buildId },
-        includedSources: source.dirtyPaths.length ? [] : [{ repositoryId: source.repositoryId, sourceHead: source.head }],
+        includedSources: source.dirtyPaths.length
+          ? []
+          : [{ repositoryId: source.repositoryId, sourceHead: source.head }],
       };
       env.BYCODA_BUILD_MANIFEST = join(dirname(environment.executableRunDir), "build-info.json");
       await writeFile(env.BYCODA_BUILD_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, {
@@ -437,25 +496,83 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         const executable = await bootstrap.withBuildCache(
           workspaceId,
           abort.signal,
-          async ({ cargoTargetDir: leasedCargoTargetDir, cargoHome }) => {
+          async ({ cargoTargetDir: leasedCargoTargetDir, cargoHome, buildReceipt }) => {
             const cargoTargetDir = explicitCargoTarget ?? leasedCargoTargetDir;
             await mkdir(cargoTargetDir, { recursive: true });
-            await completed(
-              launch("cargo", ["build", "--manifest-path", join(root, "src-tauri", "Cargo.toml")], {
-                ...env,
-                CARGO_TARGET_DIR: cargoTargetDir,
-                CARGO_HOME: cargoHome,
-              }),
-            );
-            return bootstrap.copyExecutable({
-              workspaceId,
-              runId: lease.runId,
-              sourcePath: join(
-                cargoTargetDir,
-                "debug",
-                process.platform === "win32" ? "bycoda.exe" : "bycoda",
-              ),
-            });
+            const cargoArgs = ["build", "--manifest-path", join(root, "src-tauri", "Cargo.toml")];
+            const cargoEnv = {
+              ...env,
+              CARGO_TARGET_DIR: cargoTargetDir,
+              CARGO_HOME: cargoHome,
+            };
+            let cargoChild;
+            const prepared = await prepareProviderGuardian(hostRuntime);
+            try {
+              const searchPath =
+                Object.entries(cargoEnv).find(([key]) => key.toUpperCase() === "PATH")?.[1] ?? "";
+              const cargoPath =
+                process.platform === "win32"
+                  ? (
+                      await Promise.all(
+                        searchPath
+                          .split(delimiter)
+                          .filter(isAbsolute)
+                          .map(async (directory) => {
+                            const candidate = join(directory, "cargo.exe");
+                            try {
+                              await access(candidate);
+                              return candidate;
+                            } catch {
+                              return undefined;
+                            }
+                          }),
+                      )
+                    ).find(Boolean)
+                  : undefined;
+              if (prepared && cargoPath && (await prepared.supportsBuildReceipt())) {
+                abort.signal.throwIfAborted();
+                const child = prepared.spawn(
+                  { command: cargoPath, args: cargoArgs, cwd: root, env: cargoEnv, buildReceipt },
+                  async () => abort.signal.throwIfAborted(),
+                  () => abort.signal.throwIfAborted(),
+                );
+                child.failure = "";
+                child.spawnError = null;
+                child.on("error", (error) => {
+                  child.spawnError = error;
+                });
+                child.stdout.on("data", (chunk) => {
+                  child.failure = (child.failure + chunk).slice(-8192);
+                });
+                child.stderr.on("data", (chunk) => {
+                  child.failure = (child.failure + chunk).slice(-8192);
+                });
+                children.add(child);
+                child.closed = new Promise((done) =>
+                  child.once("close", () => {
+                    children.delete(child);
+                    done();
+                  }),
+                );
+                cargoChild = child;
+              }
+            } finally {
+              await prepared?.dispose();
+            }
+            await completedCargoBuild(cargoChild ?? launch("cargo", cargoArgs, cargoEnv));
+            try {
+              return await bootstrap.copyExecutable({
+                workspaceId,
+                runId: lease.runId,
+                sourcePath: join(
+                  cargoTargetDir,
+                  "debug",
+                  process.platform === "win32" ? "bycoda.exe" : "bycoda",
+                ),
+              });
+            } catch (error) {
+              throw new BuildCacheSettledFailure(error);
+            }
           },
         );
         if (JSON.stringify(await readSource()) !== JSON.stringify(source))
@@ -553,7 +670,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         }
         const record = {
           schemaVersion: 1,
-          ...(frozenRoot ? { frozenSourceRoot: root, frozenSourceManifest: join(root, "frozen-source.json") } : {}),
+          ...(frozenRoot
+            ? { frozenSourceRoot: root, frozenSourceManifest: join(root, "frozen-source.json") }
+            : {}),
           ...environment,
           cargoTargetDir: explicitCargoTarget ?? environment.cargoTargetDir,
           pid: native.pid,

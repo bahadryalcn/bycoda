@@ -1,7 +1,7 @@
 import { listDir, type FsEntry } from "../../../platform/tauri/fs";
-import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
-import { reportRemoteConnection } from "../../connections/model/remoteHealth";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { classifyRemoteError, isConnectionFailure } from "../../connections/public/remoteFailure";
+import { reportRemoteConnection } from "../../connections/public/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { pathSegments } from "./fileName";
 import { joinPath, parentPath, pathKey } from "../../../shared/lib/paths";
 

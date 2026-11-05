@@ -1,4 +1,11 @@
 import { useCallback, type MutableRefObject } from "react";
+import {
+  flushHostSessionBindings,
+  hostSessionBinding,
+  hostSessionBindingsPending,
+} from "../../../features/connections/model/sessionExecutionBinding";
+import { showSubmitNotice } from "./submit/submitNotice";
+import { t } from "../../../shared/i18n";
 import { runShellCommand } from "../../../platform/tauri/fs";
 import { loadTerminalProfile } from "../../../features/terminal/model/terminalProfiles";
 import {
@@ -29,6 +36,29 @@ export function useSessionShell({ removingSessionIds, getSubmitSessionRef }: Ses
       removingSessionIds.current.has(sessionId)
     )
       return false;
+    try {
+      if (hostSessionBindingsPending()) {
+        showSubmitNotice(
+          sessionId,
+          t("This conversation is still loading. Send again in a moment."),
+        );
+        void flushHostSessionBindings().catch((error: unknown) => {
+          showSubmitNotice(
+            sessionId,
+            error instanceof Error ? error.message : String(error),
+            "error",
+          );
+        });
+        return false;
+      }
+      if (hostSessionBinding(session)) {
+        showSubmitNotice(sessionId, "Host-owned conversations cannot execute through Native.");
+        return false;
+      }
+    } catch (error) {
+      showSubmitNotice(sessionId, error instanceof Error ? error.message : String(error));
+      return false;
+    }
     const blockId = crypto.randomUUID();
     setSessions((prev) =>
       prev.map((entry) =>
@@ -40,7 +70,12 @@ export function useSessionShell({ removingSessionIds, getSubmitSessionRef }: Ses
           : entry,
       ),
     );
-    void runShellCommand(sessionWorkCwd(session), command, loadTerminalProfile())
+    void flushHostSessionBindings()
+      .then(() => {
+        if (hostSessionBinding(session))
+          throw new Error("Host-owned conversations cannot execute through Native.");
+        return runShellCommand(sessionWorkCwd(session), command, loadTerminalProfile());
+      })
       .catch((error): ShellResult => ({
         output: error instanceof Error ? error.message : String(error),
         exitCode: null,

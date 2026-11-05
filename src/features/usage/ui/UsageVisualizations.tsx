@@ -24,7 +24,7 @@ import {
   formatMetricTick,
   formatUsagePercent,
   metricNames,
-  PagedUsageTable,
+  ContinuousUsageTable,
 } from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
@@ -95,45 +95,60 @@ export function UsageTrend({
       </div>
       {buckets.length === 1 ? (
         <div className="usage-single-period">
-          <p className="usage-muted">{formatBucket(buckets[0].start, resolution)} – {formatBucket(buckets[0].end, resolution)}</p>
-          {series.map((item) => <p key={item.key}>
-            <label className="flex min-w-0 items-center gap-2">
-            <Checkbox aria-label={item.label} checked={singleSeries === null || singleSeries.has(item.key)} onChange={(event) => {
-              const checked = event.currentTarget.checked;
-              setSingleSeries((previous) => {
-                const next = new Set(previous ?? series.map((entry) => entry.key));
-                if (checked) next.add(item.key); else next.delete(item.key);
-                return next;
-              });
-            }} />{item.label}
-            </label>
-            <strong hidden={singleSeries !== null && !singleSeries.has(item.key)}>{format(data[0]?.values[item.key] ?? 0)}</strong>
-          </p>)}
+          <p className="usage-muted">
+            {formatBucket(buckets[0].start, resolution)} –{" "}
+            {formatBucket(buckets[0].end, resolution)}
+          </p>
+          {series.map((item) => (
+            <p key={item.key}>
+              <label className="flex min-w-0 items-center gap-2">
+                <Checkbox
+                  aria-label={item.label}
+                  checked={singleSeries === null || singleSeries.has(item.key)}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setSingleSeries((previous) => {
+                      const next = new Set(previous ?? series.map((entry) => entry.key));
+                      if (checked) next.add(item.key);
+                      else next.delete(item.key);
+                      return next;
+                    });
+                  }}
+                />
+                {item.label}
+              </label>
+              <strong hidden={singleSeries !== null && !singleSeries.has(item.key)}>
+                {format(data[0]?.values[item.key] ?? 0)}
+              </strong>
+            </p>
+          ))}
         </div>
-      ) : <LineChart
-        label={t("Usage over time")}
-        data={series.length ? data : []}
-        emptyLabel={t("No usage recorded in this period.")}
-        selectSeriesLabel={t("Choose a series to show")}
-        series={series.map((s, index) => ({
-          key: s.key,
-          label: s.label,
-          color: usageChartColor(colors, s.key),
-          area: false,
-          // Series differ by stroke pattern as well as colour (solid, dash, dot).
-          pattern: (["solid", "dash", "dot"] as const)[index % 3],
-        }))}
-        height={250}
-        curve="linear"
-        formatValue={format}
-        formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
-        onActiveChange={(_, datum) => {
-          if (datum) setActive(datum.key);
-        }}
-      />}
+      ) : (
+        <LineChart
+          label={t("Usage over time")}
+          data={series.length ? data : []}
+          emptyLabel={t("No usage recorded in this period.")}
+          selectSeriesLabel={t("Choose a series to show")}
+          series={series.map((s, index) => ({
+            key: s.key,
+            label: s.label,
+            color: usageChartColor(colors, s.key),
+            area: false,
+            // Series differ by stroke pattern as well as colour (solid, dash, dot).
+            pattern: (["solid", "dash", "dot"] as const)[index % 3],
+          }))}
+          height={250}
+          curve="linear"
+          formatValue={format}
+          formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
+          onActiveChange={(_, datum) => {
+            if (datum) setActive(datum.key);
+          }}
+        />
+      )}
       <details>
         <summary>{t("Show as table")}</summary>
-        <PagedUsageTable
+        <ContinuousUsageTable
           caption={t("Usage over time")}
           rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
           metric={metric}
@@ -362,7 +377,12 @@ export function TimeDistribution({
           data-single-day={dates.length === 1 || undefined}
           role="grid"
           aria-label={t("Day and hour activity")}
-          style={{ gridTemplateColumns: dates.length === 1 ? "repeat(2, minmax(0, 1fr))" : `3.5rem repeat(${dates.length}, minmax(0, 1fr))` }}
+          style={{
+            gridTemplateColumns:
+              dates.length === 1
+                ? "repeat(2, minmax(0, 1fr))"
+                : `3.5rem repeat(${dates.length}, minmax(0, 1fr))`,
+          }}
         >
           <div role="row" className="usage-week-row">
             <span role="columnheader">{t("Time")}</span>
@@ -414,14 +434,20 @@ export function TimeDistribution({
                       })
                     }
                     onKeyDown={(event) => {
-                      const delta = dates.length === 1 ? {
-                        ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [-2, 0], ArrowDown: [2, 0],
-                      }[event.key] : {
-                        ArrowLeft: [0, -1],
-                        ArrowRight: [0, 1],
-                        ArrowUp: [-1, 0],
-                        ArrowDown: [1, 0],
-                      }[event.key];
+                      const delta =
+                        dates.length === 1
+                          ? {
+                              ArrowLeft: [-1, 0],
+                              ArrowRight: [1, 0],
+                              ArrowUp: [-2, 0],
+                              ArrowDown: [2, 0],
+                            }[event.key]
+                          : {
+                              ArrowLeft: [0, -1],
+                              ArrowRight: [0, 1],
+                              ArrowUp: [-1, 0],
+                              ArrowDown: [1, 0],
+                            }[event.key];
                       if (!delta) return;
                       event.preventDefault();
                       const row = Math.max(0, Math.min(23, rowIndex + delta[0]));

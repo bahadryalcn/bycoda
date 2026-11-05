@@ -16,22 +16,25 @@ export interface ReadBlock {
 }
 export interface ReadView {
   revision: number;
+  sourceEpoch?: string;
   status: "idle" | "running" | "interrupted";
   executionOwner?: "host" | "desktop";
   session: { blocks: ReadBlock[] };
 }
 export interface ReadDelta {
   revision: number;
+  sourceEpoch?: string;
   status: "idle" | "running" | "interrupted";
   executionOwner?: "host" | "desktop";
   head?: { count: number; chain: string };
   session: object;
 }
 export type ReadSync<View, Delta, Block> =
-  | { kind: "unchanged"; revision: number }
-  | { kind: "snapshot"; value: View }
+  | { kind: "unchanged"; revision: number; sourceEpoch?: string }
+  | { kind: "snapshot"; value: View; sourceEpoch?: string }
   | {
       kind: "delta";
+      sourceEpoch?: string;
       partial?: true;
       base: number;
       value: Delta;
@@ -56,17 +59,22 @@ export interface SessionReadPorts<
 > {
   repository: {
     projectList(projectId: string): Promise<{ list: Summary[]; etag: string }>;
-    session(sessionId: string): Promise<View>;
+    session(sessionId: string, signal?: AbortSignal): Promise<View>;
     sync(
       sessionId: string,
       revision?: number,
+      signal?: AbortSignal,
     ): Promise<ReadSync<View, Delta, View["session"]["blocks"][number]>>;
     readView(sessionId: string): Promise<View>;
-    catchUp(sessionId: string): Promise<void>;
+    catchUp(sessionId: string, signal?: AbortSignal): Promise<void>;
   };
   nativeProjection: {
-    watch(sessionId: string, fresh?: boolean): Promise<DesktopReadWatch | undefined>;
-    view(sessionId: string, projectId?: string): Promise<View | undefined>;
+    watch(
+      sessionId: string,
+      fresh?: boolean,
+      signal?: AbortSignal,
+    ): Promise<DesktopReadWatch | undefined>;
+    view(sessionId: string, projectId?: string, signal?: AbortSignal): Promise<View | undefined>;
     sync(view: View, revision?: number): ReadSync<View, Delta, View["session"]["blocks"][number]>;
     recheckMs(sessionId: string): Promise<number>;
   };
@@ -106,6 +114,8 @@ export interface SessionReadPorts<
       recheckMs: () => Promise<number>,
     ): Promise<unknown>;
   };
+  /** Identifies the current read owner and its overlay lifecycle. */
+  sourceEpoch?(sessionId: string): Promise<string>;
 }
 
 // These parameters intentionally retain the legacy HTTP coercion contract. WS
@@ -133,12 +143,19 @@ export function createSessionReadService<
   const readSync = (params: LegacyParams, context: SessionDomainContext, complete = false) => {
     return read(context, async () => {
       const id = String(params.sessionId ?? "");
-      const revision = Number.isSafeInteger(params.revision) ? Number(params.revision) : undefined;
+      const epoch = await ports.sourceEpoch?.(id);
+      const revision =
+        (!epoch || params.sourceEpoch === epoch) && Number.isSafeInteger(params.revision)
+          ? Number(params.revision)
+          : undefined;
       if (revision !== undefined && Number.isFinite(params.waitMs) && Number(params.waitMs) > 0) {
         await ports.revisionWaits.wait(
           async () =>
-            (await ports.nativeProjection.watch(id, true))?.revision ??
-            (await ports.repository.session(id)).revision,
+            (
+              await (context.signal
+                ? ports.nativeProjection.watch(id, true, context.signal)
+                : ports.nativeProjection.watch(id, true))
+            )?.revision ?? (await ports.repository.session(id)).revision,
           revision,
           Number(params.waitMs),
           async () =>
@@ -149,20 +166,38 @@ export function createSessionReadService<
         );
         await assertSessionAuthority(context);
       }
-      const watch = await ports.nativeProjection.watch(id);
+      const watch = await (context.signal
+        ? ports.nativeProjection.watch(id, false, context.signal)
+        : ports.nativeProjection.watch(id));
       let current: View;
       let sync: Sync;
-      if (watch && revision === watch.revision) return { kind: "unchanged" as const, revision };
-      const view = watch && (await ports.nativeProjection.view(id, watch.projectId));
+      if (watch && revision === watch.revision) {
+        if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
+          throw new Error("Session read owner changed; retry");
+        return { kind: "unchanged" as const, revision, ...(epoch ? { sourceEpoch: epoch } : {}) };
+      }
+      const view =
+        watch &&
+        (await (context.signal
+          ? ports.nativeProjection.view(id, watch.projectId, context.signal)
+          : ports.nativeProjection.view(id, watch.projectId)));
       if (view) {
         current = view;
         sync = ports.nativeProjection.sync(view, revision);
       } else {
-        await ports.repository.catchUp(id);
-        current = await ports.repository.session(id);
-        sync = await ports.repository.sync(id, revision);
+        context.signal?.throwIfAborted();
+        await (context.signal
+          ? ports.repository.catchUp(id, context.signal)
+          : ports.repository.catchUp(id));
+        context.signal?.throwIfAborted();
+        current = await (context.signal
+          ? ports.repository.session(id, context.signal)
+          : ports.repository.session(id));
+        sync = await (context.signal
+          ? ports.repository.sync(id, revision, context.signal)
+          : ports.repository.sync(id, revision));
       }
-      if (params.partial === true) {
+      if (params.partial === true && (!epoch || params.sourceEpoch === epoch)) {
         const ids = params.loadedBlockIds ?? [];
         if (
           !Array.isArray(ids) ||
@@ -226,7 +261,13 @@ export function createSessionReadService<
               sync.value.status === "running" ? (watch ? "desktop" : "host") : undefined,
           },
         };
-      return sync;
+      if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
+        throw new Error("Session read owner changed; retry");
+      if (!epoch) return sync;
+      if (sync.kind === "unchanged") return { ...sync, sourceEpoch: epoch };
+      if (sync.kind === "snapshot")
+        return { ...sync, value: { ...sync.value, sourceEpoch: epoch } };
+      return { ...sync, value: { ...sync.value, sourceEpoch: epoch } };
     });
   };
   return {
@@ -243,7 +284,10 @@ export function createSessionReadService<
     page(params: LegacyParams, context: SessionDomainContext) {
       return read(context, async () => {
         const id = String(params.sessionId ?? "");
-        const watch = await ports.nativeProjection.watch(id);
+        const epoch = await ports.sourceEpoch?.(id);
+        const watch = await (context.signal
+          ? ports.nativeProjection.watch(id, false, context.signal)
+          : ports.nativeProjection.watch(id));
         const { value, ...page } = await ports.transcript.page(
           () => load(id, watch),
           id,
@@ -252,12 +296,15 @@ export function createSessionReadService<
           params.preview === true,
           params.digests === true,
         );
+        if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
+          throw new Error("Session read owner changed; retry");
         return {
           ...page,
           sync: ports.transfers.respond(id, {
             kind: "snapshot",
             value: {
               ...value,
+              ...(epoch ? { sourceEpoch: epoch } : {}),
               executionOwner: value.status === "running" ? (watch ? "desktop" : "host") : undefined,
             },
           }),

@@ -1,4 +1,8 @@
 // @vitest-environment happy-dom
+vi.mock("../../model/sessionWindowOwnership", () => ({
+  reserveSessionWindow: vi.fn(async () => async () => {}),
+}));
+import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,11 +17,7 @@ import { leafIds, newTab, type WorkspaceTab } from "../../../features/workspace/
 import { normalizeSessionPreview } from "../../../features/workspace/model/sessionPreview";
 import { useOpenSessionActions, type OpenSessionActionsDeps } from "./useOpenSessionActions";
 import { message } from "@tauri-apps/plugin-dialog";
-import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
 vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn(async () => undefined) }));
-vi.mock("../../model/useWindowLiveAgents", () => ({
-  focusWindowLiveAgent: vi.fn(async () => undefined),
-}));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -36,11 +36,16 @@ function Harness() {
   return null;
 }
 
+it("carries the Room privacy mutation through a history open", async () => {
+  await act(async () => {
+    await actions.onSelectHistorySession(sessions[0].id, { workspaceRequestId: "native-pending" });
+  });
+  expect(deps.followProject).toHaveBeenCalledWith(sessions[0].cwd, expect.anything());
+});
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(message).mockClear();
-  vi.mocked(focusWindowLiveAgent).mockClear();
-  vi.mocked(focusWindowLiveAgent).mockResolvedValue(undefined);
   sessions = Array.from({ length: 12 }, (_, i) => session(`session-${i}`));
   resetSessionsStore(sessions);
   active = "";
@@ -159,6 +164,8 @@ it("does not replace another project's preview or a busy session", async () => {
 });
 
 it("ignores slow earlier opens and navigation superseded by a project change", async () => {
+  sessions[0].cwd = "/project-a";
+  sessions[1].cwd = "/project-b";
   let resolve!: (value: Session) => void;
   deps.ensureOpenSession = vi.fn((id: string) =>
     id === sessions[0].id
@@ -179,6 +186,8 @@ it("ignores slow earlier opens and navigation superseded by a project change", a
   });
   expect(deps.tabsRef.current).toHaveLength(1);
   expect(deps.tabsRef.current[0].previewSessionId).toBe(sessions[1].id);
+  expect(deps.followProject).toHaveBeenCalledTimes(1);
+  expect(deps.followProject).toHaveBeenLastCalledWith("/project-b");
   act(() => {
     pending = actions.onPreviewHistorySession(sessions[0].id);
   });
@@ -228,76 +237,6 @@ it("preserves existing kept tabs", async () => {
   expect(deps.tabsRef.current).toHaveLength(2);
 });
 
-function liveElsewhere(id: string, ownerWindowLabel = "window-2") {
-  return {
-    id,
-    cwd: "/preview-project",
-    title: id,
-    harness: "claude" as const,
-    activity: "Working",
-    needsApproval: false,
-    done: false,
-    ownerWindowLabel,
-  };
-}
-
-it("focuses a session live in another window there instead of opening it here", async () => {
-  deps.liveAgents = [
-    liveElsewhere(sessions[0].id),
-    { ...liveElsewhere(sessions[1].id), ownerWindowLabel: undefined },
-  ];
-  act(() => root.render(createElement(Harness)));
-  await act(async () => {
-    await actions.onSelectHistorySession(sessions[0].id);
-  });
-  expect(focusWindowLiveAgent).toHaveBeenCalledWith(
-    expect.objectContaining({ id: sessions[0].id, ownerWindowLabel: "window-2" }),
-  );
-  expect(deps.ensureOpenSession).not.toHaveBeenCalled();
-  expect(deps.workspaceNavigation.cancel).not.toHaveBeenCalled();
-  expect(deps.tabsRef.current).toEqual([]);
-  // A local live agent and a plain history session still open here, sharing
-  // the one preview slot.
-  await preview(sessions[1].id);
-  expect(leafIds(deps.tabsRef.current[0].layout)).toEqual([sessions[1].id]);
-  await preview(sessions[2].id);
-  expect(focusWindowLiveAgent).toHaveBeenCalledTimes(1);
-  expect(deps.tabsRef.current).toHaveLength(1);
-  expect(leafIds(deps.tabsRef.current[0].layout)).toEqual([sessions[2].id]);
-});
-
-it("reports a closed owner window instead of opening the session here", async () => {
-  deps.liveAgents = [liveElsewhere(sessions[0].id)];
-  vi.mocked(focusWindowLiveAgent).mockRejectedValueOnce(
-    new Error("The conversation window has closed."),
-  );
-  act(() => root.render(createElement(Harness)));
-  await act(async () => {
-    await actions.onPreviewHistorySession(sessions[0].id);
-  });
-  expect(message).toHaveBeenCalledWith(
-    "The conversation window has closed.",
-    expect.objectContaining({ title: expect.any(String) }),
-  );
-  expect(deps.tabsRef.current).toEqual([]);
-});
-
-it("leaves sessions live in another window out of a side-by-side composition", async () => {
-  deps.liveAgents = [liveElsewhere(sessions[0].id)];
-  act(() => root.render(createElement(Harness)));
-  await act(async () => {
-    await actions.onOpenSessionsSideBySide([sessions[0].id, sessions[1].id, sessions[2].id]);
-  });
-  expect(focusWindowLiveAgent).not.toHaveBeenCalled();
-  const tab = deps.tabsRef.current.find((entry) => entry.id === active)!;
-  expect(new Set(leafIds(tab.layout))).toEqual(new Set([sessions[1].id, sessions[2].id]));
-  await act(async () => {
-    await actions.onOpenSessionsSideBySide([sessions[0].id]);
-  });
-  expect(focusWindowLiveAgent).toHaveBeenCalledTimes(1);
-  expect(deps.tabsRef.current).toHaveLength(1);
-});
-
 it("keeps a preview when its workspace gains an editor", async () => {
   await preview(sessions[0].id);
   act(() =>
@@ -318,4 +257,32 @@ it("keeps a preview when its workspace gains an editor", async () => {
   expect(deps.tabsRef.current).toHaveLength(2);
   expect(deps.tabsRef.current[0].editorPanes[0].files[0].path).toBe("a.ts");
   expect(deps.tabsRef.current[0].previewSessionId).toBeUndefined();
+});
+
+it("does not create a local pane when another window owns the requested session", async () => {
+  vi.mocked(reserveSessionWindow).mockResolvedValueOnce(null);
+  await act(async () => {
+    await actions.onSelectHistorySession(sessions[0].id);
+  });
+  expect(deps.tabsRef.current).toHaveLength(0);
+  expect(deps.replaceBlankPaneWithSession).not.toHaveBeenCalled();
+});
+
+it("releases an in-flight reservation when navigation becomes stale", async () => {
+  let resolve!: (value: (retain?: boolean) => Promise<void>) => void;
+  const release = vi.fn(async () => {});
+  vi.mocked(reserveSessionWindow).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const opened = actions.onSelectHistorySession(sessions[0].id);
+  await vi.waitFor(() => expect(reserveSessionWindow).toHaveBeenCalled());
+  currentNavigation = false;
+  await act(async () => {
+    resolve(release);
+    await opened;
+  });
+  expect(release).toHaveBeenCalledWith(false);
+  expect(deps.tabsRef.current).toHaveLength(0);
 });

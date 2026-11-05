@@ -26,6 +26,7 @@ type Route = { after: HostBufferCursor | null; expectedContext?: HostRecoveryCon
 type View = {
   policy: Policy;
   page: HostBufferPage | null;
+  records: readonly HostBufferReport[];
   route: Route;
   previous: readonly Route[];
   loading: boolean;
@@ -55,6 +56,7 @@ const samePolicy = (a: Policy, b: Policy) =>
 const empty = (policy: Policy): View => ({
   policy,
   page: null,
+  records: [],
   route: { after: null },
   previous: [],
   loading: false,
@@ -166,6 +168,18 @@ export function useHostBufferRecovery(options: Options) {
           publish(scope, (old) => ({
             ...old,
             page,
+            records:
+              direction === "refresh"
+                ? page.records
+                : (() => {
+                    const known = new Set(old.records.map(hostBufferReportKey));
+                    const added = page.records.filter(
+                      (record) => !known.has(hostBufferReportKey(record)),
+                    );
+                    return direction === "previous"
+                      ? [...added, ...old.records]
+                      : [...old.records, ...added];
+                  })(),
             route: { after: route.after, expectedContext: page.context },
             previous:
               direction === "refresh"
@@ -200,7 +214,7 @@ export function useHostBufferRecovery(options: Options) {
         !samePolicy(currentView.policy, scope) ||
         listing.current ||
         !record.inspectable ||
-        !currentView.page?.records.includes(record)
+        !currentView.records.includes(record)
       )
         return Promise.resolve();
       const key = hostBufferReportKey(record);
@@ -245,7 +259,7 @@ export function useHostBufferRecovery(options: Options) {
   return {
     visible: policy.visible,
     available: policy.available,
-    records: shown ? (view.page?.records ?? []) : [],
+    records: shown ? view.records : [],
     details: shown ? view.details : null,
     pending: shown ? view.pending : null,
     readError: shown ? view.readError : null,

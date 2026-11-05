@@ -4,6 +4,18 @@ import type { HostSessionSummary } from "./protocol";
 
 const summary = (title: string) => [{ id: "s", title, status: "idle" }] as HostSessionSummary[];
 
+it("sorts delta lists by activity and preserves interruption metadata", () => {
+  const cache = new RemoteSessionLists(vi.fn());
+  const rows = [
+    { id: "old", status: "interrupted", updatedAt: 1000, lastActivityAt: 10 },
+    { id: "new", status: "idle", updatedAt: 20, lastActivityAt: 20 },
+  ] as HostSessionSummary[];
+  cache.publish("m", "p", rows, "base");
+  expect(
+    cache.applyChange("m", "p", { projectId: "p", base: "base", etag: "next", upserts: [] }),
+  ).toMatchObject([{ id: "new" }, { id: "old", status: "interrupted", lastActivityAt: 10 }]);
+});
+
 it("forces an owner verification inside TTL while coalescing concurrent forced reads", async () => {
   let finish!: (value: { unchanged: true; etag: string }) => void;
   const request = vi

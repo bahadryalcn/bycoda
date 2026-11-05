@@ -1,4 +1,5 @@
 import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { isTauri } from "@tauri-apps/api/core";
 import { captureByteTurnWriter } from "../turnWriter";
 import { killChild } from "../../core/child";
 import {
@@ -35,7 +36,7 @@ import {
   toolKindFromName,
   toolStartFromEvent,
   toolTitle,
-  tryParseJsonRecord,
+  createJsonRecordAccumulator,
   turnStatusFromResult,
   turnMetricsFromResult,
   usageFromResult,
@@ -69,7 +70,7 @@ type InFlightTool = {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  partialJson: string;
+  inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
 };
 
@@ -93,8 +94,8 @@ type LiveText = {
   onEvent?: (event: HarnessEvent) => void;
   toolsByIndex: Map<number, InFlightTool>;
   toolsById: Map<string, InFlightTool>;
-  compacting?:boolean;
-  compactionConfirmed?:boolean;
+  compacting?: boolean;
+  compactionConfirmed?: boolean;
 };
 
 let live: LiveText | null = null;
@@ -116,7 +117,8 @@ function textSettings(
   const subagentModel = modelSettings?.subagentModel;
   const subagentPolicy = modelSettings?.subagentPolicy;
   const settings: ClaudeCliSettings = {};
-  if(maxOutputTokens!==undefined)settings.env={CLAUDE_CODE_MAX_OUTPUT_TOKENS:String(maxOutputTokens)};
+  if (maxOutputTokens !== undefined)
+    settings.env = { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxOutputTokens) };
   if (thinking) settings.alwaysThinkingEnabled = true;
   if (fast) settings.fastMode = true;
   if (isClaudeUltracodeEffort(effort)) settings.ultracode = true;
@@ -188,7 +190,15 @@ export async function runClaudeTextPrompt(input: TextPromptInput): Promise<strin
 
 async function promptOnLive(input: TextPromptInput): Promise<string> {
   input.signal?.throwIfAborted();
-  if(input.compactBefore&&(input.ephemeral!==false||!input.threadId||!input.onCompacted))throw new Error("Claude compaction requires its exact persistent utility thread and receipt.");
+  if (
+    isTauri() &&
+    !input.operationContext?.nativeControlTurn &&
+    !input.operationContext?.hostRun &&
+    (input.ephemeral === false || input.threadId || input.compactBefore)
+  )
+    throw new Error("Standalone text generation requires a new ephemeral thread.");
+  if (input.compactBefore && (input.ephemeral !== false || !input.threadId || !input.onCompacted))
+    throw new Error("Claude compaction requires its exact persistent utility thread and receipt.");
   const model = pickTextModel(input.model);
   validateTextOutputLimit(input.maxOutputTokens);
   validateTextOutputLimit(input.maxOutputChars);
@@ -237,49 +247,72 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
 
   return withProviderRetirement(
     async () => {
-      try {
-        if(input.compactBefore){
-          session.compacting=true;session.compactionConfirmed=false;
-          const completed=new Promise<void>((resolve,reject)=>{session.turnDone=resolve;session.turnFailed=reject;});completed.catch(()=>undefined);
-          const compact=async()=>{await write(JSON.stringify(buildClaudeUserMessage({text:"/compact"})));await completed;};
-          await Promise.race([compact(),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new Error("Claude text compaction timed out")),timeoutMs);}),...(abortPromise?[abortPromise]:[])]);
-          clearTimeout(timeout);timeout=undefined;input.signal?.throwIfAborted();
-          if(!session.compactionConfirmed||session.threadId!==input.threadId)throw new Error("Claude Code did not confirm context compaction for the original Chief thread.");
-          await input.onCompacted!({threadId:session.threadId!});input.signal?.throwIfAborted();
-          session.compacting=false;session.output="";session.reasoningChars=0;session.toolsByIndex.clear();session.toolsById.clear();
-        }
-        const turnPromise = new Promise<void>((resolve, reject) => {
+      if (input.compactBefore) {
+        session.compacting = true;
+        session.compactionConfirmed = false;
+        const completed = new Promise<void>((resolve, reject) => {
           session.turnDone = resolve;
           session.turnFailed = reject;
         });
-        turnPromise.catch(()=>undefined);
-
-        await write(
-          JSON.stringify(
-            buildClaudeUserMessage({
-              text: input.prompt,
-              effort: settings.promptEffort,
-            }),
-          ),
-        );
-
+        completed.catch(() => undefined);
+        const compact = async () => {
+          await write(JSON.stringify(buildClaudeUserMessage({ text: "/compact" })));
+          await completed;
+        };
         await Promise.race([
-          turnPromise,
-          new Promise<void>((_, reject) => {
+          compact(),
+          new Promise<never>((_, reject) => {
             timeout = setTimeout(
-              () => reject(new Error("Claude text generation timed out")),
+              () => reject(new Error("Claude text compaction timed out")),
               timeoutMs,
             );
           }),
           ...(abortPromise ? [abortPromise] : []),
         ]);
-
-        const output = session.output.trim();
-        if (!output) throw new Error("Claude returned empty output.");
-        return output;
-      } catch (error) {
-        throw error;
+        clearTimeout(timeout);
+        timeout = undefined;
+        input.signal?.throwIfAborted();
+        if (!session.compactionConfirmed || session.threadId !== input.threadId)
+          throw new Error(
+            "Claude Code did not confirm context compaction for the original Chief thread.",
+          );
+        await input.onCompacted!({ threadId: session.threadId! });
+        input.signal?.throwIfAborted();
+        session.compacting = false;
+        session.output = "";
+        session.reasoningChars = 0;
+        session.toolsByIndex.clear();
+        session.toolsById.clear();
       }
+      const turnPromise = new Promise<void>((resolve, reject) => {
+        session.turnDone = resolve;
+        session.turnFailed = reject;
+      });
+      turnPromise.catch(() => undefined);
+
+      await write(
+        JSON.stringify(
+          buildClaudeUserMessage({
+            text: input.prompt,
+            effort: settings.promptEffort,
+          }),
+        ),
+      );
+
+      await Promise.race([
+        turnPromise,
+        new Promise<void>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Claude text generation timed out")),
+            timeoutMs,
+          );
+        }),
+        ...(abortPromise ? [abortPromise] : []),
+      ]);
+
+      const output = session.output.trim();
+      if (!output) throw new Error("Claude returned empty output.");
+      return output;
     },
     async () => {
       clearTimeout(timeout);
@@ -340,7 +373,11 @@ async function startLive(
   context?: Pick<TextPromptInput, "ephemeral" | "threadId" | "onThreadId">,
 ): Promise<LiveText> {
   const previous = captureDrop();
-  const child = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  const child = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(child, operationContext, true);
   retirements.admitPending(child);
   const session: LiveText = {
@@ -467,16 +504,20 @@ function handleLine(session: LiveText, line: string): void {
     session.readyDone = null;
   }
   if (!session.collecting) return;
-  if(session.compacting&&type==="system"&&stringField(rec,"subtype")==="compact_boundary"){
-    if(stringField(rec,"session_id")===session.threadId)session.compactionConfirmed=true;
+  if (
+    session.compacting &&
+    type === "system" &&
+    stringField(rec, "subtype") === "compact_boundary"
+  ) {
+    if (stringField(rec, "session_id") === session.threadId) session.compactionConfirmed = true;
     return;
   }
   if (type === "assistant") {
     const snapshot = assistantTextBlocks(rec).join("");
     if (snapshot) {
-      const output=mergeStream(session.output,snapshot);
-      if(!acceptOutput(session,output,session.reasoningChars??0))return;
-      session.output=output;
+      const output = mergeStream(session.output, snapshot);
+      if (!acceptOutput(session, output, session.reasoningChars ?? 0)) return;
+      session.output = output;
     }
     return;
   }
@@ -485,11 +526,18 @@ function handleLine(session: LiveText, line: string): void {
     return;
   }
   if (type === "result") {
-    if(session.compacting&&stringField(rec,"session_id")!==session.threadId){session.turnFailed?.(new Error("Claude compaction result does not identify its original thread."));return;}
-    const usage=usageFromResult(rec);if(usage)session.onEvent?.({type:"usage",...usage});
-    const metrics=turnMetricsFromResult(rec);if(metrics)session.onEvent?.({type:"turn.metrics",...metrics});
+    if (session.compacting && stringField(rec, "session_id") !== session.threadId) {
+      session.turnFailed?.(
+        new Error("Claude compaction result does not identify its original thread."),
+      );
+      return;
+    }
+    const usage = usageFromResult(rec);
+    if (usage) session.onEvent?.({ type: "usage", ...usage });
+    const metrics = turnMetricsFromResult(rec);
+    if (metrics) session.onEvent?.({ type: "turn.metrics", ...metrics });
     const result = turnStatusFromResult(rec);
-    if (result.status === "failed"||(session.compacting&&result.status!=="completed")) {
+    if (result.status === "failed" || (session.compacting && result.status !== "completed")) {
       session.turnFailed?.(new Error(result.error ?? "Claude turn failed"));
     } else {
       session.turnDone?.();
@@ -503,13 +551,13 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   const delta = streamDeltaFromEvent(rec);
   if (delta) {
     if (delta.kind === "assistant") {
-      if(!acceptOutput(session,session.output+delta.text,session.reasoningChars??0))return;
+      if (!acceptOutput(session, session.output + delta.text, session.reasoningChars ?? 0)) return;
       session.output += delta.text;
       session.onEvent?.({ type: "message.delta", text: delta.text });
     } else {
-      const reasoningChars=(session.reasoningChars??0)+delta.text.length;
-      if(!acceptOutput(session,session.output,reasoningChars))return;
-      session.reasoningChars=reasoningChars;
+      const reasoningChars = (session.reasoningChars ?? 0) + delta.text.length;
+      if (!acceptOutput(session, session.output, reasoningChars)) return;
+      session.reasoningChars = reasoningChars;
       session.onEvent?.({ type: "reasoning.delta", text: delta.text });
     }
     return;
@@ -521,7 +569,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
       id: started.id,
       name: started.name,
       input: started.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
     };
     if (started.index >= 0) session.toolsByIndex.set(started.index, tool);
@@ -544,8 +592,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   if (!jsonDelta) return;
   const tool = session.toolsByIndex.get(jsonDelta.index);
   if (!tool) return;
-  tool.partialJson += jsonDelta.partial;
-  const parsed = tryParseJsonRecord(tool.partialJson);
+  const parsed = tool.inputJson.append(jsonDelta.partial);
   if (!parsed) return;
   tool.input = parsed;
   tool.title = toolTitle(tool.name, parsed);
@@ -563,9 +610,13 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   });
 }
 
-function acceptOutput(session:LiveText,output:string,reasoningChars:number):boolean {
-  if(!utilityOutputExceeded(output,reasoningChars,session.outputLimit))return true;
-  session.collecting=false;
-  session.turnFailed?.(new Error("The utility response exceeded its local text allowance; provider usage is uncertain."));
+function acceptOutput(session: LiveText, output: string, reasoningChars: number): boolean {
+  if (!utilityOutputExceeded(output, reasoningChars, session.outputLimit)) return true;
+  session.collecting = false;
+  session.turnFailed?.(
+    new Error(
+      "The utility response exceeded its local text allowance; provider usage is uncertain.",
+    ),
+  );
   return false;
 }

@@ -24,7 +24,9 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Parse each complete saved JSON section once per source update and reuse its value for eligibility and rendering. Clipboard/wrap feedback must not repeatedly parse retained output; commands, diffs, truncated and invalid JSON keep exact text.
 - Retain exact command/output bytes, selection, horizontal reading and legacy/summary/full distinctions; never globally append snapshot updates.
+- Transcript subagent rows keep lifecycle, elapsed time and step summary inline before the disclosure control, including runs without steps. Failed-step counts use the danger role without changing the run lifecycle; the detached sheet retains its own state line.
 - Stop is gated by capability and call identity; acknowledgement does not prove process termination. Never rerun or kill work to populate an inspector.
 - Do not fabricate per-command cwd, exit status or timing from turn metadata. Label session working directory truthfully when that is the available provenance.
 - Preserve clipboard fallback, duplicate guards, stale-result cleanup, navigation identity, nonmodal focus and the shared overlay stack.

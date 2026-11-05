@@ -1,5 +1,9 @@
 # Source control review
 
+Linked workspace repository lists include every declared folder, including `.`
+when the containing folder is itself a repository. Root and nested repositories
+keep separate changes, commit drafts and action targets.
+
 The Git panel reviews the repository or checkout selected in its target picker.
 The **Reviewing** path identifies that target. Workspace/session focus, the Git
 review target and the checkout where an agent executes are separate choices.

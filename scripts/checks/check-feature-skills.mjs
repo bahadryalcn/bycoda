@@ -13,6 +13,10 @@ const entries = (await readdir(skillsRoot, { withFileTypes: true }))
   .sort((a, b) => a.name.localeCompare(b.name));
 let documents = 0;
 let sourcePointers = 0;
+let mobilePointers = 0;
+// `mobile/` is a separate Expo Git repository (docs/reference/repository-layout.md).
+// Its pointers are validated only when that repository is checked out here.
+const mobileCheckedOut = await exists(path.join(root, "mobile"));
 let links = 0;
 
 async function exists(target) {
@@ -37,6 +41,43 @@ async function markdownFiles(directory) {
 }
 
 const relative = (target) => path.relative(root, target).split(path.sep).join("/");
+
+// Task-log residue. Skills describe current contracts; history lives in Git, tests and
+// temp/local handoffs. Only references/decisions.md may carry dates (owner decisions).
+const historyPatterns = [
+  [
+    /\b20\d{2}-\d{2}-\d{2}\b/,
+    "date; owner decisions go in references/decisions.md, history in Git",
+  ],
+  [
+    /\b(?:commit|sha|revision)\s+[0-9a-f]{7,40}\b/i,
+    "commit SHA; history belongs in Git, not the skill",
+  ],
+  [
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i,
+    "session/task UUID; handoffs belong in temp/local",
+  ],
+  [
+    /`(?:src|src-tauri|host|mobile|apps|packages|scripts|tests|docs|evals)\/[^`\s]+:\d+(?:-\d+)?`/,
+    "path:line pointer; use folder or file level pointers",
+  ],
+  [
+    /\b\d+\s+(?:tests?|cases?|specs?)\s+(?:pass|passed|passing|green)\b/i,
+    "verification claim; results belong in the task handoff",
+  ],
+  [
+    /authorized tonight|frozen checkout has no mobile|product migration not started/i,
+    "stale session/snapshot wording",
+  ],
+];
+function historyFindings(text) {
+  const findings = [];
+  for (const [pattern, reason] of historyPatterns) {
+    const match = text.match(pattern);
+    if (match) findings.push(`${reason} ("${match[0]}")`);
+  }
+  return findings;
+}
 for (const entry of entries) {
   const directory = path.join(skillsRoot, entry.name);
   const entryPath = path.join(directory, "SKILL.md");
@@ -52,13 +93,12 @@ for (const entry of entries) {
   if (!frontmatter?.match(/^description:\s*\S/m)) {
     errors.push(`${entry.name}: missing description`);
   }
-  if (text.length > 6000) warnings.push(`${entry.name}: entry is ${text.length} chars (default read page: 6000)`);
-  if (/^##.*\b20\d{2}-\d{2}-\d{2}/m.test(text)) {
-    warnings.push(`${entry.name}: dated entry heading; check for task-log accumulation`);
+  // Shorten entries by linking a reference, never by dropping a contract.
+  const allowance = 6000;
+  if (text.length > allowance) {
+    errors.push(`${entry.name}: entry is ${text.length} chars (limit ${allowance})`);
   }
-  if (/authorized tonight|frozen checkout has no mobile|product migration not started/i.test(text)) {
-    errors.push(`${entry.name}: stale session/snapshot wording in active entry`);
-  }
+  for (const finding of historyFindings(text)) errors.push(`${entry.name}: ${finding}`);
   for (const paragraph of text.slice(text.indexOf("\n---", 4) + 4).split(/\r?\n\s*\r?\n/)) {
     const normalized = paragraph.replace(/\s+/g, " ").trim();
     if (normalized.length < 300 || normalized.startsWith("|")) continue;
@@ -73,6 +113,9 @@ for (const entry of entries) {
   for (const file of files) {
     documents++;
     const body = await readFile(file, "utf8");
+    if (file !== entryPath && path.basename(file) !== "decisions.md") {
+      for (const finding of historyFindings(body)) errors.push(`${relative(file)}: ${finding}`);
+    }
     const targets = [];
     for (const match of body.matchAll(/\[[^\]\n]*\]\(([^)\n]+)\)/g)) {
       let href = match[1].trim();
@@ -85,11 +128,17 @@ for (const entry of entries) {
       if (!(await exists(target))) errors.push(`${relative(file)}: broken link ${href}`);
     }
     edges.set(file, targets);
-    // Only literal, complete repository-root pointers. Globs, command strings and
-    // abbreviated adjacent filenames require human review instead of guessing.
-    for (const match of body.matchAll(/`((?:src|src-tauri|host|mobile|apps|packages|scripts|tests|docs|evals|public|vendor|\.github)\/[^`\s*?{}|]+)`/g)) {
+    // Only literal, complete repository-root pointers. Globs, `<placeholder>` templates,
+    // command strings and abbreviated adjacent filenames require human review instead of guessing.
+    for (const match of body.matchAll(
+      /`((?:src|src-tauri|host|mobile|apps|packages|scripts|tests|docs|evals|public|vendor|\.github)\/[^`\s*?{}|<>]+)`/g,
+    )) {
       const pointer = match[1].replace(/:\d+(?:-\d+)?$/, "");
       sourcePointers++;
+      if (pointer.startsWith("mobile/") && !mobileCheckedOut) {
+        mobilePointers++;
+        continue;
+      }
       if (!(await exists(path.join(root, pointer)))) {
         errors.push(`${relative(file)}: missing source pointer ${pointer}`);
       }
@@ -109,9 +158,19 @@ for (const entry of entries) {
 }
 
 for (const owners of entryParagraphs.values()) {
-  if (owners.size >= 3) warnings.push(`Repeated entry paragraph in ${[...owners].join(", ")}; consider one canonical reference`);
+  if (owners.size >= 3)
+    warnings.push(
+      `Repeated entry paragraph in ${[...owners].join(", ")}; consider one canonical reference`,
+    );
+}
+if (mobilePointers) {
+  console.log(
+    `Skipped existence check for ${mobilePointers} mobile/ pointers: the separate mobile repository is not checked out at mobile/.`,
+  );
 }
 for (const warning of warnings) console.warn(`WARNING ${warning}`);
 for (const error of errors) console.error(`ERROR ${error}`);
-console.log(`Feature skills: ${entries.length} entries, ${documents} documents, ${links} relative links, ${sourcePointers} literal source pointers; ${errors.length} errors, ${warnings.length} warnings.`);
+console.log(
+  `Feature skills: ${entries.length} entries, ${documents} documents, ${links} relative links, ${sourcePointers} literal source pointers; ${errors.length} errors, ${warnings.length} warnings.`,
+);
 if (errors.length) process.exitCode = 1;

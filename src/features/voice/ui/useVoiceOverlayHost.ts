@@ -4,6 +4,7 @@ import {
   VOICE_OVERLAY_COMMAND_EVENT,
   VOICE_OVERLAY_CHOICE_EVENT,
   VOICE_OVERLAY_JOB_EVENT,
+  VOICE_OVERLAY_ACTIVITY_EVENT,
   VOICE_OVERLAY_LEVEL_EVENT,
   VOICE_OVERLAY_STATE_EVENT,
   closeVoiceOverlay,
@@ -13,7 +14,8 @@ import {
   type VoiceOverlayState,
 } from "../model/voiceOverlay";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
-import type {VoiceJobDraft} from "../model/voiceJobs";
+import type { VoiceJobDraft } from "../model/voiceJobs";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 
 /** About 12 frames a second is enough for the small orb and keeps IPC light. */
 const LEVEL_INTERVAL_MS = 80;
@@ -28,9 +30,11 @@ export function useVoiceOverlayHost(options: {
   level: { readonly current: number };
   onCommand: (command: VoiceOverlayCommand) => void;
   onChoice?: (id: string, reply: UserQuestionReply) => void;
-  onChoiceRetry?:(id:string)=>void;
-  onJobReview?:(id:string,action:"change"|"start"|"cancel",rows?:VoiceJobDraft[])=>void;
+  onChoiceRetry?: (id: string) => void;
+  onJobReview?: (id: string, action: "change" | "start" | "cancel", rows?: VoiceJobDraft[]) => void;
   onClosed: () => void;
+  onError?: (cause: unknown) => void;
+  onStopWaiting?: (id: string) => void;
 }) {
   const { detached, state, level } = options;
   const handlers = useRef(options);
@@ -41,11 +45,17 @@ export function useVoiceOverlayHost(options: {
   const latestSnapshot = useRef(snapshot);
   latestSnapshot.current = snapshot;
   const label = useRef<string | null>(null);
+  const pendingClose = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
+    clearTimeout(pendingClose.current);
     if (!detached) return;
     let disposed = false;
     const unlisten: (() => void)[] = [];
+    const keep = (stop: () => void) => {
+      if (disposed) stop();
+      else unlisten.push(stop);
+    };
     let timer: ReturnType<typeof setInterval> | undefined;
     void (async () => {
       const [{ getCurrentWebviewWindow }, { emitTo }] = await Promise.all([
@@ -62,28 +72,43 @@ export function useVoiceOverlayHost(options: {
         );
       // Scoped to this window: a global listener would also receive other
       // workspace windows' overlay traffic.
-      const subscriptions = await Promise.all([
-        current.listen<{id:string;action:"change"|"start"|"cancel";rows?:VoiceJobDraft[]}>(VOICE_OVERLAY_JOB_EVENT,({payload})=>{
-          if(payload&&typeof payload.id==="string"&&["change","start","cancel"].includes(payload.action)&&(payload.rows===undefined||Array.isArray(payload.rows)))handlers.current.onJobReview?.(payload.id,payload.action,payload.rows);
-        }),
-        current.listen<{id:string;reply?:UserQuestionReply;action?:"retry"}>(VOICE_OVERLAY_CHOICE_EVENT, ({payload}) => {
-          if(payload&&typeof payload.id==="string"){
-            if(payload.action==="retry"&&payload.reply===undefined)handlers.current.onChoiceRetry?.(payload.id);
-            else if(payload.action===undefined&&payload.reply)handlers.current.onChoice?.(payload.id,payload.reply);
-          }
-        }),
-        current.listen<unknown>(VOICE_OVERLAY_COMMAND_EVENT, ({ payload }) => {
+      await Promise.all([
+        listenWindowAsync<string>(VOICE_OVERLAY_ACTIVITY_EVENT, ({ payload }) => {
+          if (typeof payload === "string" && payload.length <= 200)
+            handlers.current.onStopWaiting?.(payload);
+        }).then(keep),
+        listenWindowAsync<{
+          id: string;
+          action: "change" | "start" | "cancel";
+          rows?: VoiceJobDraft[];
+        }>(VOICE_OVERLAY_JOB_EVENT, ({ payload }) => {
+          if (
+            payload &&
+            typeof payload.id === "string" &&
+            ["change", "start", "cancel"].includes(payload.action) &&
+            (payload.rows === undefined || Array.isArray(payload.rows))
+          )
+            handlers.current.onJobReview?.(payload.id, payload.action, payload.rows);
+        }).then(keep),
+        listenWindowAsync<{ id: string; reply?: UserQuestionReply; action?: "retry" }>(
+          VOICE_OVERLAY_CHOICE_EVENT,
+          ({ payload }) => {
+            if (payload && typeof payload.id === "string") {
+              if (payload.action === "retry" && payload.reply === undefined)
+                handlers.current.onChoiceRetry?.(payload.id);
+              else if (payload.action === undefined && payload.reply)
+                handlers.current.onChoice?.(payload.id, payload.reply);
+            }
+          },
+        ).then(keep),
+        listenWindowAsync<unknown>(VOICE_OVERLAY_COMMAND_EVENT, ({ payload }) => {
           if (!isVoiceOverlayCommand(payload)) return;
           if (payload === "sync") send();
           else handlers.current.onCommand(payload);
-        }),
-        current.listen(VOICE_OVERLAY_CLOSED_EVENT, () => handlers.current.onClosed()),
+        }).then(keep),
+        listenWindowAsync(VOICE_OVERLAY_CLOSED_EVENT, () => handlers.current.onClosed()).then(keep),
       ]);
-      if (disposed) {
-        for (const stop of subscriptions) stop();
-        return;
-      }
-      unlisten.push(...subscriptions);
+      if (disposed) return;
       send();
       let last = -1;
       timer = setInterval(() => {
@@ -92,14 +117,21 @@ export function useVoiceOverlayHost(options: {
         last = value;
         void emitTo(target, VOICE_OVERLAY_LEVEL_EVENT, value).catch(() => undefined);
       }, LEVEL_INTERVAL_MS);
-    })().catch(() => undefined);
+    })().catch((cause) => {
+      for (const stop of unlisten.splice(0)) stop();
+      if (!disposed) handlers.current.onError?.(cause);
+      disposed = true;
+    });
     return () => {
       disposed = true;
       clearInterval(timer);
       for (const stop of unlisten) stop();
       label.current = null;
       // Docking, closing or unmounting the companion: the mirror has nothing left to show.
-      void closeVoiceOverlay().catch(() => undefined);
+      // React StrictMode immediately replays setup. Only a real retirement closes.
+      pendingClose.current = setTimeout(() => {
+        void closeVoiceOverlay().catch((cause) => handlers.current.onError?.(cause));
+      }, 0);
     };
   }, [detached, level]);
 

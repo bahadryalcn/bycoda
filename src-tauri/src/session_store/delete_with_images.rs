@@ -1,13 +1,23 @@
 //! Authoritative session deletion and its separately observed asset cleanup.
 use super::{
-    cleanup_unreferenced_since, delete_session, generated_image_paths, get_session,
+    cleanup_unreferenced_since, delete_session_with_mode, generated_image_paths, get_session,
     unreferenced_generated_images, validate_id, SessionStore,
 };
 
 pub(super) fn run(
     store: &SessionStore,
     session_id: &str,
+    image_paths: Vec<String>,
+    cleanup: impl FnOnce(&[String]) -> Result<(), String>,
+) -> (Result<(), String>, Result<(), ()>) {
+    run_with_mode(store, session_id, image_paths, false, cleanup)
+}
+
+pub(super) fn run_with_mode(
+    store: &SessionStore,
+    session_id: &str,
     mut image_paths: Vec<String>,
+    allow_recreate: bool,
     cleanup: impl FnOnce(&[String]) -> Result<(), String>,
 ) -> (Result<(), String>, Result<(), ()>) {
     let mut observation = Ok(());
@@ -25,7 +35,8 @@ pub(super) fn run(
                 }
             };
             image_paths.extend(persisted_paths);
-            delete_session(&conn, session_id).map_err(|error| error.to_string())?;
+            delete_session_with_mode(&conn, session_id, allow_recreate)
+                .map_err(|error| error.to_string())?;
         }
         if image_paths.is_empty() {
             return Ok(());
@@ -60,6 +71,7 @@ mod tests {
 
     fn session(id: &str, image_paths: &[&str]) -> SessionUpsert {
         SessionUpsert {
+            preserve_activity_at: false,
             managed_by: None,
             id: id.into(),
             cwd: "/isolated/delete-regression".into(),

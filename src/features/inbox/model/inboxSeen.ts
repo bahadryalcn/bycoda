@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { sameProjectPath } from "../../projects/model/recents";
+import {
+  mergeInboxSeenStorage,
+  readInboxSeenStorage,
+  seedInboxSeenStorage,
+} from "./inboxSeenStorage";
 
 const KEY = "bycoda.inboxSeen";
 const LEGACY_KEY = "bycoda.inboxSeenAt";
-/** Newest entries (by the item's update time) kept on every write. */
-export const INBOX_SEEN_MAX_ENTRIES = 2000;
-/** Entries whose item update time is older than this are dropped on write. */
-export const INBOX_SEEN_MAX_AGE_MS = 90 * 86_400_000;
+const COLD_MARKER = "bycoda.inboxSeen.indexed.v1";
+const HOT_LIMIT = 1024;
+// Never evict a seen identity merely because a partial provider fetch omitted it.
+const MAX_SEEN_ITEMS = 50_000;
 
 export type InboxSeenEntry = {
   key: string;
@@ -23,7 +28,192 @@ type SeenStore = {
 type Listener = () => void;
 
 const listeners = new Set<Listener>();
+let cachedRaw: string | null | undefined;
+let cachedStore: SeenStore | undefined;
 const knownItems = new Map<string, InboxSeenEntry & { projectPaths: string[] }>();
+type ColdState = "legacy" | "loading" | "ready" | "error";
+let coldState: ColdState = "legacy";
+let coldError: string | undefined;
+let coldSeeded = false;
+let coldReady: Promise<void> | undefined;
+let coldInitGeneration = 0;
+let coldGeneration = 0;
+const hot = new Map<string, number | undefined>();
+const pendingKeys = new Set<string>();
+let readScheduled = false;
+let inflightReads = 0;
+const aggregates = new Map<string, { generation: number; value?: boolean; pending: boolean }>();
+let channel: BroadcastChannel | undefined;
+
+function coldAvailable() {
+  return typeof indexedDB !== "undefined";
+}
+function coldRequired() {
+  try {
+    return localStorage.getItem(COLD_MARKER) === "1";
+  } catch {
+    return true;
+  }
+}
+function trimHot() {
+  while (hot.size > HOT_LIMIT) hot.delete(hot.keys().next().value!);
+}
+function legacySnapshot(raw: string | null): SeenStore {
+  if (!raw) return { seeded: false, items: {} };
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("Saved Inbox history is invalid.");
+  const value = parsed as { seeded?: unknown; items?: unknown };
+  if (typeof value.seeded === "boolean" && isSeenMap(value.items))
+    return { seeded: value.seeded, items: value.items };
+  if (isSeenMap(parsed)) return { seeded: true, items: parsed };
+  throw new Error("Saved Inbox history is invalid.");
+}
+function signalCold() {
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      channel ??= new BroadcastChannel("bycoda-inbox-seen-v1");
+      channel.onmessage = () => {
+        coldGeneration++;
+        hot.clear();
+        notifyInboxSeen();
+      };
+    }
+  } catch {
+    channel = undefined;
+  }
+}
+function broadcastCold() {
+  try {
+    signalCold();
+    channel?.postMessage("changed");
+  } catch {
+    /* Commit succeeded; other windows refresh on focus. */
+  }
+}
+async function ensureCold(): Promise<void> {
+  if (!coldAvailable()) {
+    if (coldRequired()) {
+      coldState = "error";
+      coldError = "Saved Inbox history is unavailable.";
+      throw new Error(coldError);
+    }
+    return;
+  }
+  if (coldReady) return coldReady;
+  coldState = "loading";
+  const initialization = ++coldInitGeneration;
+  coldReady = (async () => {
+    let stable = false;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const raw = localStorage.getItem(KEY);
+      const legacy = legacySnapshot(raw);
+      const entries = Object.entries(legacy.items);
+      for (let index = 0; index < entries.length; index += 512)
+        await mergeInboxSeenStorage({
+          seeded: false,
+          items: Object.fromEntries(entries.slice(index, index + 512)),
+        });
+      if (legacy.seeded) await mergeInboxSeenStorage({ seeded: true, items: {} });
+      if (raw === localStorage.getItem(KEY)) {
+        stable = true;
+        break;
+      }
+    }
+    if (!stable) throw new Error("Inbox history changed during migration. Retry.");
+    const meta = await readInboxSeenStorage([]);
+    if (initialization !== coldInitGeneration) return await ensureCold();
+    // Keep legacy bytes: old windows cannot participate in a compare-and-delete.
+    if (localStorage.getItem(COLD_MARKER) !== "1") localStorage.setItem(COLD_MARKER, "1");
+    coldSeeded = meta.seeded;
+    coldState = "ready";
+    coldError = undefined;
+    signalCold();
+    notifyInboxSeen();
+  })().catch((error) => {
+    if (initialization !== coldInitGeneration) return;
+    coldState = "error";
+    coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
+    coldReady = undefined;
+    notifyInboxSeen();
+    throw error;
+  });
+  return coldReady;
+}
+function scheduleColdRead(key: string) {
+  if (!key) return;
+  if (coldState === "error") return;
+  pendingKeys.add(key);
+  if (readScheduled) return;
+  readScheduled = true;
+  queueMicrotask(() => {
+    readScheduled = false;
+    const keys = [...pendingKeys];
+    pendingKeys.clear();
+    const generation = coldGeneration;
+    inflightReads++;
+    notifyInboxSeen();
+    void ensureCold()
+      .then(async () => {
+        const items = new Map<string, number | undefined>();
+        let seeded = false;
+        for (let index = 0; index < keys.length; index += 512) {
+          const result = await readInboxSeenStorage(keys.slice(index, index + 512));
+          seeded = result.seeded;
+          for (const [key, value] of result.items) items.set(key, value);
+        }
+        return { seeded, items };
+      })
+      .then((result) => {
+        if (generation !== coldGeneration) {
+          for (const key of keys) scheduleColdRead(key);
+          return;
+        }
+        coldSeeded = result.seeded;
+        for (const [key, value] of result.items) {
+          hot.delete(key);
+          hot.set(key, value);
+        }
+        trimHot();
+        notifyInboxSeen();
+      })
+      .catch((error) => {
+        coldState = "error";
+        coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
+      })
+      .finally(() => {
+        inflightReads--;
+        notifyInboxSeen();
+      });
+  });
+}
+async function mergeCold(entries: readonly InboxSeenEntry[], seeded = false): Promise<boolean> {
+  try {
+    await ensureCold();
+    const items = mapFrom(entries);
+    const pairs = Object.entries(items);
+    for (let index = 0; index < pairs.length; index += 512)
+      await mergeInboxSeenStorage({
+        seeded: false,
+        items: Object.fromEntries(pairs.slice(index, index + 512)),
+      });
+    if (seeded) await mergeInboxSeenStorage({ seeded: true, items: {} });
+    coldGeneration++;
+    for (const key of Object.keys(items)) hot.delete(key);
+    if (seeded) coldSeeded = true;
+    broadcastCold();
+    notifyInboxSeen();
+    return true;
+  } catch (error) {
+    coldGeneration++;
+    hot.clear();
+    broadcastCold();
+    coldState = "error";
+    coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
+    notifyInboxSeen();
+    return false;
+  }
+}
 
 /** Share fetched activity across the Inbox view, background poll, and rail menu. */
 export function rememberInboxItems(entries: readonly (InboxSeenEntry & { projectPath: string })[]) {
@@ -71,64 +261,55 @@ function isSeenMap(value: unknown): value is SeenMap {
   return Object.values(value).every((entry) => typeof entry === "number" && Number.isFinite(entry));
 }
 
-const EMPTY_STORE: SeenStore = { seeded: false, items: {} };
-
-function parseInboxSeenStore(raw: string | null): SeenStore {
-  if (!raw) return EMPTY_STORE;
-  const parsed: unknown = JSON.parse(raw);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return EMPTY_STORE;
-  const record = parsed as { seeded?: unknown; items?: unknown };
-  if (typeof record.seeded === "boolean" && isSeenMap(record.items)) {
-    return { seeded: record.seeded, items: record.items };
-  }
-  if (isSeenMap(parsed)) return { seeded: true, items: parsed };
-  return EMPTY_STORE;
-}
-
-// Parsed store keyed on the raw stored string: every list, poll and row read goes
-// through here, but only a changed string (this window's write, or another
-// window's through the `storage` event) is parsed again.
-let cachedRaw: string | null | undefined;
-let cachedStore: SeenStore = EMPTY_STORE;
-
 function loadInboxSeenStore(): SeenStore {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw === cachedRaw) return cachedStore;
-    const store = parseInboxSeenStore(raw);
+    if (raw === cachedRaw && cachedStore) return cachedStore;
+    if (!raw) {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: false, items: {} });
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: false, items: {} });
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: false, items: {} });
+    }
+    const record = parsed as { seeded?: unknown; items?: unknown };
+    if (typeof record.seeded === "boolean" && isSeenMap(record.items)) {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: record.seeded, items: record.items });
+    }
+    if (isSeenMap(parsed)) {
+      cachedRaw = raw;
+      return (cachedStore = { seeded: true, items: parsed });
+    }
     cachedRaw = raw;
-    cachedStore = store;
-    return store;
+    return (cachedStore = { seeded: false, items: {} });
   } catch {
-    return EMPTY_STORE;
+    cachedRaw = undefined;
+    cachedStore = undefined;
+    return { seeded: false, items: {} };
   }
-}
-
-/**
- * Bounded store: entries for items that left the Inbox long ago carry no
- * information, so the newest `INBOX_SEEN_MAX_ENTRIES` by item update time are
- * kept and anything older than `INBOX_SEEN_MAX_AGE_MS` is dropped. Items the
- * app currently lists keep their entry whatever their age, otherwise a stale
- * open issue would flip back to "new" after each prune.
- */
-function pruneSeenMap(items: SeenMap, now = Date.now()): SeenMap {
-  const entries = Object.entries(items);
-  const cutoff = now - INBOX_SEEN_MAX_AGE_MS;
-  let kept = entries.filter(([key, updatedAt]) => updatedAt >= cutoff || knownItems.has(key));
-  if (kept.length > INBOX_SEEN_MAX_ENTRIES) {
-    kept = kept.sort((a, b) => b[1] - a[1]).slice(0, INBOX_SEEN_MAX_ENTRIES);
-  }
-  if (kept.length === entries.length) return items;
-  return Object.fromEntries(kept);
 }
 
 function saveInboxSeenStore(store: SeenStore): boolean {
-  const next: SeenStore = { seeded: store.seeded, items: pruneSeenMap(store.items) };
   try {
-    const raw = JSON.stringify(next);
+    const existing = loadInboxSeenStore();
+    if (
+      Object.keys(store.items).length > MAX_SEEN_ITEMS &&
+      Object.keys(store.items).length > Object.keys(existing.items).length
+    )
+      return false;
+    const raw = JSON.stringify({ seeded: store.seeded, items: store.items });
     localStorage.setItem(KEY, raw);
     cachedRaw = raw;
-    cachedStore = next;
+    cachedStore = store;
   } catch {
     return false;
   }
@@ -137,6 +318,7 @@ function saveInboxSeenStore(store: SeenStore): boolean {
   } catch {
     // Legacy cleanup must not turn a successful write into a failure.
   }
+  coldGeneration++;
   notifyInboxSeen();
   return true;
 }
@@ -166,25 +348,53 @@ function entryIsUnseen(entry: InboxSeenEntry, items: SeenMap): boolean {
 }
 
 export function inboxSeenIsSeeded(): boolean {
+  if (coldAvailable() || coldRequired()) {
+    if (coldState === "legacy") void ensureCold().catch(() => {});
+    return coldState === "ready" && coldSeeded;
+  }
   return loadInboxSeenStore().seeded;
 }
 
 export function isInboxEntryUnseen(entry: InboxSeenEntry): boolean {
+  if (coldAvailable() || coldRequired()) {
+    if (!entry.key) return false;
+    if (coldState === "error") return false;
+    if (coldState !== "ready" || !hot.has(entry.key)) {
+      scheduleColdRead(entry.key);
+      return false;
+    }
+    if (!coldSeeded) return false;
+    const value = hot.get(entry.key);
+    hot.delete(entry.key);
+    hot.set(entry.key, value);
+    return value === undefined || inboxUpdatedAt(entry) > value;
+  }
   const store = loadInboxSeenStore();
   if (!store.seeded) return false;
   return entryIsUnseen(entry, store.items);
 }
 
-/** Keys of the unseen entries, read from one store snapshot for a whole list. */
-export function unseenInboxKeys(entries: readonly InboxSeenEntry[]): ReadonlySet<string> {
-  const unseen = new Set<string>();
-  const store = loadInboxSeenStore();
-  if (!store.seeded) return unseen;
-  for (const entry of entries) if (entryIsUnseen(entry, store.items)) unseen.add(entry.key);
-  return unseen;
+export function inboxSeenGeneration(): number {
+  return coldGeneration;
 }
 
-export function markInboxItemSeen(entry: InboxSeenEntry): boolean {
+export async function readInboxEntryUnseen(entry: InboxSeenEntry): Promise<boolean> {
+  if (!coldAvailable() && !coldRequired()) return isInboxEntryUnseen(entry);
+  try {
+    await ensureCold();
+    const result = await readInboxSeenStorage([entry.key]);
+    const value = result.items.get(entry.key);
+    return !!entry.key && result.seeded && (value === undefined || inboxUpdatedAt(entry) > value);
+  } catch (error) {
+    coldState = "error";
+    coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
+    notifyInboxSeen();
+    return false;
+  }
+}
+
+export function markInboxItemSeen(entry: InboxSeenEntry): boolean | Promise<boolean> {
+  if (coldAvailable() || coldRequired()) return mergeCold([entry]);
   const store = loadInboxSeenStore();
   return saveInboxSeenStore({
     ...store,
@@ -192,16 +402,39 @@ export function markInboxItemSeen(entry: InboxSeenEntry): boolean {
   });
 }
 
-export function markInboxItemsSeen(entries: readonly InboxSeenEntry[]): boolean {
+export function markInboxItemsSeen(entries: readonly InboxSeenEntry[]): boolean | Promise<boolean> {
+  if (coldAvailable() || coldRequired()) return mergeCold(entries);
   const store = loadInboxSeenStore();
+  const items = { ...store.items };
+  for (const entry of entries)
+    if (entry.key) items[entry.key] = Math.max(items[entry.key] ?? 0, inboxUpdatedAt(entry));
   return saveInboxSeenStore({
     ...store,
-    items: entries.reduce(mergeSeen, store.items),
+    items,
   });
 }
 
 /** First snapshot of the list is remembered so existing items do not badge. */
 export function seedInboxSeenIfNeeded(items: readonly InboxSeenEntry[]) {
+  if (coldAvailable() || coldRequired()) {
+    if (coldState === "error") return false;
+    if (!items.length) return;
+    return (async () => {
+      try {
+        await ensureCold();
+        await seedInboxSeenStorage(mapFrom(items));
+        coldSeeded = true;
+        coldGeneration++;
+        hot.clear();
+        broadcastCold();
+        notifyInboxSeen();
+      } catch (error) {
+        coldState = "error";
+        coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
+        notifyInboxSeen();
+      }
+    })();
+  }
   const store = loadInboxSeenStore();
   if (store.seeded || items.length === 0) return;
   saveInboxSeenStore({
@@ -211,38 +444,133 @@ export function seedInboxSeenIfNeeded(items: readonly InboxSeenEntry[]) {
 }
 
 export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
+  if (coldAvailable() || coldRequired()) {
+    if (coldState === "error") return false;
+    const key = JSON.stringify(items.map((item) => [item.key, item.updatedAt]));
+    const cached = aggregates.get(key);
+    if (cached?.generation === coldGeneration) return cached.value ?? false;
+    const current = { generation: coldGeneration, pending: true } as {
+      generation: number;
+      value?: boolean;
+      pending: boolean;
+    };
+    aggregates.delete(key);
+    aggregates.set(key, current);
+    while (aggregates.size > 32) aggregates.delete(aggregates.keys().next().value!);
+    queueMicrotask(() => {
+      inflightReads++;
+      notifyInboxSeen();
+      void (async () => {
+        await ensureCold();
+        let unseen = false;
+        for (let index = 0; index < items.length; index += 512) {
+          const page = items.slice(index, index + 512);
+          const found = await readInboxSeenStorage(page.map((item) => item.key).filter(Boolean));
+          if (
+            found.seeded &&
+            page.some(
+              (item) =>
+                item.key &&
+                (!found.items.has(item.key) ||
+                  found.items.get(item.key) === undefined ||
+                  inboxUpdatedAt(item) > found.items.get(item.key)!),
+            )
+          ) {
+            unseen = true;
+            break;
+          }
+        }
+        if (aggregates.get(key) === current && current.generation === coldGeneration) {
+          current.value = unseen;
+          current.pending = false;
+        }
+      })()
+        .catch((error) => {
+          coldState = "error";
+          coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
+        })
+        .finally(() => {
+          inflightReads--;
+          notifyInboxSeen();
+        });
+    });
+    return false;
+  }
   const store = loadInboxSeenStore();
   if (!store.seeded) return false;
   return items.some((item) => entryIsUnseen(item, store.items));
 }
 
-// One `storage` listener for the module, held while anyone subscribes: another
-// window's write invalidates the parsed cache and wakes the subscribers.
-let stopStorageListener: (() => void) | undefined;
-
-function onStorage(event: StorageEvent) {
-  if (event.key !== null && event.key !== KEY) return;
-  cachedRaw = undefined;
-  notifyInboxSeen();
-}
-
 export function subscribeInboxSeen(listener: Listener): () => void {
-  listeners.add(listener);
-  if (!stopStorageListener && typeof window !== "undefined") {
+  if (listeners.size === 0 && typeof window !== "undefined") {
     window.addEventListener("storage", onStorage);
-    stopStorageListener = () => window.removeEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
   }
+  listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0 && stopStorageListener) {
-      stopStorageListener();
-      stopStorageListener = undefined;
+    if (listeners.size === 0 && typeof window !== "undefined") {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
     }
   };
+}
+function onFocus() {
+  if (coldState === "ready") {
+    coldGeneration++;
+    hot.clear();
+    notifyInboxSeen();
+  }
+}
+
+function onStorage(event: StorageEvent) {
+  if (event.key !== KEY && event.key !== COLD_MARKER && event.key !== null) return;
+  cachedRaw = undefined;
+  cachedStore = undefined;
+  coldGeneration++;
+  coldInitGeneration++;
+  hot.clear();
+  coldReady = undefined;
+  if (coldAvailable() || coldRequired()) void ensureCold().catch(() => {});
+  notifyInboxSeen();
 }
 
 export function useInboxSeenTick(): number {
   const [tick, setTick] = useState(0);
-  useEffect(() => subscribeInboxSeen(() => setTick((value) => value + 1)), []);
+  useEffect(() => {
+    const unsubscribe = subscribeInboxSeen(() => setTick((value) => value + 1));
+    if (coldAvailable() || coldRequired()) void ensureCold().catch(() => {});
+    return unsubscribe;
+  }, []);
   return tick;
+}
+
+export function useInboxItemUnseen(entry: InboxSeenEntry, visible: boolean): boolean {
+  useInboxSeenTick();
+  const [resolved, setResolved] = useState(false);
+  const generation = inboxSeenGeneration();
+  useEffect(() => {
+    if (!visible) return;
+    let current = true;
+    void readInboxEntryUnseen({ key: entry.key, updatedAt: entry.updatedAt })
+      .then((value) => {
+        if (current) setResolved(value);
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [visible, entry.key, entry.updatedAt, generation]);
+  return typeof indexedDB === "undefined" ? isInboxEntryUnseen(entry) : resolved;
+}
+
+export function inboxSeenStatus(): { state: ColdState; error?: string } {
+  return {
+    state: coldState === "ready" && (readScheduled || inflightReads > 0) ? "loading" : coldState,
+    ...(coldError ? { error: coldError } : {}),
+  };
+}
+export function retryInboxSeenStorage(): void {
+  coldReady = undefined;
+  void ensureCold().catch(() => {});
 }

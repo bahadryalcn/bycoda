@@ -2,14 +2,14 @@
 
 Code paths are repository-relative.
 
-| Area | Owner |
-| --- | --- |
-| Outgoing list/forms | `src/features/settings/ui/McpSettings.tsx`, `McpSettings.module.css`; Settings model/search; `src/features/projects/ui/SearchableProjectPicker.tsx` |
-| Cache/parsing | `src/features/settings/model/mcpSettingsCache.ts`, `mcp.ts` |
-| Native provider config/auth | `src-tauri/src/mcp.rs`, `harness.rs`; registration in `lib.rs` |
-| Incoming grant UI | `src/features/settings/ui/ExternalMcpAccess.tsx`, `ExternalMcpAccess.module.css` |
-| Host tokens/HTTP/catalog/proxy | `host/mcp-tokens.ts`, `mcp-http.ts`, `mcp-entry.ts`, `mcp-proxy.ts`, `server.ts` |
-| Native incoming RPC allowlist | `src-tauri/src/remote.rs` |
+| Area                           | Owner                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Outgoing list/forms            | `src/features/settings/ui/McpSettings.tsx`, `McpSettings.module.css`; Settings model/search; `src/features/projects/ui/SearchableProjectPicker.tsx` |
+| Cache/parsing                  | `src/features/settings/model/mcpSettingsCache.ts`, `mcp.ts`                                                                                         |
+| Native provider config/auth    | `src-tauri/src/mcp.rs`, `harness.rs`; registration in `lib.rs`                                                                                      |
+| Incoming grant UI              | `src/features/settings/ui/ExternalMcpAccess.tsx`, `ExternalMcpAccess.module.css`                                                                    |
+| Host tokens/HTTP/catalog/proxy | `host/mcp/mcp-tokens.ts`, `mcp-http.ts`, `mcp-entry.ts`, `mcp-proxy.ts`, `server.ts`                                                                |
+| Native incoming RPC allowlist  | `src-tauri/src/remote.rs`                                                                                                                           |
 
 ## Operations and limits
 

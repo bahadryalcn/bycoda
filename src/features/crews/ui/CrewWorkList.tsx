@@ -13,8 +13,7 @@ export type CrewWorkView = "ongoing" | "finished";
 
 /**
  * Searchable list of one crew's work. It filters only the loaded runs and shows
- * their count; the Host returns every project run without a cursor or total, so no
- * page or server count is implied. Selection and filter belong to the owner so a
+ * their count; older finished runs are loaded explicitly. Selection and filter belong to the owner so a
  * poll never resets them.
  */
 export function CrewWorkList({
@@ -28,6 +27,10 @@ export function CrewWorkList({
   onViewChange,
   onQueryChange,
   onSelect,
+  hasMoreHistory,
+  historyLoading,
+  historyError,
+  onLoadMore,
 }: {
   view: CrewWorkView;
   ongoingCount: number;
@@ -41,6 +44,10 @@ export function CrewWorkList({
   onViewChange: (view: CrewWorkView) => void;
   onQueryChange: (query: string) => void;
   onSelect: (id: string) => void;
+  hasMoreHistory?: boolean;
+  historyLoading?: boolean;
+  historyError?: string;
+  onLoadMore?: () => void;
 }) {
   useLocale();
   const listRef = useRef<HTMLDivElement>(null);
@@ -56,10 +63,7 @@ export function CrewWorkList({
   const selectedHidden =
     !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
-    <nav
-      aria-label={t("Crew work")}
-      className="flex min-w-0 flex-col bg-(--ui-surface-panel)"
-    >
+    <nav aria-label={t("Crew work")} className="flex min-w-0 flex-col bg-transparent">
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl
           label={t("Crew work view")}
@@ -134,6 +138,20 @@ export function CrewWorkList({
                 ? t("No ongoing crew work.")
                 : t("No finished crew work.")}
           </p>
+        ) : null}
+        {view === "finished" && hasMoreHistory ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled || historyLoading}
+            onClick={onLoadMore}
+          >
+            {historyLoading
+              ? t("Loading…")
+              : historyError
+                ? t("Retry loading older work")
+                : t("Load older work")}
+          </Button>
         ) : null}
       </div>
     </nav>

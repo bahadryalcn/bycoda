@@ -1,5 +1,5 @@
-import type { Session } from "../../sessions/model/session";
-import { sameProjectPath } from "../../projects/model/recents";
+import type { Session } from "../../sessions";
+import { sameProjectPath } from "../../projects/public/recents";
 import { desktopCopyOf } from "./adoptedSessions";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, HostSession, RemoteMachine } from "./protocol";

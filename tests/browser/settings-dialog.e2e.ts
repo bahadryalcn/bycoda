@@ -6,15 +6,11 @@ const evidence = "temp/verification/2026-10-28-ui-redesign/n1";
 
 for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
-    test(`settings dialog over workspace: ${theme} ${width}`, async ({
-      page,
-    }) => {
+    test(`settings dialog over workspace: ${theme} ${width}`, async ({ page }) => {
       mkdirSync(evidence, { recursive: true });
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(
-        `/tests/browser/settings.html?dialog=1&theme=${theme}&lang=en`,
-      );
+      await page.goto(`/tests/browser/settings.html?dialog=1&theme=${theme}&lang=en`);
       const workspace = page.locator("[data-workspace-chrome]");
       const draft = page.getByLabel("Workspace draft");
       await draft.fill("unsent draft");
@@ -32,9 +28,7 @@ for (const theme of ["light", "dark"] as const) {
       // The work context stays mounted and visible behind the dialog, inert rather than hidden.
       await expect(workspace).toBeVisible();
       expect(
-        await workspace.evaluate(
-          (el) => !!el.closest("[inert]") || el.hasAttribute("inert"),
-        ),
+        await workspace.evaluate((el) => !!el.closest("[inert]") || el.hasAttribute("inert")),
       ).toBe(true);
       expect(await workspace.getAttribute("aria-hidden")).toBeNull();
       // One chrome: the embedded page draws no second titlebar or window controls.
@@ -44,13 +38,8 @@ for (const theme of ["light", "dark"] as const) {
       await expect(close).toBeVisible();
       const hit = await close.evaluate((el) => {
         const rect = el.getBoundingClientRect();
-        const top = document.elementFromPoint(
-          rect.x + rect.width / 2,
-          rect.y + rect.height / 2,
-        );
-        return top === el || el.contains(top)
-          ? true
-          : `${top?.tagName}.${top?.className}`;
+        const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return top === el || el.contains(top) ? true : `${top?.tagName}.${top?.className}`;
       });
       expect(hit).toBe(true);
       const box = (await dialog.boundingBox())!;
@@ -68,19 +57,12 @@ for (const theme of ["light", "dark"] as const) {
   }
 }
 
-test("settings dialog Archive reports unavailable history and retries", async ({
-  page,
-}) => {
+test("settings dialog Archive reports unavailable history and retries", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(
-    "/tests/browser/settings.html?dialog=1&section=archive&history=failed&lang=en",
-  );
+  await page.goto("/tests/browser/settings.html?dialog=1&section=archive&history=failed&lang=en");
   await page.getByTestId("open-settings").click();
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(dialog.getByRole("button", { name: /retry/i })).toBeVisible();
   await dialog.getByRole("button", { name: /retry/i }).click();
-  await expect(page.locator("main")).toHaveAttribute(
-    "data-fixture-retries",
-    "1",
-  );
+  await expect(page.locator("main")).toHaveAttribute("data-fixture-retries", "1");
 });

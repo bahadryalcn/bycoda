@@ -7,7 +7,8 @@ const LAST_SENT_KEY = "bycoda.notifications.dailySummary.lastSent";
 export const DAILY_SUMMARY_ENABLED_DEFAULT = true;
 export const DAILY_SUMMARY_TIME_DEFAULT = "09:00";
 export const DAILY_SUMMARY_CHANGE_EVENT = "bycoda:daily-summary-change";
-export const subscribeDailySummary = (onChange: () => void) => subscribePreferenceChanges([ENABLED_KEY, TIME_KEY], DAILY_SUMMARY_CHANGE_EVENT, onChange);
+export const subscribeDailySummary = (onChange: () => void) =>
+  subscribePreferenceChanges([ENABLED_KEY, TIME_KEY], DAILY_SUMMARY_CHANGE_EVENT, onChange);
 
 /** Whole hours, 06:00 to 22:00. */
 export const DAILY_SUMMARY_TIMES = Array.from(

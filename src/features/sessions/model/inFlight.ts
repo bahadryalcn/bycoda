@@ -1,11 +1,11 @@
 import { t } from "../../../shared/i18n/core";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout";
-import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import type { DockSide, ProjectTerminalDock, ProjectReturnMemory } from "../../projects";
+import { isRemoteProjectPath } from "../../../shared/lib/paths";
 import { sessionNeedsInput, type Session } from "./session";
+import { isOwnerStoppedTurn, isTurnInterruptionNotice } from "./turnInterruption";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
-import type { ProjectReturnMemory } from "../../projects/model/projectReturn";
 
 export const INTERRUPT_MESSAGE = "Turn interrupted when bycoda quit.";
 
@@ -88,7 +88,24 @@ export function quitWhileBusyMessage(count: number): string {
  * resume on the second quit.
  */
 export function markTurnInterrupted(session: Session): Session {
-  const sealed = { ...sealOpenWork(stopStreaming(session)), busy: false };
+  // Sealing after a restart must not turn restart time into conversation activity.
+  // Keep submitted-turn durations as recorded before this maintenance operation.
+  const durations = new Map(
+    session.blocks
+      .filter((block) => block.role === "user")
+      .map((block) => [block.id, block.durationMs]),
+  );
+  const stopped = stopStreaming(session);
+  stopped.blocks = stopped.blocks.map((block) => {
+    if (block.role !== "user" || !durations.has(block.id)) return block;
+    const durationMs = durations.get(block.id);
+    if (durationMs !== undefined) return { ...block, durationMs };
+    const { durationMs: _durationMs, ...withoutDuration } = block;
+    return withoutDuration;
+  });
+  const sealed = { ...sealOpenWork(stopped), busy: false };
+  // A stale in-flight snapshot cannot override the owner's terminal Stop.
+  if (isOwnerStoppedTurn(sealed.blocks)) return sealed;
   if (lastBlockIsInterrupt(sealed)) return sealed;
   return {
     ...sealed,
@@ -134,10 +151,9 @@ export function canAutoContinue(session: Session): boolean {
 }
 
 function lastBlockIsInterrupt(session: Session): boolean {
+  if (isOwnerStoppedTurn(session.blocks)) return false;
   const last = session.blocks[session.blocks.length - 1];
-  return (
-    last?.role === "system" && (last.notice === "interrupt" || isTurnInterruptMessage(last.text))
-  );
+  return isTurnInterruptionNotice(last);
 }
 
 export function inFlightSnapshotKey(refs: InFlightRef[]): string {

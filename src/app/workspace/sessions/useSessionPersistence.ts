@@ -275,6 +275,8 @@ export function useSessionPersistence({
               lastPersisted.current.delete(session.id);
             }
           },
+        }).catch((error) => {
+          console.warn("Live session persistence failed", error);
         });
       }
     }, LIVE_PERSIST_MS);

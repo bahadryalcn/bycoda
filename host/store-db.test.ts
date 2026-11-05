@@ -11,21 +11,89 @@ import { RequestAuthorizationError, StoreDatabase } from "./store-db";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanups: Array<() => void | Promise<void>> = [];
-it("captures request authority without restoring a closed SQL owner, and rechecks the original grant inside a different live transaction",async()=>{
- const{store}=await fixture();let allowed=true,captured!:()=>Promise<void>,escaped!:()=>Promise<void>;
- await store.db.withAuthorization(async()=>{await store.projects();return allowed;},()=>store.transaction(async()=>{captured=await store.db.captureAuthorization();escaped=AsyncResource.bind(()=>captured());},"critical"));
- await expect(escaped()).rejects.toThrow("closed owner");
- await store.db.withAuthorization(async()=>{await captured();return true;},()=>store.transaction(async()=>{expect(await store.projects()).toHaveLength(1);await store.db.checkAuthorization();},"critical"));
- allowed=false;await expect(store.db.withAuthorization(async()=>{await captured();return true;},()=>store.transaction(async()=>{throw new Error("A revoked guard must not enter SQL work");},"critical"))).rejects.toThrow(RequestAuthorizationError);
+it("captures request authority without restoring a closed SQL owner, and rechecks the original grant inside a different live transaction", async () => {
+  const { store } = await fixture();
+  let allowed = true,
+    captured!: () => Promise<void>,
+    escaped!: () => Promise<void>;
+  await store.db.withAuthorization(
+    async () => {
+      await store.projects();
+      return allowed;
+    },
+    () =>
+      store.transaction(async () => {
+        captured = await store.db.captureAuthorization();
+        escaped = AsyncResource.bind(() => captured());
+      }, "critical"),
+  );
+  await expect(escaped()).rejects.toThrow("closed owner");
+  await store.db.withAuthorization(
+    async () => {
+      await captured();
+      return true;
+    },
+    () =>
+      store.transaction(async () => {
+        expect(await store.projects()).toHaveLength(1);
+        await store.db.checkAuthorization();
+      }, "critical"),
+  );
+  allowed = false;
+  await expect(
+    store.db.withAuthorization(
+      async () => {
+        await captured();
+        return true;
+      },
+      () =>
+        store.transaction(async () => {
+          throw new Error("A revoked guard must not enter SQL work");
+        }, "critical"),
+    ),
+  ).rejects.toThrow(RequestAuthorizationError);
 });
 
-it("prepares captured structured authority before SQL admission while retaining both original and prepared revocation checks",async()=>{
- const{store}=await fixture(),other=new StoreDatabase(":memory:");await other.ready;cleanups.push(()=>other.close());let originalAllowed=true,preparedAllowed=true;
- const prepare=vi.fn(async()=>{expect(store.db.ownsScope).toBe(false);expect((await other.prepare("SELECT 1 AS n").get())?.n).toBe(1);return async()=>preparedAllowed;});
- const captured=await store.db.withAuthorization({prepare,check:async()=>originalAllowed},()=>store.db.captureAuthorization());expect(prepare).toHaveBeenCalledTimes(1);
- await store.db.withAuthorization(async()=>{await captured();return true;},()=>store.transaction(async()=>{await store.db.checkAuthorization();},"critical"));
- originalAllowed=false;await expect(captured()).rejects.toThrow(RequestAuthorizationError);originalAllowed=true;preparedAllowed=false;await expect(captured()).rejects.toThrow(RequestAuthorizationError);
- await store.transaction(async()=>{await expect(store.db.withAuthorization({prepare,check:async()=>true},()=>store.db.captureAuthorization())).rejects.toThrow("before SQL admission");},"critical");expect(prepare).toHaveBeenCalledTimes(1);
+it("prepares captured structured authority before SQL admission while retaining both original and prepared revocation checks", async () => {
+  const { store } = await fixture(),
+    other = new StoreDatabase(":memory:");
+  await other.ready;
+  cleanups.push(() => other.close());
+  let originalAllowed = true,
+    preparedAllowed = true;
+  const prepare = vi.fn(async () => {
+    expect(store.db.ownsScope).toBe(false);
+    expect((await other.prepare("SELECT 1 AS n").get())?.n).toBe(1);
+    return async () => preparedAllowed;
+  });
+  const captured = await store.db.withAuthorization(
+    { prepare, check: async () => originalAllowed },
+    () => store.db.captureAuthorization(),
+  );
+  expect(prepare).toHaveBeenCalledTimes(1);
+  await store.db.withAuthorization(
+    async () => {
+      await captured();
+      return true;
+    },
+    () =>
+      store.transaction(async () => {
+        await store.db.checkAuthorization();
+      }, "critical"),
+  );
+  originalAllowed = false;
+  await expect(captured()).rejects.toThrow(RequestAuthorizationError);
+  originalAllowed = true;
+  preparedAllowed = false;
+  await expect(captured()).rejects.toThrow(RequestAuthorizationError);
+  await store.transaction(async () => {
+    await expect(
+      store.db.withAuthorization({ prepare, check: async () => true }, () =>
+        store.db.captureAuthorization(),
+      ),
+    ).rejects.toThrow("before SQL admission");
+  }, "critical");
+  expect(prepare).toHaveBeenCalledTimes(1);
 });
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -621,17 +689,29 @@ it("survives a cache-publication fault after a commit: logs, clears caches and k
   error.mockRestore();
 });
 
-
 it("batches ordered writes atomically and keeps cached statements usable after eviction", async () => {
   const { store } = await fixture();
   await store.db.exec("CREATE TABLE batch_fixture(id INTEGER PRIMARY KEY, value TEXT)");
   const insert = store.db.prepare("INSERT INTO batch_fixture VALUES (?, ?)");
-  await insert.runMany([[1, "one"], [2, "two"]]);
-  await expect(insert.runMany([[3, "three"], [1, "duplicate"]])).rejects.toThrow();
-  expect(await store.db.prepare("SELECT id FROM batch_fixture ORDER BY id").all()).toEqual([{ id: 1 }, { id: 2 }]);
+  await insert.runMany([
+    [1, "one"],
+    [2, "two"],
+  ]);
+  await expect(
+    insert.runMany([
+      [3, "three"],
+      [1, "duplicate"],
+    ]),
+  ).rejects.toThrow();
+  expect(await store.db.prepare("SELECT id FROM batch_fixture ORDER BY id").all()).toEqual([
+    { id: 1 },
+    { id: 2 },
+  ]);
   for (let i = 0; i < 260; i++) await store.db.prepare(`SELECT ${i} AS value`).get();
   await insert.runMany([[3, "three"]]);
-  expect((await store.db.prepare("SELECT count(*) AS count FROM batch_fixture").get())?.count).toBe(3);
+  expect((await store.db.prepare("SELECT count(*) AS count FROM batch_fixture").get())?.count).toBe(
+    3,
+  );
 });
 
 it("authenticates warm tokens without entering SQLite and invalidates them on revoke", async () => {
@@ -647,4 +727,52 @@ it("authenticates warm tokens without entering SQLite and invalidates them on re
   expect(await store.authenticated(device.token)).toBe(false);
   expect(changed).toHaveBeenCalled();
   unsubscribe();
+});
+
+it("cancels queued read admission without ever dispatching its work after the original owner leaves", async () => {
+  const { store } = await fixture();
+  const entered = Promise.withResolvers<void>(),
+    release = Promise.withResolvers<void>();
+  const original = store.db.scope(async () => {
+    entered.resolve();
+    await release.promise;
+  });
+  await entered.promise;
+  const controller = new AbortController();
+  const read = vi.fn(async () => "should never run");
+  const queued = store.db.scope(read, controller.signal);
+  controller.abort();
+  await expect(queued).rejects.toThrow("admission cancelled");
+  expect(read).not.toHaveBeenCalled();
+  release.resolve();
+  await original;
+  await store.db.scope(async () => undefined);
+  expect(read).not.toHaveBeenCalled();
+});
+
+it("reads cold Host snapshots in the original cancellable scope while retaining pending/cache precedence", async () => {
+  const { store, value } = await fixture();
+  const changed = {
+    ...value,
+    revision: 2,
+    updatedAt: 2,
+    session: {
+      ...value.session,
+      blocks: [{ id: "answer", role: "assistant" as const, text: "exact cold journal" }],
+    },
+  };
+  await store.save(changed, {});
+  await store.flushAll();
+  (store as unknown as { cache: Map<string, unknown> }).cache.clear();
+  const controller = new AbortController();
+  const cold = await store.session("session", controller.signal);
+  expect(cold.revision).toBe(2);
+  expect(cold.session.blocks).toEqual(changed.session.blocks);
+  await store.save(
+    { ...changed, revision: 3, session: { ...changed.session, title: "Unflushed owner value" } },
+    {},
+  );
+  expect((await store.session("session", controller.signal)).session.title).toBe(
+    "Unflushed owner value",
+  );
 });

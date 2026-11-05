@@ -41,7 +41,11 @@ it("marks one target, shows one badge and announces a sentence once per change",
 });
 
 it("counts dragged files from items first, then from the file list", () => {
-  const items = [{ kind: "file", type: "image/png" }, { kind: "string", type: "text/plain" }, { kind: "file", type: "" }];
+  const items = [
+    { kind: "file", type: "image/png" },
+    { kind: "string", type: "text/plain" },
+    { kind: "file", type: "" },
+  ];
   expect(droppedFileCount({ items, files: [] } as never)).toBe(2);
   expect(droppedFileTypes({ items, files: [] } as never)).toEqual(["image/png", ""]);
   expect(droppedFileCount({ items: [], files: [1, 2, 3] } as never)).toBe(3);

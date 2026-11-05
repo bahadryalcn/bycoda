@@ -149,8 +149,7 @@ pub fn dispatch(app: &AppHandle, id: &str) {
             let _ = app.emit("toggle_autosave", enabled);
         }
         "quit" => crate::window::request_quit(app),
-        // Every workspace command targets one window: a broadcast would make
-        // every window act on a single menu click (open N tabs, close N panes).
+        // Workspace actions belong to one focused (or visible fallback) window.
         "new_tab"
         | "close_tab"
         | "close_other_tabs"
@@ -200,22 +199,44 @@ pub fn dispatch(app: &AppHandle, id: &str) {
 /// Emit `id` to the focused window, falling back to a visible one, then any.
 fn emit_to_focused(app: &AppHandle, id: &str) {
     let windows = crate::window::workspace_windows(app);
-    let target = windows
+    let states: Vec<_> = windows
         .iter()
-        .find(|window| window.is_focused().unwrap_or(false))
-        .or_else(|| {
-            windows
-                .iter()
-                .find(|window| window.is_visible().unwrap_or(false))
+        .map(|window| {
+            (
+                window.is_focused().unwrap_or(false),
+                window.is_visible().unwrap_or(false),
+            )
         })
-        .or(windows.first());
-    match target {
-        Some(window) => {
-            let _ = app.emit_to(window.label(), id, ());
-        }
-        None => {
-            let _ = app.emit(id, ());
-        }
+        .collect();
+    if let Some(window) = focused_workspace_index(&states).and_then(|index| windows.get(index)) {
+        let _ = app.emit_to(window.label(), id, ());
+    }
+}
+
+fn focused_workspace_index(states: &[(bool, bool)]) -> Option<usize> {
+    states
+        .iter()
+        .position(|(focused, _)| *focused)
+        .or_else(|| states.iter().position(|(_, visible)| *visible))
+        .or_else(|| (!states.is_empty()).then_some(0))
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::focused_workspace_index;
+
+    #[test]
+    fn actions_choose_one_focused_workspace_then_visible_fallback() {
+        assert_eq!(
+            focused_workspace_index(&[(false, true), (true, true)]),
+            Some(1)
+        );
+        assert_eq!(
+            focused_workspace_index(&[(false, false), (false, true)]),
+            Some(1)
+        );
+        assert_eq!(focused_workspace_index(&[(false, false)]), Some(0));
+        assert_eq!(focused_workspace_index(&[]), None);
     }
 }
 

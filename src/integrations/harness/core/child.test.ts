@@ -10,6 +10,16 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({
+    label:
+      (
+        globalThis as {
+          __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } };
+        }
+      ).__TAURI_INTERNALS__?.metadata?.currentWindow?.label ?? "main",
+  }),
+}));
 
 function receipt(sessionId: string, pid = 42) {
   return {
@@ -483,6 +493,16 @@ describe("child bridge", () => {
       expect(call[2]).toEqual({ target: "main-3" });
     }
     release();
+  });
+
+  it("does not register global listeners when window identity is missing", async () => {
+    installResolvedListeners();
+    vi.stubGlobal("__TAURI_INTERNALS__", { metadata: { currentWindow: { label: "" } } });
+    const child = await loadChild();
+    await expect(child.acquireHarnessBridge()).rejects.toThrow(
+      "Window event subscription requires a window identity",
+    );
+    expect(mocks.listen).not.toHaveBeenCalled();
   });
 
   it("drops output a killed child prints after it was stopped", async () => {

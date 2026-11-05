@@ -28,6 +28,10 @@ mod native_upload;
 
 #[path = "remote_native_service.rs"]
 mod native_service;
+#[path = "assistant/assistant_room_delegation.rs"]
+pub(crate) mod assistant_room_delegation;
+#[path = "assistant/assistant_native_signer.rs"]
+pub(crate) mod assistant_native_signer;
 pub(crate) use native_service::{NativeServiceChannel, NativeServiceReply};
 
 #[path = "remote_native_gateway.rs"]
@@ -437,6 +441,24 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
 pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), String> {
     let parent = path.parent().ok_or("Missing connection directory")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let before = read_store_values(path)?;
+    let prepared = match crate::assistant_server_observation::prepare(path, &before, records) {
+        Ok(()) => true,
+        Err(_) => { crate::assistant_server_observation::mark_gap(path)?; false }
+    };
+    let result = write_store_values_inner(path, records);
+    // The file is authoritative even when replacement reports an error.
+    if prepared {
+        match read_store_values(path).and_then(|actual| crate::assistant_server_observation::reconcile(path, &actual)) {
+            Ok(()) => {},
+            Err(_) => { crate::assistant_server_observation::mark_gap(path)?; }
+        }
+    }
+    result
+}
+
+fn write_store_values_inner(path: &Path, records: &[Value]) -> Result<(), String> {
+    let parent = path.parent().ok_or("Missing connection directory")?;
     let temporary = parent.join(format!("remote-machines-{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| -> Result<(), String> {
         let mut options = std::fs::OpenOptions::new();
@@ -465,7 +487,7 @@ pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), S
 }
 
 /// Hosts split large session syncs into pieces below this cap
-/// (`host/sync-transfer.ts`), so it bounds memory without limiting transcripts.
+/// (`host/sync/sync-transfer.ts`), so it bounds memory without limiting transcripts.
 const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 static RPC_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
@@ -484,6 +506,10 @@ fn rpc_agent() -> &'static ureq::Agent {
 const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The renderer abandons a run-lease acquire after 4 s (`RUN_LEASE_ACQUIRE_TIMEOUT_MS`).
 const INTERACTIVE_LEASE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+/// A writer-retirement acquire may wait 20 s on the Host. The renderer gives up
+/// at 25 s (`RUN_LEASE_RETIREMENT_ACQUIRE_TIMEOUT_MS`); the wire must outlast it
+/// so a late grant or refusal still reaches the abandoned request.
+const RETIREMENT_LEASE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const INTERACTIVE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Workspace and policy reads resolve the repository identity with git, which
 /// takes seconds on a large repository or a cold disk.
@@ -509,6 +535,9 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         // Interactive HTTP-only methods that a send, the composer or an open
         // pane awaits. A hung Host must not hold a native worker (and the user's
         // send) for the 30 s default; these reply in milliseconds when healthy.
+        "sessions.runLease" if params.get("action").and_then(Value::as_str) == Some("acquire") => {
+            RETIREMENT_LEASE_RPC_TIMEOUT
+        }
         "sessions.runLease" => INTERACTIVE_LEASE_RPC_TIMEOUT,
         "sessions.desktopLive"
         | "sessions.adopted"
@@ -523,7 +552,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         }
         // One 512 KiB chunk per call; allow slow SSH links.
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
-        "sessions.update" | "browser.status" | "browser.claim" | "browser.frame"
+        "sessions.update" | "sessions.pin.state" | "sessions.pin.apply" | "sessions.pin.receipt" | "browser.status" | "browser.claim" | "browser.frame"
         | "browser.input" => INTERACTIVE_ACTION_RPC_TIMEOUT,
         "browser.resize" => INTERACTIVE_ACTION_RPC_TIMEOUT,
         // Cheap status reads for the Git panel. History, blame, PR status and
@@ -680,7 +709,10 @@ fn rpc_timed(
             if device_effect {
                 device_http_unknown(method)
             } else {
-                error.to_string()
+                let ureq::Error::Transport(error) = ureq::Error::from(error) else {
+                    unreachable!("An I/O error becomes a transport error")
+                };
+                rpc_transport_failure(&error, &rpc_operation(method, &params))
             }
         })?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
@@ -739,6 +771,9 @@ fn device_http_effect(method: &str) -> bool {
             | "devices.start"
             | "devices.boot"
             | "devices.capture"
+            | "devices.control.claim"
+            | "devices.control.release"
+            | "devices.control.renew"
             | "devices.action"
             | "devices.preview"
             | "devices.preview.mobile.start"
@@ -991,8 +1026,8 @@ fn machine_rpc_for_consumer(
                     }
                     Ok(value)
                 }
-                // Both cases are possible only before the request was dispatched.
-                Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
+                // This flag is possible only before the request was dispatched.
+                Err(error) if error.unsupported => rpc(
                     endpoint,
                     &machine.token,
                     Some(&machine.environment_id),
@@ -1039,14 +1074,6 @@ fn machine_rpc_for_consumer(
         }
         response
     })
-}
-
-/// True when the WebSocket request provably never left this process: the Host
-/// does not advertise the method, or the connection is in reconnect back-off
-/// (`RPC_WS_UNAVAILABLE`, never dispatched). HTTP can take over without any risk of
-/// repeating an effect.
-fn ws_failure_allows_http_fallback(error: &WsFailure) -> bool {
-    error.unsupported || (error.code == "RPC_WS_UNAVAILABLE" && !error.uncertain)
 }
 
 fn native_ws_failure(error: WsFailure) -> String {
@@ -1426,10 +1453,15 @@ pub async fn remote_request(
     fresh: Option<bool>,
     allow_connect: Option<bool>,
     expected_environment_id: Option<String>,
+    sync_cycle_id: Option<String>,
 ) -> Result<Value, String> {
+    let sync_effect = if matches!(method.as_str(), "sync.push" | "sync.pull") {
+        let id = sync_cycle_id.as_deref().ok_or("SYNC_OWNER_REQUIRED")?;
+        Some(crate::sync_owner::admit(&window, &machine_id, id)?)
+    } else { None };
     tauri::async_runtime::spawn_blocking(move || {
         let state: State<'_, RemoteConnections> = app.state();
-        remote_request_blocking(
+        let result = remote_request_blocking(
             &app,
             &window,
             &state,
@@ -1439,10 +1471,165 @@ pub async fn remote_request(
             fresh,
             allow_connect,
             expected_environment_id,
-        )
+            None,
+            None,
+        );
+        if let Some(effect) = sync_effect { effect.finish(result.is_ok()); }
+        result
     })
     .await
     .map_err(|e| format!("Remote request task failed: {e}"))?
+}
+
+fn assistant_route_request(route: &crate::session_store::canonical_store::AssistantNativeRoute, op: &str) -> Result<Value, String> {
+    let parts: Vec<String> = serde_json::from_str(&route.key).map_err(|_| "Invalid assistant route")?;
+    if parts.len() != 2 || parts[0] != route.environment_id { return Err("Invalid assistant route".into()); }
+    let text = route.intent.get("text").and_then(Value::as_str).ok_or("Assistant text is unavailable")?;
+    let id = route.intent.get("key").and_then(Value::as_str).ok_or("Assistant request identity is unavailable")?;
+    let mut params = json!({"op":op,"threadId":parts[1].as_str(),"text":text,"idempotencyKey":id});
+    params["expectedHostInstance"] = json!(&route.host_instance);
+    if op == "threads.send" { params["via"] = json!("text"); }
+    if let Some(session) = route.intent.get("sessionId") { params["sessionId"] = session.clone(); }
+    Ok(params)
+}
+
+fn assistant_route_generation(state: &RemoteConnections) -> Result<String, String> {
+    static PROCESS: OnceLock<String> = OnceLock::new();
+    let process = PROCESS.get_or_init(|| uuid::Uuid::new_v4().to_string());
+    Ok(format!("{}:{}", process, state.recovery_routes.capture()?))
+}
+
+fn with_assistant_route_current<T>(app: &AppHandle, route: &crate::session_store::canonical_store::AssistantNativeRoute, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let state: State<'_, RemoteConnections> = app.state();
+    let _guard = state.store.lock().map_err(|_| "Connection store is locked")?;
+    let _route_guard = state.recovery_routes.commit.lock().map_err(|_| "Connection retirement is unavailable")?;
+    if assistant_route_generation(&state)? != route.generation || !read_uncached(&store_path(app)?)?.iter().any(|machine|
+        machine.id == route.machine_id && machine.environment_id == route.environment_id && machine.local_host && ws_fingerprint(machine) == route.fingerprint
+    ) { return Err("The original Host connection changed; the send remains held".into()); }
+    work()
+}
+
+fn assistant_reply_proof(route: &crate::session_store::canonical_store::AssistantNativeRoute, response: &Value, status: bool) -> Result<Value, String> {
+    if status && response.pointer("/sendReceipt/status").and_then(Value::as_str) != Some("settled") {
+        return Err("The original Host has not confirmed this reply".into());
+    }
+    let parts: Vec<String> = serde_json::from_str(&route.key).map_err(|_| "Invalid assistant route")?;
+    let message = response.get("messages").and_then(Value::as_array).and_then(|messages| messages.iter().find(|message|
+        message.get("role").and_then(Value::as_str) == Some("assistant") &&
+        message.get("threadId").and_then(Value::as_str) == parts.get(1).map(String::as_str)
+    )).ok_or("The original Host reply is not confirmed")?;
+    let id = message.get("id").and_then(Value::as_str).filter(|id| !id.is_empty() && id.len() <= 512).ok_or("The original Host reply is not confirmed")?;
+    Ok(json!({"messageId":id}))
+}
+
+fn verify_assistant_instance(app: &AppHandle, window: &tauri::Window, route: &crate::session_store::canonical_store::AssistantNativeRoute) -> Result<(), String> {
+    let state: State<'_, RemoteConnections> = app.state();
+    let response = remote_request_blocking(app, window, &state, route.machine_id.clone(), "assistant.request".into(),
+        json!({"op":"threads.sendIdentity"}), None, Some(true), Some(route.environment_id.clone()),
+        Some(route.fingerprint.clone()), Some(route.generation.clone()))?;
+    if response.pointer("/sendIdentity/instanceId").and_then(Value::as_str) != Some(route.host_instance.as_str()) {
+        return Err("The original Host instance changed; the send remains held".into());
+    }
+    Ok(())
+}
+
+/// Native captures the local Host route and persists it with the claim before sending.
+#[tauri::command]
+pub async fn assistant_native_send(
+    app: AppHandle, window: tauri::Window, page_token: String, key: String,
+    operation_id: String, intent_version: i64, environment_id: String,
+) -> Result<Value, String> {
+    let admission = crate::session_store::canonical_store::admit(&window, &page_token)?;
+    crate::harness::run_blocking("assistant_native_send", move || {
+        let _admission = admission;
+        crate::session_store::canonical_store::register_assistant_preparation(&window, &page_token, &key, &operation_id, intent_version)?;
+        let public = crate::local_host::local_host_connect_blocking(app.clone())?.ok_or("The original Host is unavailable")?;
+        if !public.local_host || public.environment_id != environment_id { return Err("The original Host identity changed".into()); }
+        let state: State<'_, RemoteConnections> = app.state();
+        let (machine, generation) = {
+            let _guard = state.store.lock().map_err(|_| "Connection store is locked")?;
+            let machine = read_uncached(&store_path(&app)?)?.into_iter().find(|machine|
+                machine.id == public.id && machine.environment_id == environment_id && machine.local_host
+            ).ok_or("The original Host is unavailable")?;
+            (machine, assistant_route_generation(&state)?)
+        };
+        let fingerprint = ws_fingerprint(&machine);
+        let identity = remote_request_blocking(&app, &window, &state, machine.id.clone(), "assistant.request".into(),
+            json!({"op":"threads.sendIdentity"}), None, Some(true), Some(environment_id.clone()),
+            Some(fingerprint.clone()), Some(generation.clone()))?;
+        let host_instance = identity.pointer("/sendIdentity/instanceId").and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 512).ok_or("The original Host instance is unavailable")?.to_owned();
+        let route = crate::session_store::canonical_store::prepare_assistant_send(
+            &window, &page_token, &key, &operation_id, intent_version, &machine.id, &environment_id, &fingerprint, &generation, &host_instance,
+        )?;
+        let params = assistant_route_request(&route, "threads.send")?;
+        let response = remote_request_blocking(&app, &window, &state, route.machine_id.clone(), "assistant.request".into(), params,
+            None, Some(true), Some(route.environment_id.clone()), Some(route.fingerprint.clone()), Some(route.generation.clone()))?;
+        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("The original page changed; the result remains held".into()); }
+        let proof = assistant_reply_proof(&route, &response, false)?;
+        with_assistant_route_current(&app, &route, || crate::session_store::canonical_store::record_assistant_proof(&window, &page_token, &route, &proof))?;
+        Ok(response)
+    }).await
+}
+
+#[tauri::command]
+pub async fn assistant_native_finish(window: tauri::Window, page_token: String, key: String, operation_id: String) -> Result<(), String> {
+    let admission = crate::session_store::canonical_store::admit(&window, &page_token)?;
+    crate::harness::run_blocking("assistant_native_finish", move || {
+        let _admission = admission;
+        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
+        if crate::session_store::canonical_store::assistant_send_settled(&window, &key, &operation_id, None)? { return Ok(()); }
+        let route = crate::session_store::canonical_store::assistant_send_route(&window, &key)?;
+        if route.operation_id != operation_id || route.proof.is_none() { return Err("The original Host receipt is unavailable".into()); }
+        verify_assistant_instance(window.app_handle(), &window, &route)?;
+        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
+        with_assistant_route_current(window.app_handle(), &route, || crate::session_store::canonical_store::complete_assistant_send(&window, &page_token, &route))
+    }).await
+}
+
+/// A successor may settle only after Native verifies the captured Host receipt.
+#[tauri::command]
+pub async fn assistant_native_reconcile(app: AppHandle, window: tauri::Window, page_token: String, key: String, request_key: String, operation_id: Option<String>) -> Result<Value, String> {
+    let admission = crate::session_store::canonical_store::admit(&window, &page_token)?;
+    crate::harness::run_blocking("assistant_native_reconcile", move || {
+        let _admission = admission;
+        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
+        if let Some(ref operation_id) = operation_id {
+            if crate::session_store::canonical_store::assistant_send_settled(&window, &key, operation_id, Some(&request_key))? {
+                return Ok(json!({"sendReceipt":{"status":"settled"}}));
+            }
+            if crate::session_store::canonical_store::assistant_send_not_sent(&window, &key, operation_id, &request_key)? {
+                return Ok(json!({"sendReceipt":{"status":"notSent"}}));
+            }
+        }
+        let route = match crate::session_store::canonical_store::assistant_send_route(&window, &key) {
+            Ok(route) => route,
+            Err(error) => {
+                if crate::session_store::canonical_store::release_prepared_assistant(&window, &page_token, &key, &request_key, operation_id.as_deref())? {
+                    return Ok(json!({"sendReceipt":{"status":"notSent"}}));
+                }
+                return Err(error);
+            }
+        };
+        if route.intent.get("key").and_then(Value::as_str) != Some(request_key.as_str()) { return Err("The original send identity changed".into()); }
+        if operation_id.as_ref().is_some_and(|operation_id| operation_id != &route.operation_id) { return Err("The original send identity changed".into()); }
+        with_assistant_route_current(&app, &route, || Ok(()))?;
+        verify_assistant_instance(&app, &window, &route)?;
+        let response = if route.proof.is_some() {
+            json!({"sendReceipt":{"status":"settled"}})
+        } else {
+            let state: State<'_, RemoteConnections> = app.state();
+            let params = assistant_route_request(&route, "threads.sendStatus")?;
+            let result = remote_request_blocking(&app, &window, &state, route.machine_id.clone(), "assistant.request".into(), params,
+                None, Some(true), Some(route.environment_id.clone()), Some(route.fingerprint.clone()), Some(route.generation.clone()))?;
+            let proof = assistant_reply_proof(&route, &result, true)?;
+            with_assistant_route_current(&app, &route, || crate::session_store::canonical_store::record_assistant_proof(&window, &page_token, &route, &proof))?;
+            result
+        };
+        if crate::session_store::canonical_store::page(&window)? != page_token { return Err("CANONICAL_PAGE_STALE".into()); }
+        with_assistant_route_current(&app, &route, || crate::session_store::canonical_store::complete_assistant_send(&window, &page_token, &route))?;
+        Ok(response)
+    }).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1456,19 +1643,13 @@ fn remote_request_blocking(
     fresh: Option<bool>,
     allow_connect: Option<bool>,
     expected_environment_id: Option<String>,
+    expected_fingerprint: Option<String>,
+    expected_generation: Option<String>,
 ) -> Result<Value, String> {
     if !supported_remote_method(&method) {
         return Err("Unsupported remote operation".into());
     }
-    if method == "machine.changes"
-        && params.get("tasksKnown").is_none()
-        && ["sessions", "projects"].iter().all(|key| {
-            params
-                .get(key)
-                .and_then(Value::as_array)
-                .is_some_and(Vec::is_empty)
-        })
-    {
+    if method == "machine.changes" && changes::is_empty_subscription(&params) {
         // Releasing a renderer registration is local. Never start an SSH tunnel
         // or read credentials merely because a disconnected pane closes.
         return state
@@ -1483,6 +1664,12 @@ fn remote_request_blocking(
         &machine_id,
         expected_environment_id.as_deref(),
     )?;
+    if expected_fingerprint.as_deref().is_some_and(|expected| ws_fingerprint(&machine) != expected) {
+        return Err("The original Host connection changed. The outcome remains unknown.".into());
+    }
+    if expected_generation.as_deref().is_some_and(|expected| assistant_route_generation(state).ok().as_deref() != Some(expected)) {
+        return Err("The original Host connection retired. The outcome remains unknown.".into());
+    }
     if fresh == Some(true) && machine.ssh.is_some() {
         state.tunnels.forget_failure(&machine.id);
     }
@@ -1541,6 +1728,9 @@ fn remote_request_blocking(
         {
             state.invalidate_ws(&machine.id);
             return Err("Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.".into());
+        }
+        if expected_generation.as_deref().is_some_and(|expected| assistant_route_generation(state).ok().as_deref() != Some(expected)) {
+            return Err("The original Host connection retired. The outcome remains unknown.".into());
         }
         if let Some(guard) = disclosure
             .lock()
@@ -1728,7 +1918,7 @@ pub fn host_connection_detach(
 #[allow(clippy::too_many_arguments)]
 pub async fn host_connection_request(
     app: AppHandle,
-    window: tauri::Window,
+    window: tauri::WebviewWindow,
     machine_id: String,
     method: String,
     params: Value,
@@ -1737,6 +1927,8 @@ pub async fn host_connection_request(
     response_timeout_ms: Option<u64>,
     allow_connect: Option<bool>,
 ) -> Result<WsReply, WsFailure> {
+    let issuer = crate::control::receipts::capture(&window)
+        .map_err(|_| WsFailure::local("RPC_WS_DETACHED", "Native window is unavailable"))?;
     run_ws_blocking("host_connection_request", move || {
         let state = app.state::<RemoteConnections>();
         if !HostWsBroker::supports_method(&method) {
@@ -1759,6 +1951,7 @@ pub async fn host_connection_request(
                     command_id: command_id.clone(),
                     response_timeout: response_timeout_ms.map(std::time::Duration::from_millis),
                     absolute_deadline: None,
+                    issuer: Some(issuer.clone()),
                 },
             )
         });
@@ -2374,6 +2567,11 @@ pub(crate) fn conversation_machine_call_pinned(
             | "devices.start"
             | "devices.boot"
             | "devices.capture"
+            | "devices.control.status"
+            | "devices.control.claim"
+            | "devices.control.release"
+            | "devices.control.renew"
+            | "devices.inspect"
             | "devices.action"
     ) {
         return Err("Unsupported paired device operation".into());
@@ -2543,257 +2741,9 @@ fn social_peer_endpoint(value: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
-fn supported_remote_method(method: &str) -> bool {
-    matches!(
-        method,
-        "social.request"
-            | "assistant.request"
-            | "desktop.request"
-            | "desktop.helper.request"
-            | "workspaces.prepare"
-            | "workspaces.get"
-            | "workspaces.list"
-            | "workspaces.resume"
-            | "workspaces.finish"
-            | "workspaces.close"
-            | "workspaces.exactGitRewind.get"
-            | "workspaces.exactGitRewind.set"
-            | "projects.workspacePolicy.get"
-            | "projects.workspacePolicy.update"
-            | "workspaces.featureClaims.list"
-            | "workspaces.featureClaims.acquire"
-            | "workspaces.featureClaims.release"
-            | "sessions.rewind.plan"
-            | "sessions.rewind.apply"
-            | "sessions.rewind.undo"
-            | "sessions.files.revertPlan"
-            | "sessions.files.revert"
-            | "workspaces.delivery.review"
-            | "workspaces.delivery.merge"
-            | "workspaces.delivery.publish"
-            | "workspaces.cleanup.plan"
-            | "workspaces.cleanup.apply"
-            | "workspaces.cleanup.status"
-            | "workspaces.storage.status"
-            | "workspaces.pin"
-            | "voice.local.inspect"
-            | "voice.local.setup"
-            | "voice.local.setupStatus"
-            | "voice.local.start"
-            | "voice.local.transcribe"
-            | "voice.local.keepAlive"
-            | "voice.local.release"
-            | "voice.local.speak"
-            | "voice.local.speechNext"
-            | "voice.local.speechCancel"
-            | "voice.realtime.secret"
-            | "voice.tools.list"
-            | "voice.tools.call"
-            | "voice.cloud.status"
-            | "voice.cloud.setKey"
-            | "social.oauth.availability"
-            | "social.oauth.begin"
-            | "social.oauth.status"
-            | "social.oauth.select"
-            | "social.token.connect"
-            | "social.token.inspect"
-            | "social.tiktok.creator"
-            | "social.browser.availability"
-            | "social.browser.begin"
-            | "social.browser.status"
-            | "social.browser.profile.read"
-            | "social.browser.profile.update"
-            | "social.browser.profile.follow"
-            | "social.browser.workflow.begin"
-            | "social.browser.workflow.status"
-            | "social.browser.workflow.cancel"
-            | "social.browser.registration.advance"
-            | "social.browser.registration.review"
-            | "social.browser.registration.submit"
-            | "social.browser.registration.reconcile"
-            | "social.monitoring.status"
-            | "social.media.upload"
-            | "browser.claim"
-            | "browser.close"
-            | "browser.frame"
-            | "browser.input"
-            | "browser.open"
-            | "browser.resize"
-            | "browser.release"
-            | "browser.status"
-            | "browser.setup"
-            | "browser.annotation.start"
-            | "browser.annotation.hover"
-            | "browser.annotation.select"
-            | "browser.annotation.clear"
-            | "browser.annotation.read"
-            | "browser.annotation.cancel"
-            | "devServers.list"
-            | "devServers.details"
-            | "devServers.start"
-            | "devServers.stop"
-            | "devServers.kill"
-            | "devServers.restart"
-            | "devServers.logs"
-            | "devServers.openExternal"
-            | "terminals.list"
-            | "terminals.create"
-            | "terminals.read"
-            | "terminals.write"
-            | "terminals.interrupt"
-            | "terminals.close"
-            | "runtimeLogs.read"
-            | "runtimeLogs.sources"
-            | "runtimeLogs.monitors.list"
-            | "runtimeLogs.monitors.start"
-            | "runtimeLogs.monitors.stop"
-            | "resources.read"
-            | "devices.status"
-            | "devices.preflight"
-            | "devices.preview"
-            | "devices.preview.status"
-            | "devices.setup"
-            | "devices.start"
-            | "devices.stop"
-            | "devices.list"
-            | "devices.boot"
-            | "devices.capture"
-            | "devices.action"
-            | "environment.describe"
-            | "mobile.access.status"
-            | "mobile.access.enable"
-            | "mobile.access.disable"
-            | "tunnels.status"
-            | "tunnels.start"
-            | "tunnels.stop"
-            | "tunnels.credential"
-            | "mobile.pairing.create"
-            | "mobile.pairing.status"
-            | "mobile.pairing.cancel"
-            | "machine.changes"
-            | "commands.status"
-            | "projects.list"
-            | "mcp.tokens.create"
-            | "mcp.tokens.list"
-            | "mcp.tokens.revoke"
-            | "projects.browse"
-            | "projects.createDirectory"
-            | "projects.open"
-            | "models.list"
-            | "sessions.list"
-            | "sessions.update"
-            | "sessions.delete"
-            | "sessions.sync"
-            | "sessions.page"
-            | "sessions.block"
-            | "sessions.syncChunk"
-            | "sessions.adopted"
-            | "sessions.desktopLive"
-            | "sessions.queue.get"
-            | "sessions.queue.change"
-            | "sessions.queue.claim"
-            | "sessions.queue.finish"
-            | "sessions.queue.lease"
-            | "sessions.queue.release"
-            | "sessions.runLease"
-            | "commands.dispatch"
-            | "attachments.upload"
-            | "attachments.status"
-            | "attachments.read"
-            | "attachments.claim"
-            | "attachments.claims"
-            | "attachments.release"
-            | "devices.revokeSelf"
-            | "git.diff"
-            | "git.branches"
-            | "git.switch"
-            | "git.createBranch"
-            | "git.worktrees"
-            | "git.worktreeCreate"
-            | "files.read"
-            | "files.list"
-            | "files.index"
-            | "workspace.run"
-            | "files.search"
-            | "files.searchContent"
-            | "files.create"
-            | "files.write"
-            | "git.index"
-            | "git.fileDiff"
-            | "git.action"
-            | "sync.pull"
-            | "sync.push"
-            | "shell.profiles"
-            | "shell.setProfile"
-            | "sessions.get"
-            | "automations.list"
-            | "automations.preview"
-            | "automations.save"
-            | "automations.delete"
-            | "automations.runs"
-            | "automations.runNow"
-            | "crews.list"
-            | "crews.schema"
-            | "crews.inspect"
-            | "crews.save"
-            | "crews.delete"
-            | "crews.deleteRun"
-            | "crews.agent.save"
-            | "crews.agent.delete"
-            | "crews.start"
-            | "crews.get"
-            | "crews.assign"
-            | "crews.request"
-            | "crews.resolve"
-            | "crews.respond"
-            | "crews.answer"
-            | "crews.pause"
-            | "crews.stop"
-            | "crews.resume"
-            | "crews.accept"
-            | "crews.finish"
-            | "tasks.list"
-            | "tasks.snapshotWithCursor"
-            | "tasks.events"
-            | "tasks.preflight"
-            | "tasks.evaluation.save"
-            | "tasks.save"
-            | "tasks.move"
-            | "tasks.start"
-            | "tasks.reorder"
-            | "tasks.retarget"
-            | "tasks.notes.read"
-            | "tasks.notes.resolve"
-            | "tasks.review.recheck"
-            | "tasks.delete"
-            | "sprints.list"
-            | "sprints.get"
-            | "sprints.create"
-            | "sprints.update"
-            | "sprints.start"
-            | "sprints.complete"
-            | "sprints.archive"
-            | "sprints.plan"
-            | "sprints.report"
-            | "sprints.ingest"
-            | "sprints.goalContext"
-            | "goals.list"
-            | "goals.final-review.recheck"
-            | "goals.create"
-            | "goals.update"
-            | "goals.approve"
-            | "goals.replan"
-            | "goals.cancel"
-            | "goals.delete"
-            | "stewards.list"
-            | "stewards.save"
-            | "stewards.delete"
-            | "stewards.runNow"
-            | "stewards.decline"
-            | "host.settings.get"
-            | "host.settings.save"
-    )
-}
+#[path = "remote/method_catalog.rs"]
+mod method_catalog;
+use method_catalog::supported_remote_method;
 
 /// A machine set up again: it keeps its id, so its projects and sessions stay
 /// linked. Added anew from another address (its Tailscale one, say), it keeps
@@ -3185,29 +3135,12 @@ mod recovery_ws_tests;
 #[cfg(test)]
 mod tests {
     #[test]
-    fn reconnect_backoff_failures_fall_back_to_http_but_remote_failures_do_not() {
-        use crate::host_ws::WsFailure;
-        let unavailable = WsFailure::local("RPC_WS_UNAVAILABLE", "reconnecting");
-        assert!(super::ws_failure_allows_http_fallback(&unavailable));
-        assert!(super::ws_failure_allows_http_fallback(
-            &WsFailure::unsupported()
-        ));
-        let mut sent = WsFailure::local("RPC_WS_UNAVAILABLE", "reconnecting");
-        sent.uncertain = true;
-        assert!(!super::ws_failure_allows_http_fallback(&sent));
-        assert!(!super::ws_failure_allows_http_fallback(&WsFailure::local(
-            "RPC_WS_REMOTE",
-            "rejected"
-        )));
-    }
-
-    #[test]
     fn public_device_reply_retirement_preserves_post_effect_unknown_classification() {
         use crate::host_ws::tests::{accept, hello, next, result, Server};
         for (method, params, value, effect) in [
             (
                 "devices.action",
-                serde_json::json!({"deviceId":"device","action":{"type":"home"}}),
+                serde_json::json!({"deviceId":"device","leaseId":"original-lease","requestId":"original-action","action":{"type":"home"}}),
                 serde_json::json!("accepted"),
                 true,
             ),
@@ -4210,6 +4143,19 @@ mod tests {
     }
 
     #[test]
+    fn run_lease_acquire_outlasts_host_writer_retirement() {
+        // The Host waits up to 20 s for retirement; the renderer gives up at 25 s.
+        assert!(
+            rpc_timeout("sessions.runLease", &json!({"action":"acquire"}))
+                > std::time::Duration::from_secs(25)
+        );
+        assert_eq!(
+            rpc_timeout("sessions.runLease", &json!({"action":"release"})),
+            INTERACTIVE_LEASE_RPC_TIMEOUT
+        );
+    }
+
+    #[test]
     fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
         use std::time::Duration;
         for method in [
@@ -4406,6 +4352,66 @@ mod tests {
         assert!(headers[0].ends_with("Bearer first"));
         assert!(headers[1].ends_with("Bearer second"));
     }
+    #[test]
+    fn rpc_body_read_failures_retain_transport_diagnostics() {
+        use std::io::{BufRead, BufReader};
+        use std::{net::TcpListener, thread, time::Duration};
+
+        for (method, stall, expected) in [
+            ("environment.describe", false, "RPC_HOST_UNAVAILABLE"),
+            ("environment.describe", true, "RPC_TIMEOUT"),
+            ("devices.action", false, "RPC_DEVICE_OUTCOME_UNKNOWN"),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0;
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if line.to_ascii_lowercase().starts_with("content-length:") {
+                        size = line.split(':').nth(1).unwrap().trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; size];
+                reader.read_exact(&mut body).unwrap();
+                // A partial response after valid headers must retain the same
+                // transport classification as a failure before those headers.
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: 128\r\nConnection: close\r\n\r\n{{\"result\":\"response-secret"
+                )
+                .unwrap();
+                stream.flush().unwrap();
+                if stall {
+                    thread::sleep(Duration::from_millis(500));
+                }
+            });
+            let error = super::rpc_timed(
+                &endpoint,
+                "request-secret",
+                Some("env"),
+                method,
+                json!({}),
+                Duration::from_millis(250),
+            )
+            .unwrap_err();
+            server.join().unwrap();
+            assert!(error.contains(expected), "{method}: {error}");
+            assert!(error.contains(method), "{error}");
+            assert!(!error.contains("secret"), "{error}");
+            assert_ne!(error, super::CONNECTION_REFUSED);
+        }
+    }
+
     #[test]
     fn a_slow_host_does_not_look_like_a_dead_tunnel() {
         use std::{net::TcpListener, thread, time::Duration};

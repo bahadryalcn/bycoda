@@ -2,15 +2,15 @@
 
 All code paths are repository-relative.
 
-| Area | Owner |
-| --- | --- |
-| Page/search/reveal | `src/features/settings/ui/ArchiveSettings.tsx`, `SettingsView.tsx`, `SettingsSearch.tsx`; `src/features/settings/model/settings.ts` |
-| Project archive state | `src/features/projects/model/recents.ts`, `projectData.ts`; `src/features/workspace/model/tabGroups.ts` |
-| Project removal | `src/app/workspace/projects/useProjectRemoval.ts`; `src/features/projects/ui/RemoveProjectDialog.tsx` |
-| Sidebar/archive filter | `src/features/sessions/model/sessionFilters.ts`; `src/features/sessions/data/sessionHistory.ts`; `src/app/shell/Sidebar.tsx` |
-| History/load/open | `src/app/workspace/sessions/useHistoryRefresh.ts`, `useOpenSessionActions.ts`; `src/features/sessions/data/sessionStore.ts` |
+| Area                   | Owner                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page/search/reveal     | `src/features/settings/ui/ArchiveSettings.tsx`, `SettingsView.tsx`, `SettingsSearch.tsx`; `src/features/settings/model/settings.ts`                           |
+| Project archive state  | `src/features/projects/model/recents.ts`, `projectData.ts`; `src/features/workspace/model/tabGroups.ts`                                                       |
+| Project removal        | `src/app/workspace/projects/useProjectRemoval.ts`; `src/features/projects/ui/RemoveProjectDialog.tsx`                                                         |
+| Sidebar/archive filter | `src/features/sessions/model/sessionFilters.ts`; `src/features/sessions/data/sessionHistory.ts`; `src/app/shell/Sidebar.tsx`                                  |
+| History/load/open      | `src/app/workspace/sessions/useHistoryRefresh.ts`, `useOpenSessionActions.ts`; `src/features/sessions/data/sessionStore.ts`                                   |
 | Session archive/delete | `src/app/workspace/sessions/useHistorySessionArchive.ts`, `useHistorySessionDelete.ts`; `src/features/sessions/model/archiveShortcut.ts`, `sessionRemoval.ts` |
-| Confirmation/access | `src/shared/ui/ConfirmMorph.tsx`; `src/app/workspace/lifecycle/useProjectLockRedirect.ts`; `src/features/group-lock/model/lockState.ts` |
+| Confirmation/access    | `src/shared/ui/ConfirmMorph.tsx`; `src/app/workspace/lifecycle/useProjectLockRedirect.ts`; `src/features/group-lock/model/lockState.ts`                       |
 
 ## Data and routing
 

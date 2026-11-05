@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
 import { gateRunLease } from "./submitRunLease";
+import { gateProjectLocation } from "./submitProjectLocation";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 import { getSessions, resetSessionsStore } from "../../../../features/sessions/model/sessionsStore";
 import { newSession } from "../../../../features/sessions/model/session";
@@ -19,6 +20,9 @@ vi.mock("../../../../features/connections/model/runLeaseClient", () => ({
   acquireRunLease: client.acquire,
   releaseRunLease: client.release,
   isRunLeasePending: () => false,
+}));
+vi.mock("../../../../features/projects/model/projectLocation", () => ({
+  synchronizeProjectLocation: async (path: string) => ({ path, identity: "project", moved: false }),
 }));
 
 const session = { ...newSession("codex", "/fake"), id: "chat" };
@@ -71,7 +75,10 @@ it("does not treat a still-pending initial ownership probe as permission to star
   expect(start).not.toHaveBeenCalled();
   expect(client.acquire).not.toHaveBeenCalled();
   expect(getSessions()[0].queueStatus).toBe("paused");
-  expect(getSessions()[0].blocks.at(-1)).toMatchObject({ notice: "error", text: expect.stringContaining("discovery is still pending") });
+  expect(getSessions()[0].blocks.at(-1)).toMatchObject({
+    notice: "error",
+    text: expect.stringContaining("discovery is still pending"),
+  });
 });
 
 it("starts the turn once the lease is granted, and keeps it for the turn", async () => {
@@ -102,7 +109,10 @@ it("starts the turn when the host cannot be asked", async () => {
 });
 
 it("retains an unsent message and displays retirement failure without starting or automatically queueing it", async () => {
-  client.acquire.mockResolvedValue({ kind: "failed", text: "Previous Host writer retirement is unconfirmed" });
+  client.acquire.mockResolvedValue({
+    kind: "failed",
+    text: "Previous Host writer retirement is unconfirmed",
+  });
   const start = vi.fn(() => true);
   const request = input();
   request.attachments = [{ id: "retained", name: "draft.txt" } as never];
@@ -110,19 +120,72 @@ it("retains an unsent message and displays retirement failure without starting o
   expect(start).not.toHaveBeenCalled();
   expect(client.release).not.toHaveBeenCalled();
   const current = getSessions()[0];
-  expect(current.queuedMessages).toMatchObject([{ text: "typed on the desktop", attachments: request.attachments }]);
+  expect(current.queuedMessages).toMatchObject([
+    { text: "typed on the desktop", attachments: request.attachments },
+  ]);
   expect(current.queueStatus).toBe("paused");
-  expect(current.blocks.at(-1)).toMatchObject({ role: "system", notice: "error", text: "Previous Host writer retirement is unconfirmed" });
+  expect(current.blocks.at(-1)).toMatchObject({
+    role: "system",
+    notice: "error",
+    text: "Previous Host writer retirement is unconfirmed",
+  });
   expect(current.busy).toBeFalsy();
 });
+
+it.each(["empty composer", "newer draft", "unmounted composer"])(
+  "recovers a retirement refusal once across project preparation with %s",
+  async (state) => {
+    client.acquire.mockResolvedValue({
+      kind: "failed",
+      text: "Host writer retirement unconfirmed",
+    });
+    const onSendRejected =
+      state === "unmounted composer" ? undefined : vi.fn(() => state === "empty composer");
+    const request = input({ onSendRejected });
+    request.attachments = [{ id: "retained", name: "draft.txt" } as never];
+    const start = vi.fn(() => true);
+    const nestedContext = {
+      ...ctx,
+      applyProjectLocationChange: vi.fn(),
+      refs: {
+        ...ctx.refs,
+        turnGen: { current: new Map() },
+        projectLocationSyncs: { current: new Map() },
+        submitAfterProjectSyncRef: {
+          current: (
+            sessionId: string,
+            text: string,
+            attachments: SubmitInput["attachments"],
+            options: SubmitInput["options"],
+          ) => gateRunLease(nestedContext, { sessionId, text, attachments, options }, pre, start)!,
+        },
+      },
+    } as unknown as SubmitDeps;
+    expect(await gateProjectLocation(nestedContext, request, pre)).toBe(false);
+    expect(start).not.toHaveBeenCalled();
+    if (onSendRejected) expect(onSendRejected).toHaveBeenCalledOnce();
+    const queued = getSessions()[0].queuedMessages ?? [];
+    expect(queued).toHaveLength(state === "empty composer" ? 0 : 1);
+    if (queued.length) {
+      expect(queued[0]).toMatchObject({ text: request.text, attachments: request.attachments });
+      expect(getSessions()[0].queueStatus).toBe("paused");
+    }
+  },
+);
 
 it("reports managed retirement failure to its caller without creating an interactive queue row", async () => {
   client.acquire.mockResolvedValue({ kind: "failed", text: "Retirement failed" });
   const onSettled = vi.fn();
   const start = vi.fn(() => true);
-  expect(await gateRunLease(ctx, input({ managed: true, onSettled } as never), pre, start)).toBe(false);
+  expect(await gateRunLease(ctx, input({ managed: true, onSettled } as never), pre, start)).toBe(
+    false,
+  );
   expect(start).not.toHaveBeenCalled();
-  expect(onSettled).toHaveBeenCalledWith({ status: "failed", text: "", error: "Retirement failed" });
+  expect(onSettled).toHaveBeenCalledWith({
+    status: "failed",
+    text: "",
+    error: "Retirement failed",
+  });
   expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
 });
 

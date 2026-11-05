@@ -235,9 +235,7 @@ export function SprintReports({
             ) : undefined
           }
         />
-        {error ? (
-          <InlineError>{error}</InlineError>
-        ) : null}
+        {error ? <InlineError>{error}</InlineError> : null}
       </section>
     );
   return (
@@ -248,9 +246,7 @@ export function SprintReports({
           {t("Refresh")}
         </Button>
       </div>
-      {error ? (
-        <InlineError>{error}</InlineError>
-      ) : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {!sprintId ? (
         <div className="sprint-report-empty">
           <p className="sprint-muted">

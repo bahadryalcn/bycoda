@@ -167,7 +167,7 @@ function PendingPresentation({
         </p>
       )}
       <div className={styles.footer}>
-        <Button size="sm" disabled={pending} onClick={() => void retry()}>
+        <Button size="sm" loading={pending} disabled={pending} onClick={() => void retry()}>
           {t("Retry")}
         </Button>
       </div>
@@ -339,7 +339,11 @@ function OwnerQuestionCard({
   const snoozed = !held && value.status === "snoozed" && !expanded;
   const stale = value.sourceCurrent === false;
   return (
-    <article className={styles.card} aria-label={question.prompt.title ?? t("Question")}>
+    <article
+      className={styles.card}
+      data-question-form={(ready && !snoozed && !stale) || undefined}
+      aria-label={question.prompt.title ?? t("Question")}
+    >
       {snoozed || stale ? (
         <>
           <p className={styles.title}>
@@ -358,6 +362,7 @@ function OwnerQuestionCard({
           <div className={styles.footer}>
             <Button
               size="sm"
+              loading={pending}
               disabled={pending}
               onClick={stale ? () => void refresh() : () => setExpanded(true)}
             >
@@ -367,6 +372,7 @@ function OwnerQuestionCard({
         </>
       ) : ready ? (
         <QuestionForm
+          attachmentsSupported={false}
           prompt={{
             ...prompt,
             ...(pending

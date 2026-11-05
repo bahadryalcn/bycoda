@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LastSessionsRows, LastSessionsSection } from "./LastSessionsSection";
 import { pathKey } from "../../shared/lib/paths";
 import { formatRelative } from "../../features/sessions/model/recentSessions";
+import { resetRetainedState } from "../../shared/hooks/useRetainedState";
 const data = vi.hoisted(() => ({
   stored: [
     {
@@ -35,6 +36,15 @@ const appearance = {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  resetRetainedState();
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 64 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -44,6 +54,7 @@ afterEach(async () => {
   container.remove();
   localStorage.clear();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -118,9 +129,9 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   const session = container.querySelector<HTMLButtonElement>('button[aria-current="true"]')!;
   expect(session.getAttribute("data-button-selected")).toBe("true");
   await act(async () => session.click());
-  expect(open).toHaveBeenCalledExactlyOnceWith("recent-one");
+  expect(open).toHaveBeenCalledExactlyOnceWith("recent-one", "/work/project");
   await act(async () => session.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-  expect(open).toHaveBeenLastCalledWith("recent-one", { keepOpen: true });
+  expect(open).toHaveBeenLastCalledWith("recent-one", "/work/project", { keepOpen: true });
   const pinButton = container.querySelector<HTMLButtonElement>('button[aria-label="Pin session"]')!;
   await act(async () => pinButton.click());
   expect(pin).toHaveBeenCalledTimes(1);
@@ -132,6 +143,39 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   );
   expect(document.querySelector('[role="menu"]')).toBeTruthy();
   expect(document.querySelector('[role="menu"]')?.textContent).toContain("Open project");
+});
+
+it("opens the global workspace from its title independently of collapse, even when empty", async () => {
+  const original = data.stored;
+  data.stored = [];
+  const open = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(LastSessionsSection, {
+          ...appearance,
+          source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+          projectKeys: new Set([pathKey("/work/project")]),
+          enabled: true,
+          searchActive: false,
+          onOpenProject: vi.fn(),
+          onOpenLastSessions: open,
+          lastSessionsOpen: true,
+        }),
+      ),
+    );
+    const title = container.querySelector<HTMLButtonElement>('button[aria-current="page"]')!;
+    const collapse = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(title.textContent).toContain("Last sessions");
+    await act(async () => collapse.click());
+    expect(open).not.toHaveBeenCalled();
+    expect(collapse.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => title.click());
+    expect(open).toHaveBeenCalledOnce();
+    expect(collapse.getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    data.stored = original;
+  }
 });
 
 it("applies the selected total count to pinned rows and persists the new three-row option", async () => {
@@ -204,4 +248,33 @@ it("marks only the working status dot so the root motion and focus state can pau
   expect(css).toMatch(
     /html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
   );
+});
+
+it("bounds a large Last sessions collection while retaining its row actions", async () => {
+  const rows = Array.from({ length: 180 }, (_, index) => ({
+    ...data.stored[0],
+    id: `large-${index}`,
+    title: `Large session ${index}`,
+    harness: "codex",
+    updatedAt: index + 1,
+    pinnable: true,
+    remote: false,
+  }));
+  await act(async () =>
+    root.render(
+      createElement(LastSessionsRows, {
+        ...appearance,
+        rows,
+        searchActive: false,
+        onOpenSession: vi.fn(),
+        onOpenProject: vi.fn(),
+        onTogglePin: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.querySelector('[data-continuous-list="last-sessions:rail"]')).not.toBeNull();
+  const mountedRows = container.querySelectorAll('[role="listitem"]').length;
+  expect(mountedRows).toBeGreaterThan(0);
+  expect(mountedRows).toBeLessThan(rows.length);
+  expect(container.textContent).toContain("Large session 0");
 });

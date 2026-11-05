@@ -3,13 +3,17 @@ import { mkdir } from "node:fs/promises";
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
-    test(`remote connection recovery has one retry owner at ${width}px ${theme}`, async ({ page }) => {
+    test(`remote connection recovery has one retry owner at ${width}px ${theme}`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.addInitScript((value) => {
         document.documentElement.classList.toggle("theme-light", value === "light");
       }, theme);
-      await page.goto("/tests/browser/workspace-rewind.html?remoteRewind&remoteRecovery", { waitUntil: "networkidle" });
+      await page.goto("/tests/browser/workspace-rewind.html?remoteRewind&remoteRecovery", {
+        waitUntil: "networkidle",
+      });
       await page.evaluate((value) => {
         document.documentElement.classList.toggle("theme-light", value === "light");
       }, theme);
@@ -22,7 +26,9 @@ for (const width of [1280, 800])
       await expect(reconnect).toHaveCount(0);
       const draft = page.getByRole("textbox").first();
       await draft.fill("Keep this unsent draft through reconnect.");
-      await page.evaluate(() => (window as unknown as { breakRemoteRecovery: () => void }).breakRemoteRecovery());
+      await page.evaluate(() =>
+        (window as unknown as { breakRemoteRecovery: () => void }).breakRemoteRecovery(),
+      );
       await expect(reconnect).toHaveCount(1);
       await expect(page.getByRole("button", { name: /^Retry/ })).toHaveCount(0);
       await expect(page.getByText("The first change is retained.", { exact: true })).toBeVisible();
@@ -34,17 +40,27 @@ for (const width of [1280, 800])
       await expect(reconnect).toHaveCount(0);
       await expect(draft).toHaveValue("Keep this unsent draft through reconnect.");
       await expect(page.getByText("The first change is retained.", { exact: true })).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      expect(await page.evaluate(() =>
-        (window as unknown as { rewindFixtureCalls: Array<{ method: string }> }).rewindFixtureCalls.filter((call) => call.method === "commands.dispatch"),
-      )).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      expect(
+        await page.evaluate(() =>
+          (
+            window as unknown as { rewindFixtureCalls: Array<{ method: string }> }
+          ).rewindFixtureCalls.filter((call) => call.method === "commands.dispatch"),
+        ),
+      ).toEqual([]);
       await page.screenshot({ path: `${captures}/${theme}-${width}-recovered.png` });
-      await page.evaluate(() => (window as unknown as { breakWorkspacePath: () => void }).breakWorkspacePath());
+      await page.evaluate(() =>
+        (window as unknown as { breakWorkspacePath: () => void }).breakWorkspacePath(),
+      );
       const retryWorkspace = page.getByRole("button", { name: "Retry workspace", exact: true });
       await expect(retryWorkspace).toHaveCount(1);
       await expect(reconnect).toHaveCount(0);
       await page.screenshot({ path: `${captures}/${theme}-${width}-workspace.png` });
-      await page.evaluate(() => (window as unknown as { repairWorkspacePath: () => void }).repairWorkspacePath());
+      await page.evaluate(() =>
+        (window as unknown as { repairWorkspacePath: () => void }).repairWorkspacePath(),
+      );
       await retryWorkspace.click();
       await expect(retryWorkspace).toHaveCount(0);
     });

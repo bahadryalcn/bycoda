@@ -97,6 +97,23 @@ it("transcribes the unfinished phrase on stop, then releases the microphone and 
   expect(events.state).toHaveBeenLastCalledWith("idle");
 });
 
+it("captures the selected input used by the microphone permission check", async () => {
+  const events = setup();
+  const dictation = new Dictation(events, "tr", { natural: false }, "selected-mic");
+  await dictation.start();
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      deviceId: { exact: "selected-mic" },
+    },
+    video: false,
+  });
+  dictation.cancel();
+  expect(track.stop).toHaveBeenCalled();
+});
+
 it("reports a start failure and leaves nothing running", async () => {
   const events = setup();
   backend.start.mockRejectedValueOnce("Voice setup is incomplete: Whisper model.");
@@ -180,4 +197,51 @@ it("reports real microphone level, silence and zero on stop without accepting st
   events.level.mockClear();
   captured({ data: voicedFrame().buffer });
   expect(events.level).not.toHaveBeenCalled();
+});
+
+it("keeps the lease alive while stop drains and clears the heartbeat afterwards", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = setup();
+    let finish!: (value: unknown) => void;
+    backend.transcribe.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    const dictation = new Dictation(events, "tr");
+    await dictation.start();
+    await vi.advanceTimersByTimeAsync(0);
+    speak();
+    pause();
+    const stopped = dictation.stop();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(backend.keepAlive).toHaveBeenCalledWith("dictation");
+    finish({ text: "tamam", language: "tr", inferenceMs: 1 });
+    await stopped;
+    expect(vi.getTimerCount()).toBe(0);
+    backend.keepAlive.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(backend.keepAlive).not.toHaveBeenCalled();
+    expect(backend.release).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("reports a dropped lease instead of stopping silently, releasing once", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = setup();
+    const dictation = new Dictation(events, "tr");
+    await dictation.start();
+    await vi.advanceTimersByTimeAsync(0);
+    backend.keepAlive.mockRejectedValueOnce(new Error("Voice lease expired."));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(events.error).toHaveBeenCalledExactlyOnceWith("Voice lease expired.");
+    expect(events.state).toHaveBeenLastCalledWith("idle");
+    expect(track.stop).toHaveBeenCalled();
+    expect(backend.release).toHaveBeenCalledExactlyOnceWith("dictation");
+    expect(vi.getTimerCount()).toBe(0);
+    dictation.cancel();
+    expect(backend.release).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });

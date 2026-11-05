@@ -6,7 +6,7 @@ import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
-import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
+import { ConnectionsSettings } from "../../connections/public/ConnectionsSettings";
 
 import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
@@ -21,9 +21,9 @@ import { SidebarUpdateFooter } from "../../../app/shell/SidebarUpdate";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { type RecentProject } from "../../projects/model/recents";
+import { type RecentProject } from "../../projects";
 
-import type { SessionSummary } from "../../sessions/data/sessionStore";
+import type { SessionSummary, Session } from "../../sessions";
 
 import {
   settingsSectionsByGroup,
@@ -35,9 +35,9 @@ import {
 
 import { SkillsPage } from "../../skills/ui/SkillsPage";
 
-import { WorktreesPage } from "../../source-control/ui/WorktreesPage";
-import { removeWorktree, type RemoveWorktree } from "../../source-control/model/worktrees";
-import type { Session } from "../../sessions/model/session";
+import { WorktreesPage } from "../../source-control/public/WorktreesPage";
+import { removeWorktree, type RemoveWorktree } from "../../source-control/public/worktrees";
+
 import {
   settingDomId,
   RevealedSetting,
@@ -113,7 +113,7 @@ type Props = {
   onDeleteSession: (sessionId: string) => void;
   /** Whether `sessions` is complete; Archive must not read loading or failed history as empty. */
   sessionsStatus?: ComponentProps<typeof ArchivePage>["sessionsStatus"];
-  onRestoreProject?: (path: string) => void;
+  onRestoreProject?: (path: string) => void | Promise<void>;
   onDeleteProject?: (path: string) => void | Promise<void>;
   onOpenWhatsNew: (version: string) => void;
   collapsedProjectRailMode?: CollapsedProjectRailMode;
@@ -437,11 +437,7 @@ export function SettingsView({
             label={t("Settings categories")}
           >
             {categoryGroups.map((group) => (
-              <div
-                key={group.id}
-                className="bycoda-settings-category-group"
-                role="presentation"
-              >
+              <div key={group.id} className="bycoda-settings-category-group" role="presentation">
                 <span className="bycoda-settings-category-label" aria-hidden="true">
                   {group.label}
                 </span>
@@ -510,7 +506,9 @@ export function SettingsView({
                         data-settings-section={section}
                         className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
                       >
-                        {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
+                        {section === "general" ? (
+                          <GeneralPage onOpenWhatsNew={onOpenWhatsNew} />
+                        ) : null}
                         {section === "crews" ? (
                           <div className="settings-topics">
                             <CrewsSettings
@@ -531,14 +529,18 @@ export function SettingsView({
                             <ConnectionsSettings />
                           </>
                         ) : null}
-                        {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
+                        {section === "appearance" ? (
+                          <AppearancePage appearance={appearance} />
+                        ) : null}
                         {section === "workspace" ? (
                           <WorkspacePage>
                             <Group title={t("Explorer")} layout="full">
                               <Row
                                 id="show-excluded-files"
                                 label={t("Show excluded files")}
-                                feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
+                                feedback={
+                                  <AppearanceSaveFeedback settingIds={["show-excluded-files"]} />
+                                }
                                 description={t(
                                   "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
                                 )}
@@ -575,7 +577,9 @@ export function SettingsView({
                         {section === "keybindings" ? <KeybindingsPage /> : null}
                         {section === "terminal" ? <TerminalPage /> : null}
                         {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
-                        {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
+                        {section === "providers" ? (
+                          <ProvidersPage cwd={cwd} recents={recents} />
+                        ) : null}
                         {section === "usage" ? <UsagePage /> : null}
                         {section === "limits" ? <UsagePage limitsOnly /> : null}
                         {section === "worktrees" ? (

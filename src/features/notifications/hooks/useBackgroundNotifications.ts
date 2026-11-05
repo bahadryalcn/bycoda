@@ -1,5 +1,5 @@
-import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
+export { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import { useEffect, useRef } from "react";
 import {
   backgroundMachines,
@@ -19,42 +19,6 @@ import {
 import { loadNotificationsEnabled, notifyBackground } from "../model/notifications";
 
 const POLL_MS = 60_000;
-
-/**
- * A window that hosts a workspace: `main`, the `window-N` windows that Cmd+N,
- * pop-outs and tool windows open, and the hidden `quick-session-*` windows the
- * quick composer starts a chat in (`build_session_window` in
- * `src-tauri/src/window.rs`). The always-present hidden desktop-control
- * indicator, voice overlays and the quick composer are not: they sort before
- * `main`, and letting them into the election left no window elected at all.
- * Mirrors `is_workspace_window` in `src-tauri/src/window.rs`.
- */
-export function isWorkspaceWindowLabel(label: string): boolean {
-  return label === "main" || /^window-\d+$/.test(label) || label.startsWith("quick-session-");
-}
-
-/** Only one workspace window watches, so each change is announced once. */
-export async function isLeadWindow(): Promise<boolean> {
-  let own: string;
-  try {
-    own = getCurrentWindow().label;
-  } catch {
-    return false;
-  }
-  if (!isWorkspaceWindowLabel(own)) return false;
-  try {
-    const labels = (await getAllWebviewWindows())
-      .map((window) => window.label)
-      .filter(isWorkspaceWindowLabel)
-      .sort();
-    return (labels[0] ?? own) === own;
-  } catch {
-    // Window labels are unique. The canonical workspace remains a single
-    // fallback owner when enumeration is unavailable; unidentified windows
-    // cannot safely claim ownership.
-    return own === "main";
-  }
-}
 
 /** Watches every machine's task board, goals and background automations, with
  * or without their views open, and raises an OS notification when one

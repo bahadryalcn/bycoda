@@ -1,12 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "window-a" }),
+}));
 
 const listen = vi.hoisted(() => vi.fn());
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "workspace-5" }),
-}));
 
 type Callback = (event: { payload: unknown }) => void;
 

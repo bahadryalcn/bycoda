@@ -98,6 +98,7 @@ function fixture() {
               requestId: parsed.requestId,
               answers: parsed.answers,
               ...(parsed.custom ? { custom: parsed.custom } : {}),
+              ...(parsed.notes ? { notes: parsed.notes } : {}),
               answeredAt: 10,
               version: receipt.version,
             },
@@ -157,6 +158,17 @@ it("uses canonical semantic IDs and durable exact owner intent through the finit
     label: "Other",
     literal: true,
   });
+});
+it("persists optional notes in owner answer receipt and mapped question reply", async () => {
+  const f = fixture(),
+    draft = f.model(),
+    reply = {
+      ...answer,
+      notes: { "host-question": "Keep this compatible" },
+    };
+  const result = await draft.submit(reply, f.request, 3600000);
+  expect(f.calls[1].input).toMatchObject({ notes: reply.notes });
+  expect(result.answer?.notes).toEqual(reply.notes);
 });
 it("restores a lost-ACK intent and resolves its exact receipt without sending the answer again", async () => {
   const f = fixture();

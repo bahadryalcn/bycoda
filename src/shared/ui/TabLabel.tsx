@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { MiddleTruncate } from "./MiddleTruncate";
 import { OverflowTooltip } from "./Tooltip";
@@ -28,17 +28,20 @@ export function TabLabel({
   const middle = truncate === "middle";
   const full = title === true ? children : title || undefined;
 
+  const measure = useCallback(() => {
+    const label = ref.current;
+    if (!label || middle) return;
+    setOverflow(label.clientWidth > 0 && label.scrollWidth > label.clientWidth);
+  }, [middle]);
+  useLayoutEffect(measure, [children, measure]);
   useLayoutEffect(() => {
     const label = ref.current;
     if (!label || middle) return;
-    const measure = () => {
-      setOverflow(label.clientWidth > 0 && label.scrollWidth > label.clientWidth);
-    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(label);
     return () => observer.disconnect();
-  }, [children, middle]);
+  }, [measure, middle]);
 
   if (middle)
     return (

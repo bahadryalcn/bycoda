@@ -9,8 +9,8 @@ import {
 import { useEffect, useState } from "react";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections";
 import type { RecentProject } from "../../projects/model/recents";
 
 // The same choices as an automation's run time limit.

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
-} from "../../settings/model/appearancePreferences";
+} from "../../settings/public/appearancePreferences";
 import { StatusBadge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -69,8 +69,19 @@ export function ServerTerminalSession({
         </div>
         <InfoPopover label={t("Connection details")}>
           <dl className="grid min-w-0 gap-2">
-            <div><dt>{t("Host")}</dt><dd className="select-text break-all">{address}{sshPort ? `:${sshPort}` : ""}</dd></div>
-            {key ? <div><dt>{t("Identity file")}</dt><dd className="select-text break-all">{key}</dd></div> : null}
+            <div>
+              <dt>{t("Host")}</dt>
+              <dd className="select-text break-all">
+                {address}
+                {sshPort ? `:${sshPort}` : ""}
+              </dd>
+            </div>
+            {key ? (
+              <div>
+                <dt>{t("Identity file")}</dt>
+                <dd className="select-text break-all">{key}</dd>
+              </div>
+            ) : null}
           </dl>
         </InfoPopover>
       </div>

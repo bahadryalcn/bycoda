@@ -9,15 +9,21 @@ import type { QuickGitResult } from "../model/quickGitPopup";
 const bridge = vi.hoisted(() => ({
   result: (_event: { payload: QuickGitResult }) => {},
   repo: true,
+  target: undefined as unknown,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: async (_name: string, callback: typeof bridge.result) => {
+  listen: async (_name: string, callback: typeof bridge.result, options: unknown) => {
     bridge.result = callback;
+    bridge.target = options;
     return () => {};
   },
+  once: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "quick-composer" }),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({ notifyGitChanged: vi.fn() }));
 vi.mock("../../source-control/hooks/useProjectBranches", () => ({
@@ -46,6 +52,7 @@ async function render(extra: Record<string, unknown> = {}) {
       }),
     ),
   );
+  expect(bridge.target).toEqual({ target: "quick-composer" });
 }
 function button(label: string) {
   return container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;

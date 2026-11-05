@@ -32,6 +32,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("keeps the delivery summary compact with an accessible disclosure for failure details", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const row = { id: "queued", text: "Retained instruction", attachments: [] };
+  const progress = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  updateDeliveryProgress(
+    "progress-chat",
+    progress,
+    "rejected",
+    "Provider crashed: exit 1\nNative provider output retained for inspection.",
+  );
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(DeliveryProgressNotice, {
+        sessionId: "progress-chat",
+        messages: [row],
+        embedded: true,
+      }),
+    ),
+  );
+  const detail = container.querySelector("details")!;
+  expect(detail.open).toBe(false);
+  expect(detail.querySelector("summary")?.textContent).toBe("Details");
+  expect(detail.textContent).toContain("Provider crashed: exit 1");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Provider crashed: exit 1",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
+    "Native provider output",
+  );
+  await act(async () => root.unmount());
+});
+
 it("keeps the current delivery stage and elapsed time after remounting the composer surface", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();

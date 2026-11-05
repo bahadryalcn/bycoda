@@ -44,9 +44,7 @@ export function DeleteWorktreeDialog({
         ),
         confirmLabel: ({ acknowledged }: ConfirmState) =>
           sessionCount && acknowledged
-            ? t(
-                sessionCount === 1 ? "Delete worktree and session" : "Delete worktree and sessions",
-              )
+            ? t(sessionCount === 1 ? "Delete worktree and session" : "Delete worktree and sessions")
             : t("Delete worktree"),
         consequences: ({ acknowledged }: ConfirmState) => [
           sessionCount > 0 && {

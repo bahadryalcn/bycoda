@@ -5,6 +5,7 @@ import { createServer, type AddressInfo } from "node:net";
 import {
   copyFileSync,
   mkdtempSync,
+  mkdirSync,
   existsSync,
   readFileSync,
   rmSync,
@@ -15,6 +16,22 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const exec = promisify(execFile);
+
+// An exited Host stays a zombie until its reaper collects it. Minimal container
+// inits reap lazily (about 2s), and kill(pid, 0) still succeeds for a zombie.
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) !== "Z";
+  } catch {
+    return true;
+  }
+}
 
 it(
   "starts detached, authenticates a device, revokes it, and stops independently of the launcher",
@@ -36,20 +53,63 @@ it(
         '\nif (process.argv[2] === "serve") setInterval(() => {}, 60_000);\n',
     );
     // The detached bundle resolves SQLite and Notes workers relative to itself.
-    for (const sidecar of ["store-worker.mjs", "host-notes-worker.mjs", "provider-guard.mjs"]) {
+    for (const sidecar of [
+      "store-worker.mjs",
+      "host-notes-worker.mjs",
+      "provider-guard.mjs",
+      "workspace-cleanup-worker.mjs",
+    ]) {
       copyFileSync(join(dirname(sourceBundle), sidecar), join(directory, sidecar));
     }
     const run = (...args: string[]) =>
       exec(process.execPath, [cli, ...args, "--data-dir", directory, "--port", String(port)], {
         timeout: process.platform === "win32" ? 25_000 : 10_000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          HOME: join(directory, "home"),
+          USERPROFILE: join(directory, "home"),
+          APPDATA: join(directory, "home", "AppData", "Roaming"),
+          LOCALAPPDATA: join(directory, "home", "AppData", "Local"),
+        },
       });
     try {
-      // A stale legacy PID now belongs to this unrelated test process.
-      writeFileSync(join(directory, "owner.lock"), String(process.pid));
+      mkdirSync(join(directory, "home", "AppData", "Roaming"), { recursive: true });
+      mkdirSync(join(directory, "home", "AppData", "Local"), { recursive: true });
+      // Only confirmed process absence permits reclaiming a legacy sentinel.
+      const departedPid = 2_147_483_647;
+      expect(() => process.kill(departedPid, 0)).toThrow();
+      writeFileSync(join(directory, "owner.lock"), String(departedPid));
       expect((await run("start")).stdout).toContain("Host started");
       expect((await run("status")).stdout).toContain("Host is running");
       await expect(run("serve")).rejects.toThrow("A host already owns");
       const before = JSON.parse((await run("connection-info")).stdout);
+      const runningPath = join(directory, "running.json");
+      const originalRunning = readFileSync(runningPath);
+      try {
+        const stalled = createServer((socket) => socket.resume());
+        await new Promise<void>((resolve, reject) => {
+          stalled.once("error", reject);
+          stalled.listen(0, "127.0.0.1", resolve);
+        });
+        try {
+          const state = JSON.parse(originalRunning.toString("utf8"));
+          state.port = (stalled.address() as AddressInfo).port;
+          writeFileSync(runningPath, JSON.stringify(state));
+          await expect(run("status")).rejects.toThrow("still owns");
+        } finally {
+          await new Promise<void>((resolve) => stalled.close(() => resolve()));
+        }
+        writeFileSync(runningPath, "{broken");
+        await expect(run("status")).rejects.toThrow("still owns");
+        await expect(run("stop")).rejects.toThrow("still owns");
+        expect(readFileSync(runningPath, "utf8")).toBe("{broken");
+        rmSync(runningPath);
+        await expect(run("status")).rejects.toThrow("still owns");
+      } finally {
+        writeFileSync(runningPath, originalRunning);
+      }
+      expect((await run("status")).stdout).toContain("Host is running");
       // Connecting to an existing host must not install a service or restart it.
       expect(JSON.parse((await run("service", "install")).stdout)).toEqual(before);
       const device = JSON.parse((await run("pair", "--name", "Test laptop")).stdout) as {
@@ -86,9 +146,7 @@ it(
       });
       expect((await run("stop")).stdout).toContain("Host is stopping");
       await vi.waitFor(() => expect(existsSync(join(directory, "running.json"))).toBe(false));
-      await vi.waitFor(() => {
-        expect(() => process.kill(before.pid, 0)).toThrow();
-      });
+      await vi.waitFor(() => expect(processIsAlive(before.pid)).toBe(false), { timeout: 5_000 });
       expect((await run("status")).stdout).toContain("Host is stopped");
     } finally {
       if (existsSync(join(directory, "running.json"))) {

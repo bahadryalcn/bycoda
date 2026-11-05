@@ -31,6 +31,9 @@ Use for notification settings, project exceptions/mute, pending request sheet/hi
 
 ## Workflow and checks
 
+Background notification leadership follows native `is_workspace_window` eligibility.
+Auxiliary composer, voice-overlay and desktop-control windows must never take leadership.
+
 1. Trace the affected preference/event/request from model to delivery or session action; keep action feedback at its originating project/request/control.
 2. For approval changes follow the current decision-control owner, not presentation metadata; for summary data follow [tasks/goals](../feature-tasks-goals/SKILL.md).
 3. Choose focused suites from the map; exercise unavailable reads, sibling writes, pending/uncertain remount, relock/privacy, history clear and schedule retry. Actual platform delivery and phone permissions need isolated native/device checks.

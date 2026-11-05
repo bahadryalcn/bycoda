@@ -106,9 +106,10 @@ export function PickerList({
     const selected = !option.onAction && list.isSelected(option.value);
     const highlighted = index === list.activeIndex;
     const unavailable = disabled || !!option.disabled;
-    const description = option.disabled && option.disabledReason
-      ? t("Unavailable: {p0}", { p0: option.disabledReason })
-      : option.description;
+    const description =
+      option.disabled && option.disabledReason
+        ? t("Unavailable: {p0}", { p0: option.disabledReason })
+        : option.description;
     const descriptionId = description != null ? `${list.optionId(index)}-description` : undefined;
     const check = selected ? <Check aria-hidden className="icon-sm" strokeWidth={1.75} /> : null;
     const icon = checkPlacement === "icon" && selected ? check : option.icon;
@@ -160,7 +161,9 @@ export function PickerList({
             </span>
           ) : null}
         </span>
-        {option.trailing != null ? <span className={styles.trailing}>{option.trailing}</span> : null}
+        {option.trailing != null ? (
+          <span className={styles.trailing}>{option.trailing}</span>
+        ) : null}
         {checkPlacement === "trailing" ? <span className={styles.check}>{check}</span> : null}
       </ComboboxItem>
     );
@@ -251,7 +254,8 @@ export function PickerFooter({
       className={[styles.footer, className].filter(Boolean).join(" ")}
       onMouseDown={(event) => {
         // Pressing a footer action must not blur the search field or list first.
-        if (event.target instanceof HTMLElement && event.target.closest("button")) event.preventDefault();
+        if (event.target instanceof HTMLElement && event.target.closest("button"))
+          event.preventDefault();
       }}
     >
       {children}

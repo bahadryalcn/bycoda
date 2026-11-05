@@ -11,7 +11,7 @@ import {
   validToolInput,
   fullToolCatalog,
 } from "./production";
-import { normalizeSocialToolRequest, socialToolCatalog } from "../host/social-tools";
+import { normalizeSocialToolRequest, socialToolCatalog } from "../host/social/social-tools";
 import { createOfflineReport } from "./report";
 import { voiceInstructions } from "../src/features/voice/model/realtimeVoice";
 import { voiceOwnerProfileInstructions } from "../src/features/voice/model/voiceOwner";

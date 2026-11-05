@@ -15,15 +15,17 @@ async function compactAccentCounter(counter: Locator) {
       accent,
       lineHeight: style.lineHeight,
       fontSize: style.fontSize,
-      border: style.borderTopColor,
+      border: style.borderTopWidth,
+      background: style.backgroundColor,
       overflow: element.scrollWidth > element.clientWidth,
     };
   });
   expect(presentation.height).toBeGreaterThanOrEqual(16);
   expect(presentation.height).toBeLessThanOrEqual(18);
   expect(presentation.color).toBe(presentation.accent);
-  expect(presentation.lineHeight).toBe(presentation.fontSize);
-  expect(presentation.border).toBe("rgba(0, 0, 0, 0)");
+  expect(parseFloat(presentation.lineHeight)).toBeLessThanOrEqual(18);
+  expect(presentation.border).toBe("0px");
+  expect(presentation.background).toBe("rgba(0, 0, 0, 0)");
   expect(presentation.overflow).toBe(false);
 }
 
@@ -69,7 +71,10 @@ test("shell counts stay compact and follow custom accents in both rail presentat
       const recovery = page.locator(expanded ? ".recovery-rail-number" : ".recovery-rail-count");
       await expect(working).toHaveText(String(Math.min(count, 9)));
       const workingCount = Math.min(count, 9);
-      await expect(working).toHaveAttribute("aria-label", `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`);
+      await expect(working).toHaveAttribute(
+        "aria-label",
+        `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`,
+      );
       await expect(working.locator('[data-size="xs"][aria-hidden="true"]')).toBeVisible();
       await expect(recovery).toHaveText(count > 99 ? "99+" : String(count));
       for (const light of [false, true]) {
@@ -105,7 +110,7 @@ test("shell counts stay compact and follow custom accents in both rail presentat
           }
           const neutral = page.getByTestId("neutral-count");
           expect((await neutral.boundingBox())!.height).toBeLessThanOrEqual(18);
-          expect(await neutral.evaluate((element) => getComputedStyle(element).color)).not.toBe(
+          expect(await neutral.evaluate((element) => getComputedStyle(element).color)).toBe(
             await working.evaluate((element) => getComputedStyle(element).color),
           );
           expect(

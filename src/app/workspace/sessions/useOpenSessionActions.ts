@@ -1,3 +1,4 @@
+import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import {
   useCallback,
   useEffect,
@@ -18,10 +19,12 @@ import {
   sessionNeedsKeptTab,
 } from "../../../features/workspace/model/sessionPreview";
 import type { orchestrator } from "../../../features/orchestration/model/orchestration";
-import type { LiveAgent } from "../../../features/sessions/model/liveAgents";
-import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
 import { type Session } from "../../../features/sessions/model/session";
 import { type LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
+import {
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../../features/group-lock/model/roomPrivacyProjection";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   planOpenSessionsSideBySide,
@@ -36,31 +39,16 @@ export interface OpenSessionActionsDeps {
   setProjectTerminalFocused: Dispatch<SetStateAction<boolean>>;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
   setInspectedWorkerId: Dispatch<SetStateAction<string | null>>;
-  followProject: (cwd: string | null | undefined) => void;
+  followProject: (cwd: string | null | undefined, token?: PrivacyMutationToken) => void;
   appendTab: (tab: WorkspaceTab, cwd?: string) => void;
   insertBesideActive: (prev: WorkspaceTab[], tab: WorkspaceTab, cwd?: string) => WorkspaceTab[];
   ensureOpenSession: (sessionId: string) => Promise<Session | null>;
-  focusOpenSession: (sessionId: string) => boolean;
+  focusOpenSession: (sessionId: string, token?: PrivacyMutationToken) => boolean;
   replaceBlankPaneWithSession: (session: Session) => boolean;
   linkedSessionUpdatesRef: MutableRefObject<ReadonlyMap<string, LinkedSessionUpdate>>;
   revealLinkedSessionUpdate: (sessionId: string, update: LinkedSessionUpdate) => void;
   orchestrator: typeof orchestrator;
   workspaceNavigation: { cancel: () => void; captureRequest?: () => () => boolean };
-  /** Merged live agents across app windows. A session whose agent carries an
-   * `ownerWindowLabel` is live in another window and is focused there instead
-   * of being opened here a second time. */
-  liveAgents?: readonly LiveAgent[];
-}
-
-/** Brings the owning window forward; the open request ends with this. */
-async function focusSessionInOwnerWindow(agent: LiveAgent): Promise<void> {
-  try {
-    await focusWindowLiveAgent(agent);
-  } catch (error) {
-    await message(error instanceof Error ? error.message : String(error), {
-      title: t("Open conversation window"),
-    });
-  }
 }
 
 /** Opens a history session in the workspace, or several side by side in one tab. */
@@ -82,16 +70,8 @@ export function useOpenSessionActions({
   revealLinkedSessionUpdate,
   orchestrator,
   workspaceNavigation,
-  liveAgents,
 }: OpenSessionActionsDeps) {
   const openRequest = useRef(0);
-  const liveAgentsRef = useRef(liveAgents);
-  liveAgentsRef.current = liveAgents;
-  const ownedElsewhere = useCallback(
-    (sessionId: string) =>
-      liveAgentsRef.current?.find((agent) => agent.id === sessionId && agent.ownerWindowLabel),
-    [],
-  );
   useEffect(
     () => () => {
       openRequest.current++;
@@ -125,70 +105,122 @@ export function useOpenSessionActions({
   }, [sessions, onKeepSession, tabsRef]);
 
   const onSelectHistorySession = useCallback(
-    async (sessionId: string, options?: { preview?: boolean; isCurrent?: () => boolean }) => {
-      // Opening a session a second window would let a send here retire the
-      // owner's running turn; the owning window takes the request instead.
-      const elsewhere = ownedElsewhere(sessionId);
-      if (elsewhere) {
-        await focusSessionInOwnerWindow(elsewhere);
-        return;
-      }
+    async (
+      sessionId: string,
+      options?: {
+        preview?: boolean;
+        isCurrent?: () => boolean;
+        workspaceRequestId?: string;
+        privacyToken?: PrivacyMutationToken;
+      },
+    ): Promise<void> => {
+      if (options?.workspaceRequestId && !options.privacyToken)
+        return withRoomPrivacyMutation(
+          (token) =>
+            onSelectHistorySession(sessionId, {
+              ...options,
+              workspaceRequestId: undefined,
+              privacyToken: token,
+            }),
+          options.workspaceRequestId,
+        );
       const request = ++openRequest.current;
       workspaceNavigation.cancel();
       const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
       const isCurrent = () => navigationCurrent() && options?.isCurrent?.() !== false;
       let session = await ensureOpenSession(sessionId);
-      if (request !== openRequest.current || !isCurrent() || !session || session.inboxAsk) return;
+      if (request !== openRequest.current || !isCurrent() || !session || session.inboxAsk) {
+        if (options?.privacyToken) throw new Error("Room session is unavailable.");
+        return;
+      }
+      let inspectedWorkerId: string | undefined;
       const parentId = session.orchestrationLeadId ?? orchestrator.forSession(sessionId)?.leadId;
       if (parentId && parentId !== sessionId) {
         session = await ensureOpenSession(parentId);
-        if (request !== openRequest.current || !isCurrent() || !session) return;
-        setInspectedWorkerId(sessionId);
+        if (request !== openRequest.current || !isCurrent() || !session) {
+          if (options?.privacyToken) throw new Error("Room session is unavailable.");
+          return;
+        }
+        inspectedWorkerId = sessionId;
       }
       const linkedUpdate = linkedSessionUpdatesRef.current.get(session.id);
-      if (focusOpenSession(session.id)) {
+      const follow = (cwd: string) =>
+        options?.privacyToken ? followProject(cwd, options.privacyToken) : followProject(cwd);
+      if (
+        options?.privacyToken
+          ? focusOpenSession(session.id, options.privacyToken)
+          : focusOpenSession(session.id)
+      ) {
+        if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
         if (!options?.preview) onKeepSession(session.id);
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
         return;
       }
-      if (options?.preview) {
-        const replacement = openSessionPreview(tabsRef.current, session, getSessions());
-        if (replacement) {
-          tabsRef.current = replacement.tabs;
-          setTabs(replacement.tabs);
-          setActiveTabId(replacement.tab.id);
-          followProject(session.cwd);
-          setComposerFocused(true);
-          if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
-          return;
-        }
-      }
-      if (replaceBlankPaneWithSession(session)) {
-        const id = session.id;
-        if (options?.preview && !sessionNeedsKeptTab(session)) {
-          setTabs((tabs) =>
-            tabs.map((tab) =>
-              tab.focusedId === id && tab.layout.type === "leaf"
-                ? { ...tab, previewSessionId: id }
-                : tab,
-            ),
-          );
-        }
-        followProject(session.cwd);
-        if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
+      let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
+      try {
+        release = await reserveSessionWindow([session.id], inspectedWorkerId);
+      } catch (error) {
+        if (options?.privacyToken) throw error;
+        await message(String(error), { title: appName(), kind: "warning" });
         return;
       }
-      const tab = {
-        ...newTab(session.id),
-        ...(options?.preview && !sessionNeedsKeptTab(session)
-          ? { previewSessionId: session.id }
-          : {}),
-      };
-      appendTab(tab, session.cwd);
-      setActiveTabId(tab.id);
-      followProject(session.cwd);
-      setComposerFocused(true);
-      if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
+      if (!release) {
+        if (options?.privacyToken) throw new Error("Room session ownership is unavailable.");
+        return;
+      }
+      let retained = false;
+      try {
+        if (request !== openRequest.current || !isCurrent()) {
+          if (options?.privacyToken) throw new Error("Room session open was superseded.");
+          return;
+        }
+        if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
+        if (options?.preview) {
+          const replacement = openSessionPreview(tabsRef.current, session, getSessions());
+          if (replacement) {
+            tabsRef.current = replacement.tabs;
+            setTabs(replacement.tabs);
+            setActiveTabId(replacement.tab.id);
+            follow(session.cwd);
+            setComposerFocused(true);
+            if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
+            retained = true;
+            return;
+          }
+        }
+        if (replaceBlankPaneWithSession(session)) {
+          const id = session.id;
+          if (options?.preview && !sessionNeedsKeptTab(session)) {
+            setTabs((tabs) =>
+              tabs.map((tab) =>
+                tab.focusedId === id && tab.layout.type === "leaf"
+                  ? { ...tab, previewSessionId: id }
+                  : tab,
+              ),
+            );
+          }
+          follow(session.cwd);
+          if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
+          retained = true;
+          return;
+        }
+        const tab = {
+          ...newTab(session.id),
+          ...(options?.preview && !sessionNeedsKeptTab(session)
+            ? { previewSessionId: session.id }
+            : {}),
+        };
+        appendTab(tab, session.cwd);
+        setActiveTabId(tab.id);
+        follow(session.cwd);
+        setComposerFocused(true);
+        if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
+        retained = true;
+      } finally {
+        await release(retained).catch((error) =>
+          console.error("Conversation ownership release failed", error),
+        );
+      }
     },
     [
       appendTab,
@@ -198,7 +230,6 @@ export function useOpenSessionActions({
       replaceBlankPaneWithSession,
       revealLinkedSessionUpdate,
       onKeepSession,
-      ownedElsewhere,
       tabsRef,
       setTabs,
       setActiveTabId,
@@ -212,14 +243,7 @@ export function useOpenSessionActions({
   /** Open several history sessions together as a grid in one new tab. */
   const onOpenSessionsSideBySide = useCallback(
     async (sessionIds: string[], options?: { isCurrent?: () => boolean }) => {
-      const requested = [...new Set(sessionIds)];
-      // Sessions live in another window stay there; the composition holds the rest.
-      const wanted = requested.filter((id) => !ownedElsewhere(id));
-      if (wanted.length === 0 && requested.length > 0) {
-        const elsewhere = ownedElsewhere(requested[0]);
-        if (elsewhere) await focusSessionInOwnerWindow(elsewhere);
-        return;
-      }
+      const wanted = [...new Set(sessionIds)];
       if (wanted.length > SIDE_BY_SIDE_LIMIT) {
         await message(
           t("Select at most {p0} conversations to open side by side.", { p0: SIDE_BY_SIDE_LIMIT }),
@@ -243,26 +267,42 @@ export function useOpenSessionActions({
         await onSelectHistorySession(opened[0].id, options);
         return;
       }
-      const plan = planOpenSessionsSideBySide({
-        tabs: tabsRef.current,
-        sessionIds: opened.map((session) => session.id),
-      });
-      if (!plan) return;
-      const cwd = opened[0].cwd;
-      const next = insertBesideActive(plan.tabs, plan.tab, cwd);
-      tabsRef.current = next;
-      setTabs(next);
-      setActiveTabId(plan.tab.id);
-      setProjectTerminalFocused(false);
-      followProject(cwd);
-      setComposerFocused(true);
+      let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
+      try {
+        release = await reserveSessionWindow(opened.map((session) => session.id));
+      } catch (error) {
+        await message(String(error), { title: appName(), kind: "warning" });
+        return;
+      }
+      if (!release) return;
+      let retained = false;
+      try {
+        if (request !== openRequest.current || !isCurrent()) return;
+        const plan = planOpenSessionsSideBySide({
+          tabs: tabsRef.current,
+          sessionIds: opened.map((session) => session.id),
+        });
+        if (!plan) return;
+        const cwd = opened[0].cwd;
+        const next = insertBesideActive(plan.tabs, plan.tab, cwd);
+        tabsRef.current = next;
+        setTabs(next);
+        setActiveTabId(plan.tab.id);
+        setProjectTerminalFocused(false);
+        followProject(cwd);
+        setComposerFocused(true);
+        retained = true;
+      } finally {
+        await release(retained).catch((error) =>
+          console.error("Conversation ownership release failed", error),
+        );
+      }
     },
     [
       ensureOpenSession,
       followProject,
       insertBesideActive,
       onSelectHistorySession,
-      ownedElsewhere,
       tabsRef,
       setTabs,
       setActiveTabId,

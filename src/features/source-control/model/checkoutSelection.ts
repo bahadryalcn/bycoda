@@ -117,7 +117,8 @@ const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
  */
 export function checkoutRowLabels(tree: Worktree): { title: string; detail?: string } {
   const folder = folderName(tree.path);
-  if (!tree.branch) return { title: folder, detail: t("Detached {p0}", { p0: tree.head.slice(0, 7) }) };
+  if (!tree.branch)
+    return { title: folder, detail: t("Detached {p0}", { p0: tree.head.slice(0, 7) }) };
   const leaf = slug(tree.branch.split("/").pop() ?? tree.branch);
   const name = slug(folder);
   const redundant = !!name && !!leaf && (leaf.endsWith(name) || name.endsWith(leaf));

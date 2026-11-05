@@ -13,9 +13,7 @@ export function loadPhysicalStoreAdmission(explicitArtifact) {
     throw new TypeError("An explicit absolute .node artifact path is required");
   const canonical = realpathSync(explicitArtifact);
   if (extname(canonical) !== ".node")
-    throw new TypeError(
-      "The resolved physical admission artifact must have a .node extension",
-    );
+    throw new TypeError("The resolved physical admission artifact must have a .node extension");
   if (!statSync(canonical).isFile())
     throw new TypeError("Physical admission artifact must be a regular file");
   const native = require(canonical);
@@ -30,6 +28,13 @@ export function loadPhysicalStoreAdmission(explicitArtifact) {
     throw new Error("Unsupported physical admission mechanical ABI");
   return Object.freeze({
     mechanicalAbiVersion: native.mechanicalAbiVersion,
+    windowsProcessBirths:
+      typeof native.windowsProcessBirths === "function" ? native.windowsProcessBirths : undefined,
+    windowsListeners:
+      typeof native.windowsListeners === "function" ? native.windowsListeners : undefined,
+    renameNoReplace:
+      typeof native.renameNoReplace === "function" ? native.renameNoReplace : undefined,
+    guardedMove: typeof native.guardedMove === "function" ? native.guardedMove : undefined,
     openRegistry: native.openRegistry,
     registryRootForDatabase: native.registryRootForDatabase,
     sqliteExtensionEntryPoint: native.sqliteExtensionEntryPoint,

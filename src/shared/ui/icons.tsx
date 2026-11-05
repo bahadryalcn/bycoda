@@ -91,6 +91,7 @@ import {
   Laptop as LucideLaptop,
   AudioLines as LucideAudioLines,
   VolumeX as LucideVolumeX,
+  Volume2 as LucideVolume2,
   MessageSquarePlus as LucideMessageSquarePlus,
   Minus as LucideMinus,
   Strikethrough as LucideStrikethrough,
@@ -330,6 +331,7 @@ export const Mic = wrap(LucideMic, "Mic");
 export const MicOff = wrap(LucideMicOff, "MicOff");
 export const Laptop = wrap(LucideLaptop, "Laptop");
 export const AudioLines = wrap(LucideAudioLines, "AudioLines");
+export const Volume2 = wrap(LucideVolume2, "Volume2");
 export const VolumeX = wrap(LucideVolumeX, "VolumeX");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");
 export const Minus = wrap(LucideMinus, "Minus");

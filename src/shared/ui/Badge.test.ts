@@ -2,7 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { Badge } from "./Badge";
+import { Badge, statusBadgeTone } from "./Badge";
+import { StatusDot } from "./StatusDot";
 
 async function render(node: ReturnType<typeof createElement>) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -29,6 +30,36 @@ it("names a text-less status dot for assistive technology", async () => {
     expect(badge.getAttribute("aria-label")).toBe("Online");
   } finally {
     done();
+  }
+});
+
+it("uses an accessible shared accent dot for running work", async () => {
+  const { container, done } = await render(
+    createElement(StatusDot, { label: "Running", tone: statusBadgeTone("running") }),
+  );
+  try {
+    const dot = container.querySelector('[role="img"]')!;
+    expect(dot.getAttribute("aria-label")).toBe("Running");
+    expect(dot.getAttribute("data-tone")).toBe("accent");
+  } finally {
+    done();
+  }
+});
+
+it("defaults counters to accent while preserving explicit attention tones", async () => {
+  const counter = await render(createElement(Badge, { variant: "count" }, 128));
+  try {
+    expect(counter.container.firstElementChild?.className).toContain("accent");
+    expect(counter.container.textContent).toBe("99+");
+    expect(counter.container.firstElementChild?.getAttribute("aria-label")).toBe("128");
+  } finally {
+    counter.done();
+  }
+  const attention = await render(createElement(Badge, { variant: "count", tone: "warning" }, 3));
+  try {
+    expect(attention.container.firstElementChild?.className).toContain("warning");
+  } finally {
+    attention.done();
   }
 });
 

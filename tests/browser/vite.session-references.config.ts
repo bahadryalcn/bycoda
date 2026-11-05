@@ -10,13 +10,9 @@ export default defineConfig({
       resolveId(source, importer) {
         if (
           /(?:^|\/)useReadOnlyHostSession(?:\.ts)?$/.test(source) &&
-          /\/AgentTabView\.tsx(?:\?|$)/.test(
-            importer?.replaceAll("\\", "/") ?? "",
-          )
+          /\/AgentTabView\.tsx(?:\?|$)/.test(importer?.replaceAll("\\", "/") ?? "")
         )
-          return fileURLToPath(
-            new URL("./session-references-host-reader.ts", import.meta.url),
-          );
+          return fileURLToPath(new URL("./session-references-host-reader.ts", import.meta.url));
       },
     },
     {
@@ -44,9 +40,7 @@ export default defineConfig({
         "@lezer/highlight",
       ].map((name) => [
         name,
-        fileURLToPath(
-          new URL(`../../node_modules/${name}/dist/index.js`, import.meta.url),
-        ),
+        fileURLToPath(new URL(`../../node_modules/${name}/dist/index.js`, import.meta.url)),
       ]),
     ),
   },

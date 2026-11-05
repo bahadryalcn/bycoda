@@ -1,5 +1,14 @@
 // @vitest-environment happy-dom
-import { StrictMode, act, createElement, useRef, useState, type Dispatch, type SetStateAction, useLayoutEffect } from "react";
+import {
+  StrictMode,
+  act,
+  createElement,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+  useLayoutEffect,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWindowChromeActions, type WindowChromeActions } from "./useWindowChromeActions";
@@ -25,7 +34,13 @@ let root: Root | undefined;
 let container: HTMLDivElement;
 let latest: Snapshot;
 
-function Harness({ initialRail, initialSidebar }: { initialRail: boolean; initialSidebar: boolean }) {
+function Harness({
+  initialRail,
+  initialSidebar,
+}: {
+  initialRail: boolean;
+  initialSidebar: boolean;
+}) {
   const [projectRailOpen, setProjectRailOpen] = useState(initialRail);
   const [sessionSidebarOpen, setSessionSidebarOpen] = useState(initialSidebar);
   const noop = () => undefined;

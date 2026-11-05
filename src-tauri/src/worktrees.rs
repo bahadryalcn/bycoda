@@ -596,12 +596,11 @@ fn removal_review(
                 .canonicalize()
                 .map_err(|e| e.to_string())?,
         ),
-        common_dir: git(
+        common_dir: root.join(git(
             root,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            &["rev-parse", "--git-common-dir"],
         )?
-        .trim()
-        .to_owned(),
+        .trim()).to_string_lossy().into_owned(),
         path: path_to_js(&path.canonicalize().map_err(|e| e.to_string())?),
         branch: tree.branch,
         head: tree.head,
@@ -832,9 +831,9 @@ fn removal_journal_directory(root: &Path) -> Result<PathBuf, String> {
     crate::worktree_lifecycle::validate_removal_path(root)?;
     let common = git(
         root,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        &["rev-parse", "--git-common-dir"],
     )?;
-    let common = crate::worktree_lifecycle::canonical_removal_path(Path::new(common.trim()))?;
+    let common = crate::worktree_lifecycle::canonical_removal_path(&root.join(common.trim()))?;
     let directory = common.join("bycoda-worktree-removals");
     crate::worktree_lifecycle::validate_removal_descendant(&common, &directory)?;
     Ok(directory)
@@ -1012,9 +1011,9 @@ fn preserve_removal_evidence(root: &Path, path: &Path) -> Result<(), String> {
     }
     let common = git(
         root,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        &["rev-parse", "--git-common-dir"],
     )?;
-    let common = crate::worktree_lifecycle::canonical_removal_path(Path::new(common.trim()))?;
+    let common = crate::worktree_lifecycle::canonical_removal_path(&root.join(common.trim()))?;
     let archive = common.join("bycoda-worktree-evidence");
     crate::worktree_lifecycle::validate_removal_descendant(&common, &archive)?;
     if archive.starts_with(path) {

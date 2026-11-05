@@ -45,7 +45,6 @@ import {
   capHeadTail,
   capStepOutput,
 } from "../../../features/sessions/model/agentOutput";
-import { joinStreamText } from "./streamText";
 import { MAX_TOOL_DETAIL_CHARS } from "./toolDetailLimits";
 import { registerStreamingTextUpdate } from "../../../features/sessions/model/stableBlocks";
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
@@ -83,10 +82,7 @@ export function applyHarnessEvents(session: Session, events: readonly HarnessEve
     if (event.type === "tool.updated") {
       // Command output arrives as one update per chunk, each carrying the whole
       // tail so far; only the last chunk of a run in this batch changes the result.
-      while (
-        index + 1 < events.length &&
-        isSupersededToolUpdate(event, events[index + 1])
-      ) {
+      while (index + 1 < events.length && isSupersededToolUpdate(event, events[index + 1])) {
         index++;
       }
       next = applyHarnessEvent(next, events[index]);
@@ -171,7 +167,17 @@ export function applyHarnessEvent(
   ) {
     session = { ...session, retryMessage: undefined };
   }
-  if (["turn.started", "message.delta", "reasoning.delta", "tool.started", "approval.requested", "question.asked", "image.generated"].includes(event.type))
+  if (
+    [
+      "turn.started",
+      "message.delta",
+      "reasoning.delta",
+      "tool.started",
+      "approval.requested",
+      "question.asked",
+      "image.generated",
+    ].includes(event.type)
+  )
     session = startProviderDuration(session);
   switch (event.type) {
     case "message.delta":
@@ -253,7 +259,7 @@ export function applyHarnessEvent(
         ...session,
         pendingQuestion: {
           requestId: event.requestId,
-          ...(event.occurrenceId ? {occurrenceId:event.occurrenceId} : {}),
+          ...(event.occurrenceId ? { occurrenceId: event.occurrenceId } : {}),
           questions: event.questions,
           ...(event.behavior ? { behavior: event.behavior } : {}),
           ...(event.dismissAction ? { dismissAction: event.dismissAction } : {}),
@@ -333,6 +339,7 @@ export function applyHarnessEvent(
       answered.blocks[answered.blocks.length - 1] = {
         ...answered.blocks[answered.blocks.length - 1],
         questionAnswers,
+        ...(reply?.attachments ? { attachments: Object.values(reply.attachments).flat() } : {}),
       };
       return { ...answered, busy: session.busy };
     }
@@ -536,8 +543,14 @@ function mergeTurnMetrics(
   if (userIndex < 0) return session;
   // Clarification replies and steers continue the same provider turn. Its
   // cumulative metrics belong to the root, independently of reply authorship.
-  const continuation=session.blocks[userIndex].continuationOf;
-  if(continuation){const owner=session.blocks.findIndex(block=>block.id===continuation&&block.role==="user"&&!block.continuationOf);if(owner<0)return session;userIndex=owner;}
+  const continuation = session.blocks[userIndex].continuationOf;
+  if (continuation) {
+    const owner = session.blocks.findIndex(
+      (block) => block.id === continuation && block.role === "user" && !block.continuationOf,
+    );
+    if (owner < 0) return session;
+    userIndex = owner;
+  }
 
   const current = session.blocks[userIndex];
   const metrics = {
@@ -567,9 +580,7 @@ function upsertPlan(session: Session, event: Extract<HarnessEvent, { type: "plan
 
   if (existing >= 0) {
     const current = session.blocks[existing];
-    const text = event.append
-      ? joinStreamText(current.text, event.text)
-      : event.text || current.text;
+    const text = event.append ? current.text + event.text : event.text || current.text;
     const blocks = session.blocks.slice();
     blocks[existing] = {
       ...current,

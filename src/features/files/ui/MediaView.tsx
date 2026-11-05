@@ -206,9 +206,7 @@ export function MediaView({
       </div>
       <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
         <OverflowTooltip label={path}>
-          <span className="min-w-0 flex-1 truncate">
-            {basename(path)}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
         </OverflowTooltip>
         {isVideo ? (
           <>
@@ -249,7 +247,8 @@ export function MediaView({
                 try {
                   await openPathWithDefaultApp(externalPath);
                 } catch (reason) {
-                  if (request === openGeneration.current) setActionFailure({ owner: actionOwner, message: String(reason) });
+                  if (request === openGeneration.current)
+                    setActionFailure({ owner: actionOwner, message: String(reason) });
                 } finally {
                   if (request === openGeneration.current) {
                     openingRef.current = false;
@@ -262,9 +261,7 @@ export function MediaView({
             {t(localCopy ? "Open local copy" : "Open in default app")}
           </Button>
         ) : null}
-        {actionError ? (
-          <InlineError className="basis-full">{actionError}</InlineError>
-        ) : null}
+        {actionError ? <InlineError className="basis-full">{actionError}</InlineError> : null}
       </footer>
     </div>
   );

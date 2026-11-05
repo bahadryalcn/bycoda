@@ -56,6 +56,21 @@ it("waits for the actual local row-save acknowledgement before exposing a locato
   resolve(true);
   expect(await pending).toBe(f.session.id);
 });
+it("requires durable current local ownership for a Room send", async () => {
+  const { requireRoomNativeOutput } = await import("./prepareNativeOutputSession");
+  await expect(requireRoomNativeOutput(undefined, () => true)).rejects.toThrow(
+    "local durable session owner",
+  );
+  await expect(
+    requireRoomNativeOutput({ sessionId: "s", ready: Promise.resolve(undefined) }, () => true),
+  ).rejects.toThrow("durably recorded");
+  await expect(
+    requireRoomNativeOutput({ sessionId: "s", ready: Promise.resolve("s") }, () => false),
+  ).rejects.toThrow("Turn changed");
+  await expect(
+    requireRoomNativeOutput({ sessionId: "s", ready: Promise.resolve("s") }, () => true),
+  ).resolves.toBeUndefined();
+});
 it.each(["web", "headless", "ephemeral", "remote"])(
   "preserves %s callers without creating a local row or hint",
   async (kind) => {
@@ -73,9 +88,7 @@ it.each([false, undefined])(
   async (ack) => {
     const f = await fixture();
     mocks.upsert.mockResolvedValue(ack);
-    await expect(
-      f.prepareNativeOutputSession(f.session.id, () => true),
-    ).resolves.toBeUndefined();
+    await expect(f.prepareNativeOutputSession(f.session.id, () => true)).resolves.toBeUndefined();
   },
 );
 it("a retired turn cannot proceed after a late successful save", async () => {

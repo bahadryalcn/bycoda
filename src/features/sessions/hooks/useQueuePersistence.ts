@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { setSessionQueue } from "../data/sessionStore";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import type { QueuedMessage } from "../model/session";
 import { getShellSessions, subscribeShell } from "../model/sessionsStore";
 

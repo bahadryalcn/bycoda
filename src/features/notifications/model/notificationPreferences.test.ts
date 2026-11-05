@@ -24,7 +24,9 @@ it("refuses to overwrite unreadable preferences while retaining the last known v
 
 it("does not leak an unpersisted mutation into the retained notification view", () => {
   updateNotificationPreferences(["private"], { disabled: ["issues"] });
-  const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new Error("quota"); });
+  const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+    throw new Error("quota");
+  });
   try {
     expect(() => updateNotificationPreferences(["private"], { disabled: [] })).toThrow("quota");
     expect(loadNotificationPreferences().private.disabled).toEqual(["issues"]);

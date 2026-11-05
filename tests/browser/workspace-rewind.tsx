@@ -95,7 +95,9 @@ const remoteProject = rememberRemoteProject(machine.environmentId, {
 });
 if (query.has("remoteRewind")) rememberRemoteSession("remote-shell", original.id);
 if (query.has("remoteRecovery"))
-  setStoredSessions([{ ...original, id: "remote-shell", cwd: remoteProject.key, worktreeCwd: remoteProject.key }]);
+  setStoredSessions([
+    { ...original, id: "remote-shell", cwd: remoteProject.key, worktreeCwd: remoteProject.key },
+  ]);
 if (query.has("remoteCreate"))
   authoritative = { ...original, id: "not-created", blocks: [], workspaceId: undefined };
 let failApply = query.has("failApply");
@@ -112,7 +114,9 @@ Object.assign(window, {
     workspacePathError = true;
     notifyRemoteRecovered(machine.environmentId);
   },
-  repairWorkspacePath: () => { workspacePathError = false; },
+  repairWorkspacePath: () => {
+    workspacePathError = false;
+  },
   tryRemoteSend: () => remoteSessionActions("remote-shell")?.submit("Must wait for rewind", []),
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
@@ -178,7 +182,9 @@ Object.assign(window, {
       if (query.has("remoteRecovery")) {
         if (args.method === "environment.describe" && args.fresh) recoveryBlocked = false;
         if (recoveryBlocked && args.method !== "environment.describe")
-          throw new Error("RPC_WS_BLOCKED: Native Host connection requires updated authentication, identity or protocol");
+          throw new Error(
+            "RPC_WS_BLOCKED: Native Host connection requires updated authentication, identity or protocol",
+          );
       }
       switch (args.method) {
         case "environment.describe":
@@ -328,13 +334,24 @@ Object.assign(window, {
           return [{ id: "project", cwd: original.cwd, name: "Rewind fixture" }];
         case "workspaces.get":
           if (query.has("remoteRecovery")) {
-            if (workspacePathError) throw new Error("Host rejected request: Path is outside this machine’s projects");
+            if (workspacePathError)
+              throw new Error("Host rejected request: Path is outside this machine’s projects");
             return {
-              id: "workspace", revision, projectId: "project", repositoryId: "repo",
-              environmentId: machine.environmentId, owner: { kind: "session", id: original.id },
-              path: original.cwd, branchRef: "refs/heads/main", baseRef: "refs/heads/main",
-              baseCommit: "a".repeat(40), targetBranchRef: "refs/heads/main",
-              state: "active", directoryState: "present", lastActivityAt: 1, pinned: false,
+              id: "workspace",
+              revision,
+              projectId: "project",
+              repositoryId: "repo",
+              environmentId: machine.environmentId,
+              owner: { kind: "session", id: original.id },
+              path: original.cwd,
+              branchRef: "refs/heads/main",
+              baseRef: "refs/heads/main",
+              baseCommit: "a".repeat(40),
+              targetBranchRef: "refs/heads/main",
+              state: "active",
+              directoryState: "present",
+              lastActivityAt: 1,
+              pinned: false,
             };
           }
           return { id: "workspace", revision, owner: { kind: "session", id: original.id } };

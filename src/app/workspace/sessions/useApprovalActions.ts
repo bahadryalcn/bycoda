@@ -58,7 +58,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   );
 
   const onQuestionReply = useCallback(
-    (sessionId: string, requestId: number, reply: UserQuestionReply) => {
+    (sessionId: string, requestId: number, reply: UserQuestionReply, current?: () => boolean) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session) return;
       if (session.worktreeRemoved) {
@@ -75,11 +75,13 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       )
         return;
       if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) {
+        if (current) return;
         const actions = remoteSessionActions(sessionId);
         if (!actions) throw new Error("Question connection is unavailable");
         actions.answer(requestId, reply);
         return;
       }
+      if (current && !current()) return;
       if (!respondHarnessQuestion(liveTurnHarness(session), sessionId, requestId, reply))
         failQuestionDelivery(
           sessionId,
@@ -112,5 +114,25 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
     [focusOpenSession, onSelectHistorySession],
   );
 
-  return { onApproval, onQuestionReply, onQuestionInteraction, onOpenApprovalSession };
+  // A cross-window live-agent announcement is only a request to focus an
+  // already-owned pane. Its sender may hold a stale snapshot: never reopen it.
+  const onFocusOwnedApprovalSession = useCallback(
+    (sessionId: string) => {
+      const parentId =
+        sessionsRef.current.find((session) => session.id === sessionId)?.orchestrationLeadId ??
+        orchestrator.forSession(sessionId)?.leadId;
+      const ownerId = parentId && parentId !== sessionId ? parentId : sessionId;
+      if (!focusOpenSession(ownerId)) return;
+      if (ownerId !== sessionId) setInspectedWorkerId(sessionId);
+    },
+    [focusOpenSession, sessionsRef, setInspectedWorkerId],
+  );
+
+  return {
+    onApproval,
+    onQuestionReply,
+    onQuestionInteraction,
+    onOpenApprovalSession,
+    onFocusOwnedApprovalSession,
+  };
 }

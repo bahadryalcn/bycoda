@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { t } from "../../../shared/i18n";
 import type { Session } from "../../../features/sessions/model/session";
 import { newDefaultSession } from "../../../features/sessions/model/session";

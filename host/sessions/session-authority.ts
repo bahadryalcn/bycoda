@@ -1,0 +1,140 @@
+/** The fields needed to authorize a session; transcripts are deliberately absent. */
+export type SessionAuthorityIdentity = { projectId: string; provider: string };
+export type SessionGrantScope = SessionAuthorityIdentity & {
+  sessionId: string;
+  environmentId: string;
+};
+export type AssistantThreadAuthorityResolver = (
+  threadId: string,
+) => Promise<{ id: string; projectId?: string } | null>;
+export type AssistantThreadGrantScope = {
+  kind: "assistant-thread";
+  threadId: string;
+  projectId: string;
+  environmentId: string;
+};
+export type AssistantThreadPrincipal = {
+  kind: "assistant-thread";
+  threadId: string;
+  projectId: string;
+  provider: "assistant";
+  sessionId?: undefined;
+};
+export async function assertAssistantThreadScope(
+  resolver: AssistantThreadAuthorityResolver | undefined,
+  threadId: string,
+  projectId: string,
+) {
+  if (!resolver || !threadId || threadId.length > 200 || !projectId)
+    throw new Error("Verified assistant thread identity required.");
+  const thread = await resolver(threadId);
+  if (
+    !thread ||
+    thread.id !== threadId ||
+    (thread.projectId !== undefined && thread.projectId !== projectId)
+  )
+    throw new Error("Assistant thread scope changed or belongs to another project.");
+}
+export function assertAssistantThreadGrantScope(
+  expected: unknown,
+  current: AssistantThreadGrantScope,
+) {
+  if (expected === undefined) return;
+  if (
+    !expected ||
+    typeof expected !== "object" ||
+    Array.isArray(expected) ||
+    Object.keys(expected).length !== 4 ||
+    Object.entries(current).some(
+      ([key, value]) => (expected as Record<string, unknown>)[key] !== value,
+    )
+  )
+    throw new Error("Assistant thread grant scope changed.");
+}
+
+/** Preparation changed while waiting for SQL admission. Keep the grant, but fail closed. */
+export class SessionAuthorityUnavailable extends Error {
+  constructor() {
+    super("Session metadata changed; retry authentication.");
+    this.name = "SessionAuthorityUnavailable";
+  }
+}
+
+/** How long a metadata read still stands when the desktop database moved after it. */
+const PREPARED_FRESH_MS = 5_000;
+
+export type SessionAuthorityResolver = {
+  /** External reads happen here, before reserving the Host SQL owner. */
+  prepare(id: string): Promise<void>;
+  /** Only fresh, bounded Host SQL/metadata checks; never external worker or network I/O. */
+  current(id: string): Promise<SessionAuthorityIdentity>;
+};
+
+/** Native-only sessions live in a different SQLite database. Read its metadata
+ * before Host admission, and fail closed if it changed before the fresh checks. */
+export function createSessionAuthorityResolver(
+  store: HostStore,
+  desktop: Pick<DesktopSessions, "metadataAsync" | "fingerprint" | "samePath">,
+  providers: readonly string[],
+): SessionAuthorityResolver {
+  const prepared = new Map<
+    string,
+    { fingerprint: string; cwd: string; provider: string; at: number }
+  >();
+  return {
+    async prepare(id) {
+      if (store.db.ownsScope) throw new SessionAuthorityUnavailable();
+      if (await store.sessionAuthority(id)) return;
+      // Only authentication preparation is retried, before any business operation.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const fingerprint = desktop.fingerprint();
+        const value = await desktop.metadataAsync(id);
+        // The second read stands even if the database moved again: a running
+        // desktop keeps writing, and the read itself is one consistent snapshot.
+        if (attempt === 0 && desktop.fingerprint() !== fingerprint) continue;
+        if (!value) throw new Error("Session not found on this machine");
+        prepared.delete(id);
+        prepared.set(id, { fingerprint, cwd: value.cwd, provider: value.harness, at: Date.now() });
+        while (prepared.size > 512) prepared.delete(prepared.keys().next().value!);
+        return;
+      }
+      throw new SessionAuthorityUnavailable();
+    },
+    async current(id) {
+      const host = await store.sessionAuthority(id);
+      if (host) return host;
+      const value = prepared.get(id);
+      // A running desktop writes its database all the time, so the fingerprint
+      // moves while this call waits for Host SQL. A change right after the read is
+      // normal activity; only a read that is no longer fresh is repeated.
+      const stale = () =>
+        !value ||
+        (desktop.fingerprint() !== value.fingerprint && Date.now() - value.at > PREPARED_FRESH_MS);
+      if (!value || stale()) throw new SessionAuthorityUnavailable();
+      const project = (await store.projects()).find((project) =>
+        desktop.samePath(project.cwd, value.cwd),
+      );
+      if (stale()) throw new SessionAuthorityUnavailable();
+      if (!project || (value.provider !== "acp" && !providers.includes(value.provider)))
+        throw new Error("Session not found on this machine");
+      return { projectId: project.id, provider: value.provider };
+    },
+  };
+}
+
+export function assertSessionGrantScope(expected: unknown, current: SessionGrantScope): void {
+  if (expected === undefined) return;
+  if (
+    !expected ||
+    typeof expected !== "object" ||
+    Array.isArray(expected) ||
+    Object.keys(expected).length !== 4 ||
+    Object.keys(expected).some((key) => !Object.hasOwn(current, key)) ||
+    Object.entries(current).some(
+      ([key, value]) => (expected as Record<string, unknown>)[key] !== value,
+    )
+  )
+    throw new Error("Session grant scope changed; reconnect this session explicitly.");
+}
+import type { DesktopSessions } from "../desktop/desktopSessions";
+import type { HostStore } from "../store";

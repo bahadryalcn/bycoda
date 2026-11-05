@@ -42,7 +42,13 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+  }));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {

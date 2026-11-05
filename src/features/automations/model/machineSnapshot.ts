@@ -1,4 +1,5 @@
 import { recordRemoteCapabilities, remoteRequest } from "../../connections/model/connections";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
 import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
 
@@ -27,7 +28,11 @@ function machineCache<T>(load: (machine: RemoteMachine, fresh: boolean) => Promi
       const fresh: Entry<T> = { at: now };
       // An answer for a lookup that was invalidated meanwhile still goes to
       // the callers waiting on it, but is not kept.
-      fresh.pending = load(machine, force).then(
+      fresh.pending = withTimeout(
+        Promise.resolve().then(() => load(machine, force)),
+        20_000,
+        "Machine discovery",
+      ).then(
         (value) => {
           if (entries.get(key) === fresh) entries.set(key, { at: Date.now(), value });
           return value;

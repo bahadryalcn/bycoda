@@ -82,6 +82,20 @@ describe("mounted editor Native draft ACK lineage", () => {
     expect(exactMountedEditorDraftReceipt(binding, { ...input, documentId: "other" })).toBeNull();
     expect(exactMountedEditorDraftReceipt(binding, { ...input, path: "/renamed.txt" })).toBeNull();
   });
+  it("requires exact serialized separators for the acknowledged body", () => {
+    const { binding, input } = fixture();
+    const actual = binding.currentDraft!;
+    const exact = actual.payload.text.replace(
+      /\n/g,
+      actual.payload.eol === "crlf" ? "\r\n" : actual.payload.eol === "cr" ? "\r" : "\n",
+    );
+    expect(
+      exactMountedEditorDraftReceipt(binding, { ...input, serializedText: exact }),
+    ).not.toBeNull();
+    expect(
+      exactMountedEditorDraftReceipt(binding, { ...input, serializedText: `${exact}\r` }),
+    ).toBeNull();
+  });
   it("requires current row metadata to match the ACK as well as its payload", () => {
     const { binding, input } = fixture();
     const current = binding.currentDraft!;

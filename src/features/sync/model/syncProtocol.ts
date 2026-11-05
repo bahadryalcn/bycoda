@@ -1,6 +1,6 @@
 /**
  * Wire types for library sync between this desktop and a paired machine's
- * host. Shared by `host/sync.ts` (the authoritative store) and every
+ * host. Shared by `host/sync/sync.ts` (the authoritative store) and every
  * `src/features/sync/model/*` client module. A table's `value` shape is
  * opaque here on purpose: each table's own module (syncProjects,
  * syncGroups, syncLock) validates its own fields before trusting them.

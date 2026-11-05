@@ -95,7 +95,6 @@ export function validSftpProgress(value: unknown): value is SftpProgress {
     ["running", "transferred", "completed", "cancelled", "failed"].includes(event.state)
   );
 }
-/** Progress is emitted to the window that started the transfer; the listener is scoped to it. */
 export const subscribeSftpProgress = (callback: (event: SftpProgress) => void) =>
   listenWindowAsync<unknown>("ssh-sftp-progress", (event) => {
     if (validSftpProgress(event.payload)) callback(event.payload);

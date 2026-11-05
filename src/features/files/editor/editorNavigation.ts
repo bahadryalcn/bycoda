@@ -4,7 +4,7 @@ import { Decoration, EditorView, ViewPlugin, keymap, type DecorationSet } from "
 import type { SyntaxNode } from "@lezer/common";
 import { readTextFile, statFiles } from "../../../platform/tauri/fs";
 import { joinPath, parentPath, pathKey } from "../../../shared/lib/paths";
-import { parseJsonc } from "../../projects/model/codeWorkspace";
+import { parseJsonc } from "../../projects/public/codeWorkspace";
 import type { OpenFileFn } from "../../search/model/search";
 import { languageForPath } from "./editorLanguage";
 

@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
@@ -161,7 +162,9 @@ export function useProjectRemoval({
         confirmedDirtyIds.clear();
       }
       const wasCurrent = sameProjectPath(projectCwdRef.current, normalized);
-      const remaining = options.purgeData ? forgetProject(normalized) : archiveProject(normalized);
+      const remaining = await withRoomPrivacyMutation(() =>
+        options.purgeData ? forgetProject(normalized) : archiveProject(normalized),
+      );
       if (options.purgeData) {
         forgetProjectLocation(normalized);
         setSidebarTabSelection((current) =>
@@ -275,8 +278,8 @@ export function useProjectRemoval({
   );
 
   const onRestoreProject = useCallback(
-    (path: string) => {
-      setRecents(rememberProject(path));
+    async (path: string) => {
+      setRecents(await rememberProject(path));
       onSelectProject(path);
     },
     [onSelectProject],

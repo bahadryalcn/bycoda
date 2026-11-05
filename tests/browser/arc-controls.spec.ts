@@ -622,7 +622,8 @@ async function expectFieldFocus(owner: Locator, resting?: string) {
         const lengths = css.boxShadow.match(/-?(?:\d*\.)?\d+px/g) ?? [];
         return {
           outline: css.outlineStyle,
-          noHalo: css.boxShadow === "none" ||
+          noHalo:
+            css.boxShadow === "none" ||
             (lengths.length >= 3 && lengths.every((length) => Number.parseFloat(length) === 0)),
           border: before === undefined || css.borderTopColor !== before,
         };
@@ -692,7 +693,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
       await combo.locator("..").getByRole("button", { name: "Clear selection" }).click();
       await expect(combo).toHaveValue("");
       await page.keyboard.press("Escape");
-      await region.screenshot({ path: testInfo.outputPath(`search-focus-${width}-${light ? "light" : "dark"}.png`) });
+      await region.screenshot({
+        path: testInfo.outputPath(`search-focus-${width}-${light ? "light" : "dark"}.png`),
+      });
     }
   }
   await page.getByRole("button", { name: "Search choice: First", exact: true }).click();
@@ -703,7 +706,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
   await expect(menuSearch).toHaveCSS("outline-style", "none");
 });
 
-test("text fields keep focus on one border with pointer and keyboard", async ({ page }, testInfo) => {
+test("text fields keep focus on one border with pointer and keyboard", async ({
+  page,
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/arc-controls.html");
   const region = page.getByRole("region", { name: "Field focus", exact: true });
@@ -909,7 +914,7 @@ test("search clearing fits compact and wide layouts, both themes and keyboard us
   page.on("pageerror", (error) => {
     // The browser's benign ResizeObserver loop notice (WebKit reports it as an error event while
     // the clear action resizes the field); it is not an application exception.
-    if (!/^ResizeObserver loop/.test(error.message)) errors.push(error.message);
+    if (!error.message.startsWith("ResizeObserver loop")) errors.push(error.message);
   });
   await page.goto("/tests/browser/arc-controls.html");
   const region = page.getByRole("region", { name: "Search clear controls" });

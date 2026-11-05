@@ -12,8 +12,11 @@ const presentations = {
 
 /** Presentation only. A pending or failed observation cannot certify Here. */
 export function assistantPresencePresentation(value: unknown, unconfirmed = false) {
-  const state: AssistantPresenceState = !unconfirmed && typeof value === "string" && Object.prototype.hasOwnProperty.call(presentations, value)
-    ? value as AssistantPresenceState
-    : "unknown";
+  const state: AssistantPresenceState =
+    !unconfirmed &&
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(presentations, value)
+      ? (value as AssistantPresenceState)
+      : "unknown";
   return { state, ...presentations[state] };
 }

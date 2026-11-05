@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { previewSession } from "../../../../host/transcriptPage";
+import { previewSession } from "../../../../host/sessions/transcriptPage";
 import type { AdoptedDivergence, Attachment, Block, Session } from "../../sessions/model/session";
 import type { AdoptedMirrorDeps } from "./adoptedSessions";
 import type { HostSession } from "./protocol";
@@ -16,7 +16,7 @@ const { getSession, sanitizeSessionForPersist } = await import("../../sessions/d
  * A conversation started on one computer and continued from another. The
  * transcript is synthetic but shaped like a real one: a message carrying two
  * video attachments and a huge tool output, which the host shrinks before the
- * desktop on the same computer sees them again (`host/transcriptPage.ts`).
+ * desktop on the same computer sees them again (`host/sessions/transcriptPage.ts`).
  */
 const attachments = (): Attachment[] => [
   {

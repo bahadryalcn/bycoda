@@ -46,24 +46,34 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 ) {
   const generatedId = useId();
   const controlId = id ?? generatedId;
-  const { description: hintId, error: errorId } = fieldMessageIds(controlId, { description, error });
+  const { description: hintId, error: errorId } = fieldMessageIds(controlId, {
+    description,
+    error,
+  });
   // The error follows the control directly and is described first; the helper stays below it.
-  const describedBy = fieldDescribedBy(controlId, { description, error }, props["aria-describedby"]);
+  const describedBy = fieldDescribedBy(
+    controlId,
+    { description, error },
+    props["aria-describedby"],
+  );
   const Control = clearable || props.type === "search" ? SearchInput : "input";
   const control = (
     <Control
       {...props}
-      {...(Control === SearchInput ? {
-        standalone: endAdornment == null && startAdornment == null,
-        fieldSize: fieldSize ?? (fieldVariant === "compact" ? "sm" : "md"),
-        appearance: appearance === "quiet" && endAdornment == null && startAdornment == null ? "quiet" : "bare",
-      } : {})}
+      {...(Control === SearchInput
+        ? {
+            standalone: endAdornment == null && startAdornment == null,
+            fieldSize: fieldSize ?? (fieldVariant === "compact" ? "sm" : "md"),
+            appearance:
+              appearance === "quiet" && endAdornment == null && startAdornment == null
+                ? "quiet"
+                : "bare",
+          }
+        : {})}
       id={controlId}
       ref={ref}
       aria-label={props["aria-label"] ?? (hideLabel && label ? label : undefined)}
-      className={[styles.input, className]
-        .filter(Boolean)
-        .join(" ")}
+      className={[styles.input, className].filter(Boolean).join(" ")}
       aria-invalid={error ? true : props["aria-invalid"]}
       aria-describedby={describedBy}
     />
@@ -81,10 +91,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         </label>
       )}
       {endAdornment != null || startAdornment != null ? (
-        <FieldControl startAdornment={startAdornment} endAdornment={endAdornment} appearance={appearance} size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}>
+        <FieldControl
+          startAdornment={startAdornment}
+          endAdornment={endAdornment}
+          appearance={appearance}
+          size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}
+        >
           {control}
         </FieldControl>
-      ) : control}
+      ) : (
+        control
+      )}
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
       <FieldMessage id={hintId} text={description} className={styles.description} />
     </div>

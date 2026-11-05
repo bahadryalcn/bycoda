@@ -137,9 +137,9 @@ import {
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
 
-import {assistantAutomationSelection} from "../model/assistantAutomationSelection";
+import { assistantAutomationSelection } from "../model/assistantAutomationSelection";
 type Props = {
-  revealAutomation?:import("../../assistant/model/assistantAutomationReveal").AssistantAutomationReveal;
+  revealAutomation?: import("../../assistant/model/assistantAutomationReveal").AssistantAutomationReveal;
   besideRail?: boolean;
   compactRail?: boolean;
   cwd?: string;
@@ -180,7 +180,9 @@ export function AutomationsView({
       <PaneHeader
         chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
         dragRegion
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         icon={toolNavigation ? undefined : <Zap strokeWidth={1.75} />}
         title={toolNavigation ? undefined : t("Automations")}
         trailing={IS_MAC ? null : <WindowControls />}
@@ -211,7 +213,13 @@ function AutomationsContent({
   onLaunchAssistant,
 }: Pick<
   Props,
-  "revealAutomation" | "cwd" | "recents" | "onLaunch" | "onOpenSession" | "onOpenBackgroundSession" | "onLaunchAssistant"
+  | "revealAutomation"
+  | "cwd"
+  | "recents"
+  | "onLaunch"
+  | "onOpenSession"
+  | "onOpenBackgroundSession"
+  | "onLaunchAssistant"
 >) {
   useLocale();
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -245,7 +253,12 @@ function AutomationsContent({
     [hostAutomations, lock, storedAutomations],
   );
   const collectionPending = localQuery.isPending || !host.loaded;
-  const loading = !automations.length && collectionPending && !localQuery.isError && !host.error && !unreachableNames.length;
+  const loading =
+    !automations.length &&
+    collectionPending &&
+    !localQuery.isError &&
+    !host.error &&
+    !unreachableNames.length;
   const paused = loading && !queryVisible && !localQuery.isFetching && !host.fetching;
   const viewStateKey = `automations:${cwd ? projectKey(cwd) : "global"}`;
   const [storedSelectedId, setSelectedId] = useRetainedState<string | null>(
@@ -360,8 +373,8 @@ function AutomationsContent({
     setCompactListOpen,
     setDraft,
   });
-  // A failed read is not "no automations": say so, with a retry, instead of offering first use.
-  const readFailed = (localQuery.isError && storedAutomations.length === 0) || !!host.error || unreachableNames.length > 0;
+  // Collection failures block first use; one offline machine only makes its own data unknown.
+  const readFailed = (localQuery.isError && storedAutomations.length === 0) || !!host.error;
   const error = actionError ?? (readFailed ? null : (localQuery.error?.message ?? null));
 
   const editorDraft = pickerOpen
@@ -372,29 +385,57 @@ function AutomationsContent({
   const hasAutomations = automations.length > 0;
   const showList = !focusMode && ((!paused && loading) || hasAutomations);
   const filtered = !!query.trim() || statusFilter !== "all";
-  const [revealStatus,setRevealStatus]=useState<""|"draft"|"filter"|"unavailable">("");
-  const revealAttempt=useRef<number|undefined>(undefined);
-  const revealDone=useRef<number|undefined>(undefined);
-  function applyReveal(resetFilters=false,refreshMissing=true){
-    if(!revealAutomation||revealDone.current===revealAutomation.token)return;
-    if(draft||savingRef.current){setRevealStatus("draft");return;}
-    const target=assistantAutomationSelection(revealAutomation,automations,path=>recents.some(project=>projectKey(project.path)===projectKey(path))&&!isProjectLockedIn(lock,path));
-    if(!target){setRevealStatus("unavailable");if(refreshMissing&&queryVisible)void refreshHost();return;}
-    if(!resetFilters&&!visible.some(row=>automationKey(row)===automationKey(target))){setRevealStatus("filter");return;}
-    if(resetFilters){setQuery("");setStatusFilter("all");}
-    setSelectedId(automationKey(target));setPickerOpen(false);setCompactListOpen(false);
-    revealDone.current=revealAutomation.token;setRevealStatus("");
+  const [revealStatus, setRevealStatus] = useState<"" | "draft" | "filter" | "unavailable">("");
+  const revealAttempt = useRef<number | undefined>(undefined);
+  const revealDone = useRef<number | undefined>(undefined);
+  function applyReveal(resetFilters = false, refreshMissing = true) {
+    if (!revealAutomation || revealDone.current === revealAutomation.token) return;
+    if (draft || savingRef.current) {
+      setRevealStatus("draft");
+      return;
+    }
+    const target = assistantAutomationSelection(
+      revealAutomation,
+      automations,
+      (path) =>
+        recents.some((project) => projectKey(project.path) === projectKey(path)) &&
+        !isProjectLockedIn(lock, path),
+    );
+    if (!target) {
+      setRevealStatus("unavailable");
+      if (refreshMissing && queryVisible) void refreshHost();
+      return;
+    }
+    if (!resetFilters && !visible.some((row) => automationKey(row) === automationKey(target))) {
+      setRevealStatus("filter");
+      return;
+    }
+    if (resetFilters) {
+      setQuery("");
+      setStatusFilter("all");
+    }
+    setSelectedId(automationKey(target));
+    setPickerOpen(false);
+    setCompactListOpen(false);
+    revealDone.current = revealAutomation.token;
+    setRevealStatus("");
   }
-  useEffect(()=>{
-    if(!revealAutomation||!host.loaded||revealDone.current===revealAutomation.token)return;
-    const refreshMissing=revealAttempt.current!==revealAutomation.token;
-    revealAttempt.current=revealAutomation.token;applyReveal(false,refreshMissing);
-  },[revealAutomation?.token,host.loaded,automations,lock,recents]);
+  useEffect(() => {
+    if (!revealAutomation || !host.loaded || revealDone.current === revealAutomation.token) return;
+    const refreshMissing = revealAttempt.current !== revealAutomation.token;
+    revealAttempt.current = revealAutomation.token;
+    applyReveal(false, refreshMissing);
+  }, [revealAutomation?.token, host.loaded, automations, lock, recents]);
   const showFilter = hasAutomations || loading;
   const showAssistant = Boolean(onLaunchAssistant) && !pickerOpen;
   const showCreate = !pickerOpen;
   const showHeader = showFilter || showAssistant || showCreate;
-  const firstUse = !revealAutomation && !collectionPending && !readFailed && !hasAutomations;
+  const firstUse =
+    !revealAutomation &&
+    !collectionPending &&
+    !readFailed &&
+    !unreachableNames.length &&
+    !hasAutomations;
 
   return (
     <div
@@ -402,11 +443,36 @@ function AutomationsContent({
       data-list-open={compactListOpen || undefined}
     >
       {confirmDialog}
-      {revealStatus&&revealAutomation&&<div role="status" className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
-        <span>{t(revealStatus==="draft"?"Keep or close your current automation draft before opening the requested automation.":revealStatus==="filter"?"The requested automation is hidden by your filters.":"The linked automation is unavailable on its original computer.")}</span>
-        <Button disabled={saving||!!draft} onClick={()=>applyReveal(revealStatus==="filter")}>{t(revealStatus==="filter"?"Reset filters":"Retry")}</Button>
-        <Button onClick={()=>{revealDone.current=revealAutomation.token;setRevealStatus("");}}>{t("Dismiss")}</Button>
-      </div>}
+      {revealStatus && revealAutomation && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 px-4 py-2 text-ui-secondary"
+        >
+          <span>
+            {t(
+              revealStatus === "draft"
+                ? "Keep or close your current automation draft before opening the requested automation."
+                : revealStatus === "filter"
+                  ? "The requested automation is hidden by your filters."
+                  : "The linked automation is unavailable on its original computer.",
+            )}
+          </span>
+          <Button
+            disabled={saving || !!draft}
+            onClick={() => applyReveal(revealStatus === "filter")}
+          >
+            {t(revealStatus === "filter" ? "Reset filters" : "Retry")}
+          </Button>
+          <Button
+            onClick={() => {
+              revealDone.current = revealAutomation.token;
+              setRevealStatus("");
+            }}
+          >
+            {t("Dismiss")}
+          </Button>
+        </div>
+      )}
       {assistantOpen && onLaunchAssistant ? (
         <AutomationAssistant
           cwd={cwd}
@@ -535,7 +601,20 @@ function AutomationsContent({
         </div>
       ) : null}
       {unreachableNames.length ? (
-        <Alert tone="warning" className="mx-3 mb-2 shrink-0">
+        <Alert
+          tone="warning"
+          className="mx-3 mb-2 shrink-0"
+          action={
+            <Button
+              variant="secondary"
+              disabled={!queryVisible}
+              loading={host.fetching}
+              onClick={() => void refreshHost(true)}
+            >
+              {t("Retry")}
+            </Button>
+          }
+        >
           {unreachableNames.join(", ")} {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
           {t(" reachable right now, so its automations may be out of date.")}
         </Alert>
@@ -605,7 +684,10 @@ function AutomationsContent({
             </Alert>
           ) : null}
           {paused && !editorDraft ? (
-            <EmptyState title={t("Automations")} description={t("Focus this window to load automations.")} />
+            <EmptyState
+              title={t("Automations")}
+              description={t("Focus this window to load automations.")}
+            />
           ) : loading && !editorDraft ? (
             <div className="min-h-0 flex-1">
               <SurfaceLoading />
@@ -681,8 +763,19 @@ function AutomationsContent({
             <EmptyState
               kind="unavailable"
               title={t("Automations unavailable")}
-              description={host.error?.message ?? localQuery.error?.message ?? t("Automations could not be read.")}
-              onRetry={queryVisible ? () => { void localQuery.refetch(); void refreshHost(); } : undefined}
+              description={
+                host.error?.message ??
+                localQuery.error?.message ??
+                t("Automations could not be read.")
+              }
+              onRetry={
+                queryVisible
+                  ? () => {
+                      void localQuery.refetch();
+                      void refreshHost(true);
+                    }
+                  : undefined
+              }
               retrying={localQuery.isFetching || host.fetching}
             />
           ) : (
@@ -810,9 +903,7 @@ function AutomationCard({
             </>
           ) : null}
           <OverflowTooltip label={model.name}>
-            <span
-              className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)"
-            >
+            <span className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)">
               <HarnessIcon harness={automation.harness} className="icon-sm shrink-0" />
               <span className="min-w-0 truncate">{model.name}</span>
             </span>
@@ -872,8 +963,7 @@ function AutomationPicker({
       .includes(templateQuery.trim().toLocaleLowerCase()),
   );
   const collapsible = !templateQuery.trim() && category === "all";
-  const shown =
-    collapsible && !allTemplates ? templates.slice(0, FIRST_TEMPLATES) : templates;
+  const shown = collapsible && !allTemplates ? templates.slice(0, FIRST_TEMPLATES) : templates;
 
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
@@ -926,7 +1016,9 @@ function AutomationPicker({
                     {t("AI assistant")}
                   </span>
                   <span className="mt-1 block text-ui-caption leading-snug text-(--ui-text-muted)">
-                    {t("Continue in a full AI session with automation tools and approval controls.")}
+                    {t(
+                      "Continue in a full AI session with automation tools and approval controls.",
+                    )}
                   </span>
                 </span>
               </span>
@@ -1022,7 +1114,8 @@ function AutomationPicker({
   );
 }
 
-const RUN_GRID = "grid grid-cols-[minmax(0,1.4fr)_9.5rem_6.75rem_3.5rem] items-center gap-x-4 gap-y-1 px-4";
+const RUN_GRID =
+  "grid grid-cols-[minmax(0,1.4fr)_9.5rem_6.75rem_3.5rem] items-center gap-x-4 gap-y-1 px-4";
 
 function RunRow({
   run,
@@ -1211,7 +1304,7 @@ function AutomationEditor({
     draft.prompt.trim().length > 0 &&
     looksLikeProject(draft.cwd) &&
     draft.model.length > 0;
-  const folderOptions = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
+  const folderChoices = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
   const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const setTriggers = (triggers: AutomationTrigger[]) => onChange(applyTriggers(draft, triggers));
@@ -1399,7 +1492,9 @@ function AutomationEditor({
                           values={draft.modelSettings}
                           project={draft.cwd}
                           onChange={(harness, model) => onChange({ ...draft, harness, model })}
-                          onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                          onSettingsChange={(modelSettings) =>
+                            update("modelSettings", modelSettings)
+                          }
                         />
                         {/* Chat settings "Extras summary: beside" also shows the active options here; the menu stays complete. */}
                         {extrasBeside ? (
@@ -1407,7 +1502,9 @@ function AutomationEditor({
                             harness={draft.harness}
                             model={draft.model}
                             values={draft.modelSettings}
-                            onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                            onSettingsChange={(modelSettings) =>
+                              update("modelSettings", modelSettings)
+                            }
                           />
                         ) : null}
                         {draft.harness !== "fx" ? (
@@ -1505,7 +1602,10 @@ function AutomationEditor({
                     </SettingsRow>
                     {draft.runInBackground ? null : (
                       <>
-                        <SettingsRow label={t("Working copy")} hint="This repo, or a fresh worktree">
+                        <SettingsRow
+                          label={t("Working copy")}
+                          hint="This repo, or a fresh worktree"
+                        >
                           <SettingsSelect
                             label={t("Working copy")}
                             value={
@@ -1541,7 +1641,12 @@ function AutomationEditor({
                         </SettingsRow>
                         <SettingsRow
                           label={t("Session folder")}
-                          hint="Where runs appear in the sidebar"
+                          hint={
+                            folderChoices.error ??
+                            (folderChoices.loading
+                              ? t("Loading folders…")
+                              : "Where runs appear in the sidebar")
+                          }
                         >
                           <SearchableSelect
                             variant="pill"
@@ -1549,7 +1654,8 @@ function AutomationEditor({
                             align="end"
                             label={t("Session folder")}
                             value={draft.sessionFolderId}
-                            options={folderOptions}
+                            options={folderChoices.options}
+                            disabled={folderChoices.loading || !!folderChoices.error}
                             onChange={(value) => update("sessionFolderId", value)}
                           />
                         </SettingsRow>
@@ -1618,9 +1724,7 @@ function AutomationEditor({
               <SectionLabel as="h2" className="px-1">
                 {t("Run history")}
               </SectionLabel>
-              {historyLoading ? (
-                <LoadingText className="p-3" />
-              ) : null}
+              {historyLoading ? <LoadingText className="p-3" /> : null}
               {historyError ? (
                 <InlineError
                   className="mt-2 px-1"

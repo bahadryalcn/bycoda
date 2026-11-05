@@ -201,11 +201,24 @@ it("keeps the options trigger the same size family as the primary action", async
 });
 
 it("requests a native menu without a clipped DOM popup or treating display acceptance as a selection", async () => {
-  const choose = vi.fn(), main = vi.fn();
-  const actions = [{ id: "manual", label: "Manual", checked: true, selectionRole: "radio" as const, onSelect: choose }];
+  const choose = vi.fn(),
+    main = vi.fn();
+  const actions = [
+    {
+      id: "manual",
+      label: "Manual",
+      checked: true,
+      selectionRole: "radio" as const,
+      onSelect: choose,
+    },
+  ];
   const { menu } = await render({ menuSurface: "native", actions, onClick: main });
   await act(async () => menu.click());
-  expect(popupNativeActionMenu).toHaveBeenCalledExactlyOnceWith(menu, actions, expect.any(Function));
+  expect(popupNativeActionMenu).toHaveBeenCalledExactlyOnceWith(
+    menu,
+    actions,
+    expect.any(Function),
+  );
   expect(document.querySelector('[role="menu"]')).toBeNull();
   expect(menu.hasAttribute("aria-expanded")).toBe(false);
   expect(choose).not.toHaveBeenCalled();
@@ -233,9 +246,15 @@ it("rejects native callbacks after permission changes or removal of their source
 });
 
 it("reports a failed native popup and allows retry without picking an action", async () => {
-  const error = new Error("popup unavailable"), failed = vi.fn(), choose = vi.fn();
+  const error = new Error("popup unavailable"),
+    failed = vi.fn(),
+    choose = vi.fn();
   vi.mocked(popupNativeActionMenu).mockRejectedValueOnce(error);
-  const { menu } = await render({ menuSurface: "native", onMenuError: failed, actions: [{ id: "manual", label: "Manual", onSelect: choose }] });
+  const { menu } = await render({
+    menuSurface: "native",
+    onMenuError: failed,
+    actions: [{ id: "manual", label: "Manual", onSelect: choose }],
+  });
   await act(async () => menu.click());
   expect(failed).toHaveBeenCalledExactlyOnceWith(error);
   expect(choose).not.toHaveBeenCalled();

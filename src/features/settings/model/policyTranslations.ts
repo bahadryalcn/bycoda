@@ -2,11 +2,11 @@
 export const turkishPolicies = {
   privacy: `# Gizlilik politikası
 
-Son güncelleme: 11 Ekim 2026
+Son güncelleme: 4 Kasım 2026
 
 ## Kapsam ve iletişim
 
-Bu politika, [bahadryalcn](https://github.com/bahadryalcn) tarafından bağımsız olarak sürdürülen bycoda masaüstü uygulamasını ve kendi sunucunuzda çalıştırdığınız yardımcı host'u açıklar. Gizlilik soruları ve talepleri için [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com) adresine yazabilirsiniz. Genel sorular için GitHub kullanılabilir; herkese açık issue'lara kişisel bilgi, kimlik bilgisi, özel kod veya konuşma kayıtları koymayın.
+Bu politika, [bahadryalcn](https://github.com/bahadryalcn) tarafından bağımsız olarak sürdürülen bycoda masaüstü uygulamasını ve kendi sunucunuzda çalıştırdığınız yardımcı host'u açıklar. Gizlilik soruları ve talepleri için [info@bycoda.codes](mailto:info@bycoda.codes) adresine yazabilirsiniz. Genel sorular için GitHub kullanılabilir; herkese açık issue'lara kişisel bilgi, kimlik bilgisi, özel kod veya konuşma kayıtları koymayın.
 
 ## Geliştirici veri toplamıyor veya kullanıcıları takip etmiyor
 
@@ -49,7 +49,7 @@ E-posta, issue, tanılama dosyası veya destek materyali gönderirseniz bakımc�
 Değişiklikler tarihlendirilerek depoda yayımlanır ve sonraki uygulama sürümlerine eklenir. Bu metin bağlandığınız servislerin politikalarını değiştirmez.`,
   terms: `# Kullanım koşulları
 
-Son güncelleme: 11 Ekim 2026
+Son güncelleme: 4 Kasım 2026
 
 ## Yazılım ve lisans
 
@@ -73,14 +73,14 @@ Uygulanabilir hukukun izin verdiği en geniş ölçüde ve MIT lisansıyla uyuml
 
 ## Gizlilik, güvenlik ve iletişim
 
-Gizlilik politikası yerel depolama ve bağlı servisleri açıklar. Güvenlik açıklarını özel kanaldan bildirin; sırları veya istismar ayrıntılarını açık issue'larda yayımlamayın. Gizlilik, güvenlik ve diğer sorular için [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com) adresine yazın veya [bakımcının GitHub profilini](https://github.com/bahadryalcn) ziyaret edin.
+Gizlilik politikası yerel depolama ve bağlı servisleri açıklar. Güvenlik açıklarını özel kanaldan bildirin; sırları veya istismar ayrıntılarını açık issue'larda yayımlamayın. Gizlilik, güvenlik ve diğer sorular için [info@bycoda.codes](mailto:info@bycoda.codes) adresine yazın veya [bakımcının GitHub profilini](https://github.com/bahadryalcn) ziyaret edin.
 
 ## Değişiklikler
 
 Değişiklikler depoda tarihlendirilir ve sonraki uygulama sürümlerine eklenir. Bu koşullar sertifikasyon, mevzuata uygunluk, sağlayıcı onayı veya hizmet seviyesi anlaşması iddiası içermez.`,
   thirdParty: `# Üçüncü taraflar ve veri kontrolleri
 
-Son güncelleme: 11 Ekim 2026
+Son güncelleme: 4 Kasım 2026
 
 ## Bağlantıları siz seçersiniz
 
@@ -110,5 +110,5 @@ Sosyal hesap bağlantısını kesmek yerel token'ı kaldırır ve hesabı durakl
 
 Konuşmaları ve diğer kayıtları mevcut kontrollerle silin. Gizleme ve arşivleme verileri tutar. Yerel veritabanları, webview tercihleri, tanılama günlükleri, sağlayıcı CLI geçmişi ve host kopyaları ayrı depolardır. Uygulamayı kaldırmak bunların silinmesini garanti etmez. Tam sıfırlama için uygulama ve host'u durdurun, gereken verileri yedekleyin ve bycoda.db ile varsa sosyal kimlik bilgisi kasası dahil uygulama verilerini kaldırın. Sağlayıcı depolarını, eşleştirilmiş cihazları ve yedekleri de inceleyin. Uygulama verilerini kaldırmak bütün yerel oturum ve ayarları silebilir; tercihleri sıfırlamak için proje klasörlerini silmeyin.
 
-Bakımcıya gönüllü gönderilmiş bilgilerle ilgili talepler [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com) adresine gönderilebilir. Bakımcı cihazlarınıza uzaktan erişemez; yerel verileri veya üçüncü taraf kayıtlarını sizin adınıza silemez.`,
+Bakımcıya gönüllü gönderilmiş bilgilerle ilgili talepler [info@bycoda.codes](mailto:info@bycoda.codes) adresine gönderilebilir. Bakımcı cihazlarınıza uzaktan erişemez; yerel verileri veya üçüncü taraf kayıtlarını sizin adınıza silemez.`,
 };

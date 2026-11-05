@@ -240,7 +240,7 @@ it.each(["single", "all"])(
     const unread = inboxRow(container, "Unread issue")!;
     act(() => (mode === "all" ? markAll : unread).click());
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not save read status",
+      mode === "all" ? "Some read status updates may have saved" : "Could not save read status",
     );
     expect(isInboxEntryUnseen(entry)).toBe(true);
     expect(markAll.disabled).toBe(false);

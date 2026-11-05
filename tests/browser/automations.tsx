@@ -29,6 +29,15 @@ let automation: Automation = {
 // ?runs=mixed fills the run history with every status, ?runs=error fails the first
 // read (Retry succeeds) and ?runs=slow keeps it loading until releaseRuns() is called.
 const runsMode = new URLSearchParams(location.search).get("runs");
+// ?host=offline starts with an empty local collection and one unavailable Host.
+const offlineHostMode = new URLSearchParams(location.search).get("host") === "offline";
+let hasLocalAutomation = !offlineHostMode;
+const remoteMachine = {
+  id: "fixture-tailm",
+  name: "tailm",
+  endpoint: "http://fixture-tailm.invalid:3774",
+  environmentId: "fixture-tailm-environment",
+};
 const at = Date.now();
 const sampleRuns: AutomationRun[] = [
   {
@@ -110,6 +119,7 @@ const runsHeld = new Promise<void>((resolve) => (releaseRuns = resolve));
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 const control = {
   holdSave: false,
+  remoteAvailable: false,
   finishSave: null as null | ((error?: string) => void),
   releaseRuns: () => releaseRuns(),
 };
@@ -124,7 +134,8 @@ Object.assign(window, {
       calls.push({ command, args: structuredClone(args) });
       if (command === "default_cwd") return "C:/fixture/home";
       if (command === "plugin:event|listen") return 1;
-      if (command === "automations_list") return [structuredClone(automation)];
+      if (command === "automations_list")
+        return hasLocalAutomation ? [structuredClone(automation)] : [];
       if (command === "automations_upsert") {
         if (control.holdSave) {
           await new Promise<void>((resolve, reject) => {
@@ -136,6 +147,7 @@ Object.assign(window, {
           });
         }
         automation = { ...(args.automation as Automation), createdAt: 1, updatedAt: 2 };
+        hasLocalAutomation = true;
         return structuredClone(automation);
       }
       if (command === "automations_delete") throw new Error("Fixture must cancel deletion");
@@ -146,7 +158,16 @@ Object.assign(window, {
           throw new Error("Fixture: run history is unavailable right now");
         return runsMode ? structuredClone(sampleRuns) : [];
       }
-      if (command === "remote_machines") return [];
+      if (command === "remote_machines")
+        return offlineHostMode ? [structuredClone(remoteMachine)] : [];
+      if (command === "remote_request" && args.machineId === remoteMachine.id) {
+        if (args.method === "environment.describe") {
+          if (!control.remoteAvailable) throw new Error("Fixture: tailm is unreachable");
+          return { capabilities: ["automations"] };
+        }
+        if (args.method === "automations.list" || args.method === "projects.list") return [];
+        throw new Error(`Unexpected fixture Host operation: ${String(args.method)}`);
+      }
       if (command.endsWith("_status")) return { connected: false };
       if (command.startsWith("plugin:")) return null;
       return [];

@@ -562,6 +562,43 @@ pub(super) struct Initialization {
 }
 
 impl RegisteredConnection {
+    fn recovery_directory(&self) -> Result<PathBuf, String> {
+        let registration = self
+            .registration
+            .as_ref()
+            .ok_or("Recovery lease unavailable")?;
+        registration.record.binding.verify()?;
+        let registry = registration.record.binding.registry()?;
+        let name = registry
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or("Recovery lease path invalid")?;
+        let directory = registry.with_file_name(format!("{name}-recovery"));
+        os::registry_directory(&directory)?;
+        Ok(directory)
+    }
+
+    pub(super) fn create_recovery_lease(&self, id: &str) -> Result<File, String> {
+        let id = uuid::Uuid::parse_str(id).map_err(|_| "Invalid recovery lease identity")?;
+        let file = os::safe_file(&self.recovery_directory()?.join(id.to_string()), true, true)?;
+        file.try_lock()
+            .map_err(|_| "Recovery lease could not be acquired")?;
+        Ok(file)
+    }
+
+    pub(crate) fn recovery_lease_state(&self, id: &str) -> Result<LeaseState, String> {
+        let id = uuid::Uuid::parse_str(id).map_err(|_| "Invalid recovery lease identity")?;
+        let file = os::safe_file(
+            &self.recovery_directory()?.join(id.to_string()),
+            false,
+            false,
+        )?;
+        match file.try_lock() {
+            Ok(()) => Ok(LeaseState::Unleased),
+            Err(TryLockError::WouldBlock) => Ok(LeaseState::Live),
+            Err(_) => Err("Recovery lease state is unknown".into()),
+        }
+    }
     pub(super) fn new(connection: Connection, registration: Arc<Registration>) -> Self {
         Self {
             connection,

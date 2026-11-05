@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayName } from "../../projects/public/projectNames";
 import { useT } from "../../../shared/i18n";
 import { useState, useSyncExternalStore } from "react";
 import { ToastSlot } from "../../../shared/ui/ToastRegion";
@@ -11,7 +11,7 @@ import {
 
 import { sessionDisplayTitle } from "../model/session";
 import { formatReminderTime, reminderTime, type SessionReminder } from "../model/sessionReminders";
-import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { Clock } from "../../../shared/ui/icons";
 import { sessionReminderPresets } from "./sessionReminderPresets";
 

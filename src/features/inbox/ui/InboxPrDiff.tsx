@@ -18,12 +18,7 @@ type Props = {
   contextControl?: ReactNode;
 };
 
-export function InboxPrDiff({
-  diff,
-  fullFile = false,
-  focusPath,
-  contextControl,
-}: Props) {
+export function InboxPrDiff({ diff, fullFile = false, focusPath, contextControl }: Props) {
   useLocale();
   const [picked, setPicked] = useState<{ path: string; request: number } | null>(null);
   const files = useMemo(() => {

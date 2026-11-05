@@ -1,0 +1,1556 @@
+import { joined, alreadyExists } from "./workspace-path-labels";
+import { moveWithRecovery } from "./cross-volume-move";
+import { renameWithRetry } from "../storage/rename-retry";
+import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import {
+  gitMutationScope,
+  hostGitRepositoryKey,
+  isBranchDeliveryCommand,
+  isHostGitMutation,
+  isManagedWorkspaceBranch,
+  MANAGED_DELIVERY_REVIEW_REQUIRED,
+  withHostGitMutation,
+} from "../git/git-mutations";
+import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
+import type {
+  BranchDeliveryService,
+  WorkspaceOwnerAuthorization,
+  WorkspaceRegistry,
+} from "./workspace-service-contracts";
+import { constants } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  cp,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
+import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../../src/platform/tauri/fs";
+import { hostUnmerged, unmergedMessage } from "../git/git-conflicts";
+import { hostWorktrees } from "../git/git-worktrees";
+import { hostGitSubmodules } from "../git/git-submodules";
+import { createHostBranch, hostBranches, switchHostBranch } from "../git/git-branches";
+import {
+  GIT_ACTION_COMMANDS,
+  GIT_ACTIONS_NEEDING_IDLE,
+  HISTORY_FORMAT,
+  HISTORY_REFS_FORMAT,
+  parseHistoryLog,
+  parseHistoryRefs,
+  runGitAction,
+  verifyGitManagementSnapshot,
+  type GitActionCommand,
+} from "../git/git-actions";
+import type { HostStore } from "../store";
+import { HostCheckpoints } from "../checkpoints/checkpoints";
+import { fileRevertGeneration } from "../sessions/session-file-revert";
+import { browseHostFolder } from "../browser/browse";
+import { formatWorkspaceText } from "../files/editor-format";
+import { listHostClaudeCommands } from "../providers/claude-commands";
+import {
+  deleteHostSkill,
+  exportHostSkill,
+  importHostSkill,
+  listHostSkills,
+} from "../skills/skills";
+import { withWorkspaceMutation } from "./workspace-mutations";
+import { inspectConversationPath } from "../conversation/conversation-file-mutations";
+import { migrateSkillPolicy, setSkillEnabled } from "../skills/skill-policy";
+import {
+  installCatalogSkill,
+  parseSkillInstallRequest,
+  skillInstallStatus,
+} from "../skills/skill-install";
+import {
+  createHostPath,
+  existingPath,
+  hostFileDiff,
+  hostGitAction,
+  hostGitIndex,
+  indexHostFiles,
+  invalidateHostFilePaths,
+  invalidateHostGitIndex,
+  listHostFiles,
+  searchHostContent,
+  workspacePath,
+} from "./workspace";
+
+/** Local file commands the host answers for a remote project, with the same
+ * names, arguments and results as this app's Tauri commands, so the same UI
+ * works on either machine. Paths are absolute host paths and must lie inside
+ * a registered project or one of its worktrees. `browse_dir` only returns
+ * folder metadata and can also navigate outside those roots. */
+export const WORKSPACE_COMMANDS = [
+  "session_checkpoint_status",
+  "session_checkpoint_file_diff",
+  "session_checkpoint_undo",
+  "session_checkpoint_keep",
+  "list_dir",
+  "skill_policy_get",
+  "skill_policy_set",
+  "browse_dir",
+  "list_project_files",
+  "read_text_file",
+  "format_text_file",
+  "read_binary_file",
+  "read_file_info",
+  "read_folder_entry",
+  "read_file_chunk",
+  "read_file_preview",
+  "write_text_file",
+  "stat_files",
+  "create_path",
+  "rename_path",
+  "delete_path",
+  "copy_path",
+  "move_path",
+  "git_diff_index",
+  "git_diff_files",
+  "git_diff_stats",
+  "git_file_diff",
+  "git_stage_contents",
+  "git_stage_file",
+  "git_stage_files",
+  "git_discard_files",
+  "git_unstage_files",
+  "git_unstage_file",
+  "git_discard_file",
+  "git_discard_all",
+  "git_stage_all",
+  "git_unstage_all",
+  "git_commit",
+  "git_head_message",
+  "git_push",
+  "git_pull",
+  "git_sync",
+  "git_pr_status",
+  "git_pr_destination",
+  "git_pr_create",
+  "git_history",
+  "git_commit_files",
+  "git_commit_file_diff",
+  "git_staged_context",
+  "git_range_context",
+  "git_branches",
+  "git_checkout",
+  "git_create_branch",
+  ...GIT_ACTION_COMMANDS,
+  "git_worktrees",
+  "git_submodules",
+  "search_project",
+  "cancel_project_search",
+  "list_skills",
+  "list_claude_commands",
+  "skill_export",
+  "skill_delete",
+  "skill_import",
+  "skill_catalog_install",
+  "skill_catalog_install_status",
+] as const;
+export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
+
+// Remote RPC has bounded request and response bodies. Keep file operations
+// within those bounds even after JSON escaping or base64 encoding.
+const MAX_TEXT_FILE = 1024 * 1024;
+const MAX_PREVIEW_FILE = 10 * 1024 * 1024;
+const MAX_TRANSFER_FILE = 1024 * 1024 * 1024;
+const MAX_TRANSFER_CHUNK = 1024 * 1024;
+const MAX_STAT_FILES = 64;
+const ROOTS_TTL_MS = 5_000;
+// Connections may own different command instances. Windows cannot replace the
+// same destination concurrently, so serialize canonical destinations host-wide.
+const textFileSaves = new Map<string, Promise<void>>();
+
+type Located = { root: string; relative: string };
+
+/** Installed by the execution Host, never supplied in workspace.run arguments. */
+export interface WorkspaceCommandDelivery {
+  registry: Pick<WorkspaceRegistry, "list">;
+  service: BranchDeliveryService;
+  startMutation?(cwd: string): Promise<() => Promise<void>>;
+}
+
+export class WorkspaceCommands {
+  private searches = new Map<string, { owner: string; controller: AbortController }>();
+  private cancelledSearches = new Map<string, number>();
+  private revokedSearchOwners = new Map<string, number>();
+  private roots = new Map<string, { at: number; roots: string[] }>();
+  private rootsGeneration = 0;
+
+  invalidateRoots(): void {
+    this.rootsGeneration++;
+    this.roots.clear();
+  }
+
+  constructor(
+    private readonly store: HostStore,
+    private readonly withIdleProject: <T>(
+      projectId: string,
+      action: () => Promise<T>,
+    ) => Promise<T>,
+    private readonly checkpoints = new HostCheckpoints(
+      resolve(dirname(store.attachmentDir), "checkpoints"),
+      undefined,
+      async (sessionId, generation) => {
+        await store.assertAuthority(sessionId, generation);
+      },
+    ),
+    private readonly delivery?: WorkspaceCommandDelivery,
+  ) {}
+
+  async reviewDelivery(request: WorkspaceRpcRequest<"workspaces.delivery.review">) {
+    return await this.deliveryService().review(request);
+  }
+
+  /** Owner proof is a separate trusted-transport parameter, not renderer input. */
+  async mergeDelivery(
+    request: WorkspaceRpcRequest<"workspaces.delivery.merge">,
+    owner: WorkspaceOwnerAuthorization,
+  ) {
+    return await this.deliveryService().merge(request, owner);
+  }
+
+  async publishDelivery(
+    request: WorkspaceRpcRequest<"workspaces.delivery.publish">,
+    owner: WorkspaceOwnerAuthorization,
+  ) {
+    return await this.deliveryService().publish(request, owner);
+  }
+
+  private deliveryService(): BranchDeliveryService {
+    if (!this.delivery)
+      throw new Error("Managed workspace delivery is unavailable. Update the execution Host.");
+    return this.delivery.service;
+  }
+
+  async run(
+    command: unknown,
+    args: unknown,
+    owner = "local",
+    authorized?: () => Promise<boolean>,
+  ): Promise<Awaited<Promise<unknown>>> {
+    const input =
+      args && typeof args === "object" && !Array.isArray(args)
+        ? (args as Record<string, unknown>)
+        : {};
+    const mutating =
+      isHostGitMutation(String(command)) ||
+      [
+        "write_text_file",
+        "create_path",
+        "rename_path",
+        "delete_path",
+        "copy_path",
+        "move_path",
+        "session_checkpoint_undo",
+        "session_checkpoint_keep",
+      ].includes(String(command));
+    const paths =
+      isHostGitMutation(String(command)) || String(command).startsWith("session_checkpoint_")
+        ? [input.cwd]
+        : command === "create_path"
+          ? [input.parent]
+          : command === "copy_path" || command === "move_path"
+            ? [input.from, input.destParent]
+            : [input.path];
+    const releases: (() => Promise<void>)[] = [];
+    try {
+      if (mutating && this.delivery?.startMutation)
+        for (const path of new Set(paths))
+          if (typeof path === "string") releases.push(await this.delivery.startMutation(path));
+      return await this.dispatch(command, args, owner, authorized);
+    } finally {
+      for (const release of releases.reverse()) await release();
+    }
+  }
+
+  private async dispatch(
+    command: unknown,
+    args: unknown,
+    owner: string,
+    authorized?: () => Promise<boolean>,
+  ): Promise<unknown> {
+    if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
+      throw new Error("Unsupported workspace command");
+    const input =
+      args && typeof args === "object" && !Array.isArray(args)
+        ? (args as Record<string, unknown>)
+        : {};
+    if (isHostGitMutation(command as string)) {
+      return this.gitRoot(input.cwd).then(
+        async (root) =>
+          await withHostGitMutation(
+            root,
+            async () => {
+              try {
+                if (isBranchDeliveryCommand(command as string))
+                  await this.assertLegacyDeliveryAllowed(command as string, input);
+                return await this.runCommand(command as WorkspaceCommand, input, owner);
+              } finally {
+                invalidateHostGitIndex(root);
+              }
+            },
+            undefined,
+            gitMutationScope(command as string),
+          ),
+      );
+    }
+    if (["rename_path", "delete_path", "copy_path", "move_path"].includes(String(command))) {
+      return this.locate(input.path ?? input.from).then(
+        async ({ root }) =>
+          await withWorkspaceMutation(
+            root,
+            async () =>
+              await this.runCommand(command as WorkspaceCommand, input, owner, authorized),
+          ),
+      );
+    }
+    return await this.runCommand(command as WorkspaceCommand, input, owner, authorized);
+  }
+
+  private async assertLegacyDeliveryAllowed(command: string, input: Record<string, unknown>) {
+    if (command === "git_merge" && isManagedWorkspaceBranch(input.reference))
+      throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+    if (!this.delivery) return; // Existing unregistered sessions keep legacy source control.
+    const cwd = await this.gitRoot(input.cwd);
+    const key = await hostGitRepositoryKey(cwd);
+    const projects = await this.store.projects();
+    const matching = await Promise.all(
+      projects.map(async (project) =>
+        (await hostGitRepositoryKey(project.cwd)) === key ? project : null,
+      ),
+    );
+    const owners = matching.filter((project) => project !== null);
+    if (!owners.length) throw new Error("Project is unavailable");
+    const currentBranch = (await this.gitCommand(cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+    const treeRoot = await realpath(
+      (await this.gitCommand(cwd, ["rev-parse", "--show-toplevel"])).trim(),
+    );
+    const samePath = (left: string, right: string) => {
+      const normalize = (path: string) => {
+        const value = resolve(path).replace(/\\/g, "/");
+        return process.platform === "win32" ? value.toLowerCase() : value;
+      };
+      return normalize(left) === normalize(right);
+    };
+    const expectedSource =
+      command === "git_merge" && input.expectedTargetSha !== undefined
+        ? await this.gitCommitSha(cwd, input.expectedTargetSha)
+        : undefined;
+    const reference =
+      typeof input.reference === "string"
+        ? input.reference.startsWith("refs/")
+          ? input.reference
+          : `refs/heads/${input.reference}`
+        : undefined;
+    for (const project of owners) {
+      // Failed registry reads are unknown, never permission to publish.
+      const workspaces = await this.delivery.registry.list({ projectId: project.id });
+      for (const workspace of workspaces) {
+        const workspacePath = await realpath(workspace.path).catch(() => workspace.path);
+        if (
+          samePath(treeRoot, workspacePath) ||
+          workspace.branchRef === currentBranch ||
+          workspace.branchRef === reference
+        )
+          throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+        if (expectedSource !== undefined) {
+          const source = (
+            await this.gitCommand(cwd, ["rev-parse", "--verify", `${workspace.branchRef}^{commit}`])
+          ).trim();
+          if (source === expectedSource) throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+        }
+      }
+    }
+  }
+
+  cancelSearches(owner: string): void {
+    this.rememberSearchCancellation(this.revokedSearchOwners, owner);
+    for (const entry of this.searches.values()) if (entry.owner === owner) entry.controller.abort();
+  }
+
+  private rememberSearchCancellation(cache: Map<string, number>, key: string) {
+    const now = Date.now();
+    for (const [entry, until] of cache) if (until < now) cache.delete(entry);
+    cache.delete(key);
+    cache.set(key, now + 5 * 60_000);
+    while (cache.size > 1024) cache.delete(cache.keys().next().value!);
+  }
+
+  private async runCommand(
+    command: WorkspaceCommand,
+    input: Record<string, unknown>,
+    owner: string,
+    authorized?: () => Promise<boolean>,
+  ): Promise<Awaited<Promise<unknown>>> {
+    if (GIT_ACTION_COMMANDS.includes(command as GitActionCommand))
+      return await this.gitActionCommand(command as GitActionCommand, input);
+    switch (command as Exclude<WorkspaceCommand, GitActionCommand>) {
+      case "session_checkpoint_status":
+      case "session_checkpoint_file_diff":
+      case "session_checkpoint_undo":
+      case "session_checkpoint_keep":
+        return await this.checkpoint(command as string, input);
+      case "list_dir":
+        return await this.listDir(input.path);
+      case "browse_dir":
+        return await this.browseDir(input.path, input.containing);
+      case "list_project_files":
+        return await this.listProjectFiles(input.cwd);
+      case "read_text_file":
+        return await this.readText(input.path);
+      case "format_text_file": {
+        return this.existing(input.path).then(
+          async ({ root, path }) =>
+            await formatWorkspaceText(root, path, input.source, input.cursorOffset),
+        );
+      }
+      case "read_binary_file":
+        return await this.readBinary(input.path);
+      case "read_file_info":
+        return await this.readFileInfo(input.path, input.root, input.rootIdentity);
+      case "read_folder_entry":
+        return await this.readFolderEntry(input);
+      case "read_file_chunk":
+        return await this.readFileChunk(input);
+      case "read_file_preview":
+        return await this.preview(input.path, input.maxLines, input.startLine);
+      case "write_text_file":
+        return await this.writeText(input.path, input.content);
+      case "stat_files":
+        return await this.statFiles(input.paths);
+      case "create_path":
+        return await this.create(input.parent, input.name, input.isDir);
+      case "rename_path":
+        return await this.rename(input.path, input.name, input.expectedHash, authorized);
+      case "delete_path":
+        return await this.delete(input.path, input.expectedHash, authorized);
+      case "copy_path":
+        return await this.copy(input.from, input.destParent, input.expectedHash, authorized);
+      case "move_path":
+        return await this.move(input.from, input.destParent, input.expectedHash, authorized);
+      case "git_diff_index":
+        return await this.gitIndex(input.cwd);
+      case "git_diff_files":
+        return await this.gitIndex(input.cwd, false);
+      case "git_diff_stats":
+        return this.gitIndex(input.cwd, false).then((index) => ({
+          files: index.files.length + (index.conflicts?.length ?? 0),
+          additions: index.additions,
+          deletions: index.deletions,
+        }));
+      case "git_file_diff":
+        return await this.gitFileDiff(input.cwd, input.relative, input.staged);
+      case "git_stage_contents":
+        return await this.gitAction(
+          input.cwd,
+          "stageContents",
+          input.relative,
+          undefined,
+          input.contents,
+          input.expectedOriginal,
+          input.expectedCurrent,
+          input.expectedSnapshot,
+        );
+      case "git_stage_file":
+        return await this.gitAction(input.cwd, "stage", input.relative);
+      case "git_stage_files":
+        return await this.gitAction(input.cwd, "stageFiles", input.relatives);
+      case "git_unstage_files":
+        return await this.gitAction(input.cwd, "unstageFiles", input.relatives);
+      case "git_unstage_file":
+        return await this.gitAction(input.cwd, "unstage", input.relative);
+      case "git_discard_file":
+        return await this.gitAction(input.cwd, "discard", input.relative);
+      case "git_discard_files":
+        return await this.gitAction(input.cwd, "discardFiles", input.relatives);
+      case "git_discard_all":
+        return await this.gitAction(input.cwd, "discardAll");
+      case "git_stage_all":
+        return await this.gitAction(input.cwd, "stageAll");
+      case "git_unstage_all":
+        return await this.gitAction(input.cwd, "unstageAll");
+      case "git_commit":
+        return await this.gitCommit(input.cwd, input.message, input.amend, input.signoff);
+      case "git_head_message":
+        return await this.gitCommand(input.cwd, ["log", "-1", "--format=%B"]);
+      case "git_push":
+        return await this.gitAction(input.cwd, "push");
+      case "git_pull":
+        return this.gitRoot(input.cwd).then(
+          async (root) =>
+            await this.withIdleGitProject(root, async () =>
+              this.gitCommand(root, [
+                "pull",
+                input.rebase === true ? "--rebase" : "--ff-only",
+              ]).then(() => undefined),
+            ),
+        );
+      case "git_sync":
+        return this.gitRoot(input.cwd).then(
+          async (root) => await this.withIdleGitProject(root, async () => await this.gitSync(root)),
+        );
+      case "git_pr_status":
+        return await this.gitPrStatus(input.cwd);
+      case "git_pr_destination":
+        return this.ghCommand(input.cwd, ["repo", "view", "--json", "nameWithOwner,url"]).then(
+          (json) => JSON.parse(json),
+        );
+      case "git_pr_create":
+        if (input.expectedSnapshot !== undefined)
+          return this.gitRoot(input.cwd).then(async (root) => {
+            await verifyGitManagementSnapshot(root, input.expectedSnapshot);
+            return await this.gitPrCreate(
+              root,
+              input.title,
+              input.body,
+              input.base,
+              input.head,
+              input.repository,
+            );
+          });
+        return await this.gitPrCreate(
+          input.cwd,
+          input.title,
+          input.body,
+          input.base,
+          input.head,
+          input.repository,
+        );
+      case "git_history":
+        return await this.gitHistory(input.cwd, input.limit, input.all === true);
+      case "git_commit_files":
+        return await this.gitCommitFiles(input.cwd, input.sha);
+      case "git_commit_file_diff":
+        return await this.gitCommitFileDiff(input.cwd, input.sha, input.relative);
+      case "git_staged_context":
+        return await this.gitStagedContext(input.cwd);
+      case "git_range_context":
+        return await this.gitRangeContext(input.cwd);
+      case "git_branches":
+        return await this.gitBranches(input.cwd);
+      case "git_checkout":
+        return await this.gitCheckout(input.cwd, input.name, input.remote);
+      case "git_create_branch":
+        return await this.gitCreateBranch(input.cwd, input.name);
+      case "git_worktrees":
+        return await this.gitWorktrees(input.cwd);
+      case "git_submodules":
+        return this.gitRoot(input.cwd).then(hostGitSubmodules);
+      case "search_project":
+        return await this.searchProject(input.options, owner);
+      case "cancel_project_search":
+        return await this.cancelProjectSearch(input.cwd, input.searchId, owner);
+      case "list_skills":
+        return await this.listSkills(input.cwd, input.disabledPaths, input.provider);
+      case "skill_policy_get":
+        return Promise.resolve().then(() => migrateSkillPolicy(input.legacyDisabledPaths));
+      case "skill_policy_set":
+        return Promise.resolve().then(() => setSkillEnabled(input.name, input.enabled));
+      case "list_claude_commands":
+        return this.existing(input.cwd, true).then(
+          async ({ path }) => await listHostClaudeCommands(path),
+        );
+      case "skill_export":
+        return await this.exportSkill(input.path, input.cwd);
+      case "skill_delete":
+        return await this.deleteSkill(input.path, input.cwd);
+      case "skill_import":
+        // `cwd` only routes the call here; skills land in this machine's home.
+        return Promise.resolve().then(() => importHostSkill(input));
+      case "skill_catalog_install":
+      case "skill_catalog_install_status": {
+        const request = parseSkillInstallRequest(input);
+        // The execution machine validates project authority before any network or disk mutation.
+        if (request.scope === "project") {
+          const located = await this.existing(request.cwd, true);
+          if (!(await stat(located.path)).isDirectory())
+            throw new Error("Choose a project folder.");
+          request.cwd = located.path;
+        }
+        return command === "skill_catalog_install"
+          ? await installCatalogSkill(request)
+          : await skillInstallStatus(request);
+      }
+    }
+  }
+
+  /** The project folders and worktrees files may be read and written in. */
+  private async allowedRoots(): Promise<string[]> {
+    const generation = this.rootsGeneration;
+    const out: string[] = [];
+    const projects = await this.store.projects();
+    let cursor = 0;
+    // hostWorktrees bounds each listing subprocess with a 10 s timeout.
+    await Promise.all(
+      Array.from({ length: Math.min(4, projects.length) }, async () => {
+        while (cursor < projects.length) {
+          const project = projects[cursor++];
+          const cached = this.roots.get(project.cwd);
+          if (cached && Date.now() - cached.at < ROOTS_TTL_MS) {
+            out.push(...cached.roots);
+            continue;
+          }
+          const roots = await hostWorktrees(project.cwd)
+            .then((listed) => [
+              project.cwd,
+              ...listed.worktrees
+                .filter((tree) => !tree.missing && tree.path !== project.cwd)
+                .map((tree) => tree.path),
+            ])
+            .catch(() => [project.cwd]);
+          if (generation === this.rootsGeneration)
+            this.roots.set(project.cwd, { at: Date.now(), roots });
+          out.push(...roots);
+        }
+      }),
+    );
+    return out;
+  }
+
+  /** Finds the project root that contains `input`, which may not exist yet. */
+  private async locate(input: unknown): Promise<Located> {
+    if (
+      typeof input !== "string" ||
+      !isAbsolute(input) ||
+      input.length > 4096 ||
+      input.includes("\0")
+    )
+      throw new Error("Invalid workspace path");
+    let actual = resolve(input);
+    let missing = "";
+    // Resolve symlinks on the nearest existing ancestor, then re-append the
+    // part that does not exist yet (a file about to be created or written).
+    for (;;) {
+      const real = await realpath(actual).catch(() => undefined);
+      if (real) {
+        actual = missing ? resolve(real, missing) : real;
+        break;
+      }
+      const parent = dirname(actual);
+      if (parent === actual) break;
+      missing = missing ? `${basename(actual)}/${missing}` : basename(actual);
+      actual = parent;
+    }
+    // A project nested in another belongs to the innermost one, so its root
+    // keeps the root protections instead of passing as the outer's subfolder.
+    let found: Located | undefined;
+    const find = async (roots: string[]) => {
+      // Compare physical paths on both sides. Registered folders and worktrees
+      // may be junctions/symlinks, while `actual` above is already canonical.
+      // Resolve on every admission, so cached worktree names cannot retain a
+      // previous link target. Missing/unreadable roots grant no access.
+      const physicalRoots = await Promise.all(
+        roots.map((root) => realpath(root).catch(() => undefined)),
+      );
+      for (const [index, physicalRoot] of physicalRoots.entries()) {
+        if (!physicalRoot) continue;
+        const rel = relative(physicalRoot, actual);
+        if (rel === ".." || /^\.\.[\\/]/.test(rel) || isAbsolute(rel)) continue;
+        // Preserve the registered spelling for project ownership and idle gates;
+        // existingPath/workspacePath enforce physical containment at I/O.
+        if (!found || rel.length < found.relative.length)
+          found = { root: roots[index], relative: rel };
+      }
+    };
+    await find((await this.store.projects()).map((project) => project.cwd));
+    if (found) return found;
+    await find(await this.allowedRoots());
+    if (found) return found;
+    throw new Error("Path is outside this machine’s projects");
+  }
+
+  private async existing(input: unknown, allowRoot = false) {
+    const { root, relative: rel } = await this.locate(input);
+    return { root, path: await existingPath(root, rel, allowRoot) };
+  }
+
+  private async listDir(input: unknown): Promise<FsEntry[]> {
+    const { root, relative: rel } = await this.locate(input);
+    const entries = await listHostFiles(root, rel);
+    return entries.map((entry) => ({
+      ...entry,
+      path: joined(input as string, entry.name),
+    }));
+  }
+
+  private async browseDir(input: unknown, containing: unknown) {
+    const folder = await browseHostFolder(input, containing);
+    const canOpenFiles = await this.existing(folder.path, true).then(
+      () => true,
+      () => false,
+    );
+    return { ...folder, canOpenFiles };
+  }
+
+  private async listProjectFiles(input: unknown): Promise<ProjectFile[]> {
+    const { path } = await this.existing(input, true);
+    const cwd = input as string;
+    return (await indexHostFiles(path)).map((file) => ({
+      name: file.split("/").pop() || file,
+      path: joined(cwd, file),
+      relative: file,
+    }));
+  }
+
+  private async file(input: unknown, limit: number, tooLarge: string) {
+    const { path } = await this.existing(input);
+    const info = await stat(path);
+    if (!info.isFile()) throw new Error("Not a file");
+    if (info.size > limit)
+      throw new Error(`File is too large to ${tooLarge} (maximum ${limit / 1024 / 1024} MB).`);
+    return readFile(path);
+  }
+
+  private async readText(input: unknown): Promise<string> {
+    const bytes = await this.file(input, MAX_TEXT_FILE, "edit");
+    if (bytes.includes(0)) throw new Error("Binary files cannot be edited.");
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error("File is not valid UTF-8.");
+    }
+  }
+
+  /** Base64, since host responses are JSON; the client decodes it. */
+  private async readBinary(input: unknown): Promise<string> {
+    return (await this.file(input, MAX_PREVIEW_FILE, "preview")).toString("base64");
+  }
+
+  /** Bounded, versioned reads for an owner-requested local copy or media preview. */
+  private async folderAccessPath(input: unknown, root: unknown, expectedIdentity?: unknown) {
+    const selected = await this.existing(root, true);
+    const selectedPath = await realpath(selected.path);
+    const selectedInfo = await stat(selectedPath, { bigint: true });
+    if (!selectedInfo.isDirectory()) throw new Error("The shared root is not a folder");
+    const rootIdentity = createHash("sha256")
+      .update(JSON.stringify([selectedPath, String(selectedInfo.dev), String(selectedInfo.ino)]))
+      .digest("hex");
+    if (expectedIdentity !== undefined && expectedIdentity !== rootIdentity)
+      throw new Error("The selected folder was replaced. Open the live folder again.");
+    const target = await this.existing(input, true);
+    const path = await realpath(target.path);
+    const rel = relative(selectedPath, path);
+    if (
+      rel === ".." ||
+      rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) ||
+      isAbsolute(rel)
+    )
+      throw new Error("Path is outside the selected folder");
+    return { path, rootIdentity };
+  }
+
+  private async readFolderEntry(input: Record<string, unknown>) {
+    if (typeof input.children !== "boolean") throw new Error("Invalid folder listing request");
+    const { path, rootIdentity } = await this.folderAccessPath(
+      input.path,
+      input.root,
+      input.rootIdentity,
+    );
+    const metadata = async (entryPath: string, name: string) => {
+      const info = await stat(entryPath, { bigint: true });
+      if (!info.isDirectory() && !info.isFile()) throw new Error("Unsupported filesystem entry");
+      const verified = await this.folderAccessPath(entryPath, input.root, rootIdentity);
+      const after = await stat(verified.path, { bigint: true });
+      if (verified.path !== entryPath || after.dev !== info.dev || after.ino !== info.ino)
+        throw new Error("The folder entry changed while reading.");
+      return {
+        name,
+        isDir: info.isDirectory(),
+        size: info.isFile() ? Number(info.size) : 0,
+        mtimeMs: Number(info.mtimeMs),
+        version: [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(":"),
+      };
+    };
+    const entry = await metadata(path, basename(String(input.path)));
+    const entries = [];
+    if (input.children && entry.isDir) {
+      const children = await readdir(path);
+      if (children.length > 2000)
+        throw new Error("This folder has too many entries for native browsing (maximum 2000).");
+      for (const name of children) {
+        try {
+          const child = await this.folderAccessPath(resolve(path, name), input.root, rootIdentity);
+          entries.push(await metadata(child.path, name));
+        } catch {
+          // Broken links and links escaping the selected root never become DAV entries.
+        }
+      }
+    }
+    await this.folderAccessPath(input.path, input.root, rootIdentity);
+    return { ...entry, entries, rootIdentity };
+  }
+
+  private async transferFile(input: unknown, root?: unknown, rootIdentity?: unknown) {
+    const path =
+      root === undefined
+        ? (await this.existing(input)).path
+        : (await this.folderAccessPath(input, root, rootIdentity)).path;
+    const expected = await stat(path, { bigint: true });
+    const file = await open(
+      path,
+      constants.O_RDONLY | (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+    );
+    try {
+      const info = await file.stat({ bigint: true });
+      const verified =
+        root === undefined
+          ? (await this.existing(input)).path
+          : (await this.folderAccessPath(input, root, rootIdentity)).path;
+      const after = await stat(verified, { bigint: true });
+      if (
+        info.dev !== expected.dev ||
+        info.ino !== expected.ino ||
+        info.dev !== after.dev ||
+        info.ino !== after.ino
+      )
+        throw new Error("The file changed while opening. Try again.");
+      if (!info.isFile()) throw new Error("Not a file");
+      if (info.size > BigInt(MAX_TRANSFER_FILE))
+        throw new Error("File is too large to open on this computer (maximum 1 GB).");
+      const version = [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(":");
+      return { file, size: Number(info.size), version };
+    } catch (error) {
+      await file.close();
+      throw error;
+    }
+  }
+
+  private async readFileInfo(input: unknown, root?: unknown, rootIdentity?: unknown) {
+    const { file, size, version } = await this.transferFile(input, root, rootIdentity);
+    await file.close();
+    return { size, version };
+  }
+
+  private async readFileChunk(input: Record<string, unknown>) {
+    const { offset, length, version } = input;
+    if (
+      !Number.isSafeInteger(offset) ||
+      Number(offset) < 0 ||
+      !Number.isSafeInteger(length) ||
+      Number(length) < 1 ||
+      Number(length) > MAX_TRANSFER_CHUNK ||
+      typeof version !== "string" ||
+      version.length > 256
+    )
+      throw new Error("Invalid file chunk request");
+    const transfer = await this.transferFile(input.path, input.root, input.rootIdentity);
+    try {
+      if (version !== transfer.version)
+        throw new Error("The file changed while downloading. Try again.");
+      if (Number(offset) > transfer.size) throw new Error("Invalid file chunk offset");
+      const bytes = Buffer.alloc(Math.min(Number(length), transfer.size - Number(offset)));
+      const { bytesRead } = await transfer.file.read(bytes, 0, bytes.length, Number(offset));
+      const after = await transfer.file.stat({ bigint: true });
+      if ([after.dev, after.ino, after.size, after.mtimeNs, after.ctimeNs].join(":") !== version)
+        throw new Error("The file changed while downloading. Try again.");
+      return { data: bytes.subarray(0, bytesRead).toString("base64"), offset, length: bytesRead };
+    } finally {
+      await transfer.file.close();
+    }
+  }
+
+  private async preview(input: unknown, maxLines: unknown, startLine: unknown): Promise<string[]> {
+    const text = (await this.file(input, MAX_TEXT_FILE, "preview")).toString("utf8");
+    if (text.includes("\0")) throw new Error("Binary file");
+    const limit = Math.min(12, Math.max(1, Number(maxLines) || 6));
+    const start = Math.max(1, Number(startLine) || 1);
+    return text
+      .split(/\r?\n/)
+      .slice(start - 1, start - 1 + limit)
+      .map((line) => (line.length > 200 ? `${line.slice(0, 199)}…` : line));
+  }
+
+  private async writeText(input: unknown, content: unknown): Promise<void> {
+    if (typeof content !== "string") throw new Error("Invalid file content");
+    if (Buffer.byteLength(content, "utf8") > MAX_TEXT_FILE)
+      throw new Error(`File is too large to save (maximum ${MAX_TEXT_FILE / 1024 / 1024} MB).`);
+    const { root, relative: rel } = await this.locate(input);
+    const path = workspacePath(root, rel);
+    const key = process.platform === "win32" ? path.toLowerCase() : path;
+    const save = async () => {
+      const previous = await stat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+        return undefined;
+      });
+      if (previous?.isDirectory()) throw new Error("Cannot save text to a directory.");
+      // Replace atomically, as the local command does.
+      const temporary = `${path}.bycoda-${randomUUID()}`;
+      const handle = await open(temporary, "wx", previous?.mode);
+      try {
+        await handle.writeFile(content, "utf8");
+        if (previous) await handle.chmod(previous.mode);
+        await handle.close();
+        await renameWithRetry(temporary, path);
+      } catch (reason) {
+        await handle.close().catch(() => {});
+        await rm(temporary, { force: true });
+        throw reason;
+      }
+      invalidateHostFilePaths(root);
+    };
+    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(
+      async () => await withWorkspaceMutation(root, save),
+      async () => await withWorkspaceMutation(root, save),
+    );
+    textFileSaves.set(key, pending);
+    try {
+      await pending;
+    } finally {
+      if (textFileSaves.get(key) === pending) textFileSaves.delete(key);
+    }
+  }
+
+  private async statFiles(input: unknown): Promise<FileMtime[]> {
+    if (!Array.isArray(input) || input.length > MAX_STAT_FILES) throw new Error("Too many paths");
+    return Promise.all(
+      input.map(async (path) => {
+        const info = await this.existing(path, true)
+          .then(({ path: actual }) => stat(actual))
+          .catch(() => null);
+        return {
+          path: String(path),
+          mtimeMs: info?.isFile() ? Math.floor(info.mtimeMs) : null,
+          isDir: info?.isDirectory() ?? false,
+        };
+      }),
+    );
+  }
+
+  private async create(parent: unknown, name: unknown, isDir: unknown): Promise<string> {
+    const { root, relative: rel } = await this.locate(parent);
+    try {
+      await createHostPath(root, rel, name, isDir);
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === "EEXIST")
+        throw new Error(alreadyExists(String(name)));
+      throw reason;
+    }
+    return joined(parent as string, name as string);
+  }
+
+  private async verifyExpectedPath(
+    root: string,
+    input: unknown,
+    path: string,
+    expectedHash: unknown,
+  ) {
+    if (expectedHash === undefined) return;
+    if (typeof expectedHash !== "string" || !/^[a-f0-9]{64}$/.test(expectedHash))
+      throw new Error("Invalid path fingerprint.");
+    const inspected = await inspectConversationPath(root, input);
+    const actual = await existingPath(root, input);
+    if (inspected.hash !== expectedHash || actual !== path || actual !== workspacePath(root, input))
+      throw new Error("Path changed before commit; inspect it again.");
+  }
+
+  private async rename(
+    input: unknown,
+    name: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<string> {
+    if (typeof name !== "string" || !name.trim() || /^[\\/]/.test(name) || name.includes("\0"))
+      throw new Error("A file or folder name must be provided.");
+    const { root, path: from } = await this.existing(input);
+    const target = joined(dirname(input as string), name);
+    // Canonicalize the parent only: resolving an existing case-insensitive leaf
+    // would replace the requested spelling with the source's current spelling.
+    const { root: targetRoot, relative: rel } = await this.locate(dirname(target));
+    if (targetRoot !== root) throw new Error("Cannot move a file between working copies.");
+    const to = workspacePath(root, resolve(workspacePath(root, rel, true), basename(target)));
+    if (to === from) return input as string;
+    let spellingAlias = false;
+    const destination = await lstat(to, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (destination) {
+      const source = await lstat(from, { bigint: true });
+      spellingAlias =
+        dirname(from) === dirname(to) &&
+        source.ino !== 0n &&
+        source.dev === destination.dev &&
+        source.ino === destination.ino &&
+        !(await readdir(dirname(to))).includes(basename(to));
+      // Only a proven filesystem spelling alias may reuse an existing target.
+      // A distinct directory entry (even a hard link) must never be overwritten.
+      if (!spellingAlias) throw new Error(alreadyExists(name));
+    }
+    if (!spellingAlias && !relative(from, to).startsWith(".."))
+      throw new Error("Cannot move a folder into itself.");
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
+    await mkdir(dirname(to), { recursive: true });
+    await this.verifyExpectedPath(root, input, from, expectedHash);
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
+    await rename(from, to);
+    invalidateHostFilePaths(root);
+    return target;
+  }
+
+  private async delete(
+    input: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<void> {
+    const { root, path } = await this.existing(input);
+    await this.verifyExpectedPath(root, input, path, expectedHash);
+    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
+    await rm(path, { recursive: true });
+    invalidateHostFilePaths(root);
+  }
+
+  private async destination(from: unknown, destParent: unknown) {
+    const source = await this.existing(from);
+    const parent = await this.existing(destParent, true);
+    if (!(await stat(parent.path)).isDirectory())
+      throw new Error(`${String(destParent)} is not a folder`);
+    if (
+      (await stat(source.path)).isDirectory() &&
+      !relative(source.path, parent.path).startsWith("..")
+    )
+      throw new Error("Cannot paste a folder into itself.");
+    return { root: parent.root, source: source.path, parent: parent.path };
+  }
+
+  private async copy(
+    from: unknown,
+    destParent: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<string> {
+    const { root, source, parent } = await this.destination(from, destParent);
+    const name = basename(source);
+    const ext = extname(name);
+    const stem = ext ? name.slice(0, -ext.length) : name;
+    for (let n = 0; ; n++) {
+      const candidate = n === 0 ? name : n === 1 ? `${stem} copy${ext}` : `${stem} copy ${n}${ext}`;
+      const to = resolve(parent, candidate);
+      if (
+        await lstat(to).then(
+          () => true,
+          () => false,
+        )
+      ) {
+        if (expectedHash !== undefined) throw new Error(alreadyExists(name));
+        continue;
+      }
+      await this.verifyExpectedPath(root, from, source, expectedHash);
+      if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
+      await cp(source, to, { recursive: true, errorOnExist: true, force: false });
+      invalidateHostFilePaths(root);
+      return joined(destParent as string, candidate);
+    }
+  }
+
+  private async move(
+    from: unknown,
+    destParent: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<string | { path: string; recoveryPath: string; receiptPath: string }> {
+    const { root, source, parent } = await this.destination(from, destParent);
+    const name = basename(source);
+    const to = resolve(parent, name);
+    if (to === source) return from as string;
+    if (
+      await lstat(to).then(
+        () => true,
+        () => false,
+      )
+    )
+      throw new Error(alreadyExists(name));
+    await this.verifyExpectedPath(root, from, source, expectedHash);
+    const result = await moveWithRecovery(source, to, authorized);
+    invalidateHostFilePaths(root);
+    return result ?? joined(destParent as string, name);
+  }
+
+  private async gitRoot(input: unknown): Promise<string> {
+    const { path } = await this.existing(input, true);
+    if (!(await stat(path)).isDirectory()) throw new Error("Not a working copy");
+    return path;
+  }
+
+  private async checkpoint(command: string, input: Record<string, unknown>) {
+    input = { ...input };
+    const generation = fileRevertGeneration(input.authorityGeneration);
+    const cwd = await this.gitRoot(input.cwd);
+    if (typeof input.sessionId !== "string") throw new Error("Invalid checkpoint session");
+    const path = input.relative == null ? undefined : String(input.relative);
+    if (command === "session_checkpoint_status")
+      return await this.checkpoints.status(input.sessionId, cwd, generation);
+    if (command === "session_checkpoint_file_diff") {
+      if (path === undefined) throw new Error("Choose a checkpoint file");
+      return await this.checkpoints.fileDiff(input.sessionId, cwd, path, generation);
+    }
+    const session = input.sessionId;
+    if (input.expectedCheckpoint !== undefined && typeof input.expectedCheckpoint !== "string")
+      throw new Error("Invalid expected checkpoint");
+    const change = async () =>
+      await this.checkpoints.change(
+        session,
+        cwd,
+        path,
+        command === "session_checkpoint_undo",
+        input.expectedCheckpoint as string | undefined,
+        generation,
+      );
+    return command === "session_checkpoint_undo"
+      ? await withHostGitMutation(cwd, change)
+      : await change();
+  }
+
+  /** This machine's skills for a project folder here; the desktop drops
+   * the ones it hides, as it does for its own. */
+  private async listSkills(input: unknown, disabled: unknown, provider?: unknown) {
+    if (provider !== undefined && (typeof provider !== "string" || provider.length > 64))
+      throw new Error("Invalid skill provider.");
+    if (
+      disabled != null &&
+      (!Array.isArray(disabled) ||
+        disabled.length > 10000 ||
+        disabled.some((path) => typeof path !== "string" || path.length > 4096))
+    )
+      throw new Error("Invalid disabled skill paths.");
+    const disabledPaths = (disabled ?? []) as string[];
+    // An empty `cwd` is "no project": this machine's personal skills only.
+    if (input === "")
+      return listHostSkills(null, undefined, disabledPaths, provider as string | undefined);
+    const { path } = await this.existing(input, true);
+    return listHostSkills(path, undefined, disabledPaths, provider as string | undefined);
+  }
+
+  /** A listed skill's files. The skill may live in the home folder, outside
+   * every project, so it is checked against the listing, not the roots. */
+  private async exportSkill(skill: unknown, cwd: unknown) {
+    if (cwd === "") return exportHostSkill(skill, null);
+    const { path } = await this.existing(cwd, true);
+    return exportHostSkill(skill, path);
+  }
+
+  private async deleteSkill(skill: unknown, cwd: unknown) {
+    if (cwd === "") return deleteHostSkill(skill, null);
+    const { path } = await this.existing(cwd, true);
+    return deleteHostSkill(skill, path);
+  }
+
+  private searchKey(root: string, id: unknown, owner: string) {
+    if (typeof id !== "string" || !id || id.length > 200 || id.includes("\0"))
+      throw new Error("Invalid search owner");
+    return JSON.stringify([owner, root, id]);
+  }
+
+  private async cancelProjectSearch(cwd: unknown, id: unknown, owner: string) {
+    const root = await this.gitRoot(cwd);
+    const key = this.searchKey(root, id, owner);
+    this.rememberSearchCancellation(this.cancelledSearches, key);
+    this.searches.get(key)?.controller.abort();
+  }
+
+  private async searchProject(input: unknown, owner: string) {
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      throw new Error("Invalid search");
+    const options = input as Record<string, unknown>;
+    const root = await this.gitRoot(options.cwd);
+    if ((this.revokedSearchOwners.get(owner) ?? 0) > Date.now())
+      throw new Error("Search authority was revoked");
+    // Older clients without an owner id still get bounded search, but cannot cancel a peer.
+    if (options.searchId === undefined) return await searchHostContent(root, options);
+    const key = this.searchKey(root, options.searchId, owner);
+    if ((this.cancelledSearches.get(key) ?? 0) > Date.now()) throw new Error("Search cancelled");
+    if (!this.searches.has(key) && this.searches.size >= 64)
+      throw new Error("Too many active project searches");
+    this.searches.get(key)?.controller.abort();
+    const entry = { owner, controller: new AbortController() };
+    this.searches.set(key, entry);
+    try {
+      return await searchHostContent(root, options, entry.controller.signal);
+    } finally {
+      if (this.searches.get(key) === entry) this.searches.delete(key);
+    }
+  }
+
+  private async gitIndex(input: unknown, full = true) {
+    return await hostGitIndex(await this.gitRoot(input), full);
+  }
+
+  private async gitFileDiff(cwd: unknown, relative: unknown, staged: unknown) {
+    return await hostFileDiff(await this.gitRoot(cwd), relative, staged === true);
+  }
+
+  private async gitAction(
+    cwd: unknown,
+    action: string,
+    relative?: unknown,
+    message?: unknown,
+    contents?: unknown,
+    expectedOriginal?: unknown,
+    expectedCurrent?: unknown,
+    expectedSnapshot?: unknown,
+  ) {
+    const root = await this.gitRoot(cwd);
+    return await hostGitAction(
+      root,
+      action,
+      relative,
+      message,
+      contents,
+      expectedOriginal,
+      expectedCurrent,
+      expectedSnapshot === undefined
+        ? undefined
+        : async () => await verifyGitManagementSnapshot(root, expectedSnapshot),
+    );
+  }
+
+  private async gitCommand(cwd: unknown, args: string[]): Promise<string> {
+    const root = await this.gitRoot(cwd);
+    return (
+      await exec(
+        "git",
+        [...(args.includes("--") ? ["--literal-pathspecs"] : []), "-c", "core.pager=cat", ...args],
+        {
+          cwd: root,
+          timeout: ["pull", "push", "fetch", "commit"].includes(args[0]) ? 120_000 : 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+          encoding: "utf8",
+          windowsHide: true,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+        },
+      )
+    ).stdout;
+  }
+
+  private async gitCommit(cwd: unknown, message: unknown, amend: unknown, signoff: unknown) {
+    if (typeof message !== "string" || !message.trim() || message.length > 100_000)
+      throw new Error("Enter a commit message");
+    const unresolved = await hostUnmerged(await this.gitRoot(cwd));
+    if (unresolved.length) throw new Error(unmergedMessage(unresolved));
+    await this.gitCommand(cwd, [
+      "commit",
+      ...(amend === true ? ["--amend"] : []),
+      ...(signoff === true ? ["--signoff"] : []),
+      "-m",
+      message,
+    ]);
+  }
+
+  private async gitSync(cwd: unknown) {
+    await this.gitCommand(cwd, ["pull", "--ff-only"]);
+    await this.gitAction(cwd, "push");
+  }
+
+  private async ghCommand(cwd: unknown, args: string[]): Promise<string> {
+    const root = await this.gitRoot(cwd);
+    return (
+      await exec("gh", args, {
+        cwd: root,
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+        encoding: "utf8",
+        env: { ...process.env, GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0" },
+      })
+    ).stdout.trim();
+  }
+
+  private async gitPrStatus(cwd: unknown) {
+    const output = await this.ghCommand(cwd, [
+      "pr",
+      "list",
+      "--head",
+      (await this.gitCommand(cwd, ["symbolic-ref", "--short", "HEAD"])).trim(),
+      "--state",
+      "all",
+      "--json",
+      "number,title,url,state",
+      "--limit",
+      "20",
+    ]);
+    const prs = JSON.parse(output) as GitPr[];
+    const pr = prs.find((entry) => entry.state.toLowerCase() === "open") ?? prs[0];
+    return pr ? { ...pr, state: pr.state.toLowerCase() } : null;
+  }
+
+  private async gitPrCreate(
+    cwd: unknown,
+    title: unknown,
+    body: unknown,
+    base: unknown,
+    head: unknown,
+    repository?: unknown,
+  ) {
+    if (
+      [title, body, base, head].some((value) => typeof value !== "string" || value.length > 100_000)
+    )
+      throw new Error("Invalid pull request");
+    if (
+      repository !== undefined &&
+      (typeof repository !== "string" ||
+        !/^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repository))
+    )
+      throw new Error("Invalid pull request repository");
+    return await this.ghCommand(cwd, [
+      "pr",
+      "create",
+      ...(typeof repository === "string" ? ["--repo", repository] : []),
+      "--title",
+      title as string,
+      "--body",
+      body as string,
+      "--base",
+      base as string,
+      "--head",
+      head as string,
+    ]);
+  }
+
+  private gitSha(value: unknown): string {
+    if (typeof value !== "string" || !/^[0-9a-f]{4,40}$/i.test(value))
+      throw new Error("Invalid commit");
+    return value;
+  }
+
+  private async gitCommitSha(cwd: unknown, input: unknown): Promise<string> {
+    const sha = this.gitSha(input);
+    const resolved = await this.gitCommand(cwd, ["rev-parse", "--verify", `${sha}^{commit}`]).catch(
+      () => "",
+    );
+    if (!/^[0-9a-f]{40,64}$/i.test(resolved.trim())) throw new Error("Unknown commit");
+    return resolved.trim();
+  }
+
+  private async gitHistory(cwd: unknown, limit: unknown, all: boolean) {
+    const count = Number.isSafeInteger(limit) ? Math.min(500, Math.max(1, Number(limit))) : 200;
+    const [head, upstream, index, refs] = await Promise.all([
+      this.gitCommand(cwd, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
+      this.gitCommand(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).catch(() => ""),
+      this.gitIndex(cwd),
+      this.gitCommand(cwd, [
+        "for-each-ref",
+        HISTORY_REFS_FORMAT,
+        "refs/heads",
+        "refs/tags",
+        "refs/remotes",
+      ]),
+    ]);
+    const headSha = head.trim() || null;
+    if (!headSha) return { head: null, commits: [] };
+    // Not `--all`: that would pull in `refs/stash` and its index commits.
+    const tips = all ? ["HEAD", "--branches", "--remotes", "--tags"] : ["HEAD"];
+    if (!all && upstream.trim()) tips.push("@{upstream}");
+    if (!all && index.defaultBranch && index.remote) {
+      const defaultRef = `refs/remotes/origin/${index.defaultBranch}`;
+      const exists = await this.gitCommand(cwd, ["rev-parse", "--verify", defaultRef]).then(
+        () => true,
+        () => false,
+      );
+      if (exists) tips.push(`origin/${index.defaultBranch}`);
+    }
+    const output = await this.gitCommand(cwd, [
+      "log",
+      "--topo-order",
+      `--max-count=${count}`,
+      HISTORY_FORMAT,
+      ...tips,
+    ]);
+    const commits = parseHistoryLog(output, headSha, parseHistoryRefs(refs));
+    return { head: headSha, commits };
+  }
+
+  private async gitCommitFiles(cwd: unknown, shaInput: unknown) {
+    const sha = await this.gitCommitSha(cwd, shaInput);
+    const [names, stats] = await Promise.all([
+      this.gitCommand(cwd, [
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "--no-renames",
+        "--name-status",
+        "-r",
+        sha,
+      ]),
+      this.gitCommand(cwd, [
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "--no-renames",
+        "--numstat",
+        "-r",
+        sha,
+      ]),
+    ]);
+    const counts = new Map(
+      stats
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [added, removed, path] = line.split("\t");
+          return [
+            path,
+            { additions: Number(added) || 0, deletions: Number(removed) || 0 },
+          ] as const;
+        }),
+    );
+    return names
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [code, relativePath] = line.split("\t");
+        return {
+          path: relativePath,
+          relative: relativePath,
+          status: code === "A" ? "added" : code === "D" ? "deleted" : "modified",
+          ...(counts.get(relativePath) ?? { additions: 0, deletions: 0 }),
+          staged: false,
+          unstaged: false,
+        };
+      });
+  }
+
+  private async gitCommitFileDiff(cwd: unknown, shaInput: unknown, input: unknown) {
+    const sha = await this.gitCommitSha(cwd, shaInput);
+    const root = await this.gitRoot(cwd);
+    const path = relative(root, workspacePath(root, input)).replace(/\\/g, "/");
+    const parent = await this.gitCommand(root, ["rev-parse", "--verify", `${sha}^`]).catch(
+      () => "",
+    );
+    const [original, current] = await Promise.all([
+      parent
+        ? await this.gitBlob(root, `${parent.trim()}:${path}`)
+        : Promise.resolve({ bytes: Buffer.alloc(0), tooLarge: false }),
+      this.gitBlob(root, `${sha}:${path}`),
+    ]);
+    const binary = original.bytes.includes(0) || current.bytes.includes(0);
+    const tooLarge =
+      original.tooLarge ||
+      current.tooLarge ||
+      original.bytes.length > MAX_TEXT_FILE ||
+      current.bytes.length > MAX_TEXT_FILE;
+    const status =
+      !original.bytes.length && current.bytes.length
+        ? "added"
+        : original.bytes.length && !current.bytes.length
+          ? "deleted"
+          : "modified";
+    return {
+      path,
+      relative: path,
+      status,
+      original: binary || tooLarge ? "" : original.bytes.toString("utf8"),
+      current: binary || tooLarge ? "" : current.bytes.toString("utf8"),
+      binary,
+      tooLarge,
+    };
+  }
+
+  private async gitBlob(root: string, spec: string) {
+    try {
+      const { stdout } = await exec("git", ["show", spec], {
+        cwd: root,
+        timeout: 30_000,
+        maxBuffer: MAX_TEXT_FILE + 1024,
+        encoding: "buffer",
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      });
+      return { bytes: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout), tooLarge: false };
+    } catch (reason) {
+      return { bytes: Buffer.alloc(0), tooLarge: String(reason).includes("maxBuffer") };
+    }
+  }
+
+  private async gitStagedContext(cwd: unknown) {
+    const [index, summary, patch] = await Promise.all([
+      this.gitIndex(cwd),
+      this.gitCommand(cwd, ["diff", "--cached", "--stat"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff"]),
+    ]);
+    return { branch: index.branch, summary, patch };
+  }
+
+  private async gitRangeContext(cwd: unknown) {
+    const index = await this.gitIndex(cwd);
+    if (!index.defaultBranch) throw new Error("Default branch is unknown");
+    const base = `origin/${index.defaultBranch}`;
+    const head = index.branch ?? "HEAD";
+    const [commitSummary, diffSummary, diffPatch] = await Promise.all([
+      this.gitCommand(cwd, ["log", "--oneline", `${base}..HEAD`]),
+      this.gitCommand(cwd, ["diff", "--stat", `${base}...HEAD`]),
+      this.gitCommand(cwd, ["diff", "--no-ext-diff", `${base}...HEAD`]),
+    ]);
+    return { base: index.defaultBranch, head, commitSummary, diffSummary, diffPatch };
+  }
+
+  private async gitBranches(cwd: unknown) {
+    const state = await hostBranches(await this.gitRoot(cwd));
+    return {
+      current: state.current,
+      detached: state.current === null,
+      branches: [
+        ...state.branches.map((name) => ({ name, current: name === state.current, remote: null })),
+        ...state.remotes.map((entry) => ({
+          name: entry.name,
+          current: false,
+          remote: entry.remote,
+        })),
+      ],
+    };
+  }
+
+  private async gitCheckout(cwd: unknown, name: unknown, remote: unknown) {
+    const root = await this.gitRoot(cwd);
+    const state = await this.withIdleGitProject(
+      root,
+      async () => await switchHostBranch(root, name, remote),
+    );
+    return state.current ?? "HEAD";
+  }
+
+  private async gitCreateBranch(cwd: unknown, name: unknown) {
+    const root = await this.gitRoot(cwd);
+    const state = await this.withIdleGitProject(
+      root,
+      async () => await createHostBranch(root, name),
+    );
+    return state.current ?? "HEAD";
+  }
+
+  private async withIdleGitProject<T>(cwd: string, action: () => Promise<T>): Promise<T> {
+    const { root } = await this.locate(cwd);
+    const project = (await this.store.projects()).find(
+      (candidate) => candidate.cwd === root || this.roots.get(candidate.cwd)?.roots.includes(root),
+    );
+    if (!project) throw new Error("Project is unavailable");
+    return await this.withIdleProject(project.id, action);
+  }
+
+  private async gitActionCommand(command: GitActionCommand, input: Record<string, unknown>) {
+    const root = await this.gitRoot(input.cwd);
+    const run = async () => await runGitAction(command, root, input);
+    return GIT_ACTIONS_NEEDING_IDLE.has(command)
+      ? await this.withIdleGitProject(root, run)
+      : await run();
+  }
+
+  private async gitWorktrees(cwd: unknown) {
+    const listed = await hostWorktrees(await this.gitRoot(cwd));
+    return {
+      defaultRoot: listed.defaultRoot,
+      worktrees: listed.worktrees.map((tree) => ({
+        ...tree,
+        locked: tree.locked,
+        prunable: tree.missing,
+        dirty: null,
+        unpushed: null,
+        sessionIds: [],
+      })),
+    };
+  }
+}

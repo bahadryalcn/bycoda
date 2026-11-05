@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
-import type { createManagedWorkspaceRuntime } from "../managed-workspace-runtime";
-import type { WorkspaceOwnerAuthorization } from "../workspace-service-contracts";
+import type { createManagedWorkspaceRuntime } from "../managed/managed-workspace-runtime";
+import type { WorkspaceOwnerAuthorization } from "../workspaces/workspace-service-contracts";
 import type {
   NativeBufferUploadPlatform,
   NativeWorkspaceOwnerActions,

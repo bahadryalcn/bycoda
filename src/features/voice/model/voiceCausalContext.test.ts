@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { VoiceCausalGeneration } from "./voiceCausalContext";
+import { VoiceCausalGeneration, VoiceContextScopeUnavailable } from "./voiceCausalContext";
 import {
   AssistantVoiceContextOpenSchema,
   AssistantVoiceContextInvalidateSchema,
@@ -10,6 +10,45 @@ import type {
   AssistantMessage,
   AssistantRequest,
 } from "../../../shared/model/host-contracts/assistant";
+it("registers the exact seed before connecting and rejects revoked pending registration", async () => {
+  let current = true;
+  const ack = Promise.withResolvers<{ ok: boolean }>();
+  const request = vi.fn(() => ack.promise);
+  const binding = {
+    request,
+    remote: false,
+    current: () => current,
+    open: async () => ({ thread: { id: "thread" }, messages: [], request }),
+    environmentId: async () => "host",
+    scope: async () => ({
+      complete: true,
+      projectIds: [],
+      current: () => current,
+      liveProjectIds: () => new Set<string>(),
+    }),
+  } as unknown as VoiceHistoryBinding;
+  const generation = new VoiceCausalGeneration(
+    ["seed"],
+    true,
+    () => current,
+    vi.fn(),
+    () => "generation",
+    "proof",
+  );
+  const work = generation.bindRuntimeIdentity(binding);
+  await vi.waitFor(() =>
+    expect(request).toHaveBeenCalledWith({
+      op: "voice.runtime.register",
+      threadId: "thread",
+      generationKey: "generation",
+      seedMessageIds: ["seed"],
+      summaryProofId: "proof",
+    }),
+  );
+  current = false;
+  ack.resolve({ ok: true });
+  await expect(work).rejects.toThrow("not confirmed");
+});
 function fixture() {
   let head: AssistantVoiceContext | undefined,
     active = true,
@@ -167,6 +206,31 @@ it("does not turn a deferred open into known after an earlier unverified disclos
   expect(await generation.proof()).toBeUndefined();
   expect(f.head.status).toBe("unknown");
 });
+it("bounds invalidation behind a stuck owner receipt without restoring proof", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture(),
+      generation = f.generation();
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const opening = generation.accept(
+      f.binding,
+      ready.then(() => f.source()),
+      "Owner text",
+    );
+    const invalidating = generation.invalidate();
+    await vi.advanceTimersByTimeAsync(5001);
+    await invalidating;
+    expect(f.failed).toHaveBeenCalledOnce();
+    release();
+    await opening;
+    expect(await generation.proof()).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("requires every actual disclosure contributor to remain in captured and current visibility", async () => {
   for (const hiddenAfterRead of [false, true]) {
     const f = fixture(),
@@ -303,6 +367,44 @@ it.each(["desktop.status", "desktop.snapshot", "browser.open"])(
   },
 );
 
+it("accepts exact global Host/thread provenance without certifying data for history", async () => {
+  const f = fixture(),
+    generation = f.generation();
+  await generation.accept(f.binding, f.source(), "Owner text");
+  const tool = (await generation.tool())!,
+    head = f.head;
+  const source = {
+    environmentId: "host",
+    threadId: "thread",
+    family: "conversation" as const,
+    action: "preferences.read",
+  };
+  expect(tool.environmentId).toBe("host");
+  expect(() =>
+    tool.receive(
+      { ...head, version: 2, status: "unknown", projectIds: undefined },
+      { id: "proof", contextId: head.id, requestId: "global", verified: false, source },
+      "global",
+      source,
+    ),
+  ).not.toThrow();
+  expect(await generation.proof()).toBeUndefined();
+  expect(() =>
+    tool.receive(
+      { ...head, version: 3, status: "unknown", projectIds: undefined },
+      {
+        id: "proof",
+        contextId: head.id,
+        requestId: "global",
+        verified: false,
+        source: { ...source, projectId: "p" },
+      },
+      "global",
+      source,
+    ),
+  ).toThrow("could not be verified");
+});
+
 it("refuses unscoped results without authenticated exact source metadata or with a hidden source project", async () => {
   for (const bad of ["missing", "foreign-host", "foreign-project", "hidden"]) {
     const f = fixture(),
@@ -354,5 +456,39 @@ it("rejects a foreign captured source or truncated owner text before context adm
   const generation = f.generation();
   await generation.accept({ ...f.binding, request: vi.fn() }, f.source(), "Owner text");
   expect(await generation.proof()).toBeUndefined();
+  expect(f.request).not.toHaveBeenCalled();
+});
+
+it("reports an incomplete global directory as unavailable without granting proof, until a fresh generation", async () => {
+  const f = fixture();
+  const scope = await f.binding.scope!();
+  const incomplete = {
+    ...f.binding,
+    global: true,
+    scope: async () => ({ ...scope, complete: false }),
+  };
+  const generation = f.generation();
+  await generation.accept(incomplete, f.source(), "Owner text");
+  expect(f.failed).toHaveBeenCalledWith(expect.any(VoiceContextScopeUnavailable));
+  expect(f.request).not.toHaveBeenCalled();
+  expect(await generation.proof()).toBeUndefined();
+  await generation.accept(f.binding, f.source("later"), "Owner text");
+  expect(await generation.proof()).toBeUndefined();
+  const fresh = f.generation();
+  await fresh.accept(f.binding, f.source("fresh"), "Owner text");
+  expect(await fresh.proof()).toBeDefined();
+});
+
+it("does not classify a foreign owner receipt as directory unavailability", async () => {
+  const f = fixture();
+  const scope = await f.binding.scope!();
+  const incomplete = {
+    ...f.binding,
+    global: true,
+    scope: async () => ({ ...scope, complete: false }),
+  };
+  await f.generation().accept(incomplete, f.source(), "different text");
+  expect(f.failed).toHaveBeenCalledOnce();
+  expect(f.failed.mock.calls[0][0]).not.toBeInstanceOf(VoiceContextScopeUnavailable);
   expect(f.request).not.toHaveBeenCalled();
 });

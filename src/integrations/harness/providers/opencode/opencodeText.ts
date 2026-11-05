@@ -6,6 +6,7 @@ import {
   textControlRun,
 } from "../../core/textSource";
 import { killChild } from "../../core/child";
+import { nativeSessionCapability } from "../../core/controlTurn";
 import {
   observeProviderProbeCleanup,
   preserveProviderFailure,
@@ -19,6 +20,7 @@ import { modelsFor } from "../../../../features/sessions/model/models";
 import type { TurnIntent } from "../../../../features/sessions/model/session";
 import {
   createChildProcessHandle,
+  capturedChildRoute,
   execChild,
   freeHarnessPort,
   resolveOpenCodeBinary,
@@ -56,6 +58,7 @@ const REQUEST_TIMEOUT_MS = 45_000;
 const WIRE_BEFORE_KILL_MS = 5_000;
 
 type LiveText = {
+  eventRoute: string;
   child?: ChildProcessHandle;
   closed: boolean;
   stop?: Promise<void>;
@@ -231,21 +234,38 @@ async function startLive(
   try {
     const { path } = await resolveOpenCodeBinary();
     assertCurrent();
-    const versionOut = await execChild(path, ["--version"], cwd, "opencode").catch(() => "");
+    const versionOut = await execChild(
+      path,
+      ["--version"],
+      cwd,
+      "opencode",
+      undefined,
+      "management",
+    ).catch(() => "");
     assertCurrent();
     const version = parseOpenCodeVersion(versionOut);
     const generation = assertSupportedOpenCodeVersion(version);
     // Reserve a physical B only after transport discovery, before any A
     // teardown. v2 owns a logical pending HTTP request, never a fake child.
     if (generation === "v1") {
-      const child = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+      const child = createChildProcessHandle(
+        TEXT_CHILD_ID,
+        operationContext?.nativeControlTurn,
+        operationContext?.nativeControlTurn ? undefined : "utility",
+      );
       prepareTextProcess(child, operationContext, true);
       setup.child = retirements.admitPending(child);
     }
     stopping = dropLive(undefined, previous);
     await stopping;
     assertCurrent();
-    const service = generation === "v2" ? await resolveOpenCodeV2Service(path, cwd) : undefined;
+    const capability = operationContext?.nativeControlTurn
+      ? nativeSessionCapability(operationContext.nativeControlTurn)
+      : undefined;
+    const service =
+      generation === "v2"
+        ? await resolveOpenCodeV2Service(path, cwd, capability, "utility")
+        : undefined;
     assertCurrent();
     setup.serverUrl = service?.url ?? "";
     if (generation === "v1") {
@@ -281,7 +301,17 @@ async function startLive(
         ? setup.serverUrl
         : await waitForUrl(() => setup.serverUrl, SERVER_TIMEOUT_MS);
     assertCurrent();
-    const base = new OpenCodeClient(url, cwd, generation, service?.password, TEXT_CHILD_ID);
+    const eventRoute = setup.child ? capturedChildRoute(setup.child) : TEXT_CHILD_ID;
+    const base = new OpenCodeClient(
+      url,
+      cwd,
+      generation,
+      service?.password,
+      eventRoute,
+      undefined,
+      capability,
+      service?.nativeOwnedService,
+    );
     const bootstrap = operationContext?.hostRun ? base.withHostRun(operationContext.hostRun) : base;
     setup.createWork = bootstrap
       .createSession({ permission: [{ permission: "*", pattern: "*", action: "deny" }] })
@@ -300,6 +330,7 @@ async function startLive(
       ? created.base.withHostRun(operationContext.hostRun, created.id)
       : created.base;
     const current: LiveText = {
+      eventRoute,
       child: setup.child,
       closed: false,
       client,
@@ -321,7 +352,7 @@ async function startLive(
     if (pendingSetup === setup) pendingSetup = null;
     live = current;
     await client.subscribeEvents(
-      TEXT_CHILD_ID,
+      eventRoute,
       (event) => handleTextEvent(current, event),
       () => undefined,
     );
@@ -518,7 +549,7 @@ async function dropLive(
         for (const effect of [
           () => client!.abortSession(current.sessionId),
           () => client!.deleteSession(current.sessionId),
-          () => client!.closeEvents(TEXT_CHILD_ID),
+          () => client!.closeEvents(current.eventRoute),
         ]) {
           try {
             await effect();

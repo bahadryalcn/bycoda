@@ -4,9 +4,7 @@
  * reads the stored value back so Settings can say "saved" or "not saved"
  * instead of showing a choice that disappears on the next launch.
  */
-export type ProviderPreferenceOutcome =
-  | { state: "saved" }
-  | { state: "unsaved"; message: string };
+export type ProviderPreferenceOutcome = { state: "saved" } | { state: "unsaved"; message: string };
 
 export function persistProviderPreference(
   write: () => void,

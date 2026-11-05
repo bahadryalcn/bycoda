@@ -6,7 +6,7 @@ import {
 } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { tagHighlighter, tags, type Highlighter } from "@lezer/highlight";
-import type { ColorScheme } from "../../settings/model/appearance";
+import type { ColorScheme } from "../../settings";
 import { basename } from "../../../platform/tauri/fs";
 import { cssVariableCompletions } from "./editorAutocomplete";
 

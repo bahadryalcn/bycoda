@@ -50,3 +50,35 @@ it("rejects obsolete rewrites and releases the last worker on unmount", () => {
   release();
   expect(worker.terminate).toHaveBeenCalledOnce();
 });
+
+it("settles a stalled worker as failure and ignores its late result", () => {
+  vi.useFakeTimers();
+  try {
+    const { queue, worker, complete } = fixture();
+    const result = vi.fn(),
+      error = vi.fn();
+    const release = queue.subscribe("a", { result, error });
+    queue.request("a", "large content");
+    vi.advanceTimersByTime(15_000);
+    expect(error).toHaveBeenCalledOnce();
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    complete(["late content"]);
+    expect(result).not.toHaveBeenCalled();
+    release();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("reports malformed completion instead of leaving a reply pending forever", () => {
+  const { queue, worker } = fixture();
+  const error = vi.fn();
+  const release = queue.subscribe("a", { result: vi.fn(), error });
+  queue.request("a", "large content");
+  worker.onmessage!({
+    data: { sequence: worker.postMessage.mock.calls[0][0].sequence },
+  } as MessageEvent);
+  expect(error).toHaveBeenCalledOnce();
+  release();
+});

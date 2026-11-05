@@ -33,7 +33,9 @@ describe("usage budget semantics", () => {
     const common = { ...rule, scope: "machine" as const, target: "local" };
     expect(normalizeBudget(common)).toEqual(common);
     expect(budgetMatches(common, session({ cwd: "C:/other" }), () => "unrelated")).toBe(true);
-    expect(budgetMatches(common, session({ cwd: "remote://machine/project" }), () => undefined)).toBe(false);
+    expect(
+      budgetMatches(common, session({ cwd: "remote://machine/project" }), () => undefined),
+    ).toBe(false);
     expect(normalizeBudget({ ...common, target: "group-id" })).toBeNull();
     expect(normalizeBudget({ ...common, metric: "accountPercent", capacity: 100 })).toBeNull();
   });

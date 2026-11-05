@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import {
   listAutomations,
   automationTriggers,
@@ -29,6 +30,7 @@ export function useWorkspaceAutomationActivity({
     const recoveryToken = crypto.randomUUID();
     const poll = async () => {
       try {
+        if (!(await isLeadWindow()) || disposed) return;
         const automations = (await listAutomations()).filter((automation) => automation.enabled);
         const kinds = new Set(
           automations.flatMap((automation) =>

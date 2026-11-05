@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { gitOperationStatus, subscribeGitChanged } from "../../../platform/tauri/fs";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
 import type { LegacyConflictStatus } from "../model/conflictSection";
 
 const POLL_MS = 5000;

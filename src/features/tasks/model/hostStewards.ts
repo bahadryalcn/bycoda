@@ -1,4 +1,5 @@
-import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
+import { isRemoteProvider } from "../../connections/public/protocol";
+import { type RemoteProvider } from "../../connections";
 import {
   isScheduleKind,
   type AutomationSchedule,

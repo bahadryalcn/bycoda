@@ -25,6 +25,7 @@ import {
   type NativeHelperSpawner,
 } from "./helper-client";
 import type { NativeSourceHelperProvider } from "./source-registry";
+import { hasControlCharacters } from "../../src/shared/lib/controlCharacters";
 
 /** Local installation permission only. Neither a runtime identity nor an actor grant. */
 export type NativeHelperDeploymentInput = {
@@ -87,7 +88,7 @@ function text(value: unknown, maximum: number): value is string {
     typeof value === "string" &&
     value.length > 0 &&
     value.length <= maximum &&
-    !/[\u0000-\u001f]/.test(value)
+    !hasControlCharacters(value, false)
   );
 }
 function pathValue(value: unknown): value is string {
@@ -678,7 +679,7 @@ export function createNativeSourceHelperProvider(
       closing = true;
       closePromise ??= (async () => {
         await Promise.all([...runtimes.values()].map((entry) => entry.runtime.close()));
-        await Promise.allSettled([...pending]);
+        await Promise.allSettled(pending);
         await Promise.all([...runtimes.values()].map((entry) => entry.runtime.close()));
       })();
       return closePromise;

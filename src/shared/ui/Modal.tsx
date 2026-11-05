@@ -177,7 +177,9 @@ export function ModalPanel({
   useLayoutEffect(() => {
     const layer = dialogRef.current?.closest<HTMLElement>("[data-modal-layer]");
     if (!layer || layer.parentElement !== document.body) return;
-    for (const other of document.body.querySelectorAll<HTMLElement>(":scope > [data-modal-layer]")) {
+    for (const other of document.body.querySelectorAll<HTMLElement>(
+      ":scope > [data-modal-layer]",
+    )) {
       if (other === layer) break;
       const dialog = other.querySelector("[role='dialog']");
       if (!dialog || !overlayContainsTarget(overlayId, dialog)) continue;

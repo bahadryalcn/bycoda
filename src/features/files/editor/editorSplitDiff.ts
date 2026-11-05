@@ -20,7 +20,16 @@ const ADDED = "var(--color-diff-add)";
 
 const splitScroll = EditorView.domEventHandlers({
   wheel(event, view) {
-    if (!editorSurfaceActive(view.dom) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !event.deltaY) return false;
+    if (
+      !editorSurfaceActive(view.dom) ||
+      event.defaultPrevented ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      !event.deltaY
+    )
+      return false;
     const scroller = view.dom.closest<HTMLElement>(".cm-mergeView");
     if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return false;
     const lineHeight = parseFloat(getComputedStyle(view.scrollDOM).lineHeight) || 20;

@@ -8,6 +8,54 @@ use std::time::Duration;
 
 const WAIT: Duration = Duration::from_secs(5);
 
+#[test]
+fn recovery_runs_once_after_success_and_retries_failure() {
+    let guard = Mutex::new(None);
+    assert!(recover_once::<i32>(&guard, "owner", || Err("failed".into())).is_err());
+    assert_eq!(
+        recover_once(&guard, "owner", || Ok(vec![1])).unwrap(),
+        vec![1]
+    );
+    assert_eq!(
+        recover_once::<i32>(&guard, "owner", || panic!("recovery repeated")).unwrap(),
+        vec![1]
+    );
+    assert!(
+        recover_once::<i32>(&guard, "other", || panic!("recovery repeated"))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn terminal_run_cannot_be_restarted_or_completed_again() {
+    let store = SessionStore::open_in_memory().unwrap();
+    let automation = automations_upsert_with(&store, input("transition"), || {}).unwrap();
+    let run = automation_run_now_with(&store, automation.id, 10, || {}).unwrap();
+    automation_run_update_with(
+        &store,
+        run.id.clone(),
+        "cancelled".into(),
+        None,
+        None,
+        11,
+        || {},
+    )
+    .unwrap();
+    for status in ["running", "succeeded", "cancelled"] {
+        assert!(automation_run_update_with(
+            &store,
+            run.id.clone(),
+            status.into(),
+            None,
+            None,
+            12,
+            || {}
+        )
+        .is_err());
+    }
+}
+
 fn input(id: &str) -> AutomationUpsert {
     serde_json::from_value(serde_json::json!({
         "id": id, "name": "  Original automation  ",
@@ -85,6 +133,7 @@ fn selected_session_closure_refuses_all_seven_global_automation_writes_before_sq
     refused!(automations_claim_due_with(
         &store,
         original.id.clone(),
+        original.next_run_at,
         original.next_run_at,
         original.next_run_at + 3_600_000,
         original.next_run_at,
@@ -168,6 +217,7 @@ fn all_seven_actual_operations_preserve_results_and_notify_only_after_sql_unlock
         automations_claim_due_with(
             &store,
             saved.id.clone(),
+            saved.next_run_at,
             saved.next_run_at,
             saved.next_run_at + 3_600_000,
             saved.next_run_at,

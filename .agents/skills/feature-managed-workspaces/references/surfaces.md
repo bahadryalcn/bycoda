@@ -12,16 +12,16 @@ Paths are repository-root relative. The canonical architecture is `docs/referenc
 
 ## Services, operations and persistence
 
-- `host/workspace-contracts.ts`, `host/workspace-rpc-contracts.ts`, `host/workspace-service-contracts.ts`; type-only app mirror `src/features/workspaces/model/contracts.ts`.
-- `host/managed-workspace-runtime.ts` composes registry/history/delivery/activity/removal/retention/bootstrap/ports and startup recovery. `host/managed-native-turns.ts`, `managed-native-activity.ts`, `managed-native-rewind.ts` retain device-bound coordination.
+- `host/workspaces/workspace-contracts.ts`, `host/workspaces/workspace-rpc-contracts.ts`, `host/workspaces/workspace-service-contracts.ts`; type-only app mirror `src/features/workspaces/model/contracts.ts`.
+- `host/managed/managed-workspace-runtime.ts` composes registry/history/delivery/activity/removal/retention/bootstrap/ports and startup recovery. `host/managed/managed-native-turns.ts`, `managed-native-activity.ts`, `managed-native-rewind.ts` retain device-bound coordination.
 - Operation families: `workspaces.prepare/get/list/resume/finish/close`, `projects.workspacePolicy.get/update`, `workspaces.featureClaims.list/acquire/release`, `sessions.rewind.plan/apply/undo`, `workspaces.delivery.review/merge/publish`, `workspaces.cleanup.plan/apply/status`, `workspaces.storage.status`. Read exact current schemas and tokens before altering wire behavior.
 - Rewind producers: `src/app/workspace/sessions/useCompactAndRewind.ts`, session model `conversationRewind.ts`/`conversationRewindStrategy.ts`, workspace model `rewindClient.ts`; provider reverts must not double-restore managed files.
-- Task/goal/automation/steward integration: `host/task-workspace.ts`, `host/task-worktree-cleanup.ts`, their existing scheduler owners and `src/features/tasks/model/taskWorkspace.ts`. General Git mutations stay in their existing Host Git service.
+- Task/goal/automation/steward integration: `host/tasks/task-workspace.ts`, `host/tasks/task-worktree-cleanup.ts`, their existing scheduler owners and `src/features/tasks/model/taskWorkspace.ts`. General Git mutations stay in their existing Host Git service.
 - Native: `src-tauri/src/native_workspace.rs`, `session_rewind.rs`, `worktrees.rs`, `worktree_lifecycle.rs`, `checkpoint.rs`, `session_store.rs`; `src/app/workspace/files/useManagedWorkspaceBuffers.ts`, `src/features/workspaces/model/nativeManagedTurn.ts`.
 - Development isolation/build identity: `scripts/build/dev-native.mjs`, `dev-shot.mjs`, `build-status.mjs`, existing local-update scripts and Host/dev-server owners. Never share another checkout's dependency links or mutable executable output.
 
 ## Checks
 
-- Model suites: worktree removal/policy, conversation rewind/strategy and task workspace. Host: `host/git-worktrees.test.ts`, checkpoints/leases, cleanup and `host/managed-workspaces.e2e.test.ts` (fake providers).
+- Model suites: worktree removal/policy, conversation rewind/strategy and task workspace. Host: `host/git/git-worktrees.test.ts`, checkpoints/leases, cleanup and `host/managed/managed-workspaces.e2e.test.ts` (fake providers).
 - Browser families under `tests/browser/`: worktrees, workspace-actions, workspace-rewind, build-identity, git-workspace/checkouts, project-workspace-navigation and tasks. Select each family's existing config.
 - Native checkpoint/lease/source tests need an isolated Cargo target/profile. Inspect nested `mobile/` separately; parent branch identity does not identify its source or build.

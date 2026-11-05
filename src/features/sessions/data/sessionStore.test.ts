@@ -5,6 +5,27 @@ import { toolCallLabel } from "../model/transcriptActivity";
 import { conversationReplayPrompt } from "../model/conversationRewind";
 import { newSession, type Block, type BtwThread, type Session } from "../model/session";
 import { clearConversation } from "../model/clearConversation";
+it("retains failed physical shell retirement through desktop persistence sanitization", () => {
+  const session = newSession("codex", "G:/repo", "model");
+  session.blocks = [
+    {
+      id: "shell",
+      role: "system",
+      text: "",
+      shell: {
+        command: "long command",
+        output: "termination failed",
+        exitCode: 0,
+        terminationFailed: "original tree remains unknown",
+      },
+    },
+  ];
+  const saved = sanitizeSessionForPersist(session);
+  expect(saved.blocks[0].shell).toMatchObject({
+    terminationFailed: "original tree remains unknown",
+    exitCode: null,
+  });
+});
 import {
   appendPreparingHandoff,
   failHandoff,

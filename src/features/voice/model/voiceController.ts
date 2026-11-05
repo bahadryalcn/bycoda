@@ -9,6 +9,7 @@ import { resolveVoiceProjects } from "./voiceProjectNames";
 import {
   voiceThreadToolAllowed,
   voiceDesktopInputAction,
+  voiceGlobalToolAllowed,
 } from "../../../shared/model/voiceToolScope";
 
 export type VoiceControllerPorts = {
@@ -71,7 +72,17 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
   }
   function captureTurn(scope = read().getScope?.()) {
     const id = read().getTargetId();
-    const value = id ? session(id) : undefined;
+    const value = (() => {
+      if (!id) return undefined;
+      try {
+        return session(id);
+      } catch (error) {
+        if (scope !== "global") throw error;
+        // Hidden or closed coding tabs cannot become the global manager's identity.
+        // Project and composer operations still validate their captured targets.
+        return undefined;
+      }
+    })();
     bound = {
       sessionId: value?.id,
       projectPath: value?.cwd ?? read().getProjectPath(),
@@ -106,7 +117,25 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       throw new Error("Session and project targets do not match.");
     return { cwd: path, sessionId: id };
   }
-  async function source(args: Record<string, unknown>, useTarget = false, preferTarget = false) {
+  async function source(
+    args: Record<string, unknown>,
+    useTarget = false,
+    preferTarget = false,
+    global = false,
+  ) {
+    if (
+      global &&
+      read().getThreadId &&
+      (bound?.scope ?? read().getScope?.() ?? "global") === "global" &&
+      (read().getScope?.() ?? "global") === "global" &&
+      args.projectPath === undefined &&
+      args.sessionId === undefined
+    ) {
+      const threadId = await (bound ? bound.threadId : read().getThreadId?.());
+      if (!threadId) throw new Error("Open a verified assistant conversation before using tools.");
+      const environmentId = (await read().causalContext?.())?.environmentId;
+      return { cwd: "", threadId, ...(environmentId ? { environmentId } : {}) };
+    }
     const selected = target(args);
     if (read().getThreadId) {
       if (selected.cwd.startsWith("remote://")) {
@@ -219,10 +248,10 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       // Host tools need a verified project; desktop workspace actions do not.
       // A Host failure must not hide the workspace actions as well.
       try {
-        const selected = read().getThreadId ? await source(args) : target(args);
+        const selected = read().getThreadId ? await source(args, false, false, true) : target(args);
         const page = await discoverVoiceTools(selected, options);
         assertActive();
-        project(selected.cwd);
+        if (selected.cwd) project(selected.cwd);
         return { ...page, workspaceTools: workspace };
       } catch (error) {
         assertActive();
@@ -248,6 +277,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       input,
       projectPath: args.projectPath,
       sessionId: args.sessionId,
+      accountId: args.accountId,
       bound,
     });
     const old = requests.get(requestId);
@@ -282,10 +312,25 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         return read().workspace.execute(action, { ...input, requestId });
       }
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
+      const accountId = text(args.accountId, "accountId", true);
+      if (
+        accountId &&
+        (!(
+          args.family === "social" ||
+          (args.family === "conversation" &&
+            ["observations.read", "observations.ack", "observations.resnapshot"].includes(action))
+        ) ||
+          args.projectPath !== undefined ||
+          args.sessionId !== undefined ||
+          (bound?.scope ?? read().getScope?.() ?? "global") !== "global" ||
+          (read().getScope?.() ?? "global") !== "global")
+      )
+        throw new Error("Choose Global voice scope for an account target.");
       const selected = await source(
         args,
         !voiceThreadToolAllowed(args.family, action),
         args.family === "conversation" && voiceDesktopInputAction(action),
+        voiceGlobalToolAllowed(args.family, action),
       );
       assertActive();
       const causalContext = selected.cwd.startsWith("remote://")
@@ -301,11 +346,12 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         {
           family: args.family,
           action,
+          ...(accountId ? { accountId } : {}),
           input,
           requestId,
         },
       );
-      project(selected.cwd);
+      if (selected.cwd) project(selected.cwd);
       return result;
     })();
     const request = { signature, result, settled: false };

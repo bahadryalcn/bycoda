@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { expect, it, vi } from "vitest";
-import { fixture } from "../../native-devices.test-support";
-import { deliveryIdentity, deliverySha } from "../../native-delivery.test-support";
-import { nativeDeliveryConsumedResult } from "../../native-delivery-store";
-import { WorkspaceCommands } from "../../workspace-commands";
-import { ConversationDesktopRelay } from "../../conversation-tools";
+import { fixture } from "../../devices/native-devices.test-support";
+import { deliveryIdentity, deliverySha } from "../../native-delivery/native-delivery.test-support";
+import { nativeDeliveryConsumedResult } from "../../native-delivery/native-delivery-store";
+import { WorkspaceCommands } from "../../workspaces/workspace-commands";
+import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
 import {
   nativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochRef,

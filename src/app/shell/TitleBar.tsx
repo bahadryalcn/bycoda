@@ -1,4 +1,6 @@
 import { Button } from "../../shared/ui/Button";
+import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
@@ -62,7 +64,7 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
-import {AssistantPresenceMenu} from "../../features/assistant/ui/AssistantPresenceMenu";
+import { AssistantPresenceMenu } from "../../features/assistant/ui/AssistantPresenceMenu";
 import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
@@ -289,11 +291,9 @@ function TabHarnesses({
         );
       })}
       {extra > 0 ? (
-        <span
-          className={`pl-0.5 text-ui-caption leading-none ${dimmed ? "text-(--ui-text-secondary)" : "text-content"}`}
-        >
+        <Badge variant="count" size="xs" className="ms-0.5">
           +{extra}
-        </span>
+        </Badge>
       ) : null}
     </span>
   );
@@ -372,13 +372,19 @@ function TitleTabItem({
     ...((tab.doneHarnesses?.length ?? 0) > 0 ? ["Response complete"] : []),
   ].join(" · ");
 
+  const setItemRef = sortable.setItemRef;
+  const setNode = useCallback(
+    (el: HTMLDivElement | null) => {
+      setItemRef(tab.id, el);
+      itemRef?.(el);
+    },
+    [tab.id, setItemRef, itemRef],
+  );
+
   return (
     <ActionHost
       selected={active}
-      ref={(el) => {
-        sortable.setItemRef(tab.id, el);
-        itemRef?.(el);
-      }}
+      ref={setNode}
       className="reorder-item tab-motion group @container relative flex h-(--ui-control-height-compact) w-full min-w-0 cursor-default touch-none items-center self-center"
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
@@ -481,11 +487,7 @@ function TitleTabItem({
             ) : null}
             {tab.dirty ? (
               <Tooltip label={t("Unsaved changes")}>
-                <span
-                  role="img"
-                  className="size-1.5 shrink-0 rounded-full bg-(--ui-text-secondary)"
-                  aria-label={t("Unsaved changes")}
-                />
+                <StatusDot tone="neutral" label={t("Unsaved changes")} />
               </Tooltip>
             ) : null}
           </span>
@@ -662,14 +664,17 @@ export function DevModeIndicator({ className }: { className?: string }) {
       className={`flex min-w-0 shrink-0 items-center px-3 pb-2 pt-1 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${className ?? ""}`}
     >
       <Tooltip label={t("Development build")} side="top">
-        <span
+        <Badge
+          size="xs"
+          tone="info"
+          appearance="subtle"
           role="img"
           aria-label={t("Development build")}
-          className="inline-flex min-w-0 items-center gap-1.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
+          className="min-w-0"
         >
           <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
           <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
-        </span>
+        </Badge>
       </Tooltip>
     </div>
   );
@@ -844,7 +849,7 @@ function TitleBarComponent({
     }
   };
   const tabIds = tabs.map((tab) => tab.id);
-  const { displayed, setTabNode, finishMotion } = useTabCloseMotion(tabs);
+  const { displayed, tabRef, finishMotion } = useTabCloseMotion(tabs);
   const popOutTab = useCallback(
     (tabId: string) => {
       const tab = tabs.find((entry) => entry.id === tabId);
@@ -1015,6 +1020,12 @@ function TitleBarComponent({
     tabs,
     dragging: Boolean(sortable.draggingId),
   });
+  const setActiveTabNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      activeTabRef.current = node;
+    },
+    [activeTabRef],
+  );
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId), [activeId, tabs]);
@@ -1300,9 +1311,7 @@ function TitleBarComponent({
               const tab = entry.item;
               const shell = (
                 <div
-                  ref={(el) => {
-                    if (!entry.closing) setTabNode(tab.id, el);
-                  }}
+                  ref={entry.closing ? undefined : tabRef(tab.id)}
                   className={
                     entry.closing || entry.opening
                       ? "relative flex h-full w-full min-w-0 overflow-hidden items-center"
@@ -1337,13 +1346,7 @@ function TitleBarComponent({
                         y: event.clientY,
                       })
                     }
-                    itemRef={
-                      !entry.closing && tab.id === activeId
-                        ? (el) => {
-                            activeTabRef.current = el;
-                          }
-                        : undefined
-                    }
+                    itemRef={!entry.closing && tab.id === activeId ? setActiveTabNode : undefined}
                   />
                 </div>
               );

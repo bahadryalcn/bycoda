@@ -1,4 +1,7 @@
-import { memo, useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { toolsContextForSession } from "./useActiveTabContext";
+import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
+import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
+import { memo, useLayoutEffect, useMemo, type ComponentProps, type RefObject } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
@@ -202,6 +205,24 @@ function WorkspaceMainAreaComponent({
   automationsViewOpen,
   activeLinkedWorkItemPanel,
 }: WorkspaceMainAreaProps) {
+  const toolsLock = useLockSnapshot();
+  const toolsSessionsJson = useShellSessionsSelector((sessions) =>
+    JSON.stringify(
+      sessions
+        .filter((session) => !isProjectLockedIn(toolsLock, session.cwd))
+        .map(toolsContextForSession)
+        .filter(Boolean),
+    ),
+  );
+  const toolsSessions = useMemo(
+    () =>
+      JSON.parse(
+        toolsSessionsJson,
+      ) as import("../../../features/host-tools/toolsSessionRegistry").ToolsSession[],
+    [toolsSessionsJson],
+  );
+  const activeToolsConversation =
+    toolsSessions.find((session) => session.composerSessionId === activeSessionId) ?? null;
   // Read from the shell store, not a prop: the main area re-renders only when the
   // protected or known sessions change, not on every status change elsewhere.
   const protection = useShellSessionsSelector(
@@ -224,7 +245,20 @@ function WorkspaceMainAreaComponent({
   });
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1">
-      <ToolsWorkspace>
+      <ToolsWorkspace
+        followEligible={
+          !(
+            inboxViewOpen ||
+            searchViewOpen ||
+            settingsOpen ||
+            notesViewOpen ||
+            serversViewOpen ||
+            automationsViewOpen
+          )
+        }
+        activeConversation={activeToolsConversation}
+        accessibleSessions={toolsSessions}
+      >
         <div className="@container/main-row relative flex min-h-0 min-w-0 flex-1">
           <div ref={dockGridRef} className="grid h-full min-h-0 min-w-0 flex-1">
             {projectTerminals.map((dock) => {
@@ -275,46 +309,48 @@ function WorkspaceMainAreaComponent({
                       className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
                     >
                       {isHibernated(tab) ? null : (
-                      <PaneTree
-                        {...sessionPaneProps}
-                        visible={tab.id === activeTabId && !inboxViewOpen}
-                        layout={tab.layout}
-                        maximizedPaneId={
-                          maximizedPane?.tabId === tab.id ? maximizedPane.paneId : null
-                        }
-                        onToggleMaximizePane={onToggleMaximizePane}
-                        editorPanes={tabPanes(tab)}
-                        dirtyFileIds={dirtyFiles}
-                        fileErrorCounts={fileErrorCounts}
-                        focusedId={
-                          tab.id === activeTabId &&
-                          !inboxViewOpen &&
-                          !tab.diffFocused &&
-                          !projectTerminalFocused
-                            ? tab.focusedId
-                            : ""
-                        }
-                        addToChatSessionId={tab.id === activeTabId ? activeSessionId : undefined}
-                        composerFocused={composerFocused && !projectTerminalFocused}
-                        composerFocusToken={composerFocusToken}
-                        onSelectFile={onSelectFileSurface}
-                        onCloseFile={onCloseFile}
-                        onCloseOtherFiles={onCloseOtherFiles}
-                        onOpenInNewWindow={onOpenFileInNewWindow}
-                        onPinFile={onPinFile}
-                        onReorderFiles={onReorderFiles}
-                        onFileDirtyChange={onFileDirtyChange}
-                        onFileErrorCountChange={onFileErrorCountChange}
-                        transcriptPool={transcriptPool}
-                        onRatio={(splitId, index, ratio) => onRatio(tab.id, splitId, index, ratio)}
-                        editorNavigation={editorNavigation}
-                        onUpdatePlan={onUpdatePlan}
-                        onMovePane={onMovePane}
-                        onMoveFile={onMoveFileBetweenPanes}
-                        onDetachPane={onDetachPane}
-                        onPopOutPane={onPopOutPane}
-                        onTerminalMetaChange={onTerminalMetaChange}
-                      />
+                        <PaneTree
+                          {...sessionPaneProps}
+                          visible={tab.id === activeTabId && !inboxViewOpen}
+                          layout={tab.layout}
+                          maximizedPaneId={
+                            maximizedPane?.tabId === tab.id ? maximizedPane.paneId : null
+                          }
+                          onToggleMaximizePane={onToggleMaximizePane}
+                          editorPanes={tabPanes(tab)}
+                          dirtyFileIds={dirtyFiles}
+                          fileErrorCounts={fileErrorCounts}
+                          focusedId={
+                            tab.id === activeTabId &&
+                            !inboxViewOpen &&
+                            !tab.diffFocused &&
+                            !projectTerminalFocused
+                              ? tab.focusedId
+                              : ""
+                          }
+                          addToChatSessionId={tab.id === activeTabId ? activeSessionId : undefined}
+                          composerFocused={composerFocused && !projectTerminalFocused}
+                          composerFocusToken={composerFocusToken}
+                          onSelectFile={onSelectFileSurface}
+                          onCloseFile={onCloseFile}
+                          onCloseOtherFiles={onCloseOtherFiles}
+                          onOpenInNewWindow={onOpenFileInNewWindow}
+                          onPinFile={onPinFile}
+                          onReorderFiles={onReorderFiles}
+                          onFileDirtyChange={onFileDirtyChange}
+                          onFileErrorCountChange={onFileErrorCountChange}
+                          transcriptPool={transcriptPool}
+                          onRatio={(splitId, index, ratio) =>
+                            onRatio(tab.id, splitId, index, ratio)
+                          }
+                          editorNavigation={editorNavigation}
+                          onUpdatePlan={onUpdatePlan}
+                          onMovePane={onMovePane}
+                          onMoveFile={onMoveFileBetweenPanes}
+                          onDetachPane={onDetachPane}
+                          onPopOutPane={onPopOutPane}
+                          onTerminalMetaChange={onTerminalMetaChange}
+                        />
                       )}
                     </div>
                   </div>

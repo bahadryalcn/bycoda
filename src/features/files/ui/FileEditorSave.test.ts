@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { EditorView } from "@codemirror/view";
+import { Chunk } from "@codemirror/merge";
 import { undo } from "@codemirror/commands";
 import { Storage } from "happy-dom";
 import { act, createElement } from "react";
@@ -374,4 +375,33 @@ it("retains the same source editor, selection and undo while Preview owns the pa
   expect(view.state.selection.main.head).toBe(4);
   act(() => expect(undo(view)).toBe(true));
   expect(view.state.doc.toString()).toBe("original\n");
+});
+
+it("preserves mixed separators through editing, undo and save", async () => {
+  disk = "first\r\nsecond\nthird\rfourth\r\n";
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, to: 5, insert: "FIRST" } }));
+  await act(async () => saveButton().click());
+  expect(disk).toBe("FIRST\r\nsecond\nthird\rfourth\r\n");
+  act(() => {
+    undo(view);
+  });
+  await act(async () => saveButton().click());
+  expect(disk).toBe("first\r\nsecond\nthird\rfourth\r\n");
+});
+
+it("keeps a mixed draft and reports an imprecise diff without writing", async () => {
+  disk = "first\r\nsecond\n";
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, to: 5, insert: "FIRST" } }));
+  const build = vi.spyOn(Chunk, "build").mockReturnValue([{ precise: false }] as never);
+  try {
+    await act(async () => saveButton().click());
+    expect(disk).toBe("first\r\nsecond\n");
+    expect(view.state.doc.toString()).toBe("FIRST\nsecond\n");
+    expect(container.textContent).toContain("Cannot safely preserve mixed line endings");
+    expect(saveButton().disabled).toBe(false);
+  } finally {
+    build.mockRestore();
+  }
 });

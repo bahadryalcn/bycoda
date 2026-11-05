@@ -1,4 +1,5 @@
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import type { DesktopControlGuard } from "../../../features/connections/model/desktopLive";
 import {
   useCallback,
   useEffect,
@@ -16,6 +17,7 @@ import {
   sessionChildHarnesses,
 } from "../../../features/sessions/model/handoff";
 import { markConversationTurnStopped } from "../../../features/sessions/model/conversationRewind";
+import { hasActiveSubmit } from "../../../features/sessions/model/activeSubmits";
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
@@ -34,6 +36,7 @@ export interface SessionStopDeps {
   sessionsRef: MutableRefObject<Session[]>;
   setSessions: Dispatch<SetStateAction<Session[]>>;
   turnGen: MutableRefObject<Map<string, number>>;
+  retiringTurns: MutableRefObject<Map<string, number>>;
   flushHarnessEvents: () => void;
   deferWorkspaceWork: (callback: () => void, delay: number) => void;
   tabsRef: MutableRefObject<WorkspaceTab[]>;
@@ -49,6 +52,7 @@ export function useSessionStop(deps: SessionStopDeps) {
     sessionsRef,
     setSessions,
     turnGen,
+    retiringTurns,
     flushHarnessEvents,
     deferWorkspaceWork,
     tabsRef,
@@ -58,8 +62,16 @@ export function useSessionStop(deps: SessionStopDeps) {
   } = deps;
 
   const onStop = useCallback(
-    (sessionId: string, managed = false) => {
+    (sessionId: string, managed = false, current?: DesktopControlGuard, awaitOutcome = false) => {
+      if (current && !current()) return;
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
+      if (current && remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) return;
+      // A remote desktop command has no original orchestration receipt. Hold it
+      // rather than retargeting an orchestrator that appeared after the heartbeat.
+      if (current && !managed && orchestrator.forSession(sessionId)) {
+        if (current.stopOrchestration) void current.stopOrchestration().catch(console.error);
+        return;
+      }
       if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
         remoteSessionActions(sessionId)?.stop();
         return;
@@ -125,76 +137,98 @@ export function useSessionStop(deps: SessionStopDeps) {
       // queue when it settles; the paused display alone would not stop a late success.
       noteSharedLocalStop(sessionId);
       flushHarnessEvents();
+      if (current && !current()) return;
       const generation = turnGen.current.get(sessionId) ?? 0;
+      if ((retiringTurns.current.get(sessionId) ?? 0) < 0) {
+        if (awaitOutcome) return Promise.reject(new Error("Stop is already in progress."));
+        return;
+      }
+      // A distinct marker survives the submit's own cleanup while Stop is in flight.
+      const stoppingMarker = -generation - 1;
+      retiringTurns.current.set(sessionId, stoppingMarker);
       const failureBlockId = `stop-error:${sessionId}`;
       // A send still starting has no turn yet; the last answered message is not
       // the one being stopped, so it must not be marked "Stopped by you".
       const noTurnYet = isSendStarting(sessionId);
-      void (async () => {
-        // Keep the current event generation live until cancellation is delivered.
-        // A failed Stop must leave provider events and another Stop actionable.
-        const cancellations = await Promise.allSettled(
-          session
-            ? sessionChildHarnesses(session).map((id) => cancelHarnessTurn(id, sessionId))
-            : [],
-        );
-        if ((turnGen.current.get(sessionId) ?? 0) !== generation) return;
-        const failure = cancellations.find((result) => result.status === "rejected");
-        if (failure?.status === "rejected") {
-          const detail =
-            failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+      const operation = (async () => {
+        try {
+          // Keep the current event generation live until cancellation is delivered.
+          // A failed Stop must leave provider events and another Stop actionable.
+          const cancellations = await Promise.allSettled(
+            session
+              ? sessionChildHarnesses(session).map((id) => cancelHarnessTurn(id, sessionId))
+              : [],
+          );
+          if ((turnGen.current.get(sessionId) ?? 0) !== generation) {
+            if (awaitOutcome)
+              throw new Error("Stop outcome is unknown because the session generation changed.");
+            return;
+          }
+          const failure = cancellations.find((result) => result.status === "rejected");
+          if (failure?.status === "rejected") {
+            const detail =
+              failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      blocks: [
+                        ...s.blocks.filter((block) => block.id !== failureBlockId),
+                        {
+                          id: failureBlockId,
+                          role: "system" as const,
+                          notice: "error" as const,
+                          text: `Stop failed: ${detail}. Try Stop again.`,
+                        },
+                      ],
+                      ...(s.queuedMessages?.length
+                        ? { queueStatus: nextQueueStatus(s.queueStatus, "pause") }
+                        : {}),
+                    }
+                  : s,
+              ),
+            );
+            throw new Error(`Stop failed: ${detail}. Try Stop again.`);
+          }
+          turnGen.current.set(sessionId, generation + 1);
           setSessions((prev) =>
-            prev.map((s) =>
-              s.id === sessionId
-                ? {
-                    ...s,
-                    blocks: [
-                      ...s.blocks.filter((block) => block.id !== failureBlockId),
-                      {
-                        id: failureBlockId,
-                        role: "system" as const,
-                        notice: "error" as const,
-                        text: `Stop failed: ${detail}. Try Stop again.`,
-                      },
-                    ],
-                    ...(s.queuedMessages?.length
-                      ? { queueStatus: nextQueueStatus(s.queueStatus, "pause") }
-                      : {}),
-                  }
-                : s,
-            ),
+            prev.map((s) => {
+              if (s.id !== sessionId) return s;
+              const stopped =
+                s.busy && !noTurnYet
+                  ? markConversationTurnStopped(stopStreaming(s))
+                  : stopStreaming(s);
+              const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;
+              const ready = {
+                ...completed,
+                worktreePreparing: undefined,
+                blocks: completed.blocks.filter((block) => block.id !== failureBlockId),
+              };
+              return ready.queuedMessages?.length
+                ? { ...ready, queueStatus: nextQueueStatus(ready.queueStatus, "pause") }
+                : ready;
+            }),
           );
-          return;
+          if (session) {
+            notifyFinishedWorkspace(
+              sessionId,
+              sessionWorkCwd(session),
+              deferWorkspaceWork,
+              "workspace-first",
+            );
+          } else {
+            notifyReviewChanged(sessionId);
+          }
+        } finally {
+          if (retiringTurns.current.get(sessionId) === stoppingMarker) {
+            if (hasActiveSubmit(sessionId)) retiringTurns.current.set(sessionId, generation);
+            else retiringTurns.current.delete(sessionId);
+          }
         }
-        turnGen.current.set(sessionId, generation + 1);
-        setSessions((prev) =>
-          prev.map((s) => {
-            if (s.id !== sessionId) return s;
-            const stopped = s.busy && !noTurnYet
-              ? markConversationTurnStopped(stopStreaming(s))
-              : stopStreaming(s);
-            const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;
-            const ready = {
-              ...completed,
-              worktreePreparing: undefined,
-              blocks: completed.blocks.filter((block) => block.id !== failureBlockId),
-            };
-            return ready.queuedMessages?.length
-              ? { ...ready, queueStatus: nextQueueStatus(ready.queueStatus, "pause") }
-              : ready;
-          }),
-        );
-        if (session) {
-          notifyFinishedWorkspace(
-            sessionId,
-            sessionWorkCwd(session),
-            deferWorkspaceWork,
-            "workspace-first",
-          );
-        } else {
-          notifyReviewChanged(sessionId);
-        }
-      })().catch(console.error);
+      })();
+      if (awaitOutcome) return operation;
+      void operation.catch(console.error);
     },
     [flushHarnessEvents],
   );
@@ -241,5 +275,20 @@ export function useSessionStop(deps: SessionStopDeps) {
     return () => window.removeEventListener("keydown", onEscape);
   }, [onStop]);
 
-  return { onStop };
+  const onStopForRoom = useCallback(
+    async (sessionId: string) => {
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      if (
+        !session ||
+        session.continuingElsewhere ||
+        hostSessionBinding(session) ||
+        remoteProjectFor(session.cwd) ||
+        orchestrator.forSession(sessionId)
+      )
+        throw new Error("Session stop owner is unavailable in this window.");
+      await onStop(sessionId, false, undefined, true);
+    },
+    [onStop],
+  );
+  return { onStop, onStopForRoom };
 }

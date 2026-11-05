@@ -219,9 +219,7 @@ export function ServerItem({
               >
                 <span className="text-(--ui-text-muted)">{kind} · </span>
                 {address}
-                {groupTags ? (
-                  <span className="text-(--ui-text-muted)"> · {groupTags}</span>
-                ) : null}
+                {groupTags ? <span className="text-(--ui-text-muted)"> · {groupTags}</span> : null}
               </span>
             </OverflowTooltip>
           </span>

@@ -3,10 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StoreDatabase } from "../../../../host/store-db";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { SessionQueues } from "../../../../host/session-queue";
+import { SessionQueues } from "../../../../host/sessions/session-queue";
 import { invoke } from "@tauri-apps/api/core";
 import { SharedQueueClient, type QueueTransport } from "./sharedQueueClient";
 import { mergeQueueChange, QUEUE_LEASE_TTL_MS, type SharedQueue } from "./sharedQueue";
+// These queue fixtures contain no persisted remote command attachments. Durable
+// outbox inventories have their own transaction/recovery regression suites.
+vi.mock("./remoteOutbox", async (original) => ({
+  ...(await original<typeof import("./remoteOutbox")>()),
+  durableRemoteAttachmentIds: vi.fn(async () => []),
+}));
 import { recordRemoteCapabilities } from "./connections";
 import {
   ATTACHMENT_OWNERSHIP_CAPABILITY,

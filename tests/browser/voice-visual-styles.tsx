@@ -13,8 +13,11 @@ import { setLanguagePreference } from "../../src/shared/i18n";
 import type { Session } from "../../src/features/sessions/model/session";
 import { registerVoiceDraftReader } from "../../src/features/voice/model/voiceDraftContext";
 import { VoiceSetupSteps } from "../../src/features/voice/ui/VoiceSetupSteps";
+import { saveKeybindingOverride } from "../../src/features/settings/model/settings";
 import "../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
+if (params.has("push-to-talk"))
+  saveKeybindingOverride("Voice: Push to Talk", { shortcut: "Control+Shift+KeyM" });
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 saveVoiceSettings({
@@ -77,6 +80,10 @@ const workspace = global
       ],
       execute: async (action: string) => {
         fixtureVoice.actions.push(action);
+        if (params.has("pending-tool"))
+          return new Promise((resolve) => {
+            fixtureVoice.finishTool = resolve;
+          });
         return { status: "completed", projects: [{ path: session.cwd, name: "Fixture project" }] };
       },
     }

@@ -13,7 +13,7 @@ import {
   findConflictBlocks,
   type ConflictBlock,
   type ConflictSide,
-} from "../../source-control/model/conflictMarkers";
+} from "../../source-control/public/conflictMarkers";
 
 /**
  * Git conflict blocks in the open document: both sides tinted, the markers and

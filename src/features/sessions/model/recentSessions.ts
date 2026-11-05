@@ -1,16 +1,13 @@
 import { sessionIssue } from "./sessionIssue";
+import { wasTurnInterrupted } from "./inFlight";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import {
-  sessionDisplayTitle,
-  sessionNeedsInput,
-  type HarnessId,
-  type Session,
-} from "./session";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */
 export type StoredSessionRow = {
+  recentPinTarget?: import("../data/sessionPinReceipts").PinTarget | null;
   managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
@@ -18,11 +15,18 @@ export type StoredSessionRow = {
   harness: HarnessId;
   model: string;
   updatedAt: number;
+  lastActivityAt?: number;
   pinned?: boolean;
+  interrupted?: boolean;
 };
 
 export type RecentSessionStatus =
-  "working" | "input" | "done" | "retrying" | "failed";
+  | "working"
+  | "input"
+  | "done"
+  | "retrying"
+  | "failed"
+  | "interrupted";
 
 /** What the in-memory sessions add to the stored rows. */
 export type LiveSessionInfo = {
@@ -33,11 +37,14 @@ export type LiveSessionInfo = {
   harness: HarnessId;
   model: string;
   status?: RecentSessionStatus;
+  /** False when transcript hydration cannot yet establish the latest turn. */
+  interruptionKnown?: boolean;
   /** Last user turn, for sessions the store does not hold (remote machines). */
   activityAt: number;
 };
 
 export type RecentSessionRow = {
+  pinTarget?: import("../data/sessionPinReceipts").PinTarget | null;
   managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
@@ -81,9 +88,7 @@ export function loadRecentSessionsPrefs(): RecentSessionsPrefs {
     const { collapsed, count } = parsed as Record<string, unknown>;
     return {
       collapsed: collapsed === true,
-      count:
-        RECENT_SESSION_COUNTS.find((option) => option === count) ??
-        fallback.count,
+      count: RECENT_SESSION_COUNTS.find((option) => option === count) ?? fallback.count,
     };
   } catch {
     return fallback;
@@ -112,9 +117,7 @@ export function liveSessionInfos(
     if (session.inboxAsk || session.orchestrationLeadId) continue;
     if (!hasSentTurn(session)) continue;
     const needsInput = sessionNeedsInput(session);
-    const busy =
-      !session.worktreeRemoved &&
-      (!!session.busy || !!session.continuingElsewhere);
+    const busy = !session.worktreeRemoved && (!!session.busy || !!session.continuingElsewhere);
     infos.push({
       id: session.id,
       cwd: session.cwd,
@@ -127,9 +130,12 @@ export function liveSessionInfos(
           ? "input"
           : busy
             ? "working"
-            : unseenFinishedIds.has(session.id)
-              ? "done"
-              : undefined),
+            : wasTurnInterrupted(session)
+              ? "interrupted"
+              : unseenFinishedIds.has(session.id)
+                ? "done"
+                : undefined),
+      interruptionKnown: !session.historyPartial && !session.historyLoading,
       activityAt: sessionActivityAt(session),
       managedBy: session.managedBy,
     });
@@ -152,6 +158,7 @@ export function sameLiveSessionInfos(
         left.harness === right.harness &&
         left.model === right.model &&
         left.status === right.status &&
+        left.interruptionKnown === right.interruptionKnown &&
         left.activityAt === right.activityAt &&
         left.managedBy?.jobId === right.managedBy?.jobId &&
         left.managedBy?.managedAt === right.managedBy?.managedAt
@@ -162,9 +169,7 @@ export function sameLiveSessionInfos(
 
 function comparePinnedThenRecent(a: RecentSessionRow, b: RecentSessionRow) {
   return (
-    Number(b.pinned) - Number(a.pinned) ||
-    b.updatedAt - a.updatedAt ||
-    a.id.localeCompare(b.id)
+    Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
   );
 }
 
@@ -186,27 +191,33 @@ export function buildRecentSessions({
   limit: number;
   now: number;
 }): RecentSessionRow[] {
-  const liveById = new Map(live.map((info) => [info.id, info]));
+  const identity = (cwd: string, id: string) => JSON.stringify([pathKey(cwd), id]);
+  const liveById = new Map(live.map((info) => [identity(info.cwd, info.id), info]));
   const rows = new Map<string, RecentSessionRow>();
   for (const row of stored) {
     if (!projectKeys.has(pathKey(row.cwd))) continue;
-    const info = liveById.get(row.id);
+    const info = liveById.get(identity(row.cwd, row.id));
     const active = info?.status === "working" || info?.status === "input";
-    rows.set(row.id, {
+    rows.set(identity(row.cwd, row.id), {
+      pinTarget: row.recentPinTarget ?? null,
       id: row.id,
       cwd: row.cwd,
       title: sessionDisplayTitle(info?.title ?? row.title, row.harness),
       harness: row.harness,
       model: info?.model || row.model,
       updatedAt: Math.max(
-        row.updatedAt,
+        row.lastActivityAt ?? row.updatedAt,
         info?.activityAt ?? 0,
         active ? now : 0,
       ),
       pinned: !!row.pinned,
       pinnable: true,
       remote: isRemoteProjectPath(row.cwd),
-      status: info?.status,
+      status:
+        info?.status ??
+        (row.interrupted && (!info || info.interruptionKnown === false)
+          ? "interrupted"
+          : undefined),
       managedBy: info?.managedBy ?? row.managedBy,
     });
   }
@@ -214,19 +225,17 @@ export function buildRecentSessions({
   // only just started. An idle local one is skipped, since it is either older
   // than the stored window or about to arrive with the next fetch.
   for (const info of live) {
-    if (rows.has(info.id) || !projectKeys.has(pathKey(info.cwd))) continue;
+    if (rows.has(identity(info.cwd, info.id)) || !projectKeys.has(pathKey(info.cwd))) continue;
     const remote = isRemoteProjectPath(info.cwd);
     if (!remote && !info.status) continue;
-    rows.set(info.id, {
+    rows.set(identity(info.cwd, info.id), {
+      pinTarget: null,
       id: info.id,
       cwd: info.cwd,
       title: sessionDisplayTitle(info.title, info.harness),
       harness: info.harness,
       model: info.model,
-      updatedAt:
-        info.status === "working" || info.status === "input"
-          ? now
-          : info.activityAt,
+      updatedAt: info.status === "working" || info.status === "input" ? now : info.activityAt,
       pinned: false,
       pinnable: false,
       remote,

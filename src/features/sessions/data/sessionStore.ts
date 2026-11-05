@@ -1,18 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { inlineVisualSnapshot } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
-import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
+import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
   hostSessionBinding,
+  hasHostSessionOwnerFence,
   restoreHostSessionShell,
   hostSessionShellSummaries,
   patchHostSessionShellMetadata,
   forgetHostSessionShell,
   saveHostSessionBinding,
-} from "../../connections/model/sessionExecutionBinding";
+  flushHostSessionBindings,
+} from "../../connections/public/sessionExecutionBinding";
 import {
   captureSessionOutputWrite,
   acknowledgeSessionOutputWrite,
@@ -57,8 +60,8 @@ import {
   PERSISTED_AGENT_PROMPT_CHARS,
 } from "../model/agentOutput";
 import type { ContextUsage } from "../model/contextUsage";
-import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/model/recents";
-import { removeSessionAdditionalDirs } from "../../projects/model/additionalDirs";
+import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/public/recents";
+import { removeSessionAdditionalDirs } from "../../projects/public/additionalDirs";
 import {
   claudeShellCommands,
   ompActiveAssistantTexts,
@@ -90,7 +93,7 @@ import type {
 } from "../model/session";
 
 import { HARNESSES, RUNTIME_MODES } from "../model/session";
-import { assistantSessionManagement,sessionMessageAuthor } from "../model/sessionProvenance";
+import { assistantSessionManagement, sessionMessageAuthor } from "../model/sessionProvenance";
 
 import {
   recoverTaggedOrchestrationProposals,
@@ -100,7 +103,12 @@ import {
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
 export type SessionSummary = {
-  managedBy?:Session["managedBy"];
+  /** Exact authority captured for Last Sessions pin actions. Null means unidentified. */
+  recentPinTarget?: import("./sessionPinReceipts").PinTarget | null;
+  interrupted?: boolean;
+  lastActivityAt?: number;
+  providerHistory?: import("../model/sessionProviderHistory").SessionProviderHistory;
+  managedBy?: Session["managedBy"];
   /** Optional actual Native write locator, never a FULL/application receipt. */
   nativeWriteId?: string;
   issue?: "retrying" | "failed";
@@ -133,7 +141,7 @@ export type SessionSummary = {
 };
 
 type SessionRecord = {
-  managedBy?:Session["managedBy"];
+  managedBy?: Session["managedBy"];
   transcriptRevision?: number;
   orchestrationLeadId?: string;
   id: string;
@@ -165,7 +173,7 @@ type SessionRecord = {
 };
 
 type SessionUpsertPayload = {
-  managedBy?:Session["managedBy"];
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   harness: string;
@@ -221,7 +229,9 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(session.rewindHistory);
   return {
-    ...(assistantSessionManagement(session.managedBy)?{managedBy:assistantSessionManagement(session.managedBy)}:{}),
+    ...(assistantSessionManagement(session.managedBy)
+      ? { managedBy: assistantSessionManagement(session.managedBy) }
+      : {}),
     id: session.id,
     cwd: normalizeProjectPath(session.cwd),
     harness: session.harness,
@@ -480,6 +490,11 @@ export function upsertSession(
   return persistSession(session, undefined, false, initialTimes);
 }
 
+/** Persist recovery bookkeeping without changing the conversation's activity time. */
+export function upsertSessionPreservingActivity(session: Session): Promise<SessionSummary | null> {
+  return persistSession(session, undefined, false, undefined, undefined, true);
+}
+
 /** Explicit /clear must overwrite an existing transcript even though it is empty. */
 export function upsertClearedSession(session: Session): Promise<SessionSummary | null> {
   if (
@@ -494,6 +509,27 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
   )
     throw new Error("Invalid cleared conversation");
   return persistSession(session, undefined, true);
+}
+
+/** Explicit Room creation persists its empty conversation before reporting its ID. */
+export async function createRoomSession(session: Session): Promise<SessionSummary> {
+  if (
+    session.blocks.length > 1 ||
+    session.blocks.some((block) => block.role !== "user" || !block.draft || !block.appRequestId) ||
+    session.providerSessionId ||
+    session.pendingContextReplay ||
+    session.historyPartial ||
+    session.historyLoading ||
+    session.inboxAsk ||
+    hostSessionBinding(session) ||
+    isRemoteProjectPath(session.cwd) ||
+    session.cwd === "~"
+  )
+    throw new Error("Invalid Room conversation");
+  const summary = await persistSession(session, { expectMissing: true }, true);
+  if (!summary || summary.id !== session.id)
+    throw new Error("Room conversation creation outcome is unknown");
+  return summary;
 }
 
 /**
@@ -736,6 +772,7 @@ async function replaceStoredSession(
   work: PersistenceWork,
   guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
   initialTimes?: { createdAt: number; updatedAt: number },
+  preserveActivityAt = false,
 ): Promise<SessionSummary | null> {
   if (deletedSessionIds.has(session.id)) {
     failSessionOutputWrite(outputWrite);
@@ -749,6 +786,7 @@ async function replaceStoredSession(
     prepareSessionOutputWritePayload(
       outputWrite,
       {
+        ...(preserveActivityAt ? { preserveActivityAt: true } : {}),
         session: {
           ...payload,
           ...initialTimes,
@@ -800,6 +838,7 @@ async function persistSession(
   allowEmpty = false,
   initialTimes?: { createdAt: number; updatedAt: number },
   parent?: PersistenceWork,
+  preserveActivityAt = false,
 ): Promise<SessionSummary | null> {
   if (
     hostSessionBinding(session) ||
@@ -813,7 +852,16 @@ async function persistSession(
   noteSessionWriteLead(session);
   const summary = await enqueueSessionWrite(
     session.id,
-    (work) => replaceStoredSession(session, payload, outputWrite, work, guard, initialTimes),
+    (work) =>
+      replaceStoredSession(
+        session,
+        payload,
+        outputWrite,
+        work,
+        guard,
+        initialTimes,
+        preserveActivityAt,
+      ),
     false,
     parent,
   ).catch((error) => {
@@ -987,6 +1035,10 @@ export function persistFingerprint(session: Session): string {
   return `${JSON.stringify(persistableMeta(session))}|${session.orchestrationLeadId ?? ""}|${blockIdentity}|${turnOutcomes}`;
 }
 
+function summaryActivityAt(row: { updatedAt: number; lastActivityAt?: number }): number {
+  return row.lastActivityAt ?? row.updatedAt;
+}
+
 export async function listSessionsByProject(cwd: string): Promise<SessionSummary[]> {
   if (!cwd || cwd === "~") return [];
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
@@ -996,9 +1048,12 @@ export async function listSessionsByProject(cwd: string): Promise<SessionSummary
     (entry) => normalizeProjectPath(entry.cwd) === normalizeProjectPath(cwd),
   );
   if (!owned.length)
-    return rows.filter((row) => !hostSessionBinding({ id: row.id })).map(normalizeSummary);
-  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned]
-    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt)
+    return rows.filter((row) => !hasHostSessionOwnerFence(row.id)).map(normalizeSummary);
+  return [...rows.filter((row) => !hasHostSessionOwnerFence(row.id)), ...owned]
+    .sort(
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) || summaryActivityAt(b) - summaryActivityAt(a),
+    )
     .map(normalizeSummary);
 }
 
@@ -1014,7 +1069,7 @@ export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<v
 export async function listLinkedSessions(): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_linked");
   const owned = hostSessionShellSummaries().filter((entry) => entry.linkedWorkItem);
-  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned].map(
+  return [...rows.filter((row) => !hasHostSessionOwnerFence(row.id)), ...owned].map(
     normalizeSummary,
   );
 }
@@ -1023,12 +1078,74 @@ export async function listLinkedSessions(): Promise<SessionSummary[]> {
 export async function listRecentSessions(limit: number): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
   const owned = hostSessionShellSummaries();
-  const native = rows.filter((row) => !hostSessionBinding({ id: row.id }));
-  if (!owned.length) return native.map(normalizeSummary);
-  const combined = [...native, ...owned].sort((a, b) => b.updatedAt - a.updatedAt);
+  const native = rows.filter((row) => !hasHostSessionOwnerFence(row.id));
+  const nativeRows = native.map((row): SessionSummary => ({
+    ...normalizeSummary(row),
+    recentPinTarget:
+      !row.cwd || row.cwd === "~" || isRemoteProjectPath(row.cwd)
+        ? null
+        : { kind: "native", sessionId: row.id, cwd: row.cwd },
+  }));
+  const ownedRows = owned.map((row): SessionSummary => {
+    const owner = hostSessionBinding({ id: row.id });
+    return {
+      ...normalizeSummary(row),
+      recentPinTarget: owner?.created
+        ? {
+            kind: "host",
+            sessionId: owner.sessionId,
+            machineId: owner.machineId,
+            environmentId: owner.environmentId,
+            projectId: owner.projectId,
+            ...(owner.authorityGeneration === null
+              ? {}
+              : { authorityGeneration: owner.authorityGeneration }),
+          }
+        : null,
+    };
+  });
+  if (!ownedRows.length) return nativeRows;
+  const combined = [...nativeRows, ...ownedRows].sort(
+    (a, b) => summaryActivityAt(b) - summaryActivityAt(a),
+  );
   return [
     ...combined.filter((entry) => entry.pinned),
     ...combined.filter((entry) => !entry.pinned).slice(0, limit),
+  ];
+}
+
+/** All local summaries at or after the cutoff. No pin or row-count limit. */
+export async function listRecentSessionsSince(since: number): Promise<SessionSummary[]> {
+  const rows = await invoke<SessionSummary[]>("session_list_recent_since", { since });
+  return [
+    ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
+    ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
+  ].map(normalizeSummary);
+}
+
+export type RecentSessionCursor = { activityAt: number; id: string; revision: number };
+export async function listRecentSessionsSincePage(
+  since: number,
+  cursor: RecentSessionCursor | null,
+): Promise<{ rows: SessionSummary[]; nextCursor: RecentSessionCursor | null }> {
+  const page = await invoke<{ rows: SessionSummary[]; nextCursor: RecentSessionCursor | null }>(
+    "session_list_recent_since_page",
+    { since, cursor },
+  );
+  return {
+    rows: page.rows.filter((row) => !hasHostSessionOwnerFence(row.id)).map(normalizeSummary),
+    nextCursor: page.nextCursor,
+  };
+}
+
+/** Recheck ownership at publication because bindings may change between pages. */
+export function finalizeRecentSessionPages(
+  rows: SessionSummary[],
+  since: number,
+): SessionSummary[] {
+  return [
+    ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
+    ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
   ].map(normalizeSummary);
 }
 
@@ -1157,13 +1274,46 @@ export function getSession(
   sessionId: string,
   options: SessionHydrationOptions = {},
 ): Promise<Session | null> {
+  if (deletedSessionIds.has(sessionId)) return Promise.resolve(null);
   const hostShell = restoreHostSessionShell(sessionId);
   if (hostShell) return Promise.resolve(hostShell);
   return sessionPersistence.run([sessionId], "hydration", async (work) => {
-    const result = await loadStoredSession(sessionId, options, work);
+    let result: Session | null;
+    try {
+      result = await loadStoredSession(sessionId, options, work);
+    } catch (error) {
+      if ((error instanceof Error ? error.message : String(error)) !== "Session was deleted")
+        throw error;
+      deletedSessionIds.add(sessionId);
+      work.confirmRecovery();
+      return null;
+    }
     work.confirmRecovery();
-    return result;
+    return deletedSessionIds.has(sessionId) ? null : result;
   });
+}
+
+export function isSessionDeleted(sessionId: string): boolean {
+  return deletedSessionIds.has(sessionId);
+}
+
+/** Check layout references without hydrating every inactive transcript. */
+export async function listDeletedSessionIds(sessionIds: string[]): Promise<string[]> {
+  const deleted: string[] = [];
+  for (let offset = 0; offset < sessionIds.length; offset += 500) {
+    const batch = sessionIds.slice(offset, offset + 500);
+    const result = await invoke<unknown>("session_deleted_ids", { sessionIds: batch });
+    if (
+      !Array.isArray(result) ||
+      result.some((id) => typeof id !== "string" || !batch.includes(id))
+    )
+      throw new Error("Deleted conversation status could not be verified.");
+    for (const id of result as string[]) {
+      deletedSessionIds.add(id);
+      deleted.push(id);
+    }
+  }
+  return deleted;
 }
 
 async function loadStoredSession(
@@ -1177,7 +1327,7 @@ async function loadStoredSession(
   if (!options.onHydrated) {
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
-      if (!record) return null;
+      if (!record || deletedSessionIds.has(sessionId)) return null;
       const session = recoverTaggedOrchestrationProposals(recordToSession(record));
       persistenceBaselines.set(sessionId, {
         blocks: incrementalBlocks(session),
@@ -1198,7 +1348,7 @@ async function loadStoredSession(
     finish();
     throw error;
   }
-  if (!page) {
+  if (!page || deletedSessionIds.has(sessionId)) {
     finish();
     return null;
   }
@@ -1494,17 +1644,19 @@ export function backfillCodexShellCommands(blocks: Block[]): Block[] {
 }
 
 export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
+  await flushHostSessionBindings(sessionId);
   const owner = hostSessionBinding({ id: sessionId });
   if (owner) {
     if (!owner.created)
       throw new Error("Verify this conversation's pending creation before deleting it.");
-    const { sessionAccessForMachine } = await import("../../connections/model/connections");
+    const { sessionAccessForMachine } = await import("../../connections/public/connections");
     await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).delete(
       owner.sessionId,
       owner.projectId,
       owner.authorityGeneration ?? undefined,
     );
     forgetHostSessionShell(sessionId);
+    await flushHostSessionBindings(sessionId);
     clearComposerDraft(sessionId);
     return;
   }
@@ -1537,8 +1689,9 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       removeSessionAdditionalDirs(sessionId);
       // The cache's change listener deletes the saved draft row.
       clearComposerDraft(sessionId, work);
-      const tombstone = setTimeout(() => deletedSessionIds.delete(sessionId), 60_000);
-      if (typeof tombstone === "object") tombstone.unref();
+      // IDs are never reused after explicit deletion. A delayed hydration,
+      // recovery or sibling snapshot may still arrive long after one minute.
+      // Native deletion also retains this decision across renderer restarts.
       work.confirmRecovery();
     } catch (error) {
       deletedSessionIds.delete(sessionId);
@@ -1553,7 +1706,7 @@ export async function discardDraftSessionRecord(sessionId: string): Promise<void
   await enqueueSessionWrite(
     sessionId,
     async (work) => {
-      await invoke<void>("session_delete", { sessionId, imagePaths: [] });
+      await invoke<void>("session_delete", { sessionId, imagePaths: [], allowRecreate: true });
       work.confirmRecovery();
     },
     false,
@@ -1587,11 +1740,12 @@ export async function updateOwnedSessionMetadata(
     linkedWorkItem?: LinkedWorkItem | null;
   },
 ): Promise<boolean> {
+  await flushHostSessionBindings(sessionId);
   const owner = hostSessionBinding({ id: sessionId });
   if (!owner) return false;
   if (!owner.created)
     throw new Error("Verify this conversation's pending creation before changing it.");
-  const { sessionAccessForMachine } = await import("../../connections/model/connections");
+  const { sessionAccessForMachine } = await import("../../connections/public/connections");
   await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).update(
     owner.sessionId,
     {
@@ -1618,6 +1772,7 @@ export async function updateOwnedSessionMetadata(
       },
       owner,
     );
+  await flushHostSessionBindings(sessionId);
   return true;
 }
 
@@ -1720,8 +1875,20 @@ export async function takeInFlightSessions(): Promise<{ sessionId: string; cwd: 
  */
 let workspaceWrite: Promise<unknown> = Promise.resolve();
 
-export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
-  if (readToolWindow()) return;
+/** Native window identity owns the persisted workspace layout. */
+export function isPrimaryWorkspaceWindow(): boolean {
+  try {
+    return getCurrentWindow().label === "main";
+  } catch {
+    return false;
+  }
+}
+
+export async function saveWorkspaceSnapshot(
+  snapshot: unknown,
+  recoveryReceipt?: string,
+): Promise<void> {
+  if (readToolWindow() || !isPrimaryWorkspaceWindow()) return;
   const durableSnapshot =
     snapshot && typeof snapshot === "object"
       ? {
@@ -1748,7 +1915,7 @@ export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
             Object.assign(durableSnapshot, { sessionRecovery: saved.sessionRecovery });
           }
         }
-        await invoke("workspace_set_snapshot", { snapshot: durableSnapshot });
+        await invoke("workspace_set_snapshot", { snapshot: durableSnapshot, recoveryReceipt });
         work.confirmRecovery();
       }),
   );
@@ -1767,8 +1934,8 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     role: block.role,
     text: block.text,
   };
-  const author=block.role==="user"?sessionMessageAuthor(block.author):undefined;
-  if(author)next.author=author;
+  const author = block.role === "user" ? sessionMessageAuthor(block.author) : undefined;
+  if (author) next.author = author;
   if (block.attachments?.length) {
     next.attachments = block.attachments.map(persistableAttachment);
   }
@@ -1895,9 +2062,15 @@ function sanitizeShellRun(value: Block["shell"]): Block["shell"] {
   return {
     command: value.command,
     output: typeof value.output === "string" ? value.output : "",
-    exitCode: typeof value.exitCode === "number" && !value.running ? value.exitCode : null,
+    exitCode:
+      typeof value.exitCode === "number" && !value.running && !value.terminationFailed
+        ? value.exitCode
+        : null,
     ...(value.timedOut ? { timedOut: true } : {}),
     ...(value.truncated ? { truncated: true } : {}),
+    ...(typeof value.terminationFailed === "string" && value.terminationFailed
+      ? { terminationFailed: value.terminationFailed }
+      : {}),
   };
 }
 
@@ -2240,10 +2413,11 @@ function sanitizeTaskList(value: unknown): TaskListMeta | null {
 
 function normalizeSummary(summary: SessionSummary): SessionSummary {
   const linkedWorkItem = sanitizeLinkedWorkItem(summary.linkedWorkItem);
-  const {managedBy:rawManagement,...rest}=summary;
-  const managedBy=assistantSessionManagement(rawManagement);
+  const { managedBy: rawManagement, ...rest } = summary;
+  const managedBy = assistantSessionManagement(rawManagement);
   return {
-    ...rest,...(managedBy?{managedBy}:{}),
+    ...rest,
+    ...(managedBy ? { managedBy } : {}),
     harness: asHarness(summary.harness),
     runtimeMode: asRuntimeMode(summary.runtimeMode),
     ...(summary.providerSessionId ? { providerSessionId: summary.providerSessionId } : {}),
@@ -2274,7 +2448,9 @@ function recordToSession(record: SessionRecord): Session {
   // Removed Gemini CLI sessions continue in a fresh Antigravity conversation.
   const legacyGemini = record.harness === LEGACY_GEMINI;
   return {
-    ...(assistantSessionManagement(record.managedBy)?{managedBy:assistantSessionManagement(record.managedBy)}:{}),
+    ...(assistantSessionManagement(record.managedBy)
+      ? { managedBy: assistantSessionManagement(record.managedBy) }
+      : {}),
     id: record.id,
     cwd: record.cwd,
     harness: asHarness(record.harness),

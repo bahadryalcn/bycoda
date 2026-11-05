@@ -48,9 +48,15 @@ it("settles a throwing committed-delete notification without replay, unhandled r
   const saved = await notes.save(input, 0);
   const cause = new Error("fixture notification failed");
   let calls = 0;
-  notes.onDelete = () => { calls++; throw cause; };
+  notes.onDelete = () => {
+    calls++;
+    throw cause;
+  };
   await expect(notes.delete(saved.id, saved.updatedAt)).rejects.toMatchObject({
-    code: "NOTES_DELETE_NOTIFICATION_FAILED", committed: true, uncertain: true, cause,
+    code: "NOTES_DELETE_NOTIFICATION_FAILED",
+    committed: true,
+    uncertain: true,
+    cause,
     message: "The note was deleted, but its update notification failed. Refresh before continuing.",
   });
   expect(calls).toBe(1);
@@ -165,12 +171,19 @@ it("rechecks authorization after acquiring a contended lock and never commits re
       return allowed;
     },
   );
+  let physicallySettled = false;
+  const settlement = notes.settled().then(() => {
+    physicallySettled = true;
+  });
   await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(physicallySettled).toBe(false);
   expect(checks).toEqual([true]);
   allowed = false;
   writer.exec("COMMIT");
   writer.close();
   await expect(pending).rejects.toThrow("authority revoked");
+  await settlement;
+  expect(physicallySettled).toBe(true);
   expect(checks).toEqual([true, false]);
   expect((await notes.get("note"))?.body).toBe("original");
 });

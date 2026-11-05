@@ -9,8 +9,8 @@ import {
   nativeDeviceReadOnly,
 } from "./native-devices";
 
-it("declares exactly the original paired-device nine with bounded waits and no private alias", () => {
-  expect(NATIVE_DEVICE_METHODS).toHaveLength(9);
+it("declares paired-device methods with bounded waits and no private alias", () => {
+  expect(NATIVE_DEVICE_METHODS).toHaveLength(14);
   for (const method of NATIVE_DEVICE_METHODS) {
     const definition = getHostRpcMethod(method)!;
     expect(definition.scope).toBe("device");

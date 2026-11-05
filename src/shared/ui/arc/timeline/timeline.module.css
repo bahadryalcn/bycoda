@@ -23,7 +23,11 @@
   overscroll-behavior: contain;
   scrollbar-color: var(--border-strong) transparent;
   scrollbar-width: thin;
-  mask-image: linear-gradient(to bottom, var(--palette-hex000) calc(100% - var(--timeline-feather)), transparent);
+  mask-image: linear-gradient(
+    to bottom,
+    var(--palette-hex000) calc(100% - var(--timeline-feather)),
+    transparent
+  );
   transition: --timeline-feather var(--duration-standard) var(--ease-standard);
 }
 /* While more updates wait below, the last visible row fades into the edge instead of being cut. */

@@ -21,7 +21,7 @@ import {
   workingTreeDiffFocusId,
   type WorkingTreeDiffEntry,
 } from "../model/workingTreeDiff";
-import { stageChunkText } from "../../files/editor/editorGit";
+import { stageChunkText } from "../../files/public/editorGit";
 import {
   currentGitChangeHint,
   fetchGitIndex,
@@ -384,7 +384,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [cwd, focusKind, retry]);
+  }, [cwd, focusPath, focusKind, retry]);
 
   // A review opened from the Changes or Staged Changes section shows only that side.
   const entries = useMemo(() => workingTreeDiffEntries(files ?? [], focusKind), [files, focusKind]);
@@ -493,16 +493,12 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     );
   }
   if (files == null) {
-    return (
-      <SurfaceLoading />
-    );
+    return <SurfaceLoading />;
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {mutationError && (
-        <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>
-      )}
+      {mutationError && <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>}
       <UnifiedDiffView
         files={models}
         fileCount={focusKind ? entries.length : files.length}

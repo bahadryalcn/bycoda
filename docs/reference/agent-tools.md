@@ -7,6 +7,10 @@ permissions and target identity. Metadata never grants authority.
 ## Discovery
 
 `tools.search` returns bounded summaries filtered by query, group or family.
+`group` selects a transport (`conversation`, `social`, `runtime-logs`); `family`
+selects an exact domain such as `sessions`, `providers` or `browser`. For free-text
+discovery, use `query` and omit filters when unsure. Invalid groups are rejected
+with allowed values and correction guidance; they never broaden a request.
 `tools.describe` returns complete schemas and management metadata for up to four
 namespaced IDs or exact tool names. Its JSON document may span chunks: concatenate
 `content` in cursor order until `nextCursor` is null before parsing. Cursors are
@@ -19,7 +23,7 @@ discovery can describe all three built-in groups; this is not proof that all
 groups are offered or connected. External MCP discovery includes only the
 credential's existing allowlisted operations and read/write scopes.
 
-`host/tool-management.ts` owns the pure metadata/projection logic. Catalog inputs
+`host/conversation/tool-management.ts` owns the pure metadata/projection logic. Catalog inputs
 remain in the owning schema modules. The management contract distinguishes
 legacy authorization scope, effects, identity-bound retry, preconditions,
 readback, cancellation, presentation and capability evidence. Unknown extensions
@@ -39,6 +43,23 @@ remain authoritative. Browser fallback rules do not apply to uncertain sends,
 publication, deletion or credential operations. Reconcile the original receipt
 before considering a repeated mutation. Schedule saved, task completed, review
 accepted, external delivery and UI visibility are distinct observations.
+
+## Saved SSH Servers
+
+Saved inventory tools (`servers.list/get`, SSH and metadata edits) are separate
+from execution. `servers.ssh.execute` requests one command on a saved SSH record
+through the connected desktop. Native approval displays the exact target and
+command; tool input cannot grant approval. The desktop rechecks the original
+conversation authority and effective SSH configuration before starting. Existing
+manual SSH terminals remain private and are not adopted by `terminals.*`.
+
+Use a stable `requestId`, then read `servers.ssh.status` for bounded output,
+truncation, state and exit code. `servers.ssh.cancel` stops only the owned local
+SSH process; remote completion can remain unknown. Receipts and output are
+process-local, not restart-durable. Reusing an ID with changed input is rejected;
+an uncertain reply never authorizes a new ID and another execution. Trust and
+noninteractive authentication must already work; this route cannot accept new
+host keys, import credentials or approve proxy credential access.
 
 ## Browser preview
 

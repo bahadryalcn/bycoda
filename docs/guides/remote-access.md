@@ -1,5 +1,12 @@
 # Remote access (experimental)
 
+Host `status` and `stop` verify ownership when lifecycle metadata is unavailable
+or the endpoint does not respond. An active owner reports unconfirmed shutdown;
+unverifiable legacy ownership reports unknown. Neither result means work stopped.
+Keep corrupt state for inspection and repair instead of deleting it to force a start.
+Tunnel storage errors likewise preserve recorded tunnels and prevent a new launch;
+after the stored state is repaired, the same Host can retry initialization.
+
 Development Host input changes keep a stopped operation's cleanup separate from
 permission to send another prompt. If its original target or cleanup cannot be
 verified, the operation remains unresolved. This work has not enabled automatic
@@ -48,6 +55,14 @@ checkpoint retention and a successful remote action are separate outcomes: a
 retained draft does not mean that a message was sent or applied. If an operation's
 outcome is uncertain, bycoda keeps it unresolved rather than sending it again.
 
+Remote Stop, approval and question answers for an active desktop conversation
+require matching Host and desktop protocol support. A saved command receipt
+confirms acceptance, not that the provider finished the action. If the reply is
+lost or the owning app restarts, the original command stays held rather than
+running against a replacement turn. Check the original conversation's state
+before issuing another action. An update-required message means the owning
+desktop cannot supply the required control identity.
+
 Private Native checkpoints can retain unsent question answers, queue edits and
 source/merge editor drafts as recovery data. They do not submit those inputs.
 The regular question draft still clears when discarded; earlier private
@@ -95,6 +110,18 @@ on the Host; changing or clearing the account uses the Host's settings. Closing
 the tab or losing the connection does not stop an accepted turn. An uncertain
 send retains its command ID for receipt recovery.
 
+Unreadable saved requests remain held for review. Archived recovery evidence also
+uses local storage, so new requests can be refused when that storage budget is
+full. A refused request is not sent; retain its draft while recovering earlier
+requests.
+
+Session owner records also use IndexedDB. Startup waits for their routing fences
+before loading conversations; a loading or unreadable owner is never treated as
+an ordinary local conversation. New ownership is reserved before a tab can send,
+and commands wait for its durable publication. If saving fails, sending stays
+held and the original owner and draft remain available for retry. Compatibility
+records and distinct original bytes are retained while older writers may exist.
+
 This is an explicit option for new conversations. Existing local conversations
 and the ordinary new-conversation action keep their current execution behavior.
 It does not migrate an existing conversation.
@@ -108,6 +135,10 @@ from another device; installed
 cross-device acceptance of this new local entry point is still pending.
 
 ## Connection changes and active tools
+
+SSH forwarding rules show **Stopping** while a stop is in progress. If the local
+process exit cannot be confirmed, the rule shows **Status unknown** and offers
+**Retry stop** before it can be started or removed again.
 
 When a Host connection is blocked, the conversation shows one connection recovery
 notice. Use **Reconnect** there to verify the saved machine and open a fresh
@@ -139,6 +170,12 @@ device service. Reconnect and check that computer's device-tool status before
 trying again. Mobile previews keep their original computer, project and access;
 switching projects does not transfer an existing preview to the new project.
 
+Completed device-preview receipts remain available for ten minutes. After expiry,
+the old request cannot run again or supply a stored screenshot; request a new
+preview explicitly. Work whose device effects are still pending or unknown stays
+tracked and can continue to occupy capacity. Expiry does not stop a device or
+remove an installed app.
+
 A social authority needs a stable HTTPS address, or a local loopback address for
 local use. An SSH connection alone is not an address that another Host can store
 and contact as its authority. The setup checks both peer addresses before issuing
@@ -165,6 +202,13 @@ While a terminal is open, **Saved SSH tabs** holds the restore preference and pe
 entries. Only saved connections can be remembered. Restoring an entry requires
 **Connect**, opens a new shell and does not replay previous commands. Exact endpoint
 and identity-file details remain available from the terminal's connection information.
+
+Agents use `servers.ssh.execute` to request a command on a saved SSH target.
+The connected desktop asks for approval of the exact target and command; no
+existing private terminal is shared. `servers.ssh.status` returns bounded output
+and exit status. Cancel and timeout stop local SSH but can leave the remote
+outcome unknown. Results are process-local and commands are never replayed on
+restore. See [Working with bycoda tools](agent-tools.md) for the agent workflow.
 
 SSH settings load keys, known hosts and agent information independently. A failed
 section has its own **Retry** action; successfully loaded sections remain available.
@@ -200,7 +244,7 @@ The composer's model picker lists models for the providers installed on the host
 
 The **Explorer** sidebar and Go to File use the normal file views for host folders and files. Opening a text file uses the normal editor tabs. Saving writes back to the host; remote reads and edits are limited to 1 MiB text files. File creation, rename, deletion, and project search use the same controls as local projects. The **Changes** sidebar and Git history graph use the normal Git views, including file diffs, staging, discarding, commits, pushing, and pull request creation through `gh` on the host. Remote pull requests use the host's commit list and diff summary for their title and body. An ordinary folder outside Git shows an empty Changes state. Git changes are refreshed every few seconds. Generated commit messages are not available remotely yet.
 
-The composer’s **+** menu supports file and image attachments, and its **Mode** menu offers Plan mode and saved drafts, when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these actions.
+The composer’s **+** menu supports file and image attachments, and its **Mode** menu offers Plan mode and saved drafts, when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card; editing a saved draft back into the composer is available only for chats on this computer. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these actions.
 
 Features that read or run on this computer are not available in these projects: `@` file mentions, skills and slash commands other than `/plan` and `/compact`, operator mode, and terminals. Worktree deletion and the local worktree settings page are not available remotely yet. Plans from the transcript open normal read-only plan tabs. Source files stay on the host; this feature shares host-owned sessions, not working-directory synchronization.
 
@@ -301,6 +345,14 @@ Each tagged release publishes `bycoda-host-{darwin,linux}-{arm64,x64}.tar.gz`, `
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Tagged releases include the matching archives; an unreleased checkout does not. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
 
+## Automations during a connection outage
+
+An unreachable machine shows a warning in Automations. Available records and the
+automation picker remain usable; an unread remote list is not treated as empty.
+Previously loaded remote records remain marked as out of date. **Retry** in the
+warning requests a fresh connection check, including recovery of a dropped SSH
+tunnel. Retrying preserves the open draft and does not save or run an automation.
+
 ## Interrupted Native helper requests
 
 Local reminder and SSH setting changes can also be temporarily refused during
@@ -352,6 +404,14 @@ repeating it. Later requests can proceed while the original remains pending.
 Requests whose helper is still running, or whose admission was interrupted, keep
 their reservation. Releasing capacity does not mean the original failed or that
 it is safe to send it again.
+
+Compatible new Hosts also tell the desktop when an exact unknown format request
+can no longer produce a recorded result. The desktop then releases that result's
+reservation while keeping the original request protected against replay. New
+format requests use the formatter's smaller enforced output limit and separate
+native capacity from control operations; retained older requests keep their
+original limits. A recovered completed format result can be discarded after its
+original caller is gone, without applying old text to the current editor.
 
 New development clients can also clean up completed delivery records in ordered
 groups while retaining a permanent guard against replay. Interrupted cleanup does

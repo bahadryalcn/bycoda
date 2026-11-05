@@ -29,10 +29,7 @@ import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ToolWindow } from "../../model/toolWindows";
 import type { WindowTransferPayload } from "../../model/windowTransfer";
 import type { ProjectTerminalDockState } from "../terminal/useProjectTerminalDockState";
-import {
-  ownsSharedWorkspaceState,
-  workspaceSnapshotWriteBlocked,
-} from "../../model/appLifecycle";
+import { workspaceSnapshotWriteBlocked } from "../../model/appLifecycle";
 import { useServerTerminalRestoreState } from "../../../features/connections/model/serverTerminalRestoreState";
 
 export interface WorkspaceSnapshotSyncDeps {
@@ -84,10 +81,6 @@ export function useWorkspaceSnapshotSync({
 }: WorkspaceSnapshotSyncDeps): void {
   const serverRestore = useServerTerminalRestoreState();
   useEffect(() => {
-    // The in-flight list is one app-wide table that native replaces whole: a
-    // secondary window finishing its last turn would erase the primary
-    // window's turn recovery with an empty list.
-    if (!ownsSharedWorkspaceState()) return;
     const refs = inFlightRefs(sessions, tabs);
     if (refs.length > 0) sawInFlight.current = true;
     const key = inFlightSnapshotKey(refs);
@@ -101,7 +94,7 @@ export function useWorkspaceSnapshotSync({
   }, [sessions, tabs]);
 
   useEffect(() => {
-    if (windowTransfer || toolWindow || !ownsSharedWorkspaceState()) return;
+    if (windowTransfer || toolWindow) return;
     // Collect and key inside the debounce: a burst of session events then
     // serializes the workspace once instead of on every event.
     const timer = window.setTimeout(() => {
@@ -153,7 +146,9 @@ export function useWorkspaceSnapshotSync({
       .then((cwd) => {
         if (!looksLikeProject(cwd)) return;
         setProjectCwd(cwd);
-        setRecents((prev) => (prev.length > 0 ? prev : rememberProject(cwd)));
+        void rememberProject(cwd)
+          .then((next) => setRecents((prev) => (prev.length > 0 ? prev : next)))
+          .catch((error: unknown) => console.error("Could not remember project", error));
         setSessions((prev) => prev.map((s) => (s.cwd === "~" ? { ...s, cwd } : s)));
       })
       .catch((error) => {

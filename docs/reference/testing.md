@@ -48,6 +48,32 @@ frozen source, actual artifacts/hashes and the separately required platform chec
 Model quality evaluations remain a separate, explicitly budgeted provider activity;
 deterministic grader/schema checks can run without calling a model.
 
+## Order of verification
+
+Running the whole suite after every edit is the main reason tasks take days. Checks
+are evidence for a finished change set, not a progress bar. Order one task like this:
+
+| Phase                  | What runs                                                                                                                                                                 | Not yet                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 1. Implement           | Editor feedback, `tsc-rs --noEmit --fast` for the changed project (`-p host/tsconfig.json` for Host), the one test file you are writing with `vitest run <path>`          | Full vitest, `check:web`, browser suites, `cargo test`, screenshots |
+| 2. Change set complete | `pnpm check:changed` (format, lint, invariants, structure, UI drift and up to `--max-tests` related tests, all bounded)                                                   | Everything else                                                     |
+| 3. Focused tests       | `vitest run src/features/<feature>` or `vitest run --config host/vitest.config.ts host/<feature>`; `cargo test -p <crate> <module>` for Rust                              | Suites of untouched features                                        |
+| 4. One full gate       | `pnpm check:web` (or `check:web:fast`), `pnpm host:build` or `pnpm check:rust` when the change touches that layer; run once, in the background, while writing the handoff | A second full run unless a fix changed code                         |
+| 5. Evidence            | Screenshots per tier, saved under `temp/verification/<id>/` and opened                                                                                                    |                                                                     |
+| 6. Review              | A capable model reads the diff and the phase 2–5 results; fixes go back to phase 1 for the touched files only                                                             |                                                                     |
+
+Rules that keep the order honest:
+
+- Never start phase 4 to find out what to fix. Phases 1–3 find defects; phase 4
+  confirms the finished change set.
+- A failure in phase 4 that is unrelated to the change is reported with the output,
+  not retried in a loop and not fixed by widening the task.
+- Parallel work uses isolated Host/desktop data and allocated ports; two full gates
+  on one checkout race each other and prove nothing.
+- Delegated subagents on small models may run phases 1–3 for their own files; the
+  full gate and the review stay with the responsible session.
+- Report fast mode when used, and UNVERIFIED only for a named check with its blocker.
+
 ## Browser fixture ownership
 
 `tests/browser/suites.json` owns default file selection, named browser projects,

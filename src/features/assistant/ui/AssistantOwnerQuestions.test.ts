@@ -11,7 +11,6 @@ import {
 } from "../../../shared/model/host-contracts/assistant";
 import {
   AssistantOwnerQuestionSchema,
-  type AssistantOwnerQuestion,
   type AssistantOwnerQuestionReceipt,
 } from "../../../shared/model/assistantOwnerQuestions";
 import {

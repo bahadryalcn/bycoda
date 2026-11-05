@@ -2,7 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ToolPreview } from "../model/session";
-import { FilePreview } from "../../files/ui/FilePreview";
+import { FilePreview } from "../../files/public/FilePreview";
 import { Popover } from "../../../shared/ui/Popover";
 import { X } from "../../../shared/ui/icons";
 

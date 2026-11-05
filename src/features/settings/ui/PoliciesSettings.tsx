@@ -3,7 +3,7 @@ import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
-import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 import { POLICIES } from "../model/policies";
 import { RevealedSetting, Select, settingDomId } from "./settingsControls";
 import "./policies.css";
@@ -38,7 +38,9 @@ export function PoliciesSettings() {
   const headings = [...body.matchAll(/^##\s+(.+)$/gm)].map((match) => match[1]);
   useEffect(() => {
     mailAttempt.current += 1;
-    return () => { mailAttempt.current += 1; };
+    return () => {
+      mailAttempt.current += 1;
+    };
   }, [context]);
 
   return (
@@ -48,14 +50,15 @@ export function PoliciesSettings() {
         // The shared conversation renderer only opens HTTP links. Handle our
         // published contact address here without changing conversation behavior.
         const target = event.target instanceof Element ? event.target.closest("a") : null;
-        if (target?.getAttribute("href") !== "mailto:info@bahadrhllyalcn.com") return;
+        if (target?.getAttribute("href") !== "mailto:info@bycoda.codes") return;
         event.preventDefault();
         event.stopPropagation();
         const origin = currentContext.current;
         const attempt = ++mailAttempt.current;
         setContactErrorContext(null);
-        void openUrl("mailto:info@bahadrhllyalcn.com").catch(() => {
-          if (origin === currentContext.current && attempt === mailAttempt.current) setContactErrorContext(origin);
+        void openUrl("mailto:info@bycoda.codes").catch(() => {
+          if (origin === currentContext.current && attempt === mailAttempt.current)
+            setContactErrorContext(origin);
         });
       }}
     >
@@ -86,11 +89,10 @@ export function PoliciesSettings() {
               onChange={setLanguageOverride}
             />
           </div>
-          <p className="policy-context">{t("Document language only; your app language and permissions stay unchanged.")}</p>
-          <TabList
-            className="policy-navigation"
-            label={t("Policy documents")}
-          >
+          <p className="policy-context">
+            {t("Document language only; your app language and permissions stay unchanged.")}
+          </p>
+          <TabList className="policy-navigation" label={t("Policy documents")}>
             {POLICIES.map((policy) => (
               <Tab
                 key={policy.id}
@@ -110,27 +112,38 @@ export function PoliciesSettings() {
           key={activePolicy.id}
         >
           <div className="policy-reader-context">
-            <p>{t("Documents are bundled for offline reading. Other interface languages use the English text.")}</p>
-            {turkish && activePolicy.id === "software-license" ? <p>{t("This license is shown in its original English text.")}</p> : null}
-            {headings.length > 1 ? <Select
-              label={t("Document sections")}
-              value=""
-              options={[
-                { value: "", label: t("Jump to section") },
-                ...headings.map((label, index) => ({ value: String(index), label })),
-              ]}
-              onChange={(value) => {
-                const heading = reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[Number(value)];
-                if (!heading || value === "") return;
-                heading.tabIndex = -1;
-                heading.scrollIntoView({ block: "start" });
-                heading.focus({ preventScroll: true });
-              }}
-            /> : null}
+            <p>
+              {t(
+                "Documents are bundled for offline reading. Other interface languages use the English text.",
+              )}
+            </p>
+            {turkish && activePolicy.id === "software-license" ? (
+              <p>{t("This license is shown in its original English text.")}</p>
+            ) : null}
+            {headings.length > 1 ? (
+              <Select
+                label={t("Document sections")}
+                value=""
+                options={[
+                  { value: "", label: t("Jump to section") },
+                  ...headings.map((label, index) => ({ value: String(index), label })),
+                ]}
+                onChange={(value) => {
+                  const heading =
+                    reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[
+                      Number(value)
+                    ];
+                  if (!heading || value === "") return;
+                  heading.tabIndex = -1;
+                  heading.scrollIntoView({ block: "start" });
+                  heading.focus({ preventScroll: true });
+                }}
+              />
+            ) : null}
           </div>
           {contactError ? (
             <SettingsFeedback state="error">
-              {t("Could not open your email app. Copy info@bahadrhllyalcn.com into your email app.")}
+              {t("Could not open your email app. Copy info@bycoda.codes into your email app.")}
             </SettingsFeedback>
           ) : null}
           <article

@@ -44,10 +44,16 @@ impl ControlTurnReceipt {
 /// One ResourceTable belongs to the actual WebviewWindow. Recreating a label
 /// gets another table/Arc. Resource closure serializes with local admission;
 /// it cannot turn an old capture into the next window's issuer.
-#[derive(Default)]
 pub(crate) struct WindowIssuer {
     closed: AtomicBool,
     admission: Mutex<()>,
+    identity: String,
+}
+
+impl Default for WindowIssuer {
+    fn default() -> Self {
+        Self { closed: AtomicBool::new(false), admission: Mutex::new(()), identity: uuid::Uuid::new_v4().to_string() }
+    }
 }
 
 impl Resource for WindowIssuer {
@@ -61,10 +67,14 @@ impl Resource for WindowIssuer {
 }
 
 impl WindowIssuer {
+    pub(crate) fn identity(&self) -> &str { &self.identity }
     /// Queries under ControlHost's lock must not invert the issuer→host
     /// admission order. This snapshot grants no new effect admission.
     pub(crate) fn is_live(&self) -> bool {
         !self.closed.load(Ordering::Acquire) && !self.admission.is_poisoned()
+    }
+    pub(crate) fn is_retired(&self) -> bool {
+        self.closed.load(Ordering::Acquire) && !self.admission.is_poisoned()
     }
     pub(crate) fn with_live<T>(
         &self,
@@ -77,6 +87,14 @@ impl WindowIssuer {
         if !self.is_live() {
             return Err("NATIVE_CONTROL_WINDOW_CLOSED".into());
         }
+        work()
+    }
+
+    /// Avoid waiting for a page admission while holding a database writer
+    /// lock. The short commit itself remains serialized with page retirement.
+    pub(crate) fn try_with_live<T>(&self, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+        let _guard = self.admission.try_lock().map_err(|_| "NATIVE_CONTROL_WINDOW_BUSY")?;
+        if !self.is_live() { return Err("NATIVE_CONTROL_WINDOW_CLOSED".into()); }
         work()
     }
 }
@@ -96,9 +114,12 @@ pub(crate) fn capture(window: &WebviewWindow) -> Result<Arc<WindowIssuer>, Strin
     };
     if created {
         let original = owner.clone();
+        let app = window.app_handle().clone();
         window.on_window_event(move |event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 Resource::close(original.clone());
+                crate::harness::page_retired(&app, &original);
+                crate::session_window_ownership::release_issuer(&original);
             }
         });
     }
@@ -154,10 +175,31 @@ mod tests {
         assert!(Arc::ptr_eq(&a, &capture_resources(&mut first).unwrap()));
         let b = capture_resources(&mut second).unwrap();
         assert!(!Arc::ptr_eq(&a, &b));
+        assert_ne!(a.identity(), b.identity());
+        assert_eq!(a.identity(), capture_resources(&mut first).unwrap().identity());
         Resource::close(a.clone());
         assert!(a.with_live(|| Ok(())).is_err());
         assert!(capture_resources(&mut first).is_err());
         assert!(b.with_live(|| Ok(())).is_ok());
+    }
+
+    #[test]
+    fn pending_privacy_reply_rejects_recycled_label_and_retired_issuer() {
+        let mut original = ResourceTable::default();
+        let mut replacement = ResourceTable::default();
+        let first = capture_resources(&mut original).unwrap();
+        let second = capture_resources(&mut replacement).unwrap();
+        let (reply, _receive) = std::sync::mpsc::channel();
+        let pending = super::super::Pending {
+            window: "same-label".into(), reply, authority: None,
+            assistant_source: None, window_issuer: Some(first.clone()),
+            effect_started: false,
+        };
+        assert!(super::super::pending_window_issuer_matches(pending.window_issuer.as_ref(), &first));
+        assert!(!super::super::pending_window_issuer_matches(pending.window_issuer.as_ref(), &second));
+        Resource::close(first.clone());
+        assert!(!super::super::pending_window_issuer_matches(pending.window_issuer.as_ref(), &first));
+        assert!(second.with_live(|| Ok(())).is_ok());
     }
 
     #[test]
@@ -289,6 +331,8 @@ mod tests {
                 session: "explicit-admin".into(),
                 cwd: "/repo".into(),
                 token: "admin-token".into(),
+                generation: uuid::Uuid::new_v4().to_string(),
+                issuer: None,
             },
         );
         let mut admin = std::process::Command::new("unused");

@@ -55,9 +55,11 @@ export function traySessions({
   };
   for (const row of stored) {
     if (row.archived || row.draft || row.orchestrationLeadId) continue;
-    add(row, "active", row.updatedAt);
+    add(row, "active", row.lastActivityAt ?? row.updatedAt);
   }
-  for (const row of live) add(row, row.status ?? "active", row.activityAt);
+  // The native tray has no interrupted group; retain it as an active conversation.
+  for (const row of live)
+    add(row, row.status === "interrupted" ? "active" : (row.status ?? "active"), row.activityAt);
   const liveById = new Map(live.map((row) => [row.id, row]));
   for (const agent of agents) {
     // Cached remote history deliberately clears its live status. Do not let

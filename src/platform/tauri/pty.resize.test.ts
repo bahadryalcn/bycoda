@@ -6,9 +6,6 @@ const invoke = vi.fn(
 );
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "workspace-5" }),
-}));
 
 const { resizePty } = await import("./pty");
 

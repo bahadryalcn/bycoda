@@ -3,6 +3,8 @@ use super::*;
 use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
 pub(super) mod leases;
+#[path = "turn_paths.rs"]
+mod turn_paths;
 
 /// File metadata is still checked for legacy/mixed-version peers that do not
 /// publish a lease. Only changed payloads need reopening and JSON parsing.
@@ -265,7 +267,6 @@ fn tree(root: &Path, dir: &Path, id: &str, phase: &str, protect: bool) -> Result
             root,
             &[
                 "rev-parse",
-                "--path-format=absolute",
                 "--git-path",
                 "index",
                 "--verify",
@@ -274,7 +275,7 @@ fn tree(root: &Path, dir: &Path, id: &str, phase: &str, protect: bool) -> Result
         )
         .and_then(|v| {
             let text = String::from_utf8_lossy(&v).into_owned();
-            text.lines().next().map(|line| PathBuf::from(line.trim()))
+            text.lines().next().map(|line| root.join(line.trim()))
         });
         let has_head = located.is_some() || head(root).is_some();
         let seeded = !enabled("core.splitindex")
@@ -589,7 +590,11 @@ impl CheckpointStore {
                 .split(|b| *b == 0)
                 .filter(|p| !p.is_empty())
             {
-                pending.insert(String::from_utf8(path.to_vec()).map_err(|e| e.to_string())?);
+                // Manifest paths are UTF-8; an unrelated non-UTF-8 Git path
+                // cannot match one and must not abort finalization.
+                if let Ok(path) = std::str::from_utf8(path) {
+                    pending.insert(path.to_owned());
+                }
             }
         }
         let mut resolved = Vec::new();
@@ -954,16 +959,11 @@ impl CheckpointStore {
             let paths = changed
                 .split(|b| *b == 0)
                 .filter(|p| !p.is_empty())
+                // Compare raw Git path bytes before decoding: unrelated Unix names
+                // need not be UTF-8 and must never alias a captured name.
+                .filter(|path| turn_paths::includes(path, &turn.captured, ambiguous))
                 .map(|p| String::from_utf8(p.to_vec()).map_err(|e| e.to_string()))
                 .collect::<Result<Vec<_>, _>>()?;
-            // A checkout-wide diff cannot attribute simultaneous shell edits.
-            // Only this session's explicit tool completions prove membership.
-            let paths: Vec<_> = paths
-                .into_iter()
-                .filter(|path| {
-                    (!ambiguous && turn.captured.is_empty()) || turn.captured.contains(path)
-                })
-                .collect();
             if paths.len() > MAX_SNAPSHOT_FILES {
                 return Err("Too many changed files for workspace checkpoint".into());
             }

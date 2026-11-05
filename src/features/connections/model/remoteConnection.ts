@@ -84,8 +84,16 @@ export function connectionOutcome(error: unknown): {
   error?: string;
   specific?: boolean;
 } {
-  if (["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"].includes(nativeConnectionFailureCode(error) ?? ""))
-    return { status: "connection-blocked", error: sanitizeConnectionError(remoteErrorText(error)), specific: true };
+  if (
+    ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"].includes(
+      nativeConnectionFailureCode(error) ?? "",
+    )
+  )
+    return {
+      status: "connection-blocked",
+      error: sanitizeConnectionError(remoteErrorText(error)),
+      specific: true,
+    };
   const failure = classifyRemoteError(error);
   if (failure.kind === "identity")
     return {
@@ -139,13 +147,21 @@ export function reduceConnection(
     case "ok":
       // An old host keeps answering what it knows, so only a reconnect or an
       // update clears that notice.
-      if (state.status === "outdated-host" || state.status === "identity-mismatch" || state.status === "connection-blocked") return state;
+      if (
+        state.status === "outdated-host" ||
+        state.status === "identity-mismatch" ||
+        state.status === "connection-blocked"
+      )
+        return state;
       return { status: "connected", lastSeen: event.at };
     case "failure": {
       const outcome = connectionOutcome(event.error);
       if (state.status === "identity-mismatch" && outcome.status !== "identity-mismatch")
         return state;
-      if (state.status === "connection-blocked" && !["identity-mismatch", "outdated-host", "connection-blocked"].includes(outcome.status))
+      if (
+        state.status === "connection-blocked" &&
+        !["identity-mismatch", "outdated-host", "connection-blocked"].includes(outcome.status)
+      )
         return state;
       if (outcome.status === "connected")
         return reduceConnection(state, { type: "ok", at: event.at });

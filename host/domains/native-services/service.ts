@@ -1,5 +1,6 @@
 import {
   NATIVE_SERVICES_RPC_SCHEMAS,
+  NativeAssistantBrowserPanelParamsSchema,
   type NativeServiceMethod,
 } from "../../../src/shared/model/host-contracts/native-services";
 import {
@@ -13,6 +14,7 @@ const NATIVE_SERVICE_LEGACY_METHODS = Object.freeze({
   "runtimeLogs.bridge.describe": "native.services.runtimeLogs.bridge.describe",
   "runtimeLogs.access.issue": "native.services.runtimeLogs.access.issue",
   "runtimeLogs.terminals.append": "native.services.runtimeLogs.terminals.append",
+  "runtimeLogs.terminals.demand": "native.services.runtimeLogs.terminals.demand",
   "conversation.bridge.describe": "native.services.conversation.bridge.describe",
   "conversation.access.issue": "native.services.conversation.access.issue",
   "conversation.desktop.take": "native.services.conversation.desktop.take",
@@ -39,22 +41,95 @@ export function createNativeServicesService() {
     if (!owner) throw new HostDomainAuthorizationError();
     // Desktop authorization has always rejected unknown keys, even on HTTP.
     const params: Record<string, unknown> =
-      options.legacy && method !== "native.services.conversation.desktop.authorize" && method !== "native.services.desktop.stop" && method !== "native.services.desktop.status"
+      options.legacy &&
+      method !== "native.services.conversation.desktop.authorize" &&
+      method !== "native.services.desktop.stop" &&
+      method !== "native.services.desktop.status"
         ? raw
         : NATIVE_SERVICES_RPC_SCHEMAS[method].params.parse(raw);
     let result: unknown;
-    if(method==="native.services.assistant.presence.get") {
-      if(!owner.assistantPresence)throw new Error("Native assistant presence is unavailable.");
-      result=await owner.assistantPresence();
-    } else if(method==="native.services.assistant.presence.set") {
-      if(!owner.setAssistantPresence)throw new Error("Native assistant presence is unavailable.");
-      result=await owner.setAssistantPresence(params.state as "present"|"away"|"dnd");
-    } else if(method==="native.services.desktop.status") {
-      if(!owner.desktopStatus)throw new Error("Native desktop status is unavailable.");
-      result=await owner.desktopStatus();
-    } else if(method==="native.services.desktop.stop") {
-      if(!owner.stopDesktop)throw new Error("Native desktop Stop is unavailable.");
-      result=await owner.stopDesktop();
+    if (method.startsWith("native.services.assistant.delegation.")) {
+      if (!owner.delegation) throw new Error("Native Room delegation is unavailable.");
+      const action = method.slice("native.services.assistant.delegation.".length) as
+        | "publicKey"
+        | "origin"
+        | "nativeChallenge"
+        | "attest"
+        | "issue"
+        | "issue.status"
+        | "challenge"
+        | "call"
+        | "revoke";
+      result = await owner.delegation(action, (params.input ?? {}) as Record<string, unknown>);
+    } else if (method === "native.services.assistant.visibility.epoch") {
+      if (!owner.visibilityEpoch) throw new Error("Native visibility fence is unavailable.");
+      result = await owner.visibilityEpoch();
+    } else if (method === "native.services.assistant.notification.authorize") {
+      if (!owner.authorizeAssistantNotification)
+        throw new Error("Assistant notification authorization is unavailable.");
+      const input = params.input as {
+        threadId: string;
+        notificationId: string;
+        operationHash: string;
+      };
+      if (
+        !input.threadId ||
+        input.threadId.length > 200 ||
+        !input.notificationId ||
+        input.notificationId.length > 200 ||
+        !/^[a-f0-9]{64}$/.test(input.operationHash)
+      )
+        throw new Error("Invalid Assistant notification authorization identity.");
+      result = await owner.authorizeAssistantNotification(input);
+    } else if (method === "native.services.assistant.browser.panel") {
+      if (!owner.browserPanel) throw new Error("Room browser panel transport is unavailable.");
+      result = await owner.browserPanel(NativeAssistantBrowserPanelParamsSchema.parse(params));
+    } else if (method === "native.services.assistant.observations.ingest") {
+      if (!owner.observationsIngest) throw new Error("Native observation owner is unavailable.");
+      result = await owner.observationsIngest(params.input as Record<string, unknown>);
+    } else if (method === "native.services.assistant.workspace.authorize") {
+      if (!owner.authorizeAssistantWorkspace)
+        throw new Error("Assistant workspace authorization is unavailable.");
+      const input = params.input as { threadId: string; requestId: string; operationHash: string };
+      if (
+        !input.threadId ||
+        input.threadId.length > 200 ||
+        !input.requestId ||
+        input.requestId.length > 200 ||
+        !/^[a-f0-9]{64}$/.test(input.operationHash)
+      )
+        throw new Error("Invalid Assistant workspace authorization identity.");
+      result = await owner.authorizeAssistantWorkspace(input);
+    } else if (method === "native.services.assistant.visibility.revoke") {
+      if (!owner.visibilityRevoke) throw new Error("Native visibility fence is unavailable.");
+      result = await owner.visibilityRevoke();
+    } else if (method === "native.services.assistant.visibility.reopen") {
+      if (!owner.visibilityReopen) throw new Error("Native visibility fence is unavailable.");
+      result = await owner.visibilityReopen(params.input as Record<string, unknown>);
+    } else if (method === "native.services.assistant.presence.get") {
+      if (!owner.assistantPresence) throw new Error("Native assistant presence is unavailable.");
+      result = await owner.assistantPresence();
+    } else if (method === "native.services.assistant.presence.set") {
+      if (!owner.setAssistantPresence) throw new Error("Native assistant presence is unavailable.");
+      result = await owner.setAssistantPresence(params.state as "present" | "away" | "dnd");
+    } else if (method === "native.services.desktop.status") {
+      if (!owner.desktopStatus) throw new Error("Native desktop status is unavailable.");
+      result = await owner.desktopStatus();
+    } else if (method === "native.services.desktop.status.wait") {
+      if (!owner.waitDesktopStatus) throw new Error("Native desktop status wait is unavailable.");
+      const afterRevision = String(params.afterRevision);
+      if (afterRevision.length > 100) throw new Error("Invalid desktop status revision");
+      const status = await owner.waitDesktopStatus(
+        afterRevision,
+        Number(params.timeoutMs),
+        context.signal,
+      );
+      if (typeof status.revision !== "string" || status.revision.length > 100)
+        throw new Error("Invalid desktop status revision");
+      result = status;
+    } else if (method === "native.services.desktop.stop") {
+      if (!owner.stopDesktop) throw new Error("Native desktop Stop is unavailable.");
+      result = await owner.stopDesktop();
     } else if (method.endsWith(".bridge.describe"))
       result = await owner.describe(
         method.includes("runtimeLogs")
@@ -73,7 +148,10 @@ export function createNativeServicesService() {
         String(params.sessionId ?? ""),
         params.expectedScope,
       );
-    else if (method === "native.services.runtimeLogs.terminals.append")
+    else if (method === "native.services.runtimeLogs.terminals.demand") {
+      if (!owner.terminalDemand) throw new Error("Terminal log demand is unavailable");
+      result = await owner.terminalDemand(params);
+    } else if (method === "native.services.runtimeLogs.terminals.append")
       result = await owner.appendTerminal(params);
     else if (method === "native.services.conversation.desktop.take")
       result = await owner.desktop.take();

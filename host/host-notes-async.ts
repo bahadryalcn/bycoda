@@ -1,3 +1,4 @@
+import { URL as NodeURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { AsyncResource } from "node:async_hooks";
 import {
@@ -7,8 +8,8 @@ import {
   type DesktopSnapshotMetaRecord,
   type DesktopSnapshotRecord,
   type DesktopStampRow,
-} from "./desktopSessions";
-import type { HostNotes, HostNoteDeleted } from "./host-notes";
+} from "./desktop/desktopSessions";
+import type { HostNotes, HostNoteDeleted } from "./notes/host-notes";
 import type { LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
 import {
   HostNotesAdmission,
@@ -76,7 +77,7 @@ export class AsyncHostNotes implements HostNotesAccess {
   private readonly admission: HostNotesAdmission;
   constructor(
     private readonly paths: () => string[] = desktopDatabasePaths,
-    private readonly workerUrl = new URL("./host-notes-worker.mjs", import.meta.url),
+    private readonly workerUrl = new NodeURL("./host-notes-worker.mjs", import.meta.url),
     options: HostNotesAdmissionOptions = {},
   ) {
     this.admission = new HostNotesAdmission(options);
@@ -86,6 +87,10 @@ export class AsyncHostNotes implements HostNotesAccess {
   }
   get revision() {
     return this.version;
+  }
+  /** Wait for accepted worker jobs to settle, including an observer-unknown result. */
+  settled(): Promise<void> {
+    return this.tail;
   }
 
   private async start(): Promise<StorageWorker> {

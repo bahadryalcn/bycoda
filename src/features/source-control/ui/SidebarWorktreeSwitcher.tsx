@@ -172,7 +172,9 @@ export function SidebarWorktreeSwitcher({
         disabled={creating}
         tooltip={focus ? (focus.branch ?? "detached") : (main?.branch ?? t("Project folder"))}
         tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
-        tooltipWhen={!focus && (main?.branch ?? t("Project folder")) === title ? "overflow" : "always"}
+        tooltipWhen={
+          !focus && (main?.branch ?? t("Project folder")) === title ? "overflow" : "always"
+        }
         onClick={() => {
           if (open) closePicker();
           else openPicker();
@@ -183,7 +185,7 @@ export function SidebarWorktreeSwitcher({
           openPicker();
         }}
         // The header row's gap-1 (4px) is cancelled exactly, so the hit area abuts the Forward button without covering it.
-        className="-ml-1 flex h-6.5 min-w-0 max-w-full items-center gap-2 leading-tight"
+        className="-ml-1 flex h-6.5 w-fit min-w-0 max-w-full items-center gap-2 leading-tight"
       >
         <MiddleTruncate mode="text">{title}</MiddleTruncate>
         {pending || creating ? (
@@ -269,8 +271,13 @@ export function SidebarWorktreeSwitcher({
                     <FolderTree className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   )}
                   <span className="min-w-0 flex-1">
-                    <MiddleTruncate mode="text" className="text-ui-body">{tree.label}</MiddleTruncate>
-                    <MiddleTruncate mode="path" className="text-ui-caption text-(--ui-text-secondary)">
+                    <MiddleTruncate mode="text" className="text-ui-body">
+                      {tree.label}
+                    </MiddleTruncate>
+                    <MiddleTruncate
+                      mode="path"
+                      className="text-ui-caption text-(--ui-text-secondary)"
+                    >
                       {tree.detail}
                     </MiddleTruncate>
                   </span>
@@ -293,7 +300,11 @@ export function SidebarWorktreeSwitcher({
               className="shrink-0 px-2 py-2"
               retry={
                 error
-                  ? { onRetry: () => void refresh(), pending: loading, disabled: creating || pending }
+                  ? {
+                      onRetry: () => void refresh(),
+                      pending: loading,
+                      disabled: creating || pending,
+                    }
                   : undefined
               }
             >

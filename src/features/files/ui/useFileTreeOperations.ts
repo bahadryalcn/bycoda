@@ -1,3 +1,4 @@
+import type { CopyNotice } from "./MoveRecoveryNotice";
 import { useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { wellFormedFileName } from "../model/fileName";
 import {
@@ -20,7 +21,7 @@ import {
 import { displayPath, parentPath, rebasePath } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n/technical";
 import { confirmInApp } from "../../../shared/model/appConfirm";
-import { requestGitFileInspect } from "../../source-control/ui/GitFileInspector";
+import { requestGitFileInspect } from "../../source-control/public/GitFileInspector";
 import type { OpenFileFn } from "../../search/model/search";
 import { topLevelTreePaths, type TreeSelectionModifiers } from "../model/treeSelection";
 import {
@@ -65,7 +66,7 @@ type FileTreeOperationsOptions = {
   setOperationPending: Dispatch<SetStateAction<boolean>>;
   setEditPending: Dispatch<SetStateAction<boolean>>;
   setOpError: Dispatch<SetStateAction<string | null>>;
-  setCopyNotice: Dispatch<SetStateAction<string | null>>;
+  setCopyNotice: Dispatch<SetStateAction<CopyNotice | null>>;
   setCopyFailedText: Dispatch<SetStateAction<string | null>>;
 };
 
@@ -340,7 +341,14 @@ export function useFileTreeOperations({
     for (const from of targets) {
       if (!copy && parentPath(from) === destParent) continue;
       const isDir = isDirAt(cwd, from);
-      const created = copy ? await copyPath(from, destParent) : await movePath(from, destParent);
+      const result = copy ? await copyPath(from, destParent) : await movePath(from, destParent);
+      const created = typeof result === "string" ? result : result.path;
+      if (typeof result !== "string")
+        setCopyNotice({
+          recoveryPath: result.recoveryPath,
+          receiptPath: result.receiptPath,
+          warning: result.warning,
+        });
       createdPaths.push(created);
       if (!copy) {
         remapTreePaths(from, created);
@@ -377,10 +385,17 @@ export function useFileTreeOperations({
     }
     const createdPaths: string[] = [];
     for (const entry of clip.entries) {
-      const created =
+      const result =
         clip.mode === "cut"
           ? await movePath(entry.path, destParent)
           : await copyPath(entry.path, destParent);
+      const created = typeof result === "string" ? result : result.path;
+      if (typeof result !== "string")
+        setCopyNotice({
+          recoveryPath: result.recoveryPath,
+          receiptPath: result.receiptPath,
+          warning: result.warning,
+        });
       createdPaths.push(created);
       if (clip.mode === "cut") {
         // Consume successful moves immediately so a retry cannot repeat them.
@@ -449,7 +464,20 @@ export function useFileTreeOperations({
   };
 
   const runAction = async (id: string, target: MenuTarget) => {
-    if (operationRunning.current && ["new-file", "new-folder", "cut", "paste", "duplicate", "rename", "delete", "reveal"].includes(id)) return;
+    if (
+      operationRunning.current &&
+      [
+        "new-file",
+        "new-folder",
+        "cut",
+        "paste",
+        "duplicate",
+        "rename",
+        "delete",
+        "reveal",
+      ].includes(id)
+    )
+      return;
     switch (id) {
       case "open":
         for (const path of actionPaths(target.path)) {

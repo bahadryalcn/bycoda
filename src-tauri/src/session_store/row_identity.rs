@@ -340,8 +340,13 @@ mod tests {
         {
             let conn = store.lock_conn().unwrap();
             super::super::delete_session(&conn, "ordinary").unwrap();
-            super::super::upsert_session_with_git(&conn, &session, Default::default(), None)
-                .unwrap();
+            assert!(super::super::upsert_session_with_git(
+                &conn,
+                &session,
+                Default::default(),
+                None
+            )
+            .is_err());
         }
         assert!(!store.session_row_identity_current(&identity).unwrap());
     }

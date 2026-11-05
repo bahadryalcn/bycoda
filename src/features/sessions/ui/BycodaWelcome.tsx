@@ -1,10 +1,11 @@
 import { useT } from "../../../shared/i18n";
 import { useEffect } from "react";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import type { HarnessId } from "../model/session";
+import { HarnessIcon } from "./HarnessIcon";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 
-/** Shared, provider-independent acknowledgment of a model change. */
-export function BycodaWelcome({ onDone }: { onDone: () => void }) {
+/** Acknowledge a model change with the selected provider's mark. */
+export function BycodaWelcome({ harness, onDone }: { harness: HarnessId; onDone: () => void }) {
   const t = useT();
   const motion = useDecorativeMotionEnabled();
   useEffect(() => {
@@ -18,7 +19,7 @@ export function BycodaWelcome({ onDone }: { onDone: () => void }) {
   if (!motion) return null;
   return (
     <div className="bycoda-welcome pointer-events-none" aria-hidden="true">
-      <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
+      <HarnessIcon harness={harness} className="bycoda-welcome-icon" />
       <span>{t("Ready to work together")}</span>
     </div>
   );

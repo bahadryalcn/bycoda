@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
 import {
   saveProjectRailOpen,
@@ -12,8 +19,7 @@ import {
   zoomInUiScale,
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
-import { confirmReload } from "../../model/appLifecycle";
-import { isInFlightSession } from "../../../features/sessions/model/inFlight";
+import { confirmReload, hasInFlightSessions } from "../../model/appLifecycle";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 
 export interface WindowChromeActionDeps {
@@ -128,13 +134,13 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
   }, []);
   const onReload = useCallback(() => {
     void (async () => {
-      // A reload stops this window's provider processes, so running chats are
-      // as much a reason to ask as unsaved files.
-      const confirmed = await confirmReload({
-        unsavedFiles: dirtyFilesRef.current.size > 0,
-        runningChats: sessionsRef.current.filter(isInFlightSession).length,
-      });
-      if (!confirmed) return;
+      if (
+        !(await confirmReload(
+          dirtyFilesRef.current.size > 0,
+          hasInFlightSessions(sessionsRef.current),
+        ))
+      )
+        return;
       window.location.reload();
     })();
   }, []);

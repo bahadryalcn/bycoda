@@ -32,7 +32,7 @@ beforeEach(() => {
     flushHarnessEvents: vi.fn(),
     enqueueHarnessEvent: vi.fn(),
     refs: {
-      editedResends: { start: vi.fn(() => true), finish: vi.fn() },
+      editedResends: { start: vi.fn(() => Symbol("edit")), finish: vi.fn() },
       retiringTurns: { current: new Map() },
       turnGen: { current: new Map() },
     },

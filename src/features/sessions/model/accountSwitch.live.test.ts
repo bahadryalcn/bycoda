@@ -250,7 +250,9 @@ vi.mock("../../../integrations/harness/core/child", async (importOriginal) => {
         // protocol error. Otherwise live failures only say "Claude Code exited".
         exitHandlers.get(id)?.(
           code,
-          code ? `${path.basename(command)} exited (${code}): ${live.stderr.get(id)?.trim() || "no stderr"}` : undefined,
+          code
+            ? `${path.basename(command)} exited (${code}): ${live.stderr.get(id)?.trim() || "no stderr"}`
+            : undefined,
         );
       });
     },

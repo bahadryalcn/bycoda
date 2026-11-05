@@ -1,122 +1,109 @@
-// @vitest-environment jsdom
-import { act, createElement, useRef } from "react";
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { WorkspaceActions } from "./useWorkspaceActions";
 
-const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(async () => undefined),
-  listen: vi.fn(),
-  callbacks: new Map<string, (event: { payload: unknown }) => void>(),
-  targets: new Map<string, unknown>(),
-  releases: [] as ReturnType<typeof vi.fn>[],
-  run: vi.fn((_name: string, action: () => void) => action()),
-  onNew: vi.fn(),
-  onClosePane: vi.fn(),
-  onOpenApprovalSession: vi.fn(),
-  restoreWindowFocus: vi.fn(async () => undefined),
-  sessionsRef: { current: [{ id: "session-1" }] },
+const api = vi.hoisted(() => ({
+  label: "first",
+  handlers: [] as {
+    name: string;
+    target?: string;
+    handler: (event: { payload: unknown }) => void;
+    active: boolean;
+  }[],
+  saveAutosave: vi.fn((value: boolean) => value),
+  gate: null as Promise<void> | null,
 }));
-
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (name, handler, options) => {
+    const entry = { name, handler, target: options?.target, active: true };
+    api.handlers.push(entry);
+    if (name === "new_tab" && api.gate) await api.gate;
+    return () => {
+      entry.active = false;
+    };
+  }),
+  once: vi.fn(),
+}));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "workspace-1" }),
+  getCurrentWebviewWindow: () => ({ label: api.label }),
 }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "workspace-1" }) }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({}) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../../platform/tauri/platform", () => ({ IS_MAC: false }));
-vi.mock("../../../features/settings/model/uiScale", () => ({
-  applyUiScale: vi.fn(async () => undefined),
-  loadUiScale: () => 1,
-  saveUiScale: vi.fn(),
-  UI_SCALE_DEFAULT: 1,
-  zoomInUiScale: (value: number) => value,
-  zoomOutUiScale: (value: number) => value,
-}));
-vi.mock("../../../features/settings/model/settings", () => ({ saveAutosave: vi.fn() }));
-vi.mock("../../../features/files/editor/editorFindBridge", () => ({
-  openFindInActiveEditor: vi.fn(),
-}));
-vi.mock("../../../features/onboarding/model/usageGuide", () => ({ openUsageGuide: vi.fn() }));
-vi.mock("../../../features/notifications/model/notifications", () => ({
-  BACKGROUND_NOTIFICATION_TARGETS: {
-    tasks: "tasks",
-    automations: "automations",
-    summary: "summary",
-    assistant: "assistant",
-  },
-  NOTIFICATION_CLICK_EVENT: "bycoda:notification-click",
-}));
+vi.mock("../../../features/settings/model/settings", () => ({ saveAutosave: api.saveAutosave }));
 vi.mock("../../../features/notifications/hooks/useBackgroundNotifications", () => ({
-  isLeadWindow: async () => true,
+  isLeadWindow: async () => false,
 }));
-vi.mock("../../../features/tasks/model/dailySummaryClient", () => ({
-  requestSummaryPanel: vi.fn(),
-}));
-vi.mock("../../../features/sessions/model/sessionsStore", () => ({
-  sessionsRef: mocks.sessionsRef,
-}));
-vi.mock("../../model/windowFocus", () => ({ restoreWindowFocus: mocks.restoreWindowFocus }));
-vi.mock("../../model/updater", () => ({ runUpdateFlow: vi.fn(async () => undefined) }));
-
+vi.mock("../../model/updater", () => ({ runUpdateFlow: vi.fn() }));
 import { useNativeMenuEvents } from "./useNativeMenuEvents";
 
-function Probe() {
-  const actions = useRef({
-    onNew: mocks.onNew,
-    onClosePane: mocks.onClosePane,
-    onOpenApprovalSession: mocks.onOpenApprovalSession,
-  });
-  useNativeMenuEvents({ actions: actions as never, run: mocks.run as never });
+let roots: Root[];
+const calls = { first: vi.fn(), second: vi.fn() };
+function Probe({ name }: { name: "first" | "second" }) {
+  const actions = { current: { onNew: calls[name] } as unknown as WorkspaceActions };
+  useNativeMenuEvents({ actions, run: (_action, callback) => callback() });
   return null;
 }
-
-let root: Root;
-let container: HTMLElement;
+function emit(name: string, target?: string, payload?: unknown) {
+  for (const item of api.handlers) {
+    if (item.active && item.name === name && (!target || !item.target || item.target === target))
+      item.handler({ payload });
+  }
+}
 beforeEach(() => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  vi.clearAllMocks();
-  mocks.callbacks.clear();
-  mocks.targets.clear();
-  mocks.releases = [];
-  mocks.listen.mockImplementation(async (name: string, callback, options) => {
-    mocks.callbacks.set(name, callback);
-    mocks.targets.set(name, options);
-    const release = vi.fn();
-    mocks.releases.push(release);
-    return release;
+  api.handlers = [];
+  api.gate = null;
+  api.saveAutosave.mockClear();
+  calls.first.mockClear();
+  calls.second.mockClear();
+  roots = [];
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+});
+
+it("ignores a queued menu event after unmount while registration is pending", async () => {
+  let registered!: () => void;
+  api.gate = new Promise<void>((resolve) => {
+    registered = resolve;
   });
-  container = document.createElement("div");
-  root = createRoot(container);
+  api.label = "first";
+  const root = createRoot(document.createElement("div"));
+  roots.push(root);
+  await act(async () => root.render(createElement(Probe, { name: "first" })));
+  await act(async () => root.unmount());
+  roots = [];
+  emit("new_tab", "first");
+  expect(calls.first).not.toHaveBeenCalled();
+  await act(async () => {
+    registered();
+    await Promise.resolve();
+  });
+  expect(api.handlers.find((entry) => entry.name === "new_tab")?.active).toBe(false);
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await act(async () => {
+    roots.forEach((root) => root.unmount());
+  });
+  vi.unstubAllGlobals();
 });
 
-it("subscribes every menu command on this window only and releases all on unmount", async () => {
-  await act(async () => root.render(createElement(Probe)));
-  // Rust routes menu clicks to the focused window; a process-wide listener ran the
-  // command in every open workspace (one click opened N tabs, closed N panes).
-  expect(mocks.listen.mock.calls.length).toBeGreaterThan(30);
-  for (const [name, options] of mocks.targets) {
-    expect(options, `menu event ${name} must be window-scoped`).toEqual({
-      target: "workspace-1",
-    });
+it("routes a targeted menu action to one window while retaining autosave broadcast", async () => {
+  for (const name of ["first", "second"] as const) {
+    api.label = name;
+    const root = createRoot(document.createElement("div"));
+    roots.push(root);
+    await act(async () => root.render(createElement(Probe, { name })));
   }
-  mocks.callbacks.get("new_tab")!({ payload: null });
-  expect(mocks.run).toHaveBeenCalledWith("new", mocks.onNew);
-  expect(mocks.onNew).toHaveBeenCalledOnce();
-  mocks.callbacks.get("close_tab")!({ payload: null });
-  expect(mocks.onClosePane).toHaveBeenCalledOnce();
-
-  // Broadcasts still reach a window-scoped listener; the session owner acts.
-  mocks.callbacks.get("bycoda:notification-click")!({ payload: "session-1" });
-  expect(mocks.onOpenApprovalSession).toHaveBeenCalledExactlyOnceWith("session-1");
-  mocks.callbacks.get("bycoda:notification-click")!({ payload: "elsewhere" });
-  expect(mocks.onOpenApprovalSession).toHaveBeenCalledOnce();
-
-  await act(async () => root.unmount());
-  expect(mocks.releases.length).toBe(mocks.listen.mock.calls.length);
-  expect(mocks.releases.every((release) => release.mock.calls.length === 1)).toBe(true);
-  root = createRoot(container);
+  emit("new_tab", "first");
+  expect(calls.first).toHaveBeenCalledOnce();
+  expect(calls.second).not.toHaveBeenCalled();
+  emit("toggle_autosave", undefined, true);
+  expect(api.saveAutosave).toHaveBeenCalledTimes(2);
+  const notifications = api.handlers.filter((entry) => entry.name === "bycoda:notification-click");
+  expect(notifications).toHaveLength(2);
+  expect(notifications.map((entry) => entry.target)).toEqual(["first", "second"]);
+  expect(
+    api.handlers.filter((entry) => entry.name === "toggle_autosave").map((entry) => entry.target),
+  ).toEqual(["first", "second"]);
 });

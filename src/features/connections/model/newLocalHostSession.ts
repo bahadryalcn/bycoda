@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { newDefaultSession, type RuntimeMode, type Session } from "../../sessions/model/session";
-import { worktreeFocus } from "../../source-control/model/worktreeFocus";
-import { isLocalProject } from "../../projects/model/recents";
+import { newDefaultSession, type RuntimeMode, type Session } from "../../sessions/public/session";
+
+import { worktreeFocus } from "../../source-control/public/worktreeFocus";
+import { isLocalProject } from "../../projects/public/recents";
 import { remoteRequest, refreshRemoteMachines } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostDescriptor, HostProject, RemoteMachine } from "./protocol";
-import { saveHostSessionBinding } from "./sessionExecutionBinding";
+import { saveHostSessionBinding, flushHostSessionBindings } from "./sessionExecutionBinding";
 
 export const NEW_LOCAL_HOST_SESSION = "bycoda:new-local-host-session";
 
@@ -14,6 +15,7 @@ export async function newLocalHostSession(
   cwd: string,
   runtimeMode?: RuntimeMode,
 ): Promise<Session> {
+  await flushHostSessionBindings();
   if (!isLocalProject(cwd)) throw new Error("Choose a local project first.");
   const machine = await invoke<RemoteMachine | null>("local_host_connect");
   if (!machine || !isLocalSyncMachine(machine))
@@ -58,6 +60,7 @@ export async function newLocalHostSession(
     authorityGeneration: null,
     created: false,
   });
+  await flushHostSessionBindings(bound.id);
   refreshRemoteMachines();
   return bound;
 }

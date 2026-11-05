@@ -531,7 +531,9 @@ pub async fn remote_dev_server_url(
                             .lock()
                             .map(|time| time.elapsed() > IDLE)
                             .unwrap_or(true);
-                        if expired || !access.current() {
+                        // An idle WebSocket (for example HMR) is still an active
+                        // client and must retain its gateway lease.
+                        if (expired && running.active.load(Ordering::SeqCst) == 0) || !access.current() {
                             break;
                         }
                         checked = Instant::now();
@@ -554,7 +556,11 @@ pub async fn remote_dev_server_url(
                             std::thread::spawn(move || connection(socket, access, running));
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            std::thread::sleep(Duration::from_millis(25))
+                            if crate::ssh_http_proxy::wait_tcp_ready(
+                                &[(&listener, true, false)], Duration::from_secs(1),
+                            ).is_err() {
+                                break;
+                            }
                         }
                         Err(_) => break,
                     }

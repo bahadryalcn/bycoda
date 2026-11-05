@@ -98,6 +98,8 @@ it("cancels a scheduled demand when its transcript unmounts before the request s
 });
 
 it("retains one valid demand after development StrictMode effect replacement", async () => {
-  await act(async () => { root.render(createElement(StrictMode, null, createElement(Harness))); });
+  await act(async () => {
+    root.render(createElement(StrictMode, null, createElement(Harness)));
+  });
   expect(props.load).toHaveBeenCalledTimes(1);
 });

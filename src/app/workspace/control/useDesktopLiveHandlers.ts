@@ -15,7 +15,7 @@ export interface DesktopLiveHandlersDeps {
   onDeleteHistorySessionNow: ReturnType<
     typeof useHistorySessionDelete
   >["onDeleteHistorySessionNow"];
-  onStop: (sessionId: string) => void;
+  onStop: (sessionId: string, managed?: boolean, current?: () => boolean) => void;
   onApproval: DesktopLiveHandlers["approve"];
   onQuestionReply: DesktopLiveHandlers["answer"];
 }
@@ -39,7 +39,7 @@ export function useDesktopLiveHandlers({
       if (!(await onDeleteHistorySessionNow(sessionId, true)))
         throw new Error("The conversation could not be deleted");
     },
-    stop: (sessionId) => onStop(sessionId),
+    stop: (sessionId, current) => onStop(sessionId, false, current),
     captureApproval: captureApprovalRequest,
     approvalDispatchStarted: approvalRequestDispatchStarted,
     approve: onApproval,

@@ -6,8 +6,8 @@ import type { AddressInfo } from "node:net";
 import { HostEngine } from "./engine";
 import { HostStore, summary } from "./store";
 import { createHostServer } from "./server";
-import { DesktopSessions } from "./desktopSessions";
-import { branchCache } from "./git-actions";
+import { DesktopSessions } from "./desktop/desktopSessions";
+import { branchCache } from "./git/git-actions";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { applySessionSync, type HostSession } from "../src/features/connections/model/protocol";
@@ -369,6 +369,7 @@ it("serves an actual tail page and partial delta without shipping unloaded trans
   const update = await s.call("sessions.sync", {
     sessionId: created.sessionId,
     revision: known.revision,
+    sourceEpoch: known.sourceEpoch,
     partial: true,
     loadedBlockIds: known.session.blocks.map((block) => block.id),
     windowStart: known.history!.before,
@@ -416,13 +417,17 @@ it("keeps pinned history coherent through a live append, deletion, and host rest
   };
   const epoch = (
     await s.call("machine.changes", {
-      sessions: [{ sessionId: created.sessionId, revision: known.revision }],
+      sessions: [
+        { sessionId: created.sessionId, revision: known.revision, sourceEpoch: known.sourceEpoch },
+      ],
       projects: [],
     })
   ).value.result.instanceId;
   const waiting = s.call("machine.changes", {
     instanceId: epoch,
-    sessions: [{ sessionId: created.sessionId, revision: known.revision }],
+    sessions: [
+      { sessionId: created.sessionId, revision: known.revision, sourceEpoch: known.sourceEpoch },
+    ],
     projects: [],
     waitMs: 5_000,
   });
@@ -447,12 +452,17 @@ it("keeps pinned history coherent through a live append, deletion, and host rest
   );
   const notice = await waiting;
   expect(notice.value.result.sessions).toEqual([
-    { sessionId: created.sessionId, revision: current.revision + 1 },
+    {
+      sessionId: created.sessionId,
+      revision: current.revision + 1,
+      sourceEpoch: known.sourceEpoch,
+    },
   ]);
   const sync = (
     await s.call("sessions.sync", {
       sessionId: created.sessionId,
       revision: known.revision,
+      sourceEpoch: known.sourceEpoch,
       partial: true,
       loadedBlockIds: known.session.blocks.map((block) => block.id),
       windowStart: known.history!.before,
@@ -729,15 +739,17 @@ it("wakes machine readers on store writes and inlines only bounded opted-in delt
     runtimeMode: "supervised",
   });
   const known = await s.store.session(created.sessionId);
+  const sourceEpoch = (await s.call("sessions.sync", { sessionId: created.sessionId })).value.result
+    .value.sourceEpoch;
   const initial = (
     await s.call("machine.changes", {
-      sessions: [{ sessionId: created.sessionId, revision: known.revision }],
+      sessions: [{ sessionId: created.sessionId, revision: known.revision, sourceEpoch }],
       projects: [],
     })
   ).value.result;
   const params = {
     instanceId: initial.instanceId,
-    sessions: [{ sessionId: created.sessionId, revision: known.revision }],
+    sessions: [{ sessionId: created.sessionId, revision: known.revision, sourceEpoch }],
     projects: [],
     inlineSync: true,
     waitMs: 5000,
@@ -766,9 +778,9 @@ it("wakes machine readers on store writes and inlines only bounded opted-in delt
   expect(changed.reset).toBe(false);
   expect(performance.now() - started).toBeLessThan(500);
   expect(changed.sessions[0].sync).toMatchObject({ kind: "delta", base: known.revision });
-  expect(applySessionSync(known, changed.sessions[0].sync).session.blocks[0].text).toBe(
-    "inline text",
-  );
+  expect(
+    applySessionSync({ ...known, sourceEpoch }, changed.sessions[0].sync).session.blocks[0].text,
+  ).toBe("inline text");
   const legacy = (await s.call("machine.changes", { ...params, inlineSync: false, waitMs: 0 }))
     .value.result;
   expect(legacy.sessions[0].sync).toBeUndefined();

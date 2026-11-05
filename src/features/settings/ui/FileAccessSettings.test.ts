@@ -57,9 +57,13 @@ it("reports unavailable status after an initial read failure without implying co
     "Access status unavailable",
   );
   expect(configureFileAccess).not.toHaveBeenCalled();
-  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Change file access…")!;
+  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Change file access…",
+  )!;
   expect(change.disabled).toBe(true);
-  const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Retry")!;
+  const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Retry",
+  )!;
   await act(async () => retry.click());
   expect(configureFileAccess).not.toHaveBeenCalled();
   expect(container.textContent).toContain("All files allowed");
@@ -67,18 +71,24 @@ it("reports unavailable status after an initial read failure without implying co
 });
 
 it("reads back permissions after an uncertain consent failure without invoking consent again", async () => {
-  vi.mocked(getFileAccessMode).mockResolvedValueOnce("all-files").mockResolvedValueOnce("selected-folders");
+  vi.mocked(getFileAccessMode)
+    .mockResolvedValueOnce("all-files")
+    .mockResolvedValueOnce("selected-folders");
   vi.mocked(configureFileAccess).mockRejectedValueOnce(new Error("Cleanup failed after saving"));
   await act(async () => root.render(createElement(FileAccessSettings)));
   await act(async () => changeButton().click());
   expect(configureFileAccess).toHaveBeenCalledOnce();
   expect(getFileAccessMode).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Selected folders only");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Cleanup failed after saving");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Cleanup failed after saving",
+  );
 });
 
 it("refreshes changed permissions on window focus through a read-only operation", async () => {
-  vi.mocked(getFileAccessMode).mockResolvedValueOnce("all-files").mockResolvedValueOnce("selected-folders");
+  vi.mocked(getFileAccessMode)
+    .mockResolvedValueOnce("all-files")
+    .mockResolvedValueOnce("selected-folders");
   await act(async () => root.render(createElement(FileAccessSettings)));
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(container.textContent).toContain("Selected folders only");

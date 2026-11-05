@@ -21,8 +21,9 @@ import { TaskWorkflowControls } from "./TaskWorkflowControls";
 import { TaskBudgetControls } from "./TaskBudgetControls";
 import type { TaskPreflightReport } from "../model/taskPreflight";
 import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import { REMOTE_PROVIDERS, type RemoteMachine } from "../../connections/model/protocol";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import { REMOTE_PROVIDERS, type RemoteMachine } from "../../connections/public/protocol";
+
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import {
   AutoMergeField,
@@ -359,7 +360,7 @@ export function TaskForm({
                                 event.target.checked
                                   ? {
                                       harness:
-                                        draft.harness as import("../../connections/model/protocol").RemoteProvider,
+                                        draft.harness as import("../../connections").RemoteProvider,
                                       model: draft.model,
                                       modelSettings: { ...draft.modelSettings },
                                       instructions: "",
@@ -382,8 +383,7 @@ export function TaskForm({
                               onChange={(harness, model) =>
                                 update("reviewerConfig", {
                                   ...draft.reviewerConfig!,
-                                  harness:
-                                    harness as import("../../connections/model/protocol").RemoteProvider,
+                                  harness: harness as import("../../connections").RemoteProvider,
                                   model,
                                   modelSettings: {},
                                 })

@@ -42,6 +42,8 @@ Inspect keyboard, narrow/short panes, light/dark/custom accent, density, reduced
 
 ## Read when needed
 
+- [Decision provenance](references/decisions.md): owner decisions behind badges, collection scrolling and the UI standards round.
+
 - [Component selection](../../../docs/reference/ui-component-catalog.md) before choosing/adding a control.
 - [UI contracts and ownership](../../../docs/reference/ui-design-system.md) for public APIs, feedback, fields and semantic roles.
 - [Arc integration](../../../docs/reference/arc-ui.md) for registry/adapters and local adaptations; [Theme](../feature-theme-foundation/SKILL.md) for new semantic roles.

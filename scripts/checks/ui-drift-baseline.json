@@ -21,7 +21,7 @@
       "font-weight": 1
     },
     "src/app/shell/Sidebar.tsx": {
-      "alert-role-prop": 4,
+      "alert-role-prop": 5,
       "arbitrary-spacing": 1,
       "focus-outline-removed": 1,
       "font-weight": 2,
@@ -34,9 +34,6 @@
     },
     "src/app/shell/ToolNavigation.tsx": {
       "alert-role-prop": 1
-    },
-    "src/app/shell/sessionList.css": {
-      "radius-size": 1
     },
     "src/app/shell/useProjectMenu.tsx": {
       "alert-role-prop": 2
@@ -53,30 +50,41 @@
     "src/app/workspace/layout/HostBufferRecoverySection.tsx": {
       "alert-role-prop": 1
     },
-    "src/features/assistant/ui/AssistantBriefingCard.tsx": {
-      "role-alert-text": 3
+    "src/features/assistant/ui/AssistantBriefingCard.module.css": {
+      "font-weight": 1
     },
-    "src/features/assistant/ui/AssistantPresenceMenu.tsx": {
-      "role-alert-text": 1
+    "src/features/assistant/ui/AssistantHistory.module.css": {
+      "font-weight": 2
     },
-    "src/features/assistant/ui/AssistantProfileFields.tsx": {
-      "role-alert-text": 3
+    "src/features/assistant/ui/AssistantMemoryPanel.module.css": {
+      "font-weight": 1
+    },
+    "src/features/assistant/ui/AssistantNoteCard.module.css": {
+      "font-weight": 2
+    },
+    "src/features/assistant/ui/AssistantOwnerQuestions.module.css": {
+      "font-weight": 1
+    },
+    "src/features/assistant/ui/AssistantSessions.module.css": {
+      "font-weight": 2
     },
     "src/features/assistant/ui/AssistantSessions.tsx": {
-      "role-alert-text": 1
+      "role-alert-container": 1
+    },
+    "src/features/assistant/ui/AssistantSettings.module.css": {
+      "font-weight": 3
+    },
+    "src/features/assistant/ui/AssistantSettings.tsx": {
+      "role-alert-container": 1
     },
     "src/features/assistant/ui/AssistantSetup.tsx": {
-      "role-alert-text": 1
+      "role-alert-container": 1
     },
     "src/features/assistant/ui/AssistantView.module.css": {
-      "font-weight": 5,
-      "undefined-var": 1
+      "font-weight": 6
     },
     "src/features/assistant/ui/AssistantView.tsx": {
-      "role-alert-text": 11
-    },
-    "src/features/assistant/ui/ManualSessionSupervision.tsx": {
-      "role-alert-text": 2
+      "role-alert-container": 4
     },
     "src/features/connections/ui/AddRemoteProjectDialog.tsx": {
       "alert-role-prop": 1
@@ -170,7 +178,7 @@
     },
     "src/features/files/ui/FileEditor.tsx": {
       "raw-aria-live": 1,
-      "role-alert-text": 2
+      "role-alert-container": 2
     },
     "src/features/files/ui/FilePane.tsx": {
       "raw-native-control": 1
@@ -190,23 +198,13 @@
       "raw-aria-live": 1
     },
     "src/features/files/ui/HtmlPreview.tsx": {
-      "role-alert-text": 1
+      "role-alert-container": 1
     },
     "src/features/group-lock/ui/HiddenGroupsSettings.tsx": {
       "alert-role-prop": 1
     },
     "src/features/host-tools/BrowserPanel.tsx": {
-      "alert-role-prop": 2,
-      "role-alert-text": 1
-    },
-    "src/features/host-tools/DesktopControlSettings.tsx": {
-      "role-alert-text": 1
-    },
-    "src/features/host-tools/DesktopControlStripView.tsx": {
-      "role-alert-text": 1
-    },
-    "src/features/host-tools/DesktopHelperSetup.tsx": {
-      "role-alert-text": 1
+      "alert-role-prop": 2
     },
     "src/features/host-tools/DevServersPanel.tsx": {
       "alert-role-prop": 5
@@ -224,8 +222,7 @@
       "alert-role-prop": 1
     },
     "src/features/host-tools/desktopControlWindowMain.tsx": {
-      "inline-style-layout": 1,
-      "role-alert-text": 1
+      "inline-style-layout": 1
     },
     "src/features/host-tools/dev-servers.css": {
       "font-weight": 2
@@ -377,9 +374,6 @@
     "src/features/sessions/ui/ApprovalToasts.tsx": {
       "raw-aria-live": 1
     },
-    "src/features/sessions/ui/AssistantSessionControl.tsx": {
-      "role-alert-text": 1
-    },
     "src/features/sessions/ui/AttachmentTokenText.tsx": {
       "role-alert-text": 1
     },
@@ -402,7 +396,7 @@
     },
     "src/features/sessions/ui/DeliveryProgressNotice.tsx": {
       "raw-aria-live": 2,
-      "role-alert-text": 1
+      "role-alert-container": 1
     },
     "src/features/sessions/ui/EmptySession.tsx": {
       "layer": 1
@@ -669,29 +663,14 @@
       "radius-size": 2,
       "typography": 6
     },
-    "src/features/voice/ui/VoiceCompanion.tsx": {
-      "icon-numeric-size": 15,
-      "raw-aria-live": 1,
-      "role-alert-text": 1
-    },
     "src/features/voice/ui/VoiceJobReview.module.css": {
       "font-weight": 1
-    },
-    "src/features/voice/ui/VoiceJobReview.tsx": {
-      "role-alert-text": 1
     },
     "src/features/voice/ui/VoiceOverlayWindow.module.css": {
       "font-weight": 1
     },
     "src/features/voice/ui/VoiceOverlayWindow.tsx": {
-      "raw-aria-live": 1,
-      "role-alert-text": 2
-    },
-    "src/features/voice/ui/VoicePanelChoices.tsx": {
-      "icon-numeric-size": 7
-    },
-    "src/features/voice/ui/VoiceSetupSteps.tsx": {
-      "role-alert-text": 1
+      "role-alert-container": 1
     },
     "src/features/voice/ui/VoiceVisualizer.module.css": {
       "radius-size": 1
@@ -701,14 +680,14 @@
       "popover-menu": 1
     },
     "src/features/workspaces/ui/SessionWorkspaceActions.tsx": {
-      "role-alert-text": 1
+      "role-alert-container": 1
     },
     "src/features/workspaces/ui/WorkspaceDirectoryRemoval.tsx": {
-      "role-alert-text": 1
+      "role-alert-container": 1
     },
     "src/features/workspaces/ui/WorkspaceReview.tsx": {
       "raw-anchor": 1,
-      "role-alert-text": 2,
+      "role-alert-container": 2,
       "target-blank": 1
     },
     "src/features/workspaces/ui/WorkspaceRewindPreview.tsx": {

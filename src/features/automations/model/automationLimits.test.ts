@@ -1,53 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   NO_LIMITS,
-  PREVIOUS_RUN_SKIP,
+  ObservedRunDuration,
   automationLimits,
   dailyRunLimitSkip,
-  previousRunSkip,
   runLimitBreach,
 } from "./automationLimits";
-import { monotonicNow } from "../../../shared/lib/time/timestamps";
 
 const at = (value: string) => new Date(value).getTime();
 
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-});
-
 describe("automation limits", () => {
-  it("measures the time limit on the monotonic clock, ignoring a wall-clock jump", () => {
-    const limits = { ...NO_LIMITS, maxRunMinutes: 30 };
-    let monotonic = 1_000;
-    vi.spyOn(performance, "now").mockImplementation(() => monotonic);
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(at("2026-10-03T10:00:00"));
-    const startedAt = monotonicNow();
-    // The laptop sleeps for three hours: wall time jumps, the run did not progress.
-    vi.setSystemTime(at("2026-10-03T13:00:00"));
-    monotonic += 10 * 60_000;
-    expect(runLimitBreach(limits, { startedAt })).toBeNull();
-    monotonic += 20 * 60_000;
-    expect(runLimitBreach(limits, { startedAt })).toBe(
-      "Stopped: reached the 30-minute time limit.",
-    );
-    // A monotonic reading never counts a negative elapsed time against a run.
-    expect(runLimitBreach(limits, { startedAt: monotonic + 60_000 })).toBeNull();
+  it("counts regular samples after an unknown long gap or a wall clock jump", () => {
+    const duration = new ObservedRunDuration(1_000, 100, 20_000);
+    expect(duration.sample(16_000, 15_100, 45_000)).toBe(35_000);
+    expect(duration.sample(3_616_000, 3_615_100, 45_000)).toBe(35_000);
+    expect(duration.sample(3_631_000, 3_630_100, 45_000)).toBe(50_000);
+    expect(duration.sample(3_000, 3_645_100, 45_000)).toBe(50_000);
+    expect(duration.sample(18_000, 3_660_100, 45_000)).toBe(65_000);
   });
-
-  it("holds a claimed run while an earlier run of the automation is still going", () => {
-    const runs = [
-      { id: "new", status: "pending" as const },
-      { id: "earlier", status: "running" as const },
-      { id: "done", status: "succeeded" as const },
-    ];
-    expect(previousRunSkip(runs, "new")).toBe(PREVIOUS_RUN_SKIP);
-    expect(previousRunSkip(runs, "earlier")).toBeNull();
-    expect(previousRunSkip(runs.slice(2), "new")).toBeNull();
-    expect(previousRunSkip([], "new")).toBeNull();
-  });
-
   it("treats missing, negative and non-finite values as off", () => {
     expect(automationLimits({})).toEqual(NO_LIMITS);
     expect(automationLimits({ maxRunMinutes: -5, maxRunsPerDay: Number.NaN })).toEqual(NO_LIMITS);

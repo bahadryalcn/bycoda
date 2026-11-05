@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, access, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { discoverHostInputs, hostBuildPlans } from "./host-inputs.mjs";
@@ -62,5 +62,24 @@ test("refuses dynamic entrypoint configuration rather than silently accepting an
   assert.throws(
     () => hostBuildPlans('console.log("no build calls");'),
     /No Host build entrypoints/,
+  );
+});
+
+test("isolated readonly session helper is an explicit packaged build input", async () => {
+  const plans = hostBuildPlans(
+    await readFile(new URL("../../host/build.mjs", import.meta.url), "utf8"),
+  );
+  assert.ok(
+    plans.some(
+      (plan) =>
+        plan.entryPoints.includes("host/session-read-helper.mjs") &&
+        plan.outfile === "build/host/session-read-helper.mjs",
+    ),
+  );
+  const packaging = await readFile(new URL("../../host/package.mjs", import.meta.url), "utf8");
+  assert.ok(
+    packaging.includes(
+      'copyFile("build/host/session-read-helper.mjs", join(folder, "session-read-helper.mjs"))',
+    ),
   );
 });

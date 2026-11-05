@@ -11,7 +11,12 @@ export type WorkspaceRpcParams = { [K in WorkspaceRpcMethod]: WorkspaceRpcContra
 export type WorkspaceRpcResults = {
   [K in WorkspaceRpcMethod]: WorkspaceRpcContract[K]["response"];
 };
-export type WorkspaceContext = { cwd?: string; environmentId?: string; machineId?: string; ownerProjectId?: string };
+export type WorkspaceContext = {
+  cwd?: string;
+  environmentId?: string;
+  machineId?: string;
+  ownerProjectId?: string;
+};
 export const WORKSPACE_UPDATE_REQUIRED =
   "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.";
 
@@ -47,7 +52,8 @@ async function owningMachine(context: WorkspaceContext): Promise<RemoteMachine> 
     : context.cwd
       ? backgroundMachineFor(machines, context.cwd)
       : undefined;
-  if (!machine || (context.machineId !== undefined && machine.id !== context.machineId)) throw new Error(t("This project's machine is not connected. Reconnect and retry."));
+  if (!machine || (context.machineId !== undefined && machine.id !== context.machineId))
+    throw new Error(t("This project's machine is not connected. Reconnect and retry."));
   return machine;
 }
 
@@ -137,7 +143,14 @@ export async function workspaceRequest<K extends WorkspaceRpcMethod>(
       { request: input },
     );
   return context.environmentId
-    ? remoteRequest<WorkspaceRpcResults[K]>(machine.id, method, input, false, true, context.environmentId)
+    ? remoteRequest<WorkspaceRpcResults[K]>(
+        machine.id,
+        method,
+        input,
+        false,
+        true,
+        context.environmentId,
+      )
     : remoteRequest<WorkspaceRpcResults[K]>(machine.id, method, input, false, true);
 }
 

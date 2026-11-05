@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { TextField } from "../../../shared/ui/TextField";
@@ -21,11 +22,16 @@ export function SshJumpPolicyEditor({
   onChange: (value: SshJumpPolicyDraft[]) => void;
   disabled?: boolean;
 }) {
+  const ids = useRef<number[]>([]).current;
+  const nextId = useRef(0);
+  while (ids.length < value.length) ids.push(nextId.current++);
+  if (ids.length > value.length) ids.length = value.length;
   const update = (index: number, field: keyof SshJumpPolicyDraft, text: string) =>
     onChange(value.map((entry, i) => (i === index ? { ...entry, [field]: text } : entry)));
   const move = (index: number, offset: number) => {
     const next = [...value];
     [next[index], next[index + offset]] = [next[index + offset], next[index]];
+    [ids[index], ids[index + offset]] = [ids[index + offset], ids[index]];
     onChange(next);
   };
   return (
@@ -34,7 +40,7 @@ export function SshJumpPolicyEditor({
         {t("Strict host-key verification is always enabled for every hop.")}
       </p>
       {value.map((hop, index) => (
-        <fieldset key={index} disabled={disabled} className="min-w-0 border-0 p-0">
+        <fieldset key={ids[index]} disabled={disabled} className="min-w-0 border-0 p-0">
           <legend className="text-ui-caption text-(--ui-text-muted)">
             {t("Jump host")} {index + 1}
           </legend>
@@ -70,7 +76,10 @@ export function SshJumpPolicyEditor({
               iconOnly
               label={`${t("Remove jump host")}: ${index + 1}`}
               disabled={disabled}
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
+              onClick={() => {
+                ids.splice(index, 1);
+                onChange(value.filter((_, i) => i !== index));
+              }}
             >
               <X className="icon-xs" />
             </Button>

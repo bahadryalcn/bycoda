@@ -1,3 +1,4 @@
+import { readNormalizedJsonWire } from "../normalized-wire";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   HostSubscriptionHub,
@@ -254,12 +255,14 @@ it("committed deletion aborts in-flight hydration and an old result cannot reviv
 it("collection deletion invalidation retires old replay and in-flight reads without closing the project", async () => {
   const held = deferred<{ revision: number; data: { sessions: string[] } }>();
   let reads = 0;
-  const { hub } = fixture({ load: async () => {
-    reads++;
-    if (reads === 1) return { revision: 1, data: { sessions: ["deleted"] } };
-    if (reads === 2) return held.promise;
-    return { revision: 2, data: { sessions: [] } };
-  } });
+  const { hub } = fixture({
+    load: async () => {
+      reads++;
+      if (reads === 1) return { revision: 1, data: { sessions: ["deleted"] } };
+      if (reads === 2) return held.promise;
+      return { revision: 2, data: { sessions: [] } };
+    },
+  });
   const watcher = client("one");
   const project = { kind: "project", projectId: "p" } as const;
   subscribe(hub, watcher.owner, "first", project);
@@ -439,10 +442,10 @@ it("makes progress during unrelated commits instead of repeatedly discarding pen
   expect(load).toHaveBeenCalledTimes(2);
 });
 
-
 it("coalesces targeted invalidations for at least 250ms without loading another stream", async () => {
   const { hub, load } = fixture();
-  const a = client("coalesced"), b = client("unrelated");
+  const a = client("coalesced"),
+    b = client("unrelated");
   subscribe(hub, a.owner);
   subscribe(hub, b.owner, "other", { kind: "session", sessionId: "other" });
   await expectSnapshots(a.events, 1);
@@ -455,4 +458,142 @@ it("coalesces targeted invalidations for at least 250ms without loading another 
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
   expect(load.mock.calls[0][0]).toEqual(target);
   expect(authorize).toHaveBeenCalledTimes(1);
+});
+
+it("limits one connection without blocking another connection's physical read", async () => {
+  const pending = deferred<HostStreamSnapshot | null>();
+  const load = vi.fn((_target: HostStreamTarget) => pending.promise);
+  const { hub } = fixture({ load, maxConcurrentReads: 2, maxConcurrentReadsPerConnection: 1 });
+  const noisy = client("noisy");
+  const other = client("other");
+  for (let index = 0; index < 4; index++)
+    subscribe(hub, noisy.owner, `noisy-${index}`, { kind: "session", sessionId: `noisy-${index}` });
+  subscribe(hub, other.owner, "other", { kind: "session", sessionId: "other" });
+  await settle();
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(load.mock.calls.map((args) => args[0])).toContainEqual({
+    kind: "session",
+    sessionId: "other",
+  });
+  pending.resolve({ data: { settled: true } });
+});
+
+it("aborts a detached reader but holds its physical slot until the original work settles", async () => {
+  const pending = deferred<HostStreamSnapshot | null>();
+  let originalSignal!: AbortSignal;
+  const load = vi.fn(
+    (
+      _target: HostStreamTarget,
+      _principal: string,
+      signal: AbortSignal,
+    ): Promise<HostStreamSnapshot | null> => {
+      originalSignal ??= signal;
+      return load.mock.calls.length === 1
+        ? pending.promise
+        : Promise.resolve({ data: { fresh: true } });
+    },
+  );
+  const { hub } = fixture({ load, maxConcurrentReads: 1 });
+  const first = client("first");
+  const next = client("next");
+  subscribe(hub, first.owner, "first", { kind: "session", sessionId: "first" });
+  await settle();
+  hub.detach("first");
+  subscribe(hub, next.owner, "next", { kind: "session", sessionId: "next" });
+  await settle();
+  expect(originalSignal.aborted).toBe(true);
+  expect(load).toHaveBeenCalledTimes(1);
+  pending.resolve({ data: { stale: true } });
+  await settle();
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(snapshots(first.events)).toHaveLength(0);
+  expect(snapshots(next.events)).toHaveLength(1);
+});
+
+it("rotates queued streams before rereading an earlier invalidated stream", async () => {
+  const reads = [
+    deferred<HostStreamSnapshot | null>(),
+    deferred<HostStreamSnapshot | null>(),
+    deferred<HostStreamSnapshot | null>(),
+  ];
+  const selected: HostStreamTarget[] = [];
+  const load = vi.fn((target: HostStreamTarget) => {
+    selected.push(target);
+    return reads[selected.length - 1]?.promise ?? Promise.resolve({ data: {} });
+  });
+  const { hub } = fixture({ load, maxConcurrentReads: 1 });
+  const owner = client("owner");
+  const targets: HostStreamTarget[] = ["first", "second", "third"].map((sessionId) => ({
+    kind: "session",
+    sessionId,
+  }));
+  targets.forEach((target, index) => subscribe(hub, owner.owner, `sub-${index}`, target));
+  await settle();
+  hub.invalidate(targets[0]);
+  reads[0].resolve({ data: { first: true } });
+  await settle();
+  reads[1].resolve({ data: { second: true } });
+  await settle();
+  expect(selected).toEqual(targets);
+  reads[2].resolve({ data: { third: true } });
+});
+
+it("does not cache a canceled snapshot while its final authorization check is pending", async () => {
+  const authorization = deferred<boolean>();
+  const first = client("first");
+  let checks = 0;
+  first.owner.authorized = () => (++checks === 2 ? authorization.promise : Promise.resolve(true));
+  const load = vi.fn(async (): Promise<HostStreamSnapshot> => ({
+    data: { read: load.mock.calls.length },
+  }));
+  const { hub } = fixture({ load });
+  subscribe(hub, first.owner);
+  await settle();
+  expect(checks).toBe(2);
+  hub.detach("first");
+  const next = client("next");
+  subscribe(hub, next.owner);
+  authorization.resolve(true);
+  await vi.waitFor(() => expect(snapshots(next.events)).toHaveLength(1));
+  expect(snapshots(next.events)[0].params.data).toEqual({ read: 2 });
+  expect(snapshots(first.events)).toHaveLength(0);
+});
+
+it("encodes one data snapshot across consumers and keeps legacy consumer mutations isolated", async () => {
+  const payload = "雪".repeat(1000);
+  const f = fixture({ load: async () => ({ revision: 1, data: { payload } }) });
+  const first = client("first");
+  const second = client("second");
+  first.owner.send = (event) => {
+    first.events.push(event);
+    if (event.params.data && typeof event.params.data === "object")
+      (event.params.data as Record<string, unknown>).payload = "mutated consumer";
+    return true;
+  };
+  const encoded: string[] = [];
+  second.owner.sendNormalized = (capture) => {
+    const wire = readNormalizedJsonWire(capture);
+    expect(JSON.parse(wire.serialized)).toEqual(wire.wire);
+    expect(wire.byteLength).toBe(Buffer.byteLength(wire.serialized));
+    encoded.push(wire.serialized);
+    return true;
+  };
+  const stringify = vi.spyOn(JSON, "stringify");
+  try {
+    subscribe(f.hub, first.owner, "first-sub");
+    subscribe(f.hub, second.owner, "second-sub");
+    await settle();
+    expect(encoded).toHaveLength(1);
+    expect(JSON.parse(encoded[0]).params.data).toEqual({ payload });
+    expect(
+      stringify.mock.calls.filter(
+        ([value]) =>
+          value &&
+          typeof value === "object" &&
+          (value as Record<string, unknown>).payload === payload,
+      ),
+    ).toHaveLength(1);
+  } finally {
+    stringify.mockRestore();
+  }
 });

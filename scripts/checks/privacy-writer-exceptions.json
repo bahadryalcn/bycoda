@@ -1,0 +1,278 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "file": "src/app/shell/ProjectRail.tsx",
+      "owner": "renderProjectGroup",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(group.id, (current) => ({ ...current, collapsed: !current.collapsed, }))",
+      "count": 1
+    },
+    {
+      "file": "src/app/shell/useProjectMenu.tsx",
+      "owner": "renderGroupMenu",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(group.id, (current) => ({ ...current, name: name.trim() || current.name, }))",
+      "count": 1
+    },
+    {
+      "file": "src/app/shell/useProjectMenu.tsx",
+      "owner": "renderGroupMenu",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(group.id, (current) => ({ ...current, colorIndex: colorIndex ?? undefined, customColor: undefined, }))",
+      "count": 1
+    },
+    {
+      "file": "src/app/shell/useProjectMenu.tsx",
+      "owner": "renderGroupMenu",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(group.id, (current) => ({ ...current, colorIndex: undefined, customColor, }))",
+      "count": 1
+    },
+    {
+      "file": "src/app/shell/useProjectMenu.tsx",
+      "owner": "renderGroupMenu",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(group.id, (current) => ({ ...current, mascot: mascot ?? undefined, }))",
+      "count": 1
+    },
+    {
+      "file": "src/features/group-lock/model/groupLock.ts",
+      "owner": "saveSettings",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))",
+      "count": 2
+    },
+    {
+      "file": "src/features/group-lock/model/groupLock.ts",
+      "owner": "clearPassword",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups( loadProjectGroups().map(({ lockable: _lockable, ...group }) => group), )",
+      "count": 1
+    },
+    {
+      "file": "src/features/group-lock/model/groupLock.ts",
+      "owner": "hideGroupNow",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]))",
+      "count": 1
+    },
+    {
+      "file": "src/features/group-lock/model/groupLock.ts",
+      "owner": "restoreHiddenGroupNow",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]))",
+      "count": 1
+    },
+    {
+      "file": "src/features/group-lock/model/groupLock.ts",
+      "owner": "makeGroupLockableNow",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(groupId, (group) => ({ ...group, lockable: true }))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectData.ts",
+      "owner": "rebaseProjectData",
+      "writer": "rebaseProjectGroupAssignment",
+      "expression": "rebaseProjectGroupAssignment(from, to)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "saveProjectGroups",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(GROUPS_KEY, JSON.stringify(normalized))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "saveProjectGroupAssignments",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "setProjectGroupAssignment",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(next)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "removeProjectGroupAssignment",
+      "writer": "setProjectGroupAssignment",
+      "expression": "setProjectGroupAssignment(path, null)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "rebaseProjectGroupAssignment",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(next)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "updateProjectGroup",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups(current.map((group) => (group.id === id ? update(group) : group)))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "reorderProjectGroups",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups(next)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "deleteProjectGroup",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups(nextGroups)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "deleteProjectGroup",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "assignProjectsToNamedGroup",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups([...groups, group])",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "assignProjectsToNamedGroup",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(assignments)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "linkProjectGroup",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(id, (group) => ({ ...group, workspaceFile, workspaceFolders: [...folders], }))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "unlinkProjectGroup",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(id, (group) => { const { workspaceFile: _file, workspaceFolders: _folders, ...rest } = group; return rest; })",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "changeProjectGroupMembers",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(assignments)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectOrganizationControl.ts",
+      "owner": "createProjectOrganizationControl",
+      "writer": "setProjectGroupAssignment",
+      "expression": "setProjectGroupAssignment(context.projectCwd, groupId)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectOrganizationControl.ts",
+      "owner": "createProjectOrganizationControl",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(groupId, (group) => ({ ...group, name: label }))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectOrganizationControl.ts",
+      "owner": "createProjectOrganizationControl",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups(next)",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/recents.ts",
+      "owner": "save",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(KEY, JSON.stringify(next))",
+      "count": 1
+    },
+    {
+      "file": "src/features/projects/model/recents.ts",
+      "owner": "saveArchived",
+      "writer": "localStorage.setItem",
+      "expression": "localStorage.setItem(ARCHIVED_KEY, JSON.stringify(next))",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncGroups.ts",
+      "owner": "captureLocalGroupChanges",
+      "writer": "captureAssignments",
+      "expression": "captureAssignments(machineId, pathToProjectId, localIds)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncGroups.ts",
+      "owner": "captureAssignments",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(assignments)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncGroups.ts",
+      "owner": "applyRemoteGroupRecords",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups(groups)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncGroups.ts",
+      "owner": "applyRemoteGroupRecords",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(loadProjectGroupAssignments(loadProjectGroups()))",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncGroups.ts",
+      "owner": "applyRemoteGroupRecords",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(assignments)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncLock.ts",
+      "owner": "applyRemoteLockRecords",
+      "writer": "applyRemoteLockRecord",
+      "expression": "applyRemoteLockRecord(null)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncLock.ts",
+      "owner": "applyRemoteLockRecords",
+      "writer": "applyRemoteLockRecord",
+      "expression": "applyRemoteLockRecord(parsed)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncProjects.ts",
+      "owner": "carryAssignments",
+      "writer": "saveProjectGroupAssignments",
+      "expression": "saveProjectGroupAssignments(assignments)",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncProjects.ts",
+      "owner": "captureLocalProjectChanges",
+      "writer": "carryAssignments",
+      "expression": "carryAssignments(previous, owners)",
+      "count": 1
+    }
+  ]
+}

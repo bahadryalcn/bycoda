@@ -517,3 +517,16 @@ it("clears a failed default-role settings error after an explicit valid role sel
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(observed.patches.at(-1)?.replyExecution?.model).toBe("selected-model");
 });
+
+it("keeps task observation default off but lets the owner save a preference while unavailable", async () => {
+  await setup({}, "presence");
+  expect(container.textContent).toContain("Task observation readiness is not confirmed.");
+  const complete = container.querySelector<HTMLButtonElement>(
+    'button[role="switch"][aria-label="Notify when an observed task completes"]',
+  );
+  expect(complete?.disabled).toBe(false);
+  expect(complete?.getAttribute("aria-checked")).toBe("false");
+  expect(observed.patches).toEqual([]);
+  await act(async () => complete!.click());
+  expect(observed.patches.at(-1)).toMatchObject({ observationTaskDone: true });
+});

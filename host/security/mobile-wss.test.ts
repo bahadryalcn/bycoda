@@ -10,7 +10,7 @@ import { connect as connectTcp } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
 import { MobileTlsAuthority } from "./mobile-tls";
 import { createMobileWssGateway, type MobileWssOptions } from "./mobile-wss";
-import { createLanGateway, MobileLanAccess } from "../mobile-lan";
+import { createLanGateway, MobileLanAccess } from "../mobile/mobile-lan";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { createHostBulkHandler, HostBulkTransfers } from "../transport/http/bulk";
 import { WS_SUBPROTOCOL } from "../../src/shared/model/host-contracts";

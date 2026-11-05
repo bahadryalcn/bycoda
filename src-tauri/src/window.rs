@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +12,8 @@ use tauri::window::{Effect, EffectsBuilder};
 use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(1);
+static TOOLS_WINDOW_CREATION: Mutex<()> = Mutex::new(());
+const TOOLS_WINDOW_LABEL: &str = "tools-hub";
 
 /// The floating quick composer. It is a webview window but not a workspace:
 /// it has no sessions, takes no part in quitting, and is never shown by the
@@ -40,6 +42,43 @@ enum Stage {
     Polling,
     Confirming,
     Committing,
+    Exiting,
+}
+
+/// The persistence watchdog measures only time outside interactive close decisions.
+/// Repeated open/close notifications are idempotent and cannot reset its budget.
+struct CommitClock {
+    remaining: Duration,
+    running_since: Option<Instant>,
+    dialogs: HashSet<String>,
+}
+
+impl CommitClock {
+    fn new(now: Instant) -> Self {
+        Self {
+            remaining: COMMIT_TIMEOUT,
+            running_since: Some(now),
+            dialogs: HashSet::new(),
+        }
+    }
+
+    fn remaining_at(&self, now: Instant) -> Duration {
+        self.remaining
+            .saturating_sub(self.running_since.map_or(Duration::ZERO, |since| {
+                now.checked_duration_since(since).unwrap_or_default()
+            }))
+    }
+
+    fn dialog(&mut self, label: &str, open: bool, now: Instant) {
+        if open {
+            if self.dialogs.insert(label.to_owned()) && self.dialogs.len() == 1 {
+                self.remaining = self.remaining_at(now);
+                self.running_since = None;
+            }
+        } else if self.dialogs.remove(label) && self.dialogs.is_empty() {
+            self.running_since = Some(now);
+        }
+    }
 }
 
 /// One quit at a time, decided in one place. Quit events reach every window, so
@@ -55,6 +94,8 @@ struct QuitRun {
     in_flight: u32,
     /// The window showing the dialog, so its close can abort the quit.
     prompt: Option<String>,
+    commit_clock: Option<CommitClock>,
+    commit_owners: HashMap<String, Arc<crate::control::receipts::WindowIssuer>>,
 }
 
 static QUIT_RUN: Mutex<Option<QuitRun>> = Mutex::new(None);
@@ -80,6 +121,114 @@ pub fn open_tool_window(
 ) -> Result<(), String> {
     let url = tool_window_url(tool, cwd, grouped)?;
     build_session_window_with_url(app, true, None, Some(url)).map(|_| ())
+}
+
+fn host_tools_url(payload: &serde_json::Value) -> Result<tauri::WebviewUrl, String> {
+    const FIELDS: &[&str] = &[
+        "cwd",
+        "sessionId",
+        "title",
+        "projectName",
+        "branch",
+        "worktreeCwd",
+        "model",
+        "status",
+        "composerSessionId",
+        "composerWindow",
+        "onlyTab",
+        "initialMachine",
+        "initialTab",
+        "initialUrl",
+        "transferRequestId",
+    ];
+    let object = payload.as_object().ok_or("Invalid tools metadata")?;
+    for (key, value) in object {
+        if !FIELDS.contains(&key.as_str()) || !value.is_string() {
+            return Err("Invalid tools metadata field".into());
+        }
+        if value.as_str().unwrap_or_default().len() > 8192 {
+            return Err("Tools metadata field too large".into());
+        }
+    }
+    for key in ["cwd", "sessionId", "title"] {
+        if object
+            .get(key)
+            .and_then(|v| v.as_str())
+            .is_none_or(|v| v.trim().is_empty())
+        {
+            return Err("Missing tools metadata".into());
+        }
+    }
+    let json = serde_json::to_string(payload).map_err(|error| error.to_string())?;
+    if json.len() > 32768 {
+        return Err("Tools metadata too large".into());
+    }
+    let mut url = tauri::Url::parse("https://bycoda.invalid/index.html")
+        .map_err(|error| error.to_string())?;
+    url.query_pairs_mut().append_pair("hostTools", &json);
+    Ok(tauri::WebviewUrl::App(
+        format!("index.html?{}", url.query().unwrap_or_default()).into(),
+    ))
+}
+
+/// Returns false when a concurrent caller already created the hub.
+pub fn open_host_tools_window(
+    app: &AppHandle,
+    title: &str,
+    payload: &serde_json::Value,
+) -> Result<bool, String> {
+    let url = host_tools_url(payload)?;
+    if title.trim().is_empty() || title.len() > 1024 {
+        return Err("Invalid tools window title".into());
+    }
+    let _guard = TOOLS_WINDOW_CREATION
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if let Some(window) = app.get_webview_window(TOOLS_WINDOW_LABEL) {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(false);
+    }
+    let main = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .ok_or("missing main window config")?;
+    let config = configure_host_tools_window(main, title, url);
+    let creation = crate::native_window_lifecycle::admit_window(app, TOOLS_WINDOW_LABEL)?;
+    crate::ssh_window_lifecycle::register(TOOLS_WINDOW_LABEL)?;
+    let window = WebviewWindowBuilder::from_config(app, &config)
+        .map_err(|error| error.to_string())
+        .and_then(|builder| builder.build().map_err(|error| error.to_string()))
+        .inspect_err(|_| crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL))?;
+    creation.created(&window);
+    let _ = ensure_window_reachable(&window);
+    Ok(true)
+}
+
+fn configure_host_tools_window(
+    main: &tauri::utils::config::WindowConfig,
+    title: &str,
+    url: tauri::WebviewUrl,
+) -> tauri::utils::config::WindowConfig {
+    let mut config = main.clone();
+    config.label = TOOLS_WINDOW_LABEL.into();
+    config.url = url;
+    config.title = title.into();
+    config.width = 1000.0;
+    config.height = 760.0;
+    config.min_width = Some(360.0);
+    config.min_height = Some(320.0);
+    config.decorations = true;
+    config.title_bar_style = Default::default();
+    config.hidden_title = false;
+    config.transparent = true;
+    config.resizable = true;
+    config.visible = true;
+    config.focus = true;
+    config
 }
 
 fn tool_window_url(tool: &str, cwd: &str, grouped: bool) -> Result<tauri::WebviewUrl, String> {
@@ -115,11 +264,13 @@ fn tool_window_url(tool: &str, cwd: &str, grouped: bool) -> Result<tauri::Webvie
 /// take, so two quick pop-outs cannot swap or overwrite each other's tabs.
 pub fn open_transfer_window(
     app: &AppHandle,
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: Option<(f64, f64)>,
 ) -> Result<(), String> {
     open_transfer_window_position(
         app,
+        source,
         payload,
         position.map(|(x, y)| tauri::LogicalPosition::new(x, y).into()),
     )
@@ -129,19 +280,29 @@ pub fn open_transfer_window(
 /// desktops. Browser screen coordinates alone do not share that coordinate space.
 pub fn open_transfer_window_at_point(
     app: &AppHandle,
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: tauri::PhysicalPosition<i32>,
 ) -> Result<(), String> {
-    open_transfer_window_position(app, payload, Some(position.into()))
+    open_transfer_window_position(app, source, payload, Some(position.into()))
 }
 
 fn open_transfer_window_position(
     app: &AppHandle,
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: Option<tauri::Position>,
 ) -> Result<(), String> {
     // The source keeps its tab until the destination has actually mounted.
-    let (window, ready) = build_session_window(app, true, Some(WindowSeed { payload, position }))?;
+    let (window, ready) = build_session_window(
+        app,
+        true,
+        Some(WindowSeed {
+            source,
+            payload,
+            position,
+        }),
+    )?;
     let state = app.state::<crate::window_transfer::WindowTransferState>();
     // Registered before build below; boot can acknowledge before build returns.
     let result = ready
@@ -168,6 +329,7 @@ fn open_transfer_window_position(
 }
 
 struct WindowSeed {
+    source: Arc<crate::control::receipts::WindowIssuer>,
     payload: String,
     position: Option<tauri::Position>,
 }
@@ -361,8 +523,12 @@ fn build_session_window_with_url(
     let ready = if let Some(seed) = seed {
         // Staged before the webview exists, so its boot always finds it.
         let state = app.state::<crate::window_transfer::WindowTransferState>();
-        state.stage(&label, seed.payload)?;
-        Some(state.watch_ready(&label)?)
+        let ready = state.watch_ready_owned(&label, seed.source, &seed.payload)?;
+        if let Err(error) = state.stage(&label, seed.payload) {
+            state.discard(&label);
+            return Err(error);
+        }
+        Some(ready)
     } else {
         None
     };
@@ -438,11 +604,20 @@ impl Rgb {
 
 /// Desktop blur goes on after the first UI paint and only in dark mode.
 #[tauri::command]
-pub fn set_window_glass_enabled(window: WebviewWindow, enabled: bool, background: Rgb) {
+pub fn set_window_glass_enabled(
+    window: WebviewWindow,
+    enabled: bool,
+    background: Rgb,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        if crate::macos::ns_window(&window).is_none() {
+            return Err("Native window is unavailable".into());
+        }
         if enabled {
-            let _ = window.set_background_color(Some(Color(0, 0, 0, 3)));
+            window
+                .set_background_color(Some(Color(0, 0, 0, 3)))
+                .map_err(|e| e.to_string())?;
             crate::macos::enable_glass(&window);
         } else {
             crate::macos::disable_glass(&window, background.r, background.g, background.b);
@@ -451,27 +626,36 @@ pub fn set_window_glass_enabled(window: WebviewWindow, enabled: bool, background
     #[cfg(target_os = "windows")]
     {
         if enabled {
-            let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-            let _ = window.set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build());
+            window
+                .set_background_color(Some(Color(0, 0, 0, 0)))
+                .map_err(|e| e.to_string())?;
+            window
+                .set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build())
+                .map_err(|e| e.to_string())?;
         } else {
-            let _ = window.set_effects(None);
-            let _ = window.set_background_color(Some(background.fill()));
+            window.set_effects(None).map_err(|e| e.to_string())?;
+            window
+                .set_background_color(Some(background.fill()))
+                .map_err(|e| e.to_string())?;
         }
     }
     #[cfg(target_os = "linux")]
     {
         // No system blur API on Linux: transparency only. The compositor
         // (e.g. Mutter) blends the translucent CSS glass over the desktop.
-        let _ = window.set_background_color(Some(if enabled {
-            Color(0, 0, 0, 0)
-        } else {
-            background.fill()
-        }));
+        window
+            .set_background_color(Some(if enabled {
+                Color(0, 0, 0, 0)
+            } else {
+                background.fill()
+            }))
+            .map_err(|e| e.to_string())?;
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = (window, enabled, background);
     }
+    Ok(())
 }
 
 /// Close with a running chat hides the webview so the harness child keeps going.
@@ -605,6 +789,8 @@ fn begin_run(slot: &mut Option<QuitRun>, id: u32, labels: Vec<String>) -> bool {
         replied: HashSet::new(),
         in_flight: 0,
         prompt: None,
+        commit_clock: None,
+        commit_owners: HashMap::new(),
     });
     true
 }
@@ -647,6 +833,7 @@ fn open_commit(slot: &mut Option<QuitRun>, id: u32, labels: Vec<String>) -> bool
     };
     run.stage = Stage::Committing;
     run.pending = labels.into_iter().collect();
+    run.commit_clock = Some(CommitClock::new(Instant::now()));
     true
 }
 
@@ -657,7 +844,14 @@ fn record_ready(slot: &mut Option<QuitRun>, id: u32, label: &str) -> Next {
     if run.id != id || run.stage != Stage::Committing {
         return Next::Wait;
     }
-    run.pending.remove(label);
+    if run
+        .commit_clock
+        .as_ref()
+        .is_some_and(|clock| clock.dialogs.contains(label))
+        || !run.pending.remove(label)
+    {
+        return Next::Wait;
+    }
     if run.pending.is_empty() {
         Next::Exit
     } else {
@@ -669,6 +863,13 @@ fn drop_window(slot: &mut Option<QuitRun>, label: &str) -> Next {
     let Some(run) = slot.as_mut() else {
         return Next::Wait;
     };
+    if run
+        .commit_clock
+        .as_ref()
+        .is_some_and(|clock| clock.dialogs.contains(label))
+    {
+        return Next::Abort;
+    }
     if run.stage == Stage::Confirming {
         return if run.prompt.as_deref() == Some(label) {
             Next::Abort
@@ -764,6 +965,52 @@ pub fn quit_decision(app: AppHandle, window: WebviewWindow, id: u32, confirmed: 
     }
 }
 
+fn record_commit_dialog(
+    slot: &mut Option<QuitRun>,
+    id: u32,
+    label: &str,
+    issuer: &Arc<crate::control::receipts::WindowIssuer>,
+    open: bool,
+    now: Instant,
+) -> Result<(), String> {
+    let run = slot
+        .as_mut()
+        .filter(|run| run.id == id && run.stage == Stage::Committing)
+        .ok_or("Quit commit is no longer active")?;
+    if !run.pending.contains(label)
+        || !run
+            .commit_owners
+            .get(label)
+            .is_some_and(|owner| Arc::ptr_eq(owner, issuer))
+        || !issuer.is_live()
+    {
+        return Err("Quit participant is no longer current".into());
+    }
+    run.commit_clock
+        .as_mut()
+        .ok_or("Quit commit clock is unavailable")?
+        .dialog(label, open, now);
+    Ok(())
+}
+
+/// The caller must receive this acknowledgement before opening close dialogs.
+#[tauri::command]
+pub fn quit_commit_dialog(window: WebviewWindow, id: u32, open: bool) -> Result<(), String> {
+    let issuer = crate::control::receipts::existing(&window)?;
+    issuer.with_live(|| {
+        record_commit_dialog(
+            &mut *QUIT_RUN
+                .lock()
+                .map_err(|_| "Quit coordinator unavailable")?,
+            id,
+            window.label(),
+            &issuer,
+            open,
+            Instant::now(),
+        )
+    })
+}
+
 /// One window has persisted. The last one out turns the lights off, so a slow
 /// window cannot lose its workspace to a faster window's exit.
 #[tauri::command]
@@ -771,16 +1018,36 @@ pub fn quit_ready(app: AppHandle, window: WebviewWindow, id: u32, persisted: boo
     // A window that could not save its workspace keeps the app open, the way a
     // failed persist did before the handshake existed. The windows that did
     // save are staying too, so take them back out of quitting.
-    if !persisted {
-        clear_run(id);
-        let _ = app.emit(QUIT_ABORTED, ());
+    let Ok(issuer) = crate::control::receipts::existing(&window) else {
         return;
+    };
+    let next = issuer
+        .with_live(|| {
+            let mut guard = QUIT_RUN
+                .lock()
+                .map_err(|_| "Quit coordinator unavailable")?;
+            let valid = guard.as_ref().is_some_and(|run| {
+                run.id == id
+                    && run.stage == Stage::Committing
+                    && run.pending.contains(window.label())
+                    && run
+                        .commit_owners
+                        .get(window.label())
+                        .is_some_and(|owner| Arc::ptr_eq(owner, &issuer))
+            });
+            if !valid {
+                return Ok(Next::Wait);
+            }
+            if !persisted {
+                *guard = None;
+                return Ok(Next::Abort);
+            }
+            Ok(record_ready(&mut guard, id, window.label()))
+        })
+        .unwrap_or(Next::Wait);
+    if next == Next::Abort {
+        let _ = app.emit(QUIT_ABORTED, ());
     }
-    let next = record_ready(
-        &mut QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()),
-        id,
-        window.label(),
-    );
     if next == Next::Exit {
         confirm_quit(app);
     }
@@ -798,7 +1065,11 @@ pub fn forget_quit_window(app: &AppHandle, label: &str) {
     match next {
         Next::Confirm => start_confirm(app, id),
         Next::Exit => confirm_quit(app.clone()),
-        Next::Abort => clear_run(id),
+        Next::Abort => {
+            clear_run(id);
+            // ast-grep-ignore: rust-emit-broadcast -- Quit cancellation must release every participating window's local quit state.
+            let _ = app.emit(QUIT_ABORTED, ());
+        }
         Next::Wait => {}
     }
 }
@@ -856,14 +1127,33 @@ fn start_confirm(app: &AppHandle, id: u32) {
 }
 
 fn start_commit(app: &AppHandle, id: u32) {
-    let labels = workspace_labels(app);
-    let empty = labels.is_empty();
-    if !open_commit(
-        &mut QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()),
-        id,
-        labels,
-    ) {
+    let windows = workspace_windows(app);
+    let labels: Vec<String> = windows
+        .iter()
+        .map(|window| window.label().to_owned())
+        .collect();
+    let owners: Result<HashMap<_, _>, _> = windows
+        .iter()
+        .map(|window| {
+            crate::control::receipts::capture(window)
+                .map(|owner| (window.label().to_owned(), owner))
+        })
+        .collect();
+    let Ok(owners) = owners else {
+        clear_run(id);
+        // ast-grep-ignore: rust-emit-broadcast -- Failed owner capture cancels the shared quit attempt in every participating window.
+        let _ = app.emit(QUIT_ABORTED, ());
         return;
+    };
+    let empty = labels.is_empty();
+    {
+        let mut guard = QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner());
+        if !open_commit(&mut guard, id, labels) {
+            return;
+        }
+        if let Some(run) = guard.as_mut() {
+            run.commit_owners = owners;
+        }
     }
     if empty {
         confirm_quit(app.clone());
@@ -913,10 +1203,70 @@ fn prompt_window(app: &AppHandle, replied: &HashSet<String>) -> Option<String> {
 }
 
 /// Nothing waits forever: a webview that never answers still lets the app quit.
+enum CommitDeadline {
+    Stop,
+    Wait(Duration),
+    Exit,
+    Abort,
+}
+
+fn commit_deadline(slot: &mut Option<QuitRun>, id: u32, now: Instant) -> CommitDeadline {
+    let Some(run) = slot
+        .as_mut()
+        .filter(|run| run.id == id && run.stage == Stage::Committing)
+    else {
+        return CommitDeadline::Stop;
+    };
+    // A retired page cannot keep a pause alive or answer for its replacement.
+    if run.pending.iter().any(|label| {
+        run.commit_owners
+            .get(label)
+            .is_some_and(|owner| !owner.is_live())
+    }) {
+        *slot = None;
+        return CommitDeadline::Abort;
+    }
+    let Some(clock) = run.commit_clock.as_ref() else {
+        return CommitDeadline::Stop;
+    };
+    if !clock.dialogs.is_empty() {
+        return CommitDeadline::Wait(Duration::from_millis(250));
+    }
+    let remaining = clock.remaining_at(now);
+    if remaining.is_zero() {
+        run.stage = Stage::Exiting;
+        CommitDeadline::Exit
+    } else {
+        CommitDeadline::Wait(remaining)
+    }
+}
+
 fn watch_stage(app: &AppHandle, id: u32, stage: Stage, wait: Duration) {
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(wait);
+        if stage == Stage::Committing {
+            loop {
+                let decision = commit_deadline(
+                    &mut QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()),
+                    id,
+                    Instant::now(),
+                );
+                match decision {
+                    CommitDeadline::Stop => return,
+                    CommitDeadline::Wait(wait) => std::thread::sleep(wait),
+                    CommitDeadline::Exit => {
+                        confirm_quit(app);
+                        return;
+                    }
+                    CommitDeadline::Abort => {
+                        // ast-grep-ignore: rust-emit-broadcast -- A shared quit deadline abort must release all participants, not only the originating window.
+                        let _ = app.emit(QUIT_ABORTED, ());
+                        return;
+                    }
+                }
+            }
+        }
         let stalled = QUIT_RUN
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -929,6 +1279,7 @@ fn watch_stage(app: &AppHandle, id: u32, stage: Stage, wait: Duration) {
             Stage::Polling => start_confirm(&app, id),
             Stage::Committing => confirm_quit(app),
             Stage::Confirming => clear_run(id),
+            Stage::Exiting => {}
         }
     });
 }
@@ -940,27 +1291,70 @@ fn clear_run(id: u32) {
     }
 }
 
-/// Persist already happened in JS. Show windows so window-state doesn't save hidden.
-pub fn confirm_quit(app: AppHandle) {
-    *QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()) = None;
-    ALLOW_EXIT.store(true, Ordering::SeqCst);
-    for window in workspace_windows(&app) {
-        let _ = window.show();
-    }
-    // Belt and braces. `RunEvent::Exit` reaps too, and it also runs before the
-    // process is gone, but a macOS terminate that skips the run loop would not
-    // reach it — and `kill_all`'s SIGKILL wait only works while we're alive.
-    if let Some(host) = app.try_state::<crate::harness::HarnessHost>() {
-        host.kill_all();
-    }
-    if let Some(host) = app.try_state::<crate::pty::PtyHost>() {
-        host.kill_all();
-    }
-    app.exit(0);
-}
+mod quit_finalization;
+pub use quit_finalization::confirm_quit;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn host_tools_url_accepts_only_bounded_metadata() {
+        let metadata = serde_json::json!({"cwd":"C:/project", "sessionId":"s", "title":"A & B", "transferRequestId":"r"});
+        let url = super::host_tools_url(&metadata).unwrap();
+        let tauri::WebviewUrl::App(path) = url else {
+            panic!("expected app URL")
+        };
+        let parsed =
+            tauri::Url::parse(&format!("https://bycoda.invalid/{}", path.display())).unwrap();
+        let value = parsed
+            .query_pairs()
+            .find(|(key, _)| key == "hostTools")
+            .unwrap()
+            .1;
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&value).unwrap(),
+            metadata
+        );
+        assert!(super::host_tools_url(
+            &serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "browserDraft":{}})
+        )
+        .is_err());
+        assert!(super::host_tools_url(&serde_json::json!({"cwd":"x", "sessionId":"s"})).is_err());
+        assert!(super::host_tools_url(
+            &serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "model":"x".repeat(8193)})
+        )
+        .is_err());
+        assert!(super::host_tools_url(
+            &serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "unknown":"x"})
+        )
+        .is_err());
+        assert!(super::host_tools_url(&serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t", "model":"x".repeat(8000), "branch":"x".repeat(8000), "status":"x".repeat(8000), "projectName":"x".repeat(8000), "worktreeCwd":"x".repeat(1000)})).is_err());
+    }
+
+    #[test]
+    fn host_tools_config_preserves_main_webview_profile_and_browser_args() {
+        let main = tauri::utils::config::WindowConfig {
+            additional_browser_args: Some("--remote-debugging-port=9222".into()),
+            data_directory: Some("profile".into()),
+            title_bar_style: tauri::TitleBarStyle::Overlay,
+            hidden_title: true,
+            transparent: true,
+            ..Default::default()
+        };
+        let url =
+            super::host_tools_url(&serde_json::json!({"cwd":"x", "sessionId":"s", "title":"t"}))
+                .unwrap();
+        let config = super::configure_host_tools_window(&main, "Tools", url.clone());
+        assert_eq!(config.additional_browser_args, main.additional_browser_args);
+        assert_eq!(config.data_directory, main.data_directory);
+        assert_eq!(config.label, "tools-hub");
+        assert_eq!(config.title_bar_style, tauri::TitleBarStyle::Visible);
+        assert!(!config.hidden_title && config.transparent);
+        assert_eq!(config.url, url);
+        assert_eq!(
+            (config.min_width, config.min_height),
+            (Some(360.0), Some(320.0))
+        );
+    }
     use super::*;
 
     #[test]
@@ -1140,6 +1534,102 @@ mod tests {
 
     fn in_flight(slot: &Option<QuitRun>) -> Option<u32> {
         slot.as_ref().map(|run| run.in_flight)
+    }
+
+    #[test]
+    fn commit_clock_pauses_for_all_dialogs_without_resetting_elapsed_work() {
+        let start = Instant::now();
+        let mut clock = CommitClock::new(start);
+        clock.dialog("main", true, start + Duration::from_secs(3));
+        clock.dialog("main", true, start + Duration::from_secs(30));
+        clock.dialog("window-2", true, start + Duration::from_secs(40));
+        clock.dialog("main", false, start + Duration::from_secs(50));
+        assert_eq!(
+            clock.remaining_at(start + Duration::from_secs(90)),
+            Duration::from_secs(7)
+        );
+        clock.dialog("window-2", false, start + Duration::from_secs(100));
+        clock.dialog("window-2", false, start + Duration::from_secs(101));
+        assert_eq!(
+            clock.remaining_at(start + Duration::from_secs(106)),
+            Duration::from_secs(1)
+        );
+        assert!(clock
+            .remaining_at(start + Duration::from_secs(107))
+            .is_zero());
+    }
+
+    fn committing(now: Instant) -> (Option<QuitRun>, Arc<crate::control::receipts::WindowIssuer>) {
+        let mut slot = polling(&["main"]);
+        close_poll(&mut slot, 1);
+        open_commit(&mut slot, 1, vec!["main".into()]);
+        let issuer = Arc::new(crate::control::receipts::WindowIssuer::default());
+        let run = slot.as_mut().unwrap();
+        run.commit_clock = Some(CommitClock::new(now));
+        run.commit_owners.insert("main".into(), issuer.clone());
+        (slot, issuer)
+    }
+
+    #[test]
+    fn commit_dialog_requires_original_pending_window_and_run() {
+        let now = Instant::now();
+        let (mut slot, issuer) = committing(now);
+        let replacement = Arc::new(crate::control::receipts::WindowIssuer::default());
+        assert!(record_commit_dialog(&mut slot, 99, "main", &issuer, true, now).is_err());
+        assert!(record_commit_dialog(&mut slot, 1, "other", &issuer, true, now).is_err());
+        assert!(record_commit_dialog(&mut slot, 1, "main", &replacement, true, now).is_err());
+        record_commit_dialog(&mut slot, 1, "main", &issuer, true, now).unwrap();
+        assert_eq!(record_ready(&mut slot, 1, "main"), Next::Wait);
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(60)),
+            CommitDeadline::Wait(_)
+        ));
+        record_commit_dialog(
+            &mut slot,
+            1,
+            "main",
+            &issuer,
+            false,
+            now + Duration::from_secs(60),
+        )
+        .unwrap();
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(69)),
+            CommitDeadline::Wait(_)
+        ));
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(70)),
+            CommitDeadline::Exit
+        ));
+        assert!(record_commit_dialog(&mut slot, 1, "main", &issuer, true, now).is_err());
+    }
+
+    #[test]
+    fn destroyed_or_reloaded_dialog_owner_aborts_instead_of_forcing_exit() {
+        let now = Instant::now();
+        let (mut slot, issuer) = committing(now);
+        record_commit_dialog(&mut slot, 1, "main", &issuer, true, now).unwrap();
+        assert_eq!(drop_window(&mut slot, "main"), Next::Abort);
+        tauri::Resource::close(issuer);
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + Duration::from_secs(60)),
+            CommitDeadline::Abort
+        ));
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn stalled_noninteractive_commit_still_has_a_bounded_deadline() {
+        let now = Instant::now();
+        let (mut slot, _) = committing(now);
+        assert!(matches!(
+            commit_deadline(&mut slot, 99, now + COMMIT_TIMEOUT),
+            CommitDeadline::Stop
+        ));
+        assert!(matches!(
+            commit_deadline(&mut slot, 1, now + COMMIT_TIMEOUT),
+            CommitDeadline::Exit
+        ));
     }
 
     #[test]

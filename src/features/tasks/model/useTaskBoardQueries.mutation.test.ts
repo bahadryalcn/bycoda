@@ -13,11 +13,14 @@ import { HOST_GOALS } from "./hostGoals";
 import { HOST_SETTINGS } from "./hostSettings";
 import { HOST_STEWARDS } from "./hostStewards";
 import { HOST_TASKS, HOST_TASKS_TODO } from "./hostTasks";
+import { HOST_SPRINTS } from "./hostSprints";
+import { planningCoordinator } from "./sprintClient";
 import { useTaskBoardQueries } from "./useTaskBoardQueries";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   capabilities: vi.fn(),
+  projects: vi.fn(),
   listTasks: vi.fn(),
   rememberTasks: vi.fn(),
   listGoals: vi.fn(),
@@ -29,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../automations/model/machineSnapshot", () => ({
   machineCapabilities: mocks.capabilities,
+  machineProjects: mocks.projects,
   invalidateMachineSnapshot: vi.fn(),
 }));
 vi.mock("./taskClient", async (original) => ({
@@ -54,8 +58,8 @@ vi.mock("./settingsClient", async (original) => ({
 
 type Hook = ReturnType<typeof useTaskBoardQueries>;
 let latest: Hook;
-function Probe() {
-  const probed = useTaskBoardQueries();
+function Probe({ scope = "all" }: { scope?: string }) {
+  const probed = useTaskBoardQueries(scope);
   // Publish the committed value to the test after render, not during it.
   useLayoutEffect(() => {
     latest = probed;
@@ -63,6 +67,14 @@ function Probe() {
   return null;
 }
 const Harness = withQueryClient(Probe);
+function PlanningProbe({ scope }: { scope: string }) {
+  const scoped = useTaskBoardQueries(scope, { planningCatalog: true });
+  useLayoutEffect(() => {
+    latest = scoped;
+  });
+  return null;
+}
+const PlanningHarness = withQueryClient(PlanningProbe);
 
 let container: HTMLDivElement;
 let root: Root;
@@ -90,9 +102,14 @@ const goal = (id: string, machineId: string, title = id): BoardGoal =>
 const steward = (id: string, machineId: string, title = id): BoardSteward =>
   ({ id, title, machineId, machineName: `Host ${machineId}` }) as BoardSteward;
 const limits = (machineId: string, dailyMinutes: number): MachineLimits =>
-  ({ machineId, machineName: `Host ${machineId}`, dailyMinutes, usedMinutes: 0 }) as unknown as MachineLimits;
+  ({
+    machineId,
+    machineName: `Host ${machineId}`,
+    dailyMinutes,
+    usedMinutes: 0,
+  }) as unknown as MachineLimits;
 
-const result = <T,>(machineId: string, data: T[]): MachineResult<T> => ({
+const result = <T>(machineId: string, data: T[]): MachineResult<T> => ({
   machineId,
   machineName: `Host ${machineId}`,
   status: "ok",
@@ -142,6 +159,7 @@ beforeEach(async () => {
   mocks.invoke.mockImplementation(async (command: string) =>
     command === "remote_machines" ? world.machines : null,
   );
+  mocks.projects.mockResolvedValue([]);
   mocks.capabilities.mockResolvedValue([
     HOST_TASKS,
     HOST_TASKS_TODO,
@@ -150,7 +168,7 @@ beforeEach(async () => {
     HOST_SETTINGS,
   ]);
   const pick =
-    <T,>(store: Record<string, T[]>, kind: keyof typeof holds) =>
+    <T>(store: Record<string, T[]>, kind: keyof typeof holds) =>
     async (machines: RemoteMachine[]) =>
       (take(kind) as Promise<MachineResult<T>[]> | undefined) ??
       machines.map((entry) => result(entry.id, store[entry.id] ?? []));
@@ -243,7 +261,10 @@ describe("useTaskBoardQueries confirmed writers", () => {
     const removing = await refreshWithHeldRead("goals");
     await act(async () => latest.removeGoal(goal("g1", "a")));
     expect(latest.board.goals).toEqual([]);
-    expect(mocks.rememberGoal).toHaveBeenLastCalledWith(expect.objectContaining({ id: "g1" }), true);
+    expect(mocks.rememberGoal).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "g1" }),
+      true,
+    );
     await removing.release([result("a", [goal("g1", "a", "Confirmed goal")])]);
     expect(latest.board.goals).toEqual([]);
   });
@@ -284,4 +305,138 @@ describe("useTaskBoardQueries confirmed writers", () => {
     await until(() => latest.board.tasks.length === 2);
     expect(titles(latest.board.tasks)).toEqual(["Confirmed title", "From host"]);
   });
+});
+
+it("does not probe an unrelated machine until All projects is requested", async () => {
+  world.machines.push(machine("b"));
+  await act(async () =>
+    root.render(createElement(Harness, { scope: JSON.stringify(["env-a", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && !latest.board.pending);
+  expect(mocks.capabilities.mock.calls.map(([entry]) => entry.id)).toEqual(["a"]);
+  await act(async () => latest.refresh(true));
+  expect(mocks.capabilities.mock.calls.every(([entry]) => entry.id === "a")).toBe(true);
+  await act(async () => root.render(createElement(Harness, { scope: "all" })));
+  await until(() => mocks.capabilities.mock.calls.some(([entry]) => entry.id === "b"));
+});
+
+it("keeps a saved local planning authority for an initially selected legacy remote source without reading unrelated collections", async () => {
+  world.machines.push(machine("b"));
+  mocks.capabilities.mockImplementation(async (entry: RemoteMachine) => [
+    HOST_TASKS,
+    HOST_TASKS_TODO,
+    HOST_GOALS,
+    HOST_STEWARDS,
+    HOST_SETTINGS,
+    ...(entry.id === "a" ? [HOST_SPRINTS] : []),
+  ]);
+  mocks.projects.mockImplementation(async (entry: RemoteMachine) => [
+    { id: "project", cwd: `/${entry.id}`, name: `Project ${entry.id}` },
+  ]);
+  await act(async () =>
+    root.render(createElement(PlanningHarness, { scope: JSON.stringify(["env-b", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && latest.board.projects.length === 2);
+  expect(latest.board.planningMachines.map((entry) => entry.id)).toEqual(["a", "b"]);
+  expect(planningCoordinator(latest.board.planningMachines, "env-a")?.id).toBe("a");
+  for (const mock of [mocks.listTasks, mocks.listGoals, mocks.listStewards, mocks.listLimits])
+    expect(
+      mock.mock.calls.every(([entries]) =>
+        entries.every((entry: RemoteMachine) => entry.id === "b"),
+      ),
+    ).toBe(true);
+  const collectionCalls = [
+    mocks.listTasks,
+    mocks.listGoals,
+    mocks.listStewards,
+    mocks.listLimits,
+  ].map((mock) => mock.mock.calls.length);
+  mocks.projects.mockImplementation(async (entry: RemoteMachine) => [
+    { id: "project", cwd: `/${entry.id}`, name: `Refreshed ${entry.id}` },
+  ]);
+  await act(async () => latest.refresh(true, "a"));
+  expect(latest.board.projects.find((entry) => entry.environmentId === "env-a")?.name).toBe(
+    "Refreshed a",
+  );
+  expect(
+    mocks.capabilities.mock.calls.some(([entry, fresh]) => entry.id === "a" && fresh === true),
+  ).toBe(true);
+  expect(
+    [mocks.listTasks, mocks.listGoals, mocks.listStewards, mocks.listLimits].map(
+      (mock) => mock.mock.calls.length,
+    ),
+  ).toEqual(collectionCalls);
+  await act(async () =>
+    root.render(createElement(PlanningHarness, { scope: JSON.stringify(["env-a", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && latest.board.machines[0]?.id === "a");
+  expect(latest.board.planningMachines.find((entry) => entry.environmentId === "env-a")?.id).toBe(
+    "a",
+  );
+  expect(latest.board.projects.map((entry) => entry.environmentId)).toEqual(["env-a", "env-b"]);
+});
+
+it("does not use another host's answer to finish a newly selected host's loading state", async () => {
+  world.machines.push(machine("b"));
+  await act(async () =>
+    root.render(createElement(Harness, { scope: JSON.stringify(["env-a", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && !latest.board.pending);
+  const held = hold("tasks");
+  await act(async () =>
+    root.render(createElement(Harness, { scope: JSON.stringify(["env-b", "project"]) })),
+  );
+  await settle();
+  expect(latest.board.hasTaskAnswer).toBe(false);
+  expect(latest.board.pending).toBe(true);
+  expect(latest.board.tasks).toEqual([]);
+  await act(async () => held.resolve([result("b", [])]));
+  await until(() => latest.board.hasTaskAnswer);
+});
+
+it("publishes project discovery independently and retains last-known projects after failure", async () => {
+  world.machines.push(machine("b"));
+  let release!: (value: unknown) => void;
+  const remote = new Promise((resolve) => {
+    release = resolve;
+  });
+  mocks.projects.mockImplementation(async (entry: RemoteMachine) =>
+    entry.id === "b" ? remote : [{ id: "project", cwd: "/a", name: "Local project" }],
+  );
+  await act(async () => root.render(createElement(Harness)));
+  await until(() => latest.board.projects.length === 1);
+  expect(latest.board.projects[0].name).toBe("Local project");
+  await act(async () => release([{ id: "remote", cwd: "/b", name: "Remote project" }]));
+  await until(() => latest.board.projects.length === 2);
+  mocks.projects.mockRejectedValue(new Error("Project discovery unavailable"));
+  await act(async () => latest.refresh(true));
+  expect(latest.board.projects).toHaveLength(2);
+  expect(latest.board.error).toContain("Project discovery unavailable");
+});
+
+it("retains limits as stale after failure and retries only their host", async () => {
+  world.machines.push(machine("b"));
+  world.limits.b = limits("b", 30);
+  await mount();
+  mocks.listLimits.mockImplementation(async (entries: RemoteMachine[]) => {
+    if (entries[0].id === "a") throw new Error("Limits unavailable");
+    return [world.limits.b];
+  });
+  await act(async () => latest.refresh(true, "a"));
+  expect(latest.board.limits.find((entry) => entry.machineId === "a")).toMatchObject({
+    stale: true,
+    dailyMinutes: 60,
+  });
+  expect(latest.board.limitErrors).toEqual([
+    { machineId: "a", machineName: "Host a", error: "Limits unavailable" },
+  ]);
+  expect(latest.board.taskError).toBeFalsy();
+  mocks.listLimits.mockClear();
+  mocks.listLimits.mockResolvedValue([world.limits.a]);
+  await act(async () => latest.refresh(true, "a"));
+  expect(
+    mocks.listLimits.mock.calls.map(([entries]) => entries.map((entry: RemoteMachine) => entry.id)),
+  ).toEqual([["a"]]);
+  expect(latest.board.limitErrors).toEqual([]);
+  expect(latest.board.limits.find((entry) => entry.machineId === "a")?.stale).toBe(false);
 });

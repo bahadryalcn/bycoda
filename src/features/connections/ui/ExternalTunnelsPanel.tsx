@@ -1,4 +1,4 @@
-import { Row } from "../../settings/ui/settingsControls";
+import { Row } from "../../settings/public/settingsControls";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
 import { Divider } from "../../../shared/ui/Divider";

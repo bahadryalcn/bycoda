@@ -18,7 +18,9 @@ import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
  */
 export function restorePerformanceTraceDefault() {
   savePerformanceTraceEnabled(false);
-  window.dispatchEvent(new StorageEvent("storage", { key: PERFORMANCE_TRACE_KEY, storageArea: localStorage }));
+  window.dispatchEvent(
+    new StorageEvent("storage", { key: PERFORMANCE_TRACE_KEY, storageArea: localStorage }),
+  );
 }
 
 /** Timings only: the copied JSON holds stage names, times, durations and counters. */

@@ -115,10 +115,15 @@ export function usePacedText(
   useEffect(() => {
     if (!streaming && !revealOnMount) return;
     const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    const update = () =>
-      setDirect(
-        !!preference?.matches || window.localStorage.getItem("bycoda-low-latency-text") === "true",
-      );
+    const update = () => {
+      let lowLatency = false;
+      try {
+        lowLatency = window.localStorage.getItem("bycoda-low-latency-text") === "true";
+      } catch {
+        // Storage can be unavailable in restricted webviews.
+      }
+      setDirect(!!preference?.matches || lowLatency);
+    };
     update();
     preference?.addEventListener?.("change", update);
     window.addEventListener("storage", update);

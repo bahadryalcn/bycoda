@@ -4,10 +4,11 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t } from "../../../shared/i18n";
-import { remoteRequest } from "../../connections/model/connections";
-import type { HostSession } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/public/connections";
+import type { HostSession } from "../../connections";
 import type { BackgroundSessionTarget } from "../model/backgroundSession";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 
@@ -46,7 +47,10 @@ export function TaskSessionSheet({
         setError("");
         if (known.status === "running") timer = setTimeout(load, 3000);
       } catch (reason) {
-        if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+        if (alive) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          if (!known || known.status === "running") timer = setTimeout(load, 3000);
+        }
       }
     };
     void load();
@@ -73,7 +77,14 @@ export function TaskSessionSheet({
       <div className="task-session-preview">
         <div className="task-session-toolbar">
           <span role="status">
-            <Badge tone={session?.status === "running" ? "info" : "neutral"}>
+            <Badge
+              tone={session?.status === "running" ? "accent" : "neutral"}
+              icon={
+                session?.status === "running" ? (
+                  <StatusDot tone="accent" label={t("Running")} />
+                ) : undefined
+              }
+            >
               {session
                 ? t(
                     session.status === "running"
@@ -114,9 +125,7 @@ export function TaskSessionSheet({
             </Button>
           </Alert>
         ) : null}
-        {!session && !error ? (
-          <LoadingText />
-        ) : null}
+        {!session && !error ? <LoadingText /> : null}
         {conversation.map((block) => (
           <section className="task-session-message" data-role={block.role} key={block.id}>
             <h3>{t(block.role === "user" ? "You" : "Assistant")}</h3>

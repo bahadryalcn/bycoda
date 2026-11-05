@@ -217,14 +217,14 @@ export function NoteMarkdownEditor({
           drop: (event) => [...(event.dataTransfer?.types ?? [])].includes("Files"),
         }),
         EditorView.updateListener.of((update) => {
+          if (update.docChanged) documentValue.current = update.state.doc.toString();
           if (update.docChanged || update.startState.readOnly !== update.state.readOnly)
             inputRef.current?.changed();
           if (!update.docChanged) return;
           if (update.transactions.every((tr) => tr.annotation(externalChange))) {
             return;
           }
-          const next = update.state.doc.toString();
-          documentValue.current = next;
+          const next = documentValue.current!;
           onChangeRef.current(next);
         }),
       ],
@@ -234,7 +234,7 @@ export function NoteMarkdownEditor({
       () => ({
         snapshot: {
           inputKind: "codemirror",
-          text: view.state.doc.toString(),
+          text: documentValue.current ?? view.state.doc.toString(),
           canonicalValue: valueRef.current,
           readOnly: view.state.readOnly,
           composing,
@@ -244,7 +244,8 @@ export function NoteMarkdownEditor({
         ...(composing ||
         settling ||
         view.compositionStarted ||
-        normalizeLineBreaks(valueRef.current) !== view.state.doc.toString()
+        normalizeLineBreaks(valueRef.current) !==
+          (documentValue.current ?? view.state.doc.toString())
           ? { busy: "notes-view-reconciliation" }
           : {}),
       }),
@@ -303,7 +304,7 @@ export function NoteMarkdownEditor({
     if (!view) return;
     const next = normalizeLineBreaks(value);
     // The local update listener already materialized this exact document for onChange.
-    const current = view.state.doc.toString();
+    const current = documentValue.current ?? view.state.doc.toString();
     if (next === current) {
       documentValue.current = next;
       if (inputObserver && inputPublication)

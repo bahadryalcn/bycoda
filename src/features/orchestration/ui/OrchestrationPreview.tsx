@@ -633,9 +633,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       <ChevronRight className="icon-sm shrink-0" />
                     )}
                     <OverflowTooltip label={task.title}>
-                      <span className="truncate text-ui-caption">
-                        {task.title}
-                      </span>
+                      <span className="truncate text-ui-caption">{task.title}</span>
                     </OverflowTooltip>
                   </Button>
                   <div className="max-w-[60%] min-w-0">
@@ -703,7 +701,8 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                           max={2}
                           className="min-w-0"
                           items={task.dependsOn.map((id, index) => {
-                            const title = proposal.tasks.find((entry) => entry.id === id)?.title ?? id;
+                            const title =
+                              proposal.tasks.find((entry) => entry.id === id)?.title ?? id;
                             return { id: `${index}:${title}`, label: title };
                           })}
                         />

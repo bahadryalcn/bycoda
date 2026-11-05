@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   leafIds,
   splitPaneAtSelfEdge,
@@ -51,7 +46,12 @@ export function usePaneMoveActions({
   setComposerFocused,
 }: PaneMoveActionDeps): {
   onReorderTabs: (ids: string[], movedId?: string) => void;
-  onMovePane: (fromId: string, toId: string, edge: PaneEdge, tabPosition?: PaneTabDropPosition) => void;
+  onMovePane: (
+    fromId: string,
+    toId: string,
+    edge: PaneEdge,
+    tabPosition?: PaneTabDropPosition,
+  ) => void;
   onMoveFileBetweenPanes: (
     fileId: string,
     targetPaneId: string,

@@ -1194,17 +1194,9 @@ impl NativeProviderOutputRegistry {
             self.overflow.store(true, Ordering::Release);
             error.into_inner()
         });
-        streams.retain(|_, stream| {
-            let state = stream.state.lock().unwrap_or_else(|e| e.into_inner());
-            !(state.terminal
-                && state.terminal_enqueued
-                && state.readers == 0
-                && state.in_flight == 0
-                && Arc::strong_count(stream) == 1)
-        });
-        if streams.len() < MAX_STREAMS {
-            self.overflow.store(false, Ordering::Release);
-        }
+        // Terminal delivery and dropped observers do not prove physical child,
+        // writer, adapter and deferred callback retirement. Keep originals pinned
+        // until an exact native retirement receipt can safely release them.
         if streams.len() >= MAX_STREAMS {
             self.overflow.store(true, Ordering::Release);
         }

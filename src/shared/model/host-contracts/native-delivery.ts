@@ -65,6 +65,11 @@ export const NativeServiceDeliveryStatusSchema = z.union([
   absent,
   fenced.extend({ target: NativeServiceUploadTargetSchema }),
   NativeServiceDeliveryRetiredSchema,
+  NativeDeliveryIdentitySchema.extend({
+    target: z.literal("native.services.workspace.format"),
+    state: z.literal("unknown"),
+    resultUnavailable: z.literal(true),
+  }),
   serviceIdentity.extend({ state: z.literal("unknown") }),
   serviceIdentity.extend({
     state: z.literal("recorded"),

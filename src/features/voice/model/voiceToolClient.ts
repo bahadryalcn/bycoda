@@ -1,4 +1,8 @@
-import { featureHost, hostFeatureRequest } from "../../connections/model/hostFeatureClient";
+import {
+  captureVoiceToolHost,
+  featureHost,
+  hostFeatureRequest,
+} from "../../connections/model/hostFeatureClient";
 import { remoteRequest, remoteSessionFor } from "../../connections/model/connections";
 import {
   AssistantVoiceDisclosureSchema,
@@ -18,8 +22,10 @@ export type VoiceToolTarget = {
   cwd: string;
   sessionId?: string;
   threadId?: string;
+  environmentId?: string;
   causalContext?: {
     id: string;
+    environmentId?: string;
     receive: (
       context: unknown,
       disclosure: unknown,
@@ -31,6 +37,7 @@ export type VoiceToolTarget = {
 export type VoiceToolCall = {
   family: VoiceToolFamily;
   action: string;
+  accountId?: string;
   input: Record<string, unknown>;
   /** Reuse for an uncertain invocation. Individual tool schemas may also require an input requestId. */
   requestId?: string;
@@ -39,7 +46,10 @@ export type VoiceToolCall = {
 export const VOICE_TOOLS_CAPABILITY = "voice.tools.v1";
 
 function source(target: VoiceToolTarget): { sessionId?: string; threadId?: string } {
-  if (!target.cwd.trim()) throw new Error("Choose a project before using voice tools.");
+  if (!target.cwd.trim() && !target.threadId)
+    throw new Error("Open a verified assistant conversation before using tools.");
+  if (!target.cwd.trim() && target.sessionId !== undefined)
+    throw new Error("A coding session requires its exact project target.");
   if (target.sessionId !== undefined && (!target.sessionId.trim() || target.sessionId.length > 300))
     throw new Error("The voice tool session is invalid.");
   const sessionId =
@@ -72,6 +82,11 @@ export async function discoverVoiceTools(
   selection: VoiceToolSelection = {},
 ) {
   const context = source(target);
+  if (!target.cwd.trim()) {
+    const host = await captureVoiceToolHost(target.environmentId);
+    const response = await host.request<unknown>("voice.tools.list", context);
+    return selectVoiceTools(readVoiceToolCatalog(response), selection);
+  }
   const response = await hostFeatureRequest<unknown>(
     target.cwd,
     VOICE_TOOLS_CAPABILITY,
@@ -95,13 +110,29 @@ export async function callVoiceTool(
     typeof call.input !== "object" ||
     Array.isArray(call.input) ||
     (call.requestId !== undefined && (!call.requestId.trim() || call.requestId.length > 300)) ||
-    (target.causalContext && !call.requestId)
+    (target.causalContext && !call.requestId) ||
+    (call.accountId !== undefined &&
+      (!(
+        call.family === "social" ||
+        (call.family === "conversation" &&
+          ["observations.read", "observations.ack", "observations.resnapshot"].includes(
+            call.action,
+          ))
+      ) ||
+        !!target.cwd.trim() ||
+        !call.accountId.trim() ||
+        call.accountId.length > 200)) ||
+    (!target.cwd.trim() &&
+      call.family === "social" &&
+      call.action !== "accounts.list" &&
+      !call.accountId)
   )
     throw new Error("The voice tool request is invalid.");
   const params = {
     ...context,
     family: call.family,
     action: call.action,
+    ...(call.accountId ? { accountId: call.accountId } : {}),
     input: call.input,
     ...(call.requestId === undefined ? {} : { requestId: call.requestId }),
     ...(target.causalContext ? { causalContextId: target.causalContext.id } : {}),
@@ -109,28 +140,42 @@ export async function callVoiceTool(
   // Capture the exact transport subject once; a later cache refresh must not
   // route this operation to a replacement Host/project while proof is pending.
   let expectedSource: AssistantVoiceDisclosureSource | undefined;
-  const result = target.causalContext
+  const result = !target.cwd.trim()
     ? await (async () => {
-        const bound = await featureHost(target.cwd, VOICE_TOOLS_CAPABILITY);
+        const bound = await captureVoiceToolHost(
+          target.causalContext?.environmentId ?? target.environmentId,
+        );
         expectedSource = {
           environmentId: bound.machine.environmentId,
-          projectId: bound.projectId,
           threadId: context.threadId!,
-          ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+          ...(call.accountId ? { accountId: call.accountId } : {}),
           family: call.family,
           action: call.action,
         };
-        return remoteRequest<unknown>(bound.machine.id, "voice.tools.call", {
-          ...params,
-          projectId: bound.projectId,
-        });
+        return bound.request<unknown>("voice.tools.call", params);
       })()
-    : await hostFeatureRequest<unknown>(
-        target.cwd,
-        VOICE_TOOLS_CAPABILITY,
-        "voice.tools.call",
-        params,
-      );
+    : target.causalContext
+      ? await (async () => {
+          const bound = await featureHost(target.cwd, VOICE_TOOLS_CAPABILITY);
+          expectedSource = {
+            environmentId: bound.machine.environmentId,
+            projectId: bound.projectId,
+            threadId: context.threadId!,
+            ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+            family: call.family,
+            action: call.action,
+          };
+          return remoteRequest<unknown>(bound.machine.id, "voice.tools.call", {
+            ...params,
+            projectId: bound.projectId,
+          });
+        })()
+      : await hostFeatureRequest<unknown>(
+          target.cwd,
+          VOICE_TOOLS_CAPABILITY,
+          "voice.tools.call",
+          params,
+        );
   if (!target.causalContext) return result;
   if (
     !result ||
@@ -152,7 +197,9 @@ export async function callVoiceTool(
           disclosure.source?.[key as keyof AssistantVoiceDisclosureSource] !==
           expectedSource?.[key as keyof AssistantVoiceDisclosureSource],
       ) ||
-      disclosure.source.sessionId !== expectedSource.sessionId
+      disclosure.source.sessionId !== expectedSource.sessionId ||
+      disclosure.source.projectId !== expectedSource.projectId ||
+      disclosure.source.accountId !== expectedSource.accountId
     )
       throw new Error("The voice tool result could not be verified. Check its original operation.");
   } else if (!disclosure.verified) {

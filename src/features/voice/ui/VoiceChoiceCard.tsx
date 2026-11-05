@@ -87,6 +87,7 @@ export function VoiceChoiceCard({
       }}
     >
       <QuestionForm
+        attachmentsSupported={false}
         prompt={choice.prompt}
         draftScope={owner?.scope ?? `voice-choice:${choice.id}`}
         {...(owner ? { dismissLabel: t("Later"), dismissEntirePrompt: true } : {})}

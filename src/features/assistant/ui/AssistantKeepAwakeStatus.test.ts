@@ -17,9 +17,7 @@ it("does not claim native activation from a requested policy and retains native 
       ),
     );
     expect(container.textContent).toBe("Waiting to prevent sleep");
-    expect(
-      container.querySelector('[data-assistant-keep-awake="requested"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[data-assistant-keep-awake="requested"]')).not.toBeNull();
     await act(async () =>
       root.render(
         createElement(AssistantKeepAwakeStatus, {

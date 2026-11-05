@@ -409,7 +409,10 @@ export async function sendGenericAcpTurn(
               if (!state.providerId) {
                 if (resume) {
                   resumes.delete(input.sessionId);
-                  emitNative({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+                  emitNative({
+                    type: "status",
+                    text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+                  });
                 }
                 const setup = await startupAcp.request<{
                   sessionId?: string;

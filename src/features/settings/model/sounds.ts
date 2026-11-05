@@ -16,7 +16,8 @@ export const SOUNDS_DEFAULT = true;
 export const SOUNDS_VOLUME = 0.55;
 
 export const SOUNDS_CHANGE_EVENT = "bycoda:sounds-change";
-export const subscribeSoundsEnabled = (onChange: () => void) => subscribePreferenceChanges([KEY], SOUNDS_CHANGE_EVENT, onChange);
+export const subscribeSoundsEnabled = (onChange: () => void) =>
+  subscribePreferenceChanges([KEY], SOUNDS_CHANGE_EVENT, onChange);
 
 export type SoundCue =
   | "turnFinished"

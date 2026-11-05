@@ -62,7 +62,9 @@ export function ServersTerminalWorkspace({
   const mounted = useRef(true);
   useLayoutEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+    };
   }, []);
   const [terminals, setTerminals] = useState<
     {
@@ -98,10 +100,13 @@ export function ServersTerminalWorkspace({
     setTerminals((previous) => previous.filter((value) => value.id !== id));
     setActive((current) => {
       const survivors = terminalSnapshot.current;
-      if (current !== id && (current === null || survivors.some((value) => value.id === current))) return current;
+      if (current !== id && (current === null || survivors.some((value) => value.id === current)))
+        return current;
       const next = survivors[Math.min(index, survivors.length - 1)];
       if (next) serverTerminalRestoreState.activate(next.restoreId);
-      requestAnimationFrame(() => document.getElementById(next ? `tab-${next.id}` : "servers-inventory-content")?.focus());
+      requestAnimationFrame(() =>
+        document.getElementById(next ? `tab-${next.id}` : "servers-inventory-content")?.focus(),
+      );
       return next?.id ?? null;
     });
   };
@@ -114,7 +119,11 @@ export function ServersTerminalWorkspace({
     setCloseError("");
     try {
       const ended = terminal.lifecycle === "exited" || terminal.lifecycle === "closed";
-      if (!ended && !await confirmCloseTerminal({ id, path: terminal.name, cwd: "", terminal: true })) return;
+      if (
+        !ended &&
+        !(await confirmCloseTerminal({ id, path: terminal.name, cwd: "", terminal: true }))
+      )
+        return;
       removeTerminal(id);
     } catch (reason) {
       setCloseError(String(reason));
@@ -372,7 +381,13 @@ export function ServersTerminalWorkspace({
             inert={!active ? true : undefined}
           >
             <div className="flex h-10 min-w-0 shrink-0 items-center border-b border-stroke">
-              <Button id="servers-inventory-return" variant="ghost" iconOnly label={t("Servers")} onClick={() => setActive(null)}>
+              <Button
+                id="servers-inventory-return"
+                variant="ghost"
+                iconOnly
+                label={t("Servers")}
+                onClick={() => setActive(null)}
+              >
                 <ArrowLeft className="icon-sm" />
               </Button>
               <ToolHeader>
@@ -390,7 +405,7 @@ export function ServersTerminalWorkspace({
               {!IS_MAC ? <WindowControls /> : null}
             </div>
             <div
-              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-surface-panel) px-2 py-1"
+              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-workspace-panel) px-2 py-1"
               role="tablist"
               aria-label={t("SSH terminals")}
             >
@@ -545,13 +560,25 @@ export function ServersTerminalWorkspace({
                             ? async () => {
                                 const id = `ssh-quick:${crypto.randomUUID()}`;
                                 const endpoint = { ...terminal.endpoint! };
-                                const approval = authorizeProxy(id, undefined, endpoint, terminal.shellIntegration);
+                                const approval = authorizeProxy(
+                                  id,
+                                  undefined,
+                                  endpoint,
+                                  terminal.shellIntegration,
+                                );
                                 const httpProxyTicketId = approval ? await approval : undefined;
                                 if (httpProxyTicketId === null) return;
-                                setTerminals((previous) => [...previous, {
-                                  id, restoreId: crypto.randomUUID(), name: terminal.name,
-                                  endpoint, shellIntegration: terminal.shellIntegration, httpProxyTicketId,
-                                }]);
+                                setTerminals((previous) => [
+                                  ...previous,
+                                  {
+                                    id,
+                                    restoreId: crypto.randomUUID(),
+                                    name: terminal.name,
+                                    endpoint,
+                                    shellIntegration: terminal.shellIntegration,
+                                    httpProxyTicketId,
+                                  },
+                                ]);
                                 setActive(id);
                               }
                             : undefined
@@ -560,23 +587,27 @@ export function ServersTerminalWorkspace({
                       canStart={terminal.mobileValid}
                       authorizeStart={terminal.mobileAuthorize}
                       onLifecycle={(state) => {
-                              if (mounted.current) setTerminals((previous) => previous.map((value) => value.id === terminal.id ? { ...value, lifecycle: state } : value));
-                              const entry = mobileResources.current.get(terminal.id);
-                              if (!entry) return;
-                              entry.state = state;
-                              entry.notify(state);
-                              if (
-                                state === "opened-on-computer" ||
-                                state === "failed" ||
-                                state === "closed"
-                              ) {
-                                entry.finishOpen?.(state === "opened-on-computer");
-                                entry.finishOpen = undefined;
-                              }
-                              if (state === "closed") entry.closed?.();
-                              if (state === "failed") entry.closeFailed?.();
-                            }
-                      }
+                        if (mounted.current)
+                          setTerminals((previous) =>
+                            previous.map((value) =>
+                              value.id === terminal.id ? { ...value, lifecycle: state } : value,
+                            ),
+                          );
+                        const entry = mobileResources.current.get(terminal.id);
+                        if (!entry) return;
+                        entry.state = state;
+                        entry.notify(state);
+                        if (
+                          state === "opened-on-computer" ||
+                          state === "failed" ||
+                          state === "closed"
+                        ) {
+                          entry.finishOpen?.(state === "opened-on-computer");
+                          entry.finishOpen = undefined;
+                        }
+                        if (state === "closed") entry.closed?.();
+                        if (state === "failed") entry.closeFailed?.();
+                      }}
                       sshEndpoint={terminal.endpoint}
                       shellIntegration={terminal.shellIntegration}
                       agentForwardingReviewId={terminal.agentForwardingReviewId}

@@ -1,5 +1,6 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -18,7 +19,7 @@ import {
   type RepairGroup,
 } from "./CheckRepairProgress";
 import { CheckEvidence } from "./CheckEvidence";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -49,68 +50,67 @@ import {
 } from "../model/githubPrChecks";
 
 /** A state glyph; `"spinner"` is the shared pending Spinner instead of an icon. */
-type Mark = { Icon: IconComponent | "spinner"; className: string };
+type Mark = { Icon: IconComponent | "spinner"; tone: BadgeTone };
 
 function overallMark(overall: GithubPrChecksOverall): Mark {
   switch (overall.kind) {
     case "loading":
-      return { Icon: "spinner", className: "text-(--ui-text-secondary)" };
+      return { Icon: "spinner", tone: "neutral" };
     case "error":
-      return { Icon: AlertCircle, className: "text-(--ui-tone-danger-fg)" };
+      return { Icon: AlertCircle, tone: "danger" };
     case "fail":
-      return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
+      return { Icon: CircleX, tone: "danger" };
     case "pending":
-      return { Icon: "spinner", className: "text-(--ui-tone-warning-fg)" };
+      return { Icon: "spinner", tone: "accent" };
     case "pass":
-      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
+      return { Icon: CheckCircle, tone: "success" };
     case "neutral":
-      return { Icon: CircleDashed, className: "text-(--ui-text-secondary)" };
+      return { Icon: CircleDashed, tone: "neutral" };
   }
 }
 
 function checkMark(state: GithubPrCheckState): Mark {
   switch (state) {
     case "pass":
-      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
+      return { Icon: CheckCircle, tone: "success" };
     case "fail":
-      return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
+      return { Icon: CircleX, tone: "danger" };
     case "pending":
-      return { Icon: "spinner", className: "text-(--ui-text-secondary)" };
+      return { Icon: "spinner", tone: "accent" };
     case "cancel":
-      return { Icon: Minus, className: "text-(--ui-text-secondary)" };
+      return { Icon: Minus, tone: "neutral" };
     case "unknown":
-      return { Icon: CircleHelp, className: "text-(--ui-text-secondary)" };
+      return { Icon: CircleHelp, tone: "neutral" };
     case "skipping":
-      return { Icon: CircleDashed, className: "text-(--ui-text-secondary)" };
+      return { Icon: CircleDashed, tone: "neutral" };
   }
 }
 
 function MarkGlyph({ mark, size }: { mark: Mark; size: "sm" | "md" }) {
-  if (mark.Icon === "spinner")
-    return <Spinner size={size} className={`shrink-0 ${mark.className}`} />;
   return (
-    <mark.Icon
-      className={`${size === "sm" ? "icon-sm" : "icon-md"} shrink-0 ${mark.className}`}
-      strokeWidth={1.75}
+    <Badge
+      appearance="subtle"
+      size="xs"
+      tone={mark.tone}
+      aria-hidden="true"
+      icon={mark.Icon === "spinner" ? <Spinner size={size} /> : <mark.Icon strokeWidth={1.75} />}
     />
   );
 }
 
-/**
- * The Checks tab: label plus an overall mark whose name spells out the counts. Rendered
- * inside the PR detail `Tabs`, whose `value="checks"` it selects.
- */
+/** PR detail Checks tab; its accessible name includes the overall counts. */
 export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
   useLocale();
   const mark = overallMark(overall);
   const label = `Checks: ${overall.description}`;
-  const failClass = mark.className.split(" ").find((entry) => entry.startsWith("text-")) ?? "";
   return (
     <Tab value="checks" aria-label={label} tooltip={label}>
       <span className="leading-none">{t("Checks")}</span>
       <MarkGlyph mark={mark} size="sm" />
       {overall.kind === "fail" ? (
-        <span className={`tabular-nums leading-none ${failClass}`}>{overall.failed}</span>
+        <Badge variant="count" size="xs">
+          {overall.failed}
+        </Badge>
       ) : null}
     </Tab>
   );
@@ -258,11 +258,20 @@ function PrCheckRow({
     .find((annotation) => annotation.level === "failure")
     ?.message.split(/\r?\n/)
     .find((line) => line.trim());
-  const subtitle = failureMessage || (failedStep ? `Failed at ${failedStep}` : status);
-  const title = `${check.name} · ${status}${duration ? `, took ${duration}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  const subtitle =
+    failureMessage || (failedStep ? t("Failed at {p0}", { p0: failedStep }) : status);
+  const title = `${check.name} · ${status}${duration ? `, ${t("took {p0}", { p0: duration })}` : ""}${workflow ? `, ${workflow}` : ""}`;
   const rowHint = useTooltip({
-    label: [check.name, workflow, failureMessage || failedStep ? subtitle : undefined, status, duration,
-      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined].filter(Boolean).join("\n"),
+    label: [
+      check.name,
+      workflow,
+      failureMessage || failedStep ? subtitle : undefined,
+      status,
+      duration,
+      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n"),
     when: "overflow",
   });
   const url = check.url;
@@ -310,7 +319,8 @@ function PrCheckRow({
         rowHint.trigger.onPointerEnter(event);
       }}
       onPointerOver={(event) => {
-        if (event.target instanceof Element && event.target.closest("[data-no-drag]")) rowHint.hide();
+        if (event.target instanceof Element && event.target.closest("[data-no-drag]"))
+          rowHint.hide();
         else rowHint.trigger.onPointerEnter(event);
       }}
       onFocus={(event) => {
@@ -319,7 +329,7 @@ function PrCheckRow({
       }}
       ref={rowRef}
       tabIndex={-1}
-      className={`min-w-0 rounded-(--ui-control-radius) outline-none ${expanded ? "bg-(--ui-fill-faint)" : ""}`}
+      className="min-w-0 rounded-(--ui-control-radius) outline-none"
     >
       <ActionHost className="min-w-0 gap-2 px-2 py-1 @max-[420px]/checks:gap-1">
         {expandable ? (
@@ -346,20 +356,20 @@ function PrCheckRow({
             className="w-full min-w-0 flex-1 text-left"
             type="button"
             aria-label={title}
-            onClick={() => void openUrl(url)}
+            onClick={() => openUrlSafely(url)}
           >
             {body}
           </Button>
         ) : (
-          <div className={className}>
-            {body}
-          </div>
+          <div className={className}>{body}</div>
         )}
         <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
           {repairItem ? (
             <CheckRepairStatus item={repairItem} />
           ) : (
-            <span className={`text-ui-micro ${mark.className}`}>{status}</span>
+            <Badge tone={mark.tone} size="xs" appearance="subtle">
+              {status}
+            </Badge>
           )}
         </span>
         <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
@@ -420,7 +430,7 @@ function PrCheckRow({
             tooltip={t("View full log")}
             aria-label={t("Open {p0} check", { p0: check.name })}
             data-no-drag=""
-            onClick={() => void openUrl(url)}
+            onClick={() => openUrlSafely(url)}
           >
             <ExternalLink className="icon-xs" strokeWidth={1.75} />
           </Button>
@@ -501,7 +511,9 @@ function PrCheckRow({
                 <EmptyState
                   size="inline"
                   kind="empty"
-                  description={t("No error annotations reported. View the full log at the check URL.")}
+                  description={t(
+                    "No error annotations reported. View the full log at the check URL.",
+                  )}
                 />
               ) : null}
               {details.log ? (
@@ -570,9 +582,7 @@ export function InboxPrChecks({
   );
   if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
-    return (
-      <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>
-    );
+    return <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>;
   }
   if (!checks && error) {
     return (
@@ -634,12 +644,17 @@ export function InboxPrChecks({
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <h2 className="text-ui-title font-medium leading-snug">{t(headline)}</h2>
             {stale ? (
-              <span className="text-ui-caption text-(--ui-tone-warning-fg)">{t("Saved results")}</span>
+              <Badge tone="warning" size="xs">
+                {t("Saved results")}
+              </Badge>
             ) : null}
           </div>
           {checks?.headOid ? (
             <p className="mt-1 break-all text-ui-caption text-(--ui-text-secondary)">
-              {t("Checked commit")}: <span className="font-mono" title={checks.headOid}>{checks.headOid.slice(0, 12)}</span>
+              {t("Checked commit")}:{" "}
+              <span className="font-mono" title={checks.headOid}>
+                {checks.headOid.slice(0, 12)}
+              </span>
             </p>
           ) : null}
           {summary ? (
@@ -670,12 +685,9 @@ export function InboxPrChecks({
             >
               <Sparkles className="icon-sm" strokeWidth={1.75} />
               {t("Fix all failed")}
-              <span
-                aria-hidden="true"
-                className="ml-1 border-l border-(--ui-tone-neutral-border) pl-2 text-ui-caption text-(--ui-text-secondary)"
-              >
+              <Badge variant="count" size="xs" aria-hidden="true">
                 {counts.fail}
-              </span>
+              </Badge>
             </Button>
           ) : null}
           <Button

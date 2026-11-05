@@ -9,12 +9,12 @@ import {
 } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import type { GitBlameLine, GitHistoryCommit } from "../../../platform/tauri/fs";
-import { blameByLine, mapBlameLines } from "../../source-control/model/blameMapping";
+import { blameByLine, mapBlameLines } from "../../source-control/public/blameMapping";
 import {
   authorColor,
   formatAbsoluteTime,
   formatRelativeTime,
-} from "../../source-control/model/gitGraphDisplay";
+} from "../../source-control/public/gitGraphDisplay";
 import { editorDocChanges } from "./editorDoc";
 
 /**

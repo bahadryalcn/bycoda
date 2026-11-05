@@ -5,6 +5,7 @@ import { CODEX_UTILITY_DISABLED_FEATURES } from "./codexUtilityIsolation";
 
 const state = vi.hoisted(() => ({
   streamed: false,
+  chunks: [] as string[],
   starts: [] as Record<string, unknown>[],
 }));
 vi.mock("../../../../features/sessions/model/models", () => ({
@@ -55,13 +56,17 @@ vi.mock("../../core/jsonRpc", () => ({
             ),
           },
         };
-      if (method === "mcpServerStatus/list")
-        return { data: [], nextCursor: null };
+      if (method === "mcpServerStatus/list") return { data: [], nextCursor: null };
       if (method === "thread/start") return { thread: { id: "text-thread" } };
       if (method === "turn/start") {
         state.starts.push(params);
-        const text = '{"subject":"Fix commit generation","body":""}';
-        if (state.streamed)
+        const text = state.chunks.length
+          ? state.chunks.join("")
+          : '{"subject":"Fix commit generation","body":""}';
+        if (state.chunks.length) {
+          for (const delta of state.chunks)
+            this.handlers.onNotification("item/agentMessage/delta", { delta });
+        } else if (state.streamed)
           this.handlers.onNotification("item/agentMessage/delta", {
             delta: text,
           });
@@ -78,8 +83,27 @@ vi.mock("../../core/jsonRpc", () => ({
 }));
 afterEach(() => {
   state.streamed = false;
+  state.chunks.length = 0;
   state.starts.length = 0;
 });
+
+it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n"] }])(
+  "preserves exact Codex utility delta chunks $chunks and emits no repeated completion snapshot",
+  async ({ chunks }) => {
+    state.chunks.push(...chunks);
+    const emitted: string[] = [];
+    const output = await runCodexTextPrompt({
+      cwd: "/repo",
+      prompt: "Exact text",
+      timeoutMs: 1000,
+      onEvent: (event) => {
+        if (event.type === "message.delta") emitted.push(event.text);
+      },
+    });
+    expect(output).toBe(chunks.join(""));
+    expect(emitted.join("")).toBe(output);
+  },
+);
 
 it("collects a completed message without streaming deltas and selects an advertised model", async () => {
   const output = await runCodexTextPrompt({

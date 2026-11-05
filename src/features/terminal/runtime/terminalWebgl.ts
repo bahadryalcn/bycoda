@@ -11,7 +11,11 @@ export const WEBGL_IDLE_DROP_MS = 10_000;
  * live contexts, and a context loss falls back to the DOM renderer. Disposing
  * this adapter only releases render resources, never the PTY.
  */
-export function createTerminalWebgl(term: Terminal, canRender: () => boolean) {
+export function createTerminalWebgl(
+  term: Terminal,
+  canRender: () => boolean,
+  onRendererChange: () => void = () => {},
+) {
   let webgl: IDisposable | null = null;
   let context: WebGL2RenderingContext | null = null;
   let loading = false;
@@ -56,26 +60,39 @@ export function createTerminalWebgl(term: Terminal, canRender: () => boolean) {
     if (webgl || loading || disposed) return;
     loading = true;
     let created: { dispose(): void } | undefined;
+    let before: Set<HTMLCanvasElement> | undefined;
     try {
       const { WebglAddon } = await import("@xterm/addon-webgl");
       if (disposed || !canRender()) return;
       const addon = new WebglAddon();
       created = addon;
       addon.onContextLoss(() => {
-        if (webgl === addon) {
+        const current = webgl === addon;
+        if (current) {
           webgl = null;
           context = null;
         }
         addon.dispose();
+        if (current && !disposed && canRender()) onRendererChange();
       });
-      const before = new Set(term.element?.querySelectorAll("canvas") ?? []);
+      before = new Set(term.element?.querySelectorAll("canvas") ?? []);
       term.loadAddon(addon);
       webgl = addon;
       context = rendererContext(term, before);
+      // DOM and WebGL round character metrics differently. A retained PTY must
+      // be fitted to the new renderer even when its host size did not change.
+      onRendererChange();
       // A new renderer has no previous frame, even when the grid size is unchanged.
       term.refresh(0, term.rows - 1);
     } catch {
       // A renderer that failed to attach must not keep its WebGL context alive.
+      try {
+        (context ?? (before ? rendererContext(term, before) : null))
+          ?.getExtension("WEBGL_lose_context")
+          ?.loseContext();
+      } catch {
+        // The context is already gone.
+      }
       try {
         created?.dispose();
       } catch {

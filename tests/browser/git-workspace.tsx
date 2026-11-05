@@ -313,69 +313,69 @@ const renderFixture = () =>
     <>
       {/* Git confirmations render in the shared in-app dialog; the platform fallback is not available here. */}
       <AppConfirmHost />
-    <div
-      // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
-      style={{ height: "100vh" }}
-      className={
-        new URLSearchParams(location.search).has("checkouts")
-          ? "w-full max-w-[520px] border-r border-stroke"
-          : "w-80 border-r border-stroke"
-      }
-    >
-      {actionFeedback ? (
-        <GitChangesPanel
-          cwd="/fixture"
-          enabled
-          onOpenFile={() => {}}
-          onOpenAllChanges={() => {}}
-          onOpenCommit={() => {}}
-        />
-      ) : diffUsability ? (
-        <GitGraphWorkspace
-          cwd={diffRepository}
-          commit={null}
-          onCommit={() => {}}
-          onDirty={() => {}}
-          onBranch={() => {}}
-          graph={null}
-        />
-      ) : submodules ? (
-        <SourceControl
-          cwd="/fixture"
-          enabled
-          onOpenRepository={(request) => calls.push({ command: "fixture.open", args: request })}
-          onOpenFile={() => {}}
-          onOpenAllChanges={() => {}}
-          onOpenCommit={() => {}}
-        />
-      ) : new URLSearchParams(location.search).has("checkouts") ||
-        new URLSearchParams(location.search).has("repositories") ? (
-        <WorkspaceSourceControl
-          cwd="/fixture"
-          paths={Object.keys(checkoutTrees)}
-          worktrees={checkoutTrees}
-          labels={Object.fromEntries(
-            Object.values(checkoutTrees).map((tree) => [
-              tree.path,
-              `${tree.branch ?? "Detached"} · ${tree.path}`,
-            ]),
-          )}
-          checkouts={new URLSearchParams(location.search).has("checkouts")}
-          enabled
-          onOpen={() => {}}
-        />
-      ) : (
-        <GitHistoryGraph
-          cwd="/fixture"
-          enabled
-          expanded
-          onToggleExpanded={() => {}}
-          onOpenCommit={() => {
-            throw new Error("Workspace selections must stay in the graph");
-          }}
-        />
-      )}
-    </div>
+      <div
+        // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
+        style={{ height: "100vh" }}
+        className={
+          new URLSearchParams(location.search).has("checkouts")
+            ? "w-full max-w-[520px] border-r border-stroke"
+            : "w-80 border-r border-stroke"
+        }
+      >
+        {actionFeedback ? (
+          <GitChangesPanel
+            cwd="/fixture"
+            enabled
+            onOpenFile={() => {}}
+            onOpenAllChanges={() => {}}
+            onOpenCommit={() => {}}
+          />
+        ) : diffUsability ? (
+          <GitGraphWorkspace
+            cwd={diffRepository}
+            commit={null}
+            onCommit={() => {}}
+            onDirty={() => {}}
+            onBranch={() => {}}
+            graph={null}
+          />
+        ) : submodules ? (
+          <SourceControl
+            cwd="/fixture"
+            enabled
+            onOpenRepository={(request) => calls.push({ command: "fixture.open", args: request })}
+            onOpenFile={() => {}}
+            onOpenAllChanges={() => {}}
+            onOpenCommit={() => {}}
+          />
+        ) : new URLSearchParams(location.search).has("checkouts") ||
+          new URLSearchParams(location.search).has("repositories") ? (
+          <WorkspaceSourceControl
+            cwd="/fixture"
+            paths={Object.keys(checkoutTrees)}
+            worktrees={checkoutTrees}
+            labels={Object.fromEntries(
+              Object.values(checkoutTrees).map((tree) => [
+                tree.path,
+                `${tree.branch ?? "Detached"} · ${tree.path}`,
+              ]),
+            )}
+            checkouts={new URLSearchParams(location.search).has("checkouts")}
+            enabled
+            onOpen={() => {}}
+          />
+        ) : (
+          <GitHistoryGraph
+            cwd="/fixture"
+            enabled
+            expanded
+            onToggleExpanded={() => {}}
+            onOpenCommit={() => {
+              throw new Error("Workspace selections must stay in the graph");
+            }}
+          />
+        )}
+      </div>
     </>,
   );
 Object.assign(window, {

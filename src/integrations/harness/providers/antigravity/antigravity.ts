@@ -7,6 +7,7 @@ import {
   ownsOperation,
   type HarnessOperationContext,
   acpTurnWriter,
+  holdProviderEpoch, retireProviderEpochs,
   type AcpWriterView,
 } from "../turnWriter";
 
@@ -63,7 +64,6 @@ import type {
   ApprovalDecision,
   HarnessEvent,
   SendTurnInput,
-  SteerTurnInput,
 } from "../../core/types";
 
 type SessionSetupResult = {
@@ -152,11 +152,11 @@ const resumeByThread = new Map<string, Resume>();
 // Every user-intent cancel/stop/forget bumps the epoch: sends already pending
 // at that moment are suppressed, while a send that arrives later captures the
 // new epoch and proceeds normally.
-const cancelEpoch = new Map<string, number>();
+const cancelEpoch = new Map<string, object>();
 // Bumped by user-intent invalidation (cancel/stop/forget) — never by internal
 // recycles. Lifecycle work validates the epoch captured at submission so
 // queued steps cannot resurrect a session the user already abandoned.
-const sessionEpoch = new Map<string, number>();
+const sessionEpoch = new Map<string, object>();
 
 // Startup, teardown, and replacement serialize through this chain per thread:
 // concurrent first sends share one startup, and a failed start lets the next
@@ -198,10 +198,11 @@ export async function sendAntigravityTurn(input: SendTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
 
   input = { ...input };
+  const releaseEpoch = holdProviderEpoch([cancelEpoch, sessionEpoch], input.sessionId);
 
   try {
-    const epoch = cancelEpoch.get(input.sessionId) ?? 0;
-    const cancelled = () => (cancelEpoch.get(input.sessionId) ?? 0) !== epoch;
+    const epoch = cancelEpoch.get(input.sessionId) ?? cancelEpoch.set(input.sessionId, {}).get(input.sessionId)!;
+    const cancelled = () => cancelEpoch.get(input.sessionId) !== epoch;
     try {
       // Eager prewarm only starts a child when none exists — it never tears down
       // a parked transport, so a queued send can never interrupt a running turn.
@@ -283,13 +284,12 @@ export async function sendAntigravityTurn(input: SendTurnInput): Promise<void> {
       }
     }
   } finally {
+    releaseEpoch();
     finishProviderOperation(input.operationContext);
   }
 }
 
-export async function steerAntigravityTurn(_input: SteerTurnInput): Promise<void> {
-  throw new Error("Antigravity does not support steering an in-flight turn");
-}
+export { steerAntigravityTurn } from "./antigravitySteer";
 
 export function respondAntigravityApproval(
   sessionId: string,
@@ -321,10 +321,10 @@ export async function cancelAntigravityTurn(
   const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
   // A captured cancellation must not affect a newer operation.
   if (!ownsOperation(context, original?.handle, original?.operation)) return;
-  cancelEpoch.set(sessionId, (cancelEpoch.get(sessionId) ?? 0) + 1);
+  cancelEpoch.set(sessionId, {});
   // Also retire queued/in-flight lifecycle work: a cancel before the child
   // exists must not leave a process spawning in the background.
-  sessionEpoch.set(sessionId, (sessionEpoch.get(sessionId) ?? 0) + 1);
+  sessionEpoch.set(sessionId, {});
   const pending = abortPendingSetup(sessionId, context);
   const live = liveByThread.get(sessionId);
   if (!live) {
@@ -374,8 +374,8 @@ export async function stopAntigravitySession(
   if (!ownsOperation(context, original?.handle, original?.operation)) return;
   // Stopping the session invalidates work already queued for it, not just the
   // registered live — a send waiting its turn must not resurrect it.
-  cancelEpoch.set(sessionId, (cancelEpoch.get(sessionId) ?? 0) + 1);
-  sessionEpoch.set(sessionId, (sessionEpoch.get(sessionId) ?? 0) + 1);
+  cancelEpoch.set(sessionId, {});
+  sessionEpoch.set(sessionId, {});
   const pending = abortPendingSetup(sessionId, context);
   const live = liveByThread.get(sessionId);
   await settleProviderRetirements([
@@ -383,6 +383,7 @@ export async function stopAntigravitySession(
     ...(live ? [teardownLive(live)] : []),
     ...(context ? [] : [retirements.retireOwner(sessionId)]),
   ]);
+  retireProviderEpochs([cancelEpoch, sessionEpoch], turnsByThread, sessionId, lifecycleByThread);
 }
 
 /**
@@ -413,6 +414,7 @@ export async function forgetAntigravitySession(
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
   await stopAntigravitySession(sessionId, owned ? context : undefined);
+  retireProviderEpochs([cancelEpoch, sessionEpoch], turnsByThread, sessionId, lifecycleByThread);
 }
 
 export function bindAntigravitySession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -491,7 +493,7 @@ function retireSetup(sessionId: string, setup: PreparedSetup): Promise<void> {
 }
 async function startLive(
   input: SendTurnInput,
-  life: number,
+  life: object,
   prepared?: PreparedSetup,
 ): Promise<Live> {
   assertProviderOperation(input.operationContext);
@@ -502,7 +504,7 @@ async function startLive(
     resumeByThread.delete(input.sessionId);
   }
 
-  const retired = () => (sessionEpoch.get(input.sessionId) ?? 0) !== life;
+  const retired = () => sessionEpoch.get(input.sessionId) !== life;
   if (retired()) throw new Error("Antigravity session stopped during startup");
   const pendingSetup = prepared ?? prepareSetup(input);
   const { handle, childKey } = pendingSetup;

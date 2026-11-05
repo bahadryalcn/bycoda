@@ -222,3 +222,44 @@ for (const width of [1280, 800])
       );
     });
   }
+
+for (const history of [false, true]) {
+  test(`Edit takes a saved draft back into the composer${history ? " after earlier turns" : ""}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    for (const theme of ["dark", "light"] as const) {
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(
+          `/tests/browser/edit-from-here.html?saved-draft${history ? "&history" : ""}${theme === "light" ? "&light" : ""}`,
+        );
+        const draft = page.locator('[data-prompt-anchor="saved-draft"]');
+        await expect(draft).toBeVisible();
+        // A saved draft is sent or edited from its card; no second composer competes with it.
+        await expect(page.locator("textarea")).toHaveCount(0);
+        await page.screenshot({
+          path: info.outputPath(
+            `saved-draft-${history ? "history" : "only"}-${width}-${theme}.png`,
+          ),
+        });
+        await draft.getByRole("button", { name: "Edit draft", exact: true }).click();
+        await expect(draft).toHaveCount(0);
+        const composer = page.locator("textarea");
+        await expect(composer).toHaveValue("[image1] explain this screen");
+        await expect(composer).toBeFocused();
+        await expect(page.getByRole("button", { name: /Remove image\.png/ })).toBeVisible();
+        if (history) await expect(page.locator('[data-prompt-anchor="first"]')).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.screenshot({
+          path: info.outputPath(
+            `edited-draft-${history ? "history" : "only"}-${width}-${theme}.png`,
+          ),
+        });
+        expect((await fixture(page)).events.sends).toBe(0);
+      }
+    }
+  });
+}

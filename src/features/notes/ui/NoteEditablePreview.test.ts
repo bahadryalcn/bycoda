@@ -80,7 +80,9 @@ it("keeps neighbour parse/DOM stable during block edits and maps the next select
     )!;
     await act(async () => after.click());
     expect(host.querySelector("textarea")?.value).toBe("After.");
-    const read = [...host.querySelectorAll("button")].find((button) => button.textContent === "Read document")!;
+    const read = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Read document",
+    )!;
     await act(async () => read.click());
     expect(host.querySelector("textarea")).toBeNull();
     expect(latest).toBe("Before.\n\nFinal middle.\n\nAfter.");

@@ -1,8 +1,8 @@
 import { useEffect, type MutableRefObject } from "react";
+import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { listenWindow, type WindowSubscription } from "../../../platform/tauri/listenWindow";
 import {
   applyUiScale,
   loadUiScale,
@@ -30,20 +30,15 @@ export interface NativeMenuEventDeps {
   run: WorkspaceRun;
 }
 
-/**
- * Subscribes to native menu and app-level Tauri events for the workspace.
- *
- * Every subscription is scoped to this window: menu commands are emitted to the
- * focused window and must not run in every open workspace. Broadcasts (autosave,
- * notification clicks) still reach a window-scoped listener.
- */
+/** Subscribes to native menu and app-level Tauri events for the workspace. */
 export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void {
   useEffect(() => {
-    const subscriptions: WindowSubscription[] = [
+    const unlisten = [
       listenWindow("new_tab", () => run("new", actions.current.onNew)),
       listenWindow("close_other_tabs", () => run("close-others", actions.current.onCloseOtherTabs)),
       listenWindow("close_all_tabs", () => run("close-all", actions.current.onCloseAllTabs)),
       listenWindow("close_tab", () => run("close", actions.current.onClosePane)),
+      // Autosave is a shared setting; every workspace applies the broadcast.
       listenWindow<boolean>("toggle_autosave", ({ payload }) => {
         const saved = saveAutosave(payload);
         if (saved !== payload && IS_MAC) {
@@ -111,7 +106,7 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
       listenWindow("open_model_picker", () => {
         window.dispatchEvent(new Event("open_model_picker"));
       }),
-      // The click is broadcast, so every window hears it; only the one holding the session acts.
+      // Every window hears the click; only the one holding the session acts.
       listenWindow<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
         const background =
           sessionId === BACKGROUND_NOTIFICATION_TARGETS.tasks
@@ -165,8 +160,6 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
         void applyUiScale(UI_SCALE_DEFAULT);
       }),
     ];
-    // Disposers are synchronous and race-safe: a registration that resolves after
-    // unmount is released as soon as it exists.
-    return () => subscriptions.forEach((dispose) => dispose());
+    return () => unlisten.forEach((release) => release());
   }, [run]);
 }

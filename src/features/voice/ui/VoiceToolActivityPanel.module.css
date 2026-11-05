@@ -1,0 +1,21 @@
+.panel {
+  margin-block: 8px;
+}
+.list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.row {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.meta {
+  color: var(--ui-text-secondary);
+}
+.status {
+  margin: 0;
+}

@@ -7,6 +7,7 @@ import {
   ownsOperation,
   type HarnessOperationContext,
   captureByteTurnWriter,
+  retireProviderEpoch,
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
@@ -427,6 +428,7 @@ export async function forgetAntigravityStreamSession(
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
   await stopAntigravityStreamSession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(epochBySession, turnsBySession, sessionId);
 }
 
 export function bindAntigravityStreamSession(

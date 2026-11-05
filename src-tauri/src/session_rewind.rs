@@ -484,6 +484,15 @@ pub(crate) fn restore(
         .map_err(|e| e.to_string())?;
     incremental::checkpoint(&tx, &session_id, &source.blocks, &pieces)
         .map_err(|e| e.to_string())?;
+    let harness: String = tx
+        .query_row(
+            "SELECT harness FROM sessions WHERE id=?1",
+            [&session_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    crate::session_store::update_list_summary(&tx, &session_id, &harness)
+        .map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM session_queues WHERE session_id=?1",
         [&session_id],

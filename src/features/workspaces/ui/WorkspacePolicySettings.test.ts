@@ -29,7 +29,13 @@ const policyAt = (revision: number, defaultMode: "current" | "worktree", scopes 
     policy: {
       defaultMode,
       pinned: false,
-      retention: { active: "never", idle: "never", finished: "never", merged: "never", abandoned: "never" },
+      retention: {
+        active: "never",
+        idle: "never",
+        finished: "never",
+        merged: "never",
+        abandoned: "never",
+      },
       disk: { budgetBytes: 10 * GIB, warningRatio: 0.8, minimumFreeBytes: 5 * GIB },
     },
   },
@@ -88,7 +94,9 @@ it("mirrors the Host rule that every disk amount must be positive", () => {
   const disk = { budgetBytes: 10 * GIB, warningRatio: 0.8, minimumFreeBytes: 5 * GIB };
   expect(workspacePolicyDiskErrors(disk)).toEqual({});
   expect(workspacePolicyDiskErrors({ ...disk, minimumFreeBytes: 0 }).minimumFree).toBeTruthy();
-  expect(workspacePolicyDiskErrors({ ...disk, minimumFreeBytes: Number.NaN }).minimumFree).toBeTruthy();
+  expect(
+    workspacePolicyDiskErrors({ ...disk, minimumFreeBytes: Number.NaN }).minimumFree,
+  ).toBeTruthy();
   expect(workspacePolicyDiskErrors({ ...disk, budgetBytes: 0.5 }).budget).toBeTruthy();
   expect(workspacePolicyDiskErrors({ ...disk, warningRatio: 1.5 }).warning).toBeTruthy();
 });

@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readBinaryFile } from "../../../platform/tauri/fs";
 import { attachmentPreviewSrc } from "../model/attachments";
 import type { Attachment } from "../model/session";
 
 type PreviewState = { loadedPreview?: string; open: boolean; loading: boolean; error: boolean };
-type PreviewOwner = Pick<Attachment, "id" | "path" | "loadPreview" | "missing"> & {
+type PreviewOwner = Pick<
+  Attachment,
+  "id" | "path" | "loadPreview" | "missing" | "mimeType" | "size" | "kind"
+> & {
   preview: string | undefined;
 };
 
@@ -16,29 +19,53 @@ function sameOwner(a: PreviewOwner, b: PreviewOwner): boolean {
     a.path === b.path &&
     a.loadPreview === b.loadPreview &&
     a.preview === b.preview &&
+    a.mimeType === b.mimeType &&
+    a.size === b.size &&
+    a.kind === b.kind &&
     a.missing === b.missing
   );
 }
 
-/** Load historical images only when requested, and retain bytes only while open. */
-export function useAttachmentPreview(attachment: Attachment) {
+/** Cards preload near the viewport; text tokens load only when opened. */
+export function useAttachmentPreview(attachment: Attachment, preload = false) {
   const preview = attachmentPreviewSrc(attachment);
-  const owner: PreviewOwner = {
-    id: attachment.id,
-    path: attachment.path,
-    loadPreview: attachment.loadPreview,
-    missing: attachment.missing,
-    preview,
-  };
+  const owner: PreviewOwner = useMemo(
+    () => ({
+      id: attachment.id,
+      path: attachment.path,
+      loadPreview: attachment.loadPreview,
+      missing: attachment.missing,
+      preview,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      kind: attachment.kind,
+    }),
+    [
+      attachment.id,
+      attachment.path,
+      attachment.loadPreview,
+      attachment.missing,
+      attachment.mimeType,
+      attachment.size,
+      attachment.kind,
+      preview,
+    ],
+  );
   // The state belongs to the attachment it was produced for; a different attachment reads as idle.
   const [held, setHeld] = useState<{ owner: PreviewOwner; state: PreviewState } | null>(null);
   const { loadedPreview, open, loading, error } =
     held && sameOwner(held.owner, owner) ? held.state : IDLE;
-  const update = (patch: Partial<PreviewState>) =>
-    setHeld((previous) => ({
-      owner,
-      state: { ...(previous && sameOwner(previous.owner, owner) ? previous.state : IDLE), ...patch },
-    }));
+  const update = useCallback(
+    (patch: Partial<PreviewState>) =>
+      setHeld((previous) => ({
+        owner,
+        state: {
+          ...(previous && sameOwner(previous.owner, owner) ? previous.state : IDLE),
+          ...patch,
+        },
+      })),
+    [owner],
+  );
   const request = useRef(0);
   const pending = useRef(false);
   const ownedUrl = useRef<string | undefined>(undefined);
@@ -54,10 +81,10 @@ export function useAttachmentPreview(attachment: Attachment) {
     !attachment.missing &&
     Boolean(preview || attachment.loadPreview || canReadPath);
 
-  const release = () => {
+  const release = useCallback(() => {
     if (ownedUrl.current) URL.revokeObjectURL(ownedUrl.current);
     ownedUrl.current = undefined;
-  };
+  }, []);
 
   // Identity change or unmount: invalidate in-flight loads and release the blob URL.
   useEffect(() => {
@@ -66,49 +93,69 @@ export function useAttachmentPreview(attachment: Attachment) {
       pending.current = false;
       release();
     };
-  }, [attachment.id, attachment.path, attachment.loadPreview, preview, attachment.missing]);
+  }, [owner, release]);
 
   const close = () => {
+    if (preload) {
+      update({ open: false });
+      return;
+    }
     request.current++;
     pending.current = false;
     release();
     update({ loadedPreview: undefined, open: false, loading: false });
   };
 
-  const show = async () => {
-    if (!canOpen || pending.current) return;
-    if (preview) {
-      update({ error: false, open: true });
-      return;
-    }
-    const generation = ++request.current;
-    pending.current = true;
-    update({ error: false, loading: true });
-    try {
-      let src: string;
-      // The owning host's reader always takes precedence over a disk path.
-      if (attachment.loadPreview) {
-        const data = await attachment.loadPreview();
-        if (!data) throw new Error("Empty image preview");
-        src = `data:${attachment.mimeType};base64,${data}`;
-      } else {
-        const bytes = await readBinaryFile(attachment.path!);
+  const load = useCallback(
+    async (openPreview: boolean) => {
+      if (!canOpen || pending.current) return;
+      if (preview || loadedPreview) {
+        if (openPreview) update({ error: false, open: true });
+        return;
+      }
+      const generation = ++request.current;
+      pending.current = true;
+      update({ error: false, loading: true });
+      try {
+        let src: string;
+        // The owning host's reader always takes precedence over a disk path.
+        if (attachment.loadPreview) {
+          const data = await attachment.loadPreview();
+          if (!data) throw new Error("Empty image preview");
+          src = `data:${attachment.mimeType};base64,${data}`;
+        } else {
+          const bytes = await readBinaryFile(attachment.path!);
+          if (generation !== request.current) return;
+          if (!bytes.byteLength) throw new Error("Empty image preview");
+          src = URL.createObjectURL(new Blob([bytes], { type: attachment.mimeType }));
+          ownedUrl.current = src;
+        }
         if (generation !== request.current) return;
-        if (!bytes.byteLength) throw new Error("Empty image preview");
-        src = URL.createObjectURL(new Blob([bytes], { type: attachment.mimeType }));
-        ownedUrl.current = src;
+        update({ loadedPreview: src, open: openPreview });
+      } catch {
+        if (generation === request.current) update({ error: true });
+      } finally {
+        if (generation === request.current) {
+          pending.current = false;
+          update({ loading: false });
+        }
       }
-      if (generation !== request.current) return;
-      update({ loadedPreview: src, open: true });
-    } catch {
-      if (generation === request.current) update({ error: true });
-    } finally {
-      if (generation === request.current) {
-        pending.current = false;
-        update({ loading: false });
-      }
-    }
-  };
+    },
+    [canOpen, preview, loadedPreview, owner, update],
+  );
+
+  useEffect(() => {
+    if (!preload || !canOpen || preview || loadedPreview) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void load(false).catch(() => update({ error: true, loading: false }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [preload, canOpen, preview, loadedPreview, load, update]);
+
+  const show = () => load(true);
 
   return { src: loadedPreview ?? preview, canOpen, open, loading, error, show, close };
 }

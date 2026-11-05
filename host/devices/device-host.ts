@@ -1,0 +1,1497 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rename, writeFile, stat, unlink } from "node:fs/promises";
+import { delimiter, dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { createServer } from "node:net";
+import { randomUUID } from "node:crypto";
+import { deviceBinaryCommand, deviceCommand, stopDeviceChild } from "./device-process";
+import { androidDeviceControl, quoteAndroidShell } from "./android-device-control";
+import { DeviceControlLeases } from "./device-control-leases";
+import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
+import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
+import type {
+  DeviceAction,
+  DeviceFrame,
+  DeviceHostStatus,
+  DeviceSummary,
+} from "../../src/shared/model/host-contracts/native-devices";
+
+export const DEVICE_HUB_VERSION = "0.12.0";
+export const AGENT_DEVICE_VERSION = "0.21.23";
+/** Captured by the request owner, never from a device/action DTO or socket life. */
+export interface DeviceEffectContext {
+  authorized(): boolean | Promise<boolean>;
+  track?<T>(work: Promise<T>): Promise<T>;
+}
+export class DeviceAuthorityRevokedError extends Error {
+  readonly code = "DEVICE_AUTHORITY_REVOKED";
+  constructor() {
+    super(
+      "DEVICE_AUTHORITY_REVOKED: Device access changed. Already admitted input may have taken effect; inspect the device before repeating it.",
+    );
+    this.name = "DeviceAuthorityRevokedError";
+  }
+}
+export async function assertDeviceAuthority(effect?: DeviceEffectContext): Promise<void> {
+  if (!effect) return;
+  try {
+    if (await effect.authorized()) return;
+  } catch {
+    // No storage/auth diagnostics are returned through the device surface.
+  }
+  throw new DeviceAuthorityRevokedError();
+}
+/** Use native screen points, not the CLI's cropped alert viewport scaling. */
+export function elementPressArgs(nodes: unknown, label: string): string[] {
+  if (!Array.isArray(nodes))
+    throw new Error("DEVICE_SNAPSHOT_FAILED: No accessible elements were returned.");
+  const matches = nodes.filter(
+    (node) =>
+      node &&
+      node.label === label &&
+      node.enabled !== false &&
+      node.hittable === true &&
+      ["Button", "Link", "button", "link"].includes(node.type ?? node.kind),
+  );
+  if (matches.length !== 1)
+    throw new Error(
+      matches.length
+        ? "DEVICE_ELEMENT_AMBIGUOUS: Several enabled controls have this label. Inspect the screen and choose a coordinate."
+        : "DEVICE_ELEMENT_NOT_FOUND: No visible enabled control has this label. Inspect the selected app.",
+    );
+  const rect = matches[0].rect;
+  if (
+    !rect ||
+    ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) ||
+    rect.width <= 0 ||
+    rect.height <= 0
+  )
+    throw new Error(
+      "DEVICE_ELEMENT_BOUNDS_INVALID: The selected control has no usable screen bounds.",
+    );
+  const x = Math.round(rect.x + rect.width / 2),
+    y = Math.round(rect.y + rect.height / 2);
+  if (x < 0 || y < 0 || x > 20000 || y > 20000) throw new Error("Invalid device coordinate");
+  return ["press", String(x), String(y)];
+}
+const TOOLS = {
+  hub: { name: "expo-device-hub", version: DEVICE_HUB_VERSION, entry: "dist/server/cli.mjs" },
+  agent: { name: "agent-device", version: AGENT_DEVICE_VERSION, entry: "bin/agent-device.mjs" },
+};
+type HubDevices = {
+  simulators?: DeviceSummary[];
+  emulators?: DeviceSummary[];
+  errors?: { message: string }[];
+};
+type DeviceDiscoverySources = {
+  hub?: PromiseSettledResult<HubDevices>;
+  native?: PromiseSettledResult<DeviceSummary[] | undefined>;
+  macAndroid?: PromiseSettledResult<DeviceSummary[]>;
+};
+type DeviceDiscovery = DeviceDiscoverySources & {
+  key: string;
+  previous?: DeviceDiscoverySources;
+  ready: Promise<void>;
+  nativeComplete?: Promise<void>;
+  complete: Promise<void>;
+  completedAt?: number;
+};
+export function deviceActionArgs(action: DeviceAction): string[] {
+  const coordinate = (value: number) => {
+    if (!Number.isInteger(value) || value < 0 || value > 20000)
+      throw new Error("Invalid device coordinate: use an integer between 0 and 20000.");
+    return String(value);
+  };
+  switch (action.type) {
+    case "openApp": {
+      if (typeof action.app !== "string") throw new Error("Invalid device app target");
+      const app = action.app.trim();
+      if (!app || app.length > 256 || /[\0\r\n]/.test(action.app) || app.startsWith("-"))
+        throw new Error("Invalid device app target");
+      return ["open", app];
+    }
+    case "press":
+      return ["press", coordinate(action.x), coordinate(action.y)];
+    case "swipe":
+      return [
+        "swipe",
+        coordinate(action.x),
+        coordinate(action.y),
+        coordinate(action.endX),
+        coordinate(action.endY),
+      ];
+    case "type":
+      if (
+        typeof action.text !== "string" ||
+        !action.text ||
+        action.text.length > 4096 ||
+        action.text.includes("\0") ||
+        action.text.startsWith("-")
+      )
+        throw new Error(
+          "Invalid device text: use 1 to 4096 characters, without NUL or a leading hyphen.",
+        );
+      return ["type", action.text];
+    case "home":
+      return ["home"];
+    case "snapshot":
+      return ["snapshot", "-i"];
+    case "pressElement":
+      if (!action.label.trim() || action.label.length > 300 || /[\0\r\n]/.test(action.label))
+        throw new Error("Invalid device element label");
+      return ["snapshot", "-i"];
+    case "pressNode":
+      if (!/^[A-Za-z0-9_-]{1,200}$/.test(action.inspectionId) || !/^\d{1,3}$/.test(action.nodeId))
+        throw new Error("Invalid device inspection identity");
+      return ["snapshot", "-i"];
+    case "waitForText": {
+      const timeout = action.timeoutMs ?? 30_000;
+      if (
+        !action.text.trim() ||
+        action.text.startsWith("-") ||
+        action.text.length > 300 ||
+        /[\0\r\n]/.test(action.text) ||
+        !Number.isInteger(timeout) ||
+        timeout < 1 ||
+        timeout > 120_000
+      )
+        throw new Error("Invalid device text expectation");
+      return ["wait", "text", action.text, String(timeout)];
+    }
+    default:
+      throw new Error("Unsupported device action");
+  }
+}
+function localPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("No loopback port"));
+        return;
+      }
+      const port = address.port;
+      server.close((error) => (error ? reject(error) : resolve(port)));
+    });
+  });
+}
+
+/** One owner per host. No hub origin, daemon endpoint or token is returned to clients. */
+export class DeviceHost {
+  readonly control = new DeviceControlLeases();
+  private readonly inspections = new Map<
+    string,
+    {
+      deviceId: string;
+      scope: string;
+      expiresAt: number;
+      nodes: InspectionNode[];
+      fingerprint: string;
+    }
+  >();
+  private child?: ChildProcess;
+  private origin?: string;
+  private error?: string;
+  private disposed = false;
+  private closing = false;
+  private disposal?: Promise<void>;
+  private serial: Promise<unknown> = Promise.resolve();
+  private readonly deviceSerial = new Map<string, Promise<unknown>>();
+  private readonly capturePending = new Map<string, Promise<DeviceFrame>>();
+  private lastCapture?: { id: string; frame: DeviceFrame; time: number };
+  private readonly agentSessions = new Set<string>();
+  private readonly agentTargets = new Map<string, string>();
+  private readonly stateDir: string;
+  private iosSupport?: { checkedAt: number; result: Promise<boolean> };
+  private discovery?: DeviceDiscovery;
+  constructor(
+    private readonly baseDir: string,
+    private readonly options: {
+      nodePath?: string;
+      npmCliPath?: string;
+      platform?: NodeJS.Platform;
+      env?: NodeJS.ProcessEnv;
+    } = {},
+  ) {
+    this.stateDir = join(baseDir, "devices", "agent-state");
+  }
+  private get nodePath() {
+    return this.options.nodePath ?? process.execPath;
+  }
+  private get platform() {
+    return this.options.platform ?? process.platform;
+  }
+  private get env() {
+    const env = { ...(this.options.env ?? process.env) };
+    const sdk =
+      this.platform === "darwin"
+        ? join(homedir(), "Library/Android/sdk")
+        : this.platform === "win32"
+          ? join(env.LOCALAPPDATA ?? join(homedir(), "AppData/Local"), "Android/Sdk")
+          : undefined;
+    if (
+      !env.ANDROID_HOME &&
+      !env.ANDROID_SDK_ROOT &&
+      sdk &&
+      existsSync(join(sdk, "platform-tools"))
+    )
+      env.ANDROID_HOME = sdk;
+    const developer = "/Applications/Xcode.app/Contents/Developer";
+    if (
+      this.platform === "darwin" &&
+      !env.DEVELOPER_DIR &&
+      existsSync(join(developer, "usr/bin/simctl"))
+    )
+      env.DEVELOPER_DIR = developer;
+    const javaHome = "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home";
+    if (this.platform === "darwin" && !env.JAVA_HOME && existsSync(join(javaHome, "bin/java")))
+      env.JAVA_HOME = javaHome;
+    const androidRoot = env.ANDROID_HOME ?? env.ANDROID_SDK_ROOT;
+    const searchPaths = [
+      ...(androidRoot ? [join(androidRoot, "platform-tools"), join(androidRoot, "emulator")] : []),
+      ...(env.JAVA_HOME ? [join(env.JAVA_HOME, "bin")] : []),
+      ...(env.PATH ?? env.Path ?? "").split(delimiter),
+    ].filter(Boolean);
+    env.PATH = [...new Set(searchPaths)].join(delimiter);
+    return env;
+  }
+  private dir(tool: keyof typeof TOOLS) {
+    const spec = TOOLS[tool];
+    return join(this.baseDir, "tools", spec.name, spec.version);
+  }
+  private entry(tool: keyof typeof TOOLS) {
+    return join(this.dir(tool), "node_modules", TOOLS[tool].name, TOOLS[tool].entry);
+  }
+  private async installed(tool: keyof typeof TOOLS) {
+    try {
+      return (
+        (await readFile(join(this.dir(tool), ".install-complete"), "utf8")) ===
+          TOOLS[tool].version && existsSync(this.entry(tool))
+      );
+    } catch {
+      return false;
+    }
+  }
+  private runExclusive<T>(operation: () => Promise<T>, effect?: DeviceEffectContext): Promise<T> {
+    if (this.closing) return Promise.reject(new Error("Device host is disposed"));
+    const next = Promise.allSettled([this.serial, ...this.deviceSerial.values()]).then(async () => {
+      if (this.disposed) throw new Error("Device host is disposed");
+      await assertDeviceAuthority(effect);
+      const result = await operation();
+      await assertDeviceAuthority(effect);
+      return result;
+    });
+    this.serial = next;
+    return next;
+  }
+  /** Input/capture ordering is per device; setup and shutdown fence all lanes. */
+  private runForDevice<T>(
+    id: string,
+    operation: () => Promise<T>,
+    effect?: DeviceEffectContext,
+    publish?: (result: T) => void,
+  ): Promise<T> {
+    if (this.closing) return Promise.reject(new Error("Device host is disposed"));
+    const next = Promise.allSettled([this.serial, this.deviceSerial.get(id)]).then(async () => {
+      if (this.disposed) throw new Error("Device host is disposed");
+      await assertDeviceAuthority(effect);
+      const result = await operation();
+      await assertDeviceAuthority(effect);
+      // Synchronous publication belongs inside this lane and after its final
+      // authority gate. A later input cannot be overtaken by a stale cache write.
+      publish?.(result);
+      return result;
+    });
+    this.deviceSerial.set(id, next);
+    void next
+      .finally(() => {
+        if (this.deviceSerial.get(id) === next) this.deviceSerial.delete(id);
+      })
+      .catch(() => {});
+    return next;
+  }
+  private async command(
+    effect: DeviceEffectContext | undefined,
+    ...args: Parameters<typeof deviceCommand>
+  ) {
+    await assertDeviceAuthority(effect);
+    const work = deviceCommand(...args);
+    return effect?.track ? effect.track(work) : work;
+  }
+  private async binaryCommand(
+    effect: DeviceEffectContext | undefined,
+    ...args: Parameters<typeof deviceBinaryCommand>
+  ) {
+    await assertDeviceAuthority(effect);
+    const work = deviceBinaryCommand(...args);
+    return effect?.track ? effect.track(work) : work;
+  }
+  async status(effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
+    await assertDeviceAuthority(effect);
+    const sdk = this.env.ANDROID_HOME ?? this.env.ANDROID_SDK_ROOT;
+    // CommandLineTools also ships xcrun, but cannot run the iOS simulator.
+    if (
+      this.platform === "darwin" &&
+      (!this.iosSupport || Date.now() - this.iosSupport.checkedAt > 10_000)
+    ) {
+      this.iosSupport = {
+        checkedAt: Date.now(),
+        result: deviceCommand("/usr/bin/xcrun", ["--find", "simctl"], {
+          env: this.env,
+          timeoutMs: 5000,
+        }).then(
+          (path) => !!path.trim(),
+          () => false,
+        ),
+      };
+    }
+    const ios = this.platform === "darwin" && (await this.iosSupport!.result);
+    const android =
+      !!sdk &&
+      existsSync(join(sdk, "platform-tools", this.platform === "win32" ? "adb.exe" : "adb"));
+    const result: DeviceHostStatus = {
+      running:
+        !!this.origin &&
+        !!this.child &&
+        this.child.exitCode === null &&
+        this.child.signalCode === null,
+      installed: await this.installed("hub"),
+      agentInstalled: await this.installed("agent"),
+      platform: this.platform,
+      controlProtocol: 1,
+      lastError: this.error,
+      platforms: [
+        {
+          platform: "ios",
+          available: ios,
+          reason: ios
+            ? undefined
+            : "iOS Simulator requires a Mac with Xcode and a simulator runtime.",
+        },
+        {
+          platform: "android",
+          available: android,
+          reason: android
+            ? undefined
+            : "Set ANDROID_HOME or ANDROID_SDK_ROOT to an Android SDK with platform-tools, emulator and an AVD.",
+        },
+      ],
+    };
+    await assertDeviceAuthority(effect);
+    return result;
+  }
+  /** Explicit user setup only. npm runs as Node JS (no Windows shell), no global install. */
+  setup(agentAccess: boolean, effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
+    return this.runExclusive(async () => {
+      if (!(await this.status(effect)).platforms.some((item) => item.available))
+        throw new Error("Install a simulator/emulator SDK before device tools.");
+      const [major, minor] = process.versions.node.split(".").map(Number);
+      if (major < 22 || (major === 22 && minor < 12))
+        throw new Error("Device tools require Node.js 22.12 or newer.");
+      const npmDirectories = [
+        dirname(this.nodePath),
+        dirname(dirname(this.nodePath)),
+        join(homedir(), ".bycoda-host", "runtime"),
+        ...(this.env.PATH ?? "").split(delimiter),
+      ].filter(Boolean);
+      const npm =
+        this.options.npmCliPath ??
+        npmDirectories
+          .flatMap((directory) => [
+            join(directory, "node_modules/npm/bin/npm-cli.js"),
+            join(directory, "../lib/node_modules/npm/bin/npm-cli.js"),
+          ])
+          .find(existsSync);
+      if (!npm)
+        throw new Error(
+          "npm CLI is unavailable beside the host Node runtime. Configure npmCliPath.",
+        );
+      for (const tool of agentAccess ? (["hub", "agent"] as const) : (["hub"] as const)) {
+        await assertDeviceAuthority(effect);
+        const spec = TOOLS[tool];
+        const dir = this.dir(tool);
+        const installed = await this.installed(tool);
+        await assertDeviceAuthority(effect);
+        if (installed) continue;
+        const stage = `${dir}.stage-${randomUUID()}`;
+        await mkdir(stage, { recursive: true, mode: 0o700 });
+        await assertDeviceAuthority(effect);
+        await writeFile(
+          join(stage, "package.json"),
+          JSON.stringify({ private: true, dependencies: { [spec.name]: spec.version } }),
+          { mode: 0o600 },
+        );
+        await this.command(
+          effect,
+          this.nodePath,
+          [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
+          { cwd: stage, env: this.env, timeoutMs: 600_000 },
+        );
+        await assertDeviceAuthority(effect);
+        if (!existsSync(join(stage, "node_modules", spec.name, spec.entry)))
+          throw new Error("Device tool install did not produce the expected executable");
+        await writeFile(join(stage, ".install-complete"), spec.version, { mode: 0o600 });
+        // Preserve partial/previous directories; never delete tool caches or unrelated work.
+        await this.promoteTool(stage, dir, effect);
+      }
+      return this.status(effect);
+    }, effect);
+  }
+  private async promoteTool(stage: string, dir: string, effect?: DeviceEffectContext) {
+    await assertDeviceAuthority(effect);
+    let previous: string | undefined;
+    if (existsSync(dir)) {
+      previous = `${dir}.previous-${randomUUID()}`;
+      await rename(dir, previous);
+    }
+    try {
+      await assertDeviceAuthority(effect);
+      await rename(stage, dir);
+    } catch (cause) {
+      // Only this invocation moved this exact cache aside. Restoring it is
+      // owned rollback, not permission to install or overwrite another live path.
+      if (previous && !existsSync(dir)) {
+        try {
+          await rename(previous, dir);
+        } catch (rollback) {
+          throw new AggregateError(
+            [cause, rollback],
+            "Device tool promotion failed; the preserved cache requires owner recovery.",
+          );
+        }
+      }
+      throw cause;
+    }
+  }
+  start(effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
+    return this.runExclusive(async () => {
+      if ((await this.status(effect)).running) return this.status(effect);
+      if (!(await this.installed("hub"))) throw new Error("Choose Set up device tools first.");
+      const port = await localPort();
+      const origin = `http://127.0.0.1:${port}`;
+      await assertDeviceAuthority(effect);
+      const child = spawn(
+        this.nodePath,
+        [
+          this.entry("hub"),
+          "--port",
+          String(port),
+          "--host",
+          "127.0.0.1",
+          "--hide-sidebar",
+          "--hide-boot-device",
+          ...(this.platform === "win32" ? ["--platform", "android"] : []),
+        ],
+        {
+          env: this.env,
+          cwd: this.dir("hub"),
+          windowsHide: true,
+          shell: false,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      this.child = child;
+      this.error = undefined;
+      child.stdout?.resume();
+      child.stderr?.on("data", (value: Buffer) => {
+        this.error = value.toString().slice(-2000);
+      });
+      child.once("error", (cause) => {
+        this.error = cause.message;
+      });
+      child.once("close", () => {
+        if (this.child === child) {
+          this.origin = undefined;
+          this.child = undefined;
+        }
+      });
+      try {
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          if (child.exitCode !== null || child.signalCode !== null)
+            throw new Error(this.error ?? "Device hub exited during startup");
+          await assertDeviceAuthority(effect);
+          try {
+            const response = await fetch(`${origin}/api/devices`, {
+              signal: AbortSignal.timeout(1500),
+              redirect: "error",
+            });
+            await response.body?.cancel();
+            if (response.ok) {
+              this.origin = origin;
+              return this.status(effect);
+            }
+          } catch (cause) {
+            if (cause instanceof DeviceAuthorityRevokedError) throw cause;
+            /* bounded readiness retry */
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        throw new Error("Device hub did not become ready in 30 seconds");
+      } catch (cause) {
+        await stopDeviceChild(child);
+        this.error = String(cause);
+        throw cause;
+      }
+    }, effect);
+  }
+  private async request(
+    path: string,
+    init?: RequestInit,
+    effect?: DeviceEffectContext,
+  ): Promise<Response> {
+    if (!this.origin || !(await this.status(effect)).running)
+      throw new Error("Device hub is stopped");
+    await assertDeviceAuthority(effect);
+    const response = await fetch(`${this.origin}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(init?.method === "POST" ? 180_000 : 20_000),
+      redirect: "error",
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`Device hub request failed (${response.status})`);
+    }
+    return response;
+  }
+  async list(
+    effect?: DeviceEffectContext,
+  ): Promise<{ devices: DeviceSummary[]; errors: string[] }> {
+    await assertDeviceAuthority(effect);
+    // Native discovery must still run when the optional hub API is unhealthy.
+    const nativePlatform = this.platform === "darwin" ? "ios" : "android";
+    const canDiscoverNative = this.platform === "darwin" || this.platform === "win32";
+    const canDiscoverMacAndroid =
+      this.platform === "darwin" && !!(this.env.ANDROID_HOME || this.env.ANDROID_SDK_ROOT);
+    const env = this.env;
+    const key = JSON.stringify([
+      this.platform,
+      this.origin,
+      this.child?.pid,
+      env.ANDROID_HOME,
+      env.ANDROID_SDK_ROOT,
+      env.DEVELOPER_DIR,
+      env.PATH,
+    ]);
+    let discovery = this.discovery;
+    if (
+      !discovery ||
+      discovery.key !== key ||
+      (discovery.completedAt !== undefined && Date.now() - discovery.completedAt >= 1_000)
+    ) {
+      let ready!: () => void;
+      const current: DeviceDiscovery = {
+        key,
+        // Keep the last settled sources visible while refreshing the same SDKs.
+        // New results, including an empty list, replace these source by source.
+        previous:
+          discovery?.key === key
+            ? {
+                hub: discovery.hub,
+                native: discovery.native,
+                macAndroid: discovery.macAndroid,
+              }
+            : undefined,
+        ready: new Promise<void>((resolve) => {
+          ready = resolve;
+        }),
+        complete: Promise.resolve(),
+      };
+      const observe = <T>(
+        promise: Promise<T>,
+        save: (result: PromiseSettledResult<T>) => void,
+        usable: (value: T) => boolean,
+      ) =>
+        promise.then(
+          (value) => {
+            save({ status: "fulfilled", value });
+            if (usable(value)) ready();
+          },
+          (reason) => {
+            save({ status: "rejected", reason });
+          },
+        );
+      current.complete = Promise.all([
+        observe(
+          this.request("/api/devices").then((response) => response.json() as Promise<HubDevices>),
+          (value) => {
+            current.hub = value;
+          },
+          (value) =>
+            (!canDiscoverNative && !canDiscoverMacAndroid) ||
+            !!(value.simulators?.length || value.emulators?.length),
+        ),
+        (current.nativeComplete = observe(
+          canDiscoverNative
+            ? this.platform === "darwin"
+              ? this.listIos()
+              : this.listWindowsAndroid()
+            : Promise.resolve(undefined),
+          (value) => {
+            current.native = value;
+          },
+          // Empty native enumeration is authoritative for that platform, but
+          // is not a usable device that should hide a healthy pending source.
+          (value) => (value?.length ?? 0) > 0,
+        )),
+        observe(
+          canDiscoverMacAndroid ? this.listMacAndroid() : Promise.resolve([] as DeviceSummary[]),
+          (value) => {
+            current.macAndroid = value;
+          },
+          (value) => canDiscoverMacAndroid && value.length > 0,
+        ),
+      ]).then(() => {
+        current.completedAt = Date.now();
+      });
+      this.discovery = discovery = current;
+    }
+    await Promise.race([discovery.ready, discovery.complete]);
+    // Gather sources that settle together, without holding healthy results for
+    // the optional hub's 20s timeout. Later reads share the same pending discovery.
+    if (discovery.completedAt === undefined) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          discovery.complete,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, 100);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    const pending = (source: string) => ({
+      status: "rejected" as const,
+      reason: `${source} device discovery is still running; refresh to include its results.`,
+    });
+    const hub = discovery.hub ?? discovery.previous?.hub ?? pending("Optional hub");
+    const native = discovery.native ?? discovery.previous?.native ?? pending("Native");
+    const macAndroid = discovery.macAndroid ?? discovery.previous?.macAndroid ?? pending("Android");
+    if (
+      hub.status === "rejected" &&
+      (native.status === "rejected" || !native.value) &&
+      (!canDiscoverMacAndroid || macAndroid.status === "rejected")
+    ) {
+      throw hub.reason;
+    }
+    const result = hub.status === "fulfilled" ? hub.value : {};
+    let devices = [...(result.simulators ?? []), ...(result.emulators ?? [])]
+      .filter(
+        (item) =>
+          item &&
+          typeof item.id === "string" &&
+          typeof item.name === "string" &&
+          ["ios", "android"].includes(item.platform),
+      )
+      .slice(0, 200);
+    let errors = (result.errors ?? []).map((value) => String(value.message).slice(0, 500));
+    // The hub hides simulators without usage history and cannot invoke Windows
+    // avdmanager.bat. Native discovery includes fresh devices without a shell.
+    if (canDiscoverNative) {
+      if (native.status === "fulfilled" && native.value) {
+        devices = [
+          ...devices.filter((device) => device.platform !== nativePlatform),
+          ...native.value,
+        ].slice(0, 200);
+        errors = errors.filter((error) => !error.toLowerCase().includes(nativePlatform));
+      } else if (native.status === "rejected") {
+        // Preserve working hub results and expose the actionable SDK failure.
+        errors.push(String(native.reason).slice(0, 500));
+      }
+    }
+    // A Mac hub failure can still affect optional discovery capabilities.
+    if (hub.status === "rejected" && this.platform === "darwin")
+      errors.push(String(hub.reason).slice(0, 500));
+    if (macAndroid.status === "fulfilled") {
+      for (const item of macAndroid.value) {
+        devices = devices.filter((device) => device.id !== item.id);
+        devices.push(item);
+      }
+    } else errors.push(String(macAndroid.reason).slice(0, 500));
+    // Retained devices are presentation data, not proof the refresh completed.
+    if (!discovery.hub && discovery.previous?.hub) errors.push(pending("Optional hub").reason);
+    if (!discovery.native && discovery.previous?.native) errors.push(pending("Native").reason);
+    if (!discovery.macAndroid && discovery.previous?.macAndroid)
+      errors.push(pending("Android").reason);
+    await assertDeviceAuthority(effect);
+    return { devices: devices.slice(0, 200), errors };
+  }
+  private async listMacAndroid(): Promise<DeviceSummary[]> {
+    const output = await deviceCommand(this.androidBinary("adb"), ["devices", "-l"], {
+      env: this.env,
+      timeoutMs: 10_000,
+    });
+    return output
+      .split(/\r?\n/)
+      .slice(1)
+      .flatMap((line) => {
+        const [id, state, ...details] = line.trim().split(/\s+/);
+        if (!id || state !== "device") return [];
+        return [
+          {
+            id,
+            name:
+              details
+                .find((item) => item.startsWith("model:"))
+                ?.slice(6)
+                .replaceAll("_", " ") || id,
+            platform: "android" as const,
+            version: "Android",
+            booted: true,
+            physical: !/^emulator-\d+$/.test(id),
+          },
+        ];
+      })
+      .slice(0, 200);
+  }
+  private async listIos(): Promise<DeviceSummary[]> {
+    const result = JSON.parse(
+      await deviceCommand("/usr/bin/xcrun", ["simctl", "list", "devices", "available", "--json"], {
+        env: this.env,
+        timeoutMs: 10_000,
+      }),
+    ) as {
+      devices?: Record<
+        string,
+        { udid: string; name: string; state: string; isAvailable?: boolean }[]
+      >;
+    };
+    return Object.entries(result.devices ?? {})
+      .flatMap(([runtime, devices]) =>
+        runtime.includes(".iOS-")
+          ? devices
+              .filter(
+                (device) =>
+                  device.isAvailable !== false &&
+                  typeof device.udid === "string" &&
+                  typeof device.name === "string",
+              )
+              .map((device) => ({
+                id: device.udid,
+                name: device.name,
+                platform: "ios" as const,
+                version: `iOS ${runtime.split(".iOS-")[1].replaceAll("-", ".")}`,
+                booted: device.state === "Booted",
+                physical: false,
+              }))
+          : [],
+      )
+      .slice(0, 200);
+  }
+  private androidBinary(tool: "adb" | "emulator") {
+    const sdk = this.env.ANDROID_HOME ?? this.env.ANDROID_SDK_ROOT;
+    if (!sdk) throw new Error("Set ANDROID_HOME or ANDROID_SDK_ROOT to the Android SDK.");
+    return join(
+      sdk,
+      tool === "adb" ? "platform-tools" : "emulator",
+      `${tool}${this.platform === "win32" ? ".exe" : ""}`,
+    );
+  }
+  private async listWindowsAndroid(): Promise<DeviceSummary[]> {
+    const options = { env: this.env, timeoutMs: 10_000 };
+    const adb = this.androidBinary("adb");
+    const [connected, avds] = await Promise.all([
+      deviceCommand(adb, ["devices", "-l"], options),
+      existsSync(this.androidBinary("emulator"))
+        ? deviceCommand(this.androidBinary("emulator"), ["-list-avds"], options)
+        : Promise.resolve(""),
+    ]);
+    const names = avds
+      .split(/\r?\n/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .slice(0, 200);
+    const devices: DeviceSummary[] = names.map((name) => ({
+      id: name,
+      name,
+      platform: "android",
+      version: "Android",
+      booted: false,
+      physical: false,
+    }));
+    for (const row of connected.split(/\r?\n/).slice(1).slice(0, 200)) {
+      const [serial, state, ...details] = row.trim().split(/\s+/);
+      if (!serial || state !== "device") continue;
+      const emulator = /^emulator-\d+$/.test(serial);
+      const name = emulator
+        ? ((await deviceCommand(adb, ["-s", serial, "emu", "avd", "name"], options))
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find((line) => line && line !== "OK") ?? serial)
+        : details
+            .find((item) => item.startsWith("model:"))
+            ?.slice(6)
+            .replaceAll("_", " ") || serial;
+      // Only an emulator can replace its stopped AVD placeholder. Display names
+      // are not identities: several physical phones may have the same model.
+      const entry = emulator
+        ? devices.find((device) => !device.physical && !device.booted && device.id === name)
+        : undefined;
+      const online: DeviceSummary = {
+        id: serial,
+        name,
+        platform: "android",
+        version: "Android",
+        booted: true,
+        physical: !emulator,
+      };
+      if (entry) Object.assign(entry, online);
+      else devices.push(online);
+    }
+    return devices.slice(0, 200);
+  }
+  private async inventoryForDevice(id: string) {
+    let inventory = await this.list();
+    const pending = this.discovery;
+    const selected = inventory.devices.find((device) => device.id === id);
+    const nativePlatform =
+      this.platform === "darwin" ? "ios" : this.platform === "win32" ? "android" : undefined;
+    if (pending?.nativeComplete && selected && selected.platform === nativePlatform) {
+      // The hub can expose this target before native enumeration replaces it.
+      // Await only that authority; an unrelated slow hub must not hold it back.
+      await pending.nativeComplete;
+      inventory = await this.list();
+      if (pending.native?.status === "fulfilled" && pending.native.value !== undefined)
+        return inventory;
+    }
+    const previous = pending?.previous;
+    const retainedHub = previous?.hub?.status === "fulfilled" ? previous.hub.value : undefined;
+    const retainedNative =
+      previous?.native?.status === "fulfilled" ? previous.native.value : undefined;
+    const retainedAndroid =
+      previous?.macAndroid?.status === "fulfilled" ? previous.macAndroid.value : undefined;
+    const retainedTarget = [
+      ...(retainedHub?.simulators ?? []),
+      ...(retainedHub?.emulators ?? []),
+      ...(retainedNative ?? []),
+      ...(retainedAndroid ?? []),
+    ].some((device) => device.id === id);
+    // A fast source (for example ADB) can return before another platform has
+    // enumerated. Partial absence cannot reject a selected target, and retained
+    // presentation data cannot authorize an action before authoritative refresh.
+    if (pending && (retainedTarget || !inventory.devices.some((device) => device.id === id))) {
+      // Completion may race the partial list's return; re-read even if this
+      // promise settled before the caller resumed.
+      await pending.complete;
+      inventory = await this.list();
+    }
+    return inventory;
+  }
+  private async device(id: string) {
+    if (typeof id !== "string" || !id || id.length > 200) throw new Error("Invalid device ID");
+    const device = (await this.inventoryForDevice(id)).devices.find((item) => item.id === id);
+    if (!device) throw new Error("Device is no longer available; refresh the list");
+    return device;
+  }
+  async preflight(deviceId?: string, effect?: DeviceEffectContext) {
+    await assertDeviceAuthority(effect);
+    const status = await this.status(effect);
+    const inventory = await (deviceId ? this.inventoryForDevice(deviceId) : this.list()).catch(
+      (cause) => ({
+        devices: [] as DeviceSummary[],
+        errors: [String(cause)],
+      }),
+    );
+    const device = deviceId ? inventory.devices.find((item) => item.id === deviceId) : undefined;
+    await assertDeviceAuthority(effect);
+    return {
+      status,
+      ...inventory,
+      device,
+      checks: {
+        sdk: device
+          ? status.platforms.find((item) => item.platform === device.platform)?.available === true
+          : status.platforms.some((item) => item.available),
+        device: deviceId ? !!device : inventory.devices.length > 0,
+        tools: status.installed,
+        agentControl: status.agentInstalled,
+      },
+    };
+  }
+  async prepareExpo(
+    id: string,
+    sdkVersion: string,
+    install: boolean,
+    effect?: DeviceEffectContext,
+  ) {
+    return this.runExclusive(async () => {
+      const device = await this.device(id);
+      const app = device.platform === "ios" ? "host.exp.Exponent" : "host.exp.exponent";
+      const options = { env: this.env, timeoutMs: 15_000 };
+      let version = "";
+      try {
+        if (device.platform === "ios") {
+          const path = (
+            await this.command(
+              effect,
+              "/usr/bin/xcrun",
+              ["simctl", "get_app_container", id, app, "app"],
+              options,
+            )
+          ).trim();
+          version = (
+            await this.command(
+              effect,
+              "/usr/libexec/PlistBuddy",
+              ["-c", "Print :CFBundleShortVersionString", join(path, "Info.plist")],
+              options,
+            )
+          ).trim();
+        } else {
+          const result = await this.command(
+            effect,
+            this.androidBinary("adb"),
+            ["-s", id, "shell", "dumpsys", "package", app],
+            options,
+          );
+          version = result.match(/versionName=([\d.]+)/)?.[1] ?? "";
+        }
+      } catch (cause) {
+        if (cause instanceof DeviceAuthorityRevokedError) throw cause;
+        /* missing Expo Go is reported or prepared below */
+      }
+      if (version.split(".")[0] === sdkVersion.split(".")[0])
+        return { app, version, installed: false };
+      if (!install)
+        throw new Error(
+          "EXPO_GO_SETUP_REQUIRED: Expo Go is missing or incompatible. Retry preview with installExpoGo=true after authorizing this app setup.",
+        );
+      await assertDeviceAuthority(effect);
+      const cached = await cachedExpoGo(this.baseDir, sdkVersion, device.platform, {
+        env: this.env,
+      });
+      const result =
+        device.platform === "ios"
+          ? await this.command(effect, "/usr/bin/xcrun", ["simctl", "install", id, cached.app], {
+              ...options,
+              timeoutMs: 60_000,
+            })
+          : await this.command(
+              effect,
+              this.androidBinary("adb"),
+              ["-s", id, "install", "-r", "--user", "0", cached.app],
+              { ...options, timeoutMs: 120_000 },
+            );
+      if (device.platform === "android" && !/\bSuccess\b/.test(result))
+        throw new Error(
+          "EXPO_INSTALL_NOT_CONFIRMED: Check the device for an installation prompt before retrying.",
+        );
+      return { app, version: cached.versionName, installed: true };
+    }, effect);
+  }
+  async openExpo(id: string, value: string, effect?: DeviceEffectContext) {
+    return this.runExclusive(async () => {
+      const address = expoPreviewUrl(value);
+      const launchUrl = address.href.replace(/^http:/, "exp:").replace(/^https:/, "exps:");
+      const device = await this.device(id);
+      if (device.platform === "ios") {
+        await this.command(effect, "/usr/bin/xcrun", ["simctl", "openurl", id, launchUrl], {
+          env: this.env,
+          timeoutMs: 30_000,
+        });
+      } else {
+        const output = await this.command(
+          effect,
+          this.androidBinary("adb"),
+          [
+            "-s",
+            id,
+            "shell",
+            "am",
+            "start",
+            "-W",
+            "--user",
+            "0",
+            "-a",
+            "android.intent.action.VIEW",
+            "-d",
+            quoteAndroidShell(launchUrl),
+            "-p",
+            "host.exp.exponent",
+          ],
+          { env: this.env, timeoutMs: 30_000 },
+        );
+        if (/Error:|Exception:/.test(output))
+          throw new Error("EXPO_OPEN_FAILED: Android could not open the Expo URL.");
+      }
+    }, effect);
+  }
+  boot(id: string, effect?: DeviceEffectContext): Promise<DeviceSummary> {
+    return this.runExclusive(async () => {
+      const device = await this.device(id);
+      await assertDeviceAuthority(effect);
+      if (device.physical) throw new Error("Boot is available only for simulators and emulators");
+      if (device.booted) return device;
+      this.lastCapture = undefined;
+      if (this.platform === "win32" && device.platform === "android") {
+        const child = spawn(this.androidBinary("emulator"), ["-avd", device.name, "-no-window"], {
+          env: this.env,
+          windowsHide: true,
+          shell: false,
+          stdio: "ignore",
+        });
+        let failure: Error | undefined;
+        child.once("error", (cause) => {
+          failure = cause;
+        });
+        child.unref();
+        const deadline = Date.now() + 180_000;
+        while (Date.now() < deadline) {
+          if (failure) throw failure;
+          if (child.exitCode !== null || child.signalCode !== null)
+            throw new Error("Android emulator exited before boot completed");
+          await assertDeviceAuthority(effect);
+          const started = (await this.listWindowsAndroid()).find(
+            (item) => item.name === device.name && item.booted,
+          );
+          if (
+            started &&
+            (
+              await this.command(
+                effect,
+                this.androidBinary("adb"),
+                ["-s", started.id, "shell", "getprop", "sys.boot_completed"],
+                { env: this.env, timeoutMs: 10_000 },
+              )
+            ).trim() === "1"
+          )
+            return started;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        throw new Error(
+          "Android emulator did not finish booting in 180 seconds; refresh the device list before retrying.",
+        );
+      }
+      const result = (await (
+        await this.request(
+          "/api/devices/boot",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: device.id, name: device.name, platform: device.platform }),
+          },
+          effect,
+        )
+      ).json()) as { ok: boolean; id?: string; serial?: string; error?: string };
+      if (!result.ok) throw new Error(result.error ?? "Device boot failed");
+      return { ...device, id: result.serial ?? result.id ?? device.id, booted: true };
+    }, effect);
+  }
+  async capture(id: string, effect?: DeviceEffectContext): Promise<DeviceFrame> {
+    if (this.capturePending.has(id))
+      throw new Error("Another device capture is in progress; wait for it to finish");
+    let fresh: DeviceFrame | undefined;
+    const pending = this.runForDevice(
+      id,
+      async () => {
+        if (this.lastCapture?.id === id && Date.now() - this.lastCapture.time < 1000)
+          return this.lastCapture.frame;
+        fresh = await this.captureFrame(id, effect);
+        return fresh;
+      },
+      effect,
+      (frame) => {
+        if (frame === fresh) this.lastCapture = { id, frame, time: Date.now() };
+      },
+    );
+    this.capturePending.set(id, pending);
+    try {
+      const frame = await pending;
+      return frame;
+    } finally {
+      if (this.capturePending.get(id) === pending) this.capturePending.delete(id);
+    }
+  }
+  private async captureFrame(id: string, effect?: DeviceEffectContext): Promise<DeviceFrame> {
+    const device = await this.device(id);
+    await assertDeviceAuthority(effect);
+    if (!device.booted) throw new Error("Boot the device before viewing");
+    if (this.platform === "darwin" && device.platform === "ios") {
+      // Current simctl treats '-' as a filename, not standard output.
+      const directory = join(this.baseDir, "devices", "captures");
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const file = join(directory, `${randomUUID()}.png`);
+      try {
+        await this.command(
+          effect,
+          "/usr/bin/xcrun",
+          ["simctl", "io", device.id, "screenshot", "--type=png", file],
+          { env: this.env, timeoutMs: 20_000 },
+        );
+        if ((await stat(file)).size > 4 * 1024 * 1024)
+          throw new Error("Device screenshot exceeds 4 MiB");
+        const image = await readFile(file);
+        await assertDeviceAuthority(effect);
+        if (!image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+          throw new Error("DEVICE_CAPTURE_INVALID: simctl did not return a PNG screenshot.");
+        return {
+          mime: "image/png",
+          base64: image.toString("base64"),
+          capturedAt: new Date().toISOString(),
+        };
+      } finally {
+        await unlink(file).catch(() => {});
+      }
+    }
+    if (["win32", "darwin"].includes(this.platform) && device.platform === "android") {
+      const image = await this.binaryCommand(
+        effect,
+        this.androidBinary("adb"),
+        ["-s", device.id, "exec-out", "screencap", "-p"],
+        { env: this.env, timeoutMs: 20_000 },
+      );
+      await assertDeviceAuthority(effect);
+      if (!image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+        throw new Error("Device screenshot returned an unsupported format");
+      return {
+        mime: "image/png",
+        base64: image.toString("base64"),
+        capturedAt: new Date().toISOString(),
+      };
+    }
+    const response = await this.request(
+      `/vendor/${device.platform === "ios" ? "serve-sim" : "serve-emu"}/api/screenshot?device=${encodeURIComponent(device.id)}`,
+      { method: "POST" },
+      effect,
+    );
+    const mime = response.headers.get("content-type")?.split(";")[0];
+    if (mime !== "image/png" && mime !== "image/jpeg") {
+      await response.body?.cancel();
+      throw new Error("Device screenshot returned an unsupported format");
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Device screenshot is empty");
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        await assertDeviceAuthority(effect);
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > 4 * 1024 * 1024) throw new Error("Device screenshot exceeds 4 MiB");
+        chunks.push(chunk.value);
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+    await assertDeviceAuthority(effect);
+    return {
+      mime,
+      base64: Buffer.concat(chunks).toString("base64"),
+      capturedAt: new Date().toISOString(),
+    };
+  }
+  inspect(id: string, scope: string, effect?: DeviceEffectContext) {
+    return this.runForDevice(
+      id,
+      async () => {
+        const raw = await this.performAction(id, { type: "snapshot" }, effect);
+        const nodes = inspectionNodes(raw);
+        const inspectedAt = new Date().toISOString();
+        const frame = await this.captureFrame(id, effect);
+        const device = await this.device(id);
+        const bytes = Buffer.from(frame.base64, "base64");
+        const viewportCandidate =
+          device.platform === "android" &&
+          frame.mime === "image/png" &&
+          bytes.length >= 24 &&
+          bytes.toString("ascii", 12, 16) === "IHDR"
+            ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+            : undefined;
+        const viewport =
+          viewportCandidate &&
+          viewportCandidate.width > 0 &&
+          viewportCandidate.height > 0 &&
+          viewportCandidate.width <= 20000 &&
+          viewportCandidate.height <= 20000
+            ? viewportCandidate
+            : undefined;
+        const inspectionId = randomUUID();
+        for (const [key, value] of this.inspections)
+          if (value.deviceId === id || value.expiresAt <= performance.now())
+            this.inspections.delete(key);
+        if (this.inspections.size >= 128) throw new Error("DEVICE_INSPECTION_CAPACITY");
+        this.inspections.set(inspectionId, {
+          deviceId: id,
+          scope,
+          expiresAt: performance.now() + 30_000,
+          nodes,
+          fingerprint: inspectionFingerprint(raw),
+        });
+        return {
+          deviceId: id,
+          inspectionId,
+          raw,
+          nodes,
+          inspectedAt,
+          frame,
+          coordinateSpace:
+            device.platform === "android" ? ("pixels" as const) : ("points" as const),
+          ...(viewport ? { viewport } : {}),
+        };
+      },
+      effect,
+    );
+  }
+  action(
+    id: string,
+    action: DeviceAction,
+    effect?: DeviceEffectContext,
+    scope?: string,
+  ): Promise<string> {
+    return this.runForDevice(
+      id,
+      async () => {
+        if (action.type === "pressNode") {
+          deviceActionArgs(action);
+          const inspection = this.inspections.get(action.inspectionId);
+          if (
+            !inspection ||
+            inspection.deviceId !== id ||
+            !scope ||
+            inspection.scope !== scope ||
+            inspection.expiresAt <= performance.now()
+          )
+            throw new Error("DEVICE_INSPECTION_STALE");
+          const selected = inspection.nodes.find((node) => node.id === action.nodeId);
+          if (!selected || !selected.enabled || !selected.clickable)
+            throw new Error("DEVICE_NODE_NOT_ACTIONABLE");
+          const currentRaw = await this.performAction(id, { type: "snapshot" }, effect);
+          if (inspectionFingerprint(currentRaw) !== inspection.fingerprint)
+            throw new Error("DEVICE_INSPECTION_STALE");
+          this.inspections.delete(action.inspectionId);
+          return this.performAction(
+            id,
+            {
+              type: "press",
+              x: Math.round(selected.bounds.x + selected.bounds.width / 2),
+              y: Math.round(selected.bounds.y + selected.bounds.height / 2),
+            },
+            effect,
+          );
+        }
+        if (action.type !== "snapshot" && action.type !== "waitForText")
+          for (const [key, value] of this.inspections)
+            if (value.deviceId === id) this.inspections.delete(key);
+        return this.performAction(id, action, effect);
+      },
+      effect,
+    );
+  }
+  private async performAction(
+    id: string,
+    action: DeviceAction,
+    effect?: DeviceEffectContext,
+  ): Promise<string> {
+    let args = deviceActionArgs(action);
+    const device = await this.device(id);
+    if (!device.booted) throw new Error("Boot the device before interacting");
+    if (!(await this.installed("agent")))
+      throw new Error("Enable agent control in device setup first");
+    await assertDeviceAuthority(effect);
+    if (this.platform === "win32" && device.platform === "android") {
+      this.lastCapture = undefined;
+      return androidDeviceControl(this.androidBinary("adb"), device.id, action, {
+        env: this.env,
+        authorize: () => assertDeviceAuthority(effect),
+        track: effect?.track,
+      });
+    }
+    await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+    const session = `bycoda-${device.platform}-${device.id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+    const selector = [
+      "--platform",
+      device.platform,
+      device.platform === "ios" ? "--udid" : "--serial",
+      device.id,
+      "--session",
+      session,
+      "--json",
+    ];
+    const options = {
+      cwd: this.baseDir,
+      env: {
+        ...this.env,
+        AGENT_DEVICE_STATE_DIR: this.stateDir,
+        AGENT_DEVICE_DAEMON_IDLE_TIMEOUT_MS: "10000",
+        AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
+      },
+      timeoutMs: 30_000,
+    };
+    // The private daemon exits after ten idle seconds. Never trust the local
+    // session cache after that exit, and never replay a potentially sent input.
+    {
+      const active = JSON.parse(
+        await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), "session", "list", "--json"],
+          options,
+        ),
+      ) as {
+        success?: boolean;
+        data?: { sessions?: { name: string; platform: string; id: string }[] };
+      };
+      if (!active.success || !Array.isArray(active.data?.sessions))
+        throw new Error("Could not verify device control sessions");
+      const existing = active.data.sessions.find((item) => item.name === session);
+      if (existing && (existing.platform !== device.platform || existing.id !== device.id))
+        throw new Error("Device control session belongs to a different device");
+      const remembered = this.agentTargets.get(session);
+      if (action.type === "openApp") {
+        this.lastCapture = undefined;
+        const output = await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), ...args, ...selector],
+          {
+            ...options,
+            timeoutMs: 60_000,
+          },
+        );
+        const result = this.verifyAgentResult(output);
+        this.agentTargets.set(
+          session,
+          typeof result.data?.appBundleId === "string" && result.data.appBundleId
+            ? result.data.appBundleId
+            : args[1],
+        );
+        this.agentSessions.add(session);
+        return output;
+      }
+      const homeTarget =
+        device.platform === "ios" && action.type === "home" ? "com.apple.springboard" : undefined;
+      const target = homeTarget ?? remembered;
+      // session list does not disclose app targets in the pinned CLI. A
+      // previously existing session alone cannot establish safe app ownership.
+      if (device.platform === "ios" && !target)
+        throw new Error("Open an app before controlling this iOS simulator.");
+      if (!existing || (homeTarget && remembered !== homeTarget)) {
+        const opened = await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), "open", ...(target ? [target] : []), ...selector],
+          {
+            ...options,
+            timeoutMs: 60_000,
+          },
+        );
+        const result = this.verifyAgentResult(opened);
+        if (target)
+          this.agentTargets.set(
+            session,
+            typeof result.data?.appBundleId === "string" && result.data.appBundleId
+              ? result.data.appBundleId
+              : target,
+          );
+      }
+      this.agentSessions.add(session);
+    }
+    this.lastCapture = undefined;
+    if (action.type === "pressElement") {
+      const snapshot = JSON.parse(
+        await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), ...args, ...selector],
+          options,
+        ),
+      );
+      if (snapshot.success !== true)
+        throw new Error("DEVICE_SNAPSHOT_FAILED: Could not inspect the selected app.");
+      args = elementPressArgs(snapshot.data?.nodes ?? snapshot.data?.snapshot?.nodes, action.label);
+    }
+    const output = await this.command(
+      effect,
+      this.nodePath,
+      [this.entry("agent"), ...args, ...selector],
+      action.type === "waitForText"
+        ? { ...options, timeoutMs: (action.timeoutMs ?? 30_000) + 5000 }
+        : options,
+    );
+    this.verifyAgentResult(output);
+    return output;
+  }
+  private verifyAgentResult(output: string) {
+    const result = JSON.parse(output) as {
+      success?: boolean;
+      error?: unknown;
+      data?: { appBundleId?: string };
+    };
+    if (result.success !== true) {
+      throw new Error(
+        `Device action failed: ${JSON.stringify(result.error ?? "agent-device did not confirm success").slice(0, 2000)}`,
+      );
+    }
+    return result;
+  }
+  private async shutdown(effect?: DeviceEffectContext) {
+    for (const session of this.agentSessions)
+      await this.command(
+        effect,
+        this.nodePath,
+        [this.entry("agent"), "close", "--session", session, "--json"],
+        { env: { ...this.env, AGENT_DEVICE_STATE_DIR: this.stateDir }, timeoutMs: 10_000 },
+      )
+        .then((output) => {
+          this.verifyAgentResult(output);
+          // Bookkeeping of a confirmed retirement may finish even when the
+          // original request loses access immediately after its command settles.
+          this.agentSessions.delete(session);
+          this.agentTargets.delete(session);
+        })
+        .catch((cause: unknown) => {
+          if (cause instanceof DeviceAuthorityRevokedError) throw cause;
+          this.error = String(cause);
+        });
+    await assertDeviceAuthority(effect);
+    if (this.platform !== "win32" && (await this.installed("agent")))
+      await this.command(
+        effect,
+        this.nodePath,
+        [this.entry("agent"), "daemon", "stop", "--state-dir", this.stateDir],
+        { env: this.env, timeoutMs: 10_000 },
+      )
+        .then((output) => {
+          // Preserve owned tracking if a CLI reports structured failure even
+          // though its subprocess exited0; normal successful text stays valid.
+          if (output.trim().startsWith("{") && JSON.parse(output).success === false)
+            throw new Error("Device daemon stop did not confirm success");
+          this.agentSessions.clear();
+          this.agentTargets.clear();
+        })
+        .catch((cause: unknown) => {
+          if (cause instanceof DeviceAuthorityRevokedError) throw cause;
+          this.error = String(cause);
+        });
+    await assertDeviceAuthority(effect);
+    const child = this.child;
+    this.origin = undefined;
+    this.lastCapture = undefined;
+    if (child) await stopDeviceChild(child);
+    this.child = undefined;
+  }
+  stop(effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
+    return this.runExclusive(async () => {
+      await this.shutdown(effect);
+      return this.status(effect);
+    }, effect);
+  }
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
+    this.closing = true;
+    this.disposal = (async () => {
+      await Promise.allSettled([this.serial, ...this.deviceSerial.values()]);
+      this.disposed = true;
+      await this.shutdown();
+    })();
+    return this.disposal;
+  }
+}

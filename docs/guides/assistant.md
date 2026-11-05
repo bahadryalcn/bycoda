@@ -1,5 +1,95 @@
 # Personal assistant
 
+The Room's **Conversations** starts in **Global** scope. Its management history
+and draft belong to the Assistant, even when no project or coding session is
+open. Name the target project in requests about project work; the global
+conversation keeps its identity. Project-scoped conversation history remains
+separately selectable, but managing a project does not require switching to it.
+
+When the Assistant is enabled and setup is complete, the main application window
+keeps that global Room registered in the background. Registration does not start
+a model turn, open a microphone or select a project. An open interactive Room
+takes precedence over its background registration. Closing the application or
+losing the native Host connection makes that source unavailable.
+
+Application preferences, provider metadata and visible project discovery can use
+the registered Room conversation directly. Native review, revision checks and
+operation receipts still apply to changes. Closing voice does not stop already
+accepted Host work. A disconnected Host or unavailable native owner remains
+unavailable; the Assistant does not borrow another session to continue.
+
+Typed Conversations can discover and call the supported application tools through
+the same Room identity. Project work still names an explicit visible target;
+native approvals and account policies remain in force. Each turn has a bounded
+step and token allowance. If a tool times out or its acknowledgement is lost,
+inspect the reported original operation before requesting it again. The Host
+retains that operation's identity and does not automatically replay the effect.
+
+For canonical Host conversations, the Room can create an unsent session with
+explicit provider, model and execution settings, submit reviewed work to an idle
+session without a draft, and stop an exact run. Read the current revision before
+submitting. A sent message records its real Room author; it does not invent a job
+or manual-supervision grant. After an uncertain acknowledgement, use the original
+submission ID to read its receipt. A missing receipt means unknown, never safe to
+send again. Accepted work belongs to its Host run and can continue after voice
+closes. Native desktop sessions retain a separate execution-owner path.
+
+Global scope does not grant every account or remote Host. In a social account's
+settings, **Assistant account access** separately permits reading and preparing
+drafts without choosing a project. Access starts off and can be revoked there.
+Sending still requires the account's policy and exact owner approval. Revoking or
+changing access invalidates earlier grant versions, including retained results.
+
+The personal notebook uses existing Notes storage without choosing a project.
+Typed or voice requests can list, read, create, update and delete Assistant
+notebook entries. Changes retain native review, revisions and operation receipts;
+deletion retains recovery. **Save personal note** remains available directly.
+Project notes and ordinary notes outside the Assistant notebook retain their
+existing scope.
+
+In **Conversations**, **Remote access** shows the Room registration state and
+lets you choose a paired Host, target project ID, scope and duration. **Connect**
+opens Native review of that exact request. The target must have a qualified Native
+Room, visible project and trusted installation identity. The grant retains the
+original project directory; moving the project requires a new review. Inspect
+the original request after an uncertain reply before starting another connection.
+**Show native identity for owner enrollment** displays
+the public installation identity; it does not enroll it or grant access. Headless
+access needs a separate owner decision.
+
+Task observation has separate, default-off completion and needs-input settings
+under **Settings > Schedule**. They apply only to explicitly supervised projects.
+Preferences can be saved while the source is unavailable; notifications wait
+until this Host can verify the source and transfer an exact notification to its
+native owner. Native acceptance and actual notification display are separate.
+Unknown delivery is never automatically retried. These settings do not request
+operating-system notification permission; saved preferences do not imply an
+active subscription.
+The observation journal stores bounded change metadata rather than task text.
+Retention gaps require an authorized resnapshot before the cursor can advance.
+Personal Native Notes and saved Servers use their original installation scope,
+separate from project and Social account events. Their initial state and any
+source gap require a verified, fully delivered metadata baseline. Pending or
+uncertain completion remains incomplete. Observation never opens the microphone
+or approves a new action.
+
+**Room > Sessions** separates job-created sessions from manual conversation
+supervision. Search narrows both lists; the status filter applies to job sessions.
+Clear filters when no sessions match, or choose **View jobs** when no job sessions
+exist yet. The supervision panel keeps its current state, project settings and
+refresh action together. An unavailable policy shows **Unknown** until refreshed;
+only a confirmed disabled policy shows **Off**. Supervision still requires explicit
+project selection and individual conversation enrollment.
+
+The Room's **History** tab groups activity by day, newest first. Each entry keeps
+its time, event type and available job/session links together. Search and the
+type filter narrow the visible entries; **Clear history** still requires confirmation.
+
+In the Room's **Jobs** tab, write requests in the input above the job list, one
+request per line, then choose **Review jobs**. The heading shows the number of
+matching jobs. Search and filters narrow the list; **Reset** in an empty search
+result clears them without changing your draft.
+
 Open **Set up** in the tool navigation to choose the assistant's name, language,
 execution provider, working permissions and daily token budget. The chosen name
 also appears in its Room and on messages it writes. Voice setup checks the
@@ -34,10 +124,36 @@ project; that content does not become a saved personal rule or trusted memory.
 
 ## Give and follow work
 
+Room **Settings** separates personal preferences, work permissions, schedules,
+project supervision, computer access and advanced limits. Switching sections keeps
+unsaved preferences. **Save profile settings** applies profile preferences and conversation retention without closing the dialog.
+Project supervision and computer controls have their own Save actions; changing
+sections or saving the profile does not save those independent policies. Search
+projects by name or folder path; paths distinguish projects with the same name.
+Helper executable and checksum fields are under **Advanced helper settings**.
+Closing settings or running setup again asks before discarding unsaved profile,
+project or computer drafts. Pending saves and helper preparation keep settings open.
+
+Computer settings distinguish the verified helper file, saved permission and a
+currently running desktop operation. Opening settings reads these states; it does
+not enable control, connect to an application or prepare the helper. Enabling the
+saved permission allows future requests through existing approvals. A verified
+helper alone does not mean control is enabled or an operation is running.
+
 The Room opens on **Today**, with a request field and current work. Use its tabs
 for conversations, jobs, sessions, notes, history and memory. The header's status
 control contains activity and usage details. Refresh and secondary actions stay
 in menus; the settings control and **Stop everything** remain directly available.
+
+**Conversations** shows your messages on the right and assistant replies on the
+left, grouped by day. Press **Enter** to send or **Shift+Enter** for a new line.
+Unsent drafts stay with their conversation. Message deletion, recorded actions
+and related work remain available beside each message; conversation actions live
+in the chat header. The voice launcher has its own space beside the composer.
+If a draft cannot be saved locally, the Room keeps it in this window and offers
+**Retry saving**. Save it before closing the window: an unsaved draft held only
+in memory cannot survive a full app exit. Job priority and replan requests wait
+until their original request can be saved locally before dispatch.
 
 Enter several requests in the Room or say them during voice chat. Review each
 request and its project before choosing **Start**. Keep the same request when
@@ -54,6 +170,10 @@ Choose **Scheduled automation** for recurring work. Review the project, schedule
 provider, model and run limits before saving. Creation saves the schedule without
 starting a run. Open its confirmed result in Automations to inspect or change it.
 An unconfirmed result keeps its original identity for reconciliation.
+
+After the desktop has been offline, scheduled automations consider only the newest
+missed occurrence. It runs only within its configured grace period; the schedule
+then advances to a future occurrence instead of replaying every missed run.
 
 Plan approval can be required always, only for big jobs, or never. Big jobs have
 four or more planned tasks or span multiple projects. The selected policy is
@@ -138,7 +258,15 @@ Save preferences as owner rules and choose whether they apply to voice, coding
 sessions or both. Learned facts have separate provenance and cannot promote
 themselves into owner rules. Forbidden terms can be excluded from assistant
 text outputs. Review remembered facts and remove outdated information in
-**Memory**.
+**Memory**. Its search and **Add memory** action sit above grouped Rules, About me
+and Learned entries. Each entry keeps its scope, source and date beside the text;
+enable, edit and delete controls stay with that entry. In the editor, write the
+memory first, then select its kind and scope and optional forbidden words. Deleting
+requires confirmation; **Undo** restores the deleted entry.
+
+**Notes** shows searchable cards with a title, update time and content excerpt.
+Open a title to read or edit the complete note. **New note** keeps an unfinished
+draft when closed; deleting a card requires confirmation and retains recovery.
 
 **Summarize today** in Notes shows the retained daily briefing and its generation
 time. It returns that day's saved artifact even if a later return briefing became

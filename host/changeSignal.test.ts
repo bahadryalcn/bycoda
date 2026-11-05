@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ChangeSignal } from "./changeSignal";
-import { RemoteChanges } from "./remoteChanges";
+import { RemoteChanges } from "./workspaces/remoteChanges";
 
 afterEach(() => vi.useRealTimers());
 

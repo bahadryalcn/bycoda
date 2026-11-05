@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   conversation: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async (name: string, handler: (event: { payload: never }) => void) => {
     mocks.handlers.set(name, handler);

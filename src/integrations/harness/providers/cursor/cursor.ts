@@ -15,7 +15,11 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import { retireProviderEpoch } from "../turnWriter";
+import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -81,6 +85,7 @@ import {
 } from "./cursorStore";
 import { cursorAgentLabel, cursorSubagentEvents, kindFromCursorToolName } from "./cursorSubagents";
 import { stopCursorTitleGeneration } from "./cursorTitle";
+import { cursorAskQuestionResponse } from "./cursorQuestionReply";
 import type {
   ApprovalDecision,
   HarnessEvent,
@@ -88,10 +93,8 @@ import type {
   SteerTurnInput,
 } from "../../core/types";
 import {
-  CUSTOM_OPTION_ID,
   questionPromptTitle,
   questionsFromUnknown,
-  type UserQuestion,
   type UserQuestionReply,
 } from "../../../../features/sessions/model/userQuestion";
 import {
@@ -407,6 +410,7 @@ export async function forgetCursorSession(
     stopCursorSession(sessionId),
     stopCursorTitleGeneration(sessionId),
   ]);
+  retireProviderEpoch(sourceEpochByThread, turnsByThread, sessionId);
 }
 
 /** Seed ACP resume state for a restored Bycoda session. */
@@ -631,10 +635,14 @@ async function applyModelSelection(
     await setConfigOption(live, live.modelConfigId, base, acp);
   } catch {
     await acp
-      .request("session/set_model", {
-        sessionId: live.acpSessionId,
-        modelId: base,
-      }, 20_000)
+      .request(
+        "session/set_model",
+        {
+          sessionId: live.acpSessionId,
+          modelId: base,
+        },
+        20_000,
+      )
       .catch(() => undefined);
   }
 
@@ -654,11 +662,15 @@ async function setConfigOption(
   const current = live.configOptions.find((option) => option.id === configId);
   if (current && String(current.currentValue ?? "") === String(value)) return;
 
-  const result = await acp.request<SessionSetupResult>("session/set_config_option", {
-    sessionId: live.acpSessionId,
-    configId,
-    value,
-  }, 20_000);
+  const result = await acp.request<SessionSetupResult>(
+    "session/set_config_option",
+    {
+      sessionId: live.acpSessionId,
+      configId,
+      value,
+    },
+    20_000,
+  );
   if (result?.configOptions) {
     live.configOptions = readConfigOptions(result.configOptions);
     live.modelConfigId = extractModelConfigId(result) || live.modelConfigId;
@@ -673,6 +685,18 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
     try {
       const blocks = promptBlocks(input.text, input.attachments);
       if (blocks.length === 0) return;
+      // Settled tools from earlier turns no longer need lookup state. Keep
+      // background agents and pending enrichment until their work has ended.
+      for (const [id, status] of live.toolStatuses) {
+        if (
+          (status === "completed" || status === "failed" || status === "cancelled") &&
+          !live.backgroundAgentTools.has(id) &&
+          !live.pendingToolEnrichments.has(id)
+        ) {
+          live.toolStatuses.delete(id);
+          live.enrichedTools.delete(id);
+        }
+      }
       live.agentTools.clear();
       nativeOutputSink(responseScope.work, retireCursorSubagentPolling)(live);
       live.subagentRuns.clear();
@@ -702,7 +726,10 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       }
       nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "completed");
       // Final enrichment is optional and must not hold turn completion.
-      void nativeOutputSink(responseScope.work, refreshCursorSubagents)(live).catch((error: unknown) => {
+      void nativeOutputSink(
+        responseScope.work,
+        refreshCursorSubagents,
+      )(live).catch((error: unknown) => {
         console.warn("[cursor] Final subagent refresh failed", error);
       });
       if (live.cancelled || live.muteUpdates) return;
@@ -880,26 +907,6 @@ async function handleAskQuestion(live: Live, id: number, params: unknown) {
     },
     { additionalInput: true },
   );
-}
-
-function cursorAskQuestionResponse(
-  reply: UserQuestionReply,
-  questions: UserQuestion[],
-): Record<string, unknown> {
-  if (reply.kind !== "answered") {
-    return { outcome: { outcome: "skipped", reason: "User skipped" } };
-  }
-  return {
-    outcome: {
-      outcome: "answered",
-      answers: questions.map((question) => ({
-        questionId: question.id,
-        selectedOptionIds: (reply.answers[question.id] ?? []).filter(
-          (optionId) => optionId !== CUSTOM_OPTION_ID,
-        ),
-      })),
-    },
-  };
 }
 
 async function handlePermission(live: Live, id: number, params: unknown) {
@@ -1234,11 +1241,15 @@ function refreshCursorSubagents(live: Live): Promise<void> {
   const emitNative = nativeOutputSink(outputWork, (event: HarnessEvent) => live.onEvent(event));
   const job = trackNativeOutputWork(
     (async () => {
-      const runs = await withTimeout(readStoredCursorSubagentRuns(
-        live.acpSessionId,
-        [...live.agentTools.keys()].slice(-256),
-        live.subagentRevisions,
-      ), 20_000, "Cursor subagent refresh timed out").catch(() => []);
+      const runs = await withTimeout(
+        readStoredCursorSubagentRuns(
+          live.acpSessionId,
+          [...live.agentTools.keys()].slice(-256),
+          live.subagentRevisions,
+        ),
+        20_000,
+        "Cursor subagent refresh timed out",
+      ).catch(() => []);
       if (live.muteUpdates || live.subagentGeneration !== generation) return;
       for (const run of runs) {
         if (!live.agentTools.has(run.toolCallId)) continue;

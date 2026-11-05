@@ -72,7 +72,10 @@ function projectRow(name: string) {
 }
 function click(scope: ParentNode, label: string) {
   const button = [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.getAttribute("aria-label") === label || item.getAttribute("aria-label")?.startsWith(`${label} (`) || item.textContent === label,
+    (item) =>
+      item.getAttribute("aria-label") === label ||
+      item.getAttribute("aria-label")?.startsWith(`${label} (`) ||
+      item.textContent === label,
   );
   expect(button, label).toBeDefined();
   act(() => button!.click());

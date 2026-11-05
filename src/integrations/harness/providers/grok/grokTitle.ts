@@ -7,6 +7,9 @@ export async function generateGrokSessionTitle(input: {
   sessionId: string;
   cwd: string;
   message: string;
+  model?: string;
+  modelSettings?: Record<string, string>;
+  providerAccountId?: string;
   operationContext?: HarnessOperationContext;
 }): Promise<GeneratedSessionTitle | null> {
   return generateSessionTitle(input, runGrokTextPrompt);

@@ -5,6 +5,7 @@ import {
   type HostSettingsState,
 } from "../src/features/tasks/model/hostSettings";
 import type { HostStore } from "./store";
+import { confirmedRunElapsed } from "./execution/run-duration";
 
 const MINUTE_MS = 60_000;
 /** How many days of usage are kept. */
@@ -23,6 +24,9 @@ export function localDay(time: number): string {
 export class HostLimits {
   /** Where the start times of runs still going come from. */
   private readonly sources: Array<() => number[] | Promise<number[]>> = [];
+  private readonly runSources: Array<
+    () => { sessionId: string; runId: string }[] | Promise<{ sessionId: string; runId: string }[]>
+  > = [];
 
   readonly ready: Promise<void>;
   constructor(
@@ -37,6 +41,15 @@ export class HostLimits {
           "CREATE TABLE IF NOT EXISTS host_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
             "CREATE TABLE IF NOT EXISTS agent_usage (day TEXT PRIMARY KEY, ms REAL NOT NULL);",
         );
+        await store.db.exec(
+          "CREATE TABLE IF NOT EXISTS run_duration_daily (session_id TEXT NOT NULL, run_id TEXT NOT NULL, day TEXT NOT NULL, ms REAL NOT NULL, PRIMARY KEY(session_id,run_id,day))",
+        );
+        await store.db.exec(
+          "CREATE TABLE IF NOT EXISTS run_duration_daily_unknown (session_id TEXT NOT NULL, run_id TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(session_id,run_id,day))",
+        );
+        await store.db.exec(
+          "CREATE TABLE IF NOT EXISTS run_duration_quota (session_id TEXT NOT NULL, run_id TEXT NOT NULL, PRIMARY KEY(session_id,run_id))",
+        );
       });
     })();
   }
@@ -45,6 +58,24 @@ export class HostLimits {
    * they have used so far counts towards the limit. */
   track(running: () => number[] | Promise<number[]>): void {
     this.sources.push(running);
+  }
+
+  trackRuns(
+    running: () =>
+      | { sessionId: string; runId: string }[]
+      | Promise<{ sessionId: string; runId: string }[]>,
+  ): void {
+    this.runSources.push(running);
+  }
+
+  async recordRun(run: { sessionId?: string; runId?: string }, now = this.now()): Promise<void> {
+    if (run.sessionId && run.runId) {
+      await this.ready;
+      await this.store.db
+        .prepare("INSERT OR IGNORE INTO run_duration_quota VALUES (?,?)")
+        .run(run.sessionId, run.runId);
+      await confirmedRunElapsed(this.store, run.sessionId, run.runId, now);
+    }
   }
 
   async settings(): Promise<HostSettings> {
@@ -130,7 +161,14 @@ export class HostLimits {
       for (const source of this.sources)
         for (const startedAt of await source())
           going += Math.max(0, now - Math.max(startedAt, midnight.getTime()));
-      return (settled + going) / MINUTE_MS;
+      for (const source of this.runSources)
+        for (const run of await source()) await this.recordRun(run, now);
+      const observed = await this.store.db
+        .prepare(
+          "SELECT coalesce(sum(d.ms),0) AS ms FROM run_duration_daily d JOIN run_duration_quota q USING(session_id,run_id) WHERE d.day=?",
+        )
+        .get(localDay(now));
+      return (settled + going + Number(observed!.ms)) / MINUTE_MS;
     });
   }
 
@@ -140,7 +178,9 @@ export class HostLimits {
 
     return await this.store.db.scope(async () => {
       const { dailyAgentMinutes } = await this.settings();
-      return dailyAgentMinutes > 0 && (await this.usedMinutes()) >= dailyAgentMinutes;
+      if (dailyAgentMinutes <= 0) return false;
+      const used = await this.usedMinutes();
+      return used >= dailyAgentMinutes || (await this.usageUncertain());
     });
   }
 
@@ -150,11 +190,24 @@ export class HostLimits {
     return await this.store.db.scope(async () => {
       const settings = await this.settings();
       const usedMinutes = await this.usedMinutes();
+      const usageUncertain = await this.usageUncertain();
       return {
         ...settings,
         usedMinutes,
-        limitReached: settings.dailyAgentMinutes > 0 && usedMinutes >= settings.dailyAgentMinutes,
+        ...(usageUncertain ? { usageUncertain: true } : {}),
+        limitReached:
+          settings.dailyAgentMinutes > 0 &&
+          (usageUncertain || usedMinutes >= settings.dailyAgentMinutes),
       };
     });
+  }
+
+  private async usageUncertain(): Promise<boolean> {
+    const row = await this.store.db
+      .prepare(
+        "SELECT 1 AS present FROM run_duration_daily_unknown d JOIN run_duration_quota q USING(session_id,run_id) WHERE d.day=? LIMIT 1",
+      )
+      .get(localDay(this.now()));
+    return !!row;
   }
 }

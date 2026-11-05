@@ -1,5 +1,15 @@
 # MCP connections
 
+The connection list scrolls continuously, retaining search and provider/scope
+filters during refresh. Refresh failures appear after the last loaded row and
+keep that result available with Retry.
+
+Each connection shows permission, verified readiness and activity separately.
+Configured or signed in does not mean verified ready. Current successful connection
+health can confirm readiness; a failed refresh clears the old health observation.
+Activity stays unknown where the provider does not expose a live operation feed.
+Opening this page only reads configuration and status; it does not enable a server.
+
 Open Settings > MCP for the selected local project. Each row belongs to a specific
 provider and scope, shown as a tag next to its name: **Global** applies to every
 project for that provider, **Project** is saved in the selected project's provider
@@ -16,8 +26,10 @@ Signed in, the row's action menu offers **Sign in again**. If the provider's CLI
 not installed, the page says so instead of starting a sign-in.
 
 **Configured** means the configuration was found. It does not confirm a connection
-or a successful login. Claude Code rows show **Checking…** until the Claude CLI
-reports health; that check can take more than 30 seconds, and servers it did not
+or a successful login. Opening settings reads configuration only. Choose **Refresh**
+to run provider health checks; these may start configured MCP helpers. Claude Code
+rows show **Checking** until the Claude CLI reports health; that check can take
+more than 30 seconds, and servers it did not
 reach in time stay Configured. Claude CLI health is matched by name and is not verified
 independently for duplicate names in different scopes. Codex rows show **Signed in**
 or **Needs authentication** from Codex's own sign-in state. Cursor and OpenCode can remain
@@ -30,6 +42,13 @@ in that client. Cursor uses its [CLI MCP login](https://cursor.com/docs/cli/mcp)
 Some MCP services use API keys or environment variables instead
 of OAuth; follow the service's setup instructions in the owning provider's config.
 The **Connection details** disclosure identifies that config file.
+
+Adding a Cursor, Claude Desktop or OpenCode server keeps unrelated JSON/JSONC
+settings, comments and property order. Existing symbolic links continue to point to the
+edited target. If the configuration is invalid, contains duplicate keys or changes
+while saving, the operation stops so you can inspect the file before retrying.
+An uncertain native replacement reports its retained recovery files; inspect the
+configuration before submitting the same change again.
 
 **External MCP access** is separate: its tokens allow another client to access
 bycoda's local Host. Creating one does not sign in to Cloudflare, Hostinger or any

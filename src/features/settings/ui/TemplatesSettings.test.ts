@@ -67,9 +67,7 @@ it("preserves a dirty draft and blocks stale writes until the user reloads", asy
   await act(async () => savePromptTemplates([{ ...original, name: "Updated elsewhere" }]));
   expect(container.querySelectorAll('[aria-label="Template name"]')).toHaveLength(1);
   expect(button("New template")).toBeDefined();
-  expect(container.textContent).toContain(
-    "Templates changed in another window",
-  );
+  expect(container.textContent).toContain("Templates changed in another window");
   expect(button("Save templates").disabled).toBe(true);
   expect(loadPromptTemplates()[0].name).toBe("Updated elsewhere");
   act(() => button("Discard changes and reload").click());
@@ -83,13 +81,18 @@ it("preserves a dirty draft and blocks stale writes until the user reloads", asy
 it("retains unsaved authoring state when the manager is closed and reopened", async () => {
   const input = container.querySelector<HTMLInputElement>('[aria-label="Template name"]')!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Unsaved draft");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Unsaved draft",
+    );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   act(() => root.unmount());
   root = createRoot(container);
   await act(async () => root.render(createElement(TemplatesSettings)));
-  expect(container.querySelector<HTMLInputElement>('[aria-label="Template name"]')?.value).toBe("Unsaved draft");
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Template name"]')?.value).toBe(
+    "Unsaved draft",
+  );
   expect(loadPromptTemplates()[0].name).toBe("Review");
 });
 

@@ -10,9 +10,9 @@ import {
   subscribeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { discoverAntigravityModels } from "../../../integrations/harness/providers/antigravity/antigravityCatalog";
-import { setHarnessModels } from "../../sessions/model/models";
+import { setHarnessModels } from "../../sessions/public/models";
 import { Group } from "./settingsControls";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 
 export function AntigravityAccountSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();

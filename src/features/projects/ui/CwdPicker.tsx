@@ -81,7 +81,12 @@ export function CwdPicker({
   const root = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
-  const moreIntent = useHoverIntent({ group: "cwd-more", openDelay: 0, closeDelay: HOVER_CLOSE_MS, warmMs: 0 });
+  const moreIntent = useHoverIntent({
+    group: "cwd-more",
+    openDelay: 0,
+    closeDelay: HOVER_CLOSE_MS,
+    warmMs: 0,
+  });
   const moreOpen = moreIntent.anchor !== null;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const onCloseRef = useRef(onClose);

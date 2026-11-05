@@ -1,7 +1,7 @@
 import { Alert } from "../../shared/ui/Alert";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../shared/i18n/technical";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   hostFeatureRequest,
   hostToolRequest,
@@ -38,19 +38,39 @@ import "./host-tools.css";
 import { dockHostTools, openHostToolsWindow } from "./ToolsWorkspace";
 import type { ToolsTab } from "./toolsUiControl";
 
-const DevicePanel = lazySurface(async () => ({
+function ToolMounted({ onMounted }: { onMounted?: () => void }) {
+  useEffect(() => {
+    onMounted?.();
+  }, [onMounted]);
+  return null;
+}
+function toolSurface<Props extends object>(load: () => Promise<{ default: ComponentType<Props> }>) {
+  return lazySurface(async () => {
+    const { default: Panel } = await load();
+    return {
+      default: ({ onMounted, ...props }: Props & { onMounted?: () => void }) => (
+        <>
+          <Panel {...(props as Props)} />
+          <ToolMounted onMounted={onMounted} />
+        </>
+      ),
+    };
+  });
+}
+
+const DevicePanel = toolSurface(async () => ({
   default: (await import("../devices/DevicePanel")).DevicePanel,
 }));
-const BrowserPanel = lazySurface(async () => ({
+const BrowserPanel = toolSurface(async () => ({
   default: (await import("./BrowserPanel")).BrowserPanel,
 }));
-const DiagnosticsPanel = lazySurface(async () => ({
+const DiagnosticsPanel = toolSurface(async () => ({
   default: (await import("./DiagnosticsPanel")).DiagnosticsPanel,
 }));
-const DevServersPanel = lazySurface(async () => ({
+const DevServersPanel = toolSurface(async () => ({
   default: (await import("./DevServersPanel")).DevServersPanel,
 }));
-const RuntimeLogsPanel = lazySurface(async () => ({
+const RuntimeLogsPanel = toolSurface(async () => ({
   default: (await import("./RuntimeLogsPanel")).RuntimeLogsPanel,
 }));
 
@@ -59,6 +79,11 @@ export type ConversationTools = {
   cwd: string;
   sessionId: string;
   title: string;
+  projectName?: string;
+  branch?: string;
+  worktreeCwd?: string;
+  model?: string;
+  status?: string;
   composerSessionId?: string;
   composerWindow?: string;
   onOpenFile?: OpenFileFn;
@@ -72,6 +97,9 @@ export type ConversationTools = {
   onViewChange?: (view: { tab: ToolsTab; machine: string }) => void;
   initialUrl?: string;
   onPresented?: () => void;
+  /** Presentation visibility, independent of retained component/draft ownership. */
+  active?: boolean;
+  onMounted?: (view: { tab: ToolsTab; machine: string }) => void;
 };
 
 /** Only the visible tool mounts: closed panes do not own polling or background work. */
@@ -96,10 +124,14 @@ function ConversationHostTools({
   viewRequest,
   onViewChange,
   onPresented,
+  active = true,
+  onMounted,
 }: ConversationTools) {
   useLocale();
   const panelId = useId();
   const [tab, setTab] = useState<Tab>(onlyTab ?? initialTab ?? "devices");
+  const [visited, setVisited] = useState<Tab[]>([onlyTab ?? initialTab ?? "devices"]);
+  if (!visited.includes(tab)) setVisited([...visited, tab]);
   const [presentationError, setPresentationError] = useState("");
   const [placementOpen, setPlacementOpen] = useState(false);
   const placementTrigger = useRef<HTMLButtonElement>(null);
@@ -166,6 +198,10 @@ function ConversationHostTools({
     [targetValue],
   );
   const targetKey = hostToolTargetKey(target);
+  const transferScope = useMemo(
+    () => ({ cwd, sessionId, targetValue: targetKey }),
+    [cwd, sessionId, targetKey],
+  );
   const present = async (mode: "layout" | "window", logsOnly?: "logs") => {
     setPresentationError("");
     setPlacementOpen(false);
@@ -182,26 +218,26 @@ function ConversationHostTools({
   const [machinesError, setMachinesError] = useState("");
   const [machinesRefresh, setMachinesRefresh] = useState(0);
   useEffect(() => {
-    if (!hostScoped) return;
-    let active = true;
+    if (!hostScoped || !active) return;
+    let alive = true;
     setMachinesLoading(true);
     setMachinesError("");
     void listHostToolMachines()
       .then(
         (values) => {
-          if (active) setMachines(values);
+          if (alive) setMachines(values);
         },
         (cause) => {
-          if (active) setMachinesError(cause instanceof Error ? cause.message : String(cause));
+          if (alive) setMachinesError(cause instanceof Error ? cause.message : String(cause));
         },
       )
       .finally(() => {
-        if (active) setMachinesLoading(false);
+        if (alive) setMachinesLoading(false);
       });
     return () => {
-      active = false;
+      alive = false;
     };
-  }, [hostScoped, conversationKey, machinesRefresh]);
+  }, [hostScoped, conversationKey, machinesRefresh, active]);
   const remote = parseRemotePath(cwd);
   const projectMachine = machines.find((machine) =>
     remote ? machine.environmentId === remote.environmentId : isLocalSyncMachine(machine),
@@ -231,7 +267,13 @@ function ConversationHostTools({
       list: () => request("list"),
       boot: (deviceId) => request("boot", { deviceId }),
       capture: (deviceId) => request("capture", { deviceId }),
-      action: (deviceId, action) => request("action", { deviceId, action }),
+      controlStatus: (deviceId) => request("control.status", { deviceId }),
+      claimControl: (deviceId, requestId) => request("control.claim", { deviceId, requestId }),
+      releaseControl: (deviceId, leaseId) => request("control.release", { deviceId, leaseId }),
+      renewControl: (deviceId, leaseId) => request("control.renew", { deviceId, leaseId }),
+      inspect: (deviceId, leaseId) => request("inspect", { deviceId, leaseId }),
+      action: (deviceId, action, leaseId) =>
+        request("action", { deviceId, action, leaseId, requestId: crypto.randomUUID() }),
     };
   }, [cwd, target]);
   return (
@@ -450,61 +492,95 @@ function ConversationHostTools({
           role="tabpanel"
           aria-labelledby={onlyTab ? undefined : `${panelId}-tab-${tab}`}
           aria-label={onlyTab ? t(toolLabels[tab]) : undefined}
-          className={`host-tools-content${tab === "devices" ? " host-tools-content-devices" : tab === "browser" ? " host-tools-content-browser" : ""}`}
+          className={`host-tools-content host-tools-content-${tab}`}
           tabIndex={0}
         >
-          {tab === "devices" ? (
-            <DevicePanel
-              draftScope={JSON.stringify([cwd, composerSessionId ?? sessionId, targetKey])}
-              key={JSON.stringify([cwd, sessionId, targetKey])}
-              api={api}
-              hostLabel={hostLabel}
-              onAddDevice={(device) =>
-                attachDeviceToComposer(
-                  cwd,
-                  composerSessionId ?? sessionId,
-                  device,
-                  { label: hostLabel, target },
-                  composerWindow,
-                )
-              }
-              onAddImage={(device, frame, comment) =>
-                attachDeviceImageAcrossWindows(
-                  cwd,
-                  composerSessionId ?? sessionId,
-                  { device, computer: { label: hostLabel, target }, frame, comment },
-                  composerWindow,
-                )
-              }
-            />
+          {visited.includes("devices") ? (
+            <div style={{ display: tab === "devices" ? "contents" : "none" }}>
+              <DevicePanel
+                transferScope={transferScope}
+                onMounted={() => onMounted?.({ tab: "devices", machine: targetValue })}
+                active={active && tab === "devices"}
+                draftScope={JSON.stringify([cwd, composerSessionId ?? sessionId, targetKey])}
+                key={JSON.stringify([cwd, sessionId, targetKey])}
+                api={api}
+                hostLabel={hostLabel}
+                onAddDevice={(device) =>
+                  attachDeviceToComposer(
+                    cwd,
+                    composerSessionId ?? sessionId,
+                    device,
+                    { label: hostLabel, target },
+                    composerWindow,
+                  )
+                }
+                onAddImage={(device, frame, comment, operation) =>
+                  attachDeviceImageAcrossWindows(
+                    cwd,
+                    composerSessionId ?? sessionId,
+                    { device, computer: { label: hostLabel, target }, frame, comment },
+                    composerWindow,
+                    operation,
+                  )
+                }
+              />
+            </div>
           ) : null}
-          {tab === "browser" ? (
-            <BrowserPanel
-              cwd={cwd}
-              initialUrl={target.kind === "project" ? initialUrl : undefined}
-              sessionId={sessionId}
-              composerSessionId={composerSessionId ?? sessionId}
-              composerWindow={composerWindow}
-              hostTarget={target}
-              annotationsAllowed={annotationsAllowed && !!sessionId}
-              hostLabel={hostLabel}
-            />
+          {visited.includes("browser") ? (
+            <div style={{ display: tab === "browser" ? "contents" : "none" }}>
+              <BrowserPanel
+                onMounted={() => onMounted?.({ tab: "browser", machine: targetValue })}
+                active={active && tab === "browser"}
+                cwd={cwd}
+                initialUrl={target.kind === "project" ? initialUrl : undefined}
+                sessionId={sessionId}
+                composerSessionId={composerSessionId ?? sessionId}
+                composerWindow={composerWindow}
+                hostTarget={target}
+                annotationsAllowed={annotationsAllowed && !!sessionId}
+                hostLabel={hostLabel}
+              />
+            </div>
           ) : null}
-          {tab === "servers" ? <DevServersPanel key={cwd} cwd={cwd} /> : null}
-          {tab === "logs" ? (
-            <RuntimeLogsPanel
-              key={JSON.stringify([cwd, sessionId, targetKey])}
-              cwd={cwd}
-              sessionId={sessionId}
-              composerSessionId={composerSessionId ?? sessionId}
-              target={target}
-              composerWindow={composerWindow}
-              hostLabel={hostLabel}
-              onOpenFile={target.kind === "project" ? onOpenFile : undefined}
-            />
+          {visited.includes("servers") ? (
+            <div style={{ display: tab === "servers" ? "contents" : "none" }}>
+              <DevServersPanel
+                transferScope={transferScope}
+                onMounted={() => onMounted?.({ tab: "servers", machine: targetValue })}
+                active={active && tab === "servers"}
+                key={cwd}
+                cwd={cwd}
+              />
+            </div>
           ) : null}
-          {tab === "resources" ? (
-            <DiagnosticsPanel cwd={cwd} hostTarget={target} hostLabel={hostLabel} />
+          {visited.includes("logs") ? (
+            <div style={{ display: tab === "logs" ? "contents" : "none" }}>
+              <RuntimeLogsPanel
+                transferScope={transferScope}
+                onMounted={() => onMounted?.({ tab: "logs", machine: targetValue })}
+                active={active && tab === "logs"}
+                key={JSON.stringify([cwd, sessionId, targetKey])}
+                cwd={cwd}
+                sessionId={sessionId}
+                composerSessionId={composerSessionId ?? sessionId}
+                target={target}
+                composerWindow={composerWindow}
+                hostLabel={hostLabel}
+                onOpenFile={target.kind === "project" ? onOpenFile : undefined}
+              />
+            </div>
+          ) : null}
+          {visited.includes("resources") ? (
+            <div style={{ display: tab === "resources" ? "contents" : "none" }}>
+              <DiagnosticsPanel
+                transferScope={transferScope}
+                onMounted={() => onMounted?.({ tab: "resources", machine: targetValue })}
+                active={active && tab === "resources"}
+                cwd={cwd}
+                hostTarget={target}
+                hostLabel={hostLabel}
+              />
+            </div>
           ) : null}
         </div>
       </section>

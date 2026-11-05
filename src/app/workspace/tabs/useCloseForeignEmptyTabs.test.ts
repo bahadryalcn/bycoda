@@ -62,9 +62,9 @@ it("re-evaluates each remote candidate when the close is executed", async () => 
   const [ids, fallback, opts] = onCloseTabs.mock.calls[0];
   expect(ids).toEqual([foreignTab.id]);
   expect(fallback).toBe(currentTab.id);
-  expect(opts?.stillClosable?.(foreignTab.id)).toBe(true);
+  expect(await opts?.stillClosable?.(foreignTab.id)).toBe(true);
 
   // The first turn starts creating its host session while the close confirmation waits.
   beginRemoteCreate(foreign.id, foreign.cwd, "env", []);
-  expect(opts?.stillClosable?.(foreignTab.id)).toBe(false);
+  expect(await opts?.stillClosable?.(foreignTab.id)).toBe(false);
 });

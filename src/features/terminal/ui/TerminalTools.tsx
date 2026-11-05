@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
-import { SearchAddon, type ISearchOptions, type ISearchResultChangeEvent } from "@xterm/addon-search";
+import {
+  SearchAddon,
+  type ISearchOptions,
+  type ISearchResultChangeEvent,
+} from "@xterm/addon-search";
 import { Button } from "../../../shared/ui/Button";
 import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -120,11 +124,15 @@ export function TerminalTools({
 
   useEffect(() => {
     if (mode !== "search" || !terminal) return;
+    let pendingRefresh: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
-      if (query) setFound(searchRef.current?.findNext(query, {
-        incremental: true,
-        decorations: searchDecorations,
-      }) ?? false);
+      if (query)
+        setFound(
+          searchRef.current?.findNext(query, {
+            incremental: true,
+            decorations: searchDecorations,
+          }) ?? false,
+        );
       else {
         setResults(undefined);
         searchRef.current?.clearDecorations();
@@ -135,9 +143,20 @@ export function TerminalTools({
     refresh();
     // xterm clears its selection when the grid resizes, including when this
     // compact toolbar wraps in a narrow split pane. Restore the active search.
-    const subscription = terminal.onResize(refresh);
-    const parsed = terminal.onWriteParsed(refresh);
+    const subscription = terminal.onResize(() => {
+      clearTimeout(pendingRefresh);
+      pendingRefresh = undefined;
+      refresh();
+    });
+    const parsed = terminal.onWriteParsed(() => {
+      if (!query || pendingRefresh !== undefined) return;
+      pendingRefresh = setTimeout(() => {
+        pendingRefresh = undefined;
+        refresh();
+      }, 150);
+    });
     return () => {
+      clearTimeout(pendingRefresh);
       subscription.dispose();
       parsed.dispose();
     };
@@ -222,13 +241,15 @@ export function TerminalTools({
               <ChevronDown className="icon-sm" />
             </Button>
             <span role="status" className={styles.hint}>
-              {query && !found ? t("No matches") : query && results && searchDecorations ? (
-                results.resultCount >= SEARCH_RESULT_LIMIT
-                  ? t("Results limited to the first matches")
-                  : results.resultIndex >= 0
-                    ? `${results.resultIndex + 1} / ${results.resultCount}`
-                    : t("{p0} matches", { p0: String(results.resultCount) })
-              ) : ""}
+              {query && !found
+                ? t("No matches")
+                : query && results && searchDecorations
+                  ? results.resultCount >= SEARCH_RESULT_LIMIT
+                    ? t("Results limited to the first matches")
+                    : results.resultIndex >= 0
+                      ? `${results.resultIndex + 1} / ${results.resultCount}`
+                      : t("{p0} matches", { p0: String(results.resultCount) })
+                  : ""}
             </span>
           </>
         ) : null}
@@ -390,134 +411,179 @@ export function TerminalTools({
           !!preview?.suggestions.length)));
   return (
     <>
-      <div className={styles.overlay} data-open={mode === "search" || menuOpen || helpOpen || undefined}
-        onMouseDown={(event) => event.stopPropagation()}>
-      {mode === "search" ? (
-        controls
-      ) : (
-        <div className={styles.menuTrigger}>
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Find in terminal")}
-            tooltip={t("Find in terminal")}
-            shortcut="Ctrl/Cmd+F"
-            disabled={!terminal}
-            onClick={() => changeMode("search")}
-          >
-            <Search className="icon-sm" />
-          </Button>
-        {suggestionsAllowed && (
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Command suggestions")}
-            shortcut="Ctrl+Space"
-            aria-pressed={mode === "command"}
-            disabled={!ready || alternate}
-            onClick={() => {
-              if (mode === "command") close();
-              else changeMode("command");
-            }}
-          >
-            <TerminalIcon className="icon-sm" />
-          </Button>
-        )}
-        {onEnableShellIntegration ? (
-          <Button
-            ref={helpAnchor}
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("About shell suggestions")}
-            tooltip={t("About shell suggestions")}
-            aria-expanded={helpOpen}
-            aria-haspopup="dialog"
-            onClick={() => setHelpOpen(!helpOpen)}
-          >
-            <Info aria-hidden className="icon-sm" />
-          </Button>
-        ) : null}
-          {terminal ? (
-            <>
+      <div
+        className={styles.overlay}
+        data-open={mode === "search" || menuOpen || helpOpen || undefined}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        {mode === "search" ? (
+          controls
+        ) : (
+          <div className={styles.menuTrigger}>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label={t("Find in terminal")}
+              tooltip={t("Find in terminal")}
+              shortcut="Ctrl/Cmd+F"
+              disabled={!terminal}
+              onClick={() => changeMode("search")}
+            >
+              <Search className="icon-sm" />
+            </Button>
+            {suggestionsAllowed && (
               <Button
-                ref={menuAnchor}
                 variant="ghost"
                 size="sm"
                 iconOnly
-                label={t("Terminal pane actions")}
-                tooltip={t("Terminal pane actions")}
-                aria-expanded={menuOpen}
-                aria-haspopup="dialog"
-                onClick={() => setMenuOpen(!menuOpen)}
+                label={t("Command suggestions")}
+                shortcut="Ctrl+Space"
+                aria-pressed={mode === "command"}
+                disabled={!ready || alternate}
+                onClick={() => {
+                  if (mode === "command") close();
+                  else changeMode("command");
+                }}
               >
-                <MoreHorizontal className="icon-sm" />
+                <TerminalIcon className="icon-sm" />
               </Button>
-              {menuOpen ? (
-                <Popover
-                  anchor={menuAnchor}
-                  align="end"
-                  width={300}
-                  autoFocus
-                  solid
-                  role="dialog"
-                  aria-label={t("Terminal pane actions")}
-                  tabIndex={-1}
-                  onDismiss={() => setMenuOpen(false)}
+            )}
+            {onEnableShellIntegration ? (
+              <Button
+                ref={helpAnchor}
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t("About shell suggestions")}
+                tooltip={t("About shell suggestions")}
+                aria-expanded={helpOpen}
+                aria-haspopup="dialog"
+                onClick={() => setHelpOpen(!helpOpen)}
+              >
+                <Info aria-hidden className="icon-sm" />
+              </Button>
+            ) : null}
+            {terminal ? (
+              <>
+                <Button
+                  ref={menuAnchor}
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Terminal pane actions")}
+                  tooltip={t("Terminal pane actions")}
+                  aria-expanded={menuOpen}
+                  aria-haspopup="dialog"
+                  onClick={() => setMenuOpen(!menuOpen)}
                 >
-                  <div className={styles.menuBody}>
-                    <MenuRow type="button" onClick={() => {
-                      terminal.scrollToBottom();
-                      setMenuOpen(false);
-                      terminal.focus();
-                    }}>{t("Scroll to bottom")}</MenuRow>
-                    <MenuRow type="button" disabled={alternate} onClick={() => {
-                      terminal.clear();
-                      setMenuOpen(false);
-                      terminal.focus();
-                    }}>{t("Clear terminal")}</MenuRow>
-                    {fontSize !== undefined ? (
-                      <>
-                        <Divider className="my-1" />
-                        <div className={styles.fontRow} role="group" aria-label={t("Terminal font size")}>
-                          <Button variant="ghost" size="sm" iconOnly
-                            label={t("Decrease terminal text size")} tooltip={t("Decrease terminal text size")}
-                            disabled={!onFontSizeChange || fontSize <= 8}
-                            onClick={() => onFontSizeChange?.(fontSize - 1)}>−</Button>
-                          <span className={styles.fontValue} role="status" aria-label={t("Terminal font size")}>
-                            {fontSize}px
-                          </span>
-                          <Button variant="ghost" size="sm" iconOnly
-                            label={t("Increase terminal text size")} tooltip={t("Increase terminal text size")}
-                            disabled={!onFontSizeChange || fontSize >= 40}
-                            onClick={() => onFontSizeChange?.(fontSize + 1)}>+</Button>
-                          {onResetFontSize ? (
-                            <Button variant="ghost" size="sm" label={t("Reset text size")}
-                              disabled={savedFontSize === undefined || fontSize === savedFontSize}
-                              onClick={() => {
-                                onResetFontSize();
-                                setMenuOpen(false);
-                                terminal.focus();
-                              }}>{t("Reset")}</Button>
-                          ) : null}
+                  <MoreHorizontal className="icon-sm" />
+                </Button>
+                {menuOpen ? (
+                  <Popover
+                    anchor={menuAnchor}
+                    align="end"
+                    width={300}
+                    autoFocus
+                    solid
+                    role="dialog"
+                    aria-label={t("Terminal pane actions")}
+                    tabIndex={-1}
+                    onDismiss={() => setMenuOpen(false)}
+                  >
+                    <div className={styles.menuBody}>
+                      <MenuRow
+                        type="button"
+                        onClick={() => {
+                          terminal.scrollToBottom();
+                          setMenuOpen(false);
+                          terminal.focus();
+                        }}
+                      >
+                        {t("Scroll to bottom")}
+                      </MenuRow>
+                      <MenuRow
+                        type="button"
+                        disabled={alternate}
+                        onClick={() => {
+                          terminal.clear();
+                          setMenuOpen(false);
+                          terminal.focus();
+                        }}
+                      >
+                        {t("Clear terminal")}
+                      </MenuRow>
+                      {fontSize !== undefined ? (
+                        <>
+                          <Divider className="my-1" />
+                          <div
+                            className={styles.fontRow}
+                            role="group"
+                            aria-label={t("Terminal font size")}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
+                              label={t("Decrease terminal text size")}
+                              tooltip={t("Decrease terminal text size")}
+                              disabled={!onFontSizeChange || fontSize <= 8}
+                              onClick={() => onFontSizeChange?.(fontSize - 1)}
+                            >
+                              −
+                            </Button>
+                            <span
+                              className={styles.fontValue}
+                              role="status"
+                              aria-label={t("Terminal font size")}
+                            >
+                              {fontSize}px
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
+                              label={t("Increase terminal text size")}
+                              tooltip={t("Increase terminal text size")}
+                              disabled={!onFontSizeChange || fontSize >= 40}
+                              onClick={() => onFontSizeChange?.(fontSize + 1)}
+                            >
+                              +
+                            </Button>
+                            {onResetFontSize ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                label={t("Reset text size")}
+                                disabled={savedFontSize === undefined || fontSize === savedFontSize}
+                                onClick={() => {
+                                  onResetFontSize();
+                                  setMenuOpen(false);
+                                  terminal.focus();
+                                }}
+                              >
+                                {t("Reset")}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : null}
+                      {remoteShell ||
+                      onSavedCommands ||
+                      onEnableShellIntegration ||
+                      onStartupReview ? (
+                        <div className={styles.popoverBody}>
+                          <Divider className="my-1" />
+                          {controls}
                         </div>
-                      </>
-                    ) : null}
-                    {remoteShell || onSavedCommands || onEnableShellIntegration || onStartupReview ? (
-                      <div className={styles.popoverBody}>
-                        <Divider className="my-1" />
-                        {controls}
-                      </div>
-                    ) : null}
-                  </div>
-                </Popover>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      )}
+                      ) : null}
+                    </div>
+                  </Popover>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        )}
       </div>
       {onEnableShellIntegration && helpOpen ? (
         <Popover

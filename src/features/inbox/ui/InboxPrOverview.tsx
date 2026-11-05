@@ -168,12 +168,7 @@ export function InboxPrChangesGlance({
       {diff && files.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No file changes")} />
       ) : shown.length > 0 ? (
-        <Surface
-          as="ul"
-          variant="outline"
-          padding="none"
-          className="flex flex-col overflow-hidden"
-        >
+        <Surface as="ul" variant="outline" padding="none" className="flex flex-col overflow-hidden">
           {shown.map((file) => {
             const slash = file.path.lastIndexOf("/");
             const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";

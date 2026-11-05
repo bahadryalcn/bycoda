@@ -1,3 +1,4 @@
+import { CheckoutCache } from "./checkoutCache";
 import {
   gitDiffFiles,
   gitDiffIndex,
@@ -24,14 +25,23 @@ type Flight = {
   gen: number;
   startedAt: number;
 };
-type Entry = { gen: number; request: number; result: Result | null; flight: Flight | null };
+type Entry = {
+  gen: number;
+  request: number;
+  result: Result | null;
+  flight: Flight | null;
+  pendingReads: number;
+};
 
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.pendingReads > 0,
+  (entry) => entry.result,
+);
 
 function entryFor(cwd: string): Entry {
   let entry = entries.get(cwd);
   if (!entry) {
-    entry = { gen: 0, request: 0, result: null, flight: null };
+    entry = { gen: 0, request: 0, result: null, flight: null, pendingReads: 0 };
     entries.set(cwd, entry);
   }
   return entry;
@@ -76,6 +86,7 @@ export function fetchGitIndex(
   const gen = entry.gen;
   const request = ++entry.request;
   const startedAt = Date.now();
+  entry.pendingReads++;
   const started: Flight = {
     promise: (full ? gitDiffIndex(cwd) : gitDiffFiles(cwd))
       .then((value) => {
@@ -89,6 +100,9 @@ export function fetchGitIndex(
       })
       .finally(() => {
         if (entry.flight === started) entry.flight = null;
+        entry.pendingReads--;
+        entries.refresh(cwd);
+        entries.prune();
       }),
     full,
     gen,

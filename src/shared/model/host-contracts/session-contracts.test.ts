@@ -213,6 +213,20 @@ describe("session wire contracts", () => {
     ).toBe(false);
     for (const result of [[], { unchanged: true, etag: "etag" }, { sessions: [], etag: "etag" }])
       expect(SessionsListResultSchema.parse(result)).toEqual(result);
+    const interrupted = {
+      id: "s",
+      projectId: "p",
+      revision: 1,
+      status: "interrupted",
+      updatedAt: 100,
+      lastActivityAt: 25,
+      title: "Cut",
+      harness: "codex",
+    };
+    expect(SessionsListResultSchema.parse([interrupted])).toEqual([interrupted]);
+    expect(
+      SessionsListResultSchema.safeParse([{ ...interrupted, lastActivityAt: -1 }]).success,
+    ).toBe(false);
     expect(SessionSyncResponseSchema.parse({ kind: "unchanged", revision: 7 })).toEqual({
       kind: "unchanged",
       revision: 7,

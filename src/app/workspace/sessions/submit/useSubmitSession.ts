@@ -94,12 +94,14 @@ export function useSubmitSession(deps: SubmitDeps) {
         }
       };
       const start = () => gateUsageBudget(deps, input, pre, dispatch) ?? dispatch();
-      return gateRunLease(deps, input, pre, start, () =>
-        Promise.allSettled([
-          harnessRuntimeHints(sessionId),
-          loadSkillRestrictions(pre.initialWorkCwd),
-        ]),
-      ) ?? start();
+      return (
+        gateRunLease(deps, input, pre, start, () =>
+          Promise.allSettled([
+            harnessRuntimeHints(sessionId),
+            loadSkillRestrictions(pre.initialWorkCwd),
+          ]),
+        ) ?? start()
+      );
     },
     [
       applyProjectLocationChange,

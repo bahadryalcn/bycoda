@@ -87,7 +87,9 @@ function ShellLayoutFixture() {
             }
             liveAgents={Array.from({ length: 8 }, (_, index) => ({
               id: `live-${index}`,
-              cwd: "G:/wallet/api",
+              // This fixture stresses eight visible cross-project rows. Current-project
+              // workers are summarized separately, covered by working-project-summary.
+              cwd: `G:/project-${index}`,
               title: `Improve the shared interface and preserve long session titles ${index + 1}`,
               harness: index % 2 === 0 ? "codex" : "claude",
               activity:

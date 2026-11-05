@@ -16,6 +16,7 @@ import {
   Inbox,
   StickyNote,
   Server,
+  Sparkles,
   Zap,
   Wrench,
   Terminal,
@@ -83,7 +84,7 @@ const icons = {
   notes: StickyNote,
   "conversation-tools": Wrench,
   terminal: Terminal,
-  assistant: Zap,
+  assistant: Sparkles,
 };
 
 /** Mount on first visit, retain edits and selection, suspend effects while hidden. */
@@ -123,7 +124,8 @@ export function ToolPanel({
 export function ToolNavigation() {
   const t = useT();
   const assistant = useAssistantIdentity();
-  const label = (tool: WorkspaceToolId) => tool === "assistant" ? assistant.room : t(labels[tool]);
+  const label = (tool: WorkspaceToolId) =>
+    tool === "assistant" ? assistant.room : t(labels[tool]);
   const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState<"single" | "grouped" | null>(null);

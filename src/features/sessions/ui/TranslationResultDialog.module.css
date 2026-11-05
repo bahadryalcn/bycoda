@@ -1,7 +1,7 @@
 .content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   padding: 16px;
   color: var(--color-content);
   font-size: var(--ui-font-body);
@@ -25,7 +25,7 @@
 .comparison {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .pane {
@@ -41,7 +41,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 12px 0;
+  padding: 10px 12px 0;
 }
 
 .paneHeader h3 {
@@ -55,7 +55,7 @@
 .result > .error {
   margin: 0;
   padding: 12px;
-  min-block-size: 144px;
+  min-block-size: 80px;
   max-block-size: min(360px, 40dvh);
   overflow: auto;
   overflow-wrap: anywhere;

@@ -9,12 +9,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   useLocale();
   return (
     <div className="bycoda-arc min-w-0">
-      <ArcCombobox
-        placeholder={t("Search…")}
-        emptyMessage={t("No results")}
-        {...props}
-        ref={ref}
-      />
+      <ArcCombobox placeholder={t("Search…")} emptyMessage={t("No results")} {...props} ref={ref} />
     </div>
   );
 });

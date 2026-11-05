@@ -18,7 +18,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
  *  tooltip now, not a native title attribute). */
 function noteRow(title: string): HTMLButtonElement | null {
   return (
-    [...document.querySelectorAll<HTMLButtonElement>("li button")].find(
+    [...document.querySelectorAll<HTMLButtonElement>("[data-collection-key] button")].find(
       (button) => button.querySelector("span.truncate")?.textContent === title,
     ) ?? null
   );
@@ -307,7 +307,7 @@ it("opens the dropdown without waiting for a pending save or fetching the list a
   await act(async () => finish({ ...stored[0], body: "Pending draft" }));
 });
 
-it("bounds dropdown rendering and finds notes beyond the first page", async () => {
+it("bounds dropdown rendering and finds notes beyond the initial window", async () => {
   stored = Array.from({ length: 250 }, (_, index) => ({
     ...projectNote,
     id: `project-${index}`,
@@ -315,16 +315,29 @@ it("bounds dropdown rendering and finds notes beyond the first page", async () =
     updatedAt: index,
   }));
   await loadNotes(true);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 38 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   await render();
   await click("Switch note");
-  expect(document.querySelectorAll("li")).toHaveLength(40);
-  await click("Show more");
-  expect(document.querySelectorAll("li")).toHaveLength(80);
+  expect(
+    document.querySelectorAll(".session-note-picker-list [data-collection-key]").length,
+  ).toBeLessThan(64);
+  expect(
+    [...document.querySelectorAll("button")].some((item) => item.textContent === "Show more"),
+  ).toBe(false);
   await input(
     document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')!,
     "Plan 0",
   );
-  expect(document.querySelectorAll("li")).toHaveLength(1);
+  expect(document.querySelectorAll(".session-note-picker-list [data-collection-key]")).toHaveLength(
+    2,
+  );
   expect(noteRow("Plan 0")).not.toBeNull();
 });
 

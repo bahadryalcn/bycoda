@@ -21,7 +21,7 @@ const { openUrl, invoke } = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     isMaximized: async () => false,

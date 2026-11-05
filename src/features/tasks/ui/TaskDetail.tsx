@@ -1,4 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
@@ -127,10 +128,21 @@ export function TaskDetail({
         className="flex min-h-0 w-95 max-w-[45%] shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
       >
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3">
-          {actions.pending ? (
-            <Spinner size="xs" label={t("Loading…")} />
-          ) : null}
-          <Badge data-task-status={status.kind} tone={status.tone} title={status.label === t(STATUS_LABELS[task.status]) ? undefined : t(STATUS_LABELS[task.status])}>
+          {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
+          <Badge
+            data-task-status={status.kind}
+            tone={status.tone}
+            icon={
+              status.tone === "accent" ? (
+                <StatusDot tone="accent" label={status.label} />
+              ) : undefined
+            }
+            title={
+              status.label === t(STATUS_LABELS[task.status])
+                ? undefined
+                : t(STATUS_LABELS[task.status])
+            }
+          >
             {status.label}
           </Badge>
           {task.source === "steward" ? (
@@ -323,7 +335,10 @@ export function TaskDetail({
                 <BadgeList
                   label={t("Waiting for")}
                   max={5}
-                  items={waitingFor.map((title, index) => ({ id: `${index}:${title}`, label: title }))}
+                  items={waitingFor.map((title, index) => ({
+                    id: `${index}:${title}`,
+                    label: title,
+                  }))}
                 />
               </DetailRow>
             ) : null}
@@ -355,4 +370,3 @@ export function TaskDetail({
     </OverlayParent.Provider>
   );
 }
-

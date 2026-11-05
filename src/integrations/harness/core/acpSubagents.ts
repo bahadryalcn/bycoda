@@ -9,6 +9,8 @@ export class AcpSubagents {
   private tools = new Set<string>();
   private owners = new Map<string, string>();
   private pending = new Map<string, Step[]>();
+  private completedParents = new Set<string>();
+  private liveChildren = new Set<string>();
   private prose = new Map<string, { id: number; kind: "message" | "reasoning"; text: string }>();
   private sequence = 0;
 
@@ -21,9 +23,15 @@ export class AcpSubagents {
     if (!parent) {
       return events.flatMap<HarnessEvent>((event) => {
         if (event.type !== "tool.started" && event.type !== "tool.updated") return [event];
+        const owner = this.owners.get(event.callId);
+        if (owner) return this.route({ parentToolCallId: owner }, [event]);
         this.tools.add(event.callId);
         const backlog = this.pending.get(event.callId) ?? [];
         this.pending.delete(event.callId);
+        if (event.type === "tool.updated" && terminal(event.status)) {
+          this.completedParents.add(event.callId);
+          this.retireParent(event.callId);
+        }
         return [event, ...backlog];
       });
     }
@@ -31,6 +39,9 @@ export class AcpSubagents {
     for (const event of events) {
       if (event.type === "tool.started" || event.type === "tool.updated") {
         this.owners.set(event.callId, parent);
+        if (event.type === "tool.updated" && terminal(event.status))
+          this.liveChildren.delete(event.callId);
+        else this.liveChildren.add(event.callId);
         this.prose.delete(parent);
         output.push({
           type: "agent.step",
@@ -68,7 +79,10 @@ export class AcpSubagents {
       // Child plans, context meters and lifecycle notifications belong to the
       // child too; they must never replace or finish the parent's own work.
     }
-    if (this.tools.has(parent)) return output;
+    if (this.tools.has(parent)) {
+      this.retireParent(parent);
+      return output;
+    }
     const backlog = this.pending.get(parent) ?? [];
     for (const step of output) {
       const index = backlog.findIndex((entry) => entry.stepId === step.stepId);
@@ -83,9 +97,22 @@ export class AcpSubagents {
           preview: mergeToolPreview(step.preview, backlog[index].preview),
         };
     }
-    this.pending.set(parent, backlog.slice(-64));
-    if (this.pending.size > 32) this.pending.delete(this.pending.keys().next().value!);
+    this.pending.set(parent, backlog);
     return [];
+  }
+
+  private retireParent(parent: string): void {
+    if (!this.completedParents.has(parent)) return;
+    for (const [child, owner] of this.owners) {
+      if (owner === parent && this.liveChildren.has(child)) return;
+    }
+    for (const [child, owner] of this.owners) {
+      if (owner === parent) this.owners.delete(child);
+    }
+    this.completedParents.delete(parent);
+    this.tools.delete(parent);
+    this.pending.delete(parent);
+    this.prose.delete(parent);
   }
 
   private parent(params: unknown): string | undefined {
@@ -121,6 +148,13 @@ export class AcpSubagents {
     }
     return seen.has(parent) ? undefined : parent;
   }
+}
+
+function terminal(status: string | undefined): boolean {
+  return (
+    !!status &&
+    ["completed", "failed", "error", "cancelled", "canceled"].includes(status.toLowerCase())
+  );
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

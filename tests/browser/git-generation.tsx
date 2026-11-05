@@ -67,9 +67,7 @@ function Fixture() {
             Commit
           </button>
         </div>
-        <div className="mt-3 text-[11px] text-content/50">
-          STAGED CHANGES · 3
-        </div>
+        <div className="mt-3 text-[11px] text-content/50">STAGED CHANGES · 3</div>
         <div className="py-2 text-[12px]">
           claudeAdvisor.ts
           <br />
@@ -84,6 +82,4 @@ function Fixture() {
     </ModelSourceContext.Provider>
   );
 }
-void languageReady.then(() =>
-  createRoot(document.getElementById("root")!).render(<Fixture />),
-);
+void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));

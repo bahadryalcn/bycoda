@@ -1,5 +1,6 @@
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
@@ -115,8 +116,6 @@ import {
 } from "../noteLibrary";
 import { useNoteDetail } from "../useNoteDetail";
 import { OPEN_NOTE_LIBRARY_EVENT, takeNoteLibraryTarget } from "../noteNavigation";
-import { noteLibraryItemIndex, windowNoteLibrary } from "../noteLibraryWindow";
-import { LIST_PAGE_SIZE } from "../../../shared/lib/listWindow";
 import {
   groupCreateScope,
   noteMenuItems,
@@ -159,8 +158,6 @@ const DEFAULT_WIDTH = 320;
 
 let rememberedWidth = DEFAULT_WIDTH;
 let rememberedNoteId: string | null = null;
-let rememberedLibraryStart = 0;
-let rememberedLibraryScroll = 0;
 
 type NoteFindRequest = { noteId: string; query: string; token: number } | null;
 /** A failed library mutation and, when it has one here, the action that repeats it. */
@@ -191,17 +188,7 @@ export function NotesView({
   useEffect(mountNotesView, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const listLock = useLockOverscroll<HTMLDivElement>();
   const listScroller = useRef<HTMLDivElement | null>(null);
-  const setListScroller = useCallback(
-    (element: HTMLDivElement | null) => {
-      if (!element && listScroller.current)
-        rememberedLibraryScroll = listScroller.current.scrollTop;
-      listScroller.current = element;
-      listLock(element);
-    },
-    [listLock],
-  );
   const resize = useDragResize({
     min: MIN_WIDTH,
     max: () => Math.min(MAX_WIDTH, Math.round(window.innerWidth * 0.5)),
@@ -405,19 +392,11 @@ export function NotesView({
     rememberedNoteId = selectedId;
   }, [selectedId]);
 
-  const [libraryStart, setLibraryStart] = useState(rememberedLibraryStart);
-  useEffect(() => {
-    rememberedLibraryStart = libraryStart;
-  }, [libraryStart]);
-  useEffect(() => {
-    if (listScroller.current) listScroller.current.scrollTop = rememberedLibraryScroll;
-  }, []);
-
   useEffect(() => {
     listScroller.current
       ?.querySelector<HTMLElement>('[aria-current="true"]')
       ?.scrollIntoView?.({ block: "nearest" });
-  }, [selectedId, loading, libraryStart]);
+  }, [selectedId, loading]);
   useEffect(() => {
     const requested = pendingListFocus.current;
     if (!requested) return;
@@ -430,7 +409,7 @@ export function NotesView({
       button.focus();
       pendingListFocus.current = null;
     }
-  }, [selectedId, selectedGroup, libraryStart]);
+  }, [selectedId, selectedGroup]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -465,12 +444,15 @@ export function NotesView({
     [visible, libraryPreferences.grouping],
   );
   const headings = libraryPreferences.grouping !== "none";
-  const selectedIndex = noteLibraryItemIndex(
-    groups,
-    collapsedGroups,
-    selectedId,
-    headings,
-    selectedGroup,
+  const libraryRows = useMemo(
+    () =>
+      groups.flatMap((group) => [
+        ...(headings ? [{ kind: "heading" as const, group }] : []),
+        ...(collapsedGroups.has(group.key)
+          ? []
+          : group.notes.map((note) => ({ kind: "note" as const, group, note }))),
+      ]),
+    [groups, headings, collapsedGroups],
   );
   const navigable = useMemo(
     () =>
@@ -511,15 +493,6 @@ export function NotesView({
     setSelectedGroup(target.group);
     setSelectedId(target.note.id);
   };
-  useEffect(() => {
-    setLibraryStart(
-      selectedIndex >= 0 ? Math.floor(selectedIndex / LIST_PAGE_SIZE) * LIST_PAGE_SIZE : 0,
-    );
-  }, [selectedId, selectedIndex, deferredQuery, projectFilter, tagFilter]);
-  const libraryWindow = useMemo(
-    () => windowNoteLibrary(groups, collapsedGroups, libraryStart, headings),
-    [groups, collapsedGroups, libraryStart, headings],
-  );
   const clearFilters = () => {
     setQuery("");
     setProjectFilter(null);
@@ -543,6 +516,12 @@ export function NotesView({
       ? summarizeNote(recovery.saved ?? recovery.base)
       : null) ??
     null;
+  const selectedRowGroup = selectedSummary
+    ? (groups.find(
+        (group) =>
+          group.key === selectedGroup && group.notes.some((note) => note.id === selectedSummary.id),
+      ) ?? groups.find((group) => group.notes.some((note) => note.id === selectedSummary.id)))
+    : null;
   const recovered = selectedSummary
     ? (drafts.get(selectedSummary.id)?.saved ?? drafts.get(selectedSummary.id)?.base)
     : null;
@@ -747,6 +726,11 @@ export function NotesView({
         }
       }
       setNotes((current) => current.filter((note) => !removed.has(note.id)));
+      setSelectedId((current) =>
+        current && removed.has(current)
+          ? (notes.find((note) => !removed.has(note.id))?.id ?? null)
+          : current,
+      );
       setCheckedIds((current) => new Set([...current].filter((id) => !removed.has(id))));
       notifyDrafts();
       // Partial failures stay tied to the notes that failed; retry asks again for those only.
@@ -852,7 +836,7 @@ export function NotesView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-surface-panel)"
+      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
     >
       <div className="flex min-h-9 shrink-0 items-center gap-1 px-2 pt-1">
         <span
@@ -892,43 +876,43 @@ export function NotesView({
         </Button>
       </div>
       {notes.length > 0 || filtered || loading ? (
-      <div className="flex shrink-0 items-center gap-1 px-2 py-1">
-        <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-          <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
-          <SearchInput
-            focusOwner="group"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter notes")}
-            aria-label={t("Filter notes")}
-            aria-busy={searchingBody}
-            spellCheck={false}
-            autoComplete="off"
+        <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+            <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+            <SearchInput
+              focusOwner="group"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Filter notes")}
+              aria-label={t("Filter notes")}
+              aria-busy={searchingBody}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            {searchingBody ? (
+              <span role="status" aria-label={t("Searching note content…")}>
+                <WorkingIndicator size="xs" />
+              </span>
+            ) : null}
+          </SearchInputGroup>
+          <FilterTrigger
+            label={t("Filters and options")}
+            icon={<SlidersHorizontal className="icon-sm" />}
+            activeCount={scopeFilterCount}
+            onReset={clearScopeFilters}
+            resetLabel={t("Reset project and tag filters")}
+            size="sm"
+            ref={filtersButton}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={filtersOpen}
+            onClick={(event) => {
+              event.currentTarget.focus();
+              setFiltersOpen((open) => !open);
+            }}
+            className="shrink-0"
           />
-          {searchingBody ? (
-            <span role="status" aria-label={t("Searching note content…")}>
-              <WorkingIndicator size="xs" />
-            </span>
-          ) : null}
-        </SearchInputGroup>
-        <FilterTrigger
-          label={t("Filters and options")}
-          icon={<SlidersHorizontal className="icon-sm" />}
-          activeCount={scopeFilterCount}
-          onReset={clearScopeFilters}
-          resetLabel={t("Reset project and tag filters")}
-          size="sm"
-          ref={filtersButton}
-          type="button"
-          aria-haspopup="dialog"
-          aria-expanded={filtersOpen}
-          onClick={(event) => {
-            event.currentTarget.focus();
-            setFiltersOpen((open) => !open);
-          }}
-          className="shrink-0"
-        />
-      </div>
+        </div>
       ) : null}
       {filtersOpen ? (
         <Popover
@@ -1069,12 +1053,9 @@ export function NotesView({
         </div>
       ) : null}
       <div
-        ref={setListScroller}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-none"
-        onScroll={(event) => {
-          rememberedLibraryScroll = event.currentTarget.scrollTop;
-          setMenu((current) => (current && "x" in current ? null : current));
-        }}
+        ref={listScroller}
+        className="min-h-0 flex-1 overflow-hidden flex flex-col"
+        onScroll={() => setMenu((current) => (current && "x" in current ? null : current))}
         onContextMenu={(event) => {
           // Rows and headings own their menus; only empty space and the empty state reach here.
           if ((event.target as Element).closest("button, a, input, [role='alert']")) return;
@@ -1082,22 +1063,6 @@ export function NotesView({
           openMenu({ kind: "library" }, { x: event.clientX, y: event.clientY });
         }}
       >
-        {listError ? (
-          <Alert tone="danger" className="">
-            {t("Could not load or update notes: ")}
-            {listError}{" "}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              loading={notesQuery.isFetching}
-              onClick={() => void refresh()}
-              className="underline"
-            >
-              {t("Retry")}
-            </Button>
-          </Alert>
-        ) : null}
         {actionFailure ? (
           <Alert tone="danger" className="">
             {t("Could not load or update notes: ")}
@@ -1125,22 +1090,6 @@ export function NotesView({
             </Button>
           </Alert>
         ) : null}
-        {searchError ? (
-          <Alert tone="danger" className="">
-            {t("Could not load or update notes: ")}
-            {searchError}{" "}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              loading={searchingBody}
-              onClick={() => setSearchRevision((value) => value + 1)}
-              className="underline"
-            >
-              {t("Retry")}
-            </Button>
-          </Alert>
-        ) : null}
         {[...drafts]
           .filter(([id, draft]) => id !== selectedId && draft.error)
           .map(([id, draft]) => (
@@ -1156,148 +1105,122 @@ export function NotesView({
           <LoadingText layout="fill" className="py-10">
             {t("Loading notes…")}
           </LoadingText>
-        ) : listError && notes.length === 0 ? null : visible.length === 0 ? (
-          <EmptyState
-            kind={filtered ? "filtered" : "empty"}
-            description={
-              searchingBody
-                ? t("Searching note content…")
-                : filtered
-                  ? t("No matching notes")
-                  : t("No notes yet. Save a turn from the transcript, or create one here.")
-            }
-          />
         ) : (
-          <div className="p-1.5" data-note-library>
-            {libraryWindow.groups.map((group) => (
-              <section key={group.key}>
-                {libraryPreferences.grouping !== "none" ? (
-                  <NoteGroupHeading
-                    group={group}
-                    label={
-                      group.label ||
-                      (libraryPreferences.grouping === "project"
-                        ? t("No project")
-                        : t("Untagged"))
-                    }
-                    collapsed={collapsedGroups.has(group.key)}
-                    menuOpen={menu?.target.kind === "group" && menu.target.key === group.key}
-                    onToggle={() =>
-                      setCollapsedGroups((current) => {
-                        const next = new Set(current);
-                        if (next.has(group.key)) next.delete(group.key);
-                        else next.add(group.key);
-                        return next;
-                      })
-                    }
-                    onMenu={(place) =>
-                      openMenu(
-                        {
-                          kind: "group",
-                          key: group.key,
-                          label:
-                            group.label ||
-                            (libraryPreferences.grouping === "project"
-                              ? t("No project")
-                              : t("Untagged")),
-                          path: group.path,
-                        },
-                        place,
-                      )
-                    }
-                  />
-                ) : null}
-                {collapsedGroups.has(group.key) ? null : (
-                  <ul className="flex flex-col gap-0.5">
-                    {group.notes.map((note) => (
-                      <li key={note.id} className="note-selectable-row">
-                        {selectionMode ? (
-                          <Checkbox
-                            aria-label={t("Select note: {p0}", { p0: note.title })}
-                            checked={checkedIds.has(note.id)}
-                            disabled={bulkDeleting}
-                            onChange={() => toggleChecked(note.id)}
-                          />
-                        ) : null}
-                        <NoteCard
-                          note={note}
-                          group={group.key}
-                          grouping={libraryPreferences.grouping}
-                          sort={libraryPreferences.sort}
-                          query={deferredQuery}
-                          bodyMatches={
-                            bodyMatches?.query === deferredQuery.trim()
-                              ? bodyMatches.ids
-                              : undefined
-                          }
-                          active={selectedSummary?.id === note.id}
-                          logos={logos}
-                          mascots={groupMascots}
-                          colors={groupColors}
-                          customColors={groupCustomColors}
-                          onSelect={() => {
-                            if (selectionMode) {
-                              toggleChecked(note.id);
-                              return;
-                            }
-                            setSelectedGroup(group.key);
-                            setSelectedId(note.id);
-                            setMobileListVisible(false);
-                          }}
-                          onNavigate={(event) => navigateNote(event, note.id, group.key)}
-                          menuOpen={menu?.target.kind === "note" && menu.target.id === note.id}
-                          onMenu={(place) =>
-                            openMenu({ kind: "note", id: note.id, group: group.key }, place)
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ))}
+          <div data-note-library className="min-h-0 flex flex-1 flex-col">
+            <ContinuousList
+              fill
+              className="p-1.5 overscroll-none"
+              label={t("Notes")}
+              items={libraryRows}
+              stateKey={`notes:${JSON.stringify([libraryPreferences.grouping, libraryPreferences.sort, deferredQuery, projectFilter, tagFilter])}`}
+              itemKey={(row) =>
+                row.kind === "heading"
+                  ? `group:${row.group.key}`
+                  : `note:${row.group.key}:${row.note.id}`
+              }
+              requiredKey={
+                selectedSummary && selectedRowGroup
+                  ? `note:${selectedRowGroup.key}:${selectedSummary.id}`
+                  : null
+              }
+              estimateSize={76}
+              loading={notesQuery.isFetching || searchingBody}
+              error={listError ?? searchError}
+              onRetry={() => {
+                if (listError) void refresh();
+                else setSearchRevision((value) => value + 1);
+              }}
+              emptyMessage={
+                searchingBody
+                  ? t("Searching note content…")
+                  : filtered
+                    ? t("No matching notes")
+                    : t("No notes yet. Save a turn from the transcript, or create one here.")
+              }
+              renderItem={(row) =>
+                row.kind === "heading" ? (
+                  <div role="listitem">
+                    <NoteGroupHeading
+                      group={{ ...row.group, totalNotes: row.group.notes.length }}
+                      label={
+                        row.group.label ||
+                        (libraryPreferences.grouping === "project"
+                          ? t("No project")
+                          : t("Untagged"))
+                      }
+                      collapsed={collapsedGroups.has(row.group.key)}
+                      menuOpen={menu?.target.kind === "group" && menu.target.key === row.group.key}
+                      onToggle={() =>
+                        setCollapsedGroups((current) => {
+                          const next = new Set(current);
+                          if (next.has(row.group.key)) next.delete(row.group.key);
+                          else next.add(row.group.key);
+                          return next;
+                        })
+                      }
+                      onMenu={(place) =>
+                        openMenu(
+                          {
+                            kind: "group",
+                            key: row.group.key,
+                            label:
+                              row.group.label ||
+                              (libraryPreferences.grouping === "project"
+                                ? t("No project")
+                                : t("Untagged")),
+                            path: row.group.path,
+                          },
+                          place,
+                        )
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div role="listitem" className="note-selectable-row">
+                    {selectionMode ? (
+                      <Checkbox
+                        aria-label={t("Select note: {p0}", { p0: row.note.title })}
+                        checked={checkedIds.has(row.note.id)}
+                        disabled={bulkDeleting}
+                        onChange={() => toggleChecked(row.note.id)}
+                      />
+                    ) : null}
+                    <NoteCard
+                      note={row.note}
+                      group={row.group.key}
+                      grouping={libraryPreferences.grouping}
+                      sort={libraryPreferences.sort}
+                      query={deferredQuery}
+                      bodyMatches={
+                        bodyMatches?.query === deferredQuery.trim() ? bodyMatches.ids : undefined
+                      }
+                      active={selectedSummary?.id === row.note.id}
+                      logos={logos}
+                      mascots={groupMascots}
+                      colors={groupColors}
+                      customColors={groupCustomColors}
+                      onSelect={() => {
+                        if (selectionMode) {
+                          toggleChecked(row.note.id);
+                          return;
+                        }
+                        setSelectedGroup(row.group.key);
+                        setSelectedId(row.note.id);
+                        setMobileListVisible(false);
+                      }}
+                      onNavigate={(event) => navigateNote(event, row.note.id, row.group.key)}
+                      menuOpen={menu?.target.kind === "note" && menu.target.id === row.note.id}
+                      onMenu={(place) =>
+                        openMenu({ kind: "note", id: row.note.id, group: row.group.key }, place)
+                      }
+                    />
+                  </div>
+                )
+              }
+            />
           </div>
         )}
       </div>
-      {libraryWindow.total > LIST_PAGE_SIZE ? (
-        <nav className="note-library-pages" aria-label={t("Notes")}>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={libraryWindow.start === 0}
-            onClick={() => {
-              setLibraryStart(libraryWindow.start - LIST_PAGE_SIZE);
-              if (listScroller.current) listScroller.current.scrollTop = 0;
-            }}
-          >
-            {t("Previous page")}
-          </Button>
-          <span aria-live="polite" className="tabular-nums">
-            {t("Rows {p0}–{p1} of {p2}", {
-              p0: libraryWindow.rangeStart,
-              p1: libraryWindow.rangeEnd,
-              p2: libraryWindow.total,
-            })}
-            <span className="sr-only">
-              {" "}
-              · {t("{p0} unique notes", { p0: libraryWindow.uniqueTotal })}
-            </span>
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={libraryWindow.end >= libraryWindow.total}
-            onClick={() => {
-              setLibraryStart(libraryWindow.end);
-              if (listScroller.current) listScroller.current.scrollTop = 0;
-            }}
-          >
-            {t("Next page")}
-          </Button>
-        </nav>
-      ) : null}
       <Sash
         {...resize.sashProps}
         label={t("Resize notes list")}
@@ -1320,7 +1243,9 @@ export function NotesView({
         dragRegion
         chromeInset={!besideRail ? true : compactRail ? "compact" : false}
         className="select-none"
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         trailing={IS_MAC ? null : <WindowControls />}
       >
         <ToolHeader>
@@ -1456,7 +1381,9 @@ export function NotesView({
       ) : null}
       {menu ? (
         <ContextMenu
-          {...("anchor" in menu ? { anchor: menu.anchor, side: "bottom" as const, align: "start" as const } : { x: menu.x, y: menu.y })}
+          {...("anchor" in menu
+            ? { anchor: menu.anchor, side: "bottom" as const, align: "start" as const }
+            : { x: menu.x, y: menu.y })}
           ariaLabel={t("Note actions")}
           width={236}
           header={
@@ -1569,87 +1496,96 @@ function NoteCard({
   const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
   return (
     <ActionHost selected={active} className="min-w-0 flex-1 items-start">
-    {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
+      {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
         line is a sibling laid over the row (clicks outside the badges fall through to the row)
         and the row keeps the line's height. It also holds the gutter the row actions cover. */}
-    <div className="relative min-w-0 flex-1">
-    <Button
-      data-action-primary=""
-      variant="item"
-      layout="stacked"
-      motion="none"
-      tooltip={hint}
-      aria-current={active ? "true" : undefined}
-      aria-haspopup="menu"
-      data-note-id={note.id}
-      data-note-group={group}
-      onClick={onSelect}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onMenu({ x: event.clientX, y: event.clientY });
-      }}
-      onKeyDown={(event) => {
-        if (isMenuKey(event)) {
-          event.preventDefault();
-          onMenu({ anchor: event.currentTarget });
-        } else onNavigate(event);
-      }}
-      className="w-full min-w-0"
-    >
-      <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
-        {note.title || t("Untitled")}
-      </span>
-      <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
-        {match === "content" ? t("Match in note") : note.preview || t("No preview")}
-      </span>
-      <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
-        {grouping !== "project" && project && note.sourceCwd ? (
-          <span className="min-w-0 max-w-full truncate">
-            <NoteProjectMark
-              cwd={note.sourceCwd}
-              logos={logos}
-              mascots={mascots}
-              colors={colors}
-              customColors={customColors}
-            />
+      <div className="relative min-w-0 flex-1">
+        <Button
+          data-action-primary=""
+          variant="item"
+          layout="stacked"
+          motion="none"
+          tooltip={hint}
+          aria-current={active ? "true" : undefined}
+          aria-haspopup="menu"
+          data-note-id={note.id}
+          data-note-group={group}
+          onClick={onSelect}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu({ x: event.clientX, y: event.clientY });
+          }}
+          onKeyDown={(event) => {
+            if (isMenuKey(event)) {
+              event.preventDefault();
+              onMenu({ anchor: event.currentTarget });
+            } else onNavigate(event);
+          }}
+          className="w-full min-w-0"
+        >
+          <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
+            {note.title || t("Untitled")}
           </span>
+          <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
+            {match === "content" ? t("Match in note") : note.preview || t("No preview")}
+          </span>
+          <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
+            {grouping !== "project" && project && note.sourceCwd ? (
+              <span className="min-w-0 max-w-full truncate">
+                <NoteProjectMark
+                  cwd={note.sourceCwd}
+                  logos={logos}
+                  mascots={mascots}
+                  colors={colors}
+                  customColors={customColors}
+                />
+              </span>
+            ) : null}
+            {time ? (
+              <Tooltip label={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`}>
+                <time
+                  dateTime={new Date(date.timestamp).toISOString()}
+                  className="shrink-0 tabular-nums"
+                >
+                  {t(date.label)} {time}
+                </time>
+              </Tooltip>
+            ) : null}
+            {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
+            {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
+            {note.tags.length ? null : (
+              <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+            )}
+          </span>
+          {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
+        </Button>
+        {note.tags.length ? (
+          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+            <BadgeList
+              label={t("Tags")}
+              size="xs"
+              items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
+              className="pointer-events-auto"
+            />
+            <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+          </div>
         ) : null}
-        {time ? (
-          <Tooltip label={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`}>
-            <time dateTime={new Date(date.timestamp).toISOString()} className="shrink-0 tabular-nums">
-              {t(date.label)} {time}
-            </time>
-          </Tooltip>
-        ) : null}
-        {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
-        {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
-        {note.tags.length ? null : <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />}
-      </span>
-      {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
-    </Button>
-    {note.tags.length ? (
-      <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-        <BadgeList
-          label={t("Tags")}
-          size="xs"
-          items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
-          className="pointer-events-auto"
-        />
-        <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
       </div>
-    ) : null}
-    </div>
-    <div data-action-slot="collapse" data-action-anchor="end" className="flex shrink-0 items-center">
-      <InlineAction
-        label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={(event) => onMenu({ anchor: event.currentTarget })}
+      <div
+        data-action-slot="collapse"
+        data-action-anchor="end"
+        className="flex shrink-0 items-center"
       >
-        <MoreHorizontal className="icon-sm" />
-      </InlineAction>
-    </div>
+        <InlineAction
+          label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(event) => onMenu({ anchor: event.currentTarget })}
+        >
+          <MoreHorizontal className="icon-sm" />
+        </InlineAction>
+      </div>
     </ActionHost>
   );
 }
@@ -1875,30 +1811,24 @@ function NoteEditor({
   }
   onSavedRef.current = onSaved;
   // Picker, preview paste, DOM and native drops; the draft owner applies the body.
-  const {
-    imageBusy,
-    dropZoneRef,
-    dropZoneHandlers,
-    insertImage,
-    pasteImages,
-    onPreviewPaste,
-  } = useNoteImageInsertion({
-    noteId: note.id,
-    inputOwner,
-    draftState,
-    bodyRef,
-    modeRef,
-    toolbarTargetRef,
-    editorViewRef,
-    previewViewRef,
-    previewRangeRef,
-    onInserted: (value) => {
-      editNote({ body: value });
-      setSaveError(null);
-      scheduleSave();
-    },
-    onError: setSaveError,
-  });
+  const { imageBusy, dropZoneRef, dropZoneHandlers, insertImage, pasteImages, onPreviewPaste } =
+    useNoteImageInsertion({
+      noteId: note.id,
+      inputOwner,
+      draftState,
+      bodyRef,
+      modeRef,
+      toolbarTargetRef,
+      editorViewRef,
+      previewViewRef,
+      previewRangeRef,
+      onInserted: (value) => {
+        editNote({ body: value });
+        setSaveError(null);
+        scheduleSave();
+      },
+      onError: setSaveError,
+    });
   useNoteTextInput(inputOwner, "title", titleFieldRef);
   useNoteInputState(inputOwner, "library-state", {
     mode: visibleMode,
@@ -2458,90 +2388,90 @@ function NoteEditor({
           panels="shared"
           id={modesId}
         >
-        <div className="note-editor-toolbar">
-          <TabList label={t("Note sections")}>
-            <Tab value="preview">{t("Document")}</Tab>
-            <Tab value="source">{t("Source")}</Tab>
-            {narrow ? null : <Tab value="split">{t("Split")}</Tab>}
-          </TabList>
-          <NoteMarkdownToolbar
-            viewRef={
-              visibleMode === "preview"
-                ? previewViewRef
-                : visibleMode === "source"
-                  ? editorViewRef
-                  : previewEditing && toolbarTarget === "preview"
-                    ? previewViewRef
-                    : editorViewRef
-            }
-            editing={editing}
-            imageBusy={imageBusy}
-            onInsertImage={() => void insertImage()}
-          />
-        </div>
-        <TabPanel
-          ref={dropZoneRef}
-          tabIndex={undefined}
-          data-external-drop-owner="note-images"
-          aria-busy={imageBusy}
-          className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
-          {...dropZoneHandlers}
-        >
-          <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
-            {/* Stays mounted in preview so undo history survives the switch. */}
-            <NoteEditorPane
-              label={t("Source")}
-              scrollKey={`${note.id}:source`}
-              hidden={visibleMode === "preview"}
-              split={visibleMode === "split"}
-            >
-              <NoteMarkdownEditor
-                inputObserver={inputOwner.observer("source")}
-                inputPublication={
-                  bodyPublication?.value === body
-                    ? bodyPublication.proof
-                    : inputOwner.resultControlPublication(note, "source", body)
-                }
-                viewRef={editorViewRef}
-                minHeight={0}
-                autoFocus={blank && visibleMode === "source"}
-                value={body}
-                onChange={(next) => {
-                  editNote({ body: next });
-                  scheduleSave();
-                }}
-                onSave={() => void saveNow()}
-                onPasteImages={pasteImages}
-                onFocus={() => setToolbarTarget("source")}
-              />
-            </NoteEditorPane>
-            <NoteEditorPane
-              label={t("Document")}
-              document
-              scrollKey={`${note.id}:document`}
-              hidden={visibleMode === "source"}
-              split={visibleMode === "split"}
-            >
-              <NoteEditablePreview
-                stateObserver={inputOwner.observer("preview-state")}
-                inputObserver={inputOwner.observer("preview-block")}
-                canMutate={inputOwner.allowed}
-                value={body}
-                cwd={sourceCwd}
-                viewRef={previewViewRef}
-                rangeRef={previewRangeRef}
-                onEditingChange={setPreviewEditing}
-                onFocus={() => setToolbarTarget("preview")}
-                onChange={(next) => {
-                  editNote({ body: next });
-                  scheduleSave();
-                }}
-                onSave={() => void saveNow()}
-                onPasteImages={pasteImages}
-              />
-            </NoteEditorPane>
+          <div className="note-editor-toolbar">
+            <TabList label={t("Note sections")}>
+              <Tab value="preview">{t("Document")}</Tab>
+              <Tab value="source">{t("Source")}</Tab>
+              {narrow ? null : <Tab value="split">{t("Split")}</Tab>}
+            </TabList>
+            <NoteMarkdownToolbar
+              viewRef={
+                visibleMode === "preview"
+                  ? previewViewRef
+                  : visibleMode === "source"
+                    ? editorViewRef
+                    : previewEditing && toolbarTarget === "preview"
+                      ? previewViewRef
+                      : editorViewRef
+              }
+              editing={editing}
+              imageBusy={imageBusy}
+              onInsertImage={() => void insertImage()}
+            />
           </div>
-        </TabPanel>
+          <TabPanel
+            ref={dropZoneRef}
+            tabIndex={undefined}
+            data-external-drop-owner="note-images"
+            aria-busy={imageBusy}
+            className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
+            {...dropZoneHandlers}
+          >
+            <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
+              {/* Stays mounted in preview so undo history survives the switch. */}
+              <NoteEditorPane
+                label={t("Source")}
+                scrollKey={`${note.id}:source`}
+                hidden={visibleMode === "preview"}
+                split={visibleMode === "split"}
+              >
+                <NoteMarkdownEditor
+                  inputObserver={inputOwner.observer("source")}
+                  inputPublication={
+                    bodyPublication?.value === body
+                      ? bodyPublication.proof
+                      : inputOwner.resultControlPublication(note, "source", body)
+                  }
+                  viewRef={editorViewRef}
+                  minHeight={0}
+                  autoFocus={blank && visibleMode === "source"}
+                  value={body}
+                  onChange={(next) => {
+                    editNote({ body: next });
+                    scheduleSave();
+                  }}
+                  onSave={() => void saveNow()}
+                  onPasteImages={pasteImages}
+                  onFocus={() => setToolbarTarget("source")}
+                />
+              </NoteEditorPane>
+              <NoteEditorPane
+                label={t("Document")}
+                document
+                scrollKey={`${note.id}:document`}
+                hidden={visibleMode === "source"}
+                split={visibleMode === "split"}
+              >
+                <NoteEditablePreview
+                  stateObserver={inputOwner.observer("preview-state")}
+                  inputObserver={inputOwner.observer("preview-block")}
+                  canMutate={inputOwner.allowed}
+                  value={body}
+                  cwd={sourceCwd}
+                  viewRef={previewViewRef}
+                  rangeRef={previewRangeRef}
+                  onEditingChange={setPreviewEditing}
+                  onFocus={() => setToolbarTarget("preview")}
+                  onChange={(next) => {
+                    editNote({ body: next });
+                    scheduleSave();
+                  }}
+                  onSave={() => void saveNow()}
+                  onPasteImages={pasteImages}
+                />
+              </NoteEditorPane>
+            </div>
+          </TabPanel>
         </Tabs>
       </SurfaceSelection>
     </div>

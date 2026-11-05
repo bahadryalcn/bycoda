@@ -8,13 +8,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  CaseSensitive,
-  ListFilter,
-  ChevronLeft,
-  Regex,
-  WholeWord,
-} from "../../../shared/ui/icons";
+import { CaseSensitive, ListFilter, ChevronLeft, Regex, WholeWord } from "../../../shared/ui/icons";
 import {
   useEffect,
   useMemo,
@@ -31,7 +25,7 @@ import {
   type ProjectSearchOptions,
   type ProjectSearchResult,
 } from "../../search/model/search";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -396,13 +390,7 @@ function Toggle({
 }) {
   useLocale();
   return (
-    <Button
-      variant="ghost"
-      iconOnly
-      label={label}
-      aria-pressed={active}
-      onClick={onClick}
-    >
+    <Button variant="ghost" iconOnly label={label} aria-pressed={active} onClick={onClick}>
       {children}
     </Button>
   );

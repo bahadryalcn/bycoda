@@ -1,10 +1,10 @@
 # Privacy policy
 
-Last updated: 11 October 2026
+Last updated: 4 November 2026
 
 ## Scope and contact
 
-This policy describes the bycoda desktop application and its self-hosted companion host, independently maintained by [bahadryalcn](https://github.com/bahadryalcn). For privacy questions or requests, email [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com). GitHub may be used for general questions; do not post personal information, credentials, private code or conversation logs in public issues.
+This policy describes the bycoda desktop application and its self-hosted companion host, independently maintained by [bahadryalcn](https://github.com/bahadryalcn). For privacy questions or requests, email [info@bycoda.codes](mailto:info@bycoda.codes). GitHub may be used for general questions; do not post personal information, credentials, private code or conversation logs in public issues.
 
 ## No developer collection or tracking
 

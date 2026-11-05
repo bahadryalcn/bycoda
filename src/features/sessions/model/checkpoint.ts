@@ -1,5 +1,5 @@
 import { invokeWorkspace } from "../../../platform/tauri/fs";
-import { remoteSessionFor } from "../../connections/model/connections";
+import { remoteSessionFor } from "../../connections/public/connections";
 import type { HarnessFileChange } from "../../../integrations/harness/core/types";
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {

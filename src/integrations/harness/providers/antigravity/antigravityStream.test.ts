@@ -227,8 +227,7 @@ describe("antigravity stream-json transport", () => {
       const failures = outcomes.flatMap((result) =>
         result.status === "rejected" ? [result.reason] : [],
       );
-      if (failures.length)
-        throw new AggregateError(failures, "Original capacity fixture cleanup failed");
+      expect(failures, "Original capacity fixture cleanup failed").toEqual([]);
     }
   });
   it("passes only an explicitly prepared logical hint to the generated route", async () => {

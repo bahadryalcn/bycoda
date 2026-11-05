@@ -1,5 +1,43 @@
 # Host runtime and WebSocket migration
 
+## Host server module architecture
+
+`host/server.ts` is the composition root for `createHostServer`. It builds the
+Host services, wires their shared bindings, and exposes the resulting server;
+implementation modules live in `host/server/`. `bindings.ts` defines the typed
+`ServerBindings` contract. Runtime modules accept narrow `Pick<ServerBindings,
+...>` dependency sets, so each module declares which services it uses.
+
+The composition root uses lazy binding getters for values produced by later
+runtime constructors. This preserves existing forward references and service
+cycles while keeping construction order explicit. Keep those references lazy
+when moving a dependency; eagerly reading a later runtime during initialization
+can observe an uninitialized value.
+
+Async factories publish lexical getter objects into `runtime-slot.ts` slots before
+their first await. An initialized local becomes available during its readiness
+wait, while a later local retains its original initialization boundary. Do not
+defer publication until all readiness promises resolve. Mutable heartbeat, closing
+and observation state keeps lexical setters.
+
+Runtime modules group session views, queues and leases; workspaces and projects;
+conversation and management tools; assistant, social and mobile services;
+devices, development, Git and voice; subscriptions and WebSocket setup; and
+registry/HTTP composition. `registry.ts` maps typed Host methods to domain and
+service operations. `http.ts` owns HTTP/RPC transport admission, request-scoped
+authorization and response handling. Method-family dispatch should receive
+typed dependencies, while transport authentication and authorization stay at
+the request boundary. `lifecycle.ts` owns startup readiness and idempotent
+resource shutdown; preserve cleanup ordering, in-flight request settlement and
+late-start guards.
+
+The refactor does not change wire methods, authorization ownership, HTTP/WS
+route precedence, or shutdown semantics. Focused coverage remains in
+`host/server.test.ts`, `host/server-websocket.test.ts`, and the owning domain
+family tests.
+
+## Execution and ownership
+
 The current Host input path uses one shared in-process issuer across Engine and
 the actual backend. Private operation handles cannot be restored from JSON IDs.
 Normal writes and original cleanup have separate admission; both retain the true
@@ -58,7 +96,10 @@ A late acquire refusal (`HOST_WRITER_RETIREMENT_PENDING`,
 `HOST_WRITER_RETIREMENT_FAILED` or `LEASE_HELD`) confirms no lease was granted,
 so a later owner attempt may query the Host again. It does not authorize a
 provider start or replay the retained input. A transport failure or a failed
-release after a late grant still leaves ownership unknown and guarded.
+release after a late grant still leaves ownership unknown and guarded until the
+run-lease TTL has passed, because this window never renews that lease. Desktop
+acquire waits 25 s against a retirement-capable Host so the Host's 20 s
+retirement window can answer first.
 
 The provider retirement ledger retains captured handles and failed cleanup after
 provider Live-map removal. Host activity release callbacks belong to the original
@@ -302,6 +343,35 @@ continuity; it does not require a live Desktop snapshot to execute on a headless
 Host. Project registration is not proof of Desktop UI visibility; complete
 Host-owned project/privacy provenance remains separate work.
 
+Terminal and device-preview receipts use a ten-minute monotonic retirement
+window only after their own settlement proof. Before deleting an exact receipt,
+the Host records its authority/request key in a fixed-size, process-lifetime
+fence. Fence matches refuse execution (including possible false positives);
+saturation refuses new resource admission. This is not durable cross-restart
+idempotency. Live, pending and unknown effects never expire to make room.
+Terminal history is bounded separately from live capacity, and physical close
+plus successful activity-lease release proves terminal retirement. Device
+previews settle on a confirmed ready result or read-only preflight failure;
+failures after setup begins remain uncertain. Receipt expiry does not tear down
+device resources. Original authorization is retained for replay and checked
+again after delayed authorization before screenshot disclosure.
+
+Conversation browser previews apply the same receipt fence to verified results
+and read-only status failures. Requested panel presentation must also be verified
+before settlement. Unknown claim/navigation/presentation outcomes retain admission
+slots, including after token revocation; revocation cannot erase evidence and
+authorize a retry. Natural token expiry cannot supply a result through a newer
+authorization callback. Ten-minute receipt retirement is lazy on later requests
+and never closes the user's browser page.
+
+Text workspace retirement follows the issuing run, all accepted grant-wide
+preparations and every observed physical child completion. Finishing a run alone
+does not revoke its live child access. Proven retirement revokes the grant;
+cleanup moves only its exact owned temporary directory to a unique same-root
+candidate and rechecks identity before removal. Failed or uncertain cleanup keeps
+the candidate and capacity slot for retry. Node pathname operations still cannot
+exclude every uncooperative same-user path or child-entry swap.
+
 HTTP and WS preserve known pre-admission rejection versus an admitted device
 operation whose outcome cannot be confirmed. The HTTP compatibility path reads a
 bounded rejection envelope before classifying device401 responses, preserves
@@ -360,15 +430,38 @@ An unknown service original cannot be retired; buffer retirement additionally
 requires its same verified current/archive proof. Retired status carries no
 payload and changes no source freshness or execution owner.
 
-Formatting reserves up to 32 MiB before invoking its handler. The format pool is
-64 MiB globally and 32 MiB per principal; tiny fixed buffer/finish outcomes use their
-bounded metadata row allowance instead. Exhaustion rejects before the effect.
+New formatting reserves 4 MiB before invoking its handler, matching the enforced
+serialized formatter output bound. `native.services.workspace.format.bounded.v1`
+advertises that bound; Native keeps the original 32 MiB allowance for older Hosts
+and retained legacy originals. The Host format pool remains 64 MiB globally and
+32 MiB per principal; tiny fixed buffer/finish outcomes use their bounded metadata
+row allowance instead. Native admission separates bounded formatting, legacy
+formatting and control reservations: 64 MiB, 128 MiB and 128 MiB respectively,
+including retained request bytes. Each lane admits at most 256 active result owners;
+the existing 65,536 total-row bound remains shared. These are reservation ceilings,
+not allocations of that much physical memory. A proven unavailable result no
+longer occupies an active result slot; its original request bytes and total-row
+slot remain charged. Unknown originals without that proof still occupy active
+slots. Exhaustion rejects before the effect.
 Consumed digests are stored separately from raw chunk hashes, so ACK does not
 materialize a retained 32 MiB result. Immediate Native cleanup has a 250 ms budget and
 cannot turn successful consumption into an error. Its receipt proves guarded Rust
 handoff, not receipt or application by JavaScript. Epoch compaction below extends
 that lifecycle; unknown-outcome resolution and target-platform power-loss
 acceptance remain separate full26 work.
+
+A format status may carry `resultUnavailable: true` only for an exact retained
+unknown original whose Host result reservation has been durably released and
+whose result cannot subsequently be recorded. Native verifies that original and
+the qualified Host under its response guards, then records an irreversible local
+result fence. Only the reserved result bytes are released; request bytes and
+unknown/no-replay identity remain held. This is not proof of successful or failed
+formatter execution, physical process retirement or permission to replay it.
+
+Recovery may discard a verified recorded formatter result only after its original
+live caller and unconsumed reply have relinquished ownership. Discard uses guarded
+local acknowledgement and the existing remote cleanup outbox; it never applies
+the old text to a current editor. An active caller's result remains protected.
 
 The actual Host now retains buffer report bytes, archive parts and completion
 proofs in its critical FULL SQLite owner. These reports contain file paths,
@@ -472,6 +565,14 @@ Generation updates cannot replace a pinned owner, regress a known generation or
 reopen a deleted binding. Pinned requests also verify the actual Native saved
 environment before dispatch, independently of the renderer's machine cache.
 
+Native profiles migrate binding and outbox evidence to versioned SQLite storage
+after verifying the native effect guard. Original legacy bytes remain recoverable;
+only unchanged, durably backed-up localStorage mirrors are removed. New admissions
+refresh canonical ownership, and compact receipts require an authoritative value
+reread. Browser storage retains its separate adapter. See the
+[native storage epoch contracts](../../.agents/skills/feature-host-runtime/references/storage-epoch.md)
+for migration, owner retirement and the recorded compatibility decisions.
+
 Host sessions obtain models and optional Codex/Claude account choices from their
 Host. Owner-only `models.list.accounts` contains bounded safe IDs/labels, never
 Native desktop account IDs or credential contents. Canonical configure accepts
@@ -510,6 +611,26 @@ Actual backend work stays charged until settlement, including I/O that ignores
 cancellation. A command response deadline or client detach loses only the wait:
 accepted work retains its command ID, is reconciled through its receipt, and is
 never automatically replayed with a new identity.
+
+Authentication and heartbeat work have their own bounded admission lanes. A
+positive authentication rejection blocks the connection; temporary storage or
+admission failures retain retryable unavailable/overload outcomes. Renderer
+controls use eight physical slots and a FIFO of at most 64 waiters, independent
+of ordinary reads. One monotonic response deadline covers startup, queue wait,
+request and bulk decoding. Local cancellation releases a wait, not the physical
+control slot. The native reconnect queue retains only never-sent requests with
+their original deadline, owner and resource scope; dispatched mutations are
+never queued for replay.
+
+Native reconnect resumes retained subscriptions only from proven application
+commits, exact live page issuers, logical targets and resource scopes. A complete
+membership cut from the retired connection permits shared streams to resume from
+their minimum committed cursor. Returning members never receive replay they
+already committed. Absent members retain bounded replay/backpressure state for
+at most ten seconds, without event disclosure or physical request slots. Missing
+proof, changed membership, replacement pages, gaps, invalid epochs or expired
+rejoin waits require a fresh baseline. Renderer cursor input alone never proves
+application or authorizes an ACK.
 
 File mutations retain the existing workspace confinement, serialized content CAS
 and editor activity owner. They recheck the authenticated grant inside the actual
@@ -558,6 +679,29 @@ socket-module source remains visible. Native compilation/physical acceptance is
 still required; source discovery and TypeScript checks are insufficient.
 
 ## Durability and authority
+
+Desktop-owned Stop, approval and question-answer requests use a durable Host
+receipt plus an immutable delivery row in one FULL transaction. Admission binds
+the original principal, command payload, session, page and turn. An offer is
+marked `offered_unknown` before its payload enters the heartbeat response; a lost
+response is never reoffered. Heartbeat ACK records handling by the original
+client/page, not provider completion. Host restart retains accepted/unknown rows
+for status but cannot automatically offer them from a new process incarnation.
+Generic receipt pruning and generic execution cannot erase or reuse these IDs.
+The finite receipt capacity refuses new admission when full.
+
+The native page token is a routing guard, not an execution grant. Receivers also
+capture original child/control handles before the heartbeat and recheck them
+after page verification and immediately before the existing control dispatch.
+Changing the session route cannot redirect an old command to its replacement.
+Missing original ownership proof holds the action; it cannot authorize a fresh
+target or replay. Matching Host and desktop protocol support is required.
+
+Orchestrated stops capture the run incarnation, active dispatch IDs and original
+lead/worker stop handles before awaiting persistence. Revalidation after each
+asynchronous boundary prevents a replacement run from receiving the old stop.
+Native control grant capture and disable compare the original grant generation
+and exact window issuer atomically; completion cannot revoke a newer grant.
 
 Critical Host transactions select SQLite FULL durability before BEGIN; routine
 stream checkpoints use their own policy. A persistence fault blocks new durable

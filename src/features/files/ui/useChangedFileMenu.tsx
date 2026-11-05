@@ -8,7 +8,7 @@ import { parentPath } from "../../../shared/lib/paths";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExplorerMenu, type ExplorerMenuItem } from "./ExplorerMenu";
 import { canPreviewFile } from "../model/filePreview";
-import { setMarkdownViewMode } from "../../sessions/ui/MarkdownModeToggle";
+import { setMarkdownViewMode } from "../../sessions/public/MarkdownModeToggle";
 
 type ChangedFileTarget = {
   path: string;

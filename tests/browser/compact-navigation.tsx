@@ -32,6 +32,10 @@ const history = Array.from({ length: 9 }, (_, index) => ({
       : `Product discussion ${index + 1}`,
   createdAt: Date.now() - index * 60_000,
   updatedAt: Date.now() - index * 60_000,
+  // Deliberately distinct from the synchronization stamp for detail-card checks.
+  ...(new URLSearchParams(location.search).has("activityDate")
+    ? { lastActivityAt: new Date(2026, 9, 17, 15, 37).getTime() - index * 60_000 }
+    : {}),
 }));
 // ?draft=1 leaves unsent composer text in a listed, idle discussion.
 if (new URLSearchParams(location.search).has("draft"))

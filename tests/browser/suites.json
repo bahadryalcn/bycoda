@@ -14,6 +14,53 @@
   },
   "suites": [
     {
+      "id": "attachment-cards",
+      "config": "tests/browser/attachment-cards.playwright.config.ts",
+      "files": ["attachment-cards.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.attachment-cards.config.ts",
+        "mode": "dev",
+        "path": "/tests/browser/attachment-cards.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["attachment-cards.spec.ts"]
+        }
+      ]
+    },
+    {
+      "id": "inline-visuals",
+      "config": "tests/browser/playwright.inline-visuals.config.ts",
+      "files": ["inline-visuals.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.inline-visuals.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/inline-visuals.html"
+      },
+      "projects": [
+        { "name": "chromium", "browser": "chromium", "files": ["inline-visuals.spec.ts"] }
+      ]
+    },
+    {
+      "id": "chat-citations",
+      "config": "tests/browser/playwright.chat-citations.config.ts",
+      "files": ["chat-citations.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.chat-citations.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/chat-citations.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["chat-citations.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "generated-file-links",
       "config": "tests/browser/generated-file-links.playwright.config.ts",
       "files": ["generated-file-links.spec.ts"],
@@ -33,7 +80,12 @@
     {
       "id": "assistant-room",
       "config": "tests/browser/playwright.assistant-room.config.ts",
-      "files": ["assistant-room.e2e.ts"],
+      "files": [
+        "assistant-room.e2e.ts",
+        "assistant-history.e2e.ts",
+        "assistant-memory.e2e.ts",
+        "assistant-room-dialogs.e2e.ts"
+      ],
       "fixture": {
         "config": "tests/browser/vite.assistant-room.config.ts",
         "mode": "preview",
@@ -43,7 +95,46 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["assistant-room.e2e.ts"]
+          "files": [
+            "assistant-room.e2e.ts",
+            "assistant-history.e2e.ts",
+            "assistant-memory.e2e.ts",
+            "assistant-room-dialogs.e2e.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "working-project-summary",
+      "config": "tests/browser/working-project-summary.playwright.config.ts",
+      "files": ["working-project-summary.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/working-project-summary.vite.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/working-project-summary.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["working-project-summary.spec.ts"]
+        }
+      ]
+    },
+    {
+      "id": "assistant-settings",
+      "config": "tests/browser/playwright.assistant-settings.config.ts",
+      "files": ["assistant-settings.e2e.ts", "assistant-settings-safety.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.assistant-settings.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/assistant-room.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["assistant-settings.e2e.ts", "assistant-settings-safety.e2e.ts"]
         }
       ]
     },
@@ -682,7 +773,7 @@
     {
       "id": "question-flow",
       "config": "tests/browser/playwright.question-flow.config.ts",
-      "files": ["question-flow.spec.ts"],
+      "files": ["question-flow.spec.ts", "question-attachments.spec.ts"],
       "fixture": {
         "config": "tests/browser/vite.question-flow.config.ts",
         "mode": "preview",
@@ -692,12 +783,12 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["question-flow.spec.ts"]
+          "files": ["question-flow.spec.ts", "question-attachments.spec.ts"]
         },
         {
           "name": "webkit",
           "browser": "webkit",
-          "files": ["question-flow.spec.ts"]
+          "files": ["question-flow.spec.ts", "question-attachments.spec.ts"]
         }
       ]
     },
@@ -738,6 +829,23 @@
             "servers.spec.ts",
             "ssh-key-binding.spec.ts"
           ]
+        }
+      ]
+    },
+    {
+      "id": "session-row-layout",
+      "config": "tests/browser/session-row-layout.playwright.config.ts",
+      "files": ["session-row-layout.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/session-row-layout.vite.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/session-row-layout.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["session-row-layout.spec.ts"]
         }
       ]
     },
@@ -1576,7 +1684,7 @@
     },
     {
       "config": "tests/browser/playwright.question-flow.config.ts",
-      "files": ["question-flow.spec.ts"],
+      "files": ["question-flow.spec.ts", "question-attachments.spec.ts"],
       "browsers": ["chromium"]
     },
     {

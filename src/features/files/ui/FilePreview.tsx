@@ -5,7 +5,7 @@ import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
 import { formatInteger } from "../../../shared/lib/numbers";
 import { displayPath, resolveWorkspacePath } from "../../../shared/lib/paths";
-import type { ToolPreview, ToolPreviewLine } from "../../sessions/model/session";
+import type { ToolPreview, ToolPreviewLine } from "../../sessions";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 type Status = "pending" | "accepted" | "rejected";
@@ -104,9 +104,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
           </Button>
         ) : (
           <Tooltip label={path} when={path === label ? "overflow" : "always"}>
-            <span
-              className="min-w-0 flex-1 truncate font-mono text-ui-caption font-medium text-[var(--color-content)]"
-            >
+            <span className="min-w-0 flex-1 truncate font-mono text-ui-caption font-medium text-[var(--color-content)]">
               {label}
             </span>
           </Tooltip>
@@ -225,7 +223,11 @@ function highlight(text: string, dimmed: boolean) {
       parts.push({ text: text.slice(last, match.index), color: "" });
     }
     const token = match[1];
-    const color = KEYWORDS.has(token) ? "text-(--ui-tone-success-fg)" : /^[A-Z]/.test(token) ? "text-(--ui-tone-warning-fg)" : "";
+    const color = KEYWORDS.has(token)
+      ? "text-(--ui-tone-success-fg)"
+      : /^[A-Z]/.test(token)
+        ? "text-(--ui-tone-warning-fg)"
+        : "";
     parts.push({ text: token, color });
     last = match.index + token.length;
   }

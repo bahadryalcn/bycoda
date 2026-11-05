@@ -265,6 +265,7 @@ export function hydrateWorkspaceSnapshot(
   snapshot: WorkspaceSnapshot,
   loaded: Map<string, Session>,
   interruptedIds: ReadonlySet<string> = new Set(),
+  deletedIds: ReadonlySet<string> = new Set(),
 ): ResumedWorkspace | null {
   const parsed = parseWorkspaceSnapshot(snapshot);
   if (!parsed) return null;
@@ -285,6 +286,7 @@ export function hydrateWorkspaceSnapshot(
   const duplicateIds = new Set<string>();
 
   const take = (id: string): Session | null => {
+    if (deletedIds.has(id)) return null;
     const existing = sessions.get(id);
     if (existing) return existing;
     if (duplicateIds.has(id)) return null;
@@ -318,7 +320,7 @@ export function hydrateWorkspaceSnapshot(
     let tab: WorkspaceTab | null = parsedTab;
     for (const id of leafIds(parsedTab.layout)) {
       if (paneIds.has(id) || take(id)) continue;
-      if (duplicateIds.has(id)) {
+      if (duplicateIds.has(id) || deletedIds.has(id)) {
         // The host session is already shown elsewhere: drop this pane, not the tab's other panes.
         tab = tab && closeLeaf(tab, id);
         continue;

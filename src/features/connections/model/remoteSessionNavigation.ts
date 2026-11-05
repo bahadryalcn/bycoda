@@ -1,5 +1,5 @@
-import type { Session } from "../../sessions/model/session";
-import { sameProjectPath } from "../../projects/model/recents";
+import type { Session } from "../../sessions";
+import { sameProjectPath } from "../../projects/public/recents";
 import { leafIds, type WorkspaceTab } from "../../workspace/model/layout";
 
 /** Host session IDs are resolved only within the selected remote project. */

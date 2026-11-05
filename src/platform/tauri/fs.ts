@@ -1,3 +1,5 @@
+import { createWorkspacePathMutations } from "./fs/pathMutations";
+export type { MovePathResult } from "./fs/pathMutations";
 import { invoke as invokeLocal } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
@@ -218,6 +220,8 @@ export async function browseDirectory(path: string, containing = false): Promise
 }
 
 export type DiscoveredSkill = {
+  /** Catalog installation target; absent for skills installed outside bycoda. */
+  installProvider?: string;
   modelInvocable?: false;
   userInvocable?: false;
   name: string;
@@ -242,10 +246,12 @@ export type DiscoveredSkill = {
 export function listSkills(
   cwd: string,
   disabledPaths?: readonly string[] | null,
+  provider?: string,
 ): Promise<DiscoveredSkill[]> {
   return invoke<DiscoveredSkill[]>("list_skills", {
     cwd,
     disabledPaths: disabledPaths ?? null,
+    ...(provider ? { provider } : {}),
   });
 }
 
@@ -307,7 +313,15 @@ export function listClaudeCommands(cwd: string): Promise<ClaudeCommandEntry[]> {
 type ProjectFileListing = {
   root: string;
   files: { name: string; relative: string }[];
+  truncated?: boolean;
 };
+
+const projectFileCompleteness = new WeakMap<ProjectFile[], boolean>();
+
+/** Undefined means the serving Host did not report whether its scan was complete. */
+export function projectFilesTruncated(files: ProjectFile[]): boolean | undefined {
+  return projectFileCompleteness.get(files);
+}
 
 /** Local projects send the root once with relative paths; a remote host still
  * sends full entries, which pass through untouched. */
@@ -315,11 +329,13 @@ export async function listProjectFiles(cwd: string): Promise<ProjectFile[]> {
   const listing = await invoke<ProjectFileListing | ProjectFile[]>("list_project_files", { cwd });
   if (Array.isArray(listing)) return listing;
   const prefix = listing.root.endsWith("/") ? listing.root : `${listing.root}/`;
-  return listing.files.map((file) => ({
+  const files = listing.files.map((file) => ({
     name: file.name,
     path: prefix + file.relative,
     relative: file.relative,
   }));
+  if (typeof listing.truncated === "boolean") projectFileCompleteness.set(files, listing.truncated);
+  return files;
 }
 
 export type GitDiffStats = {
@@ -888,14 +904,21 @@ function deliverGitWatch(reports: GitWatchReport[]) {
 
 function gitWatchSetup(): Promise<void> {
   // Reports are addressed to the webview that registered the checkout.
-  gitWatchReady ??= Promise.resolve()
-    .then(() =>
-      getCurrentWebview().listen<GitWatchReport[]>(GIT_WATCH_EVENT, (event) =>
-        deliverGitWatch(event.payload),
-      ),
-    )
-    // A reloaded page drops what its previous load registered.
-    .then(() => invokeLocal<void>("git_watch_reset"));
+  gitWatchReady ??= (async () => {
+    const unlisten = await getCurrentWebview().listen<GitWatchReport[]>(GIT_WATCH_EVENT, (event) =>
+      deliverGitWatch(event.payload),
+    );
+    try {
+      // A reloaded page drops what its previous load registered.
+      await invokeLocal<void>("git_watch_reset");
+    } catch (error) {
+      unlisten();
+      throw error;
+    }
+  })().catch((error) => {
+    gitWatchReady = null;
+    throw error;
+  });
   return gitWatchReady;
 }
 
@@ -1007,21 +1030,8 @@ export function createPath(parent: string, name: string, isDir: boolean): Promis
   return invoke<string>("create_path", { parent, name, isDir }).then(slash);
 }
 
-export function renamePath(path: string, name: string): Promise<string> {
-  return invoke<string>("rename_path", { path, name }).then(slash);
-}
-
-export function deletePath(path: string): Promise<void> {
-  return invoke<void>("delete_path", { path });
-}
-
-export function copyPath(from: string, destParent: string): Promise<string> {
-  return invoke<string>("copy_path", { from, destParent }).then(slash);
-}
-
-export function movePath(from: string, destParent: string): Promise<string> {
-  return invoke<string>("move_path", { from, destParent }).then(slash);
-}
+export const { renamePath, deletePath, copyPath, movePath } =
+  createWorkspacePathMutations(invokeWorkspace);
 
 /**
  * Paths for files copied in a file manager, on macOS, Linux and Windows.

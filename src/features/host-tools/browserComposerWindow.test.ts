@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   attachBrowserSelection,
   attachBrowserSelectionAcrossWindows,
+  BrowserDraftDeliveryUncertainError,
   MAX_BROWSER_SCREENSHOT_BYTES,
   registerBrowserComposer,
 } from "./browserComposer";
@@ -195,7 +196,7 @@ it("ignores mismatched acknowledgements and cleans up when the composer does not
     "",
     "closed-window",
   );
-  const rejected = expect(promise).rejects.toThrow("Open the target conversation");
+  const rejected = expect(promise).rejects.toBeInstanceOf(BrowserDraftDeliveryUncertainError);
   await vi.advanceTimersByTimeAsync(0);
   transport.handlers.get(`tools-window:${event}-ack`)!({
     payload: { id: "another-request", accepted: true },
@@ -203,6 +204,7 @@ it("ignores mismatched acknowledgements and cleans up when the composer does not
   await vi.advanceTimersByTimeAsync(2500);
   await rejected;
   expect(transport.handlers.has(`tools-window:${event}-ack`)).toBe(false);
+  expect(transport.emit).toHaveBeenCalledOnce();
 });
 
 it("removes a reply listener that finishes registering after its request timed out", async () => {

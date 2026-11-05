@@ -23,11 +23,23 @@ import {
   saveResumeAtReset,
   type ModelControls,
 } from "../model/settings";
-import { AdvancedSettings, Group, Row, Segmented, SettingsFeedback, Toggle } from "./settingsControls";
+import {
+  AdvancedSettings,
+  Group,
+  Row,
+  Segmented,
+  SettingsFeedback,
+  Toggle,
+} from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { loadComposerSpelling, saveComposerSpelling, useComposerSpelling } from "../model/composerSpelling";
+import {
+  loadComposerSpelling,
+  saveComposerSpelling,
+  useComposerSpelling,
+} from "../model/composerSpelling";
 import { TranslationSettings } from "./TranslationSettings";
+import { TitleGenerationSettings } from "./TitleGenerationSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
@@ -37,40 +49,113 @@ import { VoiceSettings } from "../../voice/ui/VoiceSettings";
 export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
   const spelling = useComposerSpelling();
-  const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(loadTranscriptLayout, subscribeTranscriptLayout);
-  const [transcriptAnchor, setTranscriptAnchor] = useStoredPreferenceState(loadTranscriptAnchor, subscribeTranscriptAnchor);
-  const [resumeAtReset, setResumeAtReset] = useStoredPreferenceState(loadResumeAtReset, subscribeResumeAtReset);
-  const [autoContinue, setAutoContinue] = useStoredPreferenceState(loadAutoContinueInterrupted, subscribeAutoContinueInterrupted);
+  const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(
+    loadTranscriptLayout,
+    subscribeTranscriptLayout,
+  );
+  const [transcriptAnchor, setTranscriptAnchor] = useStoredPreferenceState(
+    loadTranscriptAnchor,
+    subscribeTranscriptAnchor,
+  );
+  const [resumeAtReset, setResumeAtReset] = useStoredPreferenceState(
+    loadResumeAtReset,
+    subscribeResumeAtReset,
+  );
+  const [autoContinue, setAutoContinue] = useStoredPreferenceState(
+    loadAutoContinueInterrupted,
+    subscribeAutoContinueInterrupted,
+  );
   const [failures, setFailures] = useState<Record<string, () => void>>({});
-  const commit = (id: string, write: () => boolean | void, read: () => unknown, next: unknown, update: () => void) => {
+  const commit = (
+    id: string,
+    write: () => boolean | void,
+    read: () => unknown,
+    next: unknown,
+    update: () => void,
+  ) => {
     try {
       if (write() === false || read() !== next) throw new Error("Preference not persisted");
       update();
-      setFailures((current) => { const updated = { ...current }; delete updated[id]; return updated; });
+      setFailures((current) => {
+        const updated = { ...current };
+        delete updated[id];
+        return updated;
+      });
     } catch {
       setFailures((current) => ({ ...current, [id]: () => commit(id, write, read, next, update) }));
     }
   };
-  const feedback = (id: string) => failures[id] ? <SettingsFeedback state="error" action={<Button onClick={failures[id]}>{t("Retry")}</Button>}>{t("Could not save changes")}</SettingsFeedback> : undefined;
-  const [modelControls, setModelControls] = useStoredPreferenceState(loadModelControls, subscribeModelControls);
+  const feedback = (id: string) =>
+    failures[id] ? (
+      <SettingsFeedback state="error" action={<Button onClick={failures[id]}>{t("Retry")}</Button>}>
+        {t("Could not save changes")}
+      </SettingsFeedback>
+    ) : undefined;
+  const [modelControls, setModelControls] = useStoredPreferenceState(
+    loadModelControls,
+    subscribeModelControls,
+  );
   const onTranscriptLayout = (next: TranscriptLayout) => {
-    commit("transcript-layout", () => saveTranscriptLayout(next), loadTranscriptLayout, next, () => setTranscriptLayout(next));
+    commit(
+      "transcript-layout",
+      () => saveTranscriptLayout(next),
+      loadTranscriptLayout,
+      next,
+      () => setTranscriptLayout(next),
+    );
   };
   const onTranscriptAnchor = (next: boolean) => {
-    commit("anchor-prompts", () => saveTranscriptAnchor(next), loadTranscriptAnchor, next, () => setTranscriptAnchor(next));
+    commit(
+      "anchor-prompts",
+      () => saveTranscriptAnchor(next),
+      loadTranscriptAnchor,
+      next,
+      () => setTranscriptAnchor(next),
+    );
   };
   const onResumeAtReset = (next: boolean) => {
-    commit("resume-at-reset", () => saveResumeAtReset(next), loadResumeAtReset, next, () => setResumeAtReset(next));
+    commit(
+      "resume-at-reset",
+      () => saveResumeAtReset(next),
+      loadResumeAtReset,
+      next,
+      () => setResumeAtReset(next),
+    );
   };
   const onAutoContinue = (next: boolean) => {
-    commit("auto-continue-interrupted", () => saveAutoContinueInterrupted(next), loadAutoContinueInterrupted, next, () => setAutoContinue(next));
+    commit(
+      "auto-continue-interrupted",
+      () => saveAutoContinueInterrupted(next),
+      loadAutoContinueInterrupted,
+      next,
+      () => setAutoContinue(next),
+    );
   };
   const onModelControls = (next: ModelControls) => {
-    commit("model-controls", () => saveModelControls(next), loadModelControls, next, () => setModelControls(next));
+    commit(
+      "model-controls",
+      () => saveModelControls(next),
+      loadModelControls,
+      next,
+      () => setModelControls(next),
+    );
   };
   return (
     <div className="chat-settings settings-topics">
-      <Group title={t("Conversation view")} layout="full" feedback={<AppearanceSaveFeedback settingIds={["appearance-preferences", "transcript-layout", "anchor-prompts", "streaming-text-mode"]} />}>
+      <Group
+        title={t("Conversation view")}
+        layout="full"
+        feedback={
+          <AppearanceSaveFeedback
+            settingIds={[
+              "appearance-preferences",
+              "transcript-layout",
+              "anchor-prompts",
+              "streaming-text-mode",
+            ]}
+          />
+        }
+      >
         <ConversationDisplaySettings appearance={appearance} />
         <Row
           id="transcript-layout"
@@ -200,7 +285,15 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           <Toggle
             label={t("Spelling and autocorrect")}
             on={spelling}
-            onChange={(next) => commit("composer-spelling", () => saveComposerSpelling(next), loadComposerSpelling, next, () => {})}
+            onChange={(next) =>
+              commit(
+                "composer-spelling",
+                () => saveComposerSpelling(next),
+                loadComposerSpelling,
+                next,
+                () => {},
+              )
+            }
           />
         </Row>
         <Row
@@ -215,6 +308,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         <TranslationSettings embedded />
         <TranslationSettings embedded action="reprompt" />
       </Group>
+      <TitleGenerationSettings />
       <TemplatesSettings />
       <VoiceSettings />
     </div>

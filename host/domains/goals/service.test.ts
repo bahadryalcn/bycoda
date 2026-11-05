@@ -3,9 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { HostEngine } from "../../engine";
-import { HostGoals } from "../../goals";
+import { HostGoals } from "../../goals/goals";
 import { HostStore } from "../../store";
-import { HostTasks } from "../../tasks";
+import { HostTasks } from "../../tasks/tasks";
 import * as dto from "../../../src/shared/model/host-contracts/goals";
 import { createHostGoalsService } from "./service";
 

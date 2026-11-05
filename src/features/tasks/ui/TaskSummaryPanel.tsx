@@ -111,7 +111,8 @@ export function SummaryPanel({
               })
             : t("No summary yet. One is sent every day at the time set in Settings.")}
         </p>
-        <Button reserveLabels={[t("Refreshing…")]}
+        <Button
+          reserveLabels={[t("Refreshing…")]}
           variant="secondary"
           type="button"
           onClick={onRefresh}
@@ -152,6 +153,7 @@ export function SummaryPanel({
                     {entry.dailyAgentMinutes
                       ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) })
                       : ""}
+                    {entry.usageUncertain ? ` · ${t("Incomplete")}` : ""}
                   </li>
                 ))}
               </ul>
@@ -171,7 +173,6 @@ export function SummaryPanel({
     </section>
   );
 }
-
 
 /** The daily summary panel: the last summary sent, or a fresh one built on
  * request. A click on the summary notification opens the panel, also when the

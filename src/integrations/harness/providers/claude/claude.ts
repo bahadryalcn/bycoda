@@ -1,5 +1,6 @@
 import {
   queueProviderOperation,
+  retireProviderEpoch,
   assertProviderOperation,
   observeProviderProcess,
   finishProviderOperation,
@@ -13,6 +14,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { ClaudeQueryFence } from "./claudeQueryFence";
 import {
   announceSlowProviderStartup,
   PROVIDER_STARTUP_TIMEOUT_MS,
@@ -110,7 +112,7 @@ import {
   toolResultsFromUserMessage,
   toolStartFromEvent,
   toolTitle,
-  tryParseJsonRecord,
+  createJsonRecordAccumulator,
   turnStatusFromResult,
   usageLimitFromRateLimitEvent,
   type ClaudeAgentTaskNotification,
@@ -123,7 +125,7 @@ import {
 } from "../../../../features/sessions/model/compactionStatus";
 import { agentFallbackCallId, resolveStopTargets, settledTaskStatus } from "./claudeStopTask";
 import { isAgentToolName } from "../../core/preview";
-import { reportSessionCommands } from "../../core/reportedCommands";
+import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { snapshotRemainder } from "../../core/streamText";
 import {
   questionPromptTitle,
@@ -138,6 +140,7 @@ import type {
   SendTurnInput,
   SteerTurnInput,
 } from "../../core/types";
+import { TurnNotReadyError } from "../../core/types";
 
 /**
  * A PermissionRequest hook can decide before the user touches the prompt; Claude
@@ -163,7 +166,7 @@ type InFlightTool = {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  partialJson: string;
+  inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
   outputPath?: string;
 };
@@ -227,6 +230,8 @@ type Live = {
   /** TaskCreate/TaskUpdate items, keyed by Claude's task id. */
   claudeTasks: Map<string, TaskListItem>;
   turnResultSeen: boolean;
+  queryFence: ClaudeQueryFence;
+  queryGeneration: number | null;
   /** Latest `rate_limit_event` refused requests; reported when the turn ends. */
   usageLimit: { resetsAt?: number } | null;
   cancelled: boolean;
@@ -327,6 +332,7 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
             input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
             return;
           }
+          live.queryFence.assertReady();
           live.onEvent = input.onEvent;
           live.runtimeMode = input.runtimeMode;
           live.cancelled = false;
@@ -382,6 +388,7 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
             input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
             return;
           }
+          live.queryFence.assertReady();
           live.onEvent = input.onEvent;
           live.runtimeMode = input.runtimeMode;
           live.cancelled = false;
@@ -423,24 +430,16 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   input = { ...input };
 
   const live = liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!live?.activeTurn)
+    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
 
-  const writer = await captureByteTurnWriter(
-    live.handle,
-    input.nativeControlTurn,
-    input.operationContext,
-  )();
-  const message = buildClaudeUserMessage({
-    text: input.text,
-    attachments: input.attachments,
-    effort: input.modelSettings?.effort,
-  });
-  const content = (message.message as { content: unknown[] }).content;
-  if (content.length === 0) return;
-
-  await writeJson(live, message, writer);
+  // The stream result has no input identity. A second user message while the
+  // first query is open could make its terminal result complete a later turn.
+  // This typed pre-write deferral lets the composer retain text and attachments
+  // in its normal queue until the current turn has settled.
+  throw new TurnNotReadyError("Claude follow-up is waiting for the current query to finish.");
 }
 
 export function respondClaudeApproval(
@@ -531,6 +530,8 @@ export async function cancelClaudeTurn(
   await writeJson(live, buildControlRequest(nextControlId(live), { subtype: "interrupt" }), writer);
   // A failed write leaves the turn active and observable so Stop can retry.
   if (!ownsOperation(context, live.handle, live.operation)) return;
+  if (live.queryGeneration !== null) live.queryFence.interrupt(live.queryGeneration);
+  else if (live.backgroundTasks.size > 0 || live.awaitingResume) live.queryFence.hold();
   live.cancelled = true;
   stopOutputWatches(live);
   live.muteUpdates = true;
@@ -548,7 +549,6 @@ export async function stopClaudeBackgroundWork(
   callId?: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-
   const live = liveByThread.get(sessionId);
   if (!live || !ownsOperation(context, live.handle, live.operation)) return;
   const targets = resolveStopTargets(live, callId).map((target) => ({
@@ -629,13 +629,15 @@ export async function forgetClaudeSession(
   // Delete/switch must end the process: a context that no longer owns it falls
   // back to a by-session stop instead of returning with the process alive.
   resumeByThread.delete(sessionId);
-  cancelEpochByThread.delete(sessionId);
+  cancelEpochByThread.set(sessionId, {});
   tasksByThread.delete(sessionId);
   const queuedOnly = cancelQueuedOperation(context);
   const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
   const owned =
     !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  forgetSessionCommands(sessionId);
   await stopClaudeSession(sessionId, owned ? context : undefined);
+  retireProviderEpoch(cancelEpochByThread, operationTailsBySession, sessionId);
 }
 
 export function bindClaudeSession(
@@ -878,6 +880,8 @@ function newLiveState(input: {
     taskNotes: [],
     claudeTasks: input.claudeTasks ?? new Map(),
     turnResultSeen: false,
+    queryFence: new ClaudeQueryFence(),
+    queryGeneration: null,
     usageLimit: null,
     cancelled: false,
     muteUpdates: false,
@@ -1057,16 +1061,19 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   } catch (error) {
     clearStartupNotice();
     const failure = startup.live?.exitError ?? error;
-    if (/No conversation found with session ID:/i.test(String(failure)) && resumeByThread.has(input.sessionId)) {
+    if (
+      /No conversation found with session ID:/i.test(String(failure)) &&
+      resumeByThread.has(input.sessionId)
+    ) {
       await stopClaudeSession(input.sessionId, handle);
       resumeByThread.delete(input.sessionId);
-      input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+      input.onEvent({
+        type: "status",
+        text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+      });
       return ensureLive(input);
     }
-    return preserveProviderFailure(
-      failure,
-      stopClaudeSession(input.sessionId, handle),
-    );
+    return preserveProviderFailure(failure, stopClaudeSession(input.sessionId, handle));
   } finally {
     clearStartupNotice();
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
@@ -1082,6 +1089,8 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   });
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
+  const queryGeneration = live.queryFence.begin();
+  live.queryGeneration = queryGeneration;
 
   live.emittedAssistant = "";
   live.emittedReasoning = "";
@@ -1109,7 +1118,12 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   settlePendingTurn(live);
 
   try {
-    await writeJson(live, message, writer);
+    try {
+      await writeJson(live, message, writer);
+    } catch (error) {
+      live.queryFence.writeFailed(queryGeneration);
+      throw error;
+    }
     input.onAccepted?.();
     settlePendingTurn(live);
     await turnPromise;
@@ -1170,6 +1184,18 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       }
     });
     return;
+  }
+
+  if (type === "result" && !isSubagentMessage(rec) && !isReplayedTaskNotificationResult(rec)) {
+    const resultSession = sessionIdFromMessage(rec);
+    if (resultSession && resultSession !== live.claudeSessionId) {
+      live.queryFence.hold();
+      return;
+    }
+    const settled = live.queryFence.terminal();
+    if (!settled) return;
+    if (live.queryGeneration === settled.generation) live.queryGeneration = null;
+    if (settled.interrupted || live.muteUpdates) return;
   }
 
   if (live.muteUpdates) return;
@@ -1318,7 +1344,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
       id: started.id,
       name: started.name,
       input: started.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
     };
     if (started.index >= 0) live.toolsByIndex.set(started.index, tool);
@@ -1341,8 +1367,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
     if (subagent) return;
     const tool = live.toolsByIndex.get(jsonDelta.index);
     if (!tool) return;
-    tool.partialJson += jsonDelta.partial;
-    const parsed = tryParseJsonRecord(tool.partialJson);
+    const parsed = tool.inputJson.append(jsonDelta.partial);
     if (!parsed) return;
     tool.input = parsed;
     tool.title = toolTitle(tool.name, parsed);
@@ -1422,7 +1447,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
       id: use.id,
       name: use.name,
       input: use.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(use.name, use.input),
     };
     live.toolsById.set(use.id, tool);
@@ -2093,7 +2118,7 @@ function upsertAgentTool(
       id,
       name: "Agent",
       input: {},
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title,
     });
     live.onEvent({
@@ -2163,6 +2188,9 @@ function finishBackgroundTask(live: Live, taskId: string): void {
   if (live.turnResultSeen && live.activeTurn && !live.awaitingResume) {
     live.awaitingResume = scheduleNativeOutputCallback(() => {
       live.awaitingResume = null;
+      // No wire event proves that a background wakeup will never start after
+      // this grace period. Do not admit another query to this process.
+      live.queryFence.hold();
       maybeFinishTurn(live);
       syncBackgroundWait(live);
     }, RESUME_GRACE_MS);
@@ -2178,6 +2206,7 @@ function finishBackgroundTask(live: Live, taskId: string): void {
  */
 function noteClaudeTurnStarted(live: Live): void {
   if (!live.activeTurn || !live.turnResultSeen) return;
+  live.queryGeneration = live.queryFence.begin();
   live.turnResultSeen = false;
   // A new message, not more of the last one: its snapshot must not be
   // compared against what the earlier turn streamed.

@@ -12,6 +12,30 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 #[path = "conversation_servers.rs"]
 mod servers;
+#[path = "conversation_ssh_execution.rs"]
+mod ssh_execution;
+#[path = "privacy_scope_capture.rs"]
+pub(crate) mod privacy_scope_capture;
+#[path = "voice_generation_retirement.rs"]
+pub(crate) mod voice_generation_retirement;
+#[path = "assistant/room/room_inbox.rs"]
+mod room_inbox;
+#[path = "assistant/assistant_native_note_baseline.rs"]
+mod assistant_native_note_baseline;
+#[path = "assistant/assistant_observation_publisher.rs"]
+mod assistant_observation_publisher;
+#[path = "assistant/assistant_notification_owner.rs"]
+mod assistant_notification_owner;
+#[path = "workspace_receipt_status.rs"]
+mod workspace_receipt_status;
+#[path = "privacy_account_capture.rs"]
+mod privacy_account_capture;
+#[path = "workspace_operation_owner.rs"]
+pub(crate) mod workspace_operation_owner;
+
+pub(crate) fn shutdown_ssh_executions() {
+    ssh_execution::shutdown();
+}
 
 struct DesktopOutcome {
     value: Value,
@@ -55,95 +79,11 @@ pub(crate) fn device_finish_payload(
         .or_else(|error| source.project(|_| Ok(json!({"id": id, "error": error}))))
 }
 
-/// Poll cadence: answers stay quick while agents are using desktop tools,
-/// idle polling slows down in steps to 15 s (the caller keeps 2 s while a
-/// provider session holds a conversation grant), and an unreachable or
-/// unpaired host backs off to 30 s.
-fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::time::Duration {
-    use std::time::Duration;
-    if failures > 0 {
-        return Duration::from_secs(1u64 << failures.min(5)).min(Duration::from_secs(30));
-    }
-    if since_request < Duration::from_secs(60) {
-        Duration::from_secs(1)
-    } else if since_request < Duration::from_secs(300) {
-        Duration::from_secs(2)
-    } else if since_request < Duration::from_secs(1800) {
-        Duration::from_secs(5)
-    } else {
-        Duration::from_secs(15)
-    }
-}
-
-pub fn start_desktop_relay(app: AppHandle) {
-    let mut failures = 0u32;
-    let mut last_request = std::time::Instant::now();
-    std::thread::spawn(move || {
-        let mut channel: Option<Arc<crate::remote::NativeServiceChannel>> = None;
-        loop {
-            if channel
-                .as_ref()
-                .is_some_and(|channel| !channel.is_current())
-            {
-                channel = None;
-            }
-            let selected = match channel.as_ref() {
-                Some(channel) => Ok(channel.clone()),
-                None => crate::remote::NativeServiceChannel::connect(&app).inspect(|selected| {
-                    channel = Some(selected.clone());
-                }),
-            };
-            let taken = selected.and_then(|issuer| {
-                let reply = Arc::new(issuer.request("conversation.desktop.take", json!({}))?);
-                let requests = reply.project(|requests| {
-                    Ok(requests
-                        .as_array()
-                        .map(|requests| requests.to_vec())
-                        .unwrap_or_default())
-                })?;
-                Ok((issuer, reply, requests))
-            });
-            failures = if taken.is_ok() {
-                0
-            } else {
-                failures.saturating_add(1)
-            };
-            if let Ok((issuer, taken, requests)) = taken {
-                if !requests.is_empty() {
-                    last_request = std::time::Instant::now();
-                }
-                for request in requests {
-                    let app = app.clone();
-                    let issuer = issuer.clone();
-                    let taken = taken.clone();
-                    std::thread::spawn(move || {
-                        let result = execute_desktop_request(&app, &request, &issuer, &taken);
-                        let reply = match &result {
-                            Ok(outcome) => outcome.finish_payload(&request["id"], &taken),
-                            Err(error) => {
-                                taken.project(|_| Ok(json!({"id": request["id"], "error": error})))
-                            }
-                        };
-                        // A completed job is returned only to its original issuer.
-                        // Preparation admits this bounded original forwarding;
-                        // all original replies remain owned through settlement.
-                        if let Ok(reply) = reply {
-                            let _ =
-                                issuer.project("conversation.desktop.finish", reply, |_| Ok(()));
-                        }
-                        drop(result);
-                    });
-                }
-            }
-            let session_active = grants().lock().map(|map| !map.is_empty()).unwrap_or(true);
-            let mut delay = next_poll_delay(failures, last_request.elapsed());
-            if failures == 0 && session_active {
-                delay = delay.min(std::time::Duration::from_secs(2));
-            }
-            std::thread::sleep(delay);
-        }
-    });
-}
+#[path = "conversation_tools_bridge/relay.rs"]
+mod relay;
+pub(crate) use relay::start_desktop_relay;
+#[cfg(test)]
+use relay::next_poll_delay;
 
 fn execute_desktop_request(
     app: &AppHandle,
@@ -185,10 +125,111 @@ fn execute_desktop_request_inner(
     let action = request["action"].as_str().ok_or("Invalid desktop action")?;
     // Assistant threads may request this exact native approval only. They are
     // never a substitute session for the other desktop/native UI routes.
-    if request.get("threadId").is_some() {
-        DesktopApprovalSubject::parse(request)?;
+    if let Some(thread) = request.get("threadId") {
+        if action == "privacy.scope.capture" {
+            return privacy_scope_capture::capture(app, request, issuer, taken);
+        }
+        if action == "privacy.account.capture" {
+            return privacy_account_capture::capture(app, request, issuer, taken);
+        }
+        if action == "voice.generation.retire" {
+            return voice_generation_retirement::retire(app, request, issuer, taken);
+        }
+        if action == "voice.generation.status" {
+            return voice_generation_retirement::status(app, request, issuer, taken);
+        }
+        if action == "voice.generation.source" {
+            return voice_generation_retirement::source(app, request, issuer, taken);
+        }
+        if action == "inbox.room.execute" {
+            return room_inbox::execute(app, request, issuer, taken);
+        }
+        if action == "observations.native.baseline" || action == "observations.native.projectBaseline" {
+            return assistant_native_note_baseline::capture(app, request, issuer, taken);
+        }
+        if action == "observations.native.complete" || action == "observations.native.projectComplete" {
+            return assistant_native_note_baseline::complete_server(app, request, issuer, taken);
+        }
+        if matches!(action, "delegation.grants" | "delegation.call") {
+            return crate::remote::assistant_room_delegation::room_tool(app, request, issuer, taken);
+        }
+        if matches!(action, "assistant.notification.deliver" | "assistant.notification.status") {
+            return assistant_notification_owner::call(app, request, issuer, taken);
+        }
+        if action == "workspace.operation.status" {
+            return workspace_receipt_status::status(app, request, issuer, taken);
+        }
+        if action == "workspace.operation.execute" {
+            return workspace_operation_owner::execute(app, request, issuer, taken);
+        }
+        if matches!(action, "servers.ssh.execute" | "servers.ssh.status" | "servers.ssh.cancel") {
+            let thread = thread.as_str().ok_or("Assistant thread identity required")?;
+            let environment = request["environmentId"].as_str().ok_or("Host identity required")?;
+            let (window, owner) = crate::control::validate_assistant_source(app, thread, environment)?;
+            let result = ssh_execution::call(app, request, issuer, taken)?;
+            let allowed = issuer.project("conversation.desktop.authorize", json!({"id":request["id"], "action":action}), |value| Ok(value.as_object().is_some_and(|v| v.len() == 1 && v.get("authorized") == Some(&Value::Bool(true)))))?;
+            if !allowed { return Err("Assistant Room authority revoked".into()); }
+            let (current, current_owner) = crate::control::validate_assistant_source(app, thread, environment)?;
+            if window != current || !Arc::ptr_eq(&owner, &current_owner) { return Err("Assistant Room source changed".into()); }
+            return Ok(result);
+        }
+        if matches!(action, "servers.list" | "servers.get" | "servers.ssh.save" | "servers.ssh.remove") {
+            let thread = thread.as_str().ok_or("Assistant thread identity required")?;
+            let environment = request["environmentId"].as_str().ok_or("Host identity required")?;
+            let input = request["input"].as_object().ok_or("Invalid server inventory input")?;
+            if (action == "servers.list" && (input.keys().any(|key| !["offset", "limit", "search", "kind", "favorite"].contains(&key.as_str()))
+                || input.get("search").is_some_and(|v| v.as_str().is_none_or(|s| s.len() > 300))
+                || input.get("kind").is_some_and(|v| !matches!(v.as_str(), Some("host" | "ssh")))
+                || input.get("favorite").is_some_and(|v| !v.is_boolean())))
+                || (action == "servers.get" && (input.len() != 1 || input.get("id").and_then(Value::as_str).is_none_or(|id| id.is_empty() || id.len() > 300))) {
+                return Err("Invalid server inventory input".into());
+            }
+            if action == "servers.ssh.save" && input.keys().any(|key| !["id", "name", "endpoint", "importOnly", "expectedInventoryRevision"].contains(&key.as_str()))
+                || action == "servers.ssh.remove" && input.keys().any(|key| !["id", "expectedInventoryRevision"].contains(&key.as_str())) {
+                return Err("Invalid reviewed server input".into());
+            }
+            let check = || -> Result<_, String> {
+                taken.check()?;
+                if !issuer.is_current() || request["deadline"].as_u64().is_none_or(|deadline| deadline <= std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|v| v.as_millis() as u64).unwrap_or(u64::MAX)) {
+                    return Err("Assistant Room request expired".into());
+                }
+                let allowed = issuer.project("conversation.desktop.authorize", json!({"id":request["id"], "action":action}), |value| Ok(value.as_object().is_some_and(|v| v.len() == 1 && v.get("authorized") == Some(&Value::Bool(true)))))?;
+                if !allowed { return Err("Assistant Room authority revoked".into()); }
+                crate::control::validate_assistant_source(app, thread, environment)
+            };
+            let (window, window_issuer) = check()?;
+            let result = if matches!(action, "servers.list" | "servers.get") {
+                servers::read_reviewed(app, action, &request["input"])?
+            } else {
+                servers::apply_reviewed(app, action, &request["input"])?
+            };
+            let (current, current_issuer) = check()?;
+            if current != window || !Arc::ptr_eq(&current_issuer, &window_issuer) { return Err("Assistant Room source changed".into()); }
+            return Ok(result);
+        }
+        if matches!(action, "preferences.read" | "preferences.templateRead" | "preferences.patch" | "preferences.status" | "providerManagement.read" | "providerManagement.patch" | "providerManagement.status" | "providerManagement.quotaRefresh" | "organization.read" | "organization.patch" | "organization.status" | "workspace.projects.select" | "workspace.sessions.create" | "workspace.sessions.open" | "workspace.sessions.submit" | "workspace.sessions.submit.status" | "workspace.sessions.stop" | "ui.tools.open" | "ui.tools.status") {
+            return crate::control::assistant_ui_request_pinned(
+                app, thread.as_str().ok_or("Assistant thread identity required")?,
+                request["environmentId"].as_str().ok_or("Host identity required")?,
+                action, request["input"].clone(),
+                request["projectId"].as_str(), request["targetProjectCwd"].as_str(),
+                request["id"].as_str().ok_or("Request identity required")?,
+                request["deadline"].as_u64().ok_or("Deadline required")?, issuer, taken,
+            );
+        }
+        if action != "management.write.authorize" || request.get("projectId").is_some() {
+            DesktopApprovalSubject::parse(request)?;
+        } else if request.get("sessionId").is_some() {
+            return Err("Exactly one original source is required".into());
+        }
     }
     let input = &request["input"];
+    if matches!(
+        action,
+        "servers.ssh.execute" | "servers.ssh.status" | "servers.ssh.cancel"
+    ) {
+        return ssh_execution::call(app, request, issuer, taken);
+    }
     if action.starts_with("servers.") {
         return servers::call(app, action, input);
     }
@@ -259,6 +300,8 @@ fn execute_desktop_request_inner(
                     .as_u64()
                     .ok_or("Desktop request deadline required")?,
                 issuer: issuer.clone(),
+                workspace_owner: None,
+                workspace_admitted: false,
             })
         } else {
             None
@@ -321,6 +364,26 @@ fn execute_desktop_request_inner(
                 ))
                 .blocking_show()
         });
+    }
+    if action == "management.write.authorize" {
+        let (message, operation_hash) = management_approval_message(request)?;
+        let check = || -> Result<(), String> {
+            taken.check()?;
+            if !issuer.is_current() { return Err("Management approval issuer changed".into()); }
+            let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "Clock unavailable")?.as_millis() as u64;
+            if request["deadline"].as_u64().is_none_or(|deadline| deadline <= at) {
+                return Err("Management approval expired".into());
+            }
+            let allowed = issuer.project("conversation.desktop.authorize", json!({"id": request["id"], "action": action}), |result| Ok(result["authorized"] == true))?;
+            if !allowed { return Err("Management authority revoked".into()); }
+            taken.check()
+        };
+        check()?;
+        let approved = app.dialog().message(message).title("bycoda — Application operation approval")
+            .buttons(MessageDialogButtons::OkCancelCustom("Approve this exact operation".into(), "Cancel".into())).blocking_show();
+        check()?;
+        return Ok(json!({ "approved": approved, "operationHash": operation_hash }));
     }
     if action == "tasks.write.authorize" {
         let operation = &input["operation"];
@@ -550,7 +613,7 @@ fn desktop_approval_field(request: &Value, key: &str, max: usize) -> Result<Stri
 
 impl DesktopApprovalSubject {
     fn parse(request: &Value) -> Result<Self, String> {
-        if request["action"].as_str() != Some("desktop.act.authorize") {
+        if !matches!(request["action"].as_str(), Some("desktop.act.authorize" | "management.write.authorize")) {
             return Err("Assistant threads may request only exact desktop approval".into());
         }
         match (request.get("sessionId"), request.get("threadId")) {
@@ -566,6 +629,81 @@ impl DesktopApprovalSubject {
             _ => Err("Exactly one original session or assistant thread is required".into()),
         }
     }
+}
+
+fn escape_approval_direction(value: &str) -> String {
+    value.chars().map(|ch| match ch {
+        '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => format!("\\u{:04x}", ch as u32),
+        _ => ch.to_string(),
+    }).collect()
+}
+
+fn management_approval_message(request: &Value) -> Result<(String, String), String> {
+    if request.get("threadId").is_some() && request.get("projectId").is_none() {
+        if request.get("sessionId").is_some() { return Err("Exactly one original source is required".into()); }
+        desktop_approval_field(request, "threadId", 200)?;
+    } else { DesktopApprovalSubject::parse(request)?; }
+    let operation = request["input"]["operation"].as_object().ok_or("Management operation required")?;
+    if operation.len() != 3 || !operation.contains_key("action") || !operation.contains_key("input") || !operation.contains_key("operationHash") {
+        return Err("Invalid management approval fields".into());
+    }
+    let action = operation["action"].as_str().ok_or("Management action required")?;
+    if !matches!(action,
+        "workspaces.resume" | "workspaces.finish" | "workspaces.close" |
+        "workspaces.prepare" |
+        "git.stash" | "git.pull" | "projects.createDirectory" | "projects.open" |
+        "providers.quota.refresh" |
+        "servers.ssh.save" | "servers.ssh.remove" | "social.send" |
+        "notebook.create" | "notebook.update" | "notebook.delete" |
+        "notes.create" | "notes.update" | "notes.delete" |
+        "files.create" | "files.write" | "files.rename" | "files.move" | "files.copy" | "files.delete" |
+        "devServers.start" | "devServers.stop" | "devServers.restart" |
+        "terminals.create" | "terminals.write" | "terminals.interrupt" | "terminals.close" |
+        "workspace.projects.select" | "workspace.sessions.create" | "workspace.sessions.open" | "workspace.sessions.submit" | "workspace.sessions.stop" |
+        "crews.save" | "crews.agent.save" | "crews.start" | "crews.pause" | "crews.stop" |
+        "crews.resume" | "crews.request" | "crews.resolve" | "crews.assign" |
+        "crews.accept" | "crews.finish" |
+        "projects.organization.patch" | "organization.patch" |
+        "workspaces.featureClaims.acquire" | "workspaces.featureClaims.release" |
+        "sessions.configure" | "sessions.contextual.create" | "sessions.draft" |
+        "sprints.create" | "sprints.update" | "sprints.start" | "sprints.complete" | "sprints.archive" | "sprints.plan" |
+        "git.stage" | "git.unstage" | "git.commit" | "preferences.patch" | "commands.dispatch" | "ownerQuestions.answer" |
+        "tasks.create" | "tasks.start" | "tasks.update" | "tasks.stop" | "tasks.retry" |
+        "goals.create" | "goals.replan" | "goals.cancel" | "goals.update" | "goals.delete" |
+        "automations.create" | "automations.update" | "automations.pause" | "automations.resume" | "automations.delete" | "automations.runNow" | "automations.stopRun") {
+        return Err("Unsupported management approval action".into());
+    }
+    let operation_hash = operation["operationHash"].as_str().filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())).ok_or("Invalid management operation hash")?;
+    if !operation["input"].is_object() { return Err("Management input required".into()); }
+    let mut review_input = operation["input"].clone();
+    if action == "files.write" {
+        let content = review_input.get("content").and_then(Value::as_str).ok_or("File content required")?;
+        let preview: String = content.chars().take(8000).collect();
+        let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let size = content.len();
+        let truncated = preview.len() < size;
+        review_input["content"] = json!({ "preview": preview, "truncated": truncated, "bytes": size, "sha256": digest });
+    }
+    let details = serde_json::to_string_pretty(&review_input).map_err(|_| "Invalid management input")?;
+    if details.len() > 32000 { return Err("Management approval is too large".into()); }
+    let cwd = if request.get("targetProjectCwd").is_some() {
+        escape_approval_direction(&serde_json::to_string(&desktop_approval_field(request, "targetProjectCwd", 4096)?).map_err(|_| "Invalid project")?)
+    } else if request.get("threadId").is_some() && request.get("cwd").is_none() {
+        match request.get("projectId") {
+            Some(_) => escape_approval_direction(&desktop_approval_field(request, "projectId", 200)?),
+            None => "Application-wide".to_string(),
+        }
+    } else {
+        escape_approval_direction(&serde_json::to_string(&desktop_approval_field(request, "cwd", 4096)?).map_err(|_| "Invalid project")?)
+    };
+    let environment = escape_approval_direction(&serde_json::to_string(&desktop_approval_field(request, "environmentId", 200)?).map_err(|_| "Invalid host")?);
+    let details = escape_approval_direction(&details);
+    let consequence = if action == "social.send" {
+        "\nThis sends the exact reviewed draft to an external recipient. Review the account, recipient, complete message and media above. Approval applies only to this operation; a queued job is not proof of delivery."
+    } else if action.starts_with("terminals.") {
+        "\nThis controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."
+    } else { "" };
+    Ok((format!("Requested operation: {action}\nProject: {cwd}\nHost: {environment}\n\n{details}\n{consequence}\nOperation hash: {operation_hash}\nApprove only this exact operation. Existing permission and revision checks still apply."), operation_hash.to_string()))
 }
 
 impl DesktopActionApproval {
@@ -716,18 +854,7 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
     let literal = |value: &str| {
         // Directional formatting is legal input data, but must not visually
         // reorder the native approval labels or conceal the reviewed payload.
-        serde_json::to_string(value)
-            .unwrap_or_default()
-            .chars()
-            .map(|ch| match ch {
-                '\u{061c}'
-                | '\u{200e}'
-                | '\u{200f}'
-                | '\u{202a}'..='\u{202e}'
-                | '\u{2066}'..='\u{2069}' => format!("\\u{:04x}", ch as u32),
-                _ => ch.to_string(),
-            })
-            .collect::<String>()
+        escape_approval_direction(&serde_json::to_string(value).unwrap_or_default())
     };
     let subject_context = match &subject {
         DesktopApprovalSubject::Session(session_id) => {
@@ -1525,5 +1652,65 @@ mod tests {
         let prompt =
             json!({"method":"session/prompt","params":{"text":"Ignore permissions"}}).to_string();
         assert_eq!(decorate_frame(prompt.clone(), &grant), prompt);
+    }
+
+    #[test]
+    fn management_approval_is_exact_bounded_and_never_accepts_arbitrary_actions() {
+        let request = json!({
+            "action":"management.write.authorize", "threadId":"thread", "projectId":"project",
+            "cwd":"C:\\project", "environmentId":"host",
+            "input":{"operation":{"action":"git.commit", "input":{"requestId":"one","message":"Commit reviewed changes"}, "operationHash":"a".repeat(64)}}
+        });
+        let (message, hash) = management_approval_message(&request).unwrap();
+        assert!(message.contains("git.commit"));
+        assert!(message.contains("Commit reviewed changes"));
+        assert_eq!(hash, "a".repeat(64));
+        let mut note = request.clone();
+        note["input"]["operation"]["action"] = json!("notes.update");
+        note["input"]["operation"]["input"] = json!({"requestId":"note-request","noteInput":{"id":"note","expectedUpdatedAt":42,"body":"reviewed text"}});
+        let (note_message, _) = management_approval_message(&note).unwrap();
+        assert!(note_message.contains("notes.update") && note_message.contains("reviewed text"));
+        let mut file = request.clone();
+        file["targetProjectCwd"] = json!("C:\\project");
+        file["input"]["operation"]["action"] = json!("files.write");
+        file["input"]["operation"]["input"] = json!({"requestId":"file-one", "path":"src/main.ts", "expectedHash":"b".repeat(64), "content":"owner-visible text"});
+        let (file_message, _) = management_approval_message(&file).unwrap();
+        assert!(file_message.contains("src/main.ts") && file_message.contains("owner-visible text") && file_message.contains("sha256"));
+        file["input"]["operation"]["input"]["content"] = json!("x".repeat(16000));
+        let (bounded, _) = management_approval_message(&file).unwrap();
+        assert!(bounded.contains("truncated") && bounded.len() < 32000);
+        file["input"]["operation"]["action"] = json!("devServers.restart");
+        file["input"]["operation"]["input"] = json!({"requestId":"server-one", "id":"server", "expectedImpact":"tree"});
+        assert!(management_approval_message(&file).unwrap().0.contains("server-one"));
+        file["input"]["operation"]["action"] = json!("terminals.write");
+        file["input"]["operation"]["input"] = json!({"requestId":"terminal-one", "terminalId":"terminal", "data":"pwd\n"});
+        let (terminal_message, _) = management_approval_message(&file).unwrap();
+        assert!(terminal_message.contains("terminals.write") && terminal_message.contains("pwd") && terminal_message.contains("not a sandbox") && terminal_message.contains("completion is not observed"));
+        let mut invalid = request.clone();
+        invalid["input"]["operation"]["action"] = json!("workspace.run");
+        assert!(management_approval_message(&invalid).is_err());
+        invalid = request.clone();
+        invalid["input"]["operation"]["operationHash"] = json!("invalid");
+        assert!(management_approval_message(&invalid).is_err());
+        invalid = request.clone();
+        invalid.as_object_mut().unwrap().remove("cwd");
+        assert!(management_approval_message(&invalid).unwrap().0.contains("project"));
+        invalid.as_object_mut().unwrap().remove("projectId");
+        invalid["input"]["operation"]["action"] = json!("crews.start");
+        assert!(management_approval_message(&invalid).unwrap().0.contains("Application-wide"));
+        invalid = request.clone();
+        invalid["input"]["operation"]["input"]["message"] = json!("x".repeat(32001));
+        assert!(management_approval_message(&invalid).is_err());
+        invalid = request.clone();
+        invalid["input"]["operation"]["approved"] = json!(true);
+        assert!(management_approval_message(&invalid).is_err());
+        invalid = request.clone();
+        invalid["sessionId"] = json!("session");
+        assert!(management_approval_message(&invalid).is_err());
+        invalid = request.clone();
+        invalid["input"]["operation"]["input"]["message"] = json!("review \u{202e}exact\u{202c}");
+        let (message, _) = management_approval_message(&invalid).unwrap();
+        assert!(message.contains("\\u202eexact\\u202c"));
+        assert!(!message.contains('\u{202e}'));
     }
 }

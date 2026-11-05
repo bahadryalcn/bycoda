@@ -20,8 +20,8 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { UnifiedLine } from "../../source-control/model/unifiedDiff";
-import { applyStageReplacements } from "../../source-control/model/selectiveStage";
+import type { UnifiedLine } from "../../source-control";
+import { applyStageReplacements } from "../../source-control/public/selectiveStage";
 
 /** Shared with the split layout so both draw the same hunks. */
 export const DIFF_CONFIG = { scanLimit: 5_000, timeout: 100 };
@@ -337,7 +337,9 @@ export function stageChunkText(
   const doc = textFromString(current);
   const changes = stageChunkChanges(orig, doc, pos, selection, "\n", diffConfig);
   if (!changes) return null;
-  return applyStageReplacements(orig.toString(), [{ from: changes.from, to: changes.to, insert: changes.insert.toString() }]);
+  return applyStageReplacements(orig.toString(), [
+    { from: changes.from, to: changes.to, insert: changes.insert.toString() },
+  ]);
 }
 
 export async function stageChunkAt(view: EditorView, pos: number): Promise<boolean> {

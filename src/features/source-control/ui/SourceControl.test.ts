@@ -192,8 +192,9 @@ it("preserves the ordinary panel when discovery fails and keeps a usable list on
   expect(container.querySelector("section")?.dataset.cwd).toBe("/repo");
   expect(container.querySelector('[role="status"]')?.textContent).toContain("Unavailable");
   const initialPanel = container.querySelector("section");
-  const retry = [...container.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent === "Retry")!;
+  const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
   await act(async () => retry.click());
   expect(state.refresh).toHaveBeenCalledOnce();
   state.snapshot = { error: "Unavailable", loading: true };

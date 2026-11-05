@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   remoteSessionActionsObservation,
   subscribeRemoteSessionActions,
-} from "../../connections/model/remoteSessionActions";
+} from "../../connections/public/remoteSessionActions";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import { useT } from "../../../shared/i18n";
 import { useParentInputsClosed } from "../data/parentInputClosure";

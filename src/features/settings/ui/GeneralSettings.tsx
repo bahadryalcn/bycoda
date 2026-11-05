@@ -26,7 +26,7 @@ import { ArrowDownCircle, Check, Copy, RefreshCw } from "../../../shared/ui/icon
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/import/importModel";
+import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
   CLOSE_TO_TRAY_DEFAULT,
   KEEP_AWAKE_DEFAULT,
@@ -153,7 +153,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         <Row
           id="keep-awake-duration"
           label={t("After agents finish")}
-          description={t("Choose when this computer can sleep again after the last agent finishes.")}
+          description={t(
+            "Choose when this computer can sleep again after the last agent finishes.",
+          )}
           dependsOn={keepAwake}
           disabledReason={t("Turn on Prevent sleep while agents work first")}
         >
@@ -205,7 +207,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         <Row
           id="getting-started"
           label={t("Getting started")}
-          description={t("Take a one-minute tour, or connect computers, set up agents and choose your projects.")}
+          description={t(
+            "Take a one-minute tour, or connect computers, set up agents and choose your projects.",
+          )}
         >
           <div className="flex shrink-0 items-center gap-2">
             {/* The tour request closes Settings and points at the workspace controls. */}
@@ -251,11 +255,17 @@ function ProductDetails() {
         address={PRODUCT_IDENTITY.websiteUrl}
         href={PRODUCT_IDENTITY.websiteUrl}
         displayAddress={PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
+        openLabel={t("Open website")}
       />
       <ProductLink
         label={t("Contact")}
         address={PRODUCT_IDENTITY.contactEmail}
         href={`mailto:${PRODUCT_IDENTITY.contactEmail}`}
+      />
+      <ProductLink
+        label={t("Developer contact")}
+        address={PRODUCT_IDENTITY.developerContactEmail}
+        href={`mailto:${PRODUCT_IDENTITY.developerContactEmail}`}
       />
     </>
   );
@@ -267,11 +277,13 @@ function ProductLink({
   address,
   href,
   displayAddress = address,
+  openLabel,
 }: {
   label: string;
   address: string;
   href: string;
   displayAddress?: string;
+  openLabel?: string;
 }) {
   const [pending, setPending] = useState<"open" | "retry" | "copy" | null>(null);
   const [failure, setFailure] = useState<"open" | "copy" | null>(null);
@@ -307,10 +319,10 @@ function ProductLink({
         setCopied(true);
       }
       // Recovery controls disappear on success; retain focus only if it is still there.
-      returnFocus.current = beganInRecovery && (
-        document.activeElement === document.body ||
-        Boolean(recoveryActions.current?.contains(document.activeElement))
-      );
+      returnFocus.current =
+        beganInRecovery &&
+        (document.activeElement === document.body ||
+          Boolean(recoveryActions.current?.contains(document.activeElement)));
       setFailure(null);
     } catch {
       setFailure(operation === "copy" ? "copy" : "open");
@@ -395,6 +407,17 @@ function ProductLink({
           )}
         </Button>
       )}
+      {openLabel ? (
+        <Button
+          size="sm"
+          disabled={pending !== null}
+          loading={pending === "open"}
+          loadingLabel={t("Opening…")}
+          onClick={() => void run("open")}
+        >
+          {openLabel}
+        </Button>
+      ) : null}
       <span role="status" className="sr-only">
         {copied ? t("Copied") : ""}
       </span>
@@ -413,13 +436,17 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
 
   useEffect(() => {
     let cancelled = false;
-    void readAppVersion().then((currentVersion) => {
-      if (cancelled) return;
-      setSnapshot((current) => ({ ...current, currentVersion }));
-    });
-    void isUpdaterEnabled().then((enabled) => {
-      if (!cancelled) setUpdatesEnabled(enabled);
-    });
+    void readAppVersion()
+      .then((currentVersion) => {
+        if (cancelled) return;
+        setSnapshot((current) => ({ ...current, currentVersion }));
+      })
+      .catch(() => {});
+    void isUpdaterEnabled()
+      .then((enabled) => {
+        if (!cancelled) setUpdatesEnabled(enabled);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

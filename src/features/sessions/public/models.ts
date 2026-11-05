@@ -1,0 +1,28 @@
+/** Public sessions contract; exports stay explicit to preserve load isolation. */
+export {
+  MODELS,
+  catalogModelsFor,
+  defaultModelId,
+  defaultModelSettings,
+  firstEnabledHarness,
+  getModelSnapshot,
+  hasLiveCatalog,
+  isEnabledChoice,
+  isModelEnabled,
+  loadDefaultModels,
+  loadHiddenPickerProviders,
+  loadLastModelChoice,
+  mergeModelSettings,
+  modelEffortSetting,
+  modelsFor,
+  nativeModelId,
+  resolveModel,
+  saveDefaultModel,
+  saveLastModelChoice,
+  saveModelEnabled,
+  savePickerProviderVisible,
+  setHarnessModels,
+  subscribeModels,
+  subscribePickerVisibility,
+} from "../model/models";
+export type { AgentModel, ModelSetting, ModelSettingChoice } from "../model/models";

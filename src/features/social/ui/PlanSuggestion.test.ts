@@ -19,7 +19,14 @@ const account = {
   grants: { p1: ["read", "draft", "publish"] },
 } as unknown as SocialAccount;
 const campaign = (id: string, name: string) =>
-  ({ id, name, projectIds: ["p1"], variants: [], revision: 1, paused: false }) as unknown as SocialCampaign;
+  ({
+    id,
+    name,
+    projectIds: ["p1"],
+    variants: [],
+    revision: 1,
+    paused: false,
+  }) as unknown as SocialCampaign;
 const eligible = [campaign("c1", "Launch"), campaign("c2", "Feature"), campaign("c3", "Tips")];
 const suggestion: PlanSuggestion = {
   accountId: "a1",
@@ -227,6 +234,8 @@ it("warns that accepting replaces an unfinished draft and blocks an invalid edit
   expect(element.textContent).toContain("It replaces the unfinished plan draft in the form.");
   const hours = Array.from(element.querySelectorAll<HTMLInputElement>('input[type="number"]'));
   await type(hours[0], "20");
-  expect(element.textContent).toContain("The shortest interval cannot exceed the longest interval.");
+  expect(element.textContent).toContain(
+    "The shortest interval cannot exceed the longest interval.",
+  );
   expect(button("Use as plan draft").disabled).toBe(true);
 });

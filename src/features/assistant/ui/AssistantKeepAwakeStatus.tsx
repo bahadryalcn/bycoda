@@ -10,8 +10,7 @@ export function AssistantKeepAwakeStatus({
   state?: Status;
   compact?: boolean;
 }) {
-  if (compact && !state?.requested && !state?.active && !state?.error)
-    return null;
+  if (compact && !state?.requested && !state?.active && !state?.error) return null;
   const label = !state
     ? t("Sleep prevention status unavailable")
     : state.active
@@ -26,13 +25,7 @@ export function AssistantKeepAwakeStatus({
       role={state?.error ? "alert" : "status"}
       className={state?.error ? styles.error : styles.muted}
       data-assistant-keep-awake={
-        state?.active
-          ? "active"
-          : state?.requested
-            ? "requested"
-            : state
-              ? "off"
-              : "unknown"
+        state?.active ? "active" : state?.requested ? "requested" : state ? "off" : "unknown"
       }
     >
       {label}

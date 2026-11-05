@@ -462,7 +462,17 @@ export function SocialBulkComposer({
                   }
                 />
                 {row.reason ? <p>{row.reason}</p> : null}
-                {row.draft ? <DraftList recipientInParent drafts={[snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft]} client={client} run={run} snapshot={snapshot} /> : null}
+                {row.draft ? (
+                  <DraftList
+                    recipientInParent
+                    drafts={[
+                      snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft,
+                    ]}
+                    client={client}
+                    run={run}
+                    snapshot={snapshot}
+                  />
+                ) : null}
               </article>
             ))}
           </div>
@@ -501,7 +511,6 @@ export function SocialBulkComposer({
               </Button>
             ) : null}
           </div>
-
         </>
       )}
       {previousPreparations.map((preparation, index) => (
@@ -522,11 +531,20 @@ export function SocialBulkComposer({
                   label={row.status === "succeeded" ? t("Draft ready") : undefined}
                 />
                 {row.reason ? <p>{row.reason}</p> : null}
-                {row.draft ? <DraftList recipientInParent drafts={[snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft]} client={client} run={run} snapshot={snapshot} /> : null}
+                {row.draft ? (
+                  <DraftList
+                    recipientInParent
+                    drafts={[
+                      snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft,
+                    ]}
+                    client={client}
+                    run={run}
+                    snapshot={snapshot}
+                  />
+                ) : null}
               </article>
             ))}
           </div>
-
         </details>
       ))}
     </div>

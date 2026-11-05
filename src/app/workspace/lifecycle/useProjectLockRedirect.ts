@@ -1,17 +1,17 @@
 import { useLayoutEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { isProjectLockedIn, type LockSnapshot } from "../../../features/group-lock/model/lockState";
 import { looksLikeProject } from "../../../features/projects/model/recents";
-import {
-  newDefaultSession,
-  type RuntimeMode,
-} from "../../../features/sessions/model/session";
+import { newDefaultSession, type RuntimeMode } from "../../../features/sessions/model/session";
 import { setSessions } from "../../../features/sessions/model/sessionsStore";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { t } from "../../../shared/i18n";
 import { showLockRedirectNotice } from "./lockRedirectNotice";
 
 const projectName = (path: string) =>
-  path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+  path
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .pop() || path;
 
 export interface ProjectLockRedirectDeps {
   lockSnapshot: LockSnapshot;
@@ -19,7 +19,7 @@ export interface ProjectLockRedirectDeps {
   visibleRecents: ReadonlyArray<{ readonly path: string }>;
   activeTabId: string;
   appendTab: (tab: WorkspaceTab, cwd?: string) => void;
-  openProjects: (paths: readonly string[]) => void;
+  openProjects: (paths: readonly string[]) => void | Promise<void>;
   runtimeMode: RuntimeMode | undefined;
   setActiveTabId: (id: string) => void;
   setProjectCwd: Dispatch<SetStateAction<string>>;
@@ -52,7 +52,9 @@ export function useProjectLockRedirect({
         redirected.current = null;
       } else if (!isProjectLockedIn(lockSnapshot, memory.from)) {
         redirected.current = null;
-        openProjects([memory.from]);
+        void Promise.resolve(openProjects([memory.from])).catch((error: unknown) =>
+          console.error("Could not remember project", error),
+        );
         return;
       }
     }
@@ -62,16 +64,21 @@ export function useProjectLockRedirect({
       if (memory?.from === sidebarCwd) return;
       console.warn(`[lock] ${sidebarCwd} is in a locked group; moved to ${to}`);
       showLockRedirectNotice(
-        t("{p0} is in a locked group, so the window moved away from it. Unlock the group to return.", {
-          p0: projectName(sidebarCwd),
-        }),
+        t(
+          "{p0} is in a locked group, so the window moved away from it. Unlock the group to return.",
+          {
+            p0: projectName(sidebarCwd),
+          },
+        ),
       );
     };
     const next = visibleRecents.find((project) => looksLikeProject(project.path));
     if (next) {
       redirected.current = { from: sidebarCwd, to: next.path };
       notice(next.path);
-      openProjects([next.path]);
+      void Promise.resolve(openProjects([next.path])).catch((error: unknown) =>
+        console.error("Could not remember project", error),
+      );
       return;
     }
     redirected.current = { from: sidebarCwd, to: "~" };

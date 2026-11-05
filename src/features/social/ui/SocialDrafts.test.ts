@@ -3,11 +3,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DraftList } from "./SocialDrafts";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { SocialClient } from "../model/socialClient";
 import type { SocialDraft, SocialSnapshot } from "../model/social";
 
 let container: HTMLDivElement, root: Root;
 const request = vi.fn();
+const testClient = { request } as unknown as SocialClient;
 const draft: SocialDraft = {
   id: "draft",
   accountId: "account",
@@ -32,6 +34,7 @@ const messagingMediaCapabilities = [
   { operation: "message.reply", status: "available" },
 ] as SocialSnapshot["capabilities"][string];
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   request.mockReset();
   request.mockImplementation(async (action) =>
@@ -71,7 +74,7 @@ async function mount(value = draft, snapshot?: Partial<SocialSnapshot>) {
               ...snapshot,
             } as SocialSnapshot)
           : undefined,
-        client: { request } as unknown as SocialClient,
+        client: testClient,
         run: async (action) => {
           try {
             await action();
@@ -289,6 +292,45 @@ it("inceleme isteyen taslak düzenlenebilir; başarısız kaydetme editörü kap
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(container.querySelector("textarea")).toBeNull();
+});
+it("retains unsaved draft edits while a bounded list row unmounts", async () => {
+  const value = {
+    ...draft,
+    factIds: ["fact"],
+    media: [{ kind: "image" as const, uploadId: "stored-image", alt: "Original" }],
+  };
+  const snapshot = {
+    accounts: [{ ...browserAccount("telegram"), connection: "oauth" }],
+    capabilities: { account: messagingMediaCapabilities },
+    profiles: [
+      {
+        projectId: "project",
+        productName: "",
+        brandVoice: "",
+        facts: [{ id: "fact", topic: "Verified", text: "Fact", source: "owner", verifiedAt: 1 }],
+      },
+    ],
+  };
+  await mount(value, snapshot);
+  await click("Edit");
+  const editor = container.querySelector<HTMLTextAreaElement>("textarea")!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(editor, "Unsaved edit");
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const fact = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  await act(async () => fact.click());
+  expect(container.querySelector('input[type="file"]')).not.toBeNull();
+  expect(container.textContent).toContain("1 image uploaded to the host.");
+  await click("Remove attachments");
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await mount(value, snapshot);
+  expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Unsaved edit");
+  expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
+  expect(container.querySelector('input[type="file"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("1 image uploaded to the host.");
 });
 it("silinmiş bilgi kaynağı kaldırıldıktan sonra inceleme taslağı tekrar kaydedilebilir", async () => {
   await mount({ ...draft, factIds: ["removed"], reviewReason: "Bilgi kaynağı değişti" }, {});

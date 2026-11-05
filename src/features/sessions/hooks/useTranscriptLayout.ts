@@ -3,7 +3,7 @@ import {
   loadTranscriptLayout,
   subscribeTranscriptLayout,
   type TranscriptLayout,
-} from "../../settings/model/appearance";
+} from "../../settings/public/appearance";
 
 /** Subscribes to transcript layout changes triggered by saveTranscriptLayout(). */
 export function useTranscriptLayout(): TranscriptLayout {

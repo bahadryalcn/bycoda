@@ -2,13 +2,13 @@ import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { basename } from "../../../platform/tauri/fs";
 import { projectKey } from "../../../shared/lib/paths";
-import { looksLikeProject } from "../../projects/model/recents";
+import { looksLikeProject } from "../../projects/public/recents";
 import {
   loadTabGroupLabels,
   resolveTabGroupLabel,
   subscribeTabGroupLabels,
 } from "../../workspace/model/tabGroups";
-import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/model/settings";
+import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/public/settings";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";

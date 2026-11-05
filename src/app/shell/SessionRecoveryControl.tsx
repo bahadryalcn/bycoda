@@ -72,13 +72,14 @@ export function SessionRecoveryControl({
         </span>
         {count > 0 ? (
           <>
-            {/* The expanded rail shows the same plain tabular count as every other section header. */}
-            <span
-              className="recovery-rail-number ms-auto ps-1 text-ui-micro font-medium tabular-nums"
+            <Badge
+              variant="count"
+              size="sm"
+              className="recovery-rail-number ms-auto"
               aria-hidden="true"
             >
-              {count > 99 ? "99+" : count}
-            </span>
+              {count}
+            </Badge>
             {/* A label-less rail has no room for a number beside the icon, so it keeps the corner badge. */}
             <Badge
               variant="count"

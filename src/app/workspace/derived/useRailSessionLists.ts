@@ -5,7 +5,9 @@ import {
   liveSessionInfos,
   sameLiveSessionInfos,
   type LiveSessionInfo,
+  type RecentSessionRow,
 } from "../../../features/sessions/model/recentSessions";
+import type { PinTarget } from "../../../features/sessions/data/sessionPinReceipts";
 import { remoteLiveSessionInfos } from "../../../features/connections/model/remoteRailSessions";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { type PendingWindowMoves } from "../../model/windowTransferPopout";
@@ -18,7 +20,11 @@ export interface RailSessionListsDeps {
   unseenFinishedIds: ReturnType<typeof useUnseenFinishedIds>;
   unopenedRemote: Parameters<typeof remoteLiveSessionInfos>[0];
   history: SessionSummary[];
-  onPinHistorySession: (sessionId: string, pinned: boolean) => Promise<void>;
+  onPinHistorySession: (
+    sessionId: string,
+    pinned: boolean,
+    captured?: { cwd: string; target: PinTarget | null },
+  ) => Promise<unknown>;
   deckProjectTabs: WorkspaceTab[];
   dirtyFiles: Set<string>;
   pendingWindowMoves: PendingWindowMoves;
@@ -32,7 +38,7 @@ export interface RailSessionLists {
   recentSessions: {
     history: SessionSummary[];
     live: ReturnType<typeof liveSessionInfos>;
-    onPin: (sessionId: string, pinned: boolean) => Promise<void>;
+    onPin: (row: RecentSessionRow, pinned: boolean) => Promise<unknown>;
   };
   titleTabs: TitleTab[];
 }
@@ -98,7 +104,8 @@ export function useRailSessionLists(deps: RailSessionListsDeps): RailSessionList
     () => ({
       history,
       live: railLiveSessions,
-      onPin: onPinHistorySession,
+      onPin: (row: RecentSessionRow, pinned: boolean) =>
+        onPinHistorySession(row.id, pinned, { cwd: row.cwd, target: row.pinTarget ?? null }),
     }),
     [history, railLiveSessions, onPinHistorySession],
   );

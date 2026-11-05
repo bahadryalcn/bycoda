@@ -141,11 +141,14 @@ for (const theme of ["light", "dark"]) {
         for (const node of retained)
           expect(await node.evaluate((element) => element.isConnected)).toBe(true);
       }
-      await expect.poll(fits).toBe(true);
-      await info.attach(`return-grid-${index}`, {
-        body: JSON.stringify(await geometry()),
-        contentType: "application/json",
-      });
+      try {
+        await expect.poll(fits).toBe(true);
+      } finally {
+        await info.attach(`return-grid-${index}`, {
+          body: JSON.stringify(await geometry()),
+          contentType: "application/json",
+        });
+      }
       // Restoring the viewport restores physical space, not a cached column
       // count: current font metrics can legitimately change between returns.
       if (index === 0) {
@@ -170,6 +173,12 @@ for (const theme of ["light", "dark"]) {
       });
       for (const node of retained) await node.dispose();
     }
+    await page.setViewportSize({ width: 800, height: 800 });
+    await expect.poll(fits).toBe(true);
+    await page.screenshot({
+      animations: "disabled",
+      path: info.outputPath("returned-800.png"),
+    });
     const traffic = await calls();
     expect(traffic.filter((call) => call.op === "spawn")).toHaveLength(1);
     expect(traffic.filter((call) => call.op === "kill")).toHaveLength(0);

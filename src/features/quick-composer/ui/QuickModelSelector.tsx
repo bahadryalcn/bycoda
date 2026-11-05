@@ -4,7 +4,6 @@ import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { emit } from "@tauri-apps/api/event";
 import { Check, RotateCcw, Star, ChevronDown } from "../../../shared/ui/icons";
 import {
   findModel,
@@ -33,7 +32,7 @@ import {
   resolveActiveModelKey,
   stepActiveModelKey,
 } from "../../sessions/model/modelListReconcile";
-import { filterQuickModels, QUICK_COMPOSER_CATALOG_REQUEST_EVENT } from "../model/quickComposer";
+import { filterQuickModels, requestQuickCatalog } from "../model/quickComposer";
 import { quickSessionModelSettings } from "../model/quickSessionDefaults";
 
 type Props = {
@@ -59,7 +58,11 @@ export function QuickModelSelector({
   useLocale();
   useSyncExternalStore(subscribeModels, getModelSnapshot);
   useSyncExternalStore(subscribePickerVisibility, getPickerVisibilitySnapshot);
-  useSyncExternalStore(subscribeProjectProviders, projectProvidersRevision, projectProvidersRevision);
+  useSyncExternalStore(
+    subscribeProjectProviders,
+    projectProvidersRevision,
+    projectProvidersRevision,
+  );
   const [showModels, setShowModels] = useState(true);
   const modelRowRef = useRef<HTMLButtonElement>(null);
   const [tab, setTab] = useState<ModelPickerTab>(model.harness);
@@ -105,14 +108,15 @@ export function QuickModelSelector({
   const active = modelKeyIndex(models, activeKey);
   const setActive = (item: AgentModel) =>
     setActiveChoice({ key: modelRowKey(item), scope: activeScope });
-  const resetSettings = () => onSettingsChange({ ...values, ...quickSessionModelSettings(model, cwd) });
+  const resetSettings = () =>
+    onSettingsChange({ ...values, ...quickSessionModelSettings(model, cwd) });
 
   useEffect(() => {
     if (showModels) searchRef.current?.focus({ preventScroll: true });
     else modelRowRef.current?.focus({ preventScroll: true });
   }, [showModels]);
   useEffect(() => {
-    if (visibleTab !== "favorites") void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, visibleTab);
+    if (visibleTab !== "favorites") requestQuickCatalog(visibleTab);
   }, [visibleTab]);
 
   useLayoutEffect(() => {
@@ -159,153 +163,164 @@ export function QuickModelSelector({
         <RotateCcw className="icon-md" />
         {t("Reset to saved defaults")}
       </Button>
-      {showModels ? <>
-      <Tabs value={visibleTab} onValueChange={selectTab} fill panels="none">
-        <TabList label={t("Providers")} className="h-11 shrink-0 items-center gap-1 border-b border-stroke px-2">
-          {tabs.map((id) => {
-            const title = id === "favorites" ? t("Favorites") : HARNESS_TITLE[id];
-            return (
-              <Tab key={id} value={id} aria-label={title} tooltip={title}>
-                {id === "favorites" ? (
-                  <Star className="icon-md" fill={visibleTab === id ? "currentColor" : "none"} />
+      {showModels ? (
+        <>
+          <Tabs value={visibleTab} onValueChange={selectTab} fill panels="none">
+            <TabList
+              label={t("Providers")}
+              className="h-11 shrink-0 items-center gap-1 border-b border-stroke px-2"
+            >
+              {tabs.map((id) => {
+                const title = id === "favorites" ? t("Favorites") : HARNESS_TITLE[id];
+                return (
+                  <Tab key={id} value={id} aria-label={title} tooltip={title}>
+                    {id === "favorites" ? (
+                      <Star
+                        className="icon-md"
+                        fill={visibleTab === id ? "currentColor" : "none"}
+                      />
+                    ) : (
+                      <HarnessIcon harness={id} className="icon-md" />
+                    )}
+                  </Tab>
+                );
+              })}
+            </TabList>
+          </Tabs>
+          <div className="flex min-h-0">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <PopoverSearchHeader
+                ref={searchRef}
+                size="md"
+                label={t("Search models")}
+                placeholder={t("Search models…")}
+                value={query}
+                autoFocus={false}
+                listId={listId}
+                activeOptionId={active >= 0 ? `${listId}-${active}` : undefined}
+                onValueChange={(value) => {
+                  setQuery(value);
+                  setActiveChoice(null);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.nativeEvent.isComposing ||
+                    event.key === "Process" ||
+                    event.keyCode === 229
+                  )
+                    return;
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const key = stepActiveModelKey({
+                      models,
+                      activeKey,
+                      delta: event.key === "ArrowDown" ? 1 : -1,
+                      isEligible: enabled,
+                    });
+                    if (key) setActiveChoice({ key, scope: activeScope });
+                  } else if (event.key === "Enter") {
+                    event.preventDefault();
+                    const selected = models[active];
+                    if (selected) pick(selected);
+                  }
+                }}
+              />
+              <div
+                ref={listRef}
+                id={listId}
+                role="listbox"
+                aria-label={t("Models")}
+                className="h-60 min-h-0 overflow-y-auto overscroll-none p-2"
+              >
+                {models.length ? (
+                  models.map((item, index) => (
+                    <div
+                      key={`${item.harness}:${item.id}`}
+                      data-index={index}
+                      className="flex items-center"
+                      onMouseEnter={() => {
+                        if (enabled(item)) setActive(item);
+                      }}
+                    >
+                      <Button
+                        fullWidth
+                        selected={index === active}
+                        variant="item"
+                        motion="none"
+                        id={`${listId}-${index}`}
+                        type="button"
+                        role="option"
+                        aria-selected={item.id === model.id}
+                        disabled={!enabled(item)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => pick(item)}
+                        className="flex min-w-0 flex-1 items-center gap-2"
+                      >
+                        {visibleTab === "favorites" ? (
+                          <HarnessIcon harness={item.harness} className="size-3.5 shrink-0" />
+                        ) : null}
+                        <span className="truncate">{item.name}</span>
+                        {item.provider ? (
+                          <span className="ml-auto truncate text-ui-micro text-(--ui-text-muted)">
+                            {item.provider.name}
+                          </span>
+                        ) : null}
+                        {item.id === model.id ? (
+                          <Check className="ml-auto icon-sm shrink-0 text-(--ui-tone-accent-fg)" />
+                        ) : null}
+                      </Button>
+                      <Button
+                        iconOnly
+                        label={t(
+                          favorites.includes(item.id)
+                            ? "Remove {p1} from favorites"
+                            : "Add {p1} to favorites",
+                          { p1: item.name },
+                        )}
+                        variant="ghost"
+                        motion="none"
+                        type="button"
+                        tooltip={
+                          favorites.includes(item.id)
+                            ? t("Remove from favorites")
+                            : t("Add to favorites")
+                        }
+                        aria-label={t(
+                          favorites.includes(item.id)
+                            ? "Remove {p1} from favorites"
+                            : "Add {p1} to favorites",
+                          { p1: item.name },
+                        )}
+                        onClick={() => {
+                          const next = favorites.includes(item.id)
+                            ? favorites.filter((id) => id !== item.id)
+                            : [...favorites, item.id];
+                          setFavorites(next);
+                          saveFavoriteModels(next);
+                        }}
+                        className="grid shrink-0 place-items-center"
+                      >
+                        <Star
+                          className="icon-sm"
+                          fill={favorites.includes(item.id) ? "currentColor" : "none"}
+                        />
+                      </Button>
+                    </div>
+                  ))
                 ) : (
-                  <HarnessIcon harness={id} className="icon-md" />
+                  <p className="px-2 py-6 text-center text-ui-caption text-(--ui-text-muted)">
+                    {query
+                      ? t("No matching models")
+                      : visibleTab === "favorites"
+                        ? t("No favorite models")
+                        : t("Loading models…")}
+                  </p>
                 )}
-              </Tab>
-            );
-          })}
-        </TabList>
-      </Tabs>
-      <div className="flex min-h-0">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <PopoverSearchHeader
-            ref={searchRef}
-            size="md"
-            label={t("Search models")}
-            placeholder={t("Search models…")}
-            value={query}
-            autoFocus={false}
-            listId={listId}
-            activeOptionId={active >= 0 ? `${listId}-${active}` : undefined}
-            onValueChange={(value) => {
-              setQuery(value);
-              setActiveChoice(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229)
-                return;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                const key = stepActiveModelKey({
-                  models,
-                  activeKey,
-                  delta: event.key === "ArrowDown" ? 1 : -1,
-                  isEligible: enabled,
-                });
-                if (key) setActiveChoice({ key, scope: activeScope });
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                const selected = models[active];
-                if (selected) pick(selected);
-              }
-            }}
-          />
-          <div
-            ref={listRef}
-            id={listId}
-            role="listbox"
-            aria-label={t("Models")}
-            className="h-60 min-h-0 overflow-y-auto overscroll-none p-2"
-          >
-            {models.length ? (
-              models.map((item, index) => (
-                <div
-                  key={`${item.harness}:${item.id}`}
-                  data-index={index}
-                  className="flex items-center"
-                  onMouseEnter={() => {
-                    if (enabled(item)) setActive(item);
-                  }}
-                >
-                  <Button
-                    fullWidth
-                    selected={index === active}
-                    variant="item"
-                    motion="none"
-                    id={`${listId}-${index}`}
-                    type="button"
-                    role="option"
-                    aria-selected={item.id === model.id}
-                    disabled={!enabled(item)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => pick(item)}
-                    className="flex min-w-0 flex-1 items-center gap-2"
-                  >
-                    {visibleTab === "favorites" ? (
-                      <HarnessIcon harness={item.harness} className="size-3.5 shrink-0" />
-                    ) : null}
-                    <span className="truncate">{item.name}</span>
-                    {item.provider ? (
-                      <span className="ml-auto truncate text-ui-micro text-(--ui-text-muted)">
-                        {item.provider.name}
-                      </span>
-                    ) : null}
-                    {item.id === model.id ? (
-                      <Check className="ml-auto icon-sm shrink-0 text-(--ui-tone-accent-fg)" />
-                    ) : null}
-                  </Button>
-                  <Button
-                    iconOnly
-                    label={t(
-                      favorites.includes(item.id)
-                        ? "Remove {p1} from favorites"
-                        : "Add {p1} to favorites",
-                      { p1: item.name },
-                    )}
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    tooltip={
-                      favorites.includes(item.id)
-                        ? t("Remove from favorites")
-                        : t("Add to favorites")
-                    }
-                    aria-label={t(
-                      favorites.includes(item.id)
-                        ? "Remove {p1} from favorites"
-                        : "Add {p1} to favorites",
-                      { p1: item.name },
-                    )}
-                    onClick={() => {
-                      const next = favorites.includes(item.id)
-                        ? favorites.filter((id) => id !== item.id)
-                        : [...favorites, item.id];
-                      setFavorites(next);
-                      saveFavoriteModels(next);
-                    }}
-                    className="grid shrink-0 place-items-center"
-                  >
-                    <Star
-                      className="icon-sm"
-                      fill={favorites.includes(item.id) ? "currentColor" : "none"}
-                    />
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <p className="px-2 py-6 text-center text-ui-caption text-(--ui-text-muted)">
-                {query
-                  ? t("No matching models")
-                  : visibleTab === "favorites"
-                    ? t("No favorite models")
-                    : t("Loading models…")}
-              </p>
-            )}
+              </div>
+            </div>
           </div>
-
-        </div>
-      </div>
-      </> : null}
+        </>
+      ) : null}
       <Button
         ref={modelRowRef}
         variant="item"

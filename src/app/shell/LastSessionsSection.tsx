@@ -1,11 +1,20 @@
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
+import { ContinuousList } from "../../shared/ui/ContinuousList";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "./RelativeSessionTime";
 import { getLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { ChevronDown, Clock, Internet, PenLine, Pin, PinOff } from "../../shared/ui/icons";
+import {
+  ChevronDown,
+  CircleAlert,
+  Clock,
+  Internet,
+  PenLine,
+  Pin,
+  PinOff,
+} from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
@@ -13,11 +22,7 @@ import type { useTabGroupLogos } from "../../features/projects/hooks/useTabGroup
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
-import {
-  RAIL_SECTION_BLOCK,
-  RailSectionHeader,
-  type RailSectionDrag,
-} from "./useRailSections";
+import { RAIL_SECTION_BLOCK, SectionMenuButton, type RailSectionDrag } from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
 import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
@@ -49,7 +54,7 @@ export type RecentSessionsSource = {
   history: SessionSummary[];
   /** Sessions held in memory: running state, and remote sessions the store never sees. */
   live: LiveSessionInfo[];
-  onPin: (sessionId: string, pinned: boolean) => Promise<void>;
+  onPin: (row: RecentSessionRow, pinned: boolean) => Promise<unknown>;
 };
 
 export type Appearance = {
@@ -88,7 +93,12 @@ export function useLastSessionsRows({
     saveRecentSessionsPrefs(next);
   };
   const togglePin = (row: RecentSessionRow) => {
-    void source.onPin(row.id, !row.pinned).then(refresh);
+    void source
+      .onPin(row, !row.pinned)
+      .then(refresh)
+      .catch((error: unknown) => {
+        console.error("Could not refresh pinned session:", error);
+      });
   };
   return { prefs, update, rows, hasRows: rows.length > 0, togglePin, refresh };
 }
@@ -96,6 +106,7 @@ export function useLastSessionsRows({
 const STATUS_LABEL: Record<RecentSessionStatus, string> = {
   retrying: "Retrying",
   failed: "Failed",
+  interrupted: "Interrupted",
   working: "Working",
   input: "Needs input",
   done: "Done",
@@ -104,6 +115,7 @@ const STATUS_LABEL: Record<RecentSessionStatus, string> = {
 const STATUS_DOT: Record<RecentSessionStatus, string> = {
   retrying: "bg-warning",
   failed: "bg-danger",
+  interrupted: "bg-warning",
   working: "working-dot bg-accent animate-pulse motion-reduce:animate-none",
   input: "bg-warning",
   done: "bg-success",
@@ -117,8 +129,11 @@ export function LastSessionsSection({
   searchActive,
   onOpenSession,
   onOpenProject,
+  onOpenLastSessions,
+  lastSessionsOpen = false,
   drag,
   onShownChange,
+  listScopeKey,
   ...appearance
 }: {
   source: RecentSessionsSource;
@@ -127,12 +142,16 @@ export function LastSessionsSection({
   enabled: boolean;
   activeSessionId?: string;
   searchActive: boolean;
-  onOpenSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onOpenSession?: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
+  onOpenLastSessions?: () => void;
+  lastSessionsOpen?: boolean;
   /** Lets the rail move this section by its header. */
   drag?: RailSectionDrag;
   /** Reports whether the section is on screen: it has nothing to show without sessions. */
   onShownChange?: (shown: boolean) => void;
+  /** Optional owner scope for query-specific Last sessions viewports. */
+  listScopeKey?: string;
 } & Appearance) {
   const t = useT();
   const { prefs, update, rows, hasRows, togglePin } = useLastSessionsRows({
@@ -141,29 +160,48 @@ export function LastSessionsSection({
     enabled,
   });
   useEffect(() => {
-    onShownChange?.(hasRows);
+    onShownChange?.(true);
     return () => onShownChange?.(false);
-  }, [hasRows, onShownChange]);
-  if (!hasRows) return null;
-
+  }, [onShownChange]);
   return (
     <div
       ref={drag?.setRef}
       className={RAIL_SECTION_BLOCK}
       data-collapsed={prefs.collapsed || undefined}
     >
-      <RailSectionHeader
-        label={t("Last sessions")}
-        drag={drag}
-        icon={<Clock className="icon-sm" strokeWidth={1.75} />}
-        collapsed={prefs.collapsed}
-        onToggleCollapsed={() => update({ ...prefs, collapsed: !prefs.collapsed })}
-        actions={
-          prefs.collapsed ? null : (
-            <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
-          )
-        }
-      />
+      <div
+        {...drag?.headerProps}
+        className="group flex min-h-(--ui-control-height-compact) items-center gap-1 px-2"
+      >
+        <InlineAction
+          reveal="always"
+          motion="none"
+          type="button"
+          data-no-drag
+          label={t(prefs.collapsed ? "Expand" : "Collapse")}
+          aria-expanded={!prefs.collapsed}
+          onClick={() => update({ ...prefs, collapsed: !prefs.collapsed })}
+        >
+          <ChevronDown className={`icon-xs ${prefs.collapsed ? "-rotate-90" : ""}`} />
+        </InlineAction>
+        <Button
+          variant="ghost"
+          motion="none"
+          type="button"
+          data-no-drag
+          onClick={onOpenLastSessions}
+          selected={lastSessionsOpen}
+          aria-current={lastSessionsOpen ? "page" : undefined}
+          className="min-w-0 flex-1 justify-start"
+        >
+          <Clock className="icon-sm shrink-0" strokeWidth={1.75} />
+          <span className="truncate">{t("Last sessions")}</span>
+        </Button>
+        {!prefs.collapsed && hasRows ? (
+          <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
+        ) : null}
+        {drag ? <SectionMenuButton label={t("Last sessions")} onOpen={drag.openMenu} /> : null}
+      </div>
       {prefs.collapsed ? null : (
         <LastSessionsRows
           rows={rows}
@@ -173,6 +211,7 @@ export function LastSessionsSection({
           onOpenProject={onOpenProject}
           onTogglePin={togglePin}
           className={drag?.folded ? "hidden" : "flex"}
+          listScopeKey={listScopeKey}
           {...appearance}
         />
       )}
@@ -189,15 +228,17 @@ export function LastSessionsRows({
   onOpenProject,
   onTogglePin,
   className,
+  listScopeKey,
   ...appearance
 }: {
   rows: RecentSessionRow[];
   activeSessionId?: string;
   searchActive: boolean;
-  onOpenSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onOpenSession?: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
   onTogglePin: (row: RecentSessionRow) => void;
   className?: string;
+  listScopeKey?: string;
 } & Appearance) {
   const t = useT();
   const [menu, setMenu] = useState<{
@@ -213,21 +254,27 @@ export function LastSessionsRows({
       <div
         role="list"
         aria-label={t("Last sessions")}
-        className={`flex-col gap-px overflow-y-auto px-2 ${className ?? ""}`}
+        className={`flex min-h-0 flex-1 flex-col gap-px ${className ?? ""}`}
       >
-        {rows.map((row) => (
-          <SessionRow
-            key={row.id}
-            row={row}
-            now={now}
-            selected={!searchActive && row.id === activeSessionId}
-            onOpen={() => onOpenSession?.(row.id)}
-            onKeepOpen={() => onOpenSession?.(row.id, { keepOpen: true })}
-            onTogglePin={() => onTogglePin(row)}
-            onOpenMenu={(x, y) => setMenu({ x, y, row })}
-            {...appearance}
-          />
-        ))}
+        <ContinuousList
+          className="flex-1 min-h-0 px-2"
+          items={rows}
+          itemKey={(row) => JSON.stringify([row.cwd, row.id])}
+          stateKey={listScopeKey ?? "last-sessions:rail"}
+          estimateSize={56}
+          renderItem={(row) => (
+            <SessionRow
+              row={row}
+              now={now}
+              selected={!searchActive && row.id === activeSessionId}
+              onOpen={() => onOpenSession?.(row.id, row.cwd)}
+              onKeepOpen={() => onOpenSession?.(row.id, row.cwd, { keepOpen: true })}
+              onTogglePin={() => onTogglePin(row)}
+              onOpenMenu={(x, y) => setMenu({ x, y, row })}
+              {...appearance}
+            />
+          )}
+        />
       </div>
       {menu && menuRow ? (
         <ExplorerMenu
@@ -261,7 +308,7 @@ export function LastSessionsRows({
           ]}
           onPick={(id) => {
             setMenu(null);
-            if (id === "open") onOpenSession?.(menuRow.id);
+            if (id === "open") onOpenSession?.(menuRow.id, menuRow.cwd);
             else if (id === "pin") onTogglePin(menuRow);
             else if (id === "project") onOpenProject(menuRow.cwd);
           }}
@@ -364,7 +411,7 @@ function SessionRow({
     model ? `${agent} · ${model}` : agent,
     draft ? t("Draft") : "",
     status
-      ? STATUS_LABEL[status]
+      ? t(STATUS_LABEL[status])
       : time && `Last activity ${new Date(row.updatedAt).toLocaleString(getLocale())}`,
   ]
     .filter(Boolean)
@@ -397,7 +444,7 @@ function SessionRow({
           project,
           agent,
           draft ? t("Draft") : "",
-          status ? STATUS_LABEL[status].toLowerCase() : time,
+          status ? t(STATUS_LABEL[status]) : time,
         ]
           .filter(Boolean)
           .join(", ")}
@@ -451,30 +498,31 @@ function SessionRow({
             strokeWidth={1.75}
           />
         ) : null}
-        <HarnessIcon
-          harness={row.harness}
-          className="icon-xs shrink-0 @max-[200px]/rail:hidden"
-        />
-        {status ? (
+        <HarnessIcon harness={row.harness} className="icon-xs shrink-0 @max-[200px]/rail:hidden" />
+        {status === "interrupted" ? (
+          <CircleAlert
+            role="img"
+            aria-label={t("Interrupted")}
+            className="icon-xs shrink-0 text-(--ui-tone-warning-fg)"
+            strokeWidth={1.75}
+          />
+        ) : status ? (
           <span
             role="img"
-            aria-label={STATUS_LABEL[status]}
-            title={STATUS_LABEL[status]}
+            aria-label={t(STATUS_LABEL[status])}
+            title={t(STATUS_LABEL[status])}
             className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
           />
         ) : null}
         {time ? (
-          <span
-            data-action-yield=""
-            className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)"
-          >
+          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
             {time}
           </span>
         ) : null}
       </Button>
       {row.pinnable ? (
-        // Takes no width at rest; on hover, focus or selection it sits over the time (shared collapse slot, data-action-yield).
-        <div data-action-slot="collapse" className="flex shrink-0 items-center">
+        // Keep a separate action column so revealing the pin cannot cover age or title text.
+        <div data-session-pin-slot="" className="flex shrink-0 items-center">
           <InlineAction
             motion="none"
             type="button"

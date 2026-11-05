@@ -2,11 +2,17 @@ import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 
 import { synchronizeProjectLocation } from "../../../../features/projects/model/projectLocation";
 import { looksLikeProject } from "../../../../features/projects/model/recents";
-import { holdUndeliveredFollowUp, queuedModelTarget } from "../../../../features/sessions/model/messageQueue";
+import {
+  holdUndeliveredFollowUp,
+  queuedModelTarget,
+} from "../../../../features/sessions/model/messageQueue";
 import { type QueuedMessage } from "../../../../features/sessions/model/session";
 import { setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { pathKey } from "../../../../shared/lib/paths";
-import { submitAfterProjectSync, type SubmissionAcceptance } from "../../../model/submissionAcceptance";
+import {
+  submitAfterProjectSync,
+  type SubmissionAcceptance,
+} from "../../../model/submissionAcceptance";
 import { flushSync } from "react-dom";
 
 export function gateProjectLocation(
@@ -25,9 +31,7 @@ export function gateProjectLocation(
     flushSync(() =>
       setSessions((prev) =>
         prev.map((session) =>
-          session.id === sessionId
-            ? { ...session, busy: true, worktreePreparing: true }
-            : session,
+          session.id === sessionId ? { ...session, busy: true, worktreePreparing: true } : session,
         ),
       ),
     );
@@ -53,6 +57,32 @@ export function gateProjectLocation(
         () => projectLocationSyncs.current.delete(key),
       );
     }
+    // Nested send gates and project preparation can both reject the same send.
+    // Share one recovery owner so a restored draft or held row is never copied.
+    let recovered = false;
+    const recoverUnstarted = (): boolean => {
+      if (recovered) return true;
+      recovered = true;
+      releasePreparation();
+      // Existing draft/queue rows were not removed before preparation.
+      if (options?.queuedMessageId || options?.draftBlockId || editedResend) return true;
+      if (options?.onSendRejected?.()) return true;
+      const recovery: QueuedMessage = {
+        id: crypto.randomUUID(),
+        text,
+        attachments,
+        noteCard,
+        handoffCard,
+        intent,
+        modelTarget: queuedModelTarget(options?.buildTarget ?? storedCurrent),
+      };
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId ? holdUndeliveredFollowUp(session, recovery) : session,
+        ),
+      );
+      return true;
+    };
     return submitAfterProjectSync({
       cwd: current.cwd,
       sync,
@@ -63,6 +93,7 @@ export function gateProjectLocation(
         const accepted = await submitAfterProjectSyncRef.current(sessionId, text, attachments, {
           ...options,
           projectLocationReady: true,
+          onSendRejected: recoverUnstarted,
         });
         if (!accepted) {
           editedResend?.reject();
@@ -75,26 +106,7 @@ export function gateProjectLocation(
         }
         return accepted;
       },
-      onRejected: () => {
-        releasePreparation();
-        // Existing draft/queue rows were not removed before preparation.
-        if (options?.queuedMessageId || options?.draftBlockId || editedResend) return;
-        if (options?.onSendRejected?.()) return;
-        const recovery: QueuedMessage = {
-          id: crypto.randomUUID(),
-          text,
-          attachments,
-          noteCard,
-          handoffCard,
-          intent,
-          modelTarget: queuedModelTarget(options?.buildTarget ?? storedCurrent),
-        };
-        setSessions((prev) =>
-          prev.map((session) =>
-            session.id === sessionId ? holdUndeliveredFollowUp(session, recovery) : session,
-          ),
-        );
-      },
+      onRejected: recoverUnstarted,
       onError: (error: unknown) => {
         const message =
           error instanceof Error ? error.message : "The project folder could not be opened.";
@@ -113,4 +125,3 @@ export function gateProjectLocation(
     });
   }
 }
-

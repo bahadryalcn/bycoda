@@ -12,9 +12,9 @@ import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Minus, Plus, Undo2 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { relativeDirname as dirname } from "../../../shared/lib/paths";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import type { TreeSelectionModifiers } from "../../files/model/treeSelection";
-import { useChangedFileMenu } from "../../files/ui/useChangedFileMenu";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
+import type { TreeSelectionModifiers } from "../../files";
+import { useChangedFileMenu } from "../../files/public/useChangedFileMenu";
 import { basename, type GitChangedFile, type GitFileDiffKind } from "../../../platform/tauri/fs";
 
 export type ChangeSelection = {

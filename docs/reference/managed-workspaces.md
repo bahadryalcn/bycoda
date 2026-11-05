@@ -8,7 +8,7 @@ alone does not establish runtime support.
 
 ## Implemented service graph and acceptance limits
 
-`host/managed-workspace-runtime.ts` composes the production services once. Startup
+`host/managed/managed-workspace-runtime.ts` composes the production services once. Startup
 reconciles provably stopped Host activities and recovers creation, rewind,
 delivery and removal journals before admitting new writers. Sessions, tasks,
 goals, automations and stewards use authoritative registry execution paths.
@@ -27,7 +27,7 @@ capture, native process/buffer admission and native rewind coordination through
 the trusted transports below. Isolated native acceptance is described below;
 live provider and installed/released acceptance remain separate.
 
-`host/managed-workspaces.e2e.test.ts` exercises the production graph with real
+`host/managed/managed-workspaces.e2e.test.ts` exercises the production graph with real
 temporary Git repositories and SQLite, independently committed sessions,
 rewind/Undo, owner delivery with unrelated dirty target preservation, and
 junction-safe retirement retaining branches and recovery refs. Its providers are
@@ -108,8 +108,8 @@ workspace ID, not its shortened display form. Creation failure never falls back
 to main. Unsupported managed operations on older Hosts require a visible update
 explanation; current-checkout creation uses the existing compatible path.
 
-`host/managed-workspaces.ts` implements branch/directory naming and
-`host/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
+`host/managed/managed-workspaces.ts` implements branch/directory naming and
+`host/git/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
 and the 12-character display ID length; implementations validate Git ref
 components and full ownership.
 
@@ -136,6 +136,24 @@ ownership, canonical path, branch/HEAD, clean source and activity checks precede
 removal. Failed status reads mean unknown. Dirty work blocks automatic cleanup;
 an explicit owner plan must bind the observed fingerprint and preserve source
 state before removal. Unknown directories and main are never cleanup targets.
+Retention rejects known dirty or private ignored inputs before full fingerprinting.
+The complete fingerprint runs in a bounded worker and remains mandatory for an
+owner review and revalidation. Build-cache leases retain an unknown-effect fence
+after interrupted build execution, including when the sentinel is missing. On
+Windows, an available verified guardian with build-receipt capability contains
+Cargo in its own kernel job and survives the Node owner's exit. Only verified
+tree retirement publishes an immutable receipt for that exact cache generation.
+Recovery validates the receipt under the SQLite ownership witness before admitting
+another build; missing, malformed or mismatched evidence keeps the cache held.
+Settled receipts are removed only after durable generation settlement. Guardian
+failure does not authorize PID-based recovery or a second build.
+Without a compatible guardian, ordinary development retains the existing process
+fallback. A normally closed Cargo command, including a nonzero exit, remains its
+completion boundary; independently detached descendants are not proven retired.
+Managed development servers also use an available verified Windows guardian for
+supported shell invocations. Normal shutdown waits for exact owned retirement;
+unknown outcomes retain activity and port leases. Discovered processes are not
+owned merely because they use a project directory or port.
 
 Default disk policy is 50 GiB for materialized directories, an 80% warning and
 20 GiB minimum free space. Shared caches and recovery objects are reported
@@ -197,8 +215,9 @@ duplicating a successful push or PR.
 ## RPCs and capabilities
 
 RPC request/response types are frozen in
-[`host/workspace-rpc-contracts.ts`](../../host/workspace-rpc-contracts.ts).
-`host/server.ts` routes owner operations through the shared runtime; delivery and
+[`host/workspaces/workspace-rpc-contracts.ts`](../../host/workspaces/workspace-rpc-contracts.ts).
+`host/server/rpc-workspaces.ts` and `host/server/rpc-sessions.ts` route owner
+operations through the shared runtime; delivery and
 publication require authenticated owner transport, not agent credentials.
 
 | RPC methods                                                         | Capability                     |
@@ -253,9 +272,9 @@ alone do not establish inclusion.
 | S7     | Instructions, feature cards, maintained guides and acceptance inventory                      |
 
 Records, policy and naming contracts live in
-[`host/workspace-contracts.ts`](../../host/workspace-contracts.ts); service
+[`host/workspaces/workspace-contracts.ts`](../../host/workspaces/workspace-contracts.ts); service
 boundaries live in
-[`host/workspace-service-contracts.ts`](../../host/workspace-service-contracts.ts).
+[`host/workspaces/workspace-service-contracts.ts`](../../host/workspaces/workspace-service-contracts.ts).
 The app consumes type-only mirrors from
 [`src/features/workspaces/model/contracts.ts`](../../src/features/workspaces/model/contracts.ts).
 S2 and S3 acquire S4 execution-activity reservations before destructive Git or
@@ -267,7 +286,7 @@ native, installed or released acceptance.
 
 Tracked project feature cards live under `.agents/skills/feature-<name>/SKILL.md`.
 Their `name` and `description` frontmatter makes them discoverable by the existing
-project skill loader in `host/skills.ts`. Use the
+project skill loader in `host/skills/skills.ts`. Use the
 [card template](../../.agents/skills/feature-card-template/SKILL.md) for a concise
 developer workflow, feature-specific preservation contracts and conditional source
 references. Keep shared architecture here rather than duplicating it in callers.

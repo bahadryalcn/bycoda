@@ -267,7 +267,9 @@
   }
 }
 
-.indicator { display: none; }
+.indicator {
+  display: none;
+}
 .item:is([data-highlighted], [data-state="checked"], [aria-selected="true"]) {
   background: var(--ui-surface-selected);
   box-shadow: inset 0 0 0 1px var(--ui-field-border);

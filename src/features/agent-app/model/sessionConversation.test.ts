@@ -19,11 +19,7 @@ describe("sessionConversationPage", () => {
       environmentId: "env",
       sessionId: session.id,
     };
-    const page = sessionConversationPage(
-      session,
-      { limit: 1, maxChars: 200 },
-      locator,
-    );
+    const page = sessionConversationPage(session, { limit: 1, maxChars: 200 }, locator);
     expect(parseLocalSessionLink(page.link!)?.locator).toEqual(locator);
     expect(parseLocalSessionLink(page.turns[0].link!)).toEqual({
       locator,

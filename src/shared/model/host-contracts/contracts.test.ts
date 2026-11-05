@@ -32,7 +32,8 @@ const request = (method: string, params: Record<string, unknown> = {}) => ({
 
 describe("Host WS method contracts", () => {
   it("preserves the original wire-name grammar with an explicit pre-dispatch alias", () => {
-    const legacy = "goals.final-review.recheck", wire = hostRpcWireMethod(legacy);
+    const legacy = "goals.final-review.recheck",
+      wire = hostRpcWireMethod(legacy);
     expect(wire).toBe("goals.finalReview.recheck");
     expect(hostRpcWireMethod("constructor")).toBe("constructor");
     expect(hostRpcWireMethod("unknown.operation")).toBe("unknown.operation");
@@ -40,10 +41,17 @@ describe("Host WS method contracts", () => {
     expect(parseRpcRequest(request(wire, params)).method).toBe(wire);
     expect(() => parseRpcRequest(request(legacy, params))).toThrow();
     expect(getHostRpcMethod(legacy)).toBeUndefined();
-    const manifest = exportHostContractManifest() as { aliases: Record<string, string>; methods: Record<string, unknown> };
+    const manifest = exportHostContractManifest() as {
+      aliases: Record<string, string>;
+      methods: Record<string, unknown>;
+    };
     expect(manifest.aliases[legacy]).toBe(wire);
     expect(manifest.methods[legacy]).toBeUndefined();
-    expect(getHostRpcMethod("goals.list")).toMatchObject({ retry: "never", cancellation: "wait-only", cost: "read" });
+    expect(getHostRpcMethod("goals.list")).toMatchObject({
+      retry: "never",
+      cancellation: "wait-only",
+      cost: "read",
+    });
   });
   it("accepts only declared methods and validates their own closed params", () => {
     expect(parseRpcRequest(request("projects.list"))).toEqual(request("projects.list"));

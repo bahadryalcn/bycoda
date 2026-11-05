@@ -4,7 +4,8 @@ import { PromptField } from "../../../shared/ui/PromptField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Badge } from "../../../shared/ui/Badge";
+import { GoalStatusBadge } from "./GoalStatusBadge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Progress } from "../../../shared/ui/Progress";
 import { Alert } from "../../../shared/ui/Alert";
@@ -25,7 +26,7 @@ import { resolveTaskMachineId, useTaskTargetMachine } from "./useTaskTargetMachi
 import { useSprintBoard } from "../model/sprintClient";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
 import { TaskAccountPicker } from "./TaskAccountPicker";
-import { HostModelSource } from "../../connections/ui/HostModelSource";
+import { HostModelSource } from "../../connections/public/HostModelSource";
 import { type BoardTask, TASK_MACHINE_ERROR } from "../model/taskClient";
 import { t, useLocale } from "../../../shared/i18n";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -46,9 +47,9 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TaskAcceptanceEvidence } from "./TaskAcceptanceEvidence";
 import { TaskBudgetControls, TaskBudgetUsage } from "./TaskBudgetControls";
 import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { isProjectLockedIn, type LockSnapshot } from "../../group-lock/model/lockState";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import {
@@ -61,7 +62,6 @@ import {
   GOAL_FINAL_ACCEPTANCE_CRITERIA,
   goalProgress,
   type GoalSettings,
-  type GoalStatus,
   MAX_GOAL_PROJECTS,
 } from "../model/hostGoals";
 import {
@@ -92,24 +92,6 @@ import {
   TaskExecutionMode,
 } from "./TaskFormFields";
 import { MachineConcurrency } from "./TaskLimits";
-
-const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
-  planning: "Planning",
-  "awaiting-approval": "Plan ready",
-  running: "Running",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
-};
-
-const GOAL_STATUS_TONES: Record<GoalStatus, BadgeTone> = {
-  planning: "info",
-  "awaiting-approval": "warning",
-  running: "info",
-  done: "success",
-  blocked: "danger",
-  cancelled: "neutral",
-};
 
 export const ALL_GOALS = "all";
 
@@ -173,12 +155,7 @@ function GoalCard({
         >
           {goal.title}
         </h3>
-        <Badge tone={GOAL_STATUS_TONES[goal.status]} className="shrink-0">
-          {goal.status === "planning" ? (
-            <Spinner size="xs" className="mr-1" />
-          ) : null}
-          {t(GOAL_STATUS_LABELS[goal.status])}
-        </Badge>
+        <GoalStatusBadge status={goal.status} />
         {progress.total > 0 ? (
           <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-ui-micro text-(--ui-text-secondary)">
             <span className="w-14">
@@ -212,9 +189,7 @@ function GoalCard({
           </span>
         </div>
         <div className="task-goal-actions ml-auto flex flex-wrap items-center gap-0.5">
-          {pending ? (
-            <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" />
-          ) : null}
+          {pending ? <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" /> : null}
           {goal.status !== "done" && goal.status !== "cancelled" ? (
             <Button
               variant="ghost"
@@ -1240,14 +1215,22 @@ export function GoalList({
   filter: string;
   tasks: BoardTask[];
   acting: string | null;
-  revealKey?:string;
+  revealKey?: string;
 }) {
-  const disclosure=useRef<HTMLDetailsElement>(null);
-  useEffect(()=>{if(revealKey&&disclosure.current){disclosure.current.open=true;disclosure.current.scrollIntoView?.({block:"nearest"});}},[revealKey]);
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (revealKey && disclosure.current) {
+      disclosure.current.open = true;
+      disclosure.current.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [revealKey]);
   return (
     <details ref={disclosure} className="task-goals-disclosure">
       <summary>
-        {t("Goals")} · {goals.goals.length}
+        {t("Goals")}{" "}
+        <Badge variant="count" size="xs">
+          {goals.goals.length}
+        </Badge>
       </summary>
       <ul
         aria-label={t("Goals")}

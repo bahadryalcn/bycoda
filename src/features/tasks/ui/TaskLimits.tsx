@@ -5,8 +5,9 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import type { RemoteMachine } from "../../connections";
 import {
   DAILY_LIMIT_CHOICES,
   formatAgentMinutes,
@@ -66,7 +67,7 @@ export function CustomDailyLimit({
       aria-busy={saving}
       onSubmit={async (event) => {
         event.preventDefault();
-        if (!valid || saving || submitting.current) return;
+        if (!valid || saving || submitting.current || entry.stale) return;
         submitting.current = true;
         setSaving(true);
         try {
@@ -89,7 +90,7 @@ export function CustomDailyLimit({
             step="any"
             aria-label={t("Daily agent hours on {p0}", { p0: entry.machineName })}
             value={hours}
-            disabled={saving}
+            disabled={saving || entry.stale}
             onChange={(event) => {
               if (saving) return;
               const next = event.target.value;
@@ -103,7 +104,12 @@ export function CustomDailyLimit({
           />
         </label>
       </Tooltip>
-      <Button variant="secondary" type="submit" loading={saving} disabled={!valid || saving}>
+      <Button
+        variant="secondary"
+        type="submit"
+        loading={saving}
+        disabled={!valid || saving || entry.stale}
+      >
         {t("Save")}
       </Button>
       {dirty ? (
@@ -146,7 +152,7 @@ export function MachineConcurrency({
             value: String(index + 1),
             label: String(index + 1),
           }))}
-          disabled={saving}
+          disabled={saving || limit.stale}
           onChange={async (value) => {
             if (pending.current) return;
             pending.current = true;
@@ -176,9 +182,15 @@ export function MachineConcurrency({
 export function LimitsPanel({
   limits,
   onChange,
+  errors = [],
+  onRetry,
+  retrying = false,
 }: {
   limits: readonly MachineLimits[];
   onChange: SaveLimits;
+  errors?: readonly { machineId: string; machineName: string; error: string }[];
+  onRetry?: (machineId: string) => void;
+  retrying?: boolean;
 }) {
   useLocale();
   const [savingMachine, setSavingMachine] = useState<string | null>(null);
@@ -204,6 +216,18 @@ export function LimitsPanel({
       }));
   return (
     <ul aria-label={t("Work limits")} className="task-limits">
+      {errors.map((entry) => (
+        <li key={`error:${entry.machineId}`} className="task-limits-machine">
+          <span role="status">
+            {entry.machineName}: {entry.error}
+          </span>
+          {onRetry ? (
+            <Button variant="ghost" loading={retrying} onClick={() => onRetry(entry.machineId)}>
+              {t("Retry")}
+            </Button>
+          ) : null}
+        </li>
+      ))}
       {limits.map((entry) => (
         <li
           key={entry.machineId}
@@ -218,10 +242,19 @@ export function LimitsPanel({
               ) : null}
             </span>
             <span className="tabular-nums">
-              {t("Used today: ")}
+              {entry.stale ? `${t("Out of date")} · ` : t("Used today: ")}
               {formatAgentMinutes(entry.usedMinutes)}
             </span>
           </div>
+          {entry.usageUncertain ? (
+            <InlineError>
+              {entry.dailyAgentMinutes > 0
+                ? t(
+                    "Today's agent time is incomplete. New work waits until tomorrow while a daily limit is set.",
+                  )
+                : t("Today's agent time is incomplete.")}
+            </InlineError>
+          ) : null}
           <div className="task-limits-row">
             <span>{t("Max concurrent tasks")}</span>
             <SearchableSelect
@@ -233,7 +266,7 @@ export function LimitsPanel({
                 value: String(i + 1),
                 label: String(i + 1),
               }))}
-              disabled={savingMachine !== null}
+              disabled={savingMachine !== null || entry.stale}
               onChange={(value) => save(entry.machineId, { maxRunningTasks: Number(value) })}
             />
           </div>
@@ -245,7 +278,7 @@ export function LimitsPanel({
               label={t("Daily agent time on {p0}", { p0: entry.machineName })}
               value={String(entry.dailyAgentMinutes)}
               options={choices(entry.dailyAgentMinutes)}
-              disabled={savingMachine !== null}
+              disabled={savingMachine !== null || entry.stale}
               onChange={(value) => save(entry.machineId, { dailyAgentMinutes: Number(value) })}
             />
           </div>

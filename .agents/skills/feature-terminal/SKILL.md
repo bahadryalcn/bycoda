@@ -14,6 +14,8 @@ Code paths below are repository-root relative.
 - `src/features/terminal/ui/TerminalView.tsx`
 - `src/features/terminal/ui/TerminalTools.tsx`
 - `src/features/terminal/`
+- `host/terminals/terminals.ts`, `host/terminal-process.ts`
+- `src-tauri/src/mobile_pty.rs`, `src-tauri/src/pty.rs`
 
 ## Workflow
 
@@ -24,10 +26,17 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Coalesce streaming-output search refreshes within a bounded delay; explicit query, navigation and resize remain responsive. Cancel queued refreshes when query, terminal or search mode changes without writing PTY input.
+- Keep active/pending/unknown terminal capacity separate from exited history. A stop dispatch or process error is not exit proof; failed lease release remains retriable. Replay retains original authorization, and shutdown reports unconfirmed retirement.
+- Mobile PTY close acknowledges only exact-generation physical exit. Replay retirement also needs output drain, no replay gap and no unknown input. Completed attach receipts may expire independently; expired IDs remain fenced for the native runtime lifetime.
+
+- `src-tauri/src/provider_terminal_profiles.rs` retains invalid/unreadable registry evidence and writes through the synced native state helper. Missing, corrupt and dangling-linked profile registries are distinct; failed persistence cannot claim a connection or erase CLI-home references.
+
 - Preserve source output/copy bytes, scrollback, PTY/SSH/process identity and active work. Never recolor by rewriting escape bytes, NO_COLOR or shell prompts.
 - Typography and effective canvas/contrast are separate policies; an optional line-height prop must not silently change transparency.
 - Keep saved terminal font/size/weight/lineHeight, stored migration and scoped Ctrl+wheel behavior. Reset returns to saved preference without respawn.
 - Preserve wide glyphs, TUI grid fitting, shell spacing restoration, flow/visibility/resize, keyboard/IME, drag/tab/split focus and native approval/history restrictions.
+- Refit the retained terminal after a renderer transition: DOM and WebGL can use different cell metrics even when the host dimensions stay unchanged.
 - Search and ghost suggestions are not executed output; no PTY input until explicit supported acceptance. Reduced motion disables unnecessary cursor motion.
 - Unknown image/filter/opacity backdrops remain unresolved; modeled contrast and xterm minimumContrastRatio do not prove every actual glyph or selected colored cell.
 

@@ -2,7 +2,7 @@ import { parentPath, pathKey, slash } from "../../../shared/lib/paths";
 import { moveIdByStep, orderByIds, type MoveStep } from "../../../shared/lib/reorder";
 import { normalizeProjectMascotName } from "./projectMascots";
 import { TAB_GROUP_COLORS, tabGroupColor } from "../../workspace/model/tabGroups";
-import { notifyProjectPathsChanged } from "./recents";
+import { notifyProjectPathsChanged, type RecentProject } from "./recents";
 
 const GROUPS_KEY = "bycoda.projectGroups";
 const ASSIGNMENTS_KEY = "bycoda.projectGroupAssignments";
@@ -29,6 +29,35 @@ export type ProjectGroup = {
 /** A linked workspace opens the directory containing its workspace file as a project. */
 export function projectGroupWorkspaceRoot(group: ProjectGroup): string | null {
   return group.workspaceFile ? parentPath(slash(group.workspaceFile)) : null;
+}
+
+/** Roots represented by workspace headers rather than standalone rail rows. */
+export function projectGroupWorkspaceRootKeys(groups: readonly ProjectGroup[]): Set<string> {
+  return new Set(
+    groups.flatMap((group) => {
+      const root = projectGroupWorkspaceRoot(group);
+      return root ? [pathKey(root)] : [];
+    }),
+  );
+}
+
+/** Declared roots stay child rows even when assignments track workspace parents. */
+export function addListedWorkspaceRoots(
+  groups: readonly ProjectGroup[],
+  sections: { pinned: RecentProject[]; projects: RecentProject[] },
+  byGroup: Map<string, RecentProject[]>,
+  visible: (project: RecentProject, groupId: string) => boolean,
+): void {
+  const projects = [...sections.pinned, ...sections.projects];
+  for (const group of groups) {
+    const root = projectGroupWorkspaceRoot(group);
+    if (!root || !group.workspaceFolders?.some((path) => pathKey(path) === pathKey(root))) continue;
+    const project = projects.find((item) => pathKey(item.path) === pathKey(root)) ?? {
+      path: root,
+      openedAt: 0,
+    };
+    if (project && visible(project, group.id)) byGroup.get(group.id)?.unshift(project);
+  }
 }
 
 /** A workspace can sit inside an ordinary group without changing its linked folders. */
@@ -179,7 +208,8 @@ export function setProjectGroupAssignment(
   else if (loadProjectGroups().some((group) => group.id === groupId)) {
     next[key] = groupId;
   }
-  saveProjectGroupAssignments(next);
+  if (!saveProjectGroupAssignments(next))
+    throw new Error("Could not save project group assignment.");
   return next;
 }
 
@@ -194,7 +224,8 @@ export function rebaseProjectGroupAssignment(from: string, to: string): void {
   if (oldKey === newKey || !(oldKey in next)) return;
   if (!(newKey in next)) next[newKey] = next[oldKey];
   delete next[oldKey];
-  saveProjectGroupAssignments(next);
+  if (!saveProjectGroupAssignments(next))
+    throw new Error("Could not save project group assignment.");
 }
 
 /** False when the group does not exist or the change could not be saved. */
@@ -230,8 +261,7 @@ export function moveProjectGroup(id: string, step: MoveStep): boolean {
 export function deleteProjectGroup(id: string): boolean {
   const nextGroups = loadProjectGroups().filter((group) => group.id !== id);
   if (!saveProjectGroups(nextGroups)) return false;
-  saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups));
-  return true;
+  return saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups));
 }
 
 export function projectGroupColor(group: ProjectGroup): string {
@@ -326,7 +356,8 @@ export function changeProjectGroupMembers(
     if (assignments[key] === id) delete assignments[key];
   }
   for (const path of add) assignments[pathKey(path)] = id;
-  saveProjectGroupAssignments(assignments);
+  if (!saveProjectGroupAssignments(assignments))
+    throw new Error("Could not save project group membership.");
 }
 
 /** Paths (as stored keys) currently assigned to the group. */

@@ -5,8 +5,12 @@ import { saveWorkspaceSnapshot } from "../../features/sessions/data/sessionStore
 import { hasInitializedSessionRecovery } from "../../features/workspace/model/sessionRecovery";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+const nativeWindow = vi.hoisted(() => ({ label: "main" }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ label: nativeWindow.label }),
+}));
 
-it("preserves the primary journal when a detached window saves without boot recovery", async () => {
+it("preserves the primary journal when the primary window saves without boot recovery", async () => {
   expect(hasInitializedSessionRecovery()).toBe(false);
   const saved = { capturedAt: 100, dismissed: true, workspace: { marker: "primary recovery" } };
   vi.mocked(invoke).mockImplementation(async (command) =>
@@ -17,6 +21,17 @@ it("preserves the primary journal when a detached window saves without boot reco
     "workspace_set_snapshot",
     { snapshot: { tabs: [], activeTabId: "detached", sessionRecovery: saved } },
   ]);
+});
+
+it("does not read or overwrite the primary journal from a detached window", async () => {
+  nativeWindow.label = "window-2";
+  vi.mocked(invoke).mockClear();
+  try {
+    await saveWorkspaceSnapshot({ tabs: [], activeTabId: "detached" });
+    expect(invoke).not.toHaveBeenCalled();
+  } finally {
+    nativeWindow.label = "main";
+  }
 });
 
 it("does not write a replacement snapshot when the primary journal cannot be read", async () => {

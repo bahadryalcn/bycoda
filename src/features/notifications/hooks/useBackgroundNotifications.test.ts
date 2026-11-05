@@ -20,11 +20,7 @@ vi.mock("../model/notifications", () => ({
   loadNotificationsEnabled: () => true,
   notifyBackground: mocks.notify,
 }));
-import {
-  isLeadWindow,
-  isWorkspaceWindowLabel,
-  useBackgroundNotifications,
-} from "./useBackgroundNotifications";
+import { isLeadWindow, useBackgroundNotifications } from "./useBackgroundNotifications";
 let root: Root | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -37,14 +33,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("uses a single main-window fallback and never elects an unidentified window", async () => {
+it("holds every watcher when enumeration is unknown and never elects an unidentified window", async () => {
   mocks.windows.mockRejectedValue(new Error("Enumeration unavailable"));
   mocks.current
     .mockReturnValueOnce({ label: "main" })
-    .mockReturnValueOnce({ label: "window-2" })
+    .mockReturnValueOnce({ label: "workspace-secondary" })
     .mockReturnValueOnce({ label: "quick-composer" });
   expect(await Promise.all([isLeadWindow(), isLeadWindow(), isLeadWindow()])).toEqual([
-    true,
+    false,
     false,
     false,
   ]);
@@ -54,77 +50,47 @@ it("uses a single main-window fallback and never elects an unidentified window",
   expect(await isLeadWindow()).toBe(false);
 });
 
-it("preserves normal window election and excludes quick composers", async () => {
+it("elects workspace windows and excludes every native auxiliary window kind", async () => {
   mocks.windows.mockResolvedValue([
-    { label: "window-2" },
+    { label: "workspace-secondary" },
     { label: "quick-composer" },
     { label: "quick-composer-git" },
-    { label: "main" },
-  ]);
-  mocks.current.mockReturnValueOnce({ label: "main" }).mockReturnValueOnce({ label: "window-2" });
-  expect(await Promise.all([isLeadWindow(), isLeadWindow()])).toEqual([true, false]);
-});
-
-it("elects a workspace window although the hidden indicator window sorts first", async () => {
-  // The desktop-control indicator is created at launch in every build, so an
-  // election over every label never picked a workspace window at all.
-  mocks.windows.mockResolvedValue([
     { label: "desktop-control-indicator" },
+    { label: "voice-overlay-main" },
     { label: "main" },
-    { label: "window-3" },
   ]);
   mocks.current
     .mockReturnValueOnce({ label: "main" })
-    .mockReturnValueOnce({ label: "window-3" })
-    .mockReturnValueOnce({ label: "desktop-control-indicator" });
-  expect(await Promise.all([isLeadWindow(), isLeadWindow(), isLeadWindow()])).toEqual([
+    .mockReturnValueOnce({ label: "workspace-secondary" })
+    .mockReturnValueOnce({ label: "quick-composer" })
+    .mockReturnValueOnce({ label: "quick-composer-git" })
+    .mockReturnValueOnce({ label: "desktop-control-indicator" })
+    .mockReturnValueOnce({ label: "voice-overlay-main" });
+  expect(await Promise.all(Array.from({ length: 6 }, () => isLeadWindow()))).toEqual([
     true,
     false,
     false,
+    false,
+    false,
+    false,
   ]);
 });
 
-it("ignores voice overlays, quick composers and other helper windows", async () => {
-  mocks.windows.mockResolvedValue([
-    { label: "desktop-control-indicator" },
-    { label: "quick-composer" },
-    { label: "quick-composer-git" },
-    { label: "voice-overlay-main" },
-    { label: "voice-overlay-window-4" },
-    { label: "tools-helper" },
-    { label: "window-4" },
-  ]);
-  mocks.current
-    .mockReturnValueOnce({ label: "window-4" })
-    .mockReturnValueOnce({ label: "voice-overlay-main" })
-    .mockReturnValueOnce({ label: "quick-composer" })
-    .mockReturnValueOnce({ label: "tools-helper" });
-  expect(
-    await Promise.all([isLeadWindow(), isLeadWindow(), isLeadWindow(), isLeadWindow()]),
-  ).toEqual([true, false, false, false]);
+it("matches exact auxiliary labels and never elects an auxiliary on an empty list", async () => {
+  mocks.windows.mockResolvedValue([]);
+  mocks.current.mockReturnValueOnce({ label: "voice-overlay-main" });
+  expect(await isLeadWindow()).toBe(false);
+  mocks.windows.mockResolvedValue([{ label: "quick-composer-custom" }, { label: "main" }]);
+  mocks.current.mockReturnValueOnce({ label: "main" });
+  expect(await isLeadWindow()).toBe(true);
 });
 
-it("classifies workspace window labels the way the native layer does", () => {
-  for (const label of ["main", "window-1", "window-27", "quick-session-6f1c"])
-    expect(isWorkspaceWindowLabel(label)).toBe(true);
-  for (const label of [
-    "desktop-control-indicator",
-    "quick-composer",
-    "quick-composer-git",
-    "voice-overlay-main",
-    "window-",
-    "window-x",
-    "",
-  ])
-    expect(isWorkspaceWindowLabel(label)).toBe(false);
-});
-
-it("announces a background transition once across two watcher instances while enumeration keeps failing", async () => {
+it("holds announcements during failed enumeration, then elects one watcher after recovery", async () => {
   vi.useFakeTimers();
   mocks.windows.mockRejectedValue(new Error("Enumeration unavailable"));
   let checks = 0;
   mocks.current.mockImplementation(() => ({
-    label: checks++ % 2 === 0 ? "main" : "window-2",
+    label: checks++ % 2 === 0 ? "main" : "workspace-secondary",
   }));
   const task = {
     id: "task",
@@ -143,6 +109,13 @@ it("announces a background transition once across two watcher instances while en
     root!.render(createElement(Fragment, null, createElement(Watcher), createElement(Watcher))),
   );
   expect(mocks.notify).not.toHaveBeenCalled();
+  mocks.tasks.mockResolvedValue([{ ...task, status: "review" }]);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(mocks.tasks).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalled();
+  mocks.windows.mockResolvedValue([{ label: "main" }, { label: "workspace-secondary" }]);
+  mocks.tasks.mockResolvedValue([task]);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
   mocks.tasks.mockResolvedValue([{ ...task, status: "review" }]);
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(mocks.notify).toHaveBeenCalledOnce();

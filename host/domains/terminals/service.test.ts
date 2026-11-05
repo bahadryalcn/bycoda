@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { HostTerminals } from "../../terminals";
+import { HostTerminals } from "../../terminals/terminals";
 import { createTerminalService } from "./service";
 import { getHostRpcMethod } from "../../../src/shared/model/host-contracts";
 
@@ -10,9 +10,15 @@ afterEach(async () => {
 function fixture(locate = async (root: string) => root) {
   let output!: (data: string) => void;
   const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
-  const launch = vi.fn((_profile, _cwd, write) => {
+  const launch = vi.fn((_profile, _cwd, write, onExit) => {
     output = write;
-    return child;
+    return {
+      write: child.write,
+      stop: async () => {
+        await child.stop();
+        onExit(0);
+      },
+    };
   });
   const terminals = new HostTerminals(
     launch,

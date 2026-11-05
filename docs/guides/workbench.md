@@ -1,5 +1,46 @@
 # Workbench navigation
 
+Collections scroll continuously instead of using numbered pages. Search, filters
+and selection remain in place while more records load. Large loaded collections
+keep only a bounded window of rows mounted. Where a provider requires a cursor or
+offset request, use **Load more** at the end of the list. Loading, failed reads and
+partial coverage appear there without replacing previously loaded records.
+
+Ordinary panels, lists, detail panes and empty states share the canvas in both
+Pure and Tinted appearance. Spacing and fine borders separate content. Floating
+menus and dialogs, writing controls and code or log viewers keep their raised
+surfaces; selection, hover, drag and status indicators retain their own roles.
+
+Counters use compact, borderless accent labels. Counts above 99 show `99+` while
+retaining the exact accessible count. Pending questions and approvals use warning
+indicators. Running work uses an accent dot or activity icon beside its title;
+cards and rows do not add colored edge stripes for activity.
+
+Rename a conversation from its menu or with F2. The title edits inside the same
+row; project and activity stay visible. Enter saves, Escape cancels, and a failed
+save retains the draft for retry.
+
+Choose **Regenerate title**, immediately below Rename, to create a title from the
+saved conversation without sending a new turn. **Settings > Chat > Conversation
+titles** selects its model and account. Automatic chooses an enabled lightweight
+model from the conversation provider, preferring Haiku, Terra or Flash. If no
+lightweight model is available, choose one explicitly. Failed generation keeps the
+current title and offers Retry; a concurrent manual rename is preserved.
+
+While a project is open, Working summarizes its running conversations in one compact
+line and lists conversations from other projects. Its header still counts all running
+conversations. Conversations needing attention and finished conversations remain
+available as individual rows. Last Sessions keeps the complete Working list.
+
+Above the composer, expanded background work shows the reported model and provider
+icon above each subagent's title. Hover or focus the information icon to see status
+counts in a card; click or tap to keep it open. The separate arrow toggles the list.
+Steps, failed steps and elapsed time sit beside
+the opening chevron. Animated bars mark running work; a green check marks completed
+work, a red cross marks failure, and warning icons distinguish stopped and interrupted
+runs. Hover or focus a row for its full identity and status. Missing child-model
+metadata stays unspecified rather than borrowing the parent conversation's model.
+
 Readable labels stay quiet on hover. Tooltips explain icons, missing shortcuts
 and additional context, or reveal the full text when a label is clipped. Narrow
 panes that hide tab labels keep their icon explanations. Error reasons and
@@ -9,6 +50,16 @@ whether a tooltip is visible.
 Conversation deletion keeps its confirmation and shows progress while work is
 pending. Successful deletion clears the progress without an extra success banner.
 Failures, skipped conversations and incomplete cleanup remain visible for review.
+
+Queued messages keep their order when the running provider turn ends before a
+follow-up can enter it. The message returns to the queue and an active queue
+continues automatically when the conversation is free; no second Resume is needed.
+Stop and an explicitly paused queue still require Resume. Rejected sends and
+unconfirmed delivery remain held for review instead of being resent automatically.
+
+Images in older saved queues are moved to ordinary local attachment files before
+queue synchronization, keeping image bytes out of the limited browser storage.
+If saving fails, the message and original image stay queued for recovery.
 
 Question answers are retained locally while you switch conversations or hide a
 form. The local question store has a shared limit of 64 question drafts and 4 MiB,
@@ -37,12 +88,71 @@ including compact details and opening a cited conversation beside the current on
 
 Use the project rail to choose a project or workspace, the sessions list to
 choose a conversation, and the top tabs to switch open work. These keep their
-existing saved widths, layout and density settings. Detailed session rows show
-the conversation title before model and status information.
+existing saved widths, layout and density settings. Standard and detailed session
+rows show project identity above the conversation title. Within one project,
+rows keep neutral backgrounds while showing the saved project mark. Pin, archive
+and delete appear in the project header on hover or keyboard focus. Pin replaces
+the project mark beside its name; pinned rows keep the pin visible. Touch keeps
+them available. Status stays at the upper right; hover or keyboard focus hides
+its word while keeping its icon and Working elapsed time. Plain branch text and larger
+provider icons sit below the title without shifting when actions appear.
+Previous providers appear muted; the last provider used retains its color. Hover or focus the title for model, location and handoff
+details. Compact density keeps one-line rows.
+
+Interrupted conversations show a yellow warning with an Interrupted label or an
+accessible warning icon in compact rows. Opening a conversation does not clear
+the warning; continuing its turn does. Recording an interruption during quit or
+recovery preserves its last activity time, so that maintenance alone does not
+move it to the top of the recent list. Existing timestamps changed by older
+versions cannot be reconstructed reliably.
+
+Menu actions apply to the focused workspace. Tray session actions open their owning
+window; terminal output, pinch zoom and reminder navigation stay with their target
+window. Shared preferences and reminder lists still update across workspaces.
+
+Reload asks for confirmation when this window has running local conversations or
+unsaved file changes. It interrupts this window's local conversations; work on a
+remote Host and work in other windows continue. Cancelling keeps the window open.
+When quitting the app, file and terminal close dialogs remain open until answered.
+Time spent answering those dialogs does not consume the timeout for saving the
+workspace. A failed save keeps the app open and reports the failure.
+
+Opening a conversation already held by another window focuses that window.
+Local conversations and remote Host conversations keep one window owner, including
+idle tabs. If the owner cannot be verified, opening stops with an error so you can
+retry. Moving tabs keeps the source until the destination confirms receipt;
+running local turns wait until they finish before moving.
+
+The primary window restores the saved workspace. Additional windows start blank
+unless they receive an explicit tab transfer. Each window records its own running
+conversations for recovery without replacing another window's records. A local
+conversation enters recovery only after its original process has stopped; unknown
+process state stays protected.
+
+Click **Last sessions** in the project rail to open a combined workspace list. It
+shows conversations active during the last seven days, newest first, with each
+project's saved icon, color and background. This view stays open when a conversation
+is selected. A refresh keeps the previous complete list visible until the new
+history has loaded; an error leaves that list available while retrying.
+Explorer and Changes follow that conversation's real project and
+execution worktree. The **+** action in Last Sessions first asks which project should own the new
+conversation. Search or choose a project, including the current one; cancelling
+creates nothing. The new conversation uses that project’s defaults and selected
+checkout while Last Sessions stays open. Choosing a project from the rail returns
+to its own conversation list. The
+combined list does not make unrelated repositories share Git operations. The time
+filter can narrow this window to Today; Clear restores Last 7 days. Remote rows
+come from available history and show a coverage note rather than claiming a full
+remote archive. Local pinning remains available; project-scoped archive/delete
+operations stay in the project view.
 
 The sessions filter menu can show only conversations managed by your named
 assistant. It uses the Host's management record and combines with provider,
 time, archive and status filters. Clear filters restores the full list.
+
+The Workspace picker fits its label and arrows. Conversation search opens in the
+remaining header space. While search is open, selection and filter buttons yield
+their space to the query; they return when search closes, retaining their state.
 
 Settings → Keybindings includes **Stop computer use**, with the default global
 shortcut **Ctrl+Alt+Esc** (Control+Option+Esc on macOS). It stops computer control
@@ -59,6 +169,11 @@ name show their parent folder next to the name. Right-click retains the full con
 menu; keyboard users can use the context-menu key or Shift+F10 on supported rows
 and tabs. Tab close shortcuts and middle-click behavior remain available.
 
+A linked workspace lists the folders declared in its `.code-workspace` file; it
+does not discover subfolders automatically. The workspace name opens the containing
+folder. A declared containing folder (`.`) also stays visible as a child project,
+including after the workspace is moved into another group.
+
 A workspace group is identified by its Workspace icon and tooltip. Its linked
 file, Git and lock controls appear with row interaction; Git change counts and
 link warnings stay visible. Narrow rail layouts retain their compact presentation.
@@ -69,7 +184,8 @@ the menu button at the start of the title row opens the application menus, and
 Alt or F10 still opens them from the keyboard. The Changes tab always shows how
 many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
-a small detail card with the title, model, branch or worktree, path and status.
+a small detail card with the title, model, branch or worktree, path, status and
+the full date and time of its last activity.
 The card closes when you scroll its list, resize the window or switch away from
 the app. Focus the row again or hover it to reopen the details.
 
@@ -100,11 +216,28 @@ inside the app, including updates from other conversations. Returning to bycoda
 before a queued banner is sent cancels that banner; it is not replayed when you
 leave. Sound preferences and in-app attention indicators remain independent.
 
+Use **Sounds** in the bottom-right workspace controls to toggle application sounds,
+including notification cues. The icon shows when sounds are muted. This shares
+the saved **Settings > Notifications > Sounds** preference; desktop banners and
+request popups keep their own settings. If saving fails, the previous state stays
+active and the error offers **Retry**.
+
 The project menu groups remote machine reconnection and editing under Machine.
 Recovery lists retain their open and clear actions, including local pending and
 retry feedback. In compact navigation, open the recovery panel to use its full
 list controls. Unsaved-file indicators remain visible independently of tab-close
 controls.
+
+Remote workspace panels share one connection notice per machine. When automatic
+reconnection is enabled, short network interruptions retry quietly for eight
+seconds while loaded conversations, files and Git data remain available. A longer
+interruption shows the shared recovery controls instead of repeating the same
+warning in each pane. Content that has never loaded remains unverified, not empty.
+Authentication, identity and compatibility problems appear immediately; turning
+automatic reconnection off also makes the recovery control available immediately.
+Independent service, storage and operation errors retain their own feedback and
+retry controls. Notification timing does not change sending permissions or replay
+messages and commands.
 
 Before starting a local desktop turn, bycoda saves the conversation. If the save
 fails, the send reports that the conversation could not be saved before starting.

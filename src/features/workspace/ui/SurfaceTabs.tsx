@@ -461,7 +461,17 @@ export function SurfaceTabs({
         }
       : undefined,
   );
-  const { displayed, setTabNode, finishMotion } = useTabCloseMotion(files);
+  const activeFileIdRef = useRef(activeFileId);
+  activeFileIdRef.current = activeFileId;
+  const setSortableItemRef = sortable.setItemRef;
+  const setFileTabNode = useCallback(
+    (id: string, node: HTMLElement | null) => {
+      setSortableItemRef(id, node);
+      if (id === activeFileIdRef.current) activeTabRef.current = node as HTMLDivElement | null;
+    },
+    [setSortableItemRef],
+  );
+  const { displayed, tabRef, tabNode, finishMotion } = useTabCloseMotion(files, setFileTabNode);
   const menuFile = menu ? files.find((file) => file.id === menu.fileId) : undefined;
   const menuFileIndex = menuFile ? files.indexOf(menuFile) : -1;
 
@@ -525,12 +535,13 @@ export function SurfaceTabs({
   };
 
   useLayoutEffect(() => {
+    activeTabRef.current = tabNode(activeFileId) as HTMLDivElement | null;
     if (sortable.draggingId) return;
     activeTabRef.current?.scrollIntoView({
       inline: "nearest",
       block: "nearest",
     });
-  }, [activeFileId, sortable.draggingId]);
+  }, [activeFileId, sortable.draggingId, tabNode]);
 
   return (
     <div ref={rootRef} className="flex h-9 min-w-0 shrink-0 border-b border-stroke">
@@ -577,12 +588,7 @@ export function SurfaceTabs({
           const tab = (
             <ActionHost
               selected={active}
-              ref={(el) => {
-                if (closing) return;
-                setTabNode(file.id, el);
-                sortable.setItemRef(file.id, el);
-                if (el && file.id === activeFileId) activeTabRef.current = el;
-              }}
+              ref={closing ? undefined : tabRef(file.id)}
               className={
                 closing || opening
                   ? "tab-motion group relative flex h-full w-full min-w-0 overflow-hidden items-center"
@@ -687,7 +693,10 @@ export function SurfaceTabs({
                   onSelectFile(next);
                   focusFileTab(next);
                 }}
-                tooltip={appendProblems(dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip, errors)}
+                tooltip={appendProblems(
+                  dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip,
+                  errors,
+                )}
                 tooltipWhen={isPlanTab(file) && !dirty && !errors ? "overflow" : "always"}
                 onClick={() => {
                   if (sortable.consumeClick()) return;
@@ -710,9 +719,17 @@ export function SurfaceTabs({
                 >
                   {label}
                 </TabLabel>
-                {errors ? <CircleAlert aria-hidden className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" /> : null}
+                {errors ? (
+                  <CircleAlert
+                    aria-hidden
+                    className="icon-xs shrink-0 text-(--ui-tone-danger-fg)"
+                  />
+                ) : null}
                 {dirty ? (
-                  <span className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)" aria-label={t("Unsaved changes")} />
+                  <span
+                    className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)"
+                    aria-label={t("Unsaved changes")}
+                  />
                 ) : null}
               </Button>
               <InlineAction

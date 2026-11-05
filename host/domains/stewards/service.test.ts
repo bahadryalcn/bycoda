@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostTasks } from "../../tasks";
-import { HostStewards, type StewardWorkspaceServices } from "../../stewards";
+import { HostTasks } from "../../tasks/tasks";
+import { HostStewards, type StewardWorkspaceServices } from "../../stewards/stewards";
 import * as dto from "../../../src/shared/model/host-contracts/stewards";
 import { createHostStewardsService } from "./service";
 
@@ -26,10 +26,7 @@ async function fixture(workspaces?: StewardWorkspaceServices) {
   const turns: Array<{ sessionId: string; finish(): void }> = [];
   const provider = {
     send: vi.fn(
-      (input) =>
-        new Promise<void>((finish) =>
-          turns.push({ sessionId: input.sessionId, finish }),
-        ),
+      (input) => new Promise<void>((finish) => turns.push({ sessionId: input.sessionId, finish })),
     ),
     cancel: vi.fn(async (sessionId: string) => {
       turns.find((turn) => turn.sessionId === sessionId)?.finish();
@@ -50,13 +47,7 @@ async function fixture(workspaces?: StewardWorkspaceServices) {
   });
   const tasks = new HostTasks(store, engine);
   cleanups.push(() => tasks.close());
-  const stewards = new HostStewards(
-    store,
-    engine,
-    tasks,
-    undefined,
-    workspaces,
-  );
+  const stewards = new HostStewards(store, engine, tasks, undefined, workspaces);
   cleanups.push(() => stewards.close());
   await stewards.ready;
   const project = await store.addProject(root, "Fixture");
@@ -119,19 +110,14 @@ async function fixture(workspaces?: StewardWorkspaceServices) {
 
 it("shares owner defaults, full saved configuration/CAS, five results and pure list behavior", async () => {
   const f = await fixture();
-  const saved = dto.HostStewardSchema.parse(
-    await f.service.save({ steward: f.input }, f.context),
-  );
+  const saved = dto.HostStewardSchema.parse(await f.service.save({ steward: f.input }, f.context));
   const updated = await f.service.save(
     { steward: { ...saved, focus: "Changed", expectedConfiguration: saved } },
     f.context,
   );
   dto.HostStewardSchema.parse(updated);
   await expect(
-    f.service.save(
-      { steward: { ...saved, expectedConfiguration: saved } },
-      f.context,
-    ),
+    f.service.save({ steward: { ...saved, expectedConfiguration: saved } }, f.context),
   ).rejects.toThrow("Configuration changed");
   const running = {
     ...updated,
@@ -188,9 +174,9 @@ it("keeps strict WS closed while preserving complete tolerant V1 input and exact
   await f.service.delete({ stewardId: 42 }, f.context, { legacy: true });
   expect(remove).toHaveBeenLastCalledWith("42");
   const decline = vi.spyOn(f.stewards, "decline");
-  await expect(
-    f.service.decline({ taskId: false }, f.context, { legacy: true }),
-  ).rejects.toThrow("Task not found");
+  await expect(f.service.decline({ taskId: false }, f.context, { legacy: true })).rejects.toThrow(
+    "Task not found",
+  );
   expect(decline).toHaveBeenLastCalledWith("false");
 });
 
@@ -215,9 +201,7 @@ it("publishes only committed actual Steward removals and preserves proposal task
     id: saved.id,
     projectId: f.project.id,
   });
-  expect((await f.tasks.list()).map((task) => task.id)).toEqual([
-    "kept-proposal",
-  ]);
+  expect((await f.tasks.list()).map((task) => task.id)).toEqual(["kept-proposal"]);
 });
 
 it("does not remember a declined title when a task dependency blocks deletion", async () => {
@@ -225,14 +209,9 @@ it("does not remember a declined title when a task dependency blocks deletion", 
   await f.service.save({ steward: f.input }, f.context);
   await f.task("proposal");
   await f.task("dependent", { dependsOn: ["proposal"] });
-  await expect(
-    f.service.decline({ taskId: "proposal" }, f.context),
-  ).rejects.toThrow("depend");
+  await expect(f.service.decline({ taskId: "proposal" }, f.context)).rejects.toThrow("depend");
   expect((await f.stewards.list())[0].declined).toEqual([]);
-  expect((await f.tasks.list()).map((task) => task.id).sort()).toEqual([
-    "dependent",
-    "proposal",
-  ]);
+  expect((await f.tasks.list()).map((task) => task.id).sort()).toEqual(["dependent", "proposal"]);
 });
 
 it("rechecks a save after FIFO SQL admission rather than trusting its earlier grant", async () => {
@@ -337,9 +316,7 @@ it("keeps actual accepted send IDs and concurrent config without Stop after crea
     }
     return result;
   });
-  await expect(
-    f.service.runNow({ stewardId: saved.id }, f.context),
-  ).rejects.toThrow("revoked");
+  await expect(f.service.runNow({ stewardId: saved.id }, f.context)).rejects.toThrow("revoked");
   await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), {
     timeout: 5000,
   });
@@ -398,10 +375,7 @@ it("checks authority after policy wait before any managed workspace effect", asy
     },
   } as unknown as StewardWorkspaceServices;
   const f = await fixture(workspaces);
-  await f.service.save(
-    { steward: { ...f.input, isolate: undefined } },
-    f.context,
-  );
+  await f.service.save({ steward: { ...f.input, isolate: undefined } }, f.context);
   const pending = f.service.runNow({ stewardId: f.input.id }, f.context),
     denied = expect(pending).rejects.toThrow("revoked");
   await entered.promise;
@@ -429,10 +403,7 @@ it("does not disclose a captured list after its query waiter is cancelled", asyn
     await release.promise;
     return result;
   });
-  const pending = f.service.list(
-      {},
-      { ...f.context, signal: controller.signal },
-    ),
+  const pending = f.service.list({}, { ...f.context, signal: controller.signal }),
     cancelled = expect(pending).rejects.toThrow("cancelled");
   await entered.promise;
   controller.abort();
@@ -452,10 +423,7 @@ it("keeps a real accepted run after the response waiter disappears without rebin
     return result;
   });
   const current = dto.HostStewardSchema.parse(
-    await f.service.runNow(
-      { stewardId: f.input.id },
-      { ...f.context, signal: controller.signal },
-    ),
+    await f.service.runNow({ stewardId: f.input.id }, { ...f.context, signal: controller.signal }),
   );
   expect(controller.signal.aborted).toBe(true);
   expect(current.lastRunStatus).toBe("running");
@@ -502,9 +470,7 @@ it("retains only confirmed workspace/activity for system compensation after befo
   } as unknown as StewardWorkspaceServices;
   f = await fixture(workspaces);
   await f.service.save({ steward: { ...f.input, isolate: true } }, f.context);
-  await expect(
-    f.service.runNow({ stewardId: f.input.id }, f.context),
-  ).rejects.toThrow("revoked");
+  await expect(f.service.runNow({ stewardId: f.input.id }, f.context)).rejects.toThrow("revoked");
   expect((await f.stewards.list())[0]).toMatchObject({
     lastRunStatus: "failed",
     run: { workspaceId: "owned-workspace", activityId: "owned-activity" },
@@ -514,13 +480,10 @@ it("retains only confirmed workspace/activity for system compensation after befo
   expect(apply).not.toHaveBeenCalled();
   await f.store.db.outsideScope(() => f.stewards.tick());
   expect(stop).toHaveBeenCalledExactlyOnceWith("owned-activity");
-  expect(close).toHaveBeenCalledWith(
-    expect.objectContaining({ workspaceId: "owned-workspace" }),
-  );
-  expect(apply).toHaveBeenCalledWith(
-    expect.objectContaining({ workspaceId: "owned-workspace" }),
-    { kind: "retentionScheduler" },
-  );
+  expect(close).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "owned-workspace" }));
+  expect(apply).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "owned-workspace" }), {
+    kind: "retentionScheduler",
+  });
   expect((await f.stewards.list())[0].run).toBeUndefined();
 });
 
@@ -560,7 +523,5 @@ it("does not release an activity or workspace when cleanup resolves an unrelated
   expect(stop).not.toHaveBeenCalled();
   expect(close).not.toHaveBeenCalled();
   expect(apply).not.toHaveBeenCalled();
-  expect((await f.stewards.list())[0].run?.activityId).toBe(
-    "retained-activity",
-  );
+  expect((await f.stewards.list())[0].run?.activityId).toBe("retained-activity");
 });

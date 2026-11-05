@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import type { BigIntStats } from "node:fs";
 import { access, readFile, realpath, readlink, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
@@ -202,11 +203,16 @@ async function isPiLaunchCandidate(candidate: string): Promise<boolean> {
 }
 
 const RESOLVE_TTL_MS = 45_000;
-const resolved = new Map<string, { at: number; path: string; size: number; mtimeMs: number }>();
+const MAX_RESOLVED = 32;
+const resolved = new Map<string, { at: number; path: string; signature: string }>();
 const resolving = new Map<string, Promise<string>>();
+let resolutionGeneration = 0;
+const launcherSignature = (info: BigIntStats) =>
+  [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs, info.mode].join(":");
 
 /** Forget remembered provider launchers, e.g. after an install changes PATH. */
 export function clearProviderResolution(): void {
+  resolutionGeneration++;
   resolved.clear();
   resolving.clear();
 }
@@ -222,14 +228,15 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
     process.platform,
     process.env.PATH ?? "",
     process.env.APPDATA ?? "",
+    process.env.LOCALAPPDATA ?? "",
+    process.cwd(),
     homedir(),
   ].join("\0");
   const known = resolved.get(key);
-  if (known && Date.now() - known.at < RESOLVE_TTL_MS) {
+  if (known && performance.now() - known.at < RESOLVE_TTL_MS) {
     try {
-      const info = await stat(known.path);
-      if (info.isFile() && info.size === known.size && info.mtimeMs === known.mtimeMs)
-        return known.path;
+      const info = await stat(known.path, { bigint: true });
+      if (info.isFile() && launcherSignature(info) === known.signature) return known.path;
     } catch {
       /* moved or removed: scan again */
     }
@@ -237,21 +244,18 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
   }
   const running = resolving.get(key);
   if (running) return running;
-  const scan = scanProvider(provider).then(async ({ path, name }) => {
-    // Launchers whose identity depends on file or package content are not
-    // remembered: a changed manifest must be noticed at once.
-    if (!needsIdentityCheck(provider, name))
-      try {
-        const info = await stat(path);
-        resolved.set(key, {
-          at: Date.now(),
-          path,
-          size: info.size,
-          mtimeMs: info.mtimeMs,
-        });
-      } catch {
-        /* not remembered */
-      }
+  const generation = resolutionGeneration;
+  const scan = scanProvider(provider).then(({ path, name, signature }) => {
+    // FX identity uses this launcher alone. Cursor/Pi may depend on a different
+    // package/target, so they still inspect that identity on every resolution.
+    if (
+      generation === resolutionGeneration &&
+      (provider === "fx" || !needsIdentityCheck(provider, name))
+    ) {
+      resolved.delete(key);
+      while (resolved.size >= MAX_RESOLVED) resolved.delete(resolved.keys().next().value!);
+      resolved.set(key, { at: performance.now(), path, signature });
+    }
     return path;
   });
   resolving.set(key, scan);
@@ -262,7 +266,9 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
   return scan;
 }
 
-async function scanProvider(provider: RemoteProvider): Promise<{ path: string; name: string }> {
+async function scanProvider(
+  provider: RemoteProvider,
+): Promise<{ path: string; name: string; signature: string }> {
   const windows = process.platform === "win32";
   const directories = providerDirectories(provider).filter(Boolean);
   const names = binaryNames[provider];
@@ -276,10 +282,13 @@ async function scanProvider(provider: RemoteProvider): Promise<{ path: string; n
       const candidate = join(directory.replace(/^"|"$/g, ""), name + extension);
       try {
         await access(candidate, windows ? constants.F_OK : constants.X_OK);
-        if (!(await stat(candidate)).isFile()) continue;
+        const before = await stat(candidate, { bigint: true });
+        if (!before.isFile()) continue;
         await providerLaunch(candidate, []);
         if (!(await matchesProvider(candidate, provider, name))) continue;
-        return { path: candidate, name };
+        const after = await stat(candidate, { bigint: true });
+        if (!after.isFile() || launcherSignature(before) !== launcherSignature(after)) continue;
+        return { path: candidate, name, signature: launcherSignature(after) };
       } catch {
         /* try the next installed launcher */
       }
@@ -305,7 +314,47 @@ async function containedFile(root: string, path: string): Promise<string | undef
 
 const SHIM_PATH = String.raw`"(?:%dp0%\\|%~dp0)([^"%]+)"`;
 /** `"%_prog%" | "<bundled node.exe>"`, then the target and `%*`, as written by npm's cmd-shim. */
-const SHIM_LAUNCH = new RegExp(String.raw`(?:("%_prog%")|${SHIM_PATH})?\s*${SHIM_PATH}\s+%\*`, "gi");
+const SHIM_LAUNCH = new RegExp(
+  String.raw`(?:("%_prog%")|${SHIM_PATH})?\s*${SHIM_PATH}\s+%\*`,
+  "gi",
+);
+
+/** pnpm may link a package outside the shim directory. Accept only the package's
+ * declared bin for this exact command, and keep its target inside that package. */
+async function declaredShimEntry(
+  root: string,
+  target: string,
+  command: string,
+): Promise<string | undefined> {
+  const inside = relative(root, target);
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) return;
+  const parts = inside.split(/[\\/]+/);
+  const marker = parts.lastIndexOf("node_modules");
+  if (marker < 0 || !parts[marker + 1]) return;
+  const count = parts[marker + 1].startsWith("@") ? 2 : 1;
+  if (parts.length <= marker + count + 1) return;
+  const packageRoot = join(root, ...parts.slice(0, marker + count + 1));
+  try {
+    const metadata = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+      name?: unknown;
+      bin?: unknown;
+    };
+    if (typeof metadata.name !== "string") return;
+    const commandName = basename(command, extname(command)).toLowerCase();
+    const bin =
+      typeof metadata.bin === "string"
+        ? metadata.name.split("/").at(-1)?.toLowerCase() === commandName
+          ? metadata.bin
+          : undefined
+        : metadata.bin && typeof metadata.bin === "object"
+          ? (metadata.bin as Record<string, unknown>)[commandName]
+          : undefined;
+    if (typeof bin !== "string" || resolve(packageRoot, bin) !== resolve(target)) return;
+    return await containedFile(packageRoot, target);
+  } catch {
+    return;
+  }
+}
 
 /** Read the target of an npm/installer `.cmd` shim instead of running it through cmd.exe.
  * Only targets inside the shim's directory are accepted; nested shims are not followed. */
@@ -318,7 +367,9 @@ async function npmShimLaunch(
   if (!match) return;
   const root = dirname(command);
   const local = (path: string) => resolve(root, path.replace(/\\/g, "/"));
-  const entry = await containedFile(root, local(match[3]));
+  const target = local(match[3]);
+  const entry =
+    (await containedFile(root, target)) ?? (await declaredShimEntry(root, target, command));
   if (!entry || /\.(cmd|bat)$/i.test(entry)) return;
   if (match[2]) {
     // Installer shims that ship their own node.exe next to the script.

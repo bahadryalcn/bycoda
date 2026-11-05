@@ -1,4 +1,6 @@
 import { useSocialPending } from "./useSocialPending";
+import { SocialMediaEditorContext, useSocialMediaEditor } from "./useSocialMediaEditor";
+import { useSocialMediaEditRequest } from "./useSocialMediaEditRequest";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -17,19 +19,28 @@ import { FacebookReelFields, validFacebookReel } from "./FacebookReelFields";
 import { useQueryClient } from "@tanstack/react-query";
 import { type CampaignVariant, type SocialCampaign, type SocialPolicy } from "../model/social";
 import { socialLimit } from "../model/socialPolicy";
+import { socialCampaignCapabilities } from "../model/socialCampaignCapabilities";
+import { localDateTimeInput } from "../model/socialProgramForm";
 import { variantCharacterCount, variantCharacterLimit } from "./CampaignBrowser";
 import { Badge } from "../../../shared/ui/Badge";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { SocialMultiSelect } from "./SocialMultiSelect";
 import { socialQueryScope } from "../model/socialQuery";
-import { Composer, closeComposer, Projects, Notice, field, names, youtubeDefaults, type Props } from "./socialShared";
+import {
+  Composer,
+  closeComposer,
+  Projects,
+  Notice,
+  field,
+  names,
+  youtubeDefaults,
+  type Props,
+} from "./socialShared";
 
-function dateInput(value: number) {
-  if (!Number.isFinite(value)) return "";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  return new Date(value - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
+const dateInput = (value: number) =>
+  Number.isFinite(value) && Number.isFinite(new Date(value).getTime())
+    ? localDateTimeInput(value)
+    : "";
 /** Draft writing and saving; edits arrive as a versioned request from the campaign detail. */
 export function CampaignComposer({
   client,
@@ -51,6 +62,8 @@ export function CampaignComposer({
   onEditingStop?: () => void;
   onSaved: (campaign: SocialCampaign) => void;
 }) {
+  const mediaEditor = useSocialMediaEditor(client);
+  const [mediaClaimError, setMediaClaimError] = useState(false);
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -63,22 +76,25 @@ export function CampaignComposer({
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string>();
   const [editingRevision, setEditingRevision] = useState<number>();
-  // An edit request from the campaign detail is applied once per version while rendering.
-  const [appliedEdit, setAppliedEdit] = useState(0);
-  if (editRequest && editRequest.version !== appliedEdit) {
-    setAppliedEdit(editRequest.version);
-    setEditingId(editRequest.campaign.id);
-    setEditingRevision(editRequest.campaign.revision);
-    setName(editRequest.campaign.name);
-    setSelectedProjects(editRequest.campaign.projectIds);
-    setVariants(
-      editRequest.campaign.variants.map((variant) => ({
-        ...variant,
-        media: [...variant.media],
-        factIds: [...variant.factIds],
-      })),
-    );
-  }
+  useSocialMediaEditRequest(
+    editRequest,
+    mediaEditor,
+    ({ campaign }) => {
+      setMediaClaimError(false);
+      setEditingId(campaign.id);
+      setEditingRevision(campaign.revision);
+      setName(campaign.name);
+      setSelectedProjects(campaign.projectIds);
+      setVariants(
+        campaign.variants.map((variant) => ({
+          ...variant,
+          media: [...variant.media],
+          factIds: [...variant.factIds],
+        })),
+      );
+    },
+    () => setMediaClaimError(true),
+  );
   const publicFacts = snapshot.profiles
     .filter((profile) => selectedProjects.includes(profile.projectId))
     .flatMap((profile) => profile.facts);
@@ -99,7 +115,10 @@ export function CampaignComposer({
     const account = snapshot.accounts.find((item) => item.id === accountIntent.accountId);
     if (account) {
       setSeenAccountIntent(accountIntent.token);
-      if (selectedProjects.length && selectedProjects.every((id) => account.grants[id]?.includes("draft")))
+      if (
+        selectedProjects.length &&
+        selectedProjects.every((id) => account.grants[id]?.includes("draft"))
+      )
         setVariants((current) =>
           current.some((item) => item.accountId === account.id)
             ? current
@@ -117,54 +136,13 @@ export function CampaignComposer({
         );
     }
   }
-  const accountFor = (variant: CampaignVariant) =>
-    snapshot.accounts.find((account) => account.id === variant.accountId);
-  const apiLinkedInUpload = (variant: CampaignVariant) => {
-    const account = accountFor(variant);
-    return (
-      account?.platform === "linkedin" &&
-      account.accountType === "organization" &&
-      account.connection !== "browser" &&
-      snapshot.capabilities[account.id]?.some(
-        (item) => item.operation === "media" && item.status === "available",
-      )
-    );
-  };
-  const apiSnapchatUpload = (variant: CampaignVariant) => {
-    const account = accountFor(variant);
-    return (
-      account?.platform === "snapchat" &&
-      account.connection !== "browser" &&
-      account.accountType === "public_profile" &&
-      account.connected &&
-      snapshot.capabilities[account.id]?.some(
-        (item) => item.operation === "media" && item.status === "available",
-      )
-    );
-  };
-  const apiTelegramChannelUpload = (variant: CampaignVariant) => {
-    const account = accountFor(variant);
-    return (
-      account?.platform === "telegram" &&
-      account.accountType === "channel" &&
-      account.connection === "token" &&
-      account.connected &&
-      snapshot.capabilities[account.id]?.some(
-        (item) => item.operation === "media" && item.status === "available",
-      )
-    );
-  };
-  const browserUpload = (variant: CampaignVariant) => {
-    const account = accountFor(variant);
-    const capabilities = snapshot.capabilities[variant.accountId] ?? [];
-    return (
-      account?.connection === "browser" &&
-      account.connected &&
-      !["youtube", "tiktok"].includes(account.platform) &&
-      capabilities.some((item) => item.operation === "media" && item.status === "available") &&
-      capabilities.some((item) => item.operation === "publish" && item.status === "available")
-    );
-  };
+  const {
+    accountFor,
+    apiLinkedInUpload,
+    apiSnapchatUpload,
+    apiTelegramChannelUpload,
+    browserUpload,
+  } = socialCampaignCapabilities(snapshot);
   const variantLimit = (variant: CampaignVariant) => variantCharacterLimit(snapshot, variant);
   const variantCount = (variant: CampaignVariant) => variantCharacterCount(snapshot, variant);
   const invalidVariants = variants.some((variant) => {
@@ -196,179 +174,216 @@ export function CampaignComposer({
       current.map((item) => (item.accountId === id ? { ...item, ...change } : item)),
     );
   return (
-        <Composer
-          title={editingId ? t("Edit campaign draft") : t("Prepare content")}
-          onOpen={() => {
-            void queryClient.invalidateQueries({
-              queryKey: [...socialQueryScope(client), "tiktok-creator"],
-            });
+    <SocialMediaEditorContext.Provider value={mediaEditor}>
+      <Composer
+        title={editingId ? t("Edit campaign draft") : t("Prepare content")}
+        onOpen={() => {
+          void queryClient.invalidateQueries({
+            queryKey: [...socialQueryScope(client), "tiktok-creator"],
+          });
+        }}
+        editing={editRequest?.version ?? 0}
+        openRequest={openRequest}
+        description={t(
+          "Save the content, check it and approve it for publishing. Saving does not start sending.",
+        )}
+      >
+        {mediaClaimError ? (
+          <Notice kind="error">{t("Unable to retain media for this draft.")}</Notice>
+        ) : null}
+        <form
+          className="social-form"
+          onInvalidCapture={(event) => {
+            const input = event.target as HTMLElement;
+            const owner = input.closest<HTMLElement>("[data-content-account]");
+            if (owner?.dataset.contentAccount) {
+              event.preventDefault();
+              setOpenVariant(owner.dataset.contentAccount);
+              requestAnimationFrame(() => input.focus());
+            }
           }}
-          editing={editRequest?.version ?? 0}
-          openRequest={openRequest}
-          description={t(
-            "Save the content, check it and approve it for publishing. Saving does not start sending.",
-          )}
-        >
-          <form
-            className="social-form"
-            onInvalidCapture={(event) => {
-              const input = event.target as HTMLElement;
-              const owner = input.closest<HTMLElement>("[data-content-account]");
-              if (owner?.dataset.contentAccount) {
-                event.preventDefault();
-                setOpenVariant(owner.dataset.contentAccount);
-                requestAnimationFrame(() => input.focus());
-              }
-            }}
-            onSubmit={(event) => {
-              const form = event.currentTarget;
-              field(event);
-              let saved: SocialCampaign | undefined;
-              void (async () => {
-                if (
-                  !(await pendingUi.run("campaigns.save-campaign-draft", () =>
-                    run(async () => {
-                      if (
-                        !name.trim() ||
-                        !validProjects ||
-                        !variants.length ||
-                        invalidVariants ||
-                        Object.keys(videoProgress).length > 0
-                      )
-                        throw new Error(
-                          t("Check the project, account access, content limits and publish times."),
-                        );
-                      await Promise.all(
-                        variants.map(async (variant) => {
-                          const { effective } = await client.request<{
-                            effective: SocialPolicy;
-                          }>("policy.get", { accountId: variant.accountId });
-                          const policyLimit = socialLimit(effective, "content");
-                          const account = accountFor(variant);
-                          const limit =
-                            account?.platform === "facebook" &&
-                            account.connection !== "browser" &&
-                            variant.facebook?.target === "reel"
-                              ? Math.min(policyLimit ?? Infinity, 2200)
-                              : account?.platform === "telegram" &&
-                                  account.accountType === "channel" &&
-                                  account.connection === "token"
-                                ? Math.min(
-                                    policyLimit ?? Infinity,
-                                    variant.media.length ? 1024 : 4096,
-                                  )
-                                : policyLimit;
-                          if (limit !== undefined && variantCount(variant) > limit)
-                            throw new Error(
-                              t("Content for this account can be at most {p0} characters.", {
-                                p0: limit,
-                              }),
-                            );
-                        }),
+          onSubmit={(event) => {
+            const form = event.currentTarget;
+            field(event);
+            let saved: SocialCampaign | undefined;
+            void (async () => {
+              if (
+                !(await pendingUi.run("campaigns.save-campaign-draft", () =>
+                  run(async () => {
+                    if (
+                      !name.trim() ||
+                      !validProjects ||
+                      !variants.length ||
+                      invalidVariants ||
+                      Object.keys(videoProgress).length > 0
+                    )
+                      throw new Error(
+                        t("Check the project, account access, content limits and publish times."),
                       );
-                      saved = await client.request<SocialCampaign>("campaigns.create", {
-                        ...(editingId ? { id: editingId, expectedRevision: editingRevision } : {}),
-                        name,
-                        projectIds: selectedProjects,
-                        variants,
-                      });
-                    }, t("Campaign draft saved. Review the preview and approve it for publishing.")),
-                  )) ||
-                  !saved
-                )
-                  return;
-                onSaved(saved);
-                setName("");
-                setVariants([]);
-                setEditingId(undefined);
-                onEditingStop?.();
-                closeComposer(form);
-              })();
-            }}
-          >
-            <div className="social-content-context" data-mode={editingId ? "edit" : "new"}>
-              <strong>
-                {editingId
-                  ? t("Editing {p0}", {
-                      p0: snapshot.campaigns.find((item) => item.id === editingId)?.name ?? name,
-                    })
-                  : t("New campaign")}
-              </strong>
-              <Badge appearance="subtle">
-                {editingId ? t("Revision {p0}", { p0: editingRevision ?? 1 }) : t("Not saved yet")}
-              </Badge>
-            </div>
-            {intendedAccount ? <Notice kind="info">
-              {t("Preparing for account: {p0}", { p0: snapshot.accounts.find((item) => item.id === intendedAccount)?.name ?? t("Removed account") })}
-              {!variants.some((item) => item.accountId === intendedAccount) ? <p>{t("Select a project with draft access, then add this account to the targets.")}</p> : null}
-            </Notice> : null}
-            <TextField
-              disabled={socialLocked}
-              label={t("Campaign name")}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-              maxLength={200}
-            />
-            <Projects
-              projects={projects}
-              selected={selectedProjects}
-              onChange={setSelectedProjects}
-            />
-            {!validProjects ? (
-              <Notice kind="info">{t("Select at least one project.")}</Notice>
-            ) : null}
-            <SocialMultiSelect
-              label={t("Social accounts")}
-              placeholder={t("Select an account")}
-              searchPlaceholder={t("Search by account or platform")}
-              options={snapshot.accounts.map((account) => ({
-                value: account.id,
-                label: account.name,
-                description: `${names[account.platform]}${hasDraftAccess(account.id) ? "" : ` · ${t("Draft access to the selected projects is required")}`}`,
-                disabled: !hasDraftAccess(account.id),
-              }))}
-              selected={variants.map((variant) => variant.accountId)}
-              onChange={(ids) =>
-                setVariants((current) =>
-                  ids.map(
-                    (id) =>
-                      current.find((variant) => variant.accountId === id) ?? {
-                        accountId: id,
-                        text: "",
-                        media: [],
-                        factIds: [],
-                        scheduledAt: Date.now(),
-                        ...(snapshot.accounts.find((account) => account.id === id)?.platform ===
-                        "youtube"
-                          ? { youtube: { ...youtubeDefaults } }
-                          : {}),
-                      },
-                  ),
-                )
-              }
-            />
-            {!snapshot.accounts.length ? (
-              <Notice kind="info">
-                {t("Connect an account in the Accounts section to prepare content.")}
-              </Notice>
-            ) : null}
-            {variants.map((variant) => (
-              <fieldset key={variant.accountId} className="social-variant" data-content-account={variant.accountId}>
-                <legend>
-                  <Button variant="link" aria-expanded={variant.accountId === (variants.some((item) => item.accountId === openVariant) ? openVariant : variants[0]?.accountId)} onClick={() => setOpenVariant(variant.accountId)}>
+                    await Promise.all(
+                      variants.map(async (variant) => {
+                        const { effective } = await client.request<{
+                          effective: SocialPolicy;
+                        }>("policy.get", { accountId: variant.accountId });
+                        const policyLimit = socialLimit(effective, "content");
+                        const account = accountFor(variant);
+                        const limit =
+                          account?.platform === "facebook" &&
+                          account.connection !== "browser" &&
+                          variant.facebook?.target === "reel"
+                            ? Math.min(policyLimit ?? Infinity, 2200)
+                            : account?.platform === "telegram" &&
+                                account.accountType === "channel" &&
+                                account.connection === "token"
+                              ? Math.min(
+                                  policyLimit ?? Infinity,
+                                  variant.media.length ? 1024 : 4096,
+                                )
+                              : policyLimit;
+                        if (limit !== undefined && variantCount(variant) > limit)
+                          throw new Error(
+                            t("Content for this account can be at most {p0} characters.", {
+                              p0: limit,
+                            }),
+                          );
+                      }),
+                    );
+                    saved = await client.request<SocialCampaign>("campaigns.create", {
+                      ...(editingId ? { id: editingId, expectedRevision: editingRevision } : {}),
+                      name,
+                      projectIds: selectedProjects,
+                      variants,
+                    });
+                  }, t("Campaign draft saved. Review the preview and approve it for publishing.")),
+                )) ||
+                !saved
+              )
+                return;
+              onSaved(saved);
+              void mediaEditor.discard().catch(() => setMediaClaimError(true));
+              setName("");
+              setVariants([]);
+              setEditingId(undefined);
+              onEditingStop?.();
+              closeComposer(form);
+            })();
+          }}
+        >
+          <div className="social-content-context" data-mode={editingId ? "edit" : "new"}>
+            <strong>
+              {editingId
+                ? t("Editing {p0}", {
+                    p0: snapshot.campaigns.find((item) => item.id === editingId)?.name ?? name,
+                  })
+                : t("New campaign")}
+            </strong>
+            <Badge appearance="subtle">
+              {editingId ? t("Revision {p0}", { p0: editingRevision ?? 1 }) : t("Not saved yet")}
+            </Badge>
+          </div>
+          {intendedAccount ? (
+            <Notice kind="info">
+              {t("Preparing for account: {p0}", {
+                p0:
+                  snapshot.accounts.find((item) => item.id === intendedAccount)?.name ??
+                  t("Removed account"),
+              })}
+              {!variants.some((item) => item.accountId === intendedAccount) ? (
+                <p>
+                  {t("Select a project with draft access, then add this account to the targets.")}
+                </p>
+              ) : null}
+            </Notice>
+          ) : null}
+          <TextField
+            disabled={socialLocked}
+            label={t("Campaign name")}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+            maxLength={200}
+          />
+          <Projects
+            projects={projects}
+            selected={selectedProjects}
+            onChange={setSelectedProjects}
+          />
+          {!validProjects ? <Notice kind="info">{t("Select at least one project.")}</Notice> : null}
+          <SocialMultiSelect
+            label={t("Social accounts")}
+            placeholder={t("Select an account")}
+            searchPlaceholder={t("Search by account or platform")}
+            options={snapshot.accounts.map((account) => ({
+              value: account.id,
+              label: account.name,
+              description: `${names[account.platform]}${hasDraftAccess(account.id) ? "" : ` · ${t("Draft access to the selected projects is required")}`}`,
+              disabled: !hasDraftAccess(account.id),
+            }))}
+            selected={variants.map((variant) => variant.accountId)}
+            onChange={(ids) =>
+              setVariants((current) =>
+                ids.map(
+                  (id) =>
+                    current.find((variant) => variant.accountId === id) ?? {
+                      accountId: id,
+                      text: "",
+                      media: [],
+                      factIds: [],
+                      scheduledAt: Date.now(),
+                      ...(snapshot.accounts.find((account) => account.id === id)?.platform ===
+                      "youtube"
+                        ? { youtube: { ...youtubeDefaults } }
+                        : {}),
+                    },
+                ),
+              )
+            }
+          />
+          {!snapshot.accounts.length ? (
+            <Notice kind="info">
+              {t("Connect an account in the Accounts section to prepare content.")}
+            </Notice>
+          ) : null}
+          {variants.map((variant) => (
+            <fieldset
+              key={variant.accountId}
+              className="social-variant"
+              data-content-account={variant.accountId}
+            >
+              <legend>
+                <Button
+                  variant="link"
+                  aria-expanded={
+                    variant.accountId ===
+                    (variants.some((item) => item.accountId === openVariant)
+                      ? openVariant
+                      : variants[0]?.accountId)
+                  }
+                  onClick={() => setOpenVariant(variant.accountId)}
+                >
                   {snapshot.accounts.find((account) => account.id === variant.accountId)?.name}
-                  </Button>
-                  <span
-                    className="social-content-count"
-                    data-over={variantLimit(variant) !== undefined && variantCount(variant) > variantLimit(variant)!}
-                  >
-                    {variantLimit(variant) !== undefined
-                      ? `${variantCount(variant)} / ${variantLimit(variant)}`
-                      : variantCount(variant)}
-                  </span>
-                </legend>
-                <div hidden={variant.accountId !== (variants.some((item) => item.accountId === openVariant) ? openVariant : variants[0]?.accountId)} className="flex min-w-0 flex-col gap-3">
+                </Button>
+                <span
+                  className="social-content-count"
+                  data-over={
+                    variantLimit(variant) !== undefined &&
+                    variantCount(variant) > variantLimit(variant)!
+                  }
+                >
+                  {variantLimit(variant) !== undefined
+                    ? `${variantCount(variant)} / ${variantLimit(variant)}`
+                    : variantCount(variant)}
+                </span>
+              </legend>
+              <div
+                hidden={
+                  variant.accountId !==
+                  (variants.some((item) => item.accountId === openVariant)
+                    ? openVariant
+                    : variants[0]?.accountId)
+                }
+                className="flex min-w-0 flex-col gap-3"
+              >
                 {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
                 "youtube" ? (
                   <>
@@ -575,19 +590,21 @@ export function CampaignComposer({
                     }
                   />
                 ) : null}
-                  <DateTimeField
-                    disabled={socialLocked}
-                    label={t("One-time schedule time · this computer's time zone")}
-                    required
-                    clearable
-                    value={dateInput(variant.scheduledAt)}
-                    onChange={(next) =>
-                      update(variant.accountId, {
-                        scheduledAt: next ? new Date(next).getTime() : Number.NaN,
-                      })
-                    }
-                  />
-                  <p className="text-ui-caption text-(--ui-text-secondary)">{t("Time zone")}: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                <DateTimeField
+                  disabled={socialLocked}
+                  label={t("One-time schedule time · this computer's time zone")}
+                  required
+                  clearable
+                  value={dateInput(variant.scheduledAt)}
+                  onChange={(next) =>
+                    update(variant.accountId, {
+                      scheduledAt: next ? new Date(next).getTime() : Number.NaN,
+                    })
+                  }
+                />
+                <p className="text-ui-caption text-(--ui-text-secondary)">
+                  {t("Time zone")}: {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                </p>
                 <details className="social-settings">
                   <summary>{t("Media and link")}</summary>
                   <TextField
@@ -840,59 +857,61 @@ export function CampaignComposer({
                     {t("Remove this account from the campaign")}
                   </Button>
                 </div>
-                </div>
-              </fieldset>
-            ))}
-            <p className="social-muted">
-              {t(
-                "You can add this draft to a publishing plan in the Automations section for regular posting.",
-              )}
-            </p>
-            {!name.trim() || !variants.length || !validProjects ? (
-              <small className="social-muted">
-                {t("Complete the campaign name, project, account and content to save.")}
-              </small>
-            ) : invalidVariants ? (
-              <Notice kind="warning">
-                {t("Check the content, character limit, account access or schedule time.")}
-              </Notice>
-            ) : Object.keys(videoProgress).length ? (
-              <Notice kind="loading">{t("You can save once the video upload finishes.")}</Notice>
-            ) : null}
-            <div className="social-actions">
+              </div>
+            </fieldset>
+          ))}
+          <p className="social-muted">
+            {t(
+              "You can add this draft to a publishing plan in the Automations section for regular posting.",
+            )}
+          </p>
+          {!name.trim() || !variants.length || !validProjects ? (
+            <small className="social-muted">
+              {t("Complete the campaign name, project, account and content to save.")}
+            </small>
+          ) : invalidVariants ? (
+            <Notice kind="warning">
+              {t("Check the content, character limit, account access or schedule time.")}
+            </Notice>
+          ) : Object.keys(videoProgress).length ? (
+            <Notice kind="loading">{t("You can save once the video upload finishes.")}</Notice>
+          ) : null}
+          <div className="social-actions">
+            <Button
+              loading={pendingUi.is("campaigns.save-campaign-draft")}
+              type="submit"
+              variant="secondary"
+              disabled={
+                socialLocked ||
+                !name.trim() ||
+                !variants.length ||
+                !validProjects ||
+                invalidVariants ||
+                Object.keys(videoProgress).length > 0
+              }
+            >
+              {t("Save campaign draft")}
+            </Button>
+            {editingId ? (
               <Button
-                loading={pendingUi.is("campaigns.save-campaign-draft")}
-                type="submit"
+                disabled={socialLocked}
                 variant="secondary"
-                disabled={
-                  socialLocked ||
-                  !name.trim() ||
-                  !variants.length ||
-                  !validProjects ||
-                  invalidVariants ||
-                  Object.keys(videoProgress).length > 0
-                }
+                type="button"
+                onClick={(event) => {
+                  void mediaEditor.discard().catch(() => setMediaClaimError(true));
+                  setEditingId(undefined);
+                  setName("");
+                  setVariants([]);
+                  onEditingStop?.();
+                  closeComposer(event.currentTarget.closest("form")!);
+                }}
               >
-                {t("Save campaign draft")}
+                {t("Stop editing")}
               </Button>
-              {editingId ? (
-                <Button
-                  disabled={socialLocked}
-                  variant="secondary"
-                  type="button"
-                  onClick={(event) => {
-                    setEditingId(undefined);
-                    setName("");
-                    setVariants([]);
-                    onEditingStop?.();
-                    closeComposer(event.currentTarget.closest("form")!);
-                  }}
-                >
-                  {t("Stop editing")}
-                </Button>
-              ) : null}
-            </div>
-          </form>
-        </Composer>
+            ) : null}
+          </div>
+        </form>
+      </Composer>
+    </SocialMediaEditorContext.Provider>
   );
 }

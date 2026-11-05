@@ -17,6 +17,15 @@
 - Servers are saved personal SSH servers. They are different from dev servers.
   - Use `servers.list` / `servers.get`, then `servers.ssh.save`, `servers.ssh.remove`
     and `servers.metadata.update`.
+  - Commands use `servers.ssh.execute` with a stable `requestId`, saved server
+    `id` and exact `command`. The connected desktop requires native approval of
+    that target and command. Read `servers.ssh.status` for bounded combined output,
+    truncation and exit status; starting is not success. `servers.ssh.cancel`
+    stops local SSH only; remote outcome may remain unknown. Receipts are
+    process-local: inspect the same ID after an uncertain reply and never replay
+    automatically after restart. Existing manual SSH terminals remain private.
+    New trust, interactive authentication and proxy credential approval are not
+    available through this route; never bypass a rejected action with raw SSH.
   - Read before you edit. Passwords and keys are never exposed.
 - Machines are computers connected to bycoda (Settings > Connections > Add machine,
   over SSH). Each one runs a host that keeps its sessions alive.

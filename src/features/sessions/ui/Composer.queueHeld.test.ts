@@ -27,6 +27,11 @@ vi.mock("../../connections/model/useSharedLocalQueues", async (original) => ({
 
 import { Composer } from "./Composer";
 import { setQueueHoldReason } from "../model/deliveryReview";
+import {
+  beginDeliveryProgress,
+  clearDeliveryProgress,
+  updateDeliveryProgress,
+} from "../model/deliveryProgress";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -109,13 +114,15 @@ it("leaves a paused queue to its Resume, which already takes the queue over", as
   expect(button("Resume")).toBeDefined();
 });
 
-it("shows the reason the host paused the queue as text in the banner, next to Resume", async () => {
+it("keeps Resume direct and shows the actual host failure without a repeated generic error", async () => {
   setQueueHoldReason("s1", "Provider crashed: exit 1");
   try {
     await renderQueue({ queueStatus: "paused", onResumeQueue: vi.fn() });
     const banner = container.querySelector("[data-message-queue-card]")!.textContent;
-    expect(banner).toContain("Queue paused: the last message was not accepted");
+    expect(banner).not.toContain("Queue paused: the last message was not accepted");
     expect(banner).toContain("Provider crashed: exit 1");
+    const detail = container.querySelector("[data-message-queue-card] details");
+    expect(detail).toBeNull();
     expect(button("Resume")).toBeDefined();
   } finally {
     setQueueHoldReason("s1", undefined);
@@ -138,6 +145,30 @@ it("names a refused or unconfirmed head instead of blaming the person who stoppe
     onResumeQueue: vi.fn(),
     queuedMessages: [{ id: "a", text: "queued task", attachments: [], deliveryUnknown: true }],
   });
-  expect(container.textContent).toContain("Queue held: delivery is not confirmed");
+  expect(container.textContent).toContain("Delivery is not confirmed. Automatic resend is held.");
+  expect(container.textContent).not.toContain("Queue held: delivery is not confirmed");
   expect(container.textContent).not.toContain("because you interrupted");
+});
+
+it("shows a rejected delivery once inside the queue and retains named icon actions", async () => {
+  const progress = beginDeliveryProgress("s1", "a", "preparing");
+  updateDeliveryProgress("s1", progress, "rejected", "Provider crashed: exit 1");
+  try {
+    await renderQueue({
+      queueStatus: "paused",
+      onResumeQueue: vi.fn(),
+      onSteerQueuedMessage: vi.fn(),
+    });
+    const card = container.querySelector("[data-message-queue-card]")!;
+    expect(container.querySelectorAll("[data-delivery-progress]")).toHaveLength(1);
+    expect(card.querySelector("[data-delivery-progress]")).not.toBeNull();
+    expect(container.textContent?.split("Provider crashed: exit 1")).toHaveLength(2);
+    expect(container.querySelector("[data-delivery-details]")).toBeNull();
+    expect(container.querySelector('button[aria-label="Steer"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Edit queued message"]')).not.toBeNull();
+    expect(button("Resume")).toBeDefined();
+    expect(button("Remove")).toBeDefined();
+  } finally {
+    clearDeliveryProgress("s1", progress);
+  }
 });

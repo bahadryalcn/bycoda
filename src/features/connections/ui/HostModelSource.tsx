@@ -12,13 +12,12 @@ import type {
 } from "../model/protocol";
 import { requireHostDescriptor } from "../model/protocol";
 import { remoteModelControls } from "../model/remoteModels";
-import type { HarnessId } from "../../sessions/model/session";
-import type { AgentModel } from "../../sessions/model/models";
+import type { HarnessId, AgentModel } from "../../sessions";
 import {
   LOCAL_MODEL_SOURCE,
   ModelSourceContext,
   type ModelSource,
-} from "../../sessions/ui/modelSource";
+} from "../../sessions/public/modelSource";
 
 export function hostModelSource(
   id: string,

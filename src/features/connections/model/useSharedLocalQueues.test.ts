@@ -7,6 +7,7 @@ import {
   mergeQueueChange,
   QUEUE_LEASE_TTL_MS,
   QueueNotReadyError,
+  QueueDeferredError,
   type SharedQueue,
 } from "./sharedQueue";
 import { desktopQueueClientId } from "./sharedQueueClient";
@@ -18,7 +19,7 @@ import { StoreDatabase } from "../../../../host/store-db";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { setImmediate as nextWorkerTurn } from "node:timers/promises";
-import { SessionQueues } from "../../../../host/session-queue";
+import { SessionQueues } from "../../../../host/sessions/session-queue";
 import {
   heldSharedQueueLeases,
   sharedLocalQueueReady,
@@ -29,11 +30,12 @@ import {
   wakeSharedLocalQueues,
 } from "./useSharedLocalQueues";
 
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), writeAttachment: vi.fn(), upload: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async () => [
-    { id: "local", environmentId: "host", localHost: true, endpoint: "http://127.0.0.1:1" },
-  ],
+  invoke: async (command: string, args: unknown) =>
+    command === "write_attachment"
+      ? mocks.writeAttachment(args)
+      : [{ id: "local", environmentId: "host", localHost: true, endpoint: "http://127.0.0.1:1" }],
 }));
 vi.mock("./connections", () => ({
   cachedRemoteCapabilities: () => ["sessions.queue"],
@@ -41,7 +43,7 @@ vi.mock("./connections", () => ({
   remoteRequest: (...args: unknown[]) => mocks.request(...args),
 }));
 vi.mock("./remoteAttachments", () => ({
-  uploadRemoteAttachments: async (_machine: string, attachments: unknown[]) => attachments,
+  uploadRemoteAttachments: (...args: unknown[]) => mocks.upload(...args),
 }));
 
 const databases: StoreDatabase[] = [];
@@ -85,6 +87,10 @@ function Probe() {
 }
 beforeEach(() => {
   mocks.request.mockReset();
+  mocks.writeAttachment.mockReset().mockResolvedValue("/saved/legacy.png");
+  mocks.upload
+    .mockReset()
+    .mockImplementation(async (_machine: string, attachments: unknown[]) => attachments);
   localStorage.clear();
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -145,6 +151,114 @@ async function mount() {
     for (let i = 0; i < 40; i++) await flushTurn();
   });
 }
+
+it("drains a restored inline image without copying its bytes into a full WebView store", async () => {
+  mocks.upload.mockImplementation(
+    async (_machine: string, attachments: Record<string, unknown>[]) =>
+      attachments.map(({ data: _data, ...file }) => file),
+  );
+  const image = {
+    id: "legacy-image",
+    name: "image.png",
+    mimeType: "image/png",
+    kind: "image" as const,
+    size: 3,
+    data: "YWJj",
+  };
+  sessionsRef.current = [
+    { ...sessionsRef.current[0], queuedMessages: [{ ...row("a"), attachments: [image] }] },
+  ];
+  const save = localStorage.setItem.bind(localStorage);
+  const storage = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key.startsWith("bycoda:shared-queue:") && value.includes('"data":"YWJj"'))
+      throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+    save(key, value);
+  });
+  try {
+    await mount();
+    expect(sharedLocalQueueReady("chat")).toBe(true);
+    expect(mocks.writeAttachment).toHaveBeenCalledOnce();
+    expect(queue.messages[0].attachments[0]).toMatchObject({
+      id: image.id,
+      path: "/saved/legacy.png",
+    });
+    expect(sessionsRef.current[0].queuedMessages?.[0].attachments[0].data).toBeUndefined();
+    const send = vi.fn(() => true);
+    expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(true);
+    expect(send).toHaveBeenCalledOnce();
+    expect(queue.messages).toEqual([]);
+  } finally {
+    storage.mockRestore();
+  }
+});
+
+it("keeps a queue edit made while an old inline image is being saved", async () => {
+  const image = {
+    id: "legacy-edit",
+    name: "image.png",
+    mimeType: "image/png",
+    kind: "image" as const,
+    size: 3,
+    data: "YWJj",
+  };
+  sessionsRef.current = [
+    { ...sessionsRef.current[0], queuedMessages: [{ ...row("a"), attachments: [image] }] },
+  ];
+  let complete!: (path: string) => void;
+  mocks.writeAttachment.mockImplementation(
+    () =>
+      new Promise<string>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await mount();
+  expect(sharedLocalQueueReady("chat")).toBe(false);
+  const send = vi.fn(() => true);
+  await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+    QueueNotReadyError,
+  );
+  expect(send).not.toHaveBeenCalled();
+  await act(async () => {
+    sessionsRef.current = [
+      {
+        ...sessionsRef.current[0],
+        queuedMessages: [
+          { ...row("edited", "new text"), modelTarget: { harness: "codex", model: "new-model" } },
+        ],
+      },
+    ];
+    complete("/saved/old.png");
+    for (let i = 0; i < 60; i++) await flushTurn();
+  });
+  expect(queue.messages.map((message) => message.id)).toEqual(["edited"]);
+  expect(queue.messages[0]).toMatchObject({
+    text: "new text",
+    modelTarget: { model: "new-model" },
+  });
+  expect(mocks.writeAttachment).toHaveBeenCalledOnce();
+});
+
+it("retains a restored inline image after a native save failure and recovers without a queue edit", async () => {
+  const image = {
+    id: "legacy-retry",
+    name: "image.png",
+    mimeType: "image/png",
+    kind: "image" as const,
+    size: 3,
+    data: "YWJj",
+  };
+  sessionsRef.current = [
+    { ...sessionsRef.current[0], queuedMessages: [{ ...row("a"), attachments: [image] }] },
+  ];
+  mocks.writeAttachment.mockRejectedValueOnce(new Error("Disk temporarily unavailable"));
+  await mount();
+  expect(sessionsRef.current[0].queuedMessages?.[0].attachments[0]).toBe(image);
+  expect(mocks.request).not.toHaveBeenCalled();
+  await tick();
+  expect(sharedLocalQueueReady("chat")).toBe(true);
+  expect(mocks.writeAttachment).toHaveBeenCalledTimes(2);
+  expect(queue.messages[0].attachments[0].path).toBe("/saved/legacy.png");
+});
 async function tick() {
   await act(async () => {
     vi.advanceTimersByTime(1500);
@@ -410,6 +524,80 @@ it("still pauses the queue when the running turn itself refuses a Send now", asy
   expect(await submitSharedLocalQueue("chat", "a", true, () => false)).toBe(false);
   await tick();
   expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "paused" });
+});
+
+it.each(["active", "paused", "restored"] as const)(
+  "releases a deferred steer claim while retaining the %s queue and its exact rows",
+  async (status) => {
+    const attachment = {
+      id: "file",
+      name: "context.txt",
+      kind: "file" as const,
+      mimeType: "text/plain",
+      size: 7,
+      path: "/repo/context.txt",
+    };
+    const first = { ...row("a"), attachments: [attachment] };
+    sessionsRef.current[0] = {
+      ...sessionsRef.current[0],
+      busy: true,
+      queueStatus: status,
+      queuedMessages: [first, row("b")],
+    };
+    const host = useRealHostQueue();
+    await mount();
+    const before = await host.queues.get("chat");
+    const attempt = vi.fn(() => {
+      throw new QueueDeferredError("Waiting for the current turn");
+    });
+
+    await expect(submitSharedLocalQueue("chat", "a", true, attempt)).rejects.toBeInstanceOf(
+      QueueDeferredError,
+    );
+    await tick();
+
+    const retained = await host.queues.get("chat");
+    expect(retained.status).toBe(before.status);
+    expect(retained.messages).toEqual(before.messages);
+    expect(retained.messages.map((message) => message.id)).toEqual(["a", "b"]);
+    expect(retained.claim).toBeUndefined();
+    expect(sessionsRef.current[0].queueStatus).toBe(before.status);
+    expect(readDeliveryProgress("chat")).toBeUndefined();
+    expect(attempt).toHaveBeenCalledOnce();
+
+    if (status === "active") {
+      sessionsRef.current = [{ ...sessionsRef.current[0], busy: false }];
+      await tick();
+      const retry = vi.fn(() => true);
+      expect(await submitSharedLocalQueue("chat", "a", false, retry)).toBe(true);
+      await tick();
+      expect(retry).toHaveBeenCalledOnce();
+      expect((await host.queues.get("chat")).messages).toEqual([row("b")]);
+      expect((await host.queues.get("chat")).claim).toBeUndefined();
+    }
+  },
+);
+
+it("does not undo a Stop that pauses the host queue while a steer is being deferred", async () => {
+  const host = useRealHostQueue();
+  sessionsRef.current[0].busy = true;
+  await mount();
+  const attempt = vi.fn(async () => {
+    const current = await host.queues.get("chat");
+    await host.queues.change("chat", current, { ...current, status: "paused" });
+    sessionsRef.current = [{ ...sessionsRef.current[0], busy: false, queueStatus: "paused" }];
+    throw new QueueDeferredError("Waiting for the current turn");
+  });
+
+  await expect(submitSharedLocalQueue("chat", "a", true, attempt)).rejects.toBeInstanceOf(
+    QueueDeferredError,
+  );
+  await tick();
+
+  expect(await host.queues.get("chat")).toMatchObject({ status: "paused", messages: [row("a")] });
+  expect((await host.queues.get("chat")).claim).toBeUndefined();
+  expect(sessionsRef.current[0].queueStatus).toBe("paused");
+  expect(attempt).toHaveBeenCalledOnce();
 });
 
 it("stops renewing the lease of a conversation that left this window", async () => {

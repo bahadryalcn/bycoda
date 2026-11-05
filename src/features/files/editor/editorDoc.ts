@@ -1,5 +1,5 @@
-import { diff } from "@codemirror/merge";
-import type { Annotation, ChangeSpec } from "@codemirror/state";
+import { Chunk, diff } from "@codemirror/merge";
+import { Text, type Annotation, type ChangeSpec } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 const DOC_DIFF = { scanLimit: 5_000, timeout: 100 };
@@ -16,91 +16,96 @@ export function normalizeLineBreaks(value: string): string {
 
 export type LineEnding = "\n" | "\r\n" | "\r";
 
-export type LineEndings = {
-  /** The convention a save restores: the majority ending, LF when there is none. */
-  eol: LineEnding;
-  /** The file uses more than one convention; `restoreLineEnding` alone would
-   * rewrite the minority breaks, so saves go through `restoreLineEndings`. */
-  mixed: boolean;
-};
-
-/** The breaks of `value` in order, each as the sequence found on disk. */
-function lineBreaksOf(value: string): LineEnding[] {
-  const breaks: LineEnding[] = [];
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code === 13) {
-      if (value.charCodeAt(i + 1) === 10) {
-        breaks.push("\r\n");
-        i++;
-      } else breaks.push("\r");
-    } else if (code === 10) breaks.push("\n");
-  }
-  return breaks;
-}
-
-/**
- * The convention a file used before normalization. Only a strict majority of
- * the breaks (more than half) decides; a tie, a mere plurality or a file without
- * breaks reports LF. A single bare CR in an LF file, or one CRLF line in an LF
- * script, therefore never turns a save into a whole-file rewrite.
- */
-export function detectLineEndings(value: string): LineEndings {
-  if (!value.includes("\r")) return { eol: "\n", mixed: false };
-  const counts = { "\n": 0, "\r\n": 0, "\r": 0 };
-  for (const sequence of lineBreaksOf(value)) counts[sequence]++;
-  const total = counts["\n"] + counts["\r\n"] + counts["\r"];
-  const mixed = [counts["\n"], counts["\r\n"], counts["\r"]].filter((n) => n > 0).length > 1;
-  const eol: LineEnding =
-    counts["\r\n"] * 2 > total ? "\r\n" : counts["\r"] * 2 > total ? "\r" : "\n";
-  return { eol, mixed };
-}
-
-/** The majority convention of `value`; see `detectLineEndings`. */
+/** Most common separator, with first occurrence breaking ties; no breaks defaults to LF. */
 export function detectLineEnding(value: string): LineEnding {
-  return detectLineEndings(value).eol;
+  const counts = new Map<LineEnding, number>();
+  for (const match of value.matchAll(/\r\n|\r|\n/g)) {
+    const ending = match[0] as LineEnding;
+    counts.set(ending, (counts.get(ending) ?? 0) + 1);
+  }
+  let best: LineEnding = "\n";
+  let maximum = 0;
+  for (const [ending, count] of counts)
+    if (count > maximum) {
+      best = ending;
+      maximum = count;
+    }
+  return best;
 }
 
-/** Re-apply a file's own line-ending convention to LF document text. */
+/** Re-apply a uniform convention where no per-break source exists. */
 export function restoreLineEnding(value: string, eol: LineEnding): string {
   return eol === "\n" ? value : value.replace(/\n/g, eol);
 }
 
-/**
- * Serialize LF document text for a file whose disk content was `original`.
- * A file with one convention gets that convention back. A mixed file keeps the
- * exact break each unchanged line had on disk; only breaks inside edited spans
- * take the majority convention. Unchanged text therefore round-trips
- * byte-identically instead of being normalized by every save.
- */
-export function restoreLineEndings(value: string, original: string): string {
-  const { eol, mixed } = detectLineEndings(original);
-  if (!mixed) return restoreLineEnding(value, eol);
-  const breaks = lineBreaksOf(original);
-  const normalized = normalizeLineBreaks(original);
-  let out = "";
-  let a = 0; // cursor in `normalized`
-  let b = 0; // cursor in `value`
-  let next = 0; // index of the next break of `normalized`
-  const copyUnchanged = (length: number) => {
-    for (let i = b; i < b + length; i++) {
-      const char = value[i];
-      out += char === "\n" ? (breaks[next++] ?? eol) : char;
-    }
-    b += length;
-    a += length;
-  };
-  for (const change of diff(normalized, value, DOC_DIFF)) {
-    // Text between two changes is identical on both sides, so its breaks map
-    // one-to-one onto the breaks the file had there.
-    copyUnchanged(change.fromA - a);
-    for (let i = a; i < change.toA; i++) if (normalized.charCodeAt(i) === 10) next++;
-    out += restoreLineEnding(value.slice(b, change.toB), eol);
-    a = change.toA;
-    b = change.toB;
+/** Preserve separators on unchanged characters; new separators use the source majority. */
+export function restoreMixedLineEndings(
+  value: string,
+  original: string,
+  fallback = detectLineEnding(original),
+): string {
+  const target = normalizeLineBreaks(value);
+  const baseline = normalizeLineBreaks(original);
+  if (target === baseline) return original;
+  const originalBreaks = new Map<number, LineEnding>();
+  let normalizedPosition = 0;
+  for (let i = 0; i < original.length; i++, normalizedPosition++) {
+    if (original[i] === "\r") {
+      const ending: LineEnding = original[i + 1] === "\n" ? "\r\n" : "\r";
+      originalBreaks.set(normalizedPosition, ending);
+      if (ending === "\r\n") i++;
+    } else if (original[i] === "\n") originalBreaks.set(normalizedPosition, "\n");
   }
-  copyUnchanged(value.length - b);
-  return out;
+  if (new Set(originalBreaks.values()).size <= 1) return restoreLineEnding(target, fallback);
+  const mapped = new Map<number, LineEnding>();
+  // Use deterministic limits for both passes: presentation chunks may expand changes.
+  const preservationDiff = { scanLimit: 5_000 };
+  const chunks = Chunk.build(
+    Text.of(baseline.split("\n")),
+    Text.of(target.split("\n")),
+    preservationDiff,
+  );
+  if (chunks.some((chunk) => !chunk.precise)) {
+    throw new Error(
+      "Cannot safely preserve mixed line endings for this edit. Keep the draft and retry with smaller edits.",
+    );
+  }
+  const changes = diff(baseline, target, preservationDiff);
+  let oldPosition = 0;
+  let newPosition = 0;
+  for (const change of [
+    ...changes,
+    { fromA: baseline.length, toA: baseline.length, fromB: target.length, toB: target.length },
+  ]) {
+    for (let i = oldPosition; i < change.fromA; i++) {
+      const ending = originalBreaks.get(i);
+      if (ending) mapped.set(newPosition + i - oldPosition, ending);
+    }
+    // Diff can place an insertion before the old line break. Keep that break
+    // attached to its original line rather than the newly inserted line.
+    if (
+      change.fromA === change.toA &&
+      baseline[change.fromA] === "\n" &&
+      target[change.fromB] === "\n" &&
+      change.toB > change.fromB
+    ) {
+      const ending = originalBreaks.get(change.fromA);
+      if (ending) {
+        mapped.set(change.fromB, ending);
+        originalBreaks.delete(change.fromA);
+      }
+    }
+    oldPosition = change.toA;
+    newPosition = change.toB;
+  }
+  let result = "";
+  let start = 0;
+  for (let i = 0; i < target.length; i++)
+    if (target[i] === "\n") {
+      result += target.slice(start, i) + (mapped.get(i) ?? fallback);
+      start = i + 1;
+    }
+  return result + target.slice(start);
 }
 
 export function editorDocChanges(from: string, to: string): ChangeSpec[] {

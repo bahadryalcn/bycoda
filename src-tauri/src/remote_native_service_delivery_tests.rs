@@ -83,6 +83,7 @@ impl Fixture {
             delivery_supported: self.modern,
             delivery_ack_supported: self.acks,
             delivery_epochs_supported: self.epochs,
+            bounded_format_supported: false,
             journal: Some(JournalAccess::fixture(store.clone())),
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),
@@ -917,7 +918,7 @@ fn saved_issuer_change_blocks_consumption_and_changed_finish_bytes_conflict() {
 }
 
 #[test]
-fn restored_prettier_format_reconciliation_records_result_without_recreating_consumer() {
+fn restored_prettier_format_reconciliation_discards_terminal_orphan_without_recreating_consumer() {
     let params = json!({"command":"format_text_file","args":{"path":"file.ts","source":"const x=1","cursorOffset":3}});
     let (done, finished) = mpsc::channel();
     let server = serve(move |listener| async move {
@@ -977,12 +978,16 @@ fn restored_prettier_format_reconciliation_records_result_without_recreating_con
         reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         1
     );
-    let original = fixture.pending().remove(0);
-    assert_eq!(original.phase(), Phase::Recorded);
-    assert!(journal::result_json(fixture.store(), &original)
-        .unwrap()
-        .unwrap()
-        .contains("const x = 1;"));
+    assert!(fixture.pending().is_empty());
+    let conn = fixture.store().lock_conn().unwrap();
+    let row: (String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT phase,params_json,result_json FROM native_delivery_originals",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(row, ("acknowledged".into(), None, None));
     done.send(()).unwrap();
 }
 
@@ -2196,6 +2201,124 @@ fn restored_original_retired_status_is_terminal_without_recording_or_consuming()
         }));
         assert_eq!(fixture.pending()[0].phase(), Phase::Possible);
         assert!(fixture.remote_acks().is_empty());
+        done.send(()).unwrap();
+    }
+}
+
+#[test]
+fn live_formatter_consumer_is_never_discarded_and_failed_owner_can_retire_after_drop() {
+    let (done, finished) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &[
+                "native.services.delivery.apply",
+                "native.services.delivery.status",
+            ],
+            "host.1",
+        )
+        .await;
+        let apply = next(&mut socket).await;
+        assert_eq!(apply["method"], "native.services.delivery.apply");
+        result(
+            &mut socket,
+            &apply,
+            recorded(&apply["params"], json!({"formatted":"x", "cursorOffset":0})),
+        )
+        .await;
+        let status = next(&mut socket).await;
+        assert_eq!(status["method"], "native.services.delivery.status");
+        assert_eq!(
+            status["params"]["originalId"],
+            apply["params"]["originalId"]
+        );
+        result(
+            &mut socket,
+            &status,
+            recorded(
+                &status["params"],
+                json!({"formatted":"x", "cursorOffset":0}),
+            ),
+        )
+        .await;
+        finish_after(finished).await;
+    });
+    let fixture = Fixture::new(&server.endpoint, true);
+    let reply = fixture.channel().request("workspace.run", json!({"command":"format_text_file","args":{"path":"x.ts","source":"x","cursorOffset":0}})).unwrap();
+    assert_eq!(
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
+        0
+    );
+    assert_eq!(fixture.pending()[0].phase(), Phase::Recorded);
+    assert!(reply
+        .project::<()>(|_| Err("editor buffer changed".into()))
+        .is_err());
+    assert_eq!(
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
+        0
+    );
+    drop(reply);
+    assert_eq!(
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
+        1
+    );
+    assert!(fixture.pending().is_empty());
+    done.send(()).unwrap();
+}
+
+#[test]
+fn unavailable_format_result_requires_qualified_host_and_exact_original_binding() {
+    for (qualified, matching, expected) in [(true, true, 1), (false, true, 0), (true, false, 0)] {
+        let (done, finished) = mpsc::channel();
+        let server = serve(move |listener| async move {
+            let mut socket = accept(&listener).await;
+            hello(
+                &mut socket,
+                &[
+                    "native.services.delivery.apply",
+                    "native.services.delivery.status",
+                ],
+                "host.1",
+            )
+            .await;
+            let apply = next(&mut socket).await;
+            let mut disposition = apply["params"].clone();
+            disposition.as_object_mut().unwrap().remove("paramsJson");
+            disposition["state"] = json!("unknown");
+            disposition["resultUnavailable"] = json!(true);
+            if !matching {
+                disposition["sha256"] = json!("wrong");
+            }
+            result(&mut socket, &apply, disposition).await;
+            finish_after(finished).await;
+        });
+        let mut fixture = Fixture::new(&server.endpoint, true);
+        Arc::get_mut(fixture.channel.as_mut().unwrap())
+            .unwrap()
+            .bounded_format_supported = qualified;
+        let error = fixture.channel().request("workspace.run", json!({"command":"format_text_file","args":{"path":"x.ts","source":"x","cursorOffset":0}})).err().unwrap();
+        assert!(error.contains("UNCONFIRMED"));
+        assert_eq!(fixture.pending()[0].phase(), Phase::Possible);
+        let count: i64 = fixture
+            .store()
+            .lock_conn()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM native_delivery_unavailable_results",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, expected);
+        assert_eq!(
+            fixture.pending()[0].result_budget(),
+            if qualified {
+                journal::FORMAT_RESULT_BYTES
+            } else {
+                journal::MAX_RESULT_BYTES
+            }
+        );
         done.send(()).unwrap();
     }
 }

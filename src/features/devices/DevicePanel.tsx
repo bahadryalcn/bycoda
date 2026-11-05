@@ -1,8 +1,17 @@
 import { NumberField } from "../../shared/ui/NumberField";
+import { DeviceCapabilityStatus } from "./ui/DeviceCapabilityStatus";
+import { useDeviceStatus } from "./hooks/useDeviceStatus";
+import {
+  peekToolsDraftPart,
+  subscribeToolsDraftTransfer,
+  writeToolsDraftPart,
+  holdToolsDraftTransfer,
+  type ToolsDraftScope,
+} from "../host-tools/toolsDraftTransfer";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { getLocale, t, useLocale } from "../../shared/i18n/technical";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
@@ -21,9 +30,11 @@ import {
   AppWindow,
   Check,
   CursorMagicSelection,
+  Eye,
   Home,
   ImagePlus,
   Keyboard,
+  Lock,
   MessageSquarePlus,
   MoreHorizontal,
   Pause,
@@ -37,12 +48,23 @@ import {
   X,
 } from "../../shared/ui/icons";
 import "./DevicePanel.css";
+import { hitTestDeviceNodes } from "./deviceInspector";
+import {
+  DeviceImageDraftChangedError,
+  DeviceImageDraftDeliveryUncertainError,
+  DeviceImageDraftRejectedError,
+  reconcileDeviceImageTransfer,
+  type DeviceImageTransferOperation,
+} from "./deviceImageComposer";
 import type {
   DeviceAction,
   DeviceFrame,
   DeviceHostStatus,
   DevicePanelApi,
   DeviceSummary,
+  DeviceControlStatus,
+  DeviceControlLease,
+  DeviceInspection,
 } from "./types";
 
 type DeviceOperation =
@@ -57,6 +79,9 @@ type DeviceOperation =
   | "setupControl"
   | "start"
   | "stop"
+  | "claim"
+  | "release"
+  | "inspect"
   | DeviceAction["type"];
 
 type AnnotationDraft = {
@@ -65,10 +90,13 @@ type AnnotationDraft = {
   undo: ImageAnnotationDocument[];
   redo: ImageAnnotationDocument[];
   comment: string;
+  transferOperation?: DeviceImageTransferOperation;
 };
 // Layout/tool switches unmount the surface. Keep unfinished image edits in the
 // source conversation and machine scope, without retaining a device permission.
 const annotationDraftCache = new Map<string, Record<string, AnnotationDraft>>();
+type DeviceInputs = Record<string, { app: string; text: string }>;
+const inputDraftCache = new Map<string, DeviceInputs>();
 /** Readable capture time and age for a retained frame; undefined when the Host sent no real timestamp. */
 function capturedLabel(capturedAt: string, now: number): string | undefined {
   const at = Date.parse(capturedAt);
@@ -83,7 +111,7 @@ function capturedLabel(capturedAt: string, now: number): string | undefined {
   const seconds = Math.max(0, Math.round((now - at) / 1000));
   const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
   const age =
-    seconds < 5
+    seconds < 2
       ? relative.format(0, "second")
       : seconds < 60
         ? relative.format(-seconds, "second")
@@ -101,10 +129,17 @@ const unavailableTransport = (cause: unknown) =>
   /RPC_HOST_UNAVAILABLE|host unavailable|host connection.*(?:closed|refused)/i.test(String(cause));
 
 type DevicePanelProps = {
+  transferScope?: ToolsDraftScope;
+  active?: boolean;
   api: DevicePanelApi;
   hostLabel?: string;
   onAddDevice?: (device: DeviceSummary) => Promise<void>;
-  onAddImage?: (device: DeviceSummary, frame: DeviceFrame, comment: string) => Promise<void>;
+  onAddImage?: (
+    device: DeviceSummary,
+    frame: DeviceFrame,
+    comment: string,
+    operation?: DeviceImageTransferOperation,
+  ) => Promise<void>;
   draftScope?: string;
 };
 
@@ -126,54 +161,177 @@ export function DevicePanel(props: DevicePanelProps) {
 }
 
 function DevicePanelSurface({
+  active: visible = true,
   api,
   hostLabel,
   onAddDevice,
   onAddImage,
   draftScope,
+  transferScope,
 }: DevicePanelProps) {
   useLocale();
+  const ownershipDescriptionId = useId();
+  const saved = transferScope ? peekToolsDraftPart(transferScope, "device") : undefined;
   const [status, setStatus] = useState<DeviceHostStatus>();
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
-  const [selected, setSelected] = useState("");
-  const [frame, setFrame] = useState<DeviceFrame>();
+  const [selected, setSelected] = useState(saved?.selected ?? "");
+  const [frame, setFrame] = useState<DeviceFrame | undefined>(
+    saved?.annotations[saved.selected]?.frame,
+  );
+  function readableDeviceError(error: string): string | undefined {
+    if (/DEVICE_CONTROL_BUSY/.test(error)) return t("Device control held by another controller");
+    if (/DEVICE_CONTROL_LEASE_INVALID/.test(error))
+      return t("Device control expired. Claim control again to send input.");
+    if (/DEVICE_INSPECTION_STALE/.test(error))
+      return t("The device screen changed. Refresh inspection before selecting a node.");
+    if (/DEVICE_INSPECTION_UNSUPPORTED/.test(error))
+      return t("This device does not provide a structured accessibility tree.");
+    return undefined;
+  }
   const [connectionUnavailable, setConnectionUnavailable] = useState(false);
+  const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false);
   const [live, setLive] = useState(false);
   // The surface starts by reading the Host status in the effect below.
   const [busy, setBusy] = useState(true);
   const [operation, setOperation] = useState<DeviceOperation>();
   const [loadingDevices, setLoadingDevices] = useState(false);
-  const [error, setError] = useState<string>();
-  const [errorOperation, setErrorOperationState] = useState<DeviceOperation>("status");
-  const errorOperationRef = useRef<DeviceOperation>("status");
+  const [error, setError] = useState<string | undefined>(saved?.error);
+  const [errorOperation, setErrorOperationState] = useState<DeviceOperation>(
+    (saved?.errorOperation as DeviceOperation) ?? "status",
+  );
+  const errorOperationRef = useRef<DeviceOperation>(
+    (saved?.errorOperation as DeviceOperation) ?? "status",
+  );
+  const retainedOutcome = useRef(Boolean(saved?.error || saved?.notice || saved?.actionCompleted));
   const setErrorOperation = useCallback((name: DeviceOperation) => {
     errorOperationRef.current = name;
     setErrorOperationState(name);
   }, []);
   const [control, setControl] = useState(false);
-  const [app, setApp] = useState("");
-  const [text, setText] = useState("");
-  const [output, setOutput] = useState("");
-  const [deviceNotice, setDeviceNotice] = useState<{
-    text: string;
-    error: boolean;
-  }>();
+  const [controlStatus, setControlStatus] = useState<DeviceControlStatus>();
+  const [controlLease, setControlLease] = useState<DeviceControlLease>();
+  const controlLeaseRef = useRef(controlLease);
+  controlLeaseRef.current = controlLease;
+  const claimRequests = useRef<Record<string, string>>({});
+  const [inspection, setInspection] = useState<DeviceInspection>();
+  const [inspectionSearch, setInspectionSearch] = useState("");
+  const [selectedNode, setSelectedNode] = useState("");
+  const [hoveredNode, setHoveredNode] = useState("");
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [frameStale, setFrameStale] = useState(false);
+  const inputDrafts = useRef<DeviceInputs>(
+    saved?.inputs ?? (draftScope ? inputDraftCache.get(draftScope) : undefined) ?? {},
+  );
+  const [app, setApp] = useState(saved?.app ?? "");
+  const [text, setText] = useState(saved?.text ?? "");
+  const [output, setOutput] = useState(saved?.output ?? "");
+  const [deviceNotice, setDeviceNotice] = useState<
+    | {
+        text: string;
+        error: boolean;
+      }
+    | undefined
+  >(saved?.notice);
   // Set when the device action itself succeeded but the follow-up frame read failed.
-  const [actionCompleted, setActionCompleted] = useState(false);
+  const [actionCompleted, setActionCompleted] = useState(saved?.actionCompleted ?? false);
   const [now, setNow] = useState(() => Date.now());
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
+  const [endX, setEndX] = useState(0);
+  const [endY, setEndY] = useState(0);
   const [surface, setSurface] = useState<
-    "menu" | "app" | "text" | "coordinates" | "note" | "setup" | "output"
+    "menu" | "app" | "text" | "coordinates" | "note" | "setup" | "output" | "inspector"
   >();
   const [surfaceAnchor, setSurfaceAnchor] = useState<HTMLElement | null>(null);
-  const [annotating, setAnnotating] = useState(false);
-  const [annotationTool, setAnnotationTool] = useState<"box" | "arrow" | "pen" | "pin">("box");
-  const [zoom, setZoom] = useState(1);
-  const [annotations, setAnnotationState] = useState<Record<string, AnnotationDraft>>(() =>
-    draftScope ? (annotationDraftCache.get(draftScope) ?? {}) : {},
+  const [annotating, setAnnotating] = useState(saved?.annotating ?? false);
+  const [annotationTool, setAnnotationTool] = useState<"box" | "arrow" | "pen" | "pin">(
+    saved?.annotationTool ?? "box",
+  );
+  const [zoom, setZoom] = useState(saved?.zoom ?? 1);
+  const [annotations, setAnnotationState] = useState<Record<string, AnnotationDraft>>(
+    () => saved?.annotations ?? (draftScope ? (annotationDraftCache.get(draftScope) ?? {}) : {}),
   );
   const annotationsRef = useRef(annotations);
+  useEffect(() => {
+    if (!transferScope) return;
+    return subscribeToolsDraftTransfer(transferScope, ({ device }) => {
+      if (!device) return;
+      setSelected(device.selected);
+      setApp(device.app);
+      setText(device.text);
+      inputDrafts.current = device.inputs ?? {};
+      setZoom(device.zoom);
+      setAnnotating(device.annotating ?? false);
+      setAnnotationTool(device.annotationTool ?? "box");
+      setFrame(device.annotations[device.selected]?.frame);
+      setControl(false);
+      setControlStatus(undefined);
+      setControlLease(undefined);
+      setInspection(undefined);
+      setError(device.error);
+      retainedOutcome.current = Boolean(device.error || device.notice || device.actionCompleted);
+      setErrorOperationState((device.errorOperation as DeviceOperation) ?? "status");
+      errorOperationRef.current = (device.errorOperation as DeviceOperation) ?? "status";
+      setOutput(device.output ?? "");
+      setDeviceNotice(device.notice);
+      setActionCompleted(device.actionCompleted ?? false);
+      annotationsRef.current = device.annotations;
+      setAnnotationState(device.annotations);
+      if (draftScope) annotationDraftCache.set(draftScope, device.annotations);
+    });
+  }, [transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue, draftScope]);
+  // Draft text is scoped to its actual device. A draft never carries a control lease.
+  useLayoutEffect(() => {
+    if (!selected) return;
+    const previous = inputDrafts.current[selected];
+    if ((!previous && !app && !text) || (previous?.app === app && previous.text === text)) return;
+    inputDrafts.current = { ...inputDrafts.current, [selected]: { app, text } };
+    // Retain every unfinished device draft. Transfer's UTF-8 budget rejects an
+    // oversized snapshot instead of silently evicting user-authored text.
+    if (!app && !text) delete inputDrafts.current[selected];
+    if (draftScope) {
+      if (inputDraftCache.has(draftScope)) inputDraftCache.delete(draftScope);
+      if (Object.keys(inputDrafts.current).length)
+        inputDraftCache.set(draftScope, inputDrafts.current);
+      while (inputDraftCache.size > 64)
+        inputDraftCache.delete(inputDraftCache.keys().next().value!);
+    }
+  }, [selected, app, text, draftScope]);
+  useEffect(() => {
+    if (visible && transferScope)
+      writeToolsDraftPart(transferScope, "device", {
+        selected,
+        app,
+        text,
+        inputs: inputDrafts.current,
+        zoom,
+        annotating,
+        annotationTool,
+        annotations,
+        error,
+        errorOperation,
+        output,
+        notice: deviceNotice,
+        actionCompleted,
+      });
+  }, [
+    visible,
+    transferScope?.cwd,
+    transferScope?.sessionId,
+    transferScope?.targetValue,
+    selected,
+    app,
+    text,
+    zoom,
+    annotating,
+    annotationTool,
+    annotations,
+    error,
+    errorOperation,
+    output,
+    deviceNotice,
+    actionCompleted,
+  ]);
   useLayoutEffect(() => {
     annotationsRef.current = annotations;
   }, [annotations]);
@@ -203,44 +361,34 @@ function DevicePanelSurface({
   const currentScope = useRef(scope);
   currentScope.current = scope;
   const pending = useRef<object | null>(null);
+  const pendingDone = useRef<Promise<void>>(Promise.resolve());
   const capturePending = useRef<Promise<DeviceFrame> | null>(null);
   const mounted = useRef(true);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        let value = await api.status();
-        if (!active) return;
-        // Reuse an installed runtime. SDK/tool downloads remain an explicit action.
-        if (!value.running && value.installed && value.platforms.some((item) => item.available))
-          value = await api.start();
-        if (active) setStatus(value);
-      } catch (cause) {
-        if (active) setError(String(cause));
-      } finally {
-        if (active) setBusy(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [api]);
+  useDeviceStatus(api, visible, setStatus, setError, setBusy);
   const execute = useCallback(
     async <T,>(
       name: DeviceOperation,
       work: (isCurrent: () => boolean) => Promise<T>,
       commit: (value: T) => void,
     ) => {
-      if (pending.current) return;
+      if (pending.current || !visibleRef.current) return;
       const token = {};
+      let finishPending!: () => void;
+      pendingDone.current = new Promise<void>((resolve) => {
+        finishPending = resolve;
+      });
+      retainedOutcome.current = false;
       const requestScope = scope;
       pending.current = token;
+      const releaseTransfer = transferScope ? holdToolsDraftTransfer(transferScope) : undefined;
       const current = () => mounted.current && currentScope.current === requestScope;
       setBusy(true);
       setOperation(name);
@@ -256,9 +404,37 @@ function DevicePanelSurface({
       } catch (cause) {
         if (current()) {
           setError(String(cause));
+          if (name === "status") setStatus(undefined);
+          if (name === "refresh") setDiscoveryUnavailable(true);
+          if (/DEVICE_CONTROL_BUSY/.test(String(cause)) && name === "claim")
+            setControlStatus({ deviceId: selectedRef.current, busy: true });
+          if (/DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
+            setControl(false);
+            setControlLease(undefined);
+            delete claimRequests.current[selectedRef.current];
+          }
+          if (/DEVICE_INSPECTION_STALE/.test(String(cause))) {
+            setInspection(undefined);
+            setSelectedNode("");
+            setHoveredNode("");
+          }
+          if (
+            name === "capture" ||
+            name === "press" ||
+            name === "swipe" ||
+            name === "home" ||
+            name === "type" ||
+            name === "openApp"
+          ) {
+            setFrameStale(true);
+            setInspection(undefined);
+            setSelectedNode("");
+          }
           if (unavailableTransport(cause)) setConnectionUnavailable(true);
         }
       } finally {
+        finishPending();
+        releaseTransfer?.();
         if (current() && pending.current === token) {
           pending.current = null;
           setBusy(false);
@@ -266,7 +442,7 @@ function DevicePanelSurface({
         }
       }
     },
-    [scope],
+    [scope, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue],
   );
   const capture = useCallback(
     (deviceId: string) => {
@@ -299,12 +475,18 @@ function DevicePanelSurface({
   );
   const selectDevice = useCallback(
     (deviceId: string, booted = false, preserveDiscoveryError = false) => {
+      if (controlLeaseRef.current) delete claimRequests.current[controlLeaseRef.current.deviceId];
       setSelected(deviceId);
-      setApp("");
+      setApp(inputDrafts.current[deviceId]?.app ?? "");
       setFrame(undefined);
       setLive(booted);
       setControl(false);
-      setText("");
+      setControlStatus(undefined);
+      setControlLease(undefined);
+      setInspection(undefined);
+      setSelectedNode("");
+      setFrameStale(false);
+      setText(inputDrafts.current[deviceId]?.text ?? "");
       setOutput("");
       setDeviceNotice(undefined);
       setActionCompleted(false);
@@ -327,11 +509,16 @@ function DevicePanelSurface({
   selectedRef.current = selected;
   const applyDevices = useCallback(
     (value: Awaited<ReturnType<DevicePanelApi["list"]>>) => {
+      setDiscoveryUnavailable(value.errors.length > 0);
       setDevices(value.devices);
-      setErrorOperation("refresh");
-      setError(value.errors.length ? value.errors.join("\n") : undefined);
+      if (!retainedOutcome.current) {
+        setErrorOperation("refresh");
+        setError(value.errors.length ? value.errors.join("\n") : undefined);
+      }
       const current = value.devices.find((device) => device.id === selectedRef.current);
       if (!current) {
+        if (selectedRef.current && transferScope && peekToolsDraftPart(transferScope, "device"))
+          return;
         // Prefer a connected phone. Opening the panel starts viewing, never input or boot.
         const preferred =
           value.devices.find((device) => device.booted && device.physical) ??
@@ -339,20 +526,19 @@ function DevicePanelSurface({
           value.devices[0];
         selectDevice(preferred?.id ?? "", !!preferred?.booted, true);
       } else if (!current.booted) {
-        setApp("");
         setFrame(undefined);
         setLive(false);
         setOutput("");
       }
     },
-    [selectDevice],
+    [selectDevice, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue],
   );
   useEffect(() => {
+    if (!visible) return;
     if (!status?.running) {
       setLoadingDevices(false);
       setLive(false);
       setSelected("");
-      setApp("");
       setFrame(undefined);
       setDevices([]);
       return;
@@ -367,7 +553,11 @@ function DevicePanelSurface({
           applyDevices(value);
         },
         (cause: unknown) => {
-          if (active) setError(String(cause));
+          if (active) {
+            setDiscoveryUnavailable(true);
+            setConnectionUnavailable(true);
+            setError(String(cause));
+          }
         },
       )
       .finally(() => {
@@ -376,18 +566,24 @@ function DevicePanelSurface({
     return () => {
       active = false;
     };
-  }, [api, status?.running, applyDevices]);
+  }, [api, status?.running, applyDevices, visible]);
   useEffect(() => {
-    if (!live || !selected || !status?.running) return;
+    if (!visible || !live || !selected || !status?.running) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
     const poll = async () => {
       if (cancelled) return;
+      const started = performance.now();
       if (!document.hidden && !pending.current && !capturePending.current) {
         try {
           const value = await capture(selected);
           if (!cancelled) {
             setFrame(value);
+            setFrameStale(false);
+            setInspection(undefined);
+            setSelectedNode("");
+            failures = 0;
             if (errorOperationRef.current === "capture") setError(undefined);
             setActionCompleted(false);
           }
@@ -395,27 +591,40 @@ function DevicePanelSurface({
           if (!cancelled) {
             setErrorOperation("capture");
             setError(String(cause));
-            setLive(false);
+            setFrameStale(true);
+            failures++;
           }
-          return;
         }
       }
       if (!cancelled)
-        timer = setTimeout(() => {
-          void poll();
-        }, 1000);
+        timer = setTimeout(
+          () => {
+            void poll();
+          },
+          failures
+            ? Math.min(8000, 1000 * 2 ** failures)
+            : Math.max(100, 250 - (performance.now() - started)),
+        );
     };
     void poll();
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [live, selected, capture, status?.running]);
+  }, [live, selected, capture, status?.running, visible]);
   const action = (command: DeviceAction) =>
     void execute(
       command.type,
       async (isCurrent) => {
-        const output = await api.action(selected, command);
+        if (
+          !controlLease?.leaseId ||
+          controlLease.deviceId !== selected ||
+          controlLease.expiresAt <= Date.now()
+        )
+          throw new Error(t("Claim device control before sending input."));
+        setInspection(undefined);
+        setSelectedNode("");
+        const output = await api.action(selected, command, controlLease.leaseId);
         if (!isCurrent()) return { output, frame: undefined, error: undefined };
         try {
           return { output, frame: await capture(selected), error: undefined };
@@ -432,8 +641,12 @@ function DevicePanelSurface({
         if (command.type === "openApp") setApp(command.app);
         else if (command.type === "home" && device?.platform === "ios")
           setApp("com.apple.springboard");
-        setFrame(value.frame);
+        if (value.frame) {
+          setFrame(value.frame);
+          setFrameStale(false);
+        }
         if (value.error) {
+          setFrameStale(true);
           setErrorOperation("capture");
           setError(value.error);
           setActionCompleted(true);
@@ -441,18 +654,158 @@ function DevicePanelSurface({
       },
     );
   const device = devices.find((item) => item.id === selected);
+  useEffect(() => {
+    if (!controlLease) return;
+    const expiryTimer = setTimeout(
+      () => {
+        if (
+          controlLeaseRef.current?.leaseId === controlLease.leaseId &&
+          controlLeaseRef.current.expiresAt > Date.now()
+        )
+          return;
+        setControl(false);
+        setControlLease(undefined);
+        setInspection(undefined);
+        delete claimRequests.current[controlLease.deviceId];
+        setDeviceNotice({
+          text: t("Device control expired. Claim control again to send input."),
+          error: false,
+        });
+      },
+      Math.min(2_147_483_647, Math.max(0, controlLease.expiresAt - Date.now())),
+    );
+    return () => clearTimeout(expiryTimer);
+  }, [controlLease]);
+  useEffect(() => {
+    if (!controlLease || !api.releaseControl) return;
+    return () => {
+      const waitForInput = pendingDone.current;
+      const waitForCapture = capturePending.current;
+      void Promise.allSettled([waitForInput, waitForCapture])
+        .then(() => api.releaseControl!(controlLease.deviceId, controlLease.leaseId))
+        .catch(() => {});
+    };
+  }, [api, controlLease?.leaseId]);
+  useEffect(() => {
+    if (!visible || !controlLease || !api.renewControl) return;
+    const lease = controlLease;
+    let current = true,
+      renewing = false;
+    const renew = () => {
+      if (document.hidden || renewing) return;
+      renewing = true;
+      void api.renewControl!(lease.deviceId, lease.leaseId)
+        .then(
+          (value) => {
+            if (current) {
+              controlLeaseRef.current = value;
+              setControlLease(value);
+            }
+          },
+          (cause: unknown) => {
+            if (current) {
+              setControl(false);
+              setControlLease(undefined);
+              setInspection(undefined);
+              setDeviceNotice({ text: String(cause), error: true });
+            }
+          },
+        )
+        .finally(() => {
+          renewing = false;
+        })
+        .catch(() => {});
+    };
+    const timer = setTimeout(
+      renew,
+      Math.max(100, Math.min(60000, (lease.expiresAt - Date.now()) / 2)),
+    );
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [api, visible, controlLease?.leaseId, controlLease?.expiresAt]);
+  useEffect(() => {
+    if (!visible) {
+      if (controlLeaseRef.current) delete claimRequests.current[controlLeaseRef.current.deviceId];
+      setControl(false);
+      setControlLease(undefined);
+      setInspection(undefined);
+    }
+  }, [visible]);
+  useEffect(() => {
+    if (!visible || !selected || status?.controlProtocol !== 1 || !api.controlStatus) return;
+    let current = true;
+    let reading = false;
+    const refresh = () => {
+      if (document.hidden || pending.current || reading) return;
+      reading = true;
+      const leaseAtRead = controlLeaseRef.current;
+      void api.controlStatus!(selected)
+        .then(
+          (value) => {
+            if (!current) return;
+            setControlStatus(value);
+            if (controlLeaseRef.current === leaseAtRead) {
+              if (!value.busy) {
+                setControl(false);
+                setControlLease(undefined);
+                delete claimRequests.current[selected];
+              } else if (leaseAtRead && leaseAtRead.expiresAt > Date.now()) setControl(true);
+            }
+          },
+          () => {
+            if (current) {
+              setControl(false);
+              setControlStatus(undefined);
+            }
+          },
+        )
+        .finally(() => {
+          reading = false;
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 10000);
+    return () => {
+      current = false;
+      clearInterval(timer);
+    };
+  }, [api, selected, visible, status?.controlProtocol]);
   const canViewDevice = !!device?.booted && !loadingDevices;
+  const ownershipSupported =
+    status?.controlProtocol === 1 && !!api.claimControl && !!api.releaseControl;
   const canControlDevice =
-    canViewDevice && control && !!status?.agentInstalled && !connectionUnavailable;
+    canViewDevice &&
+    ownershipSupported &&
+    control &&
+    !!controlLease?.leaseId &&
+    controlLease.expiresAt > Date.now() &&
+    !!status?.agentInstalled &&
+    !connectionUnavailable;
   const canView = canViewDevice && !busy;
   const canControl = canControlDevice && !busy;
   const unavailable = (name: DeviceOperation, enabled = true) =>
     !enabled || (busy && operation !== name);
   const windowsAndroid = status?.platform === "win32" && device?.platform === "android";
+  const textError =
+    windowsAndroid && text && (!/^[\x20-\x7e]+$/.test(text) || text.includes("%s"))
+      ? t(
+          "This device input supports printable ASCII only and cannot send %s. Enter this text on the device; your draft is kept.",
+        )
+      : undefined;
   const coordinatesValid =
     Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000;
   const platformLabel = (platform: DeviceSummary["platform"]) =>
     platform === "ios" ? t("iOS") : t("Android");
+  const platformVersionLabel = (item: DeviceSummary) => {
+    const platform = platformLabel(item.platform);
+    const version = typeof item.version === "string" ? item.version.trim() : "";
+    return !version || version.toLowerCase() === platform.toLowerCase()
+      ? platform
+      : `${platform} ${version}`;
+  };
   const kindLabel = (item: DeviceSummary) =>
     item.physical ? t("Physical device") : item.platform === "ios" ? t("Simulator") : t("Emulator");
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
@@ -501,11 +854,25 @@ function DevicePanelSurface({
           currentDraft.document,
         );
         if (!isCurrent()) return;
-        await onAddImage(
-          currentDevice,
-          { mime: image.mime, base64: image.base64, capturedAt: currentDraft.frame.capturedAt },
-          currentDraft.comment,
-        );
+        try {
+          await onAddImage(
+            currentDevice,
+            { mime: image.mime, base64: image.base64, capturedAt: currentDraft.frame.capturedAt },
+            currentDraft.comment,
+            currentDraft.transferOperation,
+          );
+          if (isCurrent()) updateDraft((value) => ({ ...value, transferOperation: undefined }));
+        } catch (cause) {
+          if (
+            isCurrent() &&
+            (cause instanceof DeviceImageDraftDeliveryUncertainError ||
+              cause instanceof DeviceImageDraftChangedError)
+          )
+            updateDraft((value) => ({ ...value, transferOperation: cause.operation }));
+          else if (isCurrent() && cause instanceof DeviceImageDraftRejectedError)
+            updateDraft((value) => ({ ...value, transferOperation: undefined }));
+          throw cause;
+        }
       },
       () => {
         setSurface(undefined);
@@ -514,6 +881,93 @@ function DevicePanelSurface({
     );
   };
   const controlEnabled = canControl && !annotating;
+  useEffect(() => {
+    if (!inspection) return;
+    const timer = setTimeout(() => {
+      setInspection(undefined);
+      setHoveredNode("");
+      setSelectedNode("");
+      setDeviceNotice({
+        text: t("Accessibility snapshot expired. Refresh inspection before selecting a node."),
+        error: false,
+      });
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [inspection]);
+  const inspectDevice = () => {
+    if (!api.inspect || !controlLease?.leaseId) return;
+    setLive(false);
+    setInspection(undefined);
+    setSelectedNode("");
+    setHoveredNode("");
+    void execute(
+      "inspect",
+      () => api.inspect!(selected, controlLease.leaseId),
+      (value) => {
+        setFrame(value.frame);
+        setImageSize({ width: 0, height: 0 });
+        setFrameStale(false);
+        setInspection(value);
+        setSelectedNode("");
+        setHoveredNode("");
+        setSurface("inspector");
+      },
+    );
+  };
+  const node = inspection?.nodes.find((value) => value.id === selectedNode);
+  const highlightedNode = inspection?.nodes.find(
+    (value) => value.id === (hoveredNode || selectedNode),
+  );
+  const previewInspection =
+    !!inspection &&
+    inspection.coordinateSpace === "pixels" &&
+    !!inspection.viewport &&
+    frame === inspection.frame &&
+    imageSize.width === inspection.viewport.width &&
+    imageSize.height === inspection.viewport.height &&
+    !annotating &&
+    !frameStale;
+  const pointNode = (image: HTMLImageElement, clientX: number, clientY: number) => {
+    const bounds = image.getBoundingClientRect();
+    if (
+      !previewInspection ||
+      !bounds.width ||
+      !bounds.height ||
+      !image.naturalWidth ||
+      !image.naturalHeight
+    )
+      return undefined;
+    return hitTestDeviceNodes(
+      inspection!.nodes,
+      ((clientX - bounds.left) * image.naturalWidth) / bounds.width,
+      ((clientY - bounds.top) * image.naturalHeight) / bounds.height,
+    );
+  };
+  const filteredNodes =
+    inspection?.nodes.filter((value) =>
+      `${value.label} ${value.role} ${value.id}`
+        .toLocaleLowerCase()
+        .includes(inspectionSearch.toLocaleLowerCase()),
+    ) ?? [];
+  const directionalSwipe = (direction: "up" | "down" | "left" | "right") => {
+    if (!imageSize.width || !imageSize.height) return;
+    const width = imageSize.width - 1,
+      height = imageSize.height - 1;
+    const starts = {
+      up: [0.5, 0.75, 0.5, 0.25],
+      down: [0.5, 0.25, 0.5, 0.75],
+      left: [0.75, 0.5, 0.25, 0.5],
+      right: [0.25, 0.5, 0.75, 0.5],
+    } as const;
+    const [x, y, endX, endY] = starts[direction];
+    action({
+      type: "swipe",
+      x: Math.round(x * width),
+      y: Math.round(y * height),
+      endX: Math.round(endX * width),
+      endY: Math.round(endY * height),
+    });
+  };
   const captureFailed = !!error && errorOperation === "capture";
   const stateLabel = (item: DeviceSummary) =>
     item.physical
@@ -539,50 +993,70 @@ function DevicePanelSurface({
       () => capture(selected),
       (value) => {
         setFrame(value);
+        setFrameStale(false);
+        setInspection(undefined);
+        setSelectedNode("");
         setActionCompleted(false);
       },
     );
   const shownFrame = annotating ? draft?.frame : frame;
-  const frameStateVisible = !!frame && (!live || annotating);
+  const liveFrameDelayed =
+    !!frame &&
+    live &&
+    Number.isFinite(Date.parse(frame.capturedAt)) &&
+    now - Date.parse(frame.capturedAt) >= 3000;
+  const frameStateVisible =
+    !!frame &&
+    (!live ||
+      annotating ||
+      frameStale ||
+      captureFailed ||
+      connectionUnavailable ||
+      liveFrameDelayed);
   useEffect(() => {
-    if (!frameStateVisible) return;
+    if (!visible || !frame) return;
     setNow(Date.now());
-    const timer = setInterval(() => {
-      if (!document.hidden) setNow(Date.now());
-    }, 5000);
+    const timer = setInterval(
+      () => {
+        if (!document.hidden) setNow(Date.now());
+      },
+      live ? 1000 : 5000,
+    );
     return () => clearInterval(timer);
-  }, [frameStateVisible]);
+  }, [!!frame, live, visible]);
   const frameCaptured = shownFrame ? capturedLabel(shownFrame.capturedAt, now) : undefined;
-  // One concise reason why the Control and Mark groups are unavailable.
-  const toolbarReason = !device?.booted
-    ? undefined
-    : annotating
-      ? t("Finish marking to use control and capture.")
-      : connectionUnavailable
-        ? t("The device connection is unavailable. Refresh devices to reconnect.")
-        : !control
-          ? t("Turn on Allow device control for Home, text and apps.")
-          : !status?.agentInstalled
-            ? undefined
-            : !frame
-              ? t("Marking needs a captured frame.")
-              : undefined;
+  const ownershipLabel = control
+    ? t("Device control claimed by this controller")
+    : controlStatus?.busy
+      ? t("Device control held by another controller")
+      : t("Viewing only · Device control not claimed");
+  const toolbarReason = connectionUnavailable
+    ? t("The device connection is unavailable. Refresh devices to reconnect.")
+    : undefined;
   return (
     <section
       className="host-tool-panel device-panel bycoda-arc"
       aria-label={t("Devices")}
       aria-busy={busy || loadingDevices}
     >
+      <DeviceCapabilityStatus
+        status={status}
+        checking={operation === "status" || (!status && busy)}
+        unavailable={connectionUnavailable || discoveryUnavailable}
+        viewing={live && !!selected}
+        operating={!!operation && !["status", "refresh", "capture"].includes(operation)}
+      />
       {error && (
         <details className="device-panel-error" role="alert">
           <summary>
-            {discoveryError
-              ? t("Could not load devices")
-              : actionCompleted
-                ? t("Action completed; screen unavailable")
-                : captureFailed
-                ? t("Device screen unavailable")
-                : t("Device action failed")}
+            {readableDeviceError(error) ??
+              (discoveryError
+                ? t("Could not load devices")
+                : actionCompleted
+                  ? t("Action completed; screen unavailable")
+                  : captureFailed
+                    ? t("Device screen unavailable")
+                    : t("Device action failed"))}
           </summary>
           <pre>{error}</pre>
         </details>
@@ -626,7 +1100,14 @@ function DevicePanelSurface({
           >
             {status.installed ? t("Connect devices") : t("Set up and connect")}
           </Button>
-          <Button variant="ghost" aria-haspopup="dialog" aria-expanded={surface === "setup"} onClick={(event) => openSurface("setup", event.currentTarget)}>{t("Setup and access")}</Button>
+          <Button
+            variant="ghost"
+            aria-haspopup="dialog"
+            aria-expanded={surface === "setup"}
+            onClick={(event) => openSurface("setup", event.currentTarget)}
+          >
+            {t("Setup and access")}
+          </Button>
         </div>
       )}
       {status?.running && (
@@ -636,7 +1117,7 @@ function DevicePanelSurface({
               <Tooltip
                 label={
                   device
-                    ? `${hostLabel ?? ""} · ${kindLabel(device)} · ${platformLabel(device.platform)} ${device.version} · ${device.id}`
+                    ? `${hostLabel ?? ""} · ${kindLabel(device)} · ${platformVersionLabel(device)} · ${device.id}`
                     : undefined
                 }
               >
@@ -655,7 +1136,7 @@ function DevicePanelSurface({
                     options={devices.map((item) => ({
                       value: item.id,
                       label: item.name,
-                      description: `${platformLabel(item.platform)} ${item.version} · ${stateLabel(item)} · ${kindLabel(item)}`,
+                      description: `${platformVersionLabel(item)} · ${stateLabel(item)} · ${kindLabel(item)}`,
                       keywords: `${item.id} ${kindLabel(item)} ${item.version}`,
                     }))}
                   />
@@ -675,9 +1156,7 @@ function DevicePanelSurface({
               // is the tool's context row above, so it is not repeated here.
               <span className="device-panel-summary" data-booted={device.booted}>
                 <strong>{stateLabel(device)}</strong>
-                <span>
-                  {platformLabel(device.platform)} {device.version}
-                </span>
+                <span>{platformVersionLabel(device)}</span>
                 <span>{kindLabel(device)}</span>
               </span>
             ) : null}
@@ -728,18 +1207,62 @@ function DevicePanelSurface({
                 variant="ghost"
                 iconOnly
                 label={t("Allow device control")}
-                tooltip={t("Allow device control")}
+                tooltip={control ? t("Release device control") : t("Claim device control")}
+                tooltipDetails={[ownershipLabel]}
+                aria-describedby={ownershipDescriptionId}
+                tone={control ? "success" : controlStatus?.busy ? "warning" : "info"}
                 role="switch"
                 aria-checked={control}
                 selected={control && !annotating}
-                disabled={busy || !device?.booted}
+                loading={operation === "claim" || operation === "release"}
+                disabled={busy || !device?.booted || !ownershipSupported}
+                disabledReason={
+                  !ownershipSupported
+                    ? t(
+                        "This Host does not support device control ownership. Update the Host to control this device.",
+                      )
+                    : undefined
+                }
                 onClick={() => {
-                  setControl(annotating ? true : !control);
                   setAnnotating(false);
+                  if (annotating && control) return;
+                  if (control && controlLease?.leaseId && api.releaseControl) {
+                    void execute(
+                      "release",
+                      () => api.releaseControl!(selected, controlLease.leaseId),
+                      () => {
+                        setControlStatus({ deviceId: selected, busy: false });
+                        setControl(false);
+                        setControlLease(undefined);
+                        delete claimRequests.current[selected];
+                        setInspection(undefined);
+                      },
+                    ).catch((cause: unknown) => setError(String(cause)));
+                  } else if (api.claimControl) {
+                    claimRequests.current[selected] ??= crypto.randomUUID();
+                    void execute(
+                      "claim",
+                      () => api.claimControl!(selected, claimRequests.current[selected]),
+                      (value) => {
+                        setControlLease(value);
+                        setControlStatus({ deviceId: value.deviceId, busy: true });
+                        setControl(!!value.leaseId);
+                      },
+                    ).catch((cause: unknown) => setError(String(cause)));
+                  }
                 }}
               >
-                <CursorMagicSelection className="icon-sm" aria-hidden />
+                {control ? (
+                  <CursorMagicSelection className="icon-sm" aria-hidden />
+                ) : controlStatus?.busy ? (
+                  <Lock className="icon-sm" aria-hidden />
+                ) : (
+                  <Eye className="icon-sm" aria-hidden />
+                )}
               </Button>
+              <span id={ownershipDescriptionId} className="sr-only">
+                {ownershipLabel}
+              </span>
               <Button
                 variant="ghost"
                 iconOnly
@@ -776,6 +1299,27 @@ function DevicePanelSurface({
                 <AppWindow className="icon-sm" aria-hidden />
               </Button>
             </div>
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Inspect device screen")}
+              tone="info"
+              selected={!!inspection}
+              loading={operation === "inspect"}
+              disabled={!controlEnabled || !api.inspect}
+              onClick={(event) => {
+                setSurfaceAnchor(event.currentTarget);
+                if (inspection && surface !== "inspector") setSurface("inspector");
+                else if (inspection) {
+                  setInspection(undefined);
+                  setSelectedNode("");
+                  setHoveredNode("");
+                  setSurface(undefined);
+                } else inspectDevice();
+              }}
+            >
+              <CursorMagicSelection className="icon-sm" aria-hidden />
+            </Button>
             <div className="device-panel-group" role="group" aria-label={t("Mark")}>
               <Button
                 variant="ghost"
@@ -812,7 +1356,7 @@ function DevicePanelSurface({
                 tooltip={t("Capture")}
                 loading={operation === "capture"}
                 disabled={unavailable("capture", canViewDevice && !annotating)}
-                onClick={() => void execute("capture", () => capture(selected), setFrame)}
+                onClick={refreshFrame}
               >
                 <ImagePlus className="icon-sm" aria-hidden />
               </Button>
@@ -856,7 +1400,7 @@ function DevicePanelSurface({
           ) : null}
           {deviceNotice && (
             <p className="device-panel-notice" role={deviceNotice.error ? "alert" : "status"}>
-              {deviceNotice.text}
+              {readableDeviceError(deviceNotice.text) ?? deviceNotice.text}
               <Button
                 variant="ghost"
                 iconOnly
@@ -884,24 +1428,86 @@ function DevicePanelSurface({
                     className="device-panel-annotation"
                   />
                 ) : frame ? (
-                  <img
-                    alt={t("Current device screen")}
-                    className={
-                      controlEnabled && device?.platform === "android"
-                        ? "host-frame-interactive"
-                        : undefined
-                    }
-                    src={imageSource(frame)}
-                    draggable={false}
-                    onLoad={(event) => {
-                      const image = event.currentTarget;
-                      if (image.naturalHeight)
-                        image.style.setProperty(
-                          "--device-aspect",
-                          String(image.naturalWidth / image.naturalHeight),
-                        );
+                  <Button
+                    variant="ghost"
+                    motion="none"
+                    layout="media"
+                    className="device-panel-preview-control"
+                    aria-disabled={!controlEnabled && !previewInspection}
+                    label={t(
+                      "Device screen. Use arrow keys to swipe; use coordinate controls to press.",
+                    )}
+                    onClick={(event) => {
+                      if (
+                        event.detail === 0 &&
+                        controlEnabled &&
+                        !inspection &&
+                        device?.platform === "android" &&
+                        imageSize.width &&
+                        imageSize.height
+                      )
+                        action({
+                          type: "press",
+                          x: Math.round(imageSize.width / 2),
+                          y: Math.round(imageSize.height / 2),
+                        });
+                    }}
+                    onKeyDown={(event) => {
+                      if (inspection) {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setInspection(undefined);
+                          setHoveredNode("");
+                          setSelectedNode("");
+                          setSurface(undefined);
+                        }
+                        return;
+                      }
+                      if (!controlEnabled || device?.platform !== "android" || captureFailed)
+                        return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        if (!imageSize.width || !imageSize.height) return;
+                        action({
+                          type: "press",
+                          x: Math.round(imageSize.width / 2),
+                          y: Math.round(imageSize.height / 2),
+                        });
+                        return;
+                      }
+                      const directions = {
+                        ArrowUp: "up",
+                        ArrowDown: "down",
+                        ArrowLeft: "left",
+                        ArrowRight: "right",
+                      } as const;
+                      const direction = directions[event.key as keyof typeof directions];
+                      if (direction) {
+                        event.preventDefault();
+                        directionalSwipe(direction);
+                      }
                     }}
                     onPointerDown={(event) => {
+                      const image = event.currentTarget.querySelector("img");
+                      if (!image) return;
+                      const imageBounds = image.getBoundingClientRect();
+                      if (
+                        event.clientX < imageBounds.left ||
+                        event.clientX > imageBounds.right ||
+                        event.clientY < imageBounds.top ||
+                        event.clientY > imageBounds.bottom
+                      )
+                        return;
+                      if (inspection) {
+                        gesture.current = null;
+                        if (event.button === 0) {
+                          const target = pointNode(image, event.clientX, event.clientY);
+                          setSelectedNode(target?.id ?? "");
+                          setHoveredNode("");
+                          setSurface("inspector");
+                        }
+                        return;
+                      }
                       if (
                         !controlEnabled ||
                         device?.platform !== "android" ||
@@ -909,8 +1515,7 @@ function DevicePanelSurface({
                         captureFailed
                       )
                         return;
-                      const image = event.currentTarget,
-                        bounds = image.getBoundingClientRect();
+                      const bounds = image.getBoundingClientRect();
                       if (
                         !bounds.width ||
                         !bounds.height ||
@@ -932,6 +1537,10 @@ function DevicePanelSurface({
                       };
                     }}
                     onPointerUp={(event) => {
+                      if (inspection) {
+                        gesture.current = null;
+                        return;
+                      }
                       const start = gesture.current;
                       gesture.current = null;
                       if (
@@ -941,8 +1550,9 @@ function DevicePanelSurface({
                         captureFailed
                       )
                         return;
-                      const image = event.currentTarget,
-                        bounds = image.getBoundingClientRect();
+                      const image = event.currentTarget.querySelector("img");
+                      if (!image) return;
+                      const bounds = image.getBoundingClientRect();
                       const x = Math.max(
                         0,
                         Math.min(
@@ -970,7 +1580,35 @@ function DevicePanelSurface({
                     onPointerCancel={() => {
                       gesture.current = null;
                     }}
-                  />
+                    onPointerMove={(event) => {
+                      const image = event.currentTarget.querySelector("img");
+                      if (!image) return;
+                      if (previewInspection)
+                        setHoveredNode(pointNode(image, event.clientX, event.clientY)?.id ?? "");
+                    }}
+                    onPointerLeave={() => setHoveredNode("")}
+                  >
+                    <img
+                      key={inspection?.inspectionId ?? "device-live-frame"}
+                      alt={t("Current device screen")}
+                      className={
+                        controlEnabled && device?.platform === "android"
+                          ? "host-frame-interactive"
+                          : undefined
+                      }
+                      src={imageSource(frame)}
+                      draggable={false}
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
+                        if (image.naturalHeight)
+                          image.style.setProperty(
+                            "--device-aspect",
+                            String(image.naturalWidth / image.naturalHeight),
+                          );
+                      }}
+                    />
+                  </Button>
                 ) : (
                   <div className="device-panel-waiting" role="status">
                     {loadingDevices
@@ -1023,15 +1661,35 @@ function DevicePanelSurface({
                     )}
                   </div>
                 )}
+                {highlightedNode && frame && previewInspection && imageSize.width > 0 && (
+                  <div className="device-panel-node-layer" aria-hidden>
+                    <svg
+                      viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+                      preserveAspectRatio="xMidYMid meet"
+                    >
+                      <rect
+                        x={highlightedNode.bounds.x}
+                        y={highlightedNode.bounds.y}
+                        width={highlightedNode.bounds.width}
+                        height={highlightedNode.bounds.height}
+                      />
+                    </svg>
+                    <span className="device-panel-node-caption">
+                      {highlightedNode.label || highlightedNode.role}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
             {frameStateVisible && (
               <span className="device-panel-frame-state" title={shownFrame?.capturedAt}>
                 {annotating
                   ? t("Marking · Frozen frame")
-                  : captureFailed || connectionUnavailable
+                  : captureFailed || connectionUnavailable || frameStale
                     ? t("Last frame · Not live")
-                    : t("Paused")}
+                    : liveFrameDelayed
+                      ? t("Last frame · Refreshing")
+                      : t("Paused")}
                 {frameCaptured ? ` · ${frameCaptured}` : ""}
               </span>
             )}
@@ -1107,7 +1765,15 @@ function DevicePanelSurface({
           width={360}
           solid
           autoFocus
-          onDismiss={() => setSurface(undefined)}
+          ignore={surface === "inspector" ? ".device-panel-canvas" : undefined}
+          onDismiss={(reason) => {
+            setSurface(undefined);
+            if (surface === "inspector" && reason === "escape") {
+              setInspection(undefined);
+              setSelectedNode("");
+              setHoveredNode("");
+            }
+          }}
           className="device-panel-popover bycoda-arc"
           role="dialog"
           aria-label={t(
@@ -1119,6 +1785,7 @@ function DevicePanelSurface({
               note: "Annotation note",
               setup: "Setup and access",
               output: "Device action result",
+              inspector: "Device accessibility inspector",
             }[surface],
           )}
         >
@@ -1127,9 +1794,12 @@ function DevicePanelSurface({
               <div className="device-panel-menu-actions">
                 <Button
                   variant="item"
-                  disabled={unavailable("snapshot", canControlDevice && !annotating)}
-                  loading={operation === "snapshot"}
-                  onClick={() => action({ type: "snapshot" })}
+                  disabled={unavailable(
+                    "inspect",
+                    canControlDevice && !annotating && !!api.inspect,
+                  )}
+                  loading={operation === "inspect"}
+                  onClick={inspectDevice}
                 >
                   {t("Accessibility snapshot")}
                 </Button>
@@ -1193,7 +1863,7 @@ function DevicePanelSurface({
               {device && (
                 <p className="host-tool-muted">
                   {hostLabel ? `${hostLabel} · ` : ""}
-                  {platformLabel(device.platform)} {device.version} · {kindLabel(device)}
+                  {platformVersionLabel(device)} · {kindLabel(device)}
                 </p>
               )}
               {(device?.platform === "ios" || windowsAndroid) && (
@@ -1221,9 +1891,15 @@ function DevicePanelSurface({
                 onChange={(event) => setApp(event.target.value)}
               />
               {device?.platform === "ios" ? (
-                <p className="host-tool-muted">{t("iOS: enter the app name or bundle ID. Open the app before interacting with it.")}</p>
+                <p className="host-tool-muted">
+                  {t(
+                    "iOS: enter the app name or bundle ID. Open the app before interacting with it.",
+                  )}
+                </p>
               ) : device?.platform === "android" ? (
-                <p className="host-tool-muted">{t("Android: enter Settings or an app package ID.")}</p>
+                <p className="host-tool-muted">
+                  {t("Android: enter Settings or an app package ID.")}
+                </p>
               ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
@@ -1240,14 +1916,20 @@ function DevicePanelSurface({
                 label={t("Text to type on device")}
                 disabled={!controlEnabled}
                 value={text}
+                error={textError || (errorOperation === "type" ? error : undefined)}
                 maxLength={4096}
                 onChange={(event) => setText(event.target.value)}
               />
-              {windowsAndroid ? (
-                <p className="host-tool-muted">{t("Android text input from Windows supports printable ASCII characters only.")}</p>
+              {windowsAndroid && !textError ? (
+                <p className="host-tool-muted">
+                  {t("Android text input from Windows supports printable ASCII characters only.")}
+                </p>
               ) : null}
               <Button
-                disabled={unavailable("type", canControlDevice && !annotating && !!text)}
+                disabled={unavailable(
+                  "type",
+                  canControlDevice && !annotating && !!text && !textError,
+                )}
                 loading={operation === "type"}
                 onClick={() => action({ type: "type", text })}
               >
@@ -1280,11 +1962,177 @@ function DevicePanelSurface({
               >
                 {t("Press coordinate")}
               </Button>
+              <div className="device-panel-coordinate-pair">
+                <NumberField
+                  label={t("Swipe end X")}
+                  min={0}
+                  max={20000}
+                  value={endX}
+                  disabled={!controlEnabled}
+                  onChange={(event) => setEndX(Number(event.target.value))}
+                />
+                <NumberField
+                  label={t("Swipe end Y")}
+                  min={0}
+                  max={20000}
+                  value={endY}
+                  disabled={!controlEnabled}
+                  onChange={(event) => setEndY(Number(event.target.value))}
+                />
+              </div>
+              <Button
+                disabled={unavailable(
+                  "swipe",
+                  canControlDevice &&
+                    !annotating &&
+                    coordinatesValid &&
+                    Number.isFinite(endX) &&
+                    Number.isFinite(endY) &&
+                    endX >= 0 &&
+                    endY >= 0 &&
+                    endX <= 20000 &&
+                    endY <= 20000,
+                )}
+                loading={operation === "swipe"}
+                onClick={() => action({ type: "swipe", x, y, endX, endY })}
+              >
+                {t("Swipe coordinates")}
+              </Button>
+              {device?.platform === "android" && (
+                <div
+                  className="device-panel-swipe-actions"
+                  role="group"
+                  aria-label={t("Swipe device screen")}
+                >
+                  {(["up", "down", "left", "right"] as const).map((direction) => (
+                    <Button
+                      key={direction}
+                      variant="ghost"
+                      disabled={!controlEnabled || !imageSize.width || captureFailed}
+                      onClick={() => directionalSwipe(direction)}
+                    >
+                      {t(
+                        {
+                          up: "Swipe up",
+                          down: "Swipe down",
+                          left: "Swipe left",
+                          right: "Swipe right",
+                        }[direction],
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <p className="host-tool-muted">
                 {t(
                   "Android: click the screen to press at that pixel. iOS: use logical point coordinates from the accessibility snapshot.",
                 )}
               </p>
+            </div>
+          )}
+          {surface === "inspector" && (
+            <div className="device-panel-inspector">
+              <TextField
+                label={t("Search accessibility nodes")}
+                value={inspectionSearch}
+                onChange={(event) => setInspectionSearch(event.target.value)}
+              />
+              <p className="host-tool-muted">
+                {device?.platform === "android"
+                  ? t(
+                      "Native accessibility snapshot · Point at the preview to inspect. Select a node, then press it explicitly.",
+                    )
+                  : t(
+                      "Native accessibility snapshot · Preview bounds unavailable for this coordinate space.",
+                    )}
+              </p>
+              {!inspection || inspection.supported === false ? (
+                <p>{t("This device does not provide a structured accessibility tree.")}</p>
+              ) : (
+                <div className="device-panel-nodes" aria-label={t("Accessibility nodes")}>
+                  {filteredNodes.length ? (
+                    filteredNodes.slice(0, 500).map((value, index) => (
+                      <Button
+                        key={value.id}
+                        variant="item"
+                        selected={selectedNode === value.id}
+                        aria-pressed={selectedNode === value.id}
+                        onClick={() => setSelectedNode(value.id)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                          event.preventDefault();
+                          const next =
+                            filteredNodes[
+                              Math.max(
+                                0,
+                                Math.min(
+                                  499,
+                                  filteredNodes.length - 1,
+                                  index + (event.key === "ArrowDown" ? 1 : -1),
+                                ),
+                              )
+                            ];
+                          if (next) {
+                            setSelectedNode(next.id);
+                            const buttons =
+                              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                                "button",
+                              );
+                            buttons?.[filteredNodes.indexOf(next)]?.focus();
+                          }
+                        }}
+                      >
+                        <span className="device-panel-node-label">
+                          {value.label || value.role || value.id}
+                          <small>
+                            {value.role} · {value.id}
+                          </small>
+                        </span>
+                      </Button>
+                    ))
+                  ) : (
+                    <p>{t("No matching accessibility nodes")}</p>
+                  )}
+                </div>
+              )}
+              {node && (
+                <div className="device-panel-node-detail">
+                  <strong>{node.label || node.role}</strong>
+                  <span>
+                    {node.role} · {node.enabled ? t("Enabled") : t("Disabled")}
+                  </span>
+                  <span>
+                    {t("Bounds")}: {node.bounds.x}, {node.bounds.y} · {node.bounds.width} ×{" "}
+                    {node.bounds.height}
+                  </span>
+                  <Button
+                    disabled={!controlEnabled || !node.enabled || !node.clickable}
+                    onClick={() => {
+                      action({
+                        type: "pressNode",
+                        inspectionId: inspection!.inspectionId,
+                        nodeId: node.id,
+                      });
+                    }}
+                  >
+                    {t("Press selected node")}
+                  </Button>
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                loading={operation === "inspect"}
+                disabled={!controlEnabled || !api.inspect}
+                onClick={inspectDevice}
+              >
+                {t("Refresh inspection")}
+              </Button>
+              {inspection?.raw && (
+                <details>
+                  <summary>{t("Raw accessibility output")}</summary>
+                  <pre className="device-panel-output">{inspection.raw}</pre>
+                </details>
+              )}
             </div>
           )}
           {surface === "note" && draft && (
@@ -1308,6 +2156,37 @@ function DevicePanelSurface({
                   {t("Add marked image to draft")}
                 </Button>
               )}
+              {draft.transferOperation && (
+                <>
+                  <p>
+                    {t(
+                      "Attachment result is unknown. Check the original attachment before adding this image again.",
+                    )}
+                  </p>
+                  <Button
+                    loading={operation === "addImage"}
+                    disabled={unavailable("addImage")}
+                    onClick={() => {
+                      const attachment = draft.transferOperation!;
+                      void execute(
+                        "addImage",
+                        () => reconcileDeviceImageTransfer(attachment),
+                        () => {
+                          updateDraft((value) => ({ ...value, transferOperation: undefined }));
+                          setDeviceNotice({
+                            text: t(
+                              "Original image attachment confirmed. Your edited draft is kept.",
+                            ),
+                            error: false,
+                          });
+                        },
+                      ).catch((cause: unknown) => setError(String(cause)));
+                    }}
+                  >
+                    {t("Check attachment")}
+                  </Button>
+                </>
+              )}
               <Button
                 variant="ghost"
                 disabled={busy || !draft.document.marks.length}
@@ -1318,7 +2197,12 @@ function DevicePanelSurface({
               </Button>
               <Button
                 variant="ghost"
-                disabled={busy}
+                disabled={busy || !!draft.transferOperation}
+                disabledReason={
+                  draft.transferOperation
+                    ? t("Check the original attachment before discarding this draft.")
+                    : undefined
+                }
                 onClick={() => {
                   setAnnotations((values) => {
                     const next = { ...values };
@@ -1340,7 +2224,11 @@ function DevicePanelSurface({
                 {t("Setup and access")}
                 <span className="host-tool-muted device-panel-setup-summary">
                   {hostLabel ? `${hostLabel} · ` : ""}
-                  {status.running ? t("Device host running") : t("Device host stopped")}
+                  {connectionUnavailable || discoveryUnavailable
+                    ? t("Unknown")
+                    : status.running
+                      ? t("Device host running")
+                      : t("Device host stopped")}
                   {" · "}
                   {t("{p0} devices found", { p0: devices.length })}
                 </span>

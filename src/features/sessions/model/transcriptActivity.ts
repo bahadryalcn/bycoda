@@ -7,7 +7,7 @@ import {
   isSearchTool,
   isWeakToolTitle,
 } from "../../../integrations/harness/core/preview";
-import { leafName } from "../../files/model/fileName";
+import { leafName } from "../../files/public/fileName";
 import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/paths";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
@@ -69,7 +69,12 @@ export function toolCallState(block: Block): ToolCallState {
   if (isFailedStatus(status)) return "rejected";
   if (needsApproval(block)) return "pending";
   // Settled, and not red: what it did before the stop stays readable.
-  if (status === "completed" || status === "success" || status === "stopped" || status === "interrupted") {
+  if (
+    status === "completed" ||
+    status === "success" ||
+    status === "stopped" ||
+    status === "interrupted"
+  ) {
     return "accepted";
   }
   if (block.streaming || status === "in_progress" || status === "pending" || status === "running") {
@@ -204,7 +209,7 @@ const FENCE = "```";
 
 function countFences(text: string, from: number, to: number): number {
   let count = 0;
-  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to; ) {
+  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to;) {
     count++;
     at = text.indexOf(FENCE, at + FENCE.length);
   }
@@ -681,21 +686,35 @@ export function subagentReport(block: Block): string | undefined {
  * the agent is working, and the count says how far it has got.
  */
 export function subagentStatusLine(block: Block, steps: AgentStep[]): string {
-  if (toolCallState(block) === "rejected") return "failed";
-  if (block.tool?.status?.toLowerCase() === "interrupted") return "interrupted";
-  const tools = steps.filter((step) => step.kind === "tool").length;
-  if (isStoppedBlock(block)) {
-    return tools === 0
-      ? STOPPED_BY_YOU
-      : `${tools === 1 ? "1 step" : `${tools} steps`}, ${STOPPED_BY_YOU}`;
+  return subagentStatusParts(block, steps)
+    .map((part) => part.text)
+    .join(", ");
+}
+
+export type SubagentStatusPart = {
+  text: string;
+  tone?: "danger" | "warning" | "success" | "accent";
+};
+
+/** Keep step failures separate from the run's lifecycle and neutral step count. */
+export function subagentStatusParts(block: Block, steps: AgentStep[]): SubagentStatusPart[] {
+  if (toolCallState(block) === "rejected") return [{ text: "failed", tone: "danger" }];
+  if (block.tool?.status?.toLowerCase() === "interrupted") {
+    return [{ text: "interrupted", tone: "warning" }];
   }
-  if (tools === 0) return "";
+  const tools = steps.filter((step) => step.kind === "tool").length;
   const count = tools === 1 ? "1 step" : `${tools} steps`;
+  if (isStoppedBlock(block)) {
+    return [...(tools ? [{ text: count }] : []), { text: STOPPED_BY_YOU, tone: "warning" }];
+  }
+  if (tools === 0) return [];
   // A step that failed inside a run that went on to finish still has to say so
   // here, or the row reads clean until someone opens the trail.
   const failed = steps.filter((step) => step.kind === "tool" && isFailedStatus(step.status)).length;
-  if (!failed) return count;
-  return `${count}, ${failed === 1 ? "1 failed" : `${failed} failed`}`;
+  return [
+    { text: count },
+    ...(failed ? [{ text: `${failed} failed`, tone: "danger" as const }] : []),
+  ];
 }
 
 /** A failed delegated call must stay visible even when the work trail folds. */

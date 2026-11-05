@@ -1,4 +1,5 @@
 import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { Button } from "../../shared/ui/Button";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import type { IconComponent } from "../../shared/ui/icons";
@@ -90,9 +91,10 @@ export function RailAction({
         {label}
       </span>
       {dot ? (
-        <span
+        <StatusDot
+          label={ariaLabel ?? label}
           aria-hidden
-          className="size-2 shrink-0 rounded-full bg-accent @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5 @max-[140px]/rail:size-1.5"
+          className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5"
         />
       ) : shortcut ? (
         <span

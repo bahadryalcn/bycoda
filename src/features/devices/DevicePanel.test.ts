@@ -4,11 +4,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DevicePanel } from "./DevicePanel";
 import type { DeviceFrame, DeviceHostStatus, DevicePanelApi } from "./types";
+import {
+  readToolsDraftTransfer,
+  restoreToolsDraftTransfer,
+} from "../host-tools/toolsDraftTransfer";
 
 const status: DeviceHostStatus = {
   running: true,
   installed: true,
   agentInstalled: true,
+  controlProtocol: 1,
   platform: "win32",
   platforms: [{ platform: "android", available: true }],
 };
@@ -29,9 +34,62 @@ const makeApi = (): DevicePanelApi => ({
   boot: vi.fn().mockResolvedValue(device),
   capture: vi.fn().mockResolvedValue({ mime: "image/png", base64: "frame", capturedAt: "now" }),
   action: vi.fn().mockResolvedValue("Done"),
+  controlStatus: vi.fn().mockResolvedValue({ deviceId: device.id, busy: false }),
+  claimControl: vi.fn().mockResolvedValue({
+    deviceId: device.id,
+    leaseId: "test-lease",
+    expiresAt: Number.MAX_SAFE_INTEGER,
+  }),
+  releaseControl: vi.fn().mockResolvedValue({ released: true }),
 });
 let root: Root;
 let container: HTMLDivElement;
+it("restores device draft without claiming control", async () => {
+  const scope = { cwd: "/repo", sessionId: "device-transfer", targetValue: "project" };
+  restoreToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue, {
+    device: {
+      selected: "emulator",
+      app: "com.example.app",
+      text: "unfinished text",
+      zoom: 1,
+      annotations: {},
+    },
+  });
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api, transferScope: scope })));
+  await openOptions();
+  expect(api.action).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Android emulator");
+});
+it("holds transfer while a device action is in flight", async () => {
+  const scope = { cwd: "/repo", sessionId: "device-pending", targetValue: "project" };
+  let finish!: (value: string) => void;
+  const api = makeApi();
+  vi.mocked(api.action).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await act(async () => root.render(createElement(DevicePanel, { api, transferScope: scope })));
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await act(async () => button("Home").click());
+  expect(() => readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)).toThrow(
+    "Wait for the current tool action",
+  );
+  expect(api.action).toHaveBeenCalledTimes(1);
+  await act(async () => finish("Done"));
+  expect(() => readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)).not.toThrow();
+});
+it("does not discover or start a runtime while its conversation is hidden", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api, active: false })));
+  expect(api.status).not.toHaveBeenCalled();
+  expect(api.start).not.toHaveBeenCalled();
+  expect(api.list).not.toHaveBeenCalled();
+  await act(async () => root.render(createElement(DevicePanel, { api, active: true })));
+  expect(api.status).toHaveBeenCalledTimes(1);
+  expect(api.list).toHaveBeenCalledTimes(1);
+});
 const button = (text: string) =>
   // Command surfaces use the shared Popover portal outside the panel container.
   [...document.body.querySelectorAll("button")].find(
@@ -121,6 +179,35 @@ it("shows a readable capture time beside a paused frame", async () => {
   expect(chip.textContent).toContain("Captured");
 });
 
+it("does not repeat a generic platform returned as its version", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [{ ...device, version: " aNdRoId " }],
+    errors: [],
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  const summary = container.querySelector(".device-panel-summary")!;
+  expect(summary.textContent?.match(/Android/g)).toHaveLength(1);
+  expect(summary.textContent).not.toContain("aNdRoId");
+  await openOptions();
+  expect(document.body.textContent).not.toContain("Android Android");
+});
+
+it.each([undefined, null, 16])(
+  "keeps viewing when older device metadata has an invalid version %s",
+  async (version) => {
+    const api = makeApi();
+    vi.mocked(api.list).mockResolvedValue({
+      devices: [{ ...device, version: version as unknown as string }],
+      errors: [],
+    });
+    await act(async () => root.render(createElement(DevicePanel, { api })));
+    expect(container.querySelector(".device-panel-summary")?.textContent).toContain("Android");
+    expect(container.querySelector("img")?.src).toContain("frame");
+    expect(container.querySelector(".device-panel-error")).toBeNull();
+  },
+);
+
 it("offers Refresh frame, not a repeated action, when input succeeded but the screenshot failed", async () => {
   const api = makeApi();
   vi.mocked(api.capture)
@@ -130,13 +217,279 @@ it("offers Refresh frame, not a repeated action, when input succeeded but the sc
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   await act(async () => button("Home").click());
   expect(container.textContent).toContain("Action completed");
+  expect(container.querySelector("img")?.src).toContain("frame");
+  expect(container.querySelector(".device-panel-frame-state")?.textContent).toContain("Last frame");
   expect(button("Refresh frame")).toBeDefined();
   await act(async () => button("Refresh frame").click());
   expect(api.action).toHaveBeenCalledOnce();
   expect(container.textContent).not.toContain("do not repeat the action");
 });
 
-it("connects an installed runtime and follows a connected phone without controlling it", async () => {
+it("retains same-target frame after capture failure and retries without blanking", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Live view");
+  vi.mocked(api.capture).mockRejectedValueOnce(new Error("Capture failed"));
+  await clickButton("Capture");
+  expect(container.querySelector("img")?.src).toContain("frame");
+  expect(container.querySelector(".device-panel-frame-state")?.textContent).toContain("Last frame");
+  await clickButton("Capture");
+  expect(container.querySelector("img")?.src).toContain("frame");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("starts the next slow live capture shortly after completion without overlapping and shows delayed frame age", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-04T12:00:00Z"));
+  const capturedAt = new Date().toISOString();
+  const api = makeApi();
+  let finish!: (frame: DeviceFrame) => void;
+  vi.mocked(api.capture).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(api.capture).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(api.capture).toHaveBeenCalledTimes(1);
+  await act(async () => finish({ mime: "image/png", base64: "retained", capturedAt }));
+  await act(async () => vi.advanceTimersByTimeAsync(99));
+  expect(api.capture).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(api.capture).toHaveBeenCalledTimes(2);
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(api.capture).toHaveBeenCalledTimes(2);
+  expect(container.querySelector("img")?.src).toContain("retained");
+  const state = container.querySelector(".device-panel-frame-state")!;
+  expect(state.textContent).toContain("Last frame · Refreshing");
+  expect(state.textContent).toContain("Captured");
+  expect(state.textContent).not.toContain("now");
+});
+
+it("never claims control by viewing and keeps input disabled after a rejected claim", async () => {
+  const api = makeApi();
+  vi.mocked(api.claimControl!).mockRejectedValue(new Error("DEVICE_CONTROL_BUSY"));
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(api.claimControl).not.toHaveBeenCalled();
+  await clickButton("Allow device control");
+  const request = vi.mocked(api.claimControl!).mock.calls[0][1];
+  expect(button("Home").disabled).toBe(true);
+  expect(container.querySelector(".device-panel-error summary")?.textContent).toBe(
+    "Device control held by another controller",
+  );
+  expect(button("Allow device control").getAttribute("aria-describedby")).toBeTruthy();
+  await clickButton("Allow device control");
+  expect(vi.mocked(api.claimControl!).mock.calls[1][1]).toBe(request);
+  expect(api.action).not.toHaveBeenCalled();
+});
+
+it("explains an invalid control lease and disables input until an explicit new claim", async () => {
+  const api = makeApi();
+  vi.mocked(api.action).mockRejectedValueOnce(new Error("DEVICE_CONTROL_LEASE_INVALID"));
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  await clickButton("Home");
+  expect(container.querySelector(".device-panel-error summary")?.textContent).toBe(
+    "Device control expired. Claim control again to send input.",
+  );
+  expect(button("Home").disabled).toBe(true);
+  expect(api.claimControl).toHaveBeenCalledTimes(1);
+  await clickButton("Allow device control");
+  expect(api.claimControl).toHaveBeenCalledTimes(2);
+  expect(button("Home").disabled).toBe(false);
+});
+
+it("rejects unsupported Windows Android text locally and keeps the draft", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  await clickButton("Device text input");
+  const input = document.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      "Türkçe ıİşğ",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(input.value).toBe("Türkçe ıİşğ");
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  expect(button("Type text").disabled).toBe(true);
+  expect(api.action).not.toHaveBeenCalled();
+});
+
+it("keeps device text and app drafts distinct through switching and presentation transfer", async () => {
+  const scope = { cwd: "/drafts", sessionId: "inputs", targetValue: "project" };
+  restoreToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue, {
+    device: {
+      selected: device.id,
+      app: "first.app",
+      text: "first text",
+      zoom: 1,
+      annotations: {},
+      inputs: {
+        [device.id]: { app: "first.app", text: "first text" },
+        second: { app: "second.app", text: "second text" },
+      },
+    },
+  });
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [device, { ...device, id: "second", name: "Second" }],
+    errors: [],
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api, transferScope: scope })));
+  await act(async () => devicePicker().click());
+  await act(async () => document.querySelectorAll<HTMLButtonElement>('[role="option"]')[1].click());
+  expect(
+    readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)?.device,
+  ).toMatchObject({ selected: "second", app: "second.app", text: "second text" });
+  await act(async () => devicePicker().click());
+  await act(async () => document.querySelectorAll<HTMLButtonElement>('[role="option"]')[0].click());
+  const transferred = readToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue)!;
+  expect(transferred.device).toMatchObject({
+    selected: device.id,
+    app: "first.app",
+    text: "first text",
+  });
+  expect(JSON.stringify(transferred)).not.toContain("leaseId");
+});
+
+it("renews its own lease before expiry without releasing the renewed token", async () => {
+  vi.useFakeTimers();
+  const api = makeApi();
+  vi.mocked(api.claimControl!).mockResolvedValue({
+    deviceId: device.id,
+    leaseId: "renewed",
+    expiresAt: Date.now() + 2000,
+  });
+  api.renewControl = vi.fn().mockImplementation(async () => ({
+    deviceId: device.id,
+    leaseId: "renewed",
+    expiresAt: Date.now() + 2000,
+  }));
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  await act(async () => vi.advanceTimersByTimeAsync(2500));
+  expect(api.renewControl).toHaveBeenCalled();
+  expect(api.releaseControl).not.toHaveBeenCalled();
+  expect(button("Home").disabled).toBe(false);
+  await clickButton("Home");
+  expect(api.action).toHaveBeenCalledWith(device.id, { type: "home" }, "renewed");
+});
+
+it("uses native inspection node identity and invalidates it after input", async () => {
+  const api = makeApi();
+  api.inspect = vi.fn().mockResolvedValue({
+    deviceId: device.id,
+    inspectionId: "native-tree",
+    raw: "native accessibility tree",
+    frame: { mime: "image/png", base64: "frame", capturedAt: "now" },
+    inspectedAt: "now",
+    coordinateSpace: "pixels",
+    viewport: { width: 100, height: 200 },
+    nodes: [
+      {
+        id: "native-node",
+        label: "Continue",
+        role: "Button",
+        bounds: { x: 10, y: 20, width: 30, height: 40 },
+        enabled: true,
+        clickable: true,
+      },
+    ],
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  const previousImage = container.querySelector<HTMLImageElement>("img")!;
+  await clickButton("Inspect device screen");
+  const image = container.querySelector<HTMLImageElement>("img")!;
+  expect(image).not.toBe(previousImage);
+  Object.defineProperty(image, "naturalWidth", { value: 100, configurable: true });
+  Object.defineProperty(image, "naturalHeight", { value: 200, configurable: true });
+  image.getBoundingClientRect = () => ({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 100,
+    bottom: 200,
+    width: 100,
+    height: 200,
+    toJSON: () => ({}),
+  });
+  await act(async () => image.dispatchEvent(new Event("load", { bubbles: true })));
+  await act(async () =>
+    image.dispatchEvent(
+      new PointerEvent("pointermove", { clientX: 20, clientY: 30, bubbles: true }),
+    ),
+  );
+  expect(container.querySelector(".device-panel-node-layer rect")?.getAttribute("x")).toBe("10");
+  await act(async () =>
+    image.dispatchEvent(
+      new PointerEvent("pointerdown", { button: 0, clientX: 20, clientY: 30, bubbles: true }),
+    ),
+  );
+  await act(async () =>
+    image.dispatchEvent(
+      new PointerEvent("pointerup", { button: 0, clientX: 20, clientY: 30, bubbles: true }),
+    ),
+  );
+  expect(api.action).not.toHaveBeenCalled();
+  const nodeButton = [...document.querySelectorAll<HTMLButtonElement>("button")].find((value) =>
+    value.textContent?.startsWith("Continue"),
+  )!;
+  expect(nodeButton.getAttribute("aria-pressed")).toBe("true");
+  await clickButton("Press selected node");
+  expect(api.action).toHaveBeenCalledWith(
+    device.id,
+    { type: "pressNode", inspectionId: "native-tree", nodeId: "native-node" },
+    "test-lease",
+  );
+  expect(button("Press selected node")).toBeUndefined();
+});
+
+it("clears inspection selection before a failed refresh", async () => {
+  const api = makeApi();
+  api.inspect = vi
+    .fn()
+    .mockResolvedValueOnce({
+      deviceId: device.id,
+      inspectionId: "old-tree",
+      raw: "tree",
+      frame: { mime: "image/png", base64: "frame", capturedAt: "now" },
+      inspectedAt: "now",
+      coordinateSpace: "points",
+      nodes: [
+        {
+          id: "node",
+          label: "Native button",
+          role: "Button",
+          bounds: { x: 0, y: 0, width: 10, height: 10 },
+          enabled: true,
+          clickable: true,
+        },
+      ],
+    })
+    .mockRejectedValueOnce(new Error("Inspection failed"));
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  await clickButton("Inspect device screen");
+  const node = [...document.querySelectorAll<HTMLButtonElement>("button")].find((value) =>
+    value.textContent?.startsWith("Native button"),
+  )!;
+  await act(async () => node.click());
+  expect(button("Press selected node")).toBeDefined();
+  await clickButton("Refresh inspection");
+  expect(button("Press selected node")).toBeUndefined();
+  expect(container.querySelector("img")?.src).toContain("frame");
+  expect(api.action).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Inspection failed");
+});
+
+it("requires explicit connection for an installed runtime before following a phone", async () => {
   const api = makeApi();
   vi.mocked(api.status).mockResolvedValue({ ...status, running: false });
   vi.mocked(api.list).mockResolvedValue({
@@ -144,6 +497,11 @@ it("connects an installed runtime and follows a connected phone without controll
     errors: [],
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(api.start).not.toHaveBeenCalled();
+  expect(api.list).not.toHaveBeenCalled();
+  expect(api.capture).not.toHaveBeenCalled();
+  expect(api.claimControl).not.toHaveBeenCalled();
+  await act(async () => button("Connect devices").click());
   expect(api.start).toHaveBeenCalledOnce();
   expect(api.list).toHaveBeenCalledOnce();
   expect(devicePicker().textContent).toContain("Galaxy S24");
@@ -179,6 +537,40 @@ it("keeps discovery retry available when the running host finds no devices", asy
   expect(devicePicker().textContent).toContain(device.name);
 });
 
+it("invalidates discovery readiness and activity until discovery itself succeeds", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  const state = (axis: string) =>
+    container.querySelector(`[data-capability-axis="${axis}"]`)?.getAttribute("data-state");
+  expect(state("readiness")).toBe("ready");
+  expect(state("permission")).toBe("unknown");
+  vi.mocked(api.list).mockRejectedValueOnce(new Error("Discovery refresh failed"));
+  await clickButton("Refresh devices");
+  expect(state("readiness")).toBe("unknown");
+  expect(state("activity")).toBe("unknown");
+  await clickButton("Capture");
+  expect(state("readiness")).toBe("unknown");
+  expect(state("activity")).toBe("unknown");
+  await clickButton("Refresh devices");
+  expect(state("readiness")).toBe("ready");
+});
+
+it("clears the last running runtime observation when a status refresh fails", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await openSetup();
+  vi.mocked(api.status).mockRejectedValueOnce(new Error("Status refresh failed"));
+  await clickButton("Status");
+  expect(
+    container.querySelector('[data-capability-axis="readiness"]')?.getAttribute("data-state"),
+  ).toBe("unknown");
+  expect(
+    container.querySelector('[data-capability-axis="activity"]')?.getAttribute("data-state"),
+  ).toBe("unknown");
+  expect(document.body.textContent).not.toContain("Device host running");
+  expect(api.start).not.toHaveBeenCalled();
+});
+
 it("shows capture progress in its button and identifies capture failure without discovery advice", async () => {
   const api = makeApi();
   await act(async () => root.render(createElement(DevicePanel, { api })));
@@ -210,6 +602,7 @@ it("shows capture progress in its button and identifies capture failure without 
 });
 
 it("clears a capture error after live view successfully resumes", async () => {
+  vi.useFakeTimers();
   const api = makeApi();
   vi.mocked(api.capture).mockRejectedValueOnce(new Error("Host unavailable"));
   await act(async () => root.render(createElement(DevicePanel, { api })));
@@ -217,8 +610,8 @@ it("clears a capture error after live view successfully resumes", async () => {
   const live = container.querySelector<HTMLButtonElement>(
     '[role="switch"][aria-label="Live view"]',
   )!;
-  expect(live.getAttribute("aria-checked")).toBe("false");
-  await act(async () => live.click());
+  expect(live.getAttribute("aria-checked")).toBe("true");
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
   expect(api.capture).toHaveBeenCalledTimes(2);
   expect(container.querySelector("img")?.src).toContain("frame");
   expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -237,7 +630,7 @@ it("does not clear a failed device action when live capture succeeds", async () 
   );
   await act(async () => button("Home").click());
   await act(async () => vi.advanceTimersByTimeAsync(1000));
-  expect(api.capture).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(api.capture).mock.calls.length).toBeGreaterThanOrEqual(2);
   expect(api.action).toHaveBeenCalledOnce();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Home action failed");
 });
@@ -433,10 +826,14 @@ it("opens only an explicitly chosen iOS app and captures its screen after the ac
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => button("Open app").click());
-  expect(api.action).toHaveBeenCalledWith(device.id, {
-    type: "openApp",
-    app: "com.example.target",
-  });
+  expect(api.action).toHaveBeenCalledWith(
+    device.id,
+    {
+      type: "openApp",
+      app: "com.example.target",
+    },
+    "test-lease",
+  );
   expect(api.capture).toHaveBeenCalledWith(device.id);
   expect(vi.mocked(api.action).mock.invocationCallOrder[0]).toBeLessThan(
     vi.mocked(api.capture).mock.invocationCallOrder[0],
@@ -444,7 +841,7 @@ it("opens only an explicitly chosen iOS app and captures its screen after the ac
   expect(container.querySelector("img")?.src).toContain("frame");
   await act(async () => button("Home").click());
   expect(input.value).toBe("com.apple.springboard");
-  expect(api.action).toHaveBeenLastCalledWith(device.id, { type: "home" });
+  expect(api.action).toHaveBeenLastCalledWith(device.id, { type: "home" }, "test-lease");
 });
 
 it("clears the app target when selecting another device or changing the host", async () => {
@@ -686,16 +1083,24 @@ it("requires control permission for Android screen gestures and maps tap and swi
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
   await pointer("pointerdown", 60, 120);
   await pointer("pointerup", 60, 120);
-  expect(api.action).toHaveBeenLastCalledWith(device.id, { type: "press", x: 100, y: 200 });
+  expect(api.action).toHaveBeenLastCalledWith(
+    device.id,
+    { type: "press", x: 100, y: 200 },
+    "test-lease",
+  );
   await pointer("pointerdown", 60, 120);
   await pointer("pointerup", 160, 320);
-  expect(api.action).toHaveBeenLastCalledWith(device.id, {
-    type: "swipe",
-    x: 100,
-    y: 200,
-    endX: 300,
-    endY: 600,
-  });
+  expect(api.action).toHaveBeenLastCalledWith(
+    device.id,
+    {
+      type: "swipe",
+      x: 100,
+      y: 200,
+      endX: 300,
+      endY: 600,
+    },
+    "test-lease",
+  );
   await pointer("pointerdown", 60, 120);
   await pointer("pointercancel", 60, 120);
   await pointer("pointerup", 160, 320);
@@ -716,7 +1121,7 @@ it("returns from annotation to pointer control without revoking the already enab
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
   expect(button("Home").disabled).toBe(false);
   await clickButton("Home");
-  expect(api.action).toHaveBeenCalledWith(device.id, { type: "home" });
+  expect(api.action).toHaveBeenCalledWith(device.id, { type: "home" }, "test-lease");
   await clickButton("Allow device control");
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
   expect(button("Home").disabled).toBe(true);

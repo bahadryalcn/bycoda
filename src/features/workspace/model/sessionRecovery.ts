@@ -1,5 +1,9 @@
 import { sessionNeedsInput, type Session } from "../../sessions/model/session";
-import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
+import {
+  isOwnerStopNotice,
+  isOwnerStoppedTurn,
+  isTurnInterruptionNotice,
+} from "../../sessions/model/turnInterruption";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import { parseWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspaceSnapshot";
@@ -17,11 +21,25 @@ export function eligibleRecoverySessions(
   const seen = new Set<string>();
   const rows: WorkspaceSessionStub[] = [];
   for (const stub of recovery.workspace.sessions) {
-    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd)) continue;
+    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd))
+      continue;
     seen.add(stub.id);
     if (isRemoteProjectPath(stub.cwd) && stub.remoteSessionId) {
-      if (sessions.some((session) => sameProjectPath(session.cwd, stub.cwd) && hostSessionFor(session.id) === stub.remoteSessionId)) continue;
-      if (rows.some((row) => sameProjectPath(row.cwd, stub.cwd) && row.remoteSessionId === stub.remoteSessionId)) continue;
+      if (
+        sessions.some(
+          (session) =>
+            sameProjectPath(session.cwd, stub.cwd) &&
+            hostSessionFor(session.id) === stub.remoteSessionId,
+        )
+      )
+        continue;
+      if (
+        rows.some(
+          (row) =>
+            sameProjectPath(row.cwd, stub.cwd) && row.remoteSessionId === stub.remoteSessionId,
+        )
+      )
+        continue;
     }
     rows.push(stub);
   }
@@ -35,7 +53,11 @@ export class RecoveryOpenError extends Error {
     readonly failed: string[],
     readonly acknowledgmentFailed = false,
   ) {
-    super(acknowledgmentFailed ? "Conversation tabs are open, but the recovery update could not be saved." : "Some recovery entries could not be opened.");
+    super(
+      acknowledgmentFailed
+        ? "Conversation tabs are open, but the recovery update could not be saved."
+        : "Some recovery entries could not be opened.",
+    );
     this.name = "RecoveryOpenError";
   }
 }
@@ -46,7 +68,9 @@ const saveFailureListeners = new Set<() => void>();
 export const getRecoverySaveFailure = () => saveFailure;
 export const subscribeRecoverySaveFailure = (listener: () => void) => {
   saveFailureListeners.add(listener);
-  return () => { saveFailureListeners.delete(listener); };
+  return () => {
+    saveFailureListeners.delete(listener);
+  };
 };
 export function setRecoverySaveFailure(value: RecoverySaveFailure) {
   saveFailure = value;
@@ -233,6 +257,7 @@ export function recoveryStatus(
   if (issue) return issue;
   if (session.busy || session.continuingElsewhere) return "working";
   if (sessionNeedsInput(session)) return "input";
+  if (isOwnerStoppedTurn(session.blocks)) return "idle";
   // An interrupt remains meaningful through later status/metadata rows, but
   // never carries into a newer submitted user turn.
   for (let index = session.blocks.length - 1; index >= 0; index--) {
@@ -241,11 +266,8 @@ export function recoveryStatus(
       if (session.historyLoading || session.historyLoadError) return "unknown";
       return block.durationMs !== undefined ? "done" : "unknown";
     }
-    if (
-      block.notice === "interrupt" ||
-      (block.role === "system" && isTurnInterruptMessage(block.text))
-    )
-      return "interrupted";
+    if (isOwnerStopNotice(block)) return "idle";
+    if (isTurnInterruptionNotice(block)) return "interrupted";
   }
   return "idle";
 }

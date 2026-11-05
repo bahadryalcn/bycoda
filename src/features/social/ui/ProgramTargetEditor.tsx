@@ -7,13 +7,20 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t } from "../../../shared/i18n";
-import { PROGRAM_STEPS, type ProgramTarget, type SocialOccurrence, type SocialProgram } from "../model/socialProgram";
+import {
+  PROGRAM_STEPS,
+  type ProgramTarget,
+  type SocialOccurrence,
+  type SocialProgram,
+} from "../model/socialProgram";
 import { PROGRAM_STEP_LABELS } from "../model/socialProgramForm";
 import type { CampaignVariant } from "../model/social";
 import { ProgramLabel, programStates } from "./ProgramFormShared";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { Notice, names, type Props } from "./socialShared";
 import { useSocialPending } from "./useSocialPending";
+import { useSocialMediaEditor } from "./useSocialMediaEditor";
+import { socialMediaIds } from "../model/socialMediaEditor";
 
 type TargetEditorProps = {
   accountName?: string;
@@ -31,17 +38,44 @@ type TargetEditorProps = {
  */
 export function ProgramTargetEditor(props: TargetEditorProps) {
   const [draft, setDraft] = useState<CampaignVariant | undefined>();
+  const [claimError, setClaimError] = useState(false);
+  const [readyMediaKey, setReadyMediaKey] = useState<string>();
+  const mediaEditor = useSocialMediaEditor(props.client);
   const [selectedSteps, setSelectedSteps] = useState<string[]>([]);
   const mediaKey = props.target.variant?.media.map((m) => m.uploadId ?? m.url).join("|") ?? "";
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        for (const id of socialMediaIds(props.target.variant?.media))
+          await mediaEditor.claimExisting(id);
+        if (active) {
+          setClaimError(false);
+          setReadyMediaKey(mediaKey);
+        }
+      } catch {
+        if (active) setClaimError(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [mediaKey, mediaEditor]);
   return (
-    <TargetEditorBody
-      key={mediaKey}
-      {...props}
-      draft={draft}
-      setDraft={setDraft}
-      selectedSteps={selectedSteps}
-      setSelectedSteps={setSelectedSteps}
-    />
+    <>
+      {claimError ? (
+        <Notice kind="error">{t("Unable to retain media for this draft.")}</Notice>
+      ) : null}
+      <TargetEditorBody
+        key={mediaKey}
+        {...props}
+        busy={props.busy || readyMediaKey !== mediaKey}
+        draft={draft}
+        setDraft={setDraft}
+        selectedSteps={selectedSteps}
+        setSelectedSteps={setSelectedSteps}
+      />
+    </>
   );
 }
 

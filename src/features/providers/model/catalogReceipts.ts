@@ -76,15 +76,13 @@ export function refreshProviderCatalog(
         ? { status: "retained", at, count: after.length }
         : { status: "bundled", at, count: after.length };
     })
-    .catch(
-      (error: unknown): Settled => ({
-        status: "error",
-        at: Date.now(),
-        count: catalogModelsFor(harness).length,
-        error: error instanceof Error ? error.message : String(error),
-        retained: hadLive,
-      }),
-    )
+    .catch((error: unknown): Settled => ({
+      status: "error",
+      at: Date.now(),
+      count: catalogModelsFor(harness).length,
+      error: error instanceof Error ? error.message : String(error),
+      retained: hadLive,
+    }))
     .then((settled) => {
       inflight.delete(harness);
       publish(harness, settled);

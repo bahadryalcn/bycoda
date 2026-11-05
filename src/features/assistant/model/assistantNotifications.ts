@@ -57,7 +57,7 @@ export class AssistantNotificationDelivery {
     try {
       if (!(await this.ports.lead())) return;
       const handled = new Set(this.delivered);
-      for (const id of [...this.delivered]) await this.acknowledge(id);
+      for (const id of Array.from(this.delivered)) await this.acknowledge(id);
       if (!snapshot.profile.enabled || !snapshot.profile.setupComplete) return;
       for (const candidate of (snapshot.notifications ?? []).slice(0, 5)) {
         if (!candidate.eligible || handled.has(candidate.id)) continue;

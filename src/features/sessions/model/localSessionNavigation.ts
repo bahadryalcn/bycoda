@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { remoteRequest } from "../../connections/model/connections";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { HostProject, HostSession, RemoteMachine } from "../../connections/model/protocol";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { remoteRequest } from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { HostProject, HostSession, RemoteMachine } from "../../connections";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { nativeSessionReference, resolveNativeSessionReference } from "./nativeSessionReference";

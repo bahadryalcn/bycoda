@@ -9,7 +9,7 @@ import {
   Plus,
   Check,
 } from "../../../shared/ui/icons";
-import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import {
@@ -46,7 +46,7 @@ import {
   GIT_ACTIONS,
   HOST_UPDATE_NOTICE,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { deleteLocalBranch } from "../model/deleteBranch";
 import { operationLabel } from "../model/commitActions";
@@ -59,7 +59,12 @@ import { BranchManagerDialog } from "./BranchManagerDialog";
 import { GitPickDialog, type PickItem } from "./GitPickDialog";
 import { stashCommit } from "./GitStashSection";
 import { RefNameDialog } from "./RefNameDialog";
-import { gitPanelRuntime, setGitFeedback, withGitOperation, useGitPanelState } from "../model/gitPanelState";
+import {
+  gitPanelRuntime,
+  setGitFeedback,
+  withGitOperation,
+  useGitPanelState,
+} from "../model/gitPanelState";
 import { confirmGitAction } from "../model/gitConfirmation";
 
 /** The `busy` key the menu's own actions hold while they run. */
@@ -672,9 +677,12 @@ export function GitActionsMenu({
               void (async () => {
                 const confirmed = await confirmGitAction({
                   title: t("Delete tag?"),
-                  message: t("The tag “{p0}” is deleted here. A copy already pushed to a remote stays there.", {
-                    p0: name,
-                  }),
+                  message: t(
+                    "The tag “{p0}” is deleted here. A copy already pushed to a remote stays there.",
+                    {
+                      p0: name,
+                    },
+                  ),
                   confirmLabel: t("Delete tag"),
                 });
                 if (confirmed) await run(() => gitDeleteTag(cwd, name));

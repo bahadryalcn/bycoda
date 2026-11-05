@@ -8,10 +8,10 @@ import {
 import {
   captureRemoteSessionActions,
   type CapturedRemoteSessionActions,
-} from "../../connections/model/remoteSessionActions";
-import { remoteProjectFor } from "../../connections/model/remoteProjects";
-import type { HostSession } from "../../connections/model/protocol";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+} from "../../connections/public/remoteSessionActions";
+import type { HostSession } from "../../connections";
+import { remoteProjectFor } from "../../connections/public/remoteProjects";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { registerParentInput, type ParentAdmission } from "../data/parentInputClosure";
 import {
   copyNativeCaptureData,
@@ -343,7 +343,7 @@ export function createApprovalIntentRegistry(
   }
   const notify = () => {
     state.owner!.changed();
-    for (const listener of [...state.listeners]) {
+    for (const listener of Array.from(state.listeners)) {
       try {
         listener();
       } catch {
@@ -498,7 +498,7 @@ export function createApprovalIntentRegistry(
         notify();
       }
     }
-    for (const entry of [...state.records]) {
+    for (const entry of Array.from(state.records)) {
       if (entry.sessionId !== before.id || entry.represented) continue;
       if (entry.sourceFingerprint !== undefined) continue;
       const block = request(before, entry.requestId);
@@ -560,7 +560,7 @@ export function createApprovalIntentRegistry(
           entry.hostCursor = undefined;
       return;
     }
-    for (const entry of [...state.records]) {
+    for (const entry of Array.from(state.records)) {
       if (
         entry.sessionId !== shellId ||
         entry.represented ||

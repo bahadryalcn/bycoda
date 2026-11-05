@@ -14,9 +14,236 @@ import type {
   WorkspaceCreateOperation,
   WorkspaceFeatureClaim,
   WorkspaceRewindOperation,
-} from "./workspace-contracts";
+} from "./workspaces/workspace-contracts";
 const cleanups: Array<() => void | Promise<void>> = [];
+describe("durable desktop command receipts", () => {
+  const identity = () => ({
+    commandId: "desktop-control",
+    sessionId: "session",
+    signature: "signature",
+    principalId: "principal",
+    ownerId: "physical-owner",
+    delivery: '{"type":"cancel"}',
+    receipt: { commandId: "desktop-control", sessionId: "session", revision: 17 },
+  });
+  it("survives restart and pruning while preserving exact acceptance and one offer", async () => {
+    const path = join(open(), "desktop-command.db");
+    let store = new HostStore(path);
+    const input = identity();
+    expect(await store.acceptDesktopCommand(input, async () => {})).toEqual(input.receipt);
+    expect(
+      await store.acceptDesktopCommand(
+        { ...input, receipt: { ...input.receipt, revision: 99 } },
+        async () => {},
+      ),
+    ).toEqual(input.receipt);
+    await expect(
+      store.acceptDesktopCommand({ ...input, delivery: "other" }, async () => {}),
+    ).rejects.toThrow(/different/);
+    await expect(store.desktopCommandStatus(input.commandId, "foreign")).rejects.toThrow(
+      /principal/,
+    );
+    await expect(store.desktopCommandStatus(input.commandId, undefined)).rejects.toThrow(
+      /principal/,
+    );
+    expect(await store.desktopCommandStatus("non-desktop", undefined)).toBeUndefined();
+    const results = await Promise.all([
+      store.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+      store.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+    ]);
+    expect(results.filter(Boolean)).toEqual([input.delivery]);
+    await store.close();
+    store = new HostStore(path);
+    cleanups.push(() => store.close());
+    expect(await store.desktopCommandStatus(input.commandId, input.principalId)).toEqual(
+      input.receipt,
+    );
+    await store.pruneReceipts(Date.now() + 30 * 24 * 3600000);
+    expect(await store.receiptStatus(input.commandId)).toBeUndefined();
+    await expect(store.receipt(input.commandId, input.signature)).rejects.toThrow(
+      /desktop control/,
+    );
+    await store.ackDesktopCommand(input.commandId, input.ownerId, async () => {});
+    expect(
+      await store.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+    ).toBeUndefined();
+  });
+  it("holds an unoffered acceptance after Host restart", async () => {
+    const path = join(open(), "desktop-unoffered.db");
+    const first = new HostStore(path);
+    const input = identity();
+    await first.acceptDesktopCommand(input, async () => {});
+    await first.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect(await reopened.desktopCommandStatus(input.commandId, input.principalId)).toEqual(
+      input.receipt,
+    );
+    expect(
+      await reopened.offerDesktopCommand(input.commandId, input.ownerId, async () => {}),
+    ).toBeUndefined();
+  });
+  it("does not publish acceptance or offer when owner revalidation fails", async () => {
+    const store = new HostStore(join(open(), "desktop-revalidation.db"));
+    cleanups.push(() => store.close());
+    const input = identity();
+    await expect(
+      store.acceptDesktopCommand(input, async () => {
+        throw new Error("revoked");
+      }),
+    ).rejects.toThrow("revoked");
+    expect(await store.receiptStatus(input.commandId)).toBeUndefined();
+    await store.acceptDesktopCommand(input, async () => {});
+    await expect(
+      store.offerDesktopCommand(input.commandId, "other", async () => {}),
+    ).rejects.toThrow(/owner/);
+    await expect(
+      store.offerDesktopCommand(input.commandId, input.ownerId, async () => {
+        throw new Error("retired");
+      }),
+    ).rejects.toThrow("retired");
+    expect(await store.offerDesktopCommand(input.commandId, input.ownerId, async () => {})).toBe(
+      input.delivery,
+    );
+  });
+  it("refuses a desktop command ID already accepted by the Host", async () => {
+    const store = new HostStore(join(open(), "desktop-collision.db"));
+    cleanups.push(() => store.close());
+    const input = identity();
+    await store.recordReceipt(input.signature, input.receipt);
+    await expect(store.acceptDesktopCommand(input, async () => {})).rejects.toThrow(
+      /another command/,
+    );
+  });
+  it("captures immutable acceptance before asynchronous authority checks", async () => {
+    const store = new HostStore(join(open(), "desktop-capture.db"));
+    cleanups.push(() => store.close());
+    const input = identity();
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const pending = store.acceptDesktopCommand(input, () => gate);
+    input.ownerId = "other";
+    input.delivery = "other";
+    input.receipt.revision = 99;
+    resume();
+    expect(await pending).toEqual({
+      commandId: "desktop-control",
+      sessionId: "session",
+      revision: 17,
+    });
+    expect(
+      await store.offerDesktopCommand("desktop-control", "physical-owner", async () => {}),
+    ).toBe('{"type":"cancel"}');
+  });
+});
 describe("managed workspace persistence", () => {
+  it("hydrates legacy summaries in bounded batches without overwriting newer projections", async () => {
+    const store = new HostStore(join(open(), "summary-batches.db"));
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/summary-batches", "Summaries");
+    for (let i = 0; i < 40; i++)
+      await store.save(session(`legacy-${i}`, project.id, { updatedAt: i }), {});
+    await store.db
+      .prepare("UPDATE session_state SET summary=? WHERE project_id=?")
+      .run("{}", project.id);
+    const original = store.session.bind(store);
+    let active = 0,
+      peak = 0,
+      changed = false;
+    const spy = vi.spyOn(store, "session").mockImplementation(async (id) => {
+      active++;
+      peak = Math.max(peak, active);
+      const value = await original(id);
+      if (!changed) {
+        changed = true;
+        await store.db
+          .prepare("UPDATE session_state SET revision=revision+1,summary=? WHERE id=?")
+          .run('{"newer":true}', id);
+      }
+      active--;
+      return value;
+    });
+    const summaries = await store.summaries(project.id);
+    expect(peak).toBeLessThanOrEqual(32);
+    expect(summaries).toHaveLength(40);
+    expect(summaries.map((value) => value.updatedAt)).toEqual(
+      summaries.map((value) => value.updatedAt).sort((a, b) => b - a),
+    );
+    expect(
+      await store.db
+        .prepare("SELECT count(*) AS n FROM session_state WHERE summary=?")
+        .get('{"newer":true}'),
+    ).toMatchObject({ n: 1 });
+    spy.mockRestore();
+  });
+  it("does not refresh a legacy summary after authority transfers during hydration", async () => {
+    const store = new HostStore(join(open(), "summary-authority.db"));
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/summary-authority", "Authority");
+    await store.save(session("authority-session", project.id), {});
+    await store.db
+      .prepare("UPDATE session_state SET summary=? WHERE id=?")
+      .run("{}", "authority-session");
+    const original = store.session.bind(store);
+    const spy = vi.spyOn(store, "session").mockImplementation(async (id) => {
+      const value = await original(id);
+      await store.db
+        .prepare(
+          "INSERT INTO host_authority_heads(environment_id,session_id,generation,migration_id,phase) VALUES(?,?,?,?,?)",
+        )
+        .run("env", id, 1, "migration", "active");
+      return value;
+    });
+    await store.summaries(project.id);
+    expect(
+      await store.db
+        .prepare("SELECT summary FROM session_state WHERE id=?")
+        .get("authority-session"),
+    ).toMatchObject({ summary: "{}" });
+    spy.mockRestore();
+  });
+  it("keeps provider history in cold summaries after reopen", async () => {
+    const path = join(open(), "provider-history.db");
+    const store = new HostStore(path);
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/provider-history", "History");
+    const value = session("history", project.id);
+    value.session.harness = "codex";
+    value.session.blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "First",
+        turnModel: { harness: "claude", id: "opus", name: "Opus" },
+      },
+      {
+        id: "h",
+        role: "handoff",
+        text: "",
+        handoff: { from: "claude", to: "codex", status: "ready" },
+      },
+      {
+        id: "u2",
+        role: "user",
+        text: "Continue",
+        turnModel: { harness: "codex", id: "gpt", name: "GPT" },
+      },
+    ];
+    const expected = {
+      providers: ["claude", "codex"],
+      activeHarness: "codex",
+      activeModel: "GPT",
+      handedOffFrom: "claude",
+    };
+    await store.save(value, {});
+    expect((await store.summaries(project.id))[0].providerHistory).toEqual(expected);
+    await store.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect((await reopened.summaries(project.id))[0].providerHistory).toEqual(expected);
+  });
   it("retains optional session workspace identity in summaries after reopen", async () => {
     const path = join(open(), "workspace-summary.db"),
       store = new HostStore(path);
@@ -349,7 +576,7 @@ describe("incremental project summaries", () => {
     const title = (await store.summaries(project.id))[0].title;
     await expect(
       (async () =>
-        await await await await await store.transaction(async () => {
+        await store.transaction(async () => {
           await store.save(
             {
               ...base,
@@ -483,7 +710,7 @@ describe("sparse journal checkpoints", () => {
     next = await edit(store, next, [{ ...next.session.blocks[0], text: "pending" }]);
     await expect(
       (async () =>
-        await await await await await store.transaction(async () => {
+        await store.transaction(async () => {
           await flush(store);
           throw new Error("rollback");
         }, "critical"))(),
@@ -568,7 +795,7 @@ describe("sparse journal checkpoints", () => {
       const writes = store.snapshotWrites;
       for (let index = 0; index < 10; index++) {
         const block = { ...current.session.blocks.at(-1)!, text: `tool event ${index}` };
-        current = await await await await await store.transaction(
+        current = await store.transaction(
           async () =>
             await store.save(
               {
@@ -625,7 +852,7 @@ describe("sparse journal checkpoints", () => {
     };
     await expect(
       (async () =>
-        await await await await await store.transaction(async () => {
+        await store.transaction(async () => {
           await save();
           throw new Error("rollback");
         }, "critical"))(),
@@ -834,7 +1061,7 @@ it("rolls back a journal and its events when an enclosing transaction fails", as
   const base = await store.save(session("rollback", project.id), {});
   await expect(
     (async () =>
-      await await await await await store.transaction(async () => {
+      await store.transaction(async () => {
         await store.save({ ...base, revision: 2 }, { changed: true });
         throw new Error("rollback");
       }))(),
@@ -1133,7 +1360,7 @@ describe("HostStore device credentials", () => {
 });
 describe("HostStore receipts", () => {
   const receipt = (commandId: string) => ({ commandId }) as unknown as CommandReceipt;
-  it("prunes old receipts but keeps recent ones deduplicating retries", async () => {
+  it("compacts old request signatures while preserving exact retry answers", async () => {
     const directory = open();
     const path = join(directory, "host.db");
     const store = new HostStore(path);
@@ -1143,7 +1370,7 @@ describe("HostStore receipts", () => {
       .prepare("UPDATE receipts SET created_at=? WHERE id='old'")
       .run(Date.now() - 8 * 24 * 3600000);
     await store.pruneReceipts();
-    expect(await store.receipt("old", "sig")).toBeUndefined();
+    expect(await store.receipt("old", "sig")).toEqual(receipt("old"));
     expect(await store.receipt("recent", "sig")).toEqual(receipt("recent"));
     await expect((async () => await store.receipt("recent", "other"))()).rejects.toThrow(
       /different payload/,
@@ -1172,113 +1399,6 @@ describe("HostStore receipts", () => {
     cleanups.push(async () => await reopened.close());
     expect(await reopened.receiptStatus("durable")).toEqual(receipt("durable"));
     expect(await reopened.receiptStatus("missing")).toBeUndefined();
-  });
-});
-describe("HostStore startup columns", () => {
-  const legacy = async (path: string) => {
-    const old = new DatabaseSync(path);
-    old.exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, cwd TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
-      CREATE TABLE sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), snapshot TEXT NOT NULL, summary TEXT);
-      CREATE TABLE events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
-      INSERT INTO projects VALUES ('p', '/x', 'X');`);
-    const insert = old.prepare(
-      "INSERT INTO sessions (id, project_id, snapshot) VALUES (?, 'p', ?)",
-    );
-    const withSession = (
-      id: string,
-      patch: Record<string, unknown>,
-      extra: Partial<HostSession> = {},
-    ) => {
-      const base = session(id, "p", extra);
-      insert.run(id, JSON.stringify({ ...base, session: { ...base.session, ...patch } }));
-    };
-    // idle + desktop-shared + provider binding: needs no rewrite
-    withSession(
-      "bound",
-      { providerSessionId: "prov-1", cwd: "/work" },
-      { desktop: { updatedAt: 1 } },
-    );
-    // started here, never shared with the desktop app
-    withSession("local", {});
-    // a turn that was running when the host stopped
-    withSession(
-      "running",
-      { providerSessionId: "prov-2" },
-      { desktop: { updatedAt: 1 }, status: "running", revision: 4 },
-    );
-    // a `!command` that cannot outlive the host
-    withSession(
-      "shell",
-      {
-        blocks: [{ id: "b", role: "assistant", text: "", shell: { running: true } }],
-      },
-      { desktop: { updatedAt: 1 } },
-    );
-    await old.close();
-  };
-  it("backfills the startup columns from an old-schema database", async () => {
-    const directory = open();
-    const path = join(directory, "host.db");
-    await legacy(path);
-    const store = new HostStore(path);
-    cleanups.push(async () => await store.close());
-    const states = Object.fromEntries(
-      (await store.startupStates()).map((state) => [state.id, state]),
-    );
-    expect(states.bound).toMatchObject({
-      hasDesktop: true,
-      running: false,
-      shellRunning: false,
-      providerSessionId: "prov-1",
-      harness: "codex",
-      cwd: "/work",
-    });
-    expect(states.local).toMatchObject({
-      hasDesktop: false,
-      providerSessionId: null,
-    });
-    expect(states.running).toMatchObject({
-      running: true,
-      providerSessionId: "prov-2",
-    });
-    expect(states.shell.shellRunning).toBe(true);
-  });
-  it("starts up with the same effects as parsing every snapshot, loading only what it rewrites", async () => {
-    const directory = open();
-    const path = join(directory, "host.db");
-    await legacy(path);
-    const store = new HostStore(path);
-    cleanups.push(async () => await store.close());
-    const find = vi.spyOn(store, "session");
-    const bind = vi.fn();
-    const provider = {
-      send: vi.fn(),
-      stop: async () => {},
-      cancel: async () => {},
-      bind,
-      approve: () => {},
-      answer: () => {},
-    };
-    const engine = new HostEngine(store, { codex: provider });
-    await engine.ready;
-    cleanups.push(async () => await engine.close());
-    // Provider bindings are restored for every bound session.
-    expect(bind).toHaveBeenCalledWith("bound", "prov-1", "/work");
-    expect(bind).toHaveBeenCalledWith("running", "prov-2", "/tmp", undefined);
-    expect(bind).toHaveBeenCalledTimes(2);
-    // The idle, already-shared session was never loaded for startup.
-    expect(find.mock.calls.map(([id]) => id)).not.toContain("bound");
-    // Legacy rows are still shared with the desktop app; running turns are interrupted.
-    expect((await store.session("local")).desktop).toBeDefined();
-    expect((await store.session("running")).status).toBe("interrupted");
-    expect((await store.session("shell")).session.blocks[0].shell?.running).toBeFalsy();
-    // The columns follow the rewrites.
-    const states = Object.fromEntries(
-      (await store.startupStates()).map((state) => [state.id, state]),
-    );
-    expect(states.local.hasDesktop).toBe(true);
-    expect(states.running.running).toBe(false);
-    expect(states.shell.shellRunning).toBe(false);
   });
 });
 describe("HostStore checkpointed streaming saves", () => {

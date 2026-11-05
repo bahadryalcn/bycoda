@@ -1,3 +1,4 @@
+import { normalizeLineBreaks, restoreMixedLineEndings } from "../editor/editorDoc";
 import { invoke as invokeLocal, isTauri } from "@tauri-apps/api/core";
 import { z } from "zod";
 import {
@@ -5,7 +6,7 @@ import {
   type PersistenceDrainRegistry,
   type PersistenceProducer,
   type PersistenceWork,
-} from "../../sessions/data/persistenceDrain";
+} from "../../sessions/public/persistenceDrain";
 
 export type EditorDraftEol = "lf" | "crlf" | "cr";
 /** CodeMirror Text is immutable; callers must retain the actual document value. */
@@ -35,6 +36,7 @@ const payloadSchema = z.strictObject({
   path: z.string(),
   text: z.string(),
   eol: z.enum(["lf", "crlf", "cr"]),
+  serializedText: z.string().optional(),
   diskBaseline: z.string(),
   revision: counter.min(1),
 });
@@ -90,6 +92,8 @@ export type EditorDraftCaptureInput = Readonly<{
   text: EditorDraftText;
   diskBaseline: string;
   eol: EditorDraftEol;
+  /** Raw source whose unchanged separators are retained during materialization. */
+  lineEndingSource?: string;
 }>;
 export type EditorDraftCaptureReceipt = Readonly<{
   qualified: false;
@@ -232,6 +236,7 @@ function samePayload(a: Payload, b: Payload): boolean {
     a.path === b.path &&
     a.text === b.text &&
     a.eol === b.eol &&
+    a.serializedText === b.serializedText &&
     a.diskBaseline === b.diskBaseline &&
     a.revision === b.revision
   );
@@ -252,6 +257,9 @@ async function checkMetadata(
   strict = false,
 ): Promise<NativeEditorDraftMetadata> {
   if (
+    (payload.serializedText !== undefined &&
+      (!validText(payload.serializedText) ||
+        normalizeLineBreaks(payload.serializedText) !== payload.text)) ||
     value.ownerId !== epoch ||
     value.documentId !== payload.documentId ||
     value.path !== payload.path ||
@@ -277,7 +285,8 @@ async function checkMetadata(
     if (
       value.payloadDigest !== (await sha(JSON.stringify(payload))) ||
       value.textDigest !== (await sha(payload.text)) ||
-      value.serializedTextDigest !== (await sha(serialized(payload.text, payload.eol))) ||
+      value.serializedTextDigest !==
+        (await sha(payload.serializedText ?? serialized(payload.text, payload.eol))) ||
       value.baselineDigest !== (await sha(payload.diskBaseline))
     )
       throw new EditorDraftPersistenceError("invalid-response");
@@ -466,11 +475,17 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
         throw new EditorDraftPersistenceError("invalid-capture");
       capture.materialized = value;
     }
+    const source = capture.input.lineEndingSource ?? capture.input.diskBaseline;
+    const eol = capture.input.eol === "crlf" ? "\r\n" : capture.input.eol === "cr" ? "\r" : "\n";
+    const exact = restoreMixedLineEndings(capture.materialized, source, eol);
+    if (!validText(exact)) throw new EditorDraftPersistenceError("invalid-capture");
+    const uniform = serialized(capture.materialized, capture.input.eol);
     return (capture.payload ??= {
       documentId: doc.id,
       path: capture.path,
       text: capture.materialized,
       eol: capture.input.eol,
+      ...(exact !== uniform ? { serializedText: exact } : {}),
       diskBaseline: capture.input.diskBaseline,
       revision: (doc.known?.revision ?? 0) + 1,
     });
@@ -748,17 +763,19 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
           invalid?.code === "capacity" ||
           (Number.isSafeInteger(raw.text.length) && raw.text.length > MAX_TEXT);
         if (invalid && oversize) {
-          console.warn(`[editor-draft] capture skipped (${invalid.code}); recovery copy is not kept`);
+          console.warn(
+            `[editor-draft] capture skipped (${invalid.code}); recovery copy is not kept`,
+          );
           // The unsent older capture would otherwise be stored as if it were this document.
           const older = doc.pending;
           if (older) {
             older.cancelled = true;
             doc.pending = undefined;
             older.wake();
-            if (doc.phase === "queued") doc.phase = doc.error ? "error" : (doc.known?.state ?? "ready");
+            if (doc.phase === "queued")
+              doc.phase = doc.error ? "error" : (doc.known?.state ?? "ready");
           }
-        }
-        else if (invalid) failed(doc, invalid, value.sequence);
+        } else if (invalid) failed(doc, invalid, value.sequence);
         else {
           doc.phase = "queued";
           job = enqueue(doc, value);

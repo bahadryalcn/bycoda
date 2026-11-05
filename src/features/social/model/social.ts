@@ -128,6 +128,9 @@ export type SocialAccount = {
   paused: boolean;
   executorId: string;
   grants: Record<string, SocialPermission[]>;
+  /** Owner-controlled project-independent Assistant access; absent means denied. */
+  assistantGrant?: { permissions: ("read" | "draft")[]; version: string };
+  assistantGrantPending?: { permissions: ("read" | "draft")[] };
   createdAt: number;
 };
 /** Owner review of an existing channel and bot; never contains tokens or invite links. */
@@ -311,7 +314,8 @@ export type SocialSegment = {
 export type SocialDraft = {
   id: string;
   accountId: string;
-  projectId: string;
+  /** Absent for a personal draft bound to an unassigned account conversation. */
+  projectId?: string;
   kind: "reply" | "message" | "comment";
   threadId?: string;
   contactId: string;
@@ -357,6 +361,15 @@ export type SocialJob = {
   accountId: string;
   projectIds: string[];
   sessionId?: string;
+  roomSource?: {
+    threadId: string;
+    accountGrantVersion: string;
+    projectCwd: string | null;
+    policyVersion: string;
+    snapshotHash: string;
+    operationHash: string;
+    requestId: string;
+  };
   provider: string;
   campaignId?: string;
   publishingPlanId?: string;
@@ -494,6 +507,8 @@ export const SOCIAL_COLLECTIONS = [
 ] as const;
 export type SocialCollection = (typeof SOCIAL_COLLECTIONS)[number];
 export type SocialPage = { offset: number; limit: number; total: number };
+/** jobs.status with page=true; omitted pagination retains its legacy array response. */
+export type SocialJobsPage = { jobs: SocialJob[]; page: SocialPage };
 export type SocialCollectionFilter = {
   query?: string;
   accountId?: string;
@@ -538,6 +553,8 @@ export const SOCIAL_TOOLS = [
   "inbox.list",
   "thread.read",
   "replies.draft",
+  "drafts.read",
+  "drafts.update",
   "replies.send",
   "contacts.upsert",
   "contacts.search",

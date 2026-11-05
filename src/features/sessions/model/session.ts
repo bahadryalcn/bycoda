@@ -21,33 +21,11 @@ import {
 } from "./models";
 import { loadProjectProviderSettings } from "./projectProviders";
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
+import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
 
-export type HarnessId =
-  | "claude"
-  | "codex"
-  | "cursor"
-  | "grok"
-  | "opencode"
-  | "pi"
-  | "omp"
-  | "fx"
-  | "hermes"
-  | "antigravity"
-  | "acp";
-
-export const HARNESSES: HarnessId[] = [
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "opencode",
-  "pi",
-  "omp",
-  "fx",
-  "hermes",
-  "antigravity",
-  "acp",
-];
+export { HARNESSES, HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+export type { HarnessId } from "../../../shared/model/harnessIdentity";
 
 export type BlockRole =
   | "user"
@@ -343,13 +321,44 @@ export type TurnMetrics = {
 /** Stamped by the Host at the accepted effect boundary, never supplied by a
  * client send/create/steer command. Missing author retains legacy owner input. */
 export type SessionMessageAuthor =
-  | {kind:"assistant-manual";name:string;supervisionId:string;reason:"nudge"|"answer"|"steer"|"kickoff";operationId:string;activityId?:string}
-  | {kind:"assistant";name:string;jobId:string;reason:"nudge"|"answer"|"steer"|"kickoff";operationId:string;activityId?:string}
-  | {kind:"task"|"automation"|"steward";id:string;name:string;reason:string;operationId?:string};
-export type AssistantSessionManagement = {assistant:true;managedAt:number;detachedAt?:number}&({jobId:string;supervisionId?:never}|{supervisionId:string;jobId?:never});
+  | {
+      kind: "assistant-room";
+      name: string;
+      threadId: string;
+      reason: "kickoff";
+      operationId: string;
+    }
+  | {
+      kind: "assistant-manual";
+      name: string;
+      supervisionId: string;
+      reason: "nudge" | "answer" | "steer" | "kickoff";
+      operationId: string;
+      activityId?: string;
+    }
+  | {
+      kind: "assistant";
+      name: string;
+      jobId: string;
+      reason: "nudge" | "answer" | "steer" | "kickoff";
+      operationId: string;
+      activityId?: string;
+    }
+  | {
+      kind: "task" | "automation" | "steward";
+      id: string;
+      name: string;
+      reason: string;
+      operationId?: string;
+    };
+export type AssistantSessionManagement = {
+  assistant: true;
+  managedAt: number;
+  detachedAt?: number;
+} & ({ jobId: string; supervisionId?: never } | { supervisionId: string; jobId?: never });
 
 export type Block = {
-  author?:SessionMessageAuthor;
+  author?: SessionMessageAuthor;
   /** Immutable self-contained visual published by a completed Conversation Tool. */
   inlineVisual?: InlineVisualSnapshot;
   /** Bounded remote preview; full content is requested explicitly, never persisted. */
@@ -501,9 +510,9 @@ export type WorkspaceMode = "current" | "worktree";
 
 export type Session = {
   /** Host-owned relationship to a durable assistant job; never inferred from a title. */
-  managedBy?:AssistantSessionManagement;
+  managedBy?: AssistantSessionManagement;
   /** Explicit execution owner, independent of cwd, worktree and legacy mirrors. */
-  hostBinding?: import("../../connections/model/sessionExecutionBinding").HostSessionBinding;
+  hostBinding?: import("../../connections").HostSessionBinding;
   /** Incomplete remote view. Sending may proceed; authoritative persistence may not. */
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */
@@ -645,34 +654,6 @@ export type PendingHarnessSwitch = {
   fromProviderAccountId?: string;
   /** The harness being left had hit its usage limit; never ask it for a recap. */
   fromUsageLimited?: boolean;
-};
-
-export const HARNESS_LABEL: Record<HarnessId, string> = {
-  claude: "claude",
-  codex: "codex",
-  cursor: "cursor",
-  grok: "grok",
-  opencode: "opencode",
-  pi: "pi",
-  omp: "omp",
-  fx: "fx",
-  hermes: "hermes",
-  antigravity: "antigravity",
-  acp: "acp",
-};
-
-export const HARNESS_TITLE: Record<HarnessId, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor",
-  grok: "Grok Build",
-  opencode: "OpenCode",
-  pi: "Pi",
-  omp: "omp",
-  fx: "fx",
-  hermes: "Hermes Agent",
-  antigravity: "Antigravity",
-  acp: "ACP Agent",
 };
 
 /** fx ACP rejects attachment prompt blocks. */

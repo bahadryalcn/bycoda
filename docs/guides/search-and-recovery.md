@@ -27,6 +27,21 @@ the interrupted work that still needs a look. Unknown, unavailable and unverifie
 entries stay listed. After launch the dialog opens by itself only when such work
 remains.
 
+Stopping a turn yourself is not an interruption. Older conversations may store
+"Stopped by you." with the same internal notice kind as a crash; those notices
+do not produce an Interrupted badge or qualify for automatic continuation.
+The stop stays in conversation history. App/Host interruption notices still
+show Interrupted until the conversation continues.
+
+Deleting a conversation also prevents delayed saves and old startup layouts from
+bringing that conversation back. Confirmed deleted conversations are excluded from
+startup recovery. If deletion status cannot be read, restore offers a retry rather
+than recreating a conversation from an old layout. A stale running reference does
+not change a turn you explicitly stopped into Interrupted.
+Older histories containing an owner Stop immediately followed by the app's quit
+warning are also treated as stopped. Both history notes remain readable; real Host
+interruptions and interruptions after newer work retain their warning.
+
 The dialog is one compact list. Tabs for File drafts and Earlier file reports
 appear only when there are file copies to show; with conversations alone there is
 no tab strip. The Needs attention / All filter appears only while it separates
@@ -41,7 +56,8 @@ work; saved editor and terminal panes are not recreated.
 
 Closing a new local chat that still holds unsent text or attachments keeps it in
 the project's conversation list. The unsent input becomes the chat's saved draft;
-open the chat to send it, or remove the draft to discard the chat. A new chat
+open the chat to send it, **Edit** it to return its text and files to the composer,
+or remove the draft to discard the chat. A new chat
 closed without any input is still discarded.
 
 Open all and restore target the eligible population, including records hidden by

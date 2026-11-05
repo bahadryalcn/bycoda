@@ -60,7 +60,10 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
   const { path } = await resolveCodexBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId), "codex.catalog");
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "codex.catalog",
+  );
   const rpc = new JsonRpcClient(
     probeProcess,
     {

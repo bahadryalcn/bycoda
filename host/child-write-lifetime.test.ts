@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { ProviderChild } from "./provider-child";
+import type { ProviderChild } from "./providers/provider-child";
 import { HostChildBackend } from "./child-backend";
 import {
   acquireHarnessBridge,
@@ -168,11 +168,11 @@ setInterval(()=>{},1000);`,
       // finish before the next parameterized backend is installed.
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       const target = resolve(directory);
-      if (
-        dirname(target) !== realpathSync(tmpdir()) ||
-        !basename(target).startsWith("bycoda-write-lifetime-")
-      )
-        throw new Error("Unexpected write lifetime fixture directory");
+      expect(
+        dirname(target) === realpathSync(tmpdir()) &&
+          basename(target).startsWith("bycoda-write-lifetime-"),
+        "Unexpected write lifetime fixture directory",
+      ).toBe(true);
       rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   },

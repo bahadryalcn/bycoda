@@ -100,7 +100,7 @@ export async function uploadXMedia(
           form.set("segment_index", String(index));
           form.set(
             "media",
-            new Blob([new Uint8Array(bytes.slice(offset, offset + 4 * 1024 * 1024))]),
+            new Blob([new Uint8Array(bytes.subarray(offset, offset + 4 * 1024 * 1024))]),
             "segment.mp4",
           );
           await http.request(`https://api.x.com/2/media/upload/${id}/append`, token, {

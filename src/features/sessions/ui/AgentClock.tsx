@@ -74,7 +74,12 @@ export function AgentClock({
   // Hidden panes keep their rows mounted; they need no once-a-second render.
   const visible = usePresentationVisible();
   const at = useSharedNow(ticking && visible);
-  const label = agentClockLabel(startedAt, endedAt, live, ticking ? (visible ? at : Date.now()) : 0);
+  const label = agentClockLabel(
+    startedAt,
+    endedAt,
+    live,
+    ticking ? (visible ? at : Date.now()) : 0,
+  );
   if (!label) return null;
   return <span className={`shrink-0 tabular-nums ${className}`}>{label}</span>;
 }

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -10,42 +9,32 @@ use uuid::Uuid;
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
 pub(crate) const CHANGED: &str = "bycoda:automations-changed";
+static RECOVERY_DONE: Mutex<Option<(String, Vec<DueAutomationRun>)>> = Mutex::new(None);
+
+fn recover_once<T: Clone>(
+    guard: &Mutex<Option<(String, Vec<T>)>>,
+    owner: &str,
+    recover: impl FnOnce() -> Result<Vec<T>, String>,
+) -> Result<Vec<T>, String> {
+    let mut done = guard
+        .lock()
+        .map_err(|_| "Automation recovery unavailable".to_string())?;
+    if let Some((original_owner, result)) = &*done {
+        return Ok(if original_owner == owner {
+            result.clone()
+        } else {
+            Vec::new()
+        });
+    }
+    let result = recover()?;
+    *done = Some((owner.to_owned(), result.clone()));
+    Ok(result)
+}
 
 const MAX_NAME: usize = 200;
 const MAX_PROMPT: usize = 1_000_000;
 const MAX_TRIGGERS: usize = 20;
 const MAX_RUNS_PER_AUTOMATION: i64 = 100;
-
-/// Startup recovery runs once per process. Every webview window calls it on
-/// mount, but only the first call may treat pending or running runs as left over
-/// from an earlier process; a later window would otherwise cancel runs that are
-/// live in another window and launch pending ones a second time.
-static RECOVERY_CLAIMED: AtomicBool = AtomicBool::new(false);
-/// Wall-clock instant captured by the first recovery call of this process.
-static RECOVERY_EPOCH: OnceLock<i64> = OnceLock::new();
-
-/// True for the one caller that owns this process's recovery pass.
-fn claim_process_recovery(claimed: &AtomicBool) -> bool {
-    !claimed.swap(true, Ordering::SeqCst)
-}
-
-/// Runs created at or before this instant predate the process. The epoch is
-/// captured on the first recovery call; the caller's mount time bounds it from
-/// below so a run this process created before that call is never stale.
-fn process_recovery_cutoff(epoch: &OnceLock<i64>, started_before: i64) -> i64 {
-    (*epoch.get_or_init(now_millis)).min(started_before)
-}
-
-fn is_terminal_status(status: &str) -> bool {
-    matches!(status, "succeeded" | "failed" | "skipped" | "cancelled")
-}
-
-/// A finished run keeps its outcome. A late "running" or "pending" write, for
-/// example from a launcher whose run another window or the recovery pass has
-/// already settled, must not revive it.
-fn accepts_run_status(current: &str, requested: &str) -> bool {
-    !(is_terminal_status(current) && matches!(requested, "pending" | "running"))
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -753,7 +742,10 @@ fn trim_history(conn: &Connection, automation_id: &str) -> Result<(), String> {
             continue;
         }
         let run: AutomationRun = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-        if is_terminal_status(&run.status) {
+        if matches!(
+            run.status.as_str(),
+            "succeeded" | "failed" | "skipped" | "cancelled"
+        ) {
             delete_ids.push(id);
         }
     }
@@ -921,22 +913,13 @@ pub fn automation_runs_recover(
     started_before: i64,
     now: i64,
 ) -> Result<Vec<DueAutomationRun>, String> {
-    // Later windows of the same process find nothing to recover: the first
-    // pass already settled every run that predates the process.
-    if !claim_process_recovery(&RECOVERY_CLAIMED) {
-        return Ok(Vec::new());
-    }
-    let cutoff = process_recovery_cutoff(&RECOVERY_EPOCH, started_before);
-    let result = crate::native_window_lifecycle::persistence_write(&window, || {
-        automation_runs_recover_with(&store, cutoff, now, || {
-            let _ = window.app_handle().emit(CHANGED, ());
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        recover_once(&RECOVERY_DONE, window.label(), || {
+            automation_runs_recover_with(&store, started_before, now, || {
+                let _ = window.app_handle().emit(CHANGED, ());
+            })
         })
-    });
-    if result.is_err() {
-        // A refused or failed pass settled nothing; the caller retries it.
-        RECOVERY_CLAIMED.store(false, Ordering::SeqCst);
-    }
-    result
+    })
 }
 
 fn automation_runs_recover_with(
@@ -1065,12 +1048,12 @@ pub fn automations_claim_due(
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_next_run_at: i64,
+    scheduled_for: Option<i64>,
     next_run_at: i64,
     now: i64,
-    scheduled_for: Option<i64>,
 ) -> Result<Option<DueAutomationRun>, String> {
     crate::native_window_lifecycle::persistence_write(&window, || {
-        claim_due_occurrence_with(
+        automations_claim_due_with(
             &store,
             automation_id,
             expected_next_run_at,
@@ -1084,33 +1067,7 @@ pub fn automations_claim_due(
     })
 }
 
-/// Claims the occurrence stored as the automation's next run.
-#[cfg(test)]
 fn automations_claim_due_with(
-    store: &SessionStore,
-    automation_id: String,
-    expected_next_run_at: i64,
-    next_run_at: i64,
-    now: i64,
-    notify: impl FnOnce(),
-) -> Result<Option<DueAutomationRun>, String> {
-    claim_due_occurrence_with(
-        store,
-        automation_id,
-        expected_next_run_at,
-        expected_next_run_at,
-        next_run_at,
-        now,
-        notify,
-    )
-}
-
-/// Claims one overdue occurrence of a time-triggered automation. The stored
-/// `next_run_at` must still equal `expected_next_run_at` (the oldest overdue
-/// occurrence) and advances to `next_run_at`. `scheduled_for` names the
-/// occurrence the run stands for; after a long sleep the caller passes the
-/// newest overdue one so the skipped occurrences in between never run.
-fn claim_due_occurrence_with(
     store: &SessionStore,
     automation_id: String,
     expected_next_run_at: i64,
@@ -1120,13 +1077,8 @@ fn claim_due_occurrence_with(
     notify: impl FnOnce(),
 ) -> Result<Option<DueAutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
-    if next_run_at <= expected_next_run_at {
+    if scheduled_for < expected_next_run_at || scheduled_for > now || next_run_at <= now {
         return Err("The following automation occurrence must advance the schedule.".into());
-    }
-    if scheduled_for < expected_next_run_at || scheduled_for >= next_run_at || scheduled_for > now {
-        return Err(
-            "The claimed automation occurrence must lie within the advanced schedule.".into(),
-        );
     }
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
@@ -1327,17 +1279,27 @@ fn automation_run_update_with(
     if run.executor == Some(crate::ssh_runbooks::Executor::Ssh) || run.ssh_execution.is_some() {
         return Err("SSH execution outcomes are owned by the native execution engine".into());
     }
-    if !accepts_run_status(&run.status, &status) {
-        // The stored outcome stands; the caller reads it from the returned run.
-        tx.rollback().map_err(|error| error.to_string())?;
-        drop(conn);
-        return Ok(run);
+    let attach_session = run.status == "running"
+        && status == "running"
+        && run.session_id.is_none()
+        && session_id.is_some();
+    if !attach_session
+        && !matches!(
+            (run.status.as_str(), status.as_str()),
+            ("pending", "running" | "failed" | "skipped" | "cancelled")
+                | ("running", "succeeded" | "failed" | "skipped" | "cancelled")
+        )
+    {
+        return Err("Invalid automation run status transition.".into());
     }
     run.status = status;
     if run.status == "running" && run.started_at.is_none() {
         run.started_at = Some(now);
     }
-    if is_terminal_status(&run.status) {
+    if matches!(
+        run.status.as_str(),
+        "succeeded" | "failed" | "skipped" | "cancelled"
+    ) {
         run.completed_at = Some(now);
     }
     if session_id.is_some() {
@@ -1363,7 +1325,6 @@ mod admission_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
 
     #[test]
     fn omitted_workspace_mode_inherits_policy_and_survives_storage() {
@@ -1904,151 +1865,5 @@ mod tests {
         assert!(validate_trigger(&trigger).is_ok());
         trigger.label = "x".repeat(201);
         assert!(validate_trigger(&trigger).is_err());
-    }
-
-    #[test]
-    fn startup_recovery_runs_once_per_process_until_released() {
-        let claimed = AtomicBool::new(false);
-        assert!(claim_process_recovery(&claimed));
-        assert!(!claim_process_recovery(&claimed));
-        assert!(!claim_process_recovery(&claimed));
-        claimed.store(false, Ordering::SeqCst);
-        assert!(claim_process_recovery(&claimed));
-    }
-
-    #[test]
-    fn recovery_cutoff_is_the_process_epoch_bounded_by_the_first_mount() {
-        let epoch = OnceLock::new();
-        let first = process_recovery_cutoff(&epoch, now_millis() - 5_000);
-        assert!(first <= now_millis() - 5_000);
-        // A later window's mount time never widens the cutoff.
-        let later = process_recovery_cutoff(&epoch, now_millis() + 3_600_000);
-        assert_eq!(later, *epoch.get().unwrap());
-        assert!(later <= now_millis());
-        let earlier = process_recovery_cutoff(&epoch, 1);
-        assert_eq!(earlier, 1);
-    }
-
-    #[test]
-    fn terminal_runs_never_return_to_pending_or_running() {
-        for terminal in ["succeeded", "failed", "skipped", "cancelled"] {
-            assert!(!accepts_run_status(terminal, "running"));
-            assert!(!accepts_run_status(terminal, "pending"));
-            assert!(accepts_run_status(terminal, "failed"));
-        }
-        assert!(accepts_run_status("pending", "running"));
-        assert!(accepts_run_status("running", "cancelled"));
-        assert!(accepts_run_status("running", "pending"));
-    }
-
-    fn hourly_definition(id: &str, next_run_at: i64) -> AutomationUpsert {
-        serde_json::from_value(serde_json::json!({
-            "id": id, "name": "Hourly", "prompt": "Review", "harness": "codex",
-            "model": "model", "cwd": "/tmp", "runtimeMode": "supervised",
-            "scheduleKind": "hourly", "minute": 0, "time": "09:00", "dayOfWeek": 1,
-            "missedRunGraceMinutes": 720, "enabled": true, "nextRunAt": next_run_at,
-            "triggers": [{"id": "time", "kind": "time", "scheduleKind": "hourly"}]
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn run_update_keeps_a_settled_outcome() {
-        let store = SessionStore::open_in_memory().unwrap();
-        let saved =
-            automations_upsert_with(&store, hourly_definition("guard", 1_000), || {}).unwrap();
-        let run = automation_run_now_with(&store, saved.id.clone(), 10, || {}).unwrap();
-        let cancelled = automation_run_update_with(
-            &store,
-            run.id.clone(),
-            "cancelled".into(),
-            None,
-            Some("Interrupted when bycoda last stopped.".into()),
-            20,
-            || {},
-        )
-        .unwrap();
-        assert_eq!(cancelled.status, "cancelled");
-        let notified = Cell::new(false);
-        let kept = automation_run_update_with(
-            &store,
-            run.id.clone(),
-            "running".into(),
-            Some("late-session".into()),
-            None,
-            30,
-            || notified.set(true),
-        )
-        .unwrap();
-        assert_eq!(kept.status, "cancelled");
-        assert_eq!(kept.started_at, None);
-        assert_eq!(kept.session_id, None);
-        assert_eq!(kept.completed_at, Some(20));
-        assert!(!notified.get());
-        let stored = list_runs(&store.lock_conn().unwrap(), &saved.id).unwrap();
-        assert_eq!(stored[0].status, "cancelled");
-        assert_eq!(stored[0].session_id, None);
-    }
-
-    #[test]
-    fn claims_the_newest_overdue_occurrence_and_skips_the_rest() {
-        const HOUR: i64 = 3_600_000;
-        let store = SessionStore::open_in_memory().unwrap();
-        let first = 1_700_000_000_000;
-        let saved =
-            automations_upsert_with(&store, hourly_definition("sleep", first), || {}).unwrap();
-        let now = first + 9 * HOUR + 300_000;
-        assert!(claim_due_occurrence_with(
-            &store,
-            saved.id.clone(),
-            first,
-            first + 10 * HOUR,
-            first + 10 * HOUR,
-            now,
-            || {},
-        )
-        .is_err());
-        assert!(claim_due_occurrence_with(
-            &store,
-            saved.id.clone(),
-            first,
-            first - HOUR,
-            first + 10 * HOUR,
-            now,
-            || {},
-        )
-        .is_err());
-        let claimed = claim_due_occurrence_with(
-            &store,
-            saved.id.clone(),
-            first,
-            first + 9 * HOUR,
-            first + 10 * HOUR,
-            now,
-            || {},
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(claimed.run.status, "pending");
-        assert_eq!(claimed.run.scheduled_for, first + 9 * HOUR);
-        assert_eq!(claimed.automation.next_run_at, first + 10 * HOUR);
-        // The skipped occurrences are gone: the stored schedule moved past them.
-        assert!(claim_due_occurrence_with(
-            &store,
-            saved.id.clone(),
-            first + HOUR,
-            first + HOUR,
-            first + 2 * HOUR,
-            now,
-            || {},
-        )
-        .unwrap()
-        .is_none());
-        assert_eq!(
-            list_runs(&store.lock_conn().unwrap(), &saved.id)
-                .unwrap()
-                .len(),
-            1
-        );
     }
 }

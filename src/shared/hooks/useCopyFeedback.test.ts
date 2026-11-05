@@ -75,10 +75,11 @@ it("keeps the error until retried and releases the lock", async () => {
 
 it("treats a synchronous throw as a failure", async () => {
   render(["a"]);
-  await act(async () =>
-    void latest.copy(() => {
-      throw new Error("sync");
-    }),
+  await act(
+    async () =>
+      void latest.copy(() => {
+        throw new Error("sync");
+      }),
   );
   expect(latest.error).toBe("sync");
 });

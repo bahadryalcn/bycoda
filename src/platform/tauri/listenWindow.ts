@@ -15,24 +15,24 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type WindowSubscription = () => void;
 
-function currentWindowLabel(): string | null {
-  try {
-    return getCurrentWebviewWindow().label;
-  } catch {
-    // Outside a Tauri webview (tests, browser preview) there is no window identity.
-    return null;
+function currentWindowLabel(): string {
+  const label = getCurrentWebviewWindow().label;
+  if (typeof label !== "string" || !label.trim()) {
+    throw new Error("Window event subscription requires a window identity");
   }
+  return label;
 }
 
 function subscribe<T>(
-  register: (event: string, handler: EventCallback<T>, target?: string) => Promise<UnlistenFn>,
+  register: (event: string, handler: EventCallback<T>) => Promise<UnlistenFn>,
   event: string,
   handler: EventCallback<T>,
 ): WindowSubscription {
   let disposed = false;
   let unlisten: UnlistenFn | undefined;
-  const label = currentWindowLabel();
-  register(event, handler, label ?? undefined).then(
+  register(event, (message) => {
+    if (!disposed) handler(message);
+  }).then(
     (release) => {
       if (disposed) release();
       else unlisten = release;
@@ -53,12 +53,7 @@ export function listenWindow<T = unknown>(
   event: string,
   handler: EventCallback<T>,
 ): WindowSubscription {
-  return subscribe<T>(
-    (name, callback, target) =>
-      target ? listen<T>(name, callback, { target }) : listen<T>(name, callback),
-    event,
-    handler,
-  );
+  return subscribe<T>(listenWindowAsync, event, handler);
 }
 
 /** Receive `event` once on this window only. Returns a synchronous disposer. */
@@ -67,8 +62,7 @@ export function onceWindow<T = unknown>(
   handler: EventCallback<T>,
 ): WindowSubscription {
   return subscribe<T>(
-    (name, callback, target) =>
-      target ? once<T>(name, callback, { target }) : once<T>(name, callback),
+    async (name, callback) => once<T>(name, callback, { target: currentWindowLabel() }),
     event,
     handler,
   );
@@ -78,10 +72,27 @@ export function onceWindow<T = unknown>(
  * Promise form for code that must know the listener is registered before continuing
  * (for example before invoking a command whose reply arrives as an event).
  */
-export function listenWindowAsync<T = unknown>(
+export async function listenWindowAsync<T = unknown>(
   event: string,
   handler: EventCallback<T>,
 ): Promise<UnlistenFn> {
   const label = currentWindowLabel();
-  return label ? listen<T>(event, handler, { target: label }) : listen<T>(event, handler);
+  let active = true;
+  try {
+    const release = await listen<T>(
+      event,
+      (message) => {
+        if (active) handler(message);
+      },
+      { target: label },
+    );
+    return () => {
+      if (!active) return;
+      active = false;
+      release();
+    };
+  } catch (error) {
+    active = false;
+    throw error;
+  }
 }

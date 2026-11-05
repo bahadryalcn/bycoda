@@ -647,7 +647,7 @@ it("adapts a full session snapshot to a replacement delta while preserving hidde
         revision: 5,
         sync: expect.objectContaining({
           kind: "delta",
-          base: 4,
+          base: 0,
           blockIds: ["b"],
           blocks: [{ id: "b", role: "assistant", text: "new" }],
         }),
@@ -713,8 +713,7 @@ it("bounds logical resnapshot recovery before HTTP fallback without a physical r
   await flushNative();
   expect(calls("subscriptions.open")).toHaveLength(3);
   expect(calls("subscriptions.ack")).toHaveLength(0);
-  // The WebSocket fallback is not reported as the machine being offline.
-  expect(errors).not.toHaveBeenCalled();
+  expect(errors).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(0);
   expect(remoteRequest).toHaveBeenCalledWith(
     "ws-failure",
@@ -726,34 +725,60 @@ it("bounds logical resnapshot recovery before HTTP fallback without a physical r
   stop();
 });
 
-it("abandons a WebSocket route that never becomes ready and polls over HTTP", async () => {
-  vi.useFakeTimers();
-  vi.spyOn(console, "warn").mockImplementation(() => {});
-  const { port } = nativeFixture("ws-stuck");
-  vi.mocked(port.attach).mockImplementation(async () => true); // connecting forever
-  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
-  const errors = vi.fn();
-  const stop = subscribeRemoteMachineChannel(
-    "ws-stuck",
-    { projects: [{ projectId: "p" }] },
-    vi.fn(),
-    errors,
-  );
-  await flushNative();
-  await vi.advanceTimersByTimeAsync(4000);
-  expect(errors).not.toHaveBeenCalled();
-  await vi.advanceTimersByTimeAsync(3000);
-  await flushNative();
-  expect(errors).not.toHaveBeenCalled();
-  expect(port.detach).toHaveBeenCalled();
-  expect(remoteRequest).toHaveBeenCalledWith(
-    "ws-stuck",
-    "machine.changes",
-    expect.objectContaining({ projects: [{ projectId: "p" }] }),
-  );
-  stop();
-  (console.warn as unknown as { mockRestore(): void }).mockRestore();
-});
+it.each([false, true])(
+  "falls back from a stuck WebSocket and reports only HTTP failure (%s)",
+  async (httpFails) => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { port } = nativeFixture("ws-stuck");
+    vi.mocked(port.attach).mockImplementation(async () => true); // connecting forever
+    const failure = new Error("RPC_CONNECTION_INTERRUPTED: HTTP connection interrupted");
+    const response = {
+      instanceId: "http-fallback",
+      reset: false,
+      sessions: [],
+      projects: [{ projectId: "p", etag: "http", sessions: [] }],
+      checkedProjects: ["p"],
+      checkedSessions: [],
+    };
+    vi.mocked(remoteRequest)
+      .mockImplementationOnce(() =>
+        httpFails ? Promise.reject(failure) : Promise.resolve(response),
+      )
+      .mockImplementation(() => new Promise(() => {}));
+    const errors = vi.fn();
+    const listener = vi.fn();
+    const stop = subscribeRemoteMachineChannel(
+      "ws-stuck",
+      { projects: [{ projectId: "p" }] },
+      listener,
+      errors,
+    );
+    await flushNative();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(errors).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3000);
+    await flushNative();
+    if (httpFails) {
+      expect(errors).toHaveBeenCalledOnce();
+      expect(errors).toHaveBeenCalledWith(failure);
+      expect(listener).not.toHaveBeenCalled();
+    } else {
+      expect(errors).not.toHaveBeenCalled();
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ projects: response.projects }),
+      );
+    }
+    expect(port.detach).toHaveBeenCalled();
+    expect(remoteRequest).toHaveBeenCalledWith(
+      "ws-stuck",
+      "machine.changes",
+      expect.objectContaining({ projects: [{ projectId: "p" }] }),
+    );
+    stop();
+    (console.warn as unknown as { mockRestore(): void }).mockRestore();
+  },
+);
 
 it("shares route acquisition with unary callers and releases only the final native owner", async () => {
   const { port } = nativeFixture("ws-unary");

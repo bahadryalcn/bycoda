@@ -451,3 +451,19 @@ it("a failed exact Native recovery read remains an error rather than an absent o
   expect(captured).toHaveLength(0);
   expect(resolveInitialization).not.toHaveBeenCalled();
 });
+
+it("restores and saves the exact mixed separators from a persisted draft", async () => {
+  recordA = {
+    ...recordA,
+    payload: {
+      ...recordA.payload,
+      text: "first\nsecond\nthird\n",
+      serializedText: "first\r\nsecond\nthird\r",
+    },
+  };
+  lane = { ...lane, currentDraft: recordA };
+  const mount = await mountEditor();
+  expect(editor(mount).state.doc.toString()).toBe("first\nsecond\nthird\n");
+  await act(async () => action(mount, "Save").click());
+  expect(disk).toBe("first\r\nsecond\nthird\r");
+});

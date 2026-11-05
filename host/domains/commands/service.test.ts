@@ -5,9 +5,8 @@ import {
   type CommandServicePorts,
   type CommandQueueSnapshot,
 } from "./service";
-import { DesktopLive } from "../../desktopLive";
+import { DesktopLive } from "../../desktop/desktopLive";
 
-type SessionReceipt = { commandId: string; sessionId: string; revision: number };
 const send: SessionCommand = { type: "send", commandId: "c", sessionId: "s", text: "hello" };
 const contextual: SessionCommand = {
   type: "contextual",
@@ -29,6 +28,11 @@ function setup() {
   const ports: CommandServicePorts<{ revision: number }> = {
     repository: {
       receiptStatus: vi.fn(async () => undefined),
+      desktopCommandStatus: vi.fn(async () => undefined),
+      acceptDesktopCommand: vi.fn(async (input, revalidate) => {
+        await revalidate();
+        return input.receipt;
+      }),
       transaction: vi.fn(async (operation) => {
         events.push("transaction:start");
         const value = await operation();
@@ -45,6 +49,7 @@ function setup() {
       }),
     },
     execution: {
+      commandSignature: (command) => JSON.stringify(command),
       persistenceReady: vi.fn(() => true),
       validateCommand: vi.fn(() => {
         events.push("validate");
@@ -100,7 +105,16 @@ function setup() {
     nativeProjection: {
       watch: vi.fn(async () => undefined),
       alive: vi.fn(() => true),
-      enqueue: vi.fn(),
+      prepareDesktop: vi.fn(async (command) => ({
+        commandId: command.commandId,
+        clientId: "client",
+        sessionId: command.sessionId,
+        ownerId: "page",
+        delivery: JSON.stringify(command),
+        revalidate: async () => {},
+        current: () => true,
+      })),
+      trackDesktop: vi.fn(),
       withRetiredWriters: vi.fn(async (_id, operation) => {
         events.push("retire");
         return operation();
@@ -112,7 +126,7 @@ function setup() {
       }),
     },
   };
-  const auth = { authorized: async () => allowed };
+  const auth = { principalId: "principal", authorized: async () => allowed };
   return {
     ports,
     service: createCommandService(ports),
@@ -145,6 +159,30 @@ function queuedSetup() {
 }
 
 describe("command domain admission", () => {
+  it("rejects desktop control without a principal before preparing an offer", async () => {
+    const { service, ports } = setup();
+    vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
+    await expect(
+      service.dispatch(
+        { type: "cancel", sessionId: "s", commandId: "c", runId: "desktop" },
+        { authorized: async () => true },
+      ),
+    ).rejects.toThrow(/principal/);
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
+    expect(ports.repository.acceptDesktopCommand).not.toHaveBeenCalled();
+  });
+  it("returns an existing scoped desktop receipt without recreating a delivery", async () => {
+    const { service, ports, auth, receipt } = setup();
+    vi.mocked(ports.repository.desktopCommandStatus).mockResolvedValue(receipt);
+    expect(
+      await service.dispatch(
+        { type: "cancel", sessionId: "s", commandId: "c", runId: "desktop" },
+        auth,
+      ),
+    ).toEqual(receipt);
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
+    expect(ports.execution.command).not.toHaveBeenCalled();
+  });
   it("lets verified live control reach the engine when persistence blocks outer transactions", async () => {
     const { service, ports, auth } = setup();
     vi.mocked(ports.execution.persistenceReady).mockReturnValue(false);
@@ -204,15 +242,17 @@ describe("command domain admission", () => {
     expect(ports.execution.clearConversation).not.toHaveBeenCalled();
   });
   it("preserves legacy HTTP's ignored top-level metadata while validating every known command field", async () => {
-    const { service, ports, auth } = setup();
+    const { service, ports, auth, revoke } = setup();
     await service.dispatch({ ...send, projectId: "p", title: "unrelated rename" }, auth, {
       legacy: true,
     });
-    expect(ports.execution.command).toHaveBeenCalledWith(send);
+    expect(ports.execution.command).toHaveBeenCalledWith(send, auth);
     await expect(
       service.dispatch({ ...send, text: 42, title: "unrelated" }, auth, { legacy: true }),
     ).rejects.toThrow();
     expect(ports.execution.command).toHaveBeenCalledOnce();
+    revoke();
+    expect(await auth.authorized()).toBe(false);
   });
   it("retains semantic rejection of an ignored legacy field such as note context on rewind", async () => {
     const { service, ports, auth } = setup();
@@ -364,34 +404,11 @@ describe("command domain admission", () => {
       sessionId: "s",
       revision: 8,
     });
-    expect(ports.nativeProjection.enqueue).toHaveBeenCalledWith(cancel);
+    expect(ports.nativeProjection.prepareDesktop).toHaveBeenCalledWith(cancel, auth);
     expect(ports.repository.adopt).not.toHaveBeenCalled();
     vi.mocked(ports.nativeProjection.alive).mockReturnValue(false);
     await expect(service.dispatch(cancel, auth)).rejects.toThrow("isn't responding");
-    expect(ports.nativeProjection.enqueue).toHaveBeenCalledOnce();
-  });
-  it("persists a receipt for a desktop-routed stop so status finds it and a retry re-queues", async () => {
-    const { ports, auth } = setup();
-    const rows = new Map<string, { signature: string; receipt: SessionReceipt }>();
-    ports.repository.receiptStatus = vi.fn(async (id) => rows.get(id)?.receipt);
-    ports.repository.recordReceipt = vi.fn(async (signature, receipt) => {
-      rows.set(receipt.commandId, { signature, receipt });
-    });
-    ports.repository.receipt = vi.fn(async (id, signature) => {
-      const row = rows.get(id);
-      if (row && row.signature !== signature) throw new Error("different payload");
-      return row?.receipt;
-    });
-    const service = createCommandService(ports);
-    vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
-    const cancel = { type: "cancel", sessionId: "s", commandId: "c", runId: "run" };
-    const first = await service.dispatch(cancel, auth);
-    expect(rows.get("c")?.receipt).toEqual(first);
-    expect(await service.status({ commandId: "c" }, auth)).toEqual(first);
-    // A retry (for example after a Host restart) finds the receipt and re-queues idempotently.
-    expect(await service.dispatch(cancel, auth)).toEqual(first);
-    expect(ports.repository.recordReceipt).toHaveBeenCalledOnce();
-    expect(ports.nativeProjection.enqueue).toHaveBeenCalledTimes(2);
+    expect(ports.nativeProjection.prepareDesktop).toHaveBeenCalledOnce();
   });
   it.each([false, true])(
     "preserves the exact original approval occurrence through %s legacy admission",
@@ -414,7 +431,7 @@ describe("command domain admission", () => {
           { legacy },
         ),
       ).toEqual({ commandId: command.commandId, sessionId: "s", revision: 8 });
-      expect(ports.nativeProjection.enqueue).toHaveBeenCalledExactlyOnceWith(command);
+      expect(ports.nativeProjection.prepareDesktop).toHaveBeenCalledExactlyOnceWith(command, auth);
       expect(ports.execution.command).not.toHaveBeenCalled();
       expect(ports.repository.adopt).not.toHaveBeenCalled();
     },
@@ -431,7 +448,7 @@ describe("command domain admission", () => {
       decision: "allow",
     };
     await expect(service.dispatch(command, auth)).rejects.toThrow("identity is missing or invalid");
-    expect(ports.nativeProjection.enqueue).not.toHaveBeenCalled();
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
     vi.mocked(ports.nativeProjection.watch).mockImplementation(async () => {
       revoke();
       return { revision: 8, running: true };
@@ -442,7 +459,7 @@ describe("command domain admission", () => {
         auth,
       ),
     ).rejects.toThrow();
-    expect(ports.nativeProjection.enqueue).not.toHaveBeenCalled();
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
     expect(ports.execution.command).not.toHaveBeenCalled();
   });
   it("refuses a Host-visible same-ID replacement before transient desktop acceptance", async () => {
@@ -470,9 +487,18 @@ describe("command domain admission", () => {
       });
     publish(original);
     vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
-    vi.mocked(ports.nativeProjection.enqueue).mockImplementation((command) =>
-      live.enqueue(command),
-    );
+    vi.mocked(ports.nativeProjection.prepareDesktop).mockImplementation(async (command) => {
+      live.enqueue(command);
+      return {
+        commandId: command.commandId,
+        clientId: "client",
+        sessionId: command.sessionId,
+        ownerId: "page",
+        delivery: JSON.stringify(command),
+        revalidate: async () => {},
+        current: () => true,
+      };
+    });
     const command = {
       type: "approve",
       sessionId: "s",
@@ -506,8 +532,8 @@ describe("command domain admission", () => {
     vi.mocked(ports.repository.receiptStatus).mockResolvedValue(receipt);
     vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
     expect(await service.dispatch(command, auth)).toEqual(receipt);
-    expect(ports.execution.command).toHaveBeenCalledExactlyOnceWith(command);
-    expect(ports.nativeProjection.enqueue).not.toHaveBeenCalled();
+    expect(ports.execution.command).toHaveBeenCalledExactlyOnceWith(command, auth);
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
     expect(ports.repository.adopt).not.toHaveBeenCalled();
     vi.mocked(ports.execution.command).mockRejectedValue(
       new Error("Command ID was reused with different content"),
@@ -515,7 +541,7 @@ describe("command domain admission", () => {
     await expect(service.dispatch({ ...command, decision: "deny" }, auth)).rejects.toThrow(
       "different content",
     );
-    expect(ports.nativeProjection.enqueue).not.toHaveBeenCalled();
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
   });
   it("requires an empty queue before clearing or rewinding", async () => {
     const { service, ports, auth } = queuedSetup();

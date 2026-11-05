@@ -149,7 +149,14 @@ describe("session drag preview and gap", () => {
   const item = (id: string) => card(id).closest("li")!;
   function pointer(target: EventTarget, type: string, x: number, y: number) {
     const event = new Event(type, { bubbles: true });
-    Object.assign(event, { pointerId: 1, button: 0, clientX: x, clientY: y, screenX: x, screenY: y });
+    Object.assign(event, {
+      pointerId: 1,
+      button: 0,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+    });
     act(() => {
       target.dispatchEvent(event);
     });

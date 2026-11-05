@@ -12,11 +12,12 @@ Paths are repository-root relative. Basenames in a named directory are relative 
 
 ## Runtime, persistence and platform
 
-- Search `host/crews.ts`, Crew lifecycle/default modules and `host/conversation-tools.ts` for the actual operation, request/revision checks, paired-owner service and conversation principal. Domain HTTP/WS wiring is documented in repository-root `docs/reference/host-runtime.md`.
+- Search `host/crews/crews.ts`, Crew lifecycle/default modules and `host/conversation/conversation-tools.ts` for the actual operation, request/revision checks, paired-owner service and conversation principal. Domain HTTP/WS wiring is documented in repository-root `docs/reference/host-runtime.md`.
+- Coordinator identity/status reads cross `host/server.ts` metadata composition and `host/desktop/desktopSessions.ts`. Command effects cross `host/domains/commands/service.ts`, `host/desktop/desktopLive.ts` and `host/desktop/desktop-command-delivery.ts`; retain the existing native/Host ownership and receipt boundaries.
 - Task integration uses `src/features/tasks/model/hostTasks.ts`, `taskClient.ts`, `taskRules.ts`, `taskBulkActions.ts` in that directory; managed execution/delivery belongs to repository-root `docs/reference/managed-workspaces.md`.
 - Search `src-tauri/src/` adapters and `mobile/` Crew counterparts only for the changed boundary. Do not infer their availability from desktop source.
 - Locales live in `src/shared/i18n/locales/` and override catalogs; preserve role, model-rule, current-team, request and pending action copy.
 
 ## Focused verification
 
-Adjacent model suites include `crew.test.ts`, `crewClient.test.ts`, `crewRoster.test.ts`, `crewPresentation.test.ts`; Host suites include `host/crews.test.ts`, `host/crew-lifecycle.test.ts`, `host/crew-defaults.test.ts`. Browser entry points include `tests/browser/crews.spec.ts`, `playwright.crews.config.ts` and the separate crew scene family. Select the appropriate family; a scene render does not prove orchestration.
+Adjacent model suites include `crew.test.ts`, `crewClient.test.ts`, `crewRoster.test.ts`, `crewPresentation.test.ts`; Host suites include `host/crews/crews.test.ts`, `host/crews/crew-lifecycle.test.ts`, `host/crews/crew-defaults.test.ts`, `host/crews/crew-native-session.test.ts`. Browser entry points include `tests/browser/crews.spec.ts`, `playwright.crews.config.ts` and the separate crew scene family. Select the appropriate family; a scene render does not prove orchestration.

@@ -395,7 +395,7 @@ it("starts in the open project's backlog and creates in the explicitly selected 
     return original(command, args);
   });
   await render(undefined, "backlog");
-  const list = () => container.querySelector('[aria-label="Tasks"].task-management-list');
+  const list = () => container.querySelector('[role="list"][aria-label="Tasks"]');
   expect(list()?.textContent).toContain("Project A work");
   expect(list()?.textContent).not.toContain("Project B work");
   await allProjects();
@@ -742,6 +742,17 @@ it.each(["environment.describe", "goals.list"])(
     });
     await render();
     expect(card("Fast local task")).toBeTruthy();
+    expect(
+      invoke.mock.calls.some(
+        ([command, args]) =>
+          command === "remote_request" &&
+          (args as any)?.machineId === remote.id &&
+          ["tasks.list", "goals.list", "stewards.list", "settings.get"].includes(
+            (args as any)?.method,
+          ),
+      ),
+    ).toBe(false);
+    await allProjects();
     expect(container.querySelector('[data-remote-data-state="refreshing"]')).toBeTruthy();
     expect(container.querySelector('[data-remote-data-state="empty"]')).toBeNull();
     expect(invoke.mock.calls.filter(([command]) => command === "remote_machines")).toHaveLength(1);
@@ -753,8 +764,6 @@ it.each(["environment.describe", "goals.list"])(
       );
     });
     await act(async () => {});
-    expect(card("Remote task")).toBeNull();
-    await allProjects();
     expect(card("Remote task")).toBeTruthy();
     expect(container.querySelector('[data-remote-data-state="ready"]')).toBeTruthy();
   },
@@ -825,7 +834,7 @@ it("removes the old host's cards and write targets while a reused machine identi
   expect(isDisabled(button(form, "Add and start")!)).toBe(true);
   await act(async () => releaseProbe({ capabilities: ["tasks", "tasks.todo"] }));
   await act(async () => {});
-  expect(container.querySelector('[data-remote-data-state="ready"]')).toBeTruthy();
+  expect(container.querySelector('[data-remote-data-state="empty"]')).toBeTruthy();
   expect(card("Old host task")).toBeNull();
 });
 
@@ -1343,16 +1352,34 @@ it("disables goal settings on hosts without the update capability", async () => 
   expect(await tooltipText(edit)).toBe("Update the selected host to edit goal settings.");
 });
 
-it("reveals an explicitly requested goal without issuing an approval",async()=>{
-  const requests=host([], ["tasks","goals"],[goal({status:"awaiting-approval",plan:{tasks:[]}}),goal({id:"other",title:"Other goal"})]);
-  await act(async()=>root.render(createElement(TasksView,{cwd:"/work/project",recents:[],onClose:vi.fn(),onOpenBackgroundSession:vi.fn(),goalReveal:{machineId:"machine-local",goalId:"launch",token:1}})));
-  await vi.waitFor(()=>{
-    const details=container.querySelector<HTMLDetailsElement>(".task-goals-disclosure");
+it("reveals an explicitly requested goal without issuing an approval", async () => {
+  const requests = host(
+    [],
+    ["tasks", "goals"],
+    [
+      goal({ status: "awaiting-approval", plan: { tasks: [] } }),
+      goal({ id: "other", title: "Other goal" }),
+    ],
+  );
+  await act(async () =>
+    root.render(
+      createElement(TasksView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose: vi.fn(),
+        onOpenBackgroundSession: vi.fn(),
+        goalReveal: { machineId: "machine-local", goalId: "launch", token: 1 },
+      }),
+    ),
+  );
+  await vi.waitFor(() => {
+    const details = container.querySelector<HTMLDetailsElement>(".task-goals-disclosure");
     expect(details?.open).toBe(true);
-    const list=details!.querySelector('ul[aria-label="Goals"]')!;
-    expect(list.textContent).toContain("Launch the beta");expect(list.textContent).not.toContain("Other goal");
+    const list = details!.querySelector('ul[aria-label="Goals"]')!;
+    expect(list.textContent).toContain("Launch the beta");
+    expect(list.textContent).not.toContain("Other goal");
   });
-  expect(requests.some(value=>value.method==="goals.approve")).toBe(false);
+  expect(requests.some((value) => value.method === "goals.approve")).toBe(false);
 });
 
 it("shows a plan waiting for approval and asks the goal's machine to approve it", async () => {
@@ -1396,12 +1423,7 @@ it("shows a plan waiting for approval and asks the goal's machine to approve it"
     Array.from(card.querySelectorAll("button"))
       .filter((control) => !control.closest("[inert]"))
       .map(buttonName),
-  ).toEqual([
-    "Edit goal settings",
-    "Approve",
-    "Replan",
-    "More actions",
-  ]);
+  ).toEqual(["Edit goal settings", "Approve", "Replan", "More actions"]);
   await act(async () => button(card, "More actions")!.click());
   expect(button(document.body.querySelector('[role="menu"]')!, "Cancel")).toBeTruthy();
   expect(button(document.body.querySelector('[role="menu"]')!, "Delete")).toBeTruthy();
@@ -2741,3 +2763,42 @@ async function chooseExecutionMode(scope: ParentNode, label: string) {
   )!;
   await act(async () => option.click());
 }
+
+it("keeps a successfully empty local board available when optional goals fail", async () => {
+  host([], ["tasks", "tasks.todo", "goals"]);
+  const normal = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "goals.list")
+      throw new Error("Goals unavailable");
+    return normal(command, args);
+  });
+  await render();
+  expect(container.textContent).not.toContain("Tasks unavailable");
+  await act(async () => button(container, "Connection issue")!.click());
+  expect(document.body.textContent).toContain("Goals unavailable");
+});
+
+it("retains task rows and disables duplicate refresh while the network read is pending", async () => {
+  host([task({ title: "Retained task", status: "todo" })]);
+  await render();
+  const normal = invoke.getMockImplementation()!;
+  let release!: (value: unknown) => void;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  let attempts = 0;
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "tasks.list") {
+      attempts++;
+      return held;
+    }
+    return normal(command, args);
+  });
+  await act(async () => button(container, "Refresh")!.click());
+  expect(card("Retained task")).toBeTruthy();
+  expect(isDisabled(button(container, "Refresh")!)).toBe(true);
+  await act(async () => button(container, "Refresh")!.click());
+  expect(attempts).toBe(1);
+  await act(async () => release([task({ title: "Retained task", status: "todo" })]));
+  expect(isDisabled(button(container, "Refresh")!)).toBe(false);
+});

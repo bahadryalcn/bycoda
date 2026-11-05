@@ -11,7 +11,12 @@ export const STAR_WARS_CREW = [
   { id: "chewbacca", name: "Chewbacca", accent: themePalette.hexd6a064, headroom: 209 },
 ] as const;
 
-const R2_D2 = { id: "r2-d2", name: "R2-D2", accent: themePalette.hex8eafff, headroom: 151 } as const;
+const R2_D2 = {
+  id: "r2-d2",
+  name: "R2-D2",
+  accent: themePalette.hex8eafff,
+  headroom: 151,
+} as const;
 /** Load overflow artwork too, so the seventh arrival can appear immediately. */
 export const STAR_WARS_ARTWORK = [...STAR_WARS_CREW, R2_D2] as const;
 

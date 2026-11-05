@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MachineLimits } from "../model/settingsClient";
-import { CustomDailyLimit, type SaveLimits } from "./TaskLimits";
+import { CustomDailyLimit, LimitsPanel, type SaveLimits } from "./TaskLimits";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -32,6 +32,29 @@ const show = (entry: MachineLimits, onChange: SaveLimits) =>
 const hoursField = () => container.querySelector<HTMLInputElement>('input[type="number"]')!;
 const label = (text: string) =>
   Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent === text);
+
+it("explains incomplete usage and the effect of an enabled daily limit", async () => {
+  await act(async () =>
+    root.render(
+      createElement(LimitsPanel, {
+        limits: [{ ...limits(120), usageUncertain: true, limitReached: true }],
+        onChange: async () => true,
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Today's agent time is incomplete");
+  expect(container.textContent).toContain("New work waits until tomorrow");
+  await act(async () =>
+    root.render(
+      createElement(LimitsPanel, {
+        limits: [{ ...limits(0), usageUncertain: true }],
+        onChange: async () => true,
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Today's agent time is incomplete");
+  expect(container.textContent).not.toContain("New work waits until tomorrow");
+});
 function type(field: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
   field.dispatchEvent(new Event("input", { bubbles: true }));
@@ -94,7 +117,11 @@ it("does not carry a draft to another machine", async () => {
   await act(async () => type(hoursField(), "9"));
   await act(async () =>
     root.render(
-      createElement(CustomDailyLimit, { key: "remote", entry: limits(60, "remote"), onChange: save }),
+      createElement(CustomDailyLimit, {
+        key: "remote",
+        entry: limits(60, "remote"),
+        onChange: save,
+      }),
     ),
   );
   expect(hoursField().value).toBe("1");

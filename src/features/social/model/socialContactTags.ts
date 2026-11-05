@@ -125,7 +125,8 @@ export function tagIssue(currentTags: readonly string[], edits: readonly TagEdit
   if (!text) return t("Enter a tag.");
   if (text.length > CONTACT_TAG_MAX_LENGTH)
     return t("A tag can be at most {p0} characters.", { p0: CONTACT_TAG_MAX_LENGTH });
-  if (currentTags.some((tag) => fold(tag) === fold(text))) return t("The contact already has this tag.");
+  if (currentTags.some((tag) => fold(tag) === fold(text)))
+    return t("The contact already has this tag.");
   if (edits.some((edit, other) => other < index && edit.use && fold(edit.text) === fold(text)))
     return t("This tag is already kept for this contact.");
   // Earlier kept tags win the room that is left; later ones are the ones that no longer fit.

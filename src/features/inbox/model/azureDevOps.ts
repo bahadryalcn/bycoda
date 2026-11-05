@@ -90,7 +90,6 @@ function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
   while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
 }
 
-
 /** Patches can be megabytes, so the diff cache is also bounded by their total size. */
 const DIFF_CACHE_MAX_CHARS = 8_000_000;
 function trimDiffCache(cache: Map<string, { patch: string }>) {

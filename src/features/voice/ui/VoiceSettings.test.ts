@@ -14,8 +14,14 @@ const backend = vi.hoisted(() => ({
 vi.mock("../model/localVoiceClient", () => ({ localVoiceBackend: backend }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: backend.browse }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: backend.openUrl }));
+vi.mock("../../assistant/model/assistantClient", () => ({
+  useAssistantSnapshot: () => ({ snapshot: undefined }),
+  assistantIdentity: () => ({ title: "Assistant" }),
+}));
 import { VoiceSettings } from "./VoiceSettings";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
+import * as conversationPreset from "../model/voiceConversationPreset";
+import { claimVoiceConversationActivity } from "../model/voiceActivity";
 import * as turnPolicy from "../model/voiceTurnPolicy";
 let root: Root | undefined;
 let container: HTMLDivElement;
@@ -45,6 +51,80 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
+it("enables dictation independently without microphone capture or companion settings", async () => {
+  await setup(false);
+  const capture = vi.fn();
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia: capture },
+  });
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Enable dictation"]',
+  )!;
+  await act(async () => toggle.click());
+  await advance();
+  expect(loadVoiceSettings()).toMatchObject({
+    enabled: false,
+    dictationEnabled: true,
+    natural: true,
+  });
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: false });
+  expect(container.textContent).toContain("Dictation setup");
+  expect(container.querySelector('[data-setting-id="voice-mode"]')).toBeNull();
+  expect(container.querySelector('[data-setting-id="speech-microphone"]')).not.toBeNull();
+  expect(capture).not.toHaveBeenCalled();
+});
+
+it("applies recognition-only installation paths without changing companion playback preferences", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    enabled: false,
+    dictationEnabled: true,
+    natural: true,
+    engine: "voxcpm2",
+  });
+  backend.setupStatus.mockResolvedValue({
+    state: "ready",
+    requestedConfig: { natural: false },
+    config: { natural: false, python: "private-python", whisperPath: "recognizer" },
+  });
+  await setup(false);
+  expect(loadVoiceSettings()).toMatchObject({
+    enabled: false,
+    dictationEnabled: true,
+    natural: true,
+    engine: "voxcpm2",
+    python: "private-python",
+    whisperPath: "recognizer",
+  });
+});
+
+it("does not apply an old default-engine setup after the owner selects another engine", async () => {
+  let finish!: (value: unknown) => void;
+  backend.setupStatus.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await setup();
+  await act(async () =>
+    saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2", device: "gpu" }),
+  );
+  await act(async () =>
+    finish({
+      state: "ready",
+      requestedConfig: { natural: true },
+      config: { python: "old-python", whisperPath: "old-whisper" },
+    }),
+  );
+  expect(loadVoiceSettings()).toMatchObject({
+    engine: "voxcpm2",
+    device: "gpu",
+    python: "",
+    whisperPath: "",
+  });
+});
 it("retains the saved automatic pause while disabling its control in manual mode", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
@@ -73,6 +153,56 @@ it("retains the saved automatic pause while disabling its control in manual mode
     manualTurnEndRevision: 11,
     turnEndSilence: 4,
   });
+});
+it("applies the conversation preset in one update while preserving other preferences", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    mode: "openai",
+    device: "cpu",
+    microphoneId: "mic",
+    manualTurnEnd: true,
+    manualTurnEndRevision: 8,
+    turnEndSilence: 4,
+    allowBargeIn: false,
+    holdAnnouncements: false,
+  });
+  await setup();
+  await click("Advanced");
+  const before = loadVoiceSettings();
+  const listener = vi.fn();
+  window.addEventListener("bycoda:voice-settings", listener);
+  await click("Apply preset");
+  window.removeEventListener("bycoda:voice-settings", listener);
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(loadVoiceSettings()).toEqual({
+    ...before,
+    manualTurnEnd: false,
+    manualTurnEndRevision: 9,
+    turnEndSilence: 2.5,
+    allowBargeIn: true,
+    holdAnnouncements: true,
+  });
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="I may interrupt speech"]')!
+      .click(),
+  );
+  expect(loadVoiceSettings().allowBargeIn).toBe(false);
+});
+
+it("shows a recoverable preset save error", async () => {
+  await setup();
+  await click("Advanced");
+  const save = vi
+    .spyOn(conversationPreset, "saveProfessionalConversationPreset")
+    .mockImplementationOnce(() => {
+      throw new Error("storage unavailable");
+    });
+  await click("Apply preset");
+  expect(container.textContent).toContain("Conversation preset could not be saved. Try again.");
+  save.mockRestore();
+  await click("Apply preset");
+  expect(container.textContent).not.toContain("Conversation preset could not be saved. Try again.");
 });
 async function advance(ms = 501) {
   await act(async () => {
@@ -459,4 +589,35 @@ it("shows the speaker choice for Supertonic and cloud conversations, not for Vox
   expect(document.querySelector('[data-setting-id="voice-speaker"]')).toBeNull();
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "grok" }));
   expect(document.querySelector('[data-setting-id="voice-speaker"]')).not.toBeNull();
+});
+
+it("observes voice permission, verified readiness and live activity independently without starting capture", async () => {
+  await setup(false);
+  await advance();
+  const axis = (name: string) =>
+    container.querySelector(`[data-capability-axis="${name}"]`)?.getAttribute("data-state");
+  expect(axis("permission")).toBe("disabled");
+  expect(axis("readiness")).toBe("unknown");
+  expect(axis("activity")).toBe("unknown");
+  expect(backend.inspect).not.toHaveBeenCalled();
+  expect(backend.setup).not.toHaveBeenCalled();
+  expect(loadVoiceSettings().enabled).toBe(false);
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: true }));
+  backend.inspect.mockResolvedValueOnce({ ready: true, missing: [] });
+  await advance();
+  expect(axis("permission")).toBe("enabled");
+  expect(axis("readiness")).toBe("ready");
+  expect(axis("activity")).toBe("unknown");
+  let release!: () => void;
+  await act(async () => {
+    release = claimVoiceConversationActivity();
+  });
+  expect(axis("activity")).toBe("running");
+  await act(async () => release());
+  backend.inspect.mockRejectedValueOnce(new Error("Offline"));
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), device: "cpu" }));
+  await advance();
+  expect(axis("readiness")).toBe("unknown");
+  expect(axis("activity")).toBe("unknown");
+  expect(axis("permission")).toBe("enabled");
 });

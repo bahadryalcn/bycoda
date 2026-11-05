@@ -13,6 +13,11 @@ import type {
   SocialWorkspaceResponse,
 } from "./social";
 
+export type ManagedSocialUpload = {
+  uploadId: string;
+  managed?: { mediaId: string; uploadClaimId: string; revision: number };
+};
+
 export function socialClient(machineId: string) {
   const request = <T>(
     action: string,
@@ -214,12 +219,27 @@ export function socialClient(machineId: string) {
       remoteRequest<{ status: string; error?: string }>(machineId, "social.browser.status", {
         accountId,
       }),
+    mediaInspect: (mediaId: string) =>
+      remoteRequest<{ mediaId: string; managed: boolean; revision: number }>(
+        machineId,
+        "social.media.claim",
+        { mediaId, inspect: true },
+      ),
+    mediaClaim: (
+      action: "claim" | "transfer" | "releaseLogical",
+      input: { mediaId: string; editorId: string; expectedRevision: number; requestId: string },
+    ) =>
+      remoteRequest<{ mediaId: string; editorId: string; revision: number }>(
+        machineId,
+        `social.media.${action}`,
+        input,
+      ),
     upload: async (file: File) => {
       if (file.size > 5 * 1024 * 1024) throw new Error(t("Images can be at most 5 MiB."));
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
-      return remoteRequest<{ uploadId: string }>(machineId, "social.media.upload", {
+      return remoteRequest<ManagedSocialUpload>(machineId, "social.media.upload", {
         base64: btoa(binary),
       });
     },
@@ -229,7 +249,7 @@ export function socialClient(machineId: string) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
-      return remoteRequest<{ uploadId: string }>(machineId, "social.media.upload", {
+      return remoteRequest<ManagedSocialUpload>(machineId, "social.media.upload", {
         kind: "document",
         base64: btoa(binary),
       });

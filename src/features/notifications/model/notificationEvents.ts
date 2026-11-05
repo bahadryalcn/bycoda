@@ -48,7 +48,8 @@ export const NOTIFICATION_EVENT_SETTINGS: ReadonlyArray<{
 
 const KEY = "bycoda.notifications.events.v1";
 export const NOTIFICATION_EVENTS_CHANGE = "bycoda:notification-events-change";
-export const subscribeNotificationEvents = (onChange: () => void) => subscribePreferenceChanges([KEY], NOTIFICATION_EVENTS_CHANGE, onChange);
+export const subscribeNotificationEvents = (onChange: () => void) =>
+  subscribePreferenceChanges([KEY], NOTIFICATION_EVENTS_CHANGE, onChange);
 
 /** Every event is on once notifications themselves are enabled. */
 export function loadNotificationEvents(): Record<NotificationEventSetting, boolean> {

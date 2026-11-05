@@ -1,3 +1,4 @@
+import { bundledMechanicalLoaders } from "./storage/bundled-mechanical-loaders";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import {
@@ -130,6 +131,13 @@ function selectArtifact(options: HostNotesAdmissionOptions, bundle: string): Art
   if (!inside(path, root) || artifactHash(path) !== value.sha256) throw fault();
   return Object.freeze({ path, sha256: value.sha256 });
 }
+
+export const {
+  loadBundledNoReplace,
+  loadBundledWindowsProcessBirths,
+  loadBundledWindowsListeners,
+  loadBundledGuardedMove,
+} = bundledMechanicalLoaders(() => selectArtifact({}, dirname(fileURLToPath(import.meta.url))));
 
 export interface HostNotesWorkerComparison {
   readonly version: 1;

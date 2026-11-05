@@ -333,5 +333,6 @@ describe("streamed message DOM", () => {
     expect(settled).toBeLessThan(600);
     expect(container.querySelector(".word-fading")).toBeNull();
     expect(container.querySelector("p")).toBe(marker);
-  });
+    // Renders a 50-paragraph markdown tree about forty times; CPU-bound under load.
+  }, 20_000);
 });

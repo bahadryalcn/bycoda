@@ -165,7 +165,6 @@ export function BranchPicker({
     }));
   }, [branch, projectBranches, query]);
 
-
   const applySwitch = (pending: PendingSwitch) =>
     pending.kind === "create"
       ? pending.reference

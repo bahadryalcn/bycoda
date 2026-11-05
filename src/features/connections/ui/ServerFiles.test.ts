@@ -10,15 +10,16 @@ const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   open: vi.fn(),
   save: vi.fn(),
+  listen: vi.fn(),
   listener: undefined as ((event: { payload: unknown }) => void) | undefined,
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: native.open, save: native.save }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (_: string, listener: (event: { payload: unknown }) => void) => {
-    native.listener = listener;
-    return () => {};
-  }),
+  listen: native.listen,
 }));
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ children }: { children: ReactNode }) => children,
@@ -34,6 +35,13 @@ async function setup(
   endpoint?: import("../model/serverInventory").SshEndpoint,
 ) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  if (!native.listen.getMockImplementation())
+    native.listen.mockImplementation(
+      async (_: string, listener: (event: { payload: unknown }) => void) => {
+        native.listener = listener;
+        return () => {};
+      },
+    );
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -67,6 +75,24 @@ async function setup(
     },
   };
 }
+
+it("unsubscribes an SFTP listener whose registration finishes after unmount", async () => {
+  let ready!: (release: () => void) => void;
+  const release = vi.fn();
+  native.listen.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        ready = resolve;
+      }),
+  );
+  const context = await setup();
+  await context.cleanup();
+  await act(async () => {
+    ready(release);
+    await Promise.resolve();
+  });
+  expect(release).toHaveBeenCalledOnce();
+});
 
 it("opens only on explicit action and keeps symlinks without download/follow controls", async () => {
   const context = await setup();

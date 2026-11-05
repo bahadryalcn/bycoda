@@ -1,5 +1,5 @@
+"use client";
 import { OverflowTooltip } from "../../Tooltip";
-("use client");
 import { Popover } from "../../Popover";
 import { isImeComposition } from "../../../lib/keyboard";
 import { t } from "../../../i18n";

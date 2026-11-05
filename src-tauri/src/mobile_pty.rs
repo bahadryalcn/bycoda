@@ -1,6 +1,7 @@
 //! Opt-in metadata/replay over the canonical PTY owner; never a second process backend.
 use base64::Engine;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -8,6 +9,9 @@ use tauri::{AppHandle, Manager};
 
 const OUTPUT_LIMIT: usize = 1024 * 1024;
 const LEASE: Duration = Duration::from_secs(30);
+// Retain exited replay for ten minutes; pending/unknown lifetimes never age out.
+const SETTLED_TTL: Duration = Duration::from_secs(600);
+const FENCE_BYTES: usize = 1024 * 1024;
 #[derive(Clone, PartialEq, Eq)]
 struct Scope {
     environment: String,
@@ -70,6 +74,10 @@ struct Entry {
     rows: u16,
     shell: String,
     exited: bool,
+    physical_exit: bool,
+    native_generation: Option<String>,
+    closed: bool,
+    settled_at: Option<Instant>,
     code: Option<i32>,
     detached: bool,
     drained: bool,
@@ -79,6 +87,16 @@ struct Entry {
     gap: bool,
 }
 impl Entry {
+    fn reserve_generation(&mut self, generation: String) -> Result<(), String> {
+        if self.native_generation.is_some() {
+            return Err("Mobile PTY spawn is already reserved; never replay".into());
+        }
+        self.native_generation = Some(generation);
+        Ok(())
+    }
+    fn matches_generation(&self, generation: &str) -> bool {
+        self.native_generation.as_deref() == Some(generation)
+    }
     fn leased(&self, lease: &str) -> bool {
         !self.gap
             && !self.detached
@@ -87,7 +105,7 @@ impl Entry {
             && self.seen.elapsed() < LEASE
     }
     fn dto(&self) -> Value {
-        json!({"terminalId":self.id,"epoch":self.epoch,"sourceSessionId":self.scope.source,"name":"Mobile terminal","shell":self.shell,"state":if self.exited && self.drained {"exited"}else{"running"},"cols":self.cols,"rows":self.rows,"exitCode":self.code,"control":if self.leased(&self.lease){"mobile"}else{"none"},"replayStart":self.replay.oldest(),"replayEnd":self.replay.end})
+        json!({"terminalId":self.id,"epoch":self.epoch,"sourceSessionId":self.scope.source,"name":"Mobile terminal","shell":self.shell,"state":if self.physical_exit && self.drained {"exited"}else{"running"},"cols":self.cols,"rows":self.rows,"exitCode":self.code,"control":if self.leased(&self.lease){"mobile"}else{"none"},"replayStart":self.replay.oldest(),"replayEnd":self.replay.end})
     }
     fn lease_dto(&self) -> Value {
         json!({"terminal":self.dto(),"leaseId":self.lease,"expiresAt":now()+LEASE.saturating_sub(self.seen.elapsed()).as_millis() as u64})
@@ -115,7 +133,207 @@ pub(crate) struct MobilePtyHost {
 #[derive(Default)]
 struct Registry {
     entries: HashMap<String, Entry>,
-    requests: HashMap<String, (String, Value)>,
+    requests: HashMap<String, Receipt>,
+    settled_attaches: HashMap<String, Instant>,
+    expired: ExpiredFence,
+}
+struct Receipt {
+    fingerprint: String,
+    result: Value,
+    terminal_id: String,
+    pending: bool,
+    close: bool,
+}
+
+struct ExpiredFence {
+    bits: Vec<u8>,
+    set_bits: usize,
+}
+impl Default for ExpiredFence {
+    fn default() -> Self {
+        Self {
+            bits: vec![0; FENCE_BYTES],
+            set_bits: 0,
+        }
+    }
+}
+impl ExpiredFence {
+    fn indexes(key: &str) -> [usize; 4] {
+        let digest = Sha256::digest(key.as_bytes());
+        std::array::from_fn(|i| {
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&digest[i * 8..i * 8 + 8]);
+            (u64::from_le_bytes(bytes) % (FENCE_BYTES as u64 * 8)) as usize
+        })
+    }
+    fn contains(&self, key: &str) -> bool {
+        Self::indexes(key)
+            .into_iter()
+            .all(|i| self.bits[i / 8] & (1 << (i % 8)) != 0)
+    }
+    fn insert(&mut self, key: &str) {
+        for i in Self::indexes(key) {
+            let bit = 1 << (i % 8);
+            if self.bits[i / 8] & bit == 0 {
+                self.bits[i / 8] |= bit;
+                self.set_bits += 1;
+            }
+        }
+    }
+    fn saturated(&self) -> bool {
+        self.set_bits >= FENCE_BYTES * 8 / 4
+    }
+}
+impl Registry {
+    fn receipt_outcome(&self, key: &str, signature: &str) -> Result<Value, String> {
+        let receipt = self
+            .requests
+            .get(key)
+            .ok_or("PTY request receipt is unavailable")?;
+        if receipt.fingerprint != signature {
+            return Err("PTY request identity changed".into());
+        }
+        if receipt.close && receipt.pending {
+            return Err("PTY close is unconfirmed; retry after the process exits".into());
+        }
+        Ok(receipt.result.clone())
+    }
+    fn retry_closed(&mut self, key: &str, id: &str) -> Result<Value, String> {
+        let exited = self
+            .entries
+            .get(id)
+            .is_some_and(|entry| entry.physical_exit);
+        // Even an unconfirmed retry ID must never authorize a different effect.
+        self.expired.insert(key);
+        if !exited {
+            return Err("PTY close is unconfirmed; retry after the process exits".into());
+        }
+        Ok(json!({"closed":true}))
+    }
+    fn record_physical_exit(
+        &mut self,
+        id: &str,
+        generation: &str,
+        code: Option<i32>,
+        now: Instant,
+    ) {
+        if let Some(entry) = self.entries.get_mut(id) {
+            if entry.matches_generation(generation) {
+                entry.record_exit(code, now);
+                self.reconcile_close(id);
+            }
+        }
+    }
+    fn reconcile_close(&mut self, id: &str) {
+        for receipt in self.requests.values_mut() {
+            if receipt.close && receipt.pending && receipt.terminal_id == id {
+                receipt.result = json!({"closed": true});
+                receipt.pending = false;
+            }
+        }
+    }
+    fn prune(&mut self, now: Instant) {
+        let expired_attaches: Vec<String> = self
+            .settled_attaches
+            .iter()
+            .filter_map(|(key, at)| {
+                (now.saturating_duration_since(*at) >= SETTLED_TTL).then_some(key.clone())
+            })
+            .collect();
+        for key in expired_attaches {
+            // Fence before discarding the receipt: an old retry must not rotate a lease.
+            self.expired.insert(&key);
+            self.requests.remove(&key);
+            self.settled_attaches.remove(&key);
+        }
+        let expired: Vec<String> = self
+            .entries
+            .iter()
+            .filter_map(|(id, entry)| {
+                if entry.input_unknown || entry.gap {
+                    return None;
+                }
+                if self
+                    .requests
+                    .values()
+                    .any(|receipt| receipt.terminal_id == *id && receipt.pending)
+                {
+                    return None;
+                }
+                entry
+                    .settled_at
+                    .filter(|at| now.saturating_duration_since(*at) >= SETTLED_TTL)
+                    .map(|_| id.clone())
+            })
+            .collect();
+        for id in expired {
+            let keys: Vec<String> = self
+                .requests
+                .iter()
+                .filter_map(|(key, receipt)| (receipt.terminal_id == id).then_some(key.clone()))
+                .collect();
+            for key in keys {
+                self.expired.insert(&key);
+                self.requests.remove(&key);
+                self.settled_attaches.remove(&key);
+            }
+            self.entries.remove(&id);
+        }
+    }
+    fn admit(&self, key: &str, close: bool) -> Result<(), String> {
+        if self.expired.contains(key) {
+            return Err("PTY request receipt expired; never replay".into());
+        }
+        if !close && self.expired.saturated() {
+            return Err("Mobile PTY receipt fence is full".into());
+        }
+        Ok(())
+    }
+    fn capacity(&self) -> (usize, usize) {
+        let mut active = 0;
+        let mut history = 0;
+        for (id, entry) in &self.entries {
+            if entry.settled_at.is_some()
+                && !entry.input_unknown
+                && !entry.gap
+                && !self
+                    .requests
+                    .values()
+                    .any(|receipt| receipt.terminal_id == *id && receipt.pending)
+            {
+                history += 1;
+            } else {
+                active += 1;
+            }
+        }
+        (active, history)
+    }
+}
+impl Entry {
+    fn record_exit(&mut self, code: Option<i32>, now: Instant) {
+        self.exited = true;
+        self.physical_exit = true;
+        self.detached = true;
+        self.code = code;
+        self.mark_settled(now);
+    }
+    fn record_drain(&mut self, complete: bool, now: Instant) {
+        self.drained = complete;
+        if !complete {
+            self.gap = true;
+        }
+        self.mark_settled(now);
+    }
+    fn mark_settled(&mut self, now: Instant) {
+        if self.physical_exit
+            && self.drained
+            && !self.input_unknown
+            && !self.gap
+            && self.settled_at.is_none()
+        {
+            self.settled_at = Some(now);
+        }
+    }
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -164,14 +382,29 @@ pub(crate) fn output(app: &AppHandle, id: &str, owner: &str, bytes: &[u8]) {
         }
     }
 }
-pub(crate) fn exited(app: &AppHandle, id: &str, code: Option<i32>) {
+pub(crate) fn reserve_native_spawn(app: &AppHandle, id: &str) -> Result<(), String> {
     if let Some(host) = app.try_state::<MobilePtyHost>() {
         let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = registry.entries.get_mut(id) {
-            entry.exited = true;
-            entry.detached = true;
-            entry.code = code;
+            entry.reserve_generation(uuid::Uuid::new_v4().to_string())?;
         }
+    }
+    Ok(())
+}
+pub(crate) fn native_generation(app: &AppHandle, id: &str) -> Option<String> {
+    app.try_state::<MobilePtyHost>().and_then(|host| {
+        host.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .get(id)
+            .and_then(|entry| entry.native_generation.clone())
+    })
+}
+pub(crate) fn exited(app: &AppHandle, id: &str, generation: &str, code: Option<i32>) {
+    if let Some(host) = app.try_state::<MobilePtyHost>() {
+        let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
+        registry.record_physical_exit(id, generation, code, Instant::now());
     }
 }
 pub(crate) fn registered(app: &AppHandle, id: &str) -> bool {
@@ -191,11 +424,13 @@ pub(crate) fn desktop_control(app: &AppHandle, id: &str) -> Result<(), String> {
     }
     Ok(())
 }
-pub(crate) fn drained(app: &AppHandle, id: &str) {
+pub(crate) fn drained(app: &AppHandle, id: &str, generation: &str, complete: bool) {
     if let Some(host) = app.try_state::<MobilePtyHost>() {
         let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = registry.entries.get_mut(id) {
-            entry.drained = true;
+            if entry.matches_generation(generation) {
+                entry.record_drain(complete, Instant::now());
+            }
         }
     }
 }
@@ -270,11 +505,12 @@ pub async fn mobile_pty_call(
                 request,
             ))
             .map_err(|_| "Invalid PTY receipt")?;
-            let registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
+            registry.prune(Instant::now());
             let result = registry
                 .requests
                 .get(&key)
-                .map(|(_, value)| value.clone())
+                .map(|receipt| receipt.result.clone())
                 .unwrap_or_else(|| json!({"state":"unknown"}));
             if let Some(id) = result["terminal"]["terminalId"].as_str() {
                 return Ok(registry.entries.get(id).filter(|value|value.scope==scope).map(Entry::lease_dto).unwrap_or_else(||json!({"state":"failed","message":"The created PTY was closed; no replacement was started"})));
@@ -284,7 +520,7 @@ pub async fn mobile_pty_call(
         if action == "ptyMobile.list" {
             let registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
             return Ok(
-                json!({"terminals":registry.entries.values().filter(|entry|entry.scope==scope).map(Entry::dto).collect::<Vec<_>>()}),
+                json!({"terminals":registry.entries.values().filter(|entry|entry.scope==scope && !entry.closed).map(Entry::dto).collect::<Vec<_>>()}),
             );
         }
         if action == "ptyMobile.create" {
@@ -305,19 +541,26 @@ pub async fn mobile_pty_call(
             let id = uuid::Uuid::new_v4().to_string();
             {
                 let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some((fingerprint, result)) = registry.requests.get(&key) {
-                    return if fingerprint == &signature {
-                        Ok(result.clone())
+                registry.prune(Instant::now());
+                if let Some(receipt) = registry.requests.get(&key) {
+                    return if receipt.fingerprint == signature {
+                        Ok(receipt.result.clone())
                     } else {
                         Err("PTY request identity changed".into())
                     };
                 }
-                if registry.entries.len() >= 16 || registry.requests.len() >= 128 {
+                registry.admit(&key, false)?;
+                // Active capacity and replay grace are separate; a burst of 16
+                // live terminals can settle above the 32-entry history watermark.
+                let (active, history) = registry.capacity();
+                if active >= 16 {
                     return Err("Mobile PTY limit reached".into());
                 }
+                if history >= 32 { return Err("Mobile PTY replay history is full; retry after the retention period".into()); }
+                if registry.requests.len() >= 512 { return Err("Mobile PTY receipt limit reached".into()); }
                 registry
                     .requests
-                    .insert(key.clone(), (signature.clone(), json!({"state":"unknown"})));
+                    .insert(key.clone(), Receipt { fingerprint: signature.clone(), result: json!({"state":"unknown"}), terminal_id: id.clone(), pending: true, close: false });
                 registry.entries.insert(
                     id.clone(),
                     Entry {
@@ -331,6 +574,10 @@ pub async fn mobile_pty_call(
                         rows,
                         shell: profile.clone().unwrap_or_else(|| "default".into()),
                         exited: false,
+                        physical_exit: false,
+                        native_generation: None,
+                        closed: false,
+                        settled_at: None,
                         code: None,
                         detached: false,
                         drained: false,
@@ -366,7 +613,8 @@ pub async fn mobile_pty_call(
                     app.state::<crate::pty::PtyHost>(),
                     id.clone(),
                 );
-                exited(&app, &id, None);
+                let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(value) = registry.entries.get_mut(&id) { value.detached = true; value.exited = true; value.closed = true; }
                 return Err("Mobile PTY source closed during creation; no replay".into());
             }
             let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -374,20 +622,21 @@ pub async fn mobile_pty_call(
                 .entries
                 .get_mut(&id)
                 .ok_or("Mobile PTY creation interrupted")?;
+            let pending = result.is_err();
             let reply = match result {
                 Ok(()) => value.lease_dto(),
                 Err(_) => {
                     value.exited = true;
                     value.detached = true;
-                    value.drained = true;
-                    json!({"state":"failed","message":"Could not create mobile PTY"})
+                    json!({"state":"unknown","message":"Mobile PTY creation outcome is unknown; never replay"})
                 }
             };
-            registry.requests.insert(key, (signature, reply.clone()));
+            registry.requests.insert(key, Receipt { fingerprint: signature, result: reply.clone(), terminal_id: id, pending, close: false });
             return Ok(reply);
         }
         let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
         if action == "ptyMobile.attach" || action == "ptyMobile.close" {
+            registry.prune(Instant::now());
             let request = string(&input, "requestId")?;
             let key = serde_json::to_string(&(
                 &scope.environment,
@@ -400,17 +649,22 @@ pub async fn mobile_pty_call(
             ))
             .map_err(|_| "Invalid PTY receipt")?;
             let signature = serde_json::to_string(&input).map_err(|_| "Invalid PTY receipt")?;
-            if let Some((fingerprint, result)) = registry.requests.get(&key) {
-                return if fingerprint == &signature {
-                    Ok(result.clone())
-                } else {
-                    Err("PTY request identity changed".into())
-                };
+            if registry.requests.contains_key(&key) {
+                return registry.receipt_outcome(&key, &signature);
             }
-            if registry.requests.len() >= 128 {
+            // One exact close receipt per entry remains available at capacity.
+            let closing = action == "ptyMobile.close";
+            registry.admit(&key, closing)?;
+            if !closing && registry.requests.len() >= 512 {
                 return Err("Mobile PTY receipt limit reached".into());
             }
             let value = entry(&mut registry, &scope, &input)?;
+            if closing && value.closed {
+                let id = value.id.clone();
+                // The new ID must never be used for another effect, but repeated
+                // mobile retries must not allocate an unbounded receipt history.
+                return registry.retry_closed(&key, &id);
+            }
             if action == "ptyMobile.attach" {
                 let after = input["after"]
                     .as_u64()
@@ -435,24 +689,24 @@ pub async fn mobile_pty_call(
                 value.input_unknown = false;
                 value.input_fingerprint.clear();
                 let result = value.lease_dto();
-                registry.requests.insert(key, (signature, result.clone()));
+                let terminal_id = value.id.clone();
+                registry.settled_attaches.insert(key.clone(), Instant::now());
+                registry.requests.insert(key, Receipt { fingerprint: signature, result: result.clone(), terminal_id, pending: false, close: false });
                 return Ok(result);
             }
             value.detached = true;
             value.exited = true;
+            value.closed = true;
             let id = value.id.clone();
+            let already_exited = value.physical_exit;
             registry
                 .requests
-                .insert(key.clone(), (signature.clone(), json!({"state":"unknown"})));
+                .insert(key.clone(), Receipt { fingerprint: signature.clone(), result: if already_exited { json!({"closed":true}) } else { json!({"state":"unknown"}) }, terminal_id: id.clone(), pending: !already_exited, close: true });
+            if already_exited { return Ok(json!({"closed":true})); }
             drop(registry);
-            crate::pty::pty_kill(window, app.state::<crate::pty::PtyHost>(), id)?;
-            let result = json!({"closed":true});
-            let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
-            registry
-                .entries
-                .remove(input["terminalId"].as_str().unwrap_or_default());
-            registry.requests.insert(key, (signature, result.clone()));
-            return Ok(result);
+            let _ = crate::pty::pty_kill(window, app.state::<crate::pty::PtyHost>(), id);
+            let registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
+            return registry.receipt_outcome(&key, &signature);
         }
         let value = entry(&mut registry, &scope, &input)?;
         if action == "ptyMobile.read" {
@@ -465,11 +719,12 @@ pub async fn mobile_pty_call(
             if gap {
                 value.gap = true;
             }
+            let gap = gap || value.gap;
             if value.leased(&value.lease) {
                 value.seen = Instant::now();
             }
             return Ok(
-                json!({"terminalId":value.id,"epoch":value.epoch,"after":after,"next":next,"oldest":value.replay.oldest(),"end":value.replay.end,"dataBase64":base64::engine::general_purpose::STANDARD.encode(bytes),"state":if value.exited && value.drained {"exited"}else{"running"},"exitCode":value.code,"gap":gap,"hasMore":!gap&&next<value.replay.end}),
+                json!({"terminalId":value.id,"epoch":value.epoch,"after":after,"next":next,"oldest":value.replay.oldest(),"end":value.replay.end,"dataBase64":base64::engine::general_purpose::STANDARD.encode(bytes),"state":if value.physical_exit && value.drained {"exited"}else{"running"},"exitCode":value.code,"gap":gap,"hasMore":!gap&&next<value.replay.end}),
             );
         }
         let lease = string(&input, "leaseId")?;
@@ -531,6 +786,7 @@ pub async fn mobile_pty_call(
         if result.is_ok() {
             value.input_unknown = false;
             value.seen = Instant::now();
+            value.mark_settled(Instant::now());
         }
         result
             .map(|_| json!({"accepted":true,"inputSequence":sequence}))
@@ -542,6 +798,310 @@ pub async fn mobile_pty_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_entry(id: &str, now: Instant) -> Entry {
+        Entry {
+            scope: Scope {
+                environment: "env".into(),
+                source: "source".into(),
+                cwd: "/project".into(),
+                actor: "actor".into(),
+                owner: "owner".into(),
+            },
+            id: id.into(),
+            epoch: "epoch".into(),
+            lease: "lease".into(),
+            seen: now,
+            replay: Replay::new(),
+            cols: 80,
+            rows: 24,
+            shell: "default".into(),
+            exited: false,
+            physical_exit: false,
+            native_generation: None,
+            closed: false,
+            settled_at: None,
+            code: None,
+            detached: false,
+            drained: false,
+            sequence: 0,
+            input_unknown: false,
+            input_fingerprint: String::new(),
+            gap: false,
+        }
+    }
+    #[test]
+    fn completed_receipts_age_into_permanent_fence_without_duplicate_admission() {
+        let now = Instant::now();
+        let mut registry = Registry::default();
+        for i in 0..300 {
+            let id = format!("terminal-{i}");
+            let key = format!("request-{i}");
+            let mut value = test_entry(&id, now);
+            value.physical_exit = true;
+            value.drained = true;
+            value.mark_settled(now);
+            registry.entries.insert(id.clone(), value);
+            registry.requests.insert(
+                key.clone(),
+                Receipt {
+                    fingerprint: "original".into(),
+                    result: json!({"closed":true}),
+                    terminal_id: id,
+                    pending: false,
+                    close: false,
+                },
+            );
+            registry.prune(now + SETTLED_TTL - Duration::from_millis(1));
+            assert!(registry.requests.contains_key(&key));
+            registry.prune(now + SETTLED_TTL);
+            assert!(!registry.requests.contains_key(&key));
+            assert!(registry.admit(&key, false).is_err());
+        }
+        assert!(registry.entries.is_empty());
+        assert!(registry.requests.is_empty());
+        assert!(registry.admit("new-request", false).is_ok());
+    }
+    #[test]
+    fn live_terminal_completed_attach_receipts_expire_without_rotating_old_ids() {
+        let now = Instant::now();
+        let mut registry = Registry::default();
+        registry
+            .entries
+            .insert("live".into(), test_entry("live", now));
+        registry.requests.insert(
+            "create".into(),
+            Receipt {
+                fingerprint: "create".into(),
+                result: json!({"state":"unknown"}),
+                terminal_id: "live".into(),
+                pending: true,
+                close: false,
+            },
+        );
+        registry.requests.insert(
+            "close".into(),
+            Receipt {
+                fingerprint: "close".into(),
+                result: json!({"state":"unknown"}),
+                terminal_id: "live".into(),
+                pending: true,
+                close: true,
+            },
+        );
+        for i in 0..600 {
+            let key = format!("attach-{i}");
+            let at = now + SETTLED_TTL * i;
+            assert!(registry.admit(&key, false).is_ok());
+            registry.requests.insert(
+                key.clone(),
+                Receipt {
+                    fingerprint: "attach".into(),
+                    result: json!({"leaseId":"original"}),
+                    terminal_id: "live".into(),
+                    pending: false,
+                    close: false,
+                },
+            );
+            registry.settled_attaches.insert(key.clone(), at);
+            registry.prune(at + SETTLED_TTL - Duration::from_millis(1));
+            assert!(registry.requests.contains_key(&key));
+            registry.prune(at + SETTLED_TTL);
+            assert!(!registry.requests.contains_key(&key));
+            assert!(registry.admit(&key, false).is_err());
+            assert_eq!(registry.entries["live"].lease, "lease");
+        }
+        assert!(registry.requests.contains_key("create"));
+        assert!(registry.requests.contains_key("close"));
+        assert_eq!(registry.entries.len(), 1);
+    }
+    #[test]
+    fn live_unknown_incomplete_drain_and_pending_receipts_never_age_out() {
+        let now = Instant::now();
+        let mut registry = Registry::default();
+        for (id, physical_exit, drained, pending) in [
+            ("live", false, false, false),
+            ("close-unknown", false, true, false),
+            ("drain-unknown", true, false, false),
+            ("pending", true, true, true),
+        ] {
+            let mut value = test_entry(id, now);
+            value.exited = true;
+            value.physical_exit = physical_exit;
+            value.drained = drained;
+            value.mark_settled(now);
+            registry.entries.insert(id.into(), value);
+            registry.requests.insert(
+                id.into(),
+                Receipt {
+                    fingerprint: "request".into(),
+                    result: json!({"state":"unknown"}),
+                    terminal_id: id.into(),
+                    pending,
+                    close: false,
+                },
+            );
+        }
+        registry.prune(now + SETTLED_TTL * 100);
+        assert_eq!(registry.entries.len(), 4);
+        assert_eq!(registry.requests.len(), 4);
+        assert_eq!(registry.expired.set_bits, 0);
+    }
+    #[test]
+    fn unknown_input_and_replay_gap_block_expiry_even_after_exit_and_drain() {
+        let now = Instant::now();
+        let mut registry = Registry::default();
+        for id in ["unknown-input", "gap"] {
+            let mut value = test_entry(id, now);
+            value.record_exit(Some(0), now);
+            value.record_drain(true, now);
+            if id == "gap" {
+                value.gap = true;
+            } else {
+                value.input_unknown = true;
+            }
+            registry.entries.insert(id.into(), value);
+            registry.requests.insert(
+                id.into(),
+                Receipt {
+                    fingerprint: "original".into(),
+                    result: json!({"closed":true}),
+                    terminal_id: id.into(),
+                    pending: false,
+                    close: false,
+                },
+            );
+        }
+        registry.prune(now + SETTLED_TTL * 100);
+        assert_eq!(registry.capacity(), (2, 0));
+        assert_eq!(registry.entries.len(), 2);
+        assert_eq!(registry.requests.len(), 2);
+        assert_eq!(registry.expired.set_bits, 0);
+    }
+    #[test]
+    fn close_and_drain_do_not_prove_exit_and_failed_drain_blocks_retirement() {
+        let now = Instant::now();
+        let mut value = test_entry("id", now);
+        value.closed = true;
+        value.exited = true;
+        value.record_drain(true, now);
+        assert!(value.settled_at.is_none());
+        assert_eq!(value.dto()["state"], "running");
+        value.record_exit(Some(0), now + Duration::from_secs(1));
+        assert_eq!(value.settled_at, Some(now + Duration::from_secs(1)));
+        let mut failed = test_entry("failed", now);
+        failed.record_exit(None, now);
+        failed.record_drain(false, now);
+        assert!(failed.gap);
+        assert!(failed.settled_at.is_none());
+    }
+    #[test]
+    fn native_generation_rejects_replacement_and_stale_callbacks() {
+        let now = Instant::now();
+        let mut value = test_entry("id", now);
+        value.reserve_generation("first".into()).unwrap();
+        assert!(value.reserve_generation("second".into()).is_err());
+        assert!(!value.matches_generation("second"));
+        assert!(value.matches_generation("first"));
+        value.closed = true;
+        assert!(value.reserve_generation("third".into()).is_err());
+    }
+    #[test]
+    fn close_ack_waits_for_matching_exit_and_new_retries_never_repeat_effect() {
+        let now = Instant::now();
+        let mut registry = Registry::default();
+        let mut value = test_entry("id", now);
+        value.reserve_generation("generation".into()).unwrap();
+        value.closed = true;
+        value.exited = true;
+        registry.entries.insert("id".into(), value);
+        registry.requests.insert(
+            "create".into(),
+            Receipt {
+                fingerprint: "create".into(),
+                result: json!({"state":"unknown"}),
+                terminal_id: "id".into(),
+                pending: true,
+                close: false,
+            },
+        );
+        registry.requests.insert(
+            "close".into(),
+            Receipt {
+                fingerprint: "original".into(),
+                result: json!({"state":"unknown"}),
+                terminal_id: "id".into(),
+                pending: true,
+                close: true,
+            },
+        );
+        // A successful kill dispatch is not physical exit; same and fresh IDs
+        // both report unconfirmed without allocating another receipt.
+        assert!(registry.receipt_outcome("close", "original").is_err());
+        assert!(registry.receipt_outcome("close", "different").is_err());
+        assert!(registry.retry_closed("fresh", "id").is_err());
+        assert!(registry.admit("fresh", true).is_err());
+        assert_eq!(registry.requests.len(), 2);
+        registry.record_physical_exit("id", "stale", Some(0), now);
+        assert!(registry.receipt_outcome("close", "original").is_err());
+        registry.record_physical_exit("id", "generation", Some(0), now);
+        assert_eq!(
+            registry.receipt_outcome("close", "original").unwrap(),
+            json!({"closed":true})
+        );
+        assert!(registry.requests["create"].pending);
+        assert_eq!(
+            registry.requests["create"].result,
+            json!({"state":"unknown"})
+        );
+        assert_eq!(
+            registry.retry_closed("fresh-after", "id").unwrap(),
+            json!({"closed":true})
+        );
+        assert_eq!(registry.requests.len(), 2);
+        assert!(registry.admit("fresh-after", true).is_err());
+    }
+    #[test]
+    fn fence_saturation_refuses_new_admission_without_clearing_old_ids() {
+        let mut registry = Registry::default();
+        registry.expired.insert("old");
+        registry.expired.set_bits = FENCE_BYTES * 8 / 4;
+        assert!(registry.admit("old", false).is_err());
+        assert!(registry.admit("old", true).is_err());
+        assert!(registry.admit("fresh", false).is_err());
+        assert!(registry.admit("fresh", true).is_ok());
+        assert!(registry.expired.contains("old"));
+    }
+    #[test]
+    fn confirmed_history_does_not_consume_active_capacity_and_pending_does() {
+        let now = Instant::now();
+        let mut registry = Registry::default();
+        for i in 0..16 {
+            let id = format!("settled-{i}");
+            let mut value = test_entry(&id, now);
+            value.physical_exit = true;
+            value.drained = true;
+            value.mark_settled(now);
+            registry.entries.insert(id, value);
+        }
+        let mut pending = test_entry("pending", now);
+        pending.physical_exit = true;
+        pending.drained = true;
+        pending.mark_settled(now);
+        registry.entries.insert("pending".into(), pending);
+        registry.requests.insert(
+            "pending-request".into(),
+            Receipt {
+                fingerprint: "x".into(),
+                result: json!({"state":"unknown"}),
+                terminal_id: "pending".into(),
+                pending: true,
+                close: false,
+            },
+        );
+        assert_eq!(registry.capacity(), (1, 16));
+        registry.prune(now + SETTLED_TTL);
+        assert_eq!(registry.capacity(), (1, 0));
+    }
     #[test]
     fn byte_replay_keeps_utf8_fragments_and_refuses_gap_as_screen() {
         let mut replay = Replay::new();
@@ -572,6 +1132,10 @@ mod tests {
             rows: 24,
             shell: "default".into(),
             exited: false,
+            physical_exit: false,
+            native_generation: None,
+            closed: false,
+            settled_at: None,
             code: None,
             detached: false,
             drained: false,
@@ -593,6 +1157,8 @@ mod tests {
         value.exited = true;
         assert_eq!(value.dto()["state"], "running");
         value.drained = true;
+        assert_eq!(value.dto()["state"], "running");
+        value.physical_exit = true;
         assert_eq!(value.dto()["state"], "exited");
         let scope = value.scope.clone();
         let mut registry = Registry::default();

@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4]
+
+### Conversations and navigation
+
+- Keep owner-stopped turns distinct from interrupted work in conversation lists, history and recovery across desktop and Host reads.
+- Preserve undelivered input when project-folder preparation is rejected or fails before a turn starts.
+- Edit, remove or send local saved drafts from their cards, restoring text and attachments to the unsent composer when editing. Host-bound drafts retain Send and Remove.
+- Allow the Host's retirement window to finish before desktop run-lease acquisition times out, and retain uncertain ownership guards until an unrenewed lease expires.
+- Make attachment cards more compact while retaining filenames, reference tokens, metadata and full-screen access.
+- Add direct assistant-room navigation and keep Settings pinned at the bottom of the project rail and sidebar, including short windows.
+
+### Task board reliability
+
+- Keep task-change subscriptions stable across background polls to avoid repeated invalidation and refresh loops.
+- Refresh task data silently in the background while retaining visible progress for initial loading and owner-requested refreshes.
+
+## [0.7.3]
+
+### Voice and assistant
+
+- Add a professional conversation preset with automatic turn ending, longer pauses and interruption support.
+- Handle requests to pause, listening acknowledgments and resumed answers without losing the current conversation turn.
+- Track played and interrupted audio per response so conversation history and assistant briefings reflect what was delivered.
+- Improve recognition of bycoda feature names without including private project or session names in transcription hints.
+- Avoid return briefings when presence is unknown and reserve spoken return updates for meaningful activity.
+- Reorganize assistant settings with explicit saves, confirmation of saved changes and protection for unsaved drafts.
+- Group assistant history by day and make saved memory searchable by rules, profile information and learned facts.
+
+### Conversations and previews
+
+- Quote selected message text with source references, comments and matching highlights.
+- Add recent conversations across accessible projects and retain the provider and model history of submitted turns and handoffs.
+- Refine attachment references, session rows, sidebar controls and translated interface text.
+- Open inline visuals in a resizable side panel or expanded view, with shared preview, source and reload controls.
+- Choose the project when starting a new conversation and summarize work already listed in the current project without duplicating its running sessions.
+- Preserve interrupted status and last activity when reading stored conversations.
+- Attach, paste or drop files into free-text question answers, retain them with the question draft and upload them to the executing Host before remote delivery.
+
+### Connected servers
+
+- Run an exact command on a saved SSH server through the conversation tools, with native owner approval and strict host-key verification.
+- Read bounded command output and request cancellation by operation ID, with explicit unknown outcomes when remote termination cannot be confirmed.
+
+### Reliability
+
+- Validate provider history in remote session reads and retain large-response deletion safeguards.
+
+- Keep streaming output following the latest reply after delayed WebKit scroll updates while preserving deliberate history scrolling.
+- Consolidate remote connection notices and fall back to HTTP when a WebSocket connection is slow to become ready.
+- Preserve independent Git subscriptions across windows and validate authenticated subscription requests consistently.
+- Keep cross-machine sprint planning available while filtering tasks by project.
+- Make task starts and queue ordering atomic, preserve board state during pending or failed changes, and improve review recovery.
+- Keep queued messages in a recoverable waiting state when delivery is deferred, with clear progress instead of reporting an unconfirmed send as complete.
+
+## [0.7.2]
+
+### Voice and assistant
+
+- Keep voice connected across navigation and bind each spoken request to the conversation it was made in.
+- Start dictation while the recognizer loads, keep it warm for five minutes, and report a dropped connection instead of stopping silently.
+- Keep the dictation connection alive while buffered phrases finish after you stop.
+- Approve desktop actions on an assistant thread without a coding session.
+- Offer a one-million token draft budget and re-check setup before saving.
+- Keep follow-up activity on the original run until its children finish, and resolve bare filenames against a folder named in the same reply.
+- Announce voice errors and speakers reliably to screen readers.
+
+### macOS permissions
+
+- Ask for Screen Recording before quick-composer screenshots and open the right Privacy & Security pane when microphone or screen access is missing.
+- Declare local network, removable and network volume, Apple Events and camera usage so macOS can prompt for them.
+- Sign the app and the desktop-control helper with a Developer ID and notarize them when Apple credentials are configured, so permissions survive updates.
+
+### Security and reliability
+
+- Refuse hidden files such as `.env` in HTML previews and stop previews from sending data to other sites.
+- Reject invalid social webhook signatures instead of accepting them, and keep the Host running when an asynchronous error is not handled.
+- Keep Turkish and other non-ASCII text intact in large formatter and CLI inputs, and refuse to save files that are not UTF-8 or that became symlinks.
+- Retry a failed LAN gateway configuration load, use a free port when the saved one is taken, and start background services independently.
+- Rate-limit MCP requests per token and report rate limiting clearly.
+- Give secondary windows only the permissions they use.
+- Enable the microphone on Linux and bundle the correct Host on Intel Macs.
+
+### Interface
+
+- Refit running terminals after renderer changes so returning from a hidden panel uses the current cell size without restarting the shell.
+- Add missing translations, translate remaining English messages and keep keyboard focus in translated menus.
+- Follow the light theme during startup, keep SSH jump host order and focus when reordering, and show errors when a link cannot be opened.
+- Use shared icons, errors, tooltips and typography across the assistant, voice and desktop-control screens.
+
+### Build and verification
+
+- Run format, lint, translation, color, UI and documentation checks in CI, and require Node.js 22.12 or newer.
+- Stop tracking the unused npm lockfile and a stray process file.
+
 ## [0.7.1]
 
 ### Personal assistant

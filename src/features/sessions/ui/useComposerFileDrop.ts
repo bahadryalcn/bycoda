@@ -1,5 +1,6 @@
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { t } from "../../../shared/i18n";
 import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
@@ -31,6 +32,7 @@ type Options = {
   sinkRef: RefObject<AttachmentSink>;
   /** The draft's current attachments, so the badge can say how many will fit. */
   attachmentsRef?: RefObject<readonly unknown[]>;
+  persistBlobs?: boolean;
   readDroppedAttachments: (read: () => Promise<Attachment[]>) => void;
   setPasteError: Dispatch<SetStateAction<string | null>>;
 };
@@ -49,6 +51,7 @@ export function useComposerFileDrop({
   boxRef,
   sinkRef,
   attachmentsRef,
+  persistBlobs,
   readDroppedAttachments,
   setPasteError,
 }: Options): void {
@@ -118,7 +121,7 @@ export function useComposerFileDrop({
       if (Date.now() - nativeDropAt < 250) return;
       const files = filesFromClipboard(data);
       if (files.length === 0) return;
-      readDroppedAttachments(() => attachmentsFromFiles(files));
+      readDroppedAttachments(() => persistBlobs === undefined ? attachmentsFromFiles(files) : attachmentsFromFiles(files, { persistBlobs }));
     };
 
     const onExplorerFilePointerDrag = (event: Event) => {
@@ -158,42 +161,39 @@ export function useComposerFileDrop({
 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (cancelled) return;
-        if (event.payload.type === "leave") {
+    void Promise.resolve()
+      .then(() =>
+        getCurrentWebview().onDragDropEvent((event) => {
+          if (cancelled) return;
+          if (event.payload.type === "leave") {
+            nativeCount = 0;
+            hide();
+            return;
+          }
+          const { x, y } = event.payload.position;
+          const point = dragPointToClient(x, y);
+          const over = overTarget(point.x, point.y);
+          if (event.payload.type === "enter" || event.payload.type === "over") {
+            if (event.payload.type === "enter") nativeCount = event.payload.paths.length;
+            if (!over) hide();
+            else show(nativeCount, false, nativeDropPointer({ x, y }, pointerInside(dropRoot())));
+            return;
+          }
+          if (event.payload.type !== "drop") return;
           nativeCount = 0;
           hide();
-          return;
-        }
-        const { x, y } = event.payload.position;
-        const point = dragPointToClient(x, y);
-        const over = overTarget(point.x, point.y);
-        if (event.payload.type === "enter" || event.payload.type === "over") {
-          if (event.payload.type === "enter") nativeCount = event.payload.paths.length;
-          if (!over) hide();
-          else
-            show(
-              nativeCount,
-              false,
-              nativeDropPointer({ x, y }, pointerInside(dropRoot())),
+          if (!over || blockedBy(false)) return;
+          if (event.payload.paths.length === 0) {
+            setPasteError(
+              t("This drag did not provide a file. Save the image, then drag the saved file here."),
             );
-          return;
-        }
-        if (event.payload.type !== "drop") return;
-        nativeCount = 0;
-        hide();
-        if (!over || blockedBy(false)) return;
-        if (event.payload.paths.length === 0) {
-          setPasteError(
-            "This drag did not provide a file. Save the image, then drag the saved file here.",
-          );
-          return;
-        }
-        nativeDropAt = Date.now();
-        const paths = event.payload.paths;
-        readDroppedAttachments(() => attachmentsFromPaths(paths));
-      })
+            return;
+          }
+          nativeDropAt = Date.now();
+          const paths = event.payload.paths;
+          readDroppedAttachments(() => attachmentsFromPaths(paths));
+        }),
+      )
       .then((fn) => {
         if (cancelled) fn();
         else unlisten = fn;
@@ -215,7 +215,7 @@ export function useComposerFileDrop({
       window.removeEventListener("dragend", hide);
       unlisten?.();
     };
-  }, [disabled, enabled, readDroppedAttachments]);
+  }, [disabled, enabled, persistBlobs, readDroppedAttachments]);
 
   // The verdict changes with the provider; the next drag event draws the new one.
   useEffect(() => {

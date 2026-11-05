@@ -14,6 +14,9 @@ vi.mock("@tauri-apps/api/core", async () => ({
   ...(await vi.importActual<object>("@tauri-apps/api/core")),
   invoke: mocks.invoke,
 }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, handler: (value: { payload: any }) => void) => {
     mocks.handlers.set(name, handler);
@@ -67,9 +70,11 @@ async function fixture(includeSession = true) {
   release = await child.acquireHarnessBridge();
   const handle = child.createChildProcessHandle("session");
   const constructionId = "00000000-0000-4000-8000-000000000042";
-  mocks.invoke.mockImplementation(async (command: string) => command === "harness_spawn"
-    ? { version: 1, backend: "native", sessionId: "session", pid: 42, constructionId }
-    : undefined);
+  mocks.invoke.mockImplementation(async (command: string) =>
+    command === "harness_spawn"
+      ? { version: 1, backend: "native", sessionId: "session", pid: 42, constructionId }
+      : undefined,
+  );
   await child.spawnChild(handle, "fixture-agent", [], "/fixture");
   const vector = vectors.cases[0];
   const metadata = {
@@ -214,7 +219,13 @@ it("accepts the separate post-reader state event without emitting a second legac
     reason: null,
   };
   mocks.handlers.get("harness-exit")!({
-    payload: { sessionId: "session", constructionId: f.constructionId, code: 0, pid: 42, nativeOutputState: state },
+    payload: {
+      sessionId: "session",
+      constructionId: f.constructionId,
+      code: 0,
+      pid: 42,
+      nativeOutputState: state,
+    },
   });
   expect(exit).toHaveBeenCalledExactlyOnceWith(0);
   expect(f.audit.inspectNativeOutputDelivery("session").streams[0].nativeState).toBe("unsealed");

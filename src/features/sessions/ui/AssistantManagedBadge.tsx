@@ -15,32 +15,31 @@ export function AssistantManagedBadge({
   compact?: boolean;
   local?: boolean;
 }) {
-  return management?.assistant&&management.detachedAt===undefined ? (
+  return management?.assistant && management.detachedAt === undefined ? (
     local ? (
       <ManagedBadge compact={compact} manual={"supervisionId" in management} />
     ) : (
-      <ManagementMark label={t("supervisionId" in management?"Supervision recorded":"Managed session")} compact={compact} />
+      <ManagementMark
+        label={t("supervisionId" in management ? "Supervision recorded" : "Managed session")}
+        compact={compact}
+      />
     )
   ) : null;
 }
-function ManagedBadge({ compact,manual }: { compact: boolean;manual:boolean }) {
+function ManagedBadge({ compact, manual }: { compact: boolean; manual: boolean }) {
   const { name } = useAssistantIdentity();
-  const label = manual?t("Supervision recorded"):name
-    ? t("Managed by {p0}", { p0: name })
-    : t("Managed session");
+  const label = manual
+    ? t("Supervision recorded")
+    : name
+      ? t("Managed by {p0}", { p0: name })
+      : t("Managed session");
   return <ManagementMark label={label} compact={compact} />;
 }
-function ManagementMark({
-  label,
-  compact,
-}: {
-  label: string;
-  compact: boolean;
-}) {
+function ManagementMark({ label, compact }: { label: string; compact: boolean }) {
   return (
     <Tooltip label={label}>
       <Badge tone="info" size="xs" aria-label={label} data-assistant-managed>
-        {compact ? <Bot size={12} aria-hidden="true" /> : label}
+        {compact ? <Bot className="icon-xs" aria-hidden="true" /> : label}
       </Badge>
     </Tooltip>
   );

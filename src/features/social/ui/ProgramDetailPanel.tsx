@@ -54,12 +54,7 @@ export function ProgramDetailPending({
       {detailError ? (
         <Notice kind="error" title={t("Could not load this program")}>
           {String(detailError)}{" "}
-          <Button
-            type="button"
-            variant="secondary"
-            loading={refreshing}
-            onClick={() => onRetry()}
-          >
+          <Button type="button" variant="secondary" loading={refreshing} onClick={() => onRetry()}>
             {t("Retry")}
           </Button>
         </Notice>
@@ -103,9 +98,7 @@ export function ProgramDetailPanel({
   bulkLink: string;
   onBulkLinkChange: (link: string) => void;
   onEdit: (program: SocialProgram) => void;
-  onDetailChange: (
-    update: (previous: ProgramDetail | undefined) => ProgramDetail,
-  ) => void;
+  onDetailChange: (update: (previous: ProgramDetail | undefined) => ProgramDetail) => void;
 }) {
   const pendingUi = useSocialPending();
   const socialLocked = useContext(SocialBusyContext);
@@ -116,20 +109,13 @@ export function ProgramDetailPanel({
       {hideHeading ? null : (
         <header className="social-record-heading">
           <h3>{detail.program.name}</h3>
-          <span className="social-muted">
-            {detail.program.enabled ? t("Active") : t("Paused")}
-          </span>
+          <span className="social-muted">{detail.program.enabled ? t("Active") : t("Paused")}</span>
         </header>
       )}
       {detailError ? (
         <Notice kind="error" title={t("Could not refresh this program")}>
           {String(detailError)}{" "}
-          <Button
-            type="button"
-            variant="secondary"
-            loading={refreshing}
-            onClick={() => onRetry()}
-          >
+          <Button type="button" variant="secondary" loading={refreshing} onClick={() => onRetry()}>
             {t("Retry")}
           </Button>
         </Notice>
@@ -227,9 +213,7 @@ export function ProgramDetailPanel({
           checked={confirmed}
           onChange={(e) => onConfirmedChange(e.target.checked)}
         />
-        {t(
-          "I reviewed this revision, its accounts, schedule, models, budgets and approval steps.",
-        )}
+        {t("I reviewed this revision, its accounts, schedule, models, budgets and approval steps.")}
       </label>
       {detail.program.enabled || detail.program.cancelled || !confirmed ? (
         <small className="social-muted">
@@ -255,11 +239,7 @@ export function ProgramDetailPanel({
           variant="secondary"
           loading={pendingUi.is("programs.activate-reviewed-campaign")}
           disabled={
-            socialLocked ||
-            busy ||
-            !confirmed ||
-            detail.program.cancelled ||
-            detail.program.enabled
+            socialLocked || busy || !confirmed || detail.program.cancelled || detail.program.enabled
           }
           onClick={() =>
             void pendingUi.run("programs.activate-reviewed-campaign", () =>
@@ -355,9 +335,7 @@ export function ProgramDetailPanel({
                   before: detail.nextBefore,
                 });
                 onDetailChange((d) =>
-                  d
-                    ? { ...older, occurrences: [...older.occurrences, ...d.occurrences] }
-                    : older,
+                  d ? { ...older, occurrences: [...older.occurrences, ...d.occurrences] } : older,
                 );
               }),
             )

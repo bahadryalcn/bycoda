@@ -235,7 +235,7 @@ export function codexMcpForm(params: unknown): CodexMcpForm | null {
     if (
       type === "array" &&
       typeof field.minItems === "number" &&
-      field.minItems > (asRecord(field.items)?.enum as unknown[]).length
+      field.minItems > (Array.isArray(asRecord(field.items)?.enum) ? (asRecord(field.items)!.enum as unknown[]).length : 0)
     )
       return null;
     if (type === "array" && (field.minItems === undefined || field.minItems === 0))
@@ -288,6 +288,8 @@ export function codexMcpFormResponse(
   content: Record<string, FormValue> | null;
   _meta: null;
 } {
+  if (reply.kind === "answered" && reply.notes && Object.keys(reply.notes).length)
+    throw new Error("Question notes are not supported for typed Codex elicitation.");
   if (reply.kind === "skipped") return { action: "cancel", content: null, _meta: null };
   const entries: [string, FormValue][] = [];
   for (const field of form.fields) {

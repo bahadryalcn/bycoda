@@ -209,3 +209,49 @@ describe("ACP child routing", () => {
     });
   });
 });
+
+it("retains a live child until its completed parent and child both settle", () => {
+  const router = new AcpSubagents();
+  router.route({}, [{ type: "tool.started", callId: "parent", title: "Task" }]);
+  router.route({ parentToolCallId: "parent" }, [
+    { type: "tool.started", callId: "child", title: "Read" },
+  ]);
+  router.route({}, [{ type: "tool.updated", callId: "parent", status: "completed" }]);
+  expect(
+    router.route({}, [{ type: "tool.updated", callId: "child", status: "completed" }]),
+  ).toMatchObject([{ type: "agent.step", callId: "parent", status: "completed" }]);
+  expect((router as unknown as { owners: Map<string, string> }).owners.size).toBe(0);
+  expect((router as unknown as { tools: Set<string> }).tools.size).toBe(0);
+});
+
+it("does not evict unknown pending child work when other parents arrive", () => {
+  const router = new AcpSubagents();
+  for (let i = 0; i < 40; i++) {
+    router.route({ parentToolCallId: `parent-${i}` }, [{ type: "message.delta", text: `${i}` }]);
+  }
+  expect(
+    router.route({}, [{ type: "tool.started", callId: "parent-0", title: "Task" }]),
+  ).toContainEqual(expect.objectContaining({ type: "agent.step", text: "0" }));
+});
+
+it("routes sparse child updates in a mixed batch while another child remains live", () => {
+  const router = new AcpSubagents();
+  router.route({}, [{ type: "tool.started", callId: "root", title: "Task" }]);
+  router.route({ parentToolCallId: "root" }, [
+    { type: "tool.started", callId: "first", title: "Read" },
+    { type: "tool.started", callId: "second", title: "Search" },
+  ]);
+  router.route({}, [{ type: "tool.updated", callId: "root", status: "completed" }]);
+  expect(
+    router.route({}, [
+      { type: "tool.updated", callId: "first", status: "completed" },
+      { type: "tool.started", callId: "unrelated", title: "Other" },
+    ]),
+  ).toMatchObject([
+    { type: "agent.step", callId: "root", status: "completed" },
+    { type: "tool.started", callId: "unrelated" },
+  ]);
+  expect(
+    router.route({}, [{ type: "tool.updated", callId: "second", status: "completed" }]),
+  ).toMatchObject([{ type: "agent.step", callId: "root", status: "completed" }]);
+});

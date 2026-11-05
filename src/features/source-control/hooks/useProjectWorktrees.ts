@@ -1,3 +1,4 @@
+import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
@@ -14,7 +15,10 @@ type Entry = {
 };
 
 const EMPTY: Snapshot = {};
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.snapshot,
+);
 
 function entryFor(cwd: string): Entry {
   const key = pathKey(cwd);
@@ -32,11 +36,15 @@ function entryFor(cwd: string): Entry {
 }
 
 function publish(entry: Entry, snapshot: Snapshot) {
+  const previous = entry.snapshot;
   entry.snapshot = snapshot;
+  if (previous.data !== snapshot.data || previous.error !== snapshot.error)
+    entries.refresh(pathKey(entry.cwd));
   for (const listener of entry.listeners) listener();
 }
 
 function load(entry: Entry, invalidated = false): Promise<boolean> {
+  if (entries.get(pathKey(entry.cwd)) !== entry) return Promise.resolve(false);
   if (entry.inFlight) {
     // A Git mutation during a read needs a follow-up; repeated focus/open
     // events can share the request already in progress.
@@ -60,6 +68,7 @@ function load(entry: Entry, invalidated = false): Promise<boolean> {
       entry.invalidated = false;
       return load(entry);
     }
+    entries.prune();
     return loaded;
   })();
   return entry.inFlight;
@@ -107,6 +116,7 @@ export function useProjectWorktrees(cwd: string, enabled = true) {
           entry.stop?.();
           entry.stop = undefined;
         }
+        entries.prune();
       };
     },
     [active, cwd],

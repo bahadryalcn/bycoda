@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(),
   capabilities: vi.fn(async () => ["sync"]),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => false }));
 vi.mock("../../connections/model/connections", () => ({
   cachedRemoteCapabilities: () => ["sync"],
   loadRemoteCapabilities: mocks.capabilities,
@@ -30,6 +30,7 @@ let stop: (() => void) | undefined;
 beforeEach(() => {
   vi.useFakeTimers();
   resetRemoteHealth();
+  mocks.stop.mockResolvedValue(true);
   mocks.invoke.mockImplementation(async (command) =>
     command === "remote_machines" ? machines : machines[0],
   );

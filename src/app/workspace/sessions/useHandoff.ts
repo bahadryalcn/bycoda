@@ -1,7 +1,24 @@
 import { type MutableRefObject, useCallback } from "react";
-import { formatSessionTitle, newSession, sessionDisplayTitle, sessionWorkCwd, type Block, type ModelTarget, type Session } from "../../../features/sessions/model/session";
-import { harnessForTurn, turnEditedFiles, turnUserRequest } from "../../../features/sessions/model/secondOpinion";
-import { HANDOFF_TITLE, buildDeterministicHandoff, buildHandoffComposerCard, sessionThroughTurn } from "../../../features/sessions/model/handoff";
+import {
+  formatSessionTitle,
+  newSession,
+  sessionDisplayTitle,
+  sessionWorkCwd,
+  type Block,
+  type ModelTarget,
+  type Session,
+} from "../../../features/sessions/model/session";
+import {
+  harnessForTurn,
+  turnEditedFiles,
+  turnUserRequest,
+} from "../../../features/sessions/model/secondOpinion";
+import {
+  HANDOFF_TITLE,
+  buildDeterministicHandoff,
+  buildHandoffComposerCard,
+  sessionThroughTurn,
+} from "../../../features/sessions/model/handoff";
 import { mergeModelSettings, resolveModel } from "../../../features/sessions/model/models";
 import type { OpenSessionBeside } from "./useSecondOpinion";
 

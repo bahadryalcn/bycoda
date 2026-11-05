@@ -1,8 +1,5 @@
-import {
-  captureTextInput,
-  prepareTextProcess,
-  runTextOperation,
-} from "../../core/textSource";
+import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { isTauri } from "@tauri-apps/api/core";
 import { rpcTurnWriter, type JsonRpcWriterView } from "../turnWriter";
 import { killChild } from "../../core/child";
 import {
@@ -12,10 +9,7 @@ import {
   createProviderRetirementLedger,
   preserveProviderFailure,
 } from "../../core/providerRetirement";
-import {
-  continueAfterFailure,
-  settledTail,
-} from "../../../../shared/lib/promiseQueue";
+import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
@@ -39,10 +33,7 @@ import { JsonRpcClient, type JsonRpcId } from "../../core/jsonRpc";
 import type { TextPromptInput } from "../../core/registry";
 
 import { mergeStream } from "../../core/streamText";
-import {
-  utilityOutputExceeded,
-  validateTextOutputLimit,
-} from "../../core/textOutput";
+import { utilityOutputExceeded, validateTextOutputLimit } from "../../core/textOutput";
 import {
   assertCodexUtilityIsolation,
   codexUtilityConfig,
@@ -108,23 +99,13 @@ function pickTextModel(requested?: string): string {
   const luna = models.find((model) =>
     /5\.6-luna/i.test(`${model.nativeId ?? ""} ${model.name} ${model.id}`),
   );
-  return (
-    luna?.nativeId ??
-    models.find((model) => model.nativeId)?.nativeId ??
-    TEXT_MODEL
-  );
+  return luna?.nativeId ?? models.find((model) => model.nativeId)?.nativeId ?? TEXT_MODEL;
 }
 
-function pickTextEffort(
-  modelId: string,
-  modelSettings?: Record<string, string>,
-): string {
-  const requested =
-    modelSettings?.reasoningEffort?.trim() || modelSettings?.effort?.trim();
+function pickTextEffort(modelId: string, modelSettings?: Record<string, string>): string {
+  const requested = modelSettings?.reasoningEffort?.trim() || modelSettings?.effort?.trim();
   const model = modelsFor("codex").find((entry) => entry.nativeId === modelId);
-  const setting = model?.settings?.find(
-    (entry) => entry.id === "reasoningEffort",
-  );
+  const setting = model?.settings?.find((entry) => entry.id === "reasoningEffort");
   const options = setting?.options?.map((option) => option.value) ?? [];
   if (requested && (options.length === 0 || options.includes(requested))) {
     return requested;
@@ -135,9 +116,7 @@ function pickTextEffort(
   return TEXT_EFFORT;
 }
 
-function pickTextServiceTier(
-  modelSettings?: Record<string, string>,
-): string | undefined {
+function pickTextServiceTier(modelSettings?: Record<string, string>): string | undefined {
   const value = modelSettings?.serviceTier?.trim();
   return value || undefined;
 }
@@ -157,29 +136,27 @@ export function warmupCodexText(cwd: string): Promise<void> {
 }
 
 /** Codex app-server turn that reuses a warm process, like Cursor text generation. */
-export async function runCodexTextPrompt(
-  input: TextPromptInput,
-): Promise<string> {
+export async function runCodexTextPrompt(input: TextPromptInput): Promise<string> {
   input = captureTextInput(input);
   const run = turns
     .catch(() => undefined)
-    .then(() =>
-      runTextOperation(input.operationContext, () => promptOnLive(input)),
-    );
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));
   turns = settledTail(run);
   return run;
 }
 
 async function promptOnLive(input: TextPromptInput): Promise<string> {
   input.signal?.throwIfAborted();
-  validateTextOutputLimit(input.maxOutputChars);
   if (
-    input.compactBefore &&
-    (input.ephemeral !== false || !input.threadId || !input.onCompacted)
+    isTauri() &&
+    !input.operationContext?.nativeControlTurn &&
+    !input.operationContext?.hostRun &&
+    (input.ephemeral === false || input.threadId || input.compactBefore)
   )
-    throw new Error(
-      "Codex compaction requires its exact persistent utility thread and receipt.",
-    );
+    throw new Error("Standalone text generation requires a new ephemeral thread.");
+  validateTextOutputLimit(input.maxOutputChars);
+  if (input.compactBefore && (input.ephemeral !== false || !input.threadId || !input.onCompacted))
+    throw new Error("Codex compaction requires its exact persistent utility thread and receipt.");
   const session = await ensureLive(input);
   let writer: Awaited<ReturnType<typeof rpcTurnWriter>>;
   try {
@@ -195,9 +172,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     await assertCodexUtilityIsolation(writer, session.threadId);
     input.signal?.throwIfAborted();
     if (input.compactBefore && session.threadId !== input.threadId)
-      throw new Error(
-        "The original Chief thread could not be resumed for compaction.",
-      );
+      throw new Error("The original Chief thread could not be resumed for compaction.");
   } catch (error) {
     return preserveProviderFailure(error, dropLive(session));
   }
@@ -210,11 +185,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
       input.operationContext,
       "control",
     );
-    return original.request(
-      "turn/interrupt",
-      { threadId },
-      INTERRUPT_TIMEOUT_MS,
-    );
+    return original.request("turn/interrupt", { threadId }, INTERRUPT_TIMEOUT_MS);
   };
   session.output = "";
   session.outputLimit = input.maxOutputChars;
@@ -300,14 +271,8 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
         );
         // A rejected text bound must interrupt even while the start ACK is delayed.
         // A completion event alone still cannot replace the start acknowledgement.
-        const earlyFailure = turnPromise.then(
-          () => new Promise<never>(() => {}),
-        );
-        await Promise.race([
-          turnStart,
-          earlyFailure,
-          ...(abortPromise ? [abortPromise] : []),
-        ]);
+        const earlyFailure = turnPromise.then(() => new Promise<never>(() => {}));
+        await Promise.race([turnStart, earlyFailure, ...(abortPromise ? [abortPromise] : [])]);
 
         await Promise.race([
           turnPromise,
@@ -354,9 +319,7 @@ async function ensureLive(input: {
   // Titles, commit messages, branch names, and PR content must never become
   // saved Codex conversations. Only resumable side questions opt into storage.
   const ephemeral = input.ephemeral ?? true;
-  const requestedThreadId = ephemeral
-    ? undefined
-    : input.threadId?.trim() || undefined;
+  const requestedThreadId = ephemeral ? undefined : input.threadId?.trim() || undefined;
   if (live && !live.closed) {
     const original = live;
     prepareTextProcess(original.process, input.operationContext);
@@ -366,8 +329,7 @@ async function ensureLive(input: {
       input.operationContext?.nativeControlTurn,
       input.operationContext,
     );
-    if (live !== original || original.closed)
-      throw new Error("Codex text generator stopped");
+    if (live !== original || original.closed) throw new Error("Codex text generator stopped");
     if (
       live.cwd === input.cwd &&
       live.model === model &&
@@ -399,15 +361,8 @@ async function ensureLive(input: {
       current.model = model;
       current.effort = effort;
       current.serviceTier = serviceTier;
-      await openThread(
-        current,
-        writer,
-        input.cwd,
-        requestedThreadId,
-        ephemeral,
-      );
-      if (live !== current || current.closed)
-        throw new Error("Codex text generator stopped");
+      await openThread(current, writer, input.cwd, requestedThreadId, ephemeral);
+      if (live !== current || current.closed) throw new Error("Codex text generator stopped");
       await input.onThreadId?.(current.threadId);
       return current;
     } catch (error) {
@@ -427,10 +382,7 @@ async function ensureLive(input: {
   await confirmThread(started, input.onThreadId);
   return started;
 }
-async function confirmThread(
-  session: LiveText,
-  save?: TextPromptInput["onThreadId"],
-) {
+async function confirmThread(session: LiveText, save?: TextPromptInput["onThreadId"]) {
   try {
     await save?.(session.threadId);
   } catch (error) {
@@ -453,6 +405,7 @@ async function startLive(
   const textProcess = createChildProcessHandle(
     TEXT_CHILD_ID,
     operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
   );
   prepareTextProcess(textProcess, operationContext, true);
   const sessionRef: { session: LiveText | null } = { session: null };
@@ -476,13 +429,7 @@ async function startLive(
             operationContext,
           )
             .then((original) =>
-              handleServerRequest(
-                original,
-                id,
-                method,
-                params,
-                sessionRef.session,
-              ),
+              handleServerRequest(original, id, method, params, sessionRef.session),
             )
             .catch(() => {
               if (sessionRef.session) failUtilityTool(sessionRef.session);
@@ -526,8 +473,7 @@ async function startLive(
 
     await stopping;
     const { path } = await resolveCodexBinary();
-    if (starting !== textProcess)
-      throw new Error("Codex text startup cancelled");
+    if (starting !== textProcess) throw new Error("Codex text startup cancelled");
     await spawnChild(
       textProcess,
       path,
@@ -559,17 +505,14 @@ async function startLive(
     );
     await writer.notify("initialized", undefined);
     await openThread(session, writer, cwd, requestedThreadId, ephemeral);
-    if (starting !== textProcess || session.closed)
-      throw new Error("Codex text startup cancelled");
+    if (starting !== textProcess || session.closed) throw new Error("Codex text startup cancelled");
     live = session;
     return session;
   } catch (error) {
     const session = sessionRef.session;
     if (session) {
       session.closed = true;
-      session.rpc.close(
-        error instanceof Error ? error : new Error(String(error)),
-      );
+      session.rpc.close(error instanceof Error ? error : new Error(String(error)));
     }
     return preserveProviderFailure(
       error,
@@ -662,10 +605,7 @@ async function dropLive(
   const originals = new Set([current?.process, pending]);
   await (expected
     ? retirements.retire(originals)
-    : settleProviderRetirements([
-        snapshot.cohort.retire(),
-        retirements.retire(originals),
-      ]));
+    : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(originals)]));
 }
 
 function settleCompaction(session: LiveText) {
@@ -677,32 +617,21 @@ function settleCompaction(session: LiveText) {
         (turn) =>
           turn.started &&
           turn.compactStarted &&
-          (turn.compactCompleted ||
-            (turn.completed && turn.status !== "completed")),
+          (turn.compactCompleted || (turn.completed && turn.status !== "completed")),
       );
   if (candidates.length > 1) {
-    session.turnFailed?.(
-      new Error("Codex compaction completion is ambiguous."),
-    );
+    session.turnFailed?.(new Error("Codex compaction completion is ambiguous."));
     return;
   }
   const turn = candidates[0];
   if (!turn?.completed) return;
   if (turn.status === "completed") {
     session.compactedTurnId =
-      compact.turnId ??
-      [...compact.turns.entries()].find(([, value]) => value === turn)?.[0];
+      compact.turnId ?? [...compact.turns.entries()].find(([, value]) => value === turn)?.[0];
     session.turnDone?.();
-  } else
-    session.turnFailed?.(
-      new Error("Codex did not confirm successful compaction."),
-    );
+  } else session.turnFailed?.(new Error("Codex did not confirm successful compaction."));
 }
-function handleNotification(
-  session: LiveText | null,
-  method: string,
-  params: unknown,
-): void {
+function handleNotification(session: LiveText | null, method: string, params: unknown): void {
   if (session && utilityToolNotification(method, params)) {
     failUtilityTool(session);
     return;
@@ -711,8 +640,7 @@ function handleNotification(
     session &&
     !session.compacting &&
     method === "turn/completed" &&
-    stringField(asRecord(asRecord(params)?.turn), "id") ===
-      session.compactedTurnId &&
+    stringField(asRecord(asRecord(params)?.turn), "id") === session.compactedTurnId &&
     session.compactedTurnId
   )
     return;
@@ -734,9 +662,7 @@ function handleNotification(
           state.completed = true;
           state.status = stringField(turn, "status");
         }
-        if (
-          stringField(asRecord(record?.item), "type") === "contextCompaction"
-        ) {
+        if (stringField(asRecord(record?.item), "type") === "contextCompaction") {
           if (method === "item/started") state.compactStarted = true;
           if (method === "item/completed") state.compactCompleted = true;
         }
@@ -755,13 +681,15 @@ function handleNotification(
 
   const mapped = mapCodexNotification(method, params, session.usage);
   for (const event of mapped.events) {
+    const previousOutput = session.output;
     const output =
       event.type === "message.delta"
-        ? mergeStream(session.output, event.text)
+        ? method === "item/agentMessage/delta"
+          ? session.output + event.text
+          : mergeStream(session.output, event.text)
         : session.output;
     const reasoningChars =
-      (session.reasoningChars ?? 0) +
-      (event.type === "reasoning.delta" ? event.text.length : 0);
+      (session.reasoningChars ?? 0) + (event.type === "reasoning.delta" ? event.text.length : 0);
     if (utilityOutputExceeded(output, reasoningChars, session.outputLimit)) {
       session.collecting = false;
       session.turnFailed?.(
@@ -773,7 +701,10 @@ function handleNotification(
     }
     session.output = output;
     session.reasoningChars = reasoningChars;
-    session.onEvent?.(event);
+    if (event.type === "message.delta") {
+      const delta = output.slice(previousOutput.length);
+      if (delta) session.onEvent?.({ ...event, text: delta });
+    } else session.onEvent?.(event);
   }
 
   if (method === "item/agentMessage/delta") {
@@ -785,8 +716,7 @@ function handleNotification(
     const turn = asRecord(asRecord(params)?.turn);
     const status = stringField(turn, "status") ?? "completed";
     if (status === "failed") {
-      const message =
-        stringField(asRecord(turn?.error), "message") ?? "Codex turn failed";
+      const message = stringField(asRecord(turn?.error), "message") ?? "Codex turn failed";
       session.turnFailed?.(new Error(message));
     } else {
       session.turnDone?.();
@@ -827,26 +757,18 @@ function utilityToolNotification(method: string, params: unknown): boolean {
   if (method === "item/started" || method === "item/completed") {
     const type = stringField(asRecord(asRecord(params)?.item), "type");
     return (
-      !type ||
-      ![
-        "agentMessage",
-        "userMessage",
-        "reasoning",
-        "contextCompaction",
-      ].includes(type)
+      !type || !["agentMessage", "userMessage", "reasoning", "contextCompaction"].includes(type)
     );
   }
   return (
-    /^item\//.test(method) &&
+    method.startsWith("item/") &&
     !/^item\/(?:agentMessage|reasoning|contextCompaction)\//.test(method)
   );
 }
 function failUtilityTool(session: LiveText): void {
   session.collecting = false;
   session.turnFailed?.(
-    new Error(
-      "An unexpected utility tool request stopped reasoning; provider usage is uncertain.",
-    ),
+    new Error("An unexpected utility tool request stopped reasoning; provider usage is uncertain."),
   );
   void dropLive(session).catch(() => undefined);
 }

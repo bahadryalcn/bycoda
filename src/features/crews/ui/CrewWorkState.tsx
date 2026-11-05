@@ -15,7 +15,7 @@ import {
 } from "../model/crewPresentation";
 
 export function executionTone(state: CrewExecutionState): BadgeTone {
-  return state === "finished" ? "success" : state === "working" ? "info" : "neutral";
+  return state === "finished" ? "success" : state === "working" ? "accent" : "neutral";
 }
 
 export function attentionTone(attention: CrewAttention): BadgeTone {
@@ -63,13 +63,9 @@ export function CrewWorkStatusText({ run }: { run: CrewRunView }) {
       {attention ? (
         <>
           <span aria-hidden="true">·</span>
-          <span
-            className={
-              attention === "blocked" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"
-            }
-          >
+          <Badge tone={attentionTone(attention)} size="xs">
             {crewAttentionLabel(attention)}
-          </span>
+          </Badge>
         </>
       ) : null}
     </span>

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   CommandDispatchParamsSchema,
   CommandsStatusParamsSchema,
@@ -7,6 +6,26 @@ import {
 } from "../../../src/shared/model/host-contracts/session-commands";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 import { isApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
+
+export type DesktopCommandAcceptance = {
+  commandId: string;
+  sessionId: string;
+  signature: string;
+  principalId: string;
+  ownerId: string;
+  delivery: string;
+  receipt: CommandReceipt;
+};
+
+export type PreparedDesktop = {
+  commandId: string;
+  clientId: string;
+  ownerId: string;
+  sessionId: string;
+  delivery: string;
+  revalidate: () => Promise<void>;
+  current: () => boolean;
+};
 
 type Contextual = Extract<SessionCommand, { type: "contextual" }>;
 type DesktopCommand = Extract<SessionCommand, { type: "cancel" | "approve" | "answer" }>;
@@ -33,10 +52,15 @@ export interface CommandQueueSnapshot {
 export interface CommandServicePorts<View> {
   repository: {
     receiptStatus(commandId: string): Promise<CommandReceipt | null | undefined>;
-    /** Durable receipt write (store.recordReceipt). Optional so a host without it keeps the in-memory behavior. */
-    recordReceipt?(signature: string, receipt: CommandReceipt): Promise<void>;
-    /** Receipt lookup that rejects when the command ID was used with another signature (store.receipt). */
-    receipt?(commandId: string, signature: string): Promise<CommandReceipt | undefined>;
+    desktopCommandStatus(
+      commandId: string,
+      principalId: string | undefined,
+      signature?: string,
+    ): Promise<CommandReceipt | undefined>;
+    acceptDesktopCommand(
+      input: DesktopCommandAcceptance,
+      revalidate: () => Promise<void>,
+    ): Promise<CommandReceipt>;
     transaction<T>(operation: () => Promise<T>): Promise<T>;
     readView(sessionId: string): Promise<View>;
     modelTarget(sessionId: string): Promise<ModelTarget>;
@@ -44,12 +68,17 @@ export interface CommandServicePorts<View> {
     touchWorkspace(sessionId: string): Promise<unknown>;
   };
   execution: {
+    commandSignature(command: SessionCommand): string;
     persistenceReady(): boolean;
     /** Existing semantic admission (notes, prompts, accounts, workspace etc.). */
     validateCommand(raw: unknown): void;
+    validateQuestionAttachments?(
+      command: SessionCommand,
+      context: HostDomainContext,
+    ): Promise<void>;
     attachmentRefs(raw: unknown): readonly { id: string; size: number }[];
     previewContextual(command: Contextual, view: View): Promise<{ digest: string }>;
-    command(command: SessionCommand): Promise<CommandReceipt>;
+    command(command: SessionCommand, context?: HostDomainContext): Promise<CommandReceipt>;
     clearConversation(command: Extract<SessionCommand, { type: "send" }>): Promise<CommandReceipt>;
     rewind(command: Extract<SessionCommand, { type: "rewind" }>): Promise<CommandReceipt>;
     assertHostMayRun(sessionId: string): Promise<void>;
@@ -75,7 +104,8 @@ export interface CommandServicePorts<View> {
   nativeProjection: {
     watch(sessionId: string): Promise<{ running?: boolean; revision: number } | undefined>;
     alive(): boolean;
-    enqueue(command: DesktopCommand): void;
+    prepareDesktop(command: DesktopCommand, context: HostDomainContext): Promise<PreparedDesktop>;
+    trackDesktop(prepared: PreparedDesktop): void;
     withRetiredWriters<T>(sessionId: string, operation: () => Promise<T>): Promise<T>;
   };
   crews: { ownerDirective(command: SessionCommand): Promise<unknown> };
@@ -91,6 +121,11 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
     async status(params: unknown, context: HostDomainContext): Promise<CommandReceipt | null> {
       await assertDomainAuthority(context);
       const { commandId } = CommandsStatusParamsSchema.parse(params);
+      const desktop = await ports.repository.desktopCommandStatus(commandId, context.principalId);
+      if (desktop) {
+        await assertDomainAuthority(context);
+        return desktop;
+      }
       const receipt = await ports.repository.receiptStatus(commandId);
       await assertDomainAuthority(context);
       return receipt ?? null;
@@ -119,12 +154,22 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           "Approval request identity is missing or invalid. Refresh this request before responding.",
         );
       const sessionId = command.sessionId ?? "";
+      const signature = ports.execution.commandSignature(command);
+      const desktopReceipt = await ports.repository.desktopCommandStatus(
+        command.commandId,
+        context.principalId,
+        signature,
+      );
+      if (desktopReceipt) {
+        await assertDomainAuthority(context);
+        return desktopReceipt;
+      }
       const accepted = () => ports.repository.receiptStatus(command.commandId);
 
       if (command.type === "contextual") {
         if (await accepted()) {
           await assertDomainAuthority(context);
-          const receipt = await ports.execution.command(command);
+          const receipt = await ports.execution.command(command, context);
           await assertDomainAuthority(context);
           return receipt;
         }
@@ -146,7 +191,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
         );
 
-      const queued = command.queued;
+      const queued = "queued" in command ? command.queued : undefined;
       if (queued && !(await accepted())) {
         if (command.type !== "send" && command.type !== "steer" && command.type !== "compact")
           throw new Error("Invalid queued command");
@@ -212,32 +257,18 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         throw new Error("Clear the queued messages before rewinding the conversation.");
 
       if (command.type === "cancel" || command.type === "approve" || command.type === "answer") {
-        // Desktop-routed controls get a durable receipt so `commands.status` finds
-        // them and a retry after a Host restart re-queues instead of answering "unknown".
-        const desktopSignature = createHash("sha256")
-          .update(`desktop-control:${JSON.stringify(command)}`)
-          .digest("hex");
-        const prior = await ports.repository
-          .receipt?.(command.commandId, desktopSignature)
-          .catch(() => undefined);
-        if (prior) {
-          const live = await ports.nativeProjection.watch(sessionId);
-          if (live?.running && ports.nativeProjection.alive()) {
-            try {
-              ports.nativeProjection.enqueue(command);
-            } catch {
-              // Already delivered, or no longer deliverable: the receipt stands.
-            }
-          }
-          return prior;
-        }
         if (command.type === "approve" && (await accepted())) {
           // A move to desktop execution cannot bypass the original Host receipt's
           // exact command signature or enqueue the same identity as a new effect.
           await assertDomainAuthority(context);
-          const receipt = await ports.execution.command(command);
+          const receipt = await ports.execution.command(command, context);
           await assertDomainAuthority(context);
           return receipt;
+        }
+        if (command.type === "answer" && !(await accepted())) {
+          await assertDomainAuthority(context);
+          await ports.execution.validateQuestionAttachments?.(command, context);
+          await assertDomainAuthority(context);
         }
         const watch = await ports.nativeProjection.watch(sessionId);
         if (watch?.running) {
@@ -246,12 +277,26 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
               "The bycoda app on that computer isn't responding. Try again when it's open.",
             );
           await assertDomainAuthority(context);
-          ports.nativeProjection.enqueue(command);
-          const receipt = { commandId: command.commandId, sessionId, revision: watch.revision };
-          if (!(await accepted())) {
-            // The command is already queued; a failed receipt write must not fail the dispatch.
-            await ports.repository.recordReceipt?.(desktopSignature, receipt).catch(() => {});
-          }
+          if (!context.principalId)
+            throw new Error("Authenticated desktop command principal is required.");
+          const prepared = await ports.nativeProjection.prepareDesktop(command, context);
+          await assertDomainAuthority(context);
+          const receipt = await ports.repository.acceptDesktopCommand(
+            {
+              commandId: command.commandId,
+              sessionId,
+              signature,
+              principalId: context.principalId,
+              ownerId: prepared.ownerId,
+              delivery: prepared.delivery,
+              receipt: { commandId: command.commandId, sessionId, revision: watch.revision },
+            },
+            async () => {
+              await assertDomainAuthority(context);
+              await prepared.revalidate();
+            },
+          );
+          ports.nativeProjection.trackDesktop(prepared);
           return receipt;
         }
       }
@@ -262,7 +307,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         // The engine can control its verified current run without claiming a
         // durable receipt. Do not prevent it with adoption or an outer SQL write.
         await assertDomainAuthority(context);
-        return ports.execution.command(command);
+        return ports.execution.command(command, context);
       }
       if (["send", "compact", "contextual"].includes(command.type) && !(await accepted())) {
         await assertDomainAuthority(context);
@@ -291,10 +336,18 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         await assertDomainAuthority(context);
         return receipt;
       }
+      // Utility generation can wait for a provider; never hold an SQL transaction
+      // across that wait. The engine atomically records its title and receipt.
+      if (command.type === "regenerateTitle") {
+        await assertDomainAuthority(context);
+        const receipt = await ports.execution.command(command, context);
+        await assertDomainAuthority(context);
+        return receipt;
+      }
       const dispatch = () =>
         ports.repository.transaction(async () => {
           await assertDomainAuthority(context);
-          const receipt = await ports.execution.command(command);
+          const receipt = await ports.execution.command(command, context);
           // These are one admission unit with the receipt; cancellation must not
           // strand a consumed message or skip its accepted owner directive.
           if (

@@ -75,14 +75,18 @@ export function SplitButton({
       const action = current.actions.find((entry) => entry.id === id);
       if (!anchor.isConnected || current.blocked || !action || action.disabled) return;
       action.onSelect();
-    }).catch((cause) => {
-      if (!retired && anchor.isConnected) latestMenu.current.onMenuError?.(cause);
-    }).finally(() => {
-      // Native popup acceptance is not selection or dismissal. The native menu
-      // owns its lifetime; this only retires our one display request.
-      if (!retired) latestMenu.current.changeOpen(false);
-    });
-    return () => { retired = true; };
+    })
+      .catch((cause) => {
+        if (!retired && anchor.isConnected) latestMenu.current.onMenuError?.(cause);
+      })
+      .finally(() => {
+        // Native popup acceptance is not selection or dismissal. The native menu
+        // owns its lifetime; this only retires our one display request.
+        if (!retired) latestMenu.current.changeOpen(false);
+      });
+    return () => {
+      retired = true;
+    };
   }, [open, blocked, menuSurface]);
   // Solid actions separate with a gap, outlined ones share a border, quiet ones need no seam.
   const hierarchy = buttonProps.variant ?? "secondary";

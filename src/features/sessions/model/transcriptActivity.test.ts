@@ -34,7 +34,10 @@ import {
 } from "./transcriptActivity";
 
 it("does not keep a provider-interrupted subagent running or attribute it to the user", () => {
-  const block: Block = { id: "interrupted", role: "tool", text: "Research",
+  const block: Block = {
+    id: "interrupted",
+    role: "tool",
+    text: "Research",
     tool: { callId: "child", kind: "agent", status: "interrupted" },
     agentRun: { name: "Research", steps: [] },
   };

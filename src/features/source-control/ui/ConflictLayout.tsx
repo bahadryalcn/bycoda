@@ -3,7 +3,7 @@ import { EditorState, Compartment, type Text } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { presentableDiff } from "@codemirror/merge";
-import { editorSearch } from "../../files/editor/editorSearch";
+import { editorSearch } from "../../files/public/editorSearch";
 import { Button } from "../../../shared/ui/Button";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -21,10 +21,11 @@ import { openSearchPanel } from "@codemirror/search";
 import { mergeResolution, type MergeChoice, type MergeResolution } from "../model/mergeResolution";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import { isLightScheme } from "../../settings/model/appearance";
-import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
-import { editorReadability } from "../../files/editor/editorReadability";
-import { editorSurface } from "../../files/editor/editorSurface";
+import { isLightScheme } from "../../settings/public/appearance";
+import { languageForPath } from "../../files/public/editorLanguage";
+import { schemeExtensions } from "../../files/public/editorChrome";
+import { editorReadability } from "../../files/public/editorReadability";
+import { editorSurface } from "../../files/public/editorSurface";
 import {
   conflictReplacement,
   findConflictBlocks,
@@ -42,7 +43,6 @@ import {
   type PaneSizes,
 } from "./ConflictSash";
 import "./conflict-layout.css";
-
 type Layout = "stacked" | "columns" | "inline";
 export type ConflictControls = {
   state: MergeResolution;

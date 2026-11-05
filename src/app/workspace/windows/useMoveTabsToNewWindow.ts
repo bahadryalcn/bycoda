@@ -1,3 +1,6 @@
+import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -24,7 +27,12 @@ import {
   type PendingWindowMoves,
   type WindowMovePosition,
 } from "../../model/windowTransferPopout";
-import { abortQuit, relinquishTransferredWindow } from "../../model/appLifecycle";
+import {
+  abortQuit,
+  beginTransferredWindowClose,
+  relinquishTransferredWindow,
+} from "../../model/appLifecycle";
+import { flushAssistantDrafts } from "../../../features/assistant/model/assistantDraftFlush";
 import type { TabActivation } from "../tabs/useTabActivation";
 import { beginWindowMoveTiming } from "../../model/windowMoveTiming";
 import {
@@ -248,7 +256,15 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
         try {
           timing.stage("native-start");
           const outcome = await invoke<string>("move_window_tabs", {
-            transfer: JSON.stringify(payload),
+            transfer: JSON.stringify({
+              ...payload,
+              ownershipIds: payload.sessions.flatMap((session) => {
+                const remoteId = remoteSessionFor(session.id);
+                return remoteId && parseRemotePath(session.cwd)
+                  ? [remoteSessionOwnershipKey(session.cwd, remoteId)]
+                  : [];
+              }),
+            }),
             targetWindowLabel: opts?.targetWindowLabel ?? null,
             x: opts?.position?.x ?? null,
             y: opts?.position?.y ?? null,
@@ -323,8 +339,10 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           });
         });
         if (closeDrainedWindow) {
-          relinquishTransferredWindow();
+          beginTransferredWindowClose();
           try {
+            await flushAssistantDrafts();
+            relinquishTransferredWindow();
             await getCurrentWindow().destroy();
           } catch (error) {
             abortQuit();

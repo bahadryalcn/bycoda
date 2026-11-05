@@ -219,11 +219,16 @@ export class TurnNotReadyError extends Error {}
 /** Internal source observation; identity comes from the original registry call. */
 export type HarnessOperationContext = Readonly<{
   operation?: object;
+  nativeSessionCapability?: import("./controlTurn").NativeSessionCapability;
   nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
   /** Original actual Host authority capability, never a run-id DTO. */
   hostRun?: import("./hostRun").HostRunHandle;
   /** Separately issued original cleanup view; never substitutes a normal run. */
   hostControlRun?: import("./hostRun").HostRunHandle;
+  /** Internal receipt for a successfully completed, globally owned utility operation. */
+  onUtilityStarted?: (utility: object) => void;
+  onUtilityCompleted?: (utility: object) => void;
+  onUtilityFailed?: (utility: object) => void;
   originalProcess?: import("./child").ChildProcessHandle;
   originalProcesses?: readonly import("./child").ChildProcessHandle[];
 }>;

@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
-import { nextQueueStatus } from "../../connections/model/queueState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { nextQueueStatus } from "../../connections/public/queueState";
 import {
   deliveryResolverFor,
   useDeliveryReviewRequest,
@@ -17,7 +19,7 @@ import {
   updateDeliveryProgress,
   type DeliveryStage,
 } from "../model/deliveryProgress";
-import { useLocalSharedQueueClient } from "../../connections/model/useSharedLocalQueues";
+import { useLocalSharedQueueClient } from "../../connections/public/useSharedLocalQueues";
 
 const noSubscribe = () => () => {};
 const noClientState = { queue: { claim: undefined as { id: string } | undefined } };
@@ -32,7 +34,7 @@ const labels: Record<DeliveryStage, string> = {
   provider: "Waiting for the provider to be ready…",
   confirming: "Sending the message. Waiting for provider confirmation…",
   accepted: "Message accepted. Follow its progress in the conversation.",
-  rejected: "The message remains queued. Resolve the error before trying again.",
+  rejected: "Queue paused: the last message was not accepted",
   unknown: "Delivery is not confirmed. Automatic resend is held.",
 };
 export const deliveryIsPending = (stage?: DeliveryStage) =>
@@ -42,9 +44,11 @@ export const deliveryIsPending = (stage?: DeliveryStage) =>
 export function DeliveryProgressNotice({
   sessionId = "",
   messages,
+  embedded = false,
 }: {
   sessionId?: string;
   messages: QueuedMessage[];
+  embedded?: boolean;
 }) {
   const t = useT();
   const progress = useDeliveryProgress(sessionId);
@@ -102,6 +106,12 @@ export function DeliveryProgressNotice({
   }, [sessionId, progress, messages, client, clientState]);
   if (!progress && !unknownRow) return null;
   const stage = unknownRow && !pending ? "unknown" : (progress?.stage ?? "unknown");
+  const failure = stage === "rejected" ? progress?.detail : undefined;
+  const summary = failure?.split(/\r?\n/, 1)[0] || labels[stage];
+  const expandedDetail =
+    progress?.detail &&
+    !unknownRow &&
+    (failure ? failure.length > 180 || failure.includes("\n") : progress.detail !== labels[stage]);
   const outcomeText = (outcome: DeliveryReviewOutcome) =>
     outcome === "delivered"
       ? t("Marked as delivered. The message was not sent again.")
@@ -156,24 +166,35 @@ export function DeliveryProgressNotice({
     finish();
   };
   return (
-    <div className="px-4 py-1 text-ui-caption text-(--ui-text-secondary)" data-delivery-progress={stage}>
-      <div
-        role={stage === "rejected" || stage === "unknown" ? "alert" : "status"}
-        aria-live="polite"
-      >
-        {t(labels[stage])}
+    <div
+      className={`${embedded ? "px-1" : "px-4"} py-1 text-ui-caption text-(--ui-text-secondary)`}
+      data-delivery-progress={stage}
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <LiveText
+          className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]"
+          text={t(summary)}
+          mode={stage === "rejected" ? "assertive" : "polite"}
+        />
         {pending ? (
-          <span className="ms-2 tabular-nums" aria-live="off">
+          <span className="shrink-0 tabular-nums text-(--ui-text-muted)">
             {t("{p0}s elapsed", { p0: elapsed })}
           </span>
         ) : null}
-        {pending && elapsed >= 10 ? (
-          <span className="ms-2">
-            {t("Still waiting. Your message is retained; you do not need to write it again.")}
-          </span>
-        ) : null}
-        {progress?.detail && !unknownRow ? <div>{t(progress.detail)}</div> : null}
       </div>
+      {pending && elapsed >= 10 ? (
+        <p className="mt-1 text-(--ui-text-muted)">
+          {t("Still waiting. Your message is retained; you do not need to write it again.")}
+        </p>
+      ) : null}
+      {expandedDetail ? (
+        <details className="mt-1 min-w-0 text-(--ui-text-muted)" data-delivery-details>
+          <summary className="w-fit cursor-pointer text-ui-caption">{t("Details")}</summary>
+          <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {t(progress!.detail!)}
+          </p>
+        </details>
+      ) : null}
       {unknownRow && !clientState.queue.claim ? (
         <DeliveryReviewChoice
           text={unknownRow.text}
@@ -183,11 +204,7 @@ export function DeliveryProgressNotice({
           onChoose={choose}
         />
       ) : null}
-      {resolveError ? (
-        <div role="alert" className="mt-1 text-ui-caption text-(--ui-tone-danger-fg)">
-          {resolveError}
-        </div>
-      ) : null}
+      {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
     </div>
   );
 }

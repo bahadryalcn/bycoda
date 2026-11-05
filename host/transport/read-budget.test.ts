@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WS_LIMITS } from "../../src/shared/model/host-contracts";
 import { createHostReadDispatcher, HostDispatchError } from "./dispatch";
 import { HostReadWorkBudget } from "./read-budget";
@@ -24,7 +24,10 @@ describe("Host backend read admission", () => {
     const second = deferred<number>();
     const a = budget.run("a", () => first.promise);
     const b = budget.run("b", () => second.promise);
-    await expect(budget.run("a", async () => 3)).rejects.toMatchObject({ code: "overloaded" });
+    await expect(budget.run("a", async () => 3)).rejects.toMatchObject({
+      code: "overloaded",
+      details: { category: "overload", retryable: true, delivery: "not-sent" },
+    });
     await expect(budget.run("c", async () => 3)).rejects.toMatchObject({ code: "overloaded" });
     first.resolve(1);
     expect(await a).toBe(1);
@@ -101,5 +104,33 @@ describe("Host backend read admission", () => {
     await finish.promise;
     await Promise.resolve();
     expect(await budget.run("device", async () => [])).toEqual([]);
+  });
+  it("shares one lease with a tracked child until physical settlement and rejects late work", async () => {
+    const budget = new HostReadWorkBudget({
+      ...WS_LIMITS,
+      maxControlJobs: 1,
+      maxControlJobsPerDevice: 1,
+    });
+    const child = deferred<number>();
+    let track!: <T>(work: () => Promise<T>) => Promise<T>;
+    const outer = budget.runScoped(
+      "device",
+      async (run) => {
+        track = run;
+        void run(() => child.promise);
+        return "response";
+      },
+      "control",
+    );
+    await Promise.resolve();
+    await expect(budget.run("device", async () => 1, "control")).rejects.toMatchObject({
+      code: "overloaded",
+    });
+    const late = vi.fn(async () => 2);
+    await expect(track(late)).rejects.toMatchObject({ code: "cancelled" });
+    expect(late).not.toHaveBeenCalled();
+    child.resolve(3);
+    expect(await outer).toBe("response");
+    expect(await budget.run("device", async () => 4, "control")).toBe(4);
   });
 });

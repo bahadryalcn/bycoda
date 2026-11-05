@@ -23,7 +23,11 @@ export function GitGraphHoverCard({
 }) {
   useLocale();
   // The card can be reused for another commit; its outcome and any copy in flight belong to one SHA.
-  const { copy: runCopy, copied, error: copyError } = useCopyFeedback({
+  const {
+    copy: runCopy,
+    copied,
+    error: copyError,
+  } = useCopyFeedback({
     resetKeys: [commit.sha],
     successMs: 1200,
   });
@@ -44,7 +48,9 @@ export function GitGraphHoverCard({
         {formatAbsoluteTime(commit.timestamp)} ({formatRelativeTime(commit.timestamp, Date.now())})
       </p>
       <div className="flex items-center gap-1.5">
-        <code className="font-mono text-ui-micro text-(--ui-text-secondary)">{commit.shortSha}</code>
+        <code className="font-mono text-ui-micro text-(--ui-text-secondary)">
+          {commit.shortSha}
+        </code>
         <Button
           variant="ghost"
           motion="none"

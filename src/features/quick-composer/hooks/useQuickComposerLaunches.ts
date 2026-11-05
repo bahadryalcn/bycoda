@@ -2,7 +2,9 @@ import { probeHarnessAvailability } from "../../../integrations/harness/core/ava
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit, listen, type Event } from "@tauri-apps/api/event";
+import { emit, type Event } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
+import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import {
   loadQuickComposerEnabled,
   subscribeQuickComposerEnabled,
@@ -69,21 +71,43 @@ export function useQuickComposerLaunches(
     const onFocus = () => void take();
     const subscriptions: Array<() => void> = [];
     const subscribe = async (event: string, handler: (event: Event<unknown>) => void) => {
-      const stop = await listen(event, handler);
+      const stop = await listenWindowAsync(event, (message) => {
+        if (!disposed) handler(message);
+      });
       if (disposed) stop();
       else subscriptions.push(stop);
     };
     void Promise.all([
       subscribe(QUICK_COMPOSER_LAUNCH_EVENT, () => void take()),
       subscribe(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, (event) => {
-        void probeHarnessAvailability()
-          .then(async () => {
-            if (disposed) return;
-            void emit(QUICK_COMPOSER_CATALOG_EVENT, liveQuickCatalog());
+        const request =
+          event.payload && typeof event.payload === "object"
+            ? (event.payload as { requestId?: unknown; generation?: unknown; harness?: unknown })
+            : undefined;
+        const correlated =
+          typeof request?.requestId === "string" && typeof request.generation === "number";
+        const harness = correlated ? request?.harness : event.payload;
+        const answer = () =>
+          correlated
+            ? {
+                requestId: request!.requestId,
+                generation: request!.generation,
+                catalog: liveQuickCatalog(),
+              }
+            : liveQuickCatalog();
+        void isLeadWindow()
+          .then((lead) => {
+            if (!lead || disposed) return false;
+            return probeHarnessAvailability().then(() => true);
+          })
+          .then(async (lead) => {
+            if (!lead || disposed || !(await isLeadWindow())) return;
+            await emit(QUICK_COMPOSER_CATALOG_EVENT, answer());
             // Only probe the provider the user opened, like the workspace picker.
-            if (isHarnessId(event.payload)) {
-              await refreshHarnessCatalogs([event.payload]);
-              if (!disposed) void emit(QUICK_COMPOSER_CATALOG_EVENT, liveQuickCatalog());
+            if (isHarnessId(harness)) {
+              await refreshHarnessCatalogs([harness]);
+              if (!disposed && (await isLeadWindow()))
+                await emit(QUICK_COMPOSER_CATALOG_EVENT, answer());
             }
           })
           .catch(() => undefined);

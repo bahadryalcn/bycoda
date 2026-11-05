@@ -45,8 +45,8 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
           </>
         ),
         // Keep the dialog so the real outcome stays visible; `not-saved` can be retried.
-        onConfirm: () => {
-          const outcome = resetForgottenPassword();
+        onConfirm: async () => {
+          const outcome = await resetForgottenPassword();
           if (outcome !== "complete") throw new Error(incompleteMessage(outcome));
         },
       }}

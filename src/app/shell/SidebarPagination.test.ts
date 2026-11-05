@@ -3,7 +3,8 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
-import { LIST_PAGE_SIZE } from "../../shared/lib/listWindow";
+import { resetRetainedState } from "../../shared/hooks/useRetainedState";
+import { saveSessionFolders } from "../../features/sessions/model/sessionFolders";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -25,26 +26,19 @@ vi.mock("../../features/files/ui/FileTree", () => ({ FileTree: () => null }));
 let container: HTMLDivElement;
 let root: Root;
 let props: ComponentProps<typeof Sidebar>;
-const observers = new Set<{ target: Element; callback: IntersectionObserverCallback }>();
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
-  observers.clear();
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class {
-      subscription?: { target: Element; callback: IntersectionObserverCallback };
-      constructor(private callback: IntersectionObserverCallback) {}
-      observe(target: Element) {
-        this.subscription = { target, callback: this.callback };
-        observers.add(this.subscription);
-      }
-      disconnect() {
-        if (this.subscription) observers.delete(this.subscription);
-      }
-    },
-  );
+  resetRetainedState();
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 64 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -78,6 +72,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   localStorage.clear();
 });
 
@@ -86,47 +81,105 @@ async function render() {
 }
 
 function rowCount() {
-  return container.querySelector("[data-session-list]")?.children.length ?? 0;
+  const lists = container.querySelectorAll("[data-session-list]");
+  return lists.item(lists.length - 1)?.children.length ?? 0;
 }
 
-async function reachBottom() {
-  const subscription = [...observers].find(({ target }) => container.contains(target));
-  expect(subscription, "the mounted list must have an active load-more observer").toBeDefined();
-  await act(async () =>
-    subscription!.callback(
-      [{ isIntersecting: true, target: subscription!.target } as IntersectionObserverEntry],
-      {} as IntersectionObserver,
-    ),
-  );
+function projectList() {
+  const lists = container.querySelectorAll("[data-session-list]");
+  return lists.item(lists.length - 1);
 }
 
-it("keeps loading all 500 conversations after the sidebar closes and reopens", async () => {
+it("keeps the loaded collection bounded after the sidebar closes and reopens", async () => {
   await render();
-  expect(rowCount()).toBe(LIST_PAGE_SIZE + 1);
+  expect(rowCount()).toBeLessThan(500);
+  expect(rowCount()).toBeGreaterThan(0);
   props.open = false;
   await render();
   props.open = true;
   await render();
-  await reachBottom();
-  expect(rowCount()).toBe(LIST_PAGE_SIZE * 2 + 1);
-  while (rowCount() < 500) await reachBottom();
-  expect(rowCount()).toBe(500);
+  expect(rowCount()).toBeLessThan(500);
 });
 
-it("attaches pagination when the sidebar is initially closed", async () => {
+it("mounts a bounded collection when the sidebar is initially closed", async () => {
   props.open = false;
   await render();
   props.open = true;
   await render();
-  await reachBottom();
-  expect(rowCount()).toBe(LIST_PAGE_SIZE * 2 + 1);
+  expect(rowCount()).toBeLessThan(500);
+  expect(rowCount()).toBeGreaterThan(0);
 });
 
-it("loads beyond an older active conversation included in the initial window", async () => {
+it("retains an older active conversation in the virtual window", async () => {
   props.activeSessionId = props.sessions[250].id;
   await render();
-  const initialCount = rowCount();
-  expect(initialCount).toBeGreaterThan(LIST_PAGE_SIZE + 1);
-  await reachBottom();
-  expect(rowCount()).toBe(initialCount + LIST_PAGE_SIZE);
+  expect(rowCount()).toBeLessThan(500);
+  expect(projectList()?.textContent).toContain("Conversation 250");
+});
+
+it("scrolls the shared viewport to later virtual rows", async () => {
+  await render();
+  const viewport = container.querySelector<HTMLElement>("[data-session-list-panel]")!;
+  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 280 });
+  Object.defineProperty(viewport, "clientWidth", { configurable: true, value: 320 });
+  Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 40_000 });
+  viewport.getBoundingClientRect = () => new DOMRect(0, 0, 320, 280);
+  viewport.scrollTop = 20_000;
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  const indices = Array.from(
+    projectList()?.querySelectorAll<HTMLElement>("[data-index]") ?? [],
+  ).map((row) => Number(row.dataset.index));
+  expect(indices.some((index) => index > 64)).toBe(true);
+  expect(rowCount()).toBeLessThan(100);
+  await act(async () => {
+    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight - 1;
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  const endIndices = Array.from(
+    projectList()?.querySelectorAll<HTMLElement>("[data-index]") ?? [],
+  ).map((row) => Number(row.dataset.index));
+  expect(Math.max(...endIndices)).toBeGreaterThan(450);
+});
+
+it("bounds an expanded folder containing hundreds of sessions", async () => {
+  saveSessionFolders(props.cwd, [
+    {
+      id: "large-folder",
+      name: "Large folder",
+      sessionIds: props.sessions.map((session) => session.id),
+      collapsed: false,
+    },
+  ]);
+  await render();
+  expect(projectList()?.querySelector('[data-session-folder="large-folder"]')).not.toBeNull();
+  expect(projectList()?.textContent).toContain("Large folder");
+  expect(rowCount()).toBeLessThan(100);
+});
+
+it("keeps select-all state while the large session window stays bounded", async () => {
+  await render();
+  const select = container.querySelector<HTMLButtonElement>('[aria-label="Select conversations"]')!;
+  await act(async () => select.click());
+  const selectAll = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === "Select all",
+  )!;
+  await act(async () => selectAll.click());
+  expect(container.textContent).toContain("500 selected");
+  expect(rowCount()).toBeLessThan(100);
+});
+
+it("restores scroll within a list scope and resets it for another project", async () => {
+  await render();
+  const viewport = container.querySelector<HTMLElement>("[data-session-list-panel]")!;
+  viewport.scrollTop = 1_200;
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  const originalSessions = props.sessions;
+  props.cwd = "/workspace/other";
+  props.sessions = originalSessions.map((session) => ({ ...session, cwd: props.cwd }));
+  await render();
+  expect(viewport.scrollTop).toBe(0);
+  props.cwd = "/workspace/project";
+  props.sessions = originalSessions;
+  await render();
+  expect(viewport.scrollTop).toBe(1_200);
 });

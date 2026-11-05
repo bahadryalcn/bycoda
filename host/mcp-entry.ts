@@ -9,13 +9,13 @@ async function entry() {
   if (["conversation-mcp", "runtime-logs-mcp", "social-mcp"].includes(command))
     process.env.PATH = [dirname(process.execPath), process.env.PATH ?? ""].join(delimiter);
   if (command === "conversation-mcp") {
-    const { runMcpProxy } = await import("./mcp-proxy");
+    const { runMcpProxy } = await import("./mcp/mcp-proxy");
     await runMcpProxy("conversation");
   } else if (command === "runtime-logs-mcp") {
-    const { runMcpProxy } = await import("./mcp-proxy");
+    const { runMcpProxy } = await import("./mcp/mcp-proxy");
     await runMcpProxy("runtime-logs");
   } else if (command === "social-mcp") {
-    const { runMcpProxy } = await import("./mcp-proxy");
+    const { runMcpProxy } = await import("./mcp/mcp-proxy");
     await runMcpProxy("social");
   } else {
     // A variable keeps esbuild from folding the full host into this light entry.

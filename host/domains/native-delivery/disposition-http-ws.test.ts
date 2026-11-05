@@ -1,10 +1,11 @@
 import { expect, it, vi } from "vitest";
-import { fixture } from "../../native-devices.test-support";
-import { deliveryIdentity, deliverySha } from "../../native-delivery.test-support";
-import { WorkspaceCommands } from "../../workspace-commands";
+import { fixture } from "../../devices/native-devices.test-support";
+import { deliveryIdentity, deliverySha } from "../../native-delivery/native-delivery.test-support";
+import { createNativeDeliveryStore } from "../../native-delivery/native-delivery-store";
+import { WorkspaceCommands } from "../../workspaces/workspace-commands";
 
 const target = "native.services.workspace.format";
-const maximum = 32 * 1024 * 1024;
+const maximum = 4 * 1024 * 1024;
 const evidence = "2026-10-29-delivery-disposition-root";
 const params = (path: string) => {
   const paramsJson = JSON.stringify({
@@ -31,6 +32,7 @@ it("keeps an exited failure unknown across HTTP/WS while releasing only its resu
     unknown = {
       ...scope,
       state: "unknown",
+      resultUnavailable: true,
     };
   expect(await f.callHttp("native.services.delivery.apply", original)).toEqual(unknown);
   const row = await f.store.db
@@ -87,6 +89,9 @@ it("holds an active original across transports until its own continuation exits"
   void pending.catch(() => {});
   try {
     await entered;
+    const journal = createNativeDeliveryStore(f.store);
+    for (let index = 0; index < 7; index++)
+      await journal.admit(deliverySha(f.device.token), target, params(f.projectPath));
     expect(await f.callHttp("native.services.delivery.apply", original)).toMatchObject({
       state: "unknown",
     });
@@ -103,7 +108,7 @@ it("holds an active original across transports until its own continuation exits"
   } finally {
     release();
   }
-  expect(await pending).toMatchObject({ state: "unknown" });
+  expect(await pending).toMatchObject({ state: "unknown", resultUnavailable: true });
   expect(
     (
       await f.store.db

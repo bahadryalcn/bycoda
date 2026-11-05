@@ -193,14 +193,17 @@ it("continues an empty page using exactly its opaque cursor/context, then previo
   expect(f.value.hasNext).toBe(true);
   expect(f.value.records).toEqual([]);
   expect(f.value.unavailable).toBe(true);
-  f.api.list.mockResolvedValueOnce({ ...page(), next: null });
+  const newer = { ...record, key: "selected-row-newer", reportVersion: 3 };
+  f.api.list.mockResolvedValueOnce({ ...page([newer]), next: null });
   await act(() => f.value.next());
   expect(f.api.list).toHaveBeenLastCalledWith(
     { after: cursor, expectedContext: context, limit: 25 },
     expect.anything(),
   );
   expect(f.value.hasPrevious).toBe(true);
+  expect(f.value.records.map((item) => item.reportVersion)).toEqual([3]);
   await act(() => f.value.previous());
+  expect(f.value.records.map((item) => item.reportVersion)).toEqual([2, 3]);
   expect(f.api.list).toHaveBeenLastCalledWith(
     { after: null, expectedContext: context, limit: 25 },
     expect.anything(),

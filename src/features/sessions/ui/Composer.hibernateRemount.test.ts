@@ -11,7 +11,7 @@ import {
 } from "../model/draftCache";
 import type { Attachment } from "../model/session";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []), isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => undefined }),
 }));

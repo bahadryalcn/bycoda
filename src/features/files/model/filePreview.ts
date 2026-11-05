@@ -72,10 +72,7 @@ export function sniffImageMime(bytes: Uint8Array): string | null {
  * then shown through an `<img>`, where its scripts and external references
  * never run. A Git LFS pointer in place of the image matches neither.
  */
-export function sniffDocumentImageMime(
-  path: string,
-  bytes: Uint8Array,
-): string | null {
+export function sniffDocumentImageMime(path: string, bytes: Uint8Array): string | null {
   const raster = sniffImageMime(bytes);
   if (raster) return raster;
   if (!/\.svg$/i.test(path) || bytes.includes(0)) return null;

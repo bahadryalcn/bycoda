@@ -5,7 +5,8 @@
   min-block-size: 0;
   min-inline-size: 0;
   color: var(--color-content);
-  font-size: var(--font-size-ui, 13px);
+  font-size: var(--ui-font-secondary);
+  background: var(--ui-workspace-canvas-chat);
 }
 .header,
 .strip,
@@ -33,7 +34,7 @@
   min-inline-size: 0;
 }
 .heading h1 {
-  font-size: 14px;
+  font-size: var(--ui-font-body);
   font-weight: 600;
   margin: 0;
   overflow: hidden;
@@ -42,7 +43,7 @@
 }
 .heading p {
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   margin-block: 3px 0;
   overflow-wrap: anywhere;
 }
@@ -52,19 +53,21 @@
   inline-size: 32px;
   block-size: 32px;
   background: var(--ui-surface-raised);
-  border-radius: 8px;
-  font-size: 18px;
+  border-radius: var(--ui-radius-card);
+  font-size: var(--ui-font-title);
   overflow: clip;
 }
 .strip {
   padding: 8px 18px;
   border-block-end: 1px solid var(--ui-tone-neutral-border);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .strip > :last-child {
   margin-inline-start: auto;
 }
-.strip > :first-child { flex-shrink: 0; }
+.strip > :first-child {
+  flex-shrink: 0;
+}
 .tabRow {
   padding-inline: 12px;
   border-block-end: 1px solid var(--ui-tone-neutral-border);
@@ -89,12 +92,12 @@
 }
 .section h2,
 .sectionTitle {
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-weight: 600;
   margin: 0;
 }
 .section h3 {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-weight: 600;
   color: var(--ui-text-secondary);
   margin: 0;
@@ -108,9 +111,19 @@
   margin: 0;
   min-inline-size: 0;
 }
-.manualScope legend { margin-block-end: 10px; color: var(--ui-text-secondary); }
-.manualProject { display: flex; align-items: center; gap: 8px; min-inline-size: 0; }
-.manualProject span { overflow-wrap: anywhere; }
+.manualScope legend {
+  margin-block-end: 10px;
+  color: var(--ui-text-secondary);
+}
+.manualProject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.manualProject span {
+  overflow-wrap: anywhere;
+}
 .rowHeading {
   justify-content: space-between;
 }
@@ -136,7 +149,7 @@
 }
 .rowText p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .rowText > button {
   align-self: start;
@@ -149,14 +162,14 @@
 }
 .muted {
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   overflow-wrap: anywhere;
 }
 .empty {
   margin: 0;
   padding-block: 16px;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .prewrap {
   white-space: pre-wrap;
@@ -174,7 +187,7 @@
 }
 .error {
   color: var(--ui-tone-danger-fg);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
   margin: 0;
 }
@@ -182,7 +195,11 @@
   padding: 10px 16px;
   border-block-end: 1px solid var(--ui-pane-border);
   color: var(--ui-tone-danger-fg);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
+}
+.feedbackInline {
+  padding: 10px 16px;
+  border-block-end: 1px solid var(--ui-pane-border);
 }
 .feedback > span {
   flex: 1 1 180px;
@@ -214,7 +231,7 @@
   justify-content: space-between;
   border-block-start: 1px solid var(--ui-tone-neutral-border);
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .briefing {
   padding-block: 0 16px;
@@ -224,7 +241,7 @@
   gap: 10px;
 }
 .briefing h2 {
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-weight: 600;
   margin: 0;
 }
@@ -234,7 +251,7 @@
   align-items: baseline;
   gap: 4px 12px;
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .presenceStatus p {
   flex-basis: 100%;
@@ -257,7 +274,7 @@
   max-inline-size: 560px;
 }
 .setupPrompt h2 {
-  font-size: 18px;
+  font-size: var(--ui-font-title);
   font-weight: 500;
   margin: 0;
 }
@@ -390,23 +407,85 @@
   overflow-y: auto;
   padding: 12px;
   border-inline-end: 1px solid var(--ui-tone-neutral-border);
+  background: transparent;
 }
 .transcript {
   min-inline-size: 0;
   min-block-size: 0;
   display: flex;
   flex-direction: column;
+  background: var(--ui-workspace-canvas-chat);
 }
 .message {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-block: 10px;
+  gap: 4px;
+  align-self: flex-start;
+  inline-size: fit-content;
+  max-inline-size: min(78%, 640px);
+  min-inline-size: min(160px, 100%);
+  padding: 10px 12px 6px;
+  border-radius: var(--ui-radius-card);
+  border-end-start-radius: var(--ui-radius-control);
+  background: transparent;
+  border: 1px solid var(--ui-tone-neutral-border);
+  overflow-wrap: anywhere;
 }
-.message[data-author="assistant"] {
-  background: var(--ui-surface-raised);
-  border-radius: 8px;
-  padding: 12px;
+.message[data-author="user"] {
+  align-self: flex-end;
+  background: transparent;
+  border-end-start-radius: var(--ui-radius-card);
+  border-end-end-radius: var(--ui-radius-control);
+}
+.message > p {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  line-height: 1.6;
+}
+.messageMeta {
+  order: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--ui-font-micro);
+  color: var(--ui-text-secondary);
+}
+.messageMeta > :first-child {
+  font-weight: 500;
+  margin-inline-end: auto;
+}
+.messageMeta time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.dayDivider {
+  align-self: center;
+  margin-block: 12px 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.chatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+  flex: none;
+  background: var(--ui-workspace-canvas-chat);
+}
+.chatIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.chatIdentity > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .undo {
   padding: 8px 16px;
@@ -464,61 +543,229 @@
   gap: 12px;
   padding: 14px;
   max-inline-size: 340px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
-.healthDetails p { margin: 0; color: var(--ui-text-secondary); line-height: 1.5; }
-.healthDetails > button { justify-self: start; }
-.briefingText { font-size: 12px; line-height: 1.55; }
-.briefingText > summary { cursor: pointer; color: var(--ui-text-secondary); }
-.briefingText > p { margin-block-start: 10px; }
-.relatedWork { inline-size: 100%; font-size: 12px; }
-.relatedWork > summary { cursor: pointer; color: var(--ui-text-secondary); padding-block: 4px; }
-.relatedWork > .stack { gap: 6px; padding-block-start: 8px; align-items: start; }
-.relatedWork h3 { margin-block: 12px 6px; font-size: 12px; font-weight: 500; }
-.detail > p { margin: 0; line-height: 1.55; }
-.briefingText { flex: 1; min-inline-size: 0; }
+.healthDetails p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+.healthDetails > button {
+  justify-self: start;
+}
+.briefingText {
+  font-size: var(--ui-font-caption);
+  line-height: 1.55;
+}
+.briefingText > summary {
+  cursor: pointer;
+  color: var(--ui-text-secondary);
+}
+.briefingText > p {
+  margin-block-start: 10px;
+}
+.relatedWork {
+  inline-size: 100%;
+  font-size: var(--ui-font-caption);
+}
+.relatedWork > summary {
+  cursor: pointer;
+  color: var(--ui-text-secondary);
+  padding-block: 4px;
+}
+.relatedWork > .stack {
+  gap: 6px;
+  padding-block-start: 8px;
+  align-items: start;
+}
+.relatedWork h3 {
+  margin-block: 12px 6px;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.detail > p {
+  margin: 0;
+  line-height: 1.55;
+}
+.briefingText {
+  flex: 1;
+  min-inline-size: 0;
+}
 .content[data-view="Conversations"] {
   display: flex;
   flex-direction: column;
   padding: 0;
   overflow: hidden;
 }
-.content[data-view="Conversations"] > .collectionTools { padding: 12px 16px 0; }
+.content[data-view="Conversations"] > .collectionTools {
+  padding: 12px 16px 0;
+}
 .messageHistory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   flex: 1;
   overflow-y: auto;
   min-block-size: 120px;
-  padding: 16px 20px;
+  padding: 16px 20px 24px;
   overscroll-behavior: contain;
 }
-.messageHistory > .empty { margin-block: 8px; }
+.messageHistory > .empty {
+  margin-block: 8px;
+}
 .transcript > .composer {
   flex: none;
   margin: 0;
-  padding: 12px 16px;
+  /* The persistent VoiceCompanion launcher owns the trailing corner. */
+  padding: 12px 80px 12px 20px;
+  flex-wrap: nowrap;
+  align-items: flex-end;
   border-block-start: 1px solid var(--ui-tone-neutral-border);
-  background: var(--ui-surface);
+  background: var(--ui-workspace-reading-chat);
 }
-.transcript > .muted { margin: 0; padding: 0 16px 12px; }
-.conversationActions { margin-block-end: 4px; }
-.jobsSection { max-inline-size: 1000px; }
-.jobsSection > .jobInput { order: -1; margin: 0 0 8px; }
-.jobsSection > .rowHeading:empty { display: none; }
-.settingsGroup { min-inline-size: 0; border-block-end: 1px solid var(--ui-tone-neutral-border); }
+.transcript > .muted {
+  margin: 0;
+  padding: 0 16px 12px;
+}
+.conversationActions {
+  margin: 0;
+}
+.jobsSection {
+  max-inline-size: 1000px;
+}
+.jobsSection > .jobInput {
+  margin: 0 0 8px;
+}
+.jobComposerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+.content[data-view="Today"] .jobComposerActions {
+  display: contents;
+}
+.content[data-view="Jobs"] {
+  padding: 24px;
+}
+.content[data-view="Jobs"] > .collectionTools,
+.content[data-view="Jobs"] > .jobsSection {
+  max-inline-size: 1040px;
+  margin-inline: auto;
+}
+.content[data-view="Jobs"] > .collectionTools {
+  margin-block-end: 20px;
+}
+.jobsTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 600;
+}
+.content[data-view="Jobs"] .collectionTools > .jobsTitle {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.jobsTitle span {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.content[data-view="Jobs"] .collectionTools > :nth-child(2) {
+  flex: 0 1 240px;
+  min-inline-size: 0;
+}
+.content[data-view="Jobs"] .jobInput {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 20px;
+  margin-block-end: 12px;
+  background: transparent;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-radius-card);
+}
+.content[data-view="Jobs"] .jobInput > :first-child {
+  flex: none;
+}
+.jobsEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 16px;
+  text-align: center;
+  border-block: 1px solid var(--ui-tone-neutral-border);
+}
+.jobsEmpty h3 {
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+.jobsEmpty p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .content[data-view="Jobs"] {
+    padding: 16px;
+  }
+  .content[data-view="Jobs"] .jobInput {
+    padding: 16px;
+  }
+}
+.jobsSection > .rowHeading:empty {
+  display: none;
+}
+.settingsGroup {
+  min-inline-size: 0;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
 .settingsGroup > summary {
   cursor: pointer;
   padding-block: 12px;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
   color: var(--ui-tone-neutral-fg);
 }
-.settingsGroup > .stack { padding-block: 4px 18px; }
-.settingsGroup p { margin: 0; line-height: 1.5; }
-.settingsGroup + .settingsGroup { margin-block-start: -12px; }
+.settingsGroup > .stack {
+  padding-block: 4px 18px;
+}
+.settingsGroup p {
+  margin: 0;
+  line-height: 1.5;
+}
+.settingsGroup + .settingsGroup {
+  margin-block-start: -12px;
+}
 @media (max-width: 720px) {
-  .header { padding-inline: 12px; }
-  .content { padding: 12px; }
-  .conversations { grid-template-columns: 180px minmax(0, 1fr); }
-  .threadList { padding: 10px; }
-  .messageHistory { padding: 12px; }
+  .header {
+    padding-inline: 12px;
+  }
+  .content {
+    padding: 12px;
+  }
+  .conversations {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .threadList {
+    padding: 10px;
+  }
+  .messageHistory {
+    padding: 12px;
+  }
+  .message {
+    max-inline-size: 90%;
+  }
+  .chatHeader {
+    padding-inline: 12px;
+  }
 }

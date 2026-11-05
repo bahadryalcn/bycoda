@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { z } from "zod";
 import { listenWindowAsync } from "./listenWindow";
+import { z } from "zod";
 import {
   BulkDescriptorSchema,
   ConnectionGenerationSchema,
@@ -105,8 +105,6 @@ export function createTauriHostConnection(
   IdentifierSchema.parse(machineId);
   return {
     async listen(listener) {
-      // Rust emits to the attaching window only; a plain listener would also
-      // receive other windows' attachments (duplicates, peer detach).
       const unlisten = await listenWindowAsync<unknown>("host-connection-event", ({ payload }) => {
         const parsed = nativeEnvelopeSchema.safeParse(payload);
         if (parsed.success && parsed.data.machineId === machineId)

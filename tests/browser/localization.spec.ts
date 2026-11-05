@@ -16,7 +16,9 @@ test("switches all eight languages and preserves an unsent draft", async ({ page
     ["en", "English", "Settings"],
   ];
   for (const [locale, nativeName, heading] of languages) {
-    await page.locator('[data-setting-id="interface-language"] button[aria-haspopup="listbox"]').click();
+    await page
+      .locator('[data-setting-id="interface-language"] button[aria-haspopup="listbox"]')
+      .click();
     await page.getByRole("option", { name: nativeName, exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("lang", locale, { timeout: 30_000 });
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading);
@@ -48,7 +50,9 @@ test("chooses Git and technical languages independently and persists them", asyn
 
 test("persists Turkish and fits a narrow Japanese settings page", async ({ page }, testInfo) => {
   await page.goto("/tests/browser/localization.html");
-  await page.locator('[data-setting-id="interface-language"] button[aria-haspopup="listbox"]').click();
+  await page
+    .locator('[data-setting-id="interface-language"] button[aria-haspopup="listbox"]')
+    .click();
   await page.getByRole("option", { name: "Türkçe", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "tr", { timeout: 30_000 });
   await page.reload();
@@ -59,7 +63,9 @@ test("persists Turkish and fits a narrow Japanese settings page", async ({ page 
   await page.keyboard.press("Escape");
   await page.screenshot({ path: testInfo.outputPath("localization-turkish.png") });
   await page.setViewportSize({ width: 460, height: 800 });
-  await page.locator('[data-setting-id="interface-language"] button[aria-haspopup="listbox"]').click();
+  await page
+    .locator('[data-setting-id="interface-language"] button[aria-haspopup="listbox"]')
+    .click();
   await page.getByRole("option", { name: "日本語", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ja", { timeout: 30_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

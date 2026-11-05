@@ -1,5 +1,5 @@
+"use client";
 import { OverflowTooltip } from "../../Tooltip";
-("use client");
 import { debounce } from "es-toolkit";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 

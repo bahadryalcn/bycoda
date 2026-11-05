@@ -37,10 +37,14 @@ Source paths are repository-relative.
 ## Preserve
 
 - Baselines only fall. Never raise a bucket to make a check pass; never baseline an error.
+- Tool diagnostics without a file/rule (including invalid UTF-8) fail with their actual error;
+  never discard them or convert them into baseline findings.
 - Rules describe a defect class with a known alternative; advisory style preferences stay out of
   the gate (a rule with more noise than signal is removed, not baselined).
 - Helpers keep their contracts: `listenWindow` disposers are synchronous and race-safe;
-  `writeFileAtomic` fsyncs before rename and `readStateFile` quarantines instead of throwing;
+  `writeFileAtomic` fsyncs before rename; `readStateFile`/`readStateFileSync` distinguish missing,
+  corrupt and unreadable state. Optional evidence copies never remove the source; security
+  state stays closed until repaired, and genuine I/O errors remain explicit;
   `truncateGraphemes` never emits an unpaired surrogate; `isoTimestamp` never throws;
   `formatRelativeTime`/`formatBytes` follow the app locale.
 - Rust rules are static; when a Rust bucket reaches zero, promote the rule to `clippy.toml`

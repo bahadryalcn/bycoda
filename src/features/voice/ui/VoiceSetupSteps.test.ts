@@ -94,7 +94,7 @@ it("keeps a failed provider check retryable without opening the microphone", asy
     .mockResolvedValueOnce({ ready: true, missing: [] });
   const valid = await render("provider");
   await click("Check connection");
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+  expect(container.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
     "Fixture connection unavailable",
   );
   expect(valid).not.toHaveBeenCalledWith(true);
@@ -113,5 +113,7 @@ it("does not retain a successful indication when an explicit recheck fails", asy
   await click("Check connection");
   expect(container.querySelector('[role="status"]')).toBeNull();
   expect(valid).toHaveBeenLastCalledWith(false);
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Fixture connection lost");
+  expect(container.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+    "Fixture connection lost",
+  );
 });

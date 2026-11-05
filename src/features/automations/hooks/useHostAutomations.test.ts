@@ -95,6 +95,16 @@ async function mountWith(first: MachineResult<Automation>[]) {
   expect(latest.loaded).toBe(true);
 }
 
+it("forces a capability probe only for an explicit recovery refresh", async () => {
+  await mountWith([]);
+  expect(client.probe).toHaveBeenLastCalledWith("automations", false);
+  client.list.mockResolvedValue([]);
+  await act(async () => latest.refresh(true));
+  expect(client.probe).toHaveBeenLastCalledWith("automations", true);
+  await act(async () => latest.refresh());
+  expect(client.probe).toHaveBeenLastCalledWith("automations", false);
+});
+
 /** Starts a refresh that stays in flight until the returned poll is resolved. */
 async function startInFlightRefresh() {
   const poll = pendingPoll();
@@ -144,13 +154,18 @@ describe("useHostAutomations confirmed-mutation ledger", () => {
     expect(latest.loaded).toBe(false);
     expect(latest.automations).toEqual([]);
     expect(client.list).not.toHaveBeenCalled();
-    expect(latest.error).toBeNull();expect(latest.fetching).toBe(false);
+    expect(latest.error).toBeNull();
+    expect(latest.fetching).toBe(false);
   });
 
-  it("retains an initial probe error as unavailable rather than a loaded empty collection",async()=>{
+  it("retains an initial probe error as unavailable rather than a loaded empty collection", async () => {
     client.probe.mockRejectedValueOnce(new Error("Original Host unavailable"));
-    await act(async()=>root.render(createElement(Harness,{enabled:true})));await settle();
-    expect(latest.loaded).toBe(false);expect(latest.error?.message).toBe("Original Host unavailable");expect(latest.fetching).toBe(false);expect(client.list).not.toHaveBeenCalled();
+    await act(async () => root.render(createElement(Harness, { enabled: true })));
+    await settle();
+    expect(latest.loaded).toBe(false);
+    expect(latest.error?.message).toBe("Original Host unavailable");
+    expect(latest.fetching).toBe(false);
+    expect(client.list).not.toHaveBeenCalled();
   });
 
   it("keeps a save confirmed while an older poll was in flight, then releases it", async () => {
