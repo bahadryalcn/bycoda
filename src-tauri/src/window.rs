@@ -672,17 +672,7 @@ pub fn destroy_window(window: WebviewWindow) -> Result<(), String> {
     let label = window.label().to_string();
     let before = primary_workspace_label(&app);
     window.destroy().map_err(|err| err.to_string())?;
-    let after = primary_workspace_label_excluding(&app, Some(&label));
-    if before != after {
-        if let Some(primary) = after {
-            for other in workspace_labels(&app)
-                .into_iter()
-                .filter(|other| *other != label)
-            {
-                let _ = app.emit_to(other.as_str(), PRIMARY_WORKSPACE_CHANGED, primary.clone());
-            }
-        }
-    }
+    primary_workspace::announce_after_destroy(&app, &label, before);
     Ok(())
 }
 
@@ -709,40 +699,6 @@ fn workspace_labels(app: &AppHandle) -> Vec<String> {
         .iter()
         .map(|window| window.label().to_string())
         .collect()
-}
-
-/// Window event carrying the new primary label (a plain string payload).
-pub const PRIMARY_WORKSPACE_CHANGED: &str = "workspace-primary-changed";
-
-/// Session windows are numbered from a monotonic counter, so a lower number is older.
-fn workspace_age(label: &str) -> u64 {
-    label
-        .strip_prefix("window-")
-        .and_then(|id| id.parse::<u64>().ok())
-        .unwrap_or(u64::MAX)
-}
-
-fn primary_workspace_label_excluding(app: &AppHandle, excluded: Option<&str>) -> Option<String> {
-    let labels: Vec<String> = workspace_labels(app)
-        .into_iter()
-        .filter(|label| Some(label.as_str()) != excluded)
-        .collect();
-    if labels.iter().any(|label| label == "main") {
-        return Some("main".into());
-    }
-    labels
-        .into_iter()
-        .min_by_key(|label| (workspace_age(label), label.clone()))
-}
-
-/// The window that owns the persisted workspace state: `main` while it exists,
-/// otherwise the oldest remaining workspace window.
-pub fn primary_workspace_label(app: &AppHandle) -> Option<String> {
-    primary_workspace_label_excluding(app, None)
-}
-
-pub fn is_primary_workspace(app: &AppHandle, label: &str) -> bool {
-    primary_workspace_label(app).as_deref() == Some(label)
 }
 
 #[tauri::command]
@@ -1345,6 +1301,10 @@ fn clear_run(id: u32) {
     }
 }
 
+mod primary_workspace;
+pub use primary_workspace::{
+    is_primary_workspace, primary_workspace_label, PRIMARY_WORKSPACE_CHANGED,
+};
 mod quit_finalization;
 pub use quit_finalization::confirm_quit;
 
