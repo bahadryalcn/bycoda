@@ -369,7 +369,7 @@
     "src/features/source-control/ui/GitGraphConflictEditor.tsx|react-hooks-js(set-state-in-effect)": 1,
     "src/features/source-control/ui/GitGraphHoverCard.tsx|react-hooks-js(purity)": 1,
     "src/features/source-control/ui/GitGraphWorkspace.tsx|react-hooks-js(refs)": 5,
-    "src/features/source-control/ui/GitHistoryGraph.tsx|react-hooks-js(refs)": 6,
+    "src/features/source-control/hooks/useGitHistory.ts|react-hooks-js(refs)": 6,
     "src/features/source-control/ui/MergeConflictEditor.tsx|react-hooks-js(refs)": 3,
     "src/features/source-control/ui/QuickDeleteWorktreeDialog.tsx|react-hooks-js(set-state-in-effect)": 2,
     "src/features/source-control/ui/SessionChangesDiff.tsx|react-hooks-js(refs)": 1,

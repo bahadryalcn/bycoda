@@ -1,12 +1,10 @@
 import { runTextOperation } from "../src/integrations/harness/core/textSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import { withMachineSkillPolicy, type HostProvider } from "./providers/providers";
-import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
-import type { TurnGitRecord, TurnGitSnapshot } from "./workspaces/workspace-contracts";
+import { HostEngine, parseCommand } from "./engine";
 import { HostStore } from "./store";
 import { cleanups, managedHistory, setup } from "./engine-support/engine.test-support";
 
@@ -141,11 +139,7 @@ it.each(["configure", "draft"] as const)(
 );
 import { launchSessionRun } from "./sessions/sessionRuns";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments/attachments";
-import {
-  applySessionSync,
-  REMOTE_PROVIDERS,
-  type RemoteProvider,
-} from "../src/features/connections/model/protocol";
+import { applySessionSync, REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import { sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { deriveActivityDock } from "../src/features/sessions/model/activityDock";
 import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/transcriptActivity";
