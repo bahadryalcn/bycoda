@@ -3,6 +3,8 @@ export const BRIDGE_LOOKUP_TIMEOUT_MS = 2_000;
 /** How long a definite empty or failed answer is reused before asking the Host again. */
 export const BRIDGE_NEGATIVE_TTL_MS = 10_000;
 const MAX_NEGATIVE = 256;
+/** Usable answers are re-fetched after eviction; the cap bounds the process lifetime. */
+const MAX_FOUND = 256;
 
 /**
  * Caches a bridge answer per session. A usable answer is kept; a definite empty or
@@ -22,6 +24,9 @@ export function createBridgeLookup<T>(
 
   const remember = (key: string, value: T | null) => {
     if (value) {
+      // Re-insert so the oldest answer is the first key to evict.
+      found.delete(key);
+      if (found.size >= MAX_FOUND) found.delete(found.keys().next().value!);
       found.set(key, value);
       missing.delete(key);
       return;

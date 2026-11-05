@@ -1936,6 +1936,24 @@ function trackAgentRow(live: Live, event: HarnessEvent): void {
     return;
   }
   live.openAgentRows.delete(event.callId);
+  retireAgentRow(live, event.callId);
+}
+
+/** Drops the per-row collab bookkeeping once its row is closed and none of its
+ * children is still running, so the maps are bounded by open agent rows. */
+function retireAgentRow(live: Live, callId: string): void {
+  if (live.openAgentRows.has(callId)) return;
+  for (const [threadId, owner] of live.subagentThreads) {
+    if (owner === callId && !live.terminalChildren.has(threadId)) return;
+  }
+  for (const [threadId, owner] of live.subagentThreads) {
+    if (owner !== callId) continue;
+    live.subagentThreads.delete(threadId);
+    live.terminalChildren.delete(threadId);
+    live.childTurns.delete(threadId);
+  }
+  live.agentTitles.delete(callId);
+  live.childOutcomes.delete(callId);
 }
 
 /**
@@ -1968,12 +1986,14 @@ function settleChild(live: Live, threadId: string, status: string, message?: str
   )
     return;
   live.openAgentRows.delete(callId);
+  const rowStatus = live.childOutcomes.get(callId) ?? status;
+  retireAgentRow(live, callId);
   live.onEvent({
     type: "tool.updated",
     callId,
     title,
     kind: "agent",
-    status: live.childOutcomes.get(callId) ?? status,
+    status: rowStatus,
     ...(message ? { detail: message } : {}),
   });
   syncBackgroundWait(live);
