@@ -71,8 +71,12 @@ function pruneSeenItems(items: SeenMap, cutoff: number): SeenMap {
 }
 /** Whether an item is unseen given its seen record (`undefined` when it has none). */
 function unseenAgainst(entry: InboxSeenEntry, value: number | undefined): boolean {
-  if (value == null) return inboxUpdatedAt(entry) >= retentionCutoff();
+  // An unreadable timestamp cannot prove the item is old, so a new one stays unseen.
+  if (value == null) return !hasReadableTime(entry) || inboxUpdatedAt(entry) >= retentionCutoff();
   return inboxUpdatedAt(entry) > value;
+}
+function hasReadableTime(item: { updatedAt: string }): boolean {
+  return Number.isFinite(Date.parse(item.updatedAt));
 }
 function legacySnapshot(raw: string | null): SeenStore {
   if (!raw) return { seeded: false, items: {} };
@@ -250,7 +254,7 @@ export function rememberInboxItems(entries: readonly (InboxSeenEntry & { project
   if (changed) {
     const cutoff = retentionCutoff();
     for (const [key, entry] of knownItems)
-      if (inboxUpdatedAt(entry) < cutoff) knownItems.delete(key);
+      if (hasReadableTime(entry) && inboxUpdatedAt(entry) < cutoff) knownItems.delete(key);
     notifyInboxSeen();
   }
 }

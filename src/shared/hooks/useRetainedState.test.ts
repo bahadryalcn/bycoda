@@ -2,12 +2,7 @@
 import { act, createElement, StrictMode, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  RETAINED_STATE_CAPACITY,
-  RetainedStateCapacityError,
-  resetRetainedState,
-  useRetainedState,
-} from "./useRetainedState";
+import { RETAINED_STATE_CAPACITY, resetRetainedState, useRetainedState } from "./useRetainedState";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -55,15 +50,41 @@ it("bounds pristine entries while preserving a dirty unmounted draft", () => {
   expect(host.textContent).toBe("42");
 });
 
-it("rejects admission when every entry holds a dirty draft", () => {
-  for (let index = 0; index < RETAINED_STATE_CAPACITY; index++) {
-    render(`draft:${index}`);
-    act(() => change(1));
+it("soft-caps when every entry holds a dirty draft, keeps the drafts and warns once", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    for (let index = 0; index < RETAINED_STATE_CAPACITY; index++) {
+      render(`draft:${index}`);
+      act(() => change(1));
+    }
+    expect(() => render("overflow")).not.toThrow();
+    expect(() => render("overflow-2")).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+    root = createRoot(host);
+    render("draft:0");
+    expect(host.textContent).toBe("1");
+  } finally {
+    warn.mockRestore();
   }
-  expect(() => render("overflow")).toThrow(RetainedStateCapacityError);
-  root = createRoot(host);
-  render("draft:0");
-  expect(host.textContent).toBe("1");
+});
+
+it("admits 600 distinct view-mode keys without throwing and evicts the clean ones", () => {
+  let scrollChange!: (value: { top: number }) => void;
+  function Scroll({ scope }: { scope: string }) {
+    const [value, setValue] = useRetainedState<{ top: number }>(scope, { top: 0 }, "view");
+    scrollChange = setValue;
+    return createElement("span", null, value.top);
+  }
+  for (let index = 0; index < 600; index++) {
+    expect(() =>
+      act(() => root.render(createElement(Scroll, { scope: `scroll:${index}` }))),
+    ).not.toThrow();
+    act(() => scrollChange({ top: index + 1 }));
+  }
+  act(() => root.render(createElement(Scroll, { scope: "scroll:0" })));
+  expect(host.textContent).toBe("0");
+  act(() => root.render(createElement(Scroll, { scope: "scroll:599" })));
+  expect(host.textContent).toBe("600");
 });
 
 it("ignores a stale setter after a pristine key is evicted and recreated", () => {

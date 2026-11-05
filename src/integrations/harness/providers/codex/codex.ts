@@ -1986,8 +1986,9 @@ function settleChild(live: Live, threadId: string, status: string, message?: str
   )
     return;
   live.openAgentRows.delete(callId);
+  // Children stay attributable after the row closes: a child that starts another turn
+  // reopens it. The owner mapping is retired only when the spawn item itself completes.
   const rowStatus = live.childOutcomes.get(callId) ?? status;
-  retireAgentRow(live, callId);
   live.onEvent({
     type: "tool.updated",
     callId,

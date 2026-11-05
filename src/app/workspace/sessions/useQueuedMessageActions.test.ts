@@ -393,7 +393,19 @@ it.each([QueueNotReadyError, QueueDeferredError])(
       });
       expect(submit).toHaveBeenCalledTimes(1);
       expect(getSessions()[0].queueStatus).toBe("active");
-      expect(enqueue).not.toHaveBeenCalled();
+      if (WaitError === QueueDeferredError) {
+        // The first safe deferral explains the wait once; the queue is not paused.
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(enqueue).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            type: "status",
+            text: expect.stringContaining("will be retried automatically"),
+          }),
+        );
+      } else {
+        expect(enqueue).not.toHaveBeenCalled();
+      }
       await act(async () => {
         await new Promise((resolve) => window.setTimeout(resolve, 2_300));
       });
@@ -410,26 +422,37 @@ it.each([QueueNotReadyError, QueueDeferredError])(
   },
 );
 
-it("pauses repeated safe deferrals without removing or replaying the head", async () => {
+it("keeps retrying repeated safe deferrals with capped backoff without removing or replaying the head", async () => {
   vi.useFakeTimers();
   const submit = vi.fn<Submit>(() => Promise.reject(new QueueDeferredError("Turn not ready")));
   const harness = await queueHarness("active", false, submit);
   try {
-    for (const delay of [1, 2_001, 4_001, 8_001]) {
+    // Retry delays double from 2 s and cap at 60 s: attempts land at 0, 2, 6, 14, 30, 62, 122 s.
+    for (const [index, delay] of [1, 2_001, 4_001, 8_001, 16_001, 32_001, 60_001].entries()) {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(delay);
       });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10);
       });
+      expect(submit).toHaveBeenCalledTimes(index + 1);
     }
-    expect(submit).toHaveBeenCalledTimes(4);
-    expect(getSessions()[0].queueStatus).toBe("paused");
+    expect(getSessions()[0].queueStatus).toBe("active");
     expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+    // The cap holds: the next attempt is 60 s after the seventh, not later and not sooner.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(120_000);
+      await vi.advanceTimersByTimeAsync(59_500);
     });
-    expect(submit).toHaveBeenCalledTimes(4);
+    expect(submit).toHaveBeenCalledTimes(7);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(submit).toHaveBeenCalledTimes(8);
+    expect(getSessions()[0].queueStatus).toBe("active");
+    expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
   } finally {
     await harness.cleanup();
     vi.useRealTimers();

@@ -224,14 +224,18 @@ it("retains a live child until its completed parent and child both settle", () =
   expect((router as unknown as { tools: Set<string> }).tools.size).toBe(0);
 });
 
-it("does not evict unknown pending child work when other parents arrive", () => {
+it("bounds unknown pending parents: the oldest backlog is dropped, the newest is kept", () => {
   const router = new AcpSubagents();
   for (let i = 0; i < 40; i++) {
     router.route({ parentToolCallId: `parent-${i}` }, [{ type: "message.delta", text: `${i}` }]);
   }
+  // 40 parents never started: the cap of 32 keeps the newest and drops the oldest.
   expect(
     router.route({}, [{ type: "tool.started", callId: "parent-0", title: "Task" }]),
-  ).toContainEqual(expect.objectContaining({ type: "agent.step", text: "0" }));
+  ).not.toContainEqual(expect.objectContaining({ type: "agent.step" }));
+  expect(
+    router.route({}, [{ type: "tool.started", callId: "parent-39", title: "Task" }]),
+  ).toContainEqual(expect.objectContaining({ type: "agent.step", text: "39" }));
 });
 
 it("routes sparse child updates in a mixed batch while another child remains live", () => {
