@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Read, Write},
     process::{Command, Stdio},
     sync::{Arc, Mutex, OnceLock},
@@ -192,6 +192,29 @@ fn complete_utf8_prefix(mut bytes: &[u8]) -> bool {
     true
 }
 type Jobs = HashMap<Key, Arc<Mutex<Job>>>;
+type ConversationKey = (String, SshSource);
+/// Native dialogs cannot be dismissed programmatically, so a slot is held until the
+/// dialog reports back, even after its request has already hit deadline or cancel.
+struct ApprovalSlot(ConversationKey);
+fn approval_slots() -> &'static Mutex<HashSet<ConversationKey>> {
+    static SLOTS: OnceLock<Mutex<HashSet<ConversationKey>>> = OnceLock::new();
+    SLOTS.get_or_init(Mutex::default)
+}
+impl ApprovalSlot {
+    fn try_take(conversation: &ConversationKey) -> Option<Self> {
+        let mut open = approval_slots().lock().unwrap_or_else(|e| e.into_inner());
+        open.insert(conversation.clone())
+            .then(|| Self(conversation.clone()))
+    }
+}
+impl Drop for ApprovalSlot {
+    fn drop(&mut self) {
+        approval_slots()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
+    }
+}
 fn evict_expired(jobs: &mut Jobs, now: Instant) {
     jobs.retain(|_, job| {
         // A poisoned job has unknown state and must not be evicted.
@@ -697,6 +720,7 @@ pub(super) fn call(
         jobs.insert(key.clone(), job.clone());
         job
     };
+    let conversation: ConversationKey = (key.environment.clone(), key.source.clone());
     let start = (|| -> Result<(), String> {
         authorize_current()?;
         check(request, issuer, taken)?;
@@ -708,26 +732,47 @@ pub(super) fn call(
             .unwrap_or(RemoteShellKind::Posix);
         let source = match &key.source { SshSource::Session { project, session } => format!("Project: {}\nSession: {}", literal(project), literal(session)), SshSource::AssistantThread { thread } => format!("Assistant Room: {}", literal(thread)) };
         let message=format!("Run this exact command on saved SSH server?\n\nServer ID: {}\nTarget: {}@{}:{}\n{}\nShell: {:?}\nTimeout: {} seconds\n\nCommand (escaped literal):\n{}\n\nThis can change remote files and services. Command output will be disclosed to the calling AI conversation. Cancellation stops local SSH; remote work may continue.",literal(&server),literal(endpoint.user.as_deref().unwrap_or("(default)")),literal(&endpoint.host),endpoint.port,source,shell,timeout,literal(&script));
-        let (approval_tx, approval_rx) = std::sync::mpsc::sync_channel(1);
-        app
-            .dialog()
-            .message(message)
-            .title("bycoda — SSH command approval")
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Run this exact command".into(),
-                "Cancel".into(),
-            ))
-            .show(move |approved| { let _ = approval_tx.send(approved); });
-        let approved = loop {
+        // At most one open approval dialog per conversation; others queue here.
+        let slot = loop {
             if job.lock().map_err(|_| "SSH execution unavailable")?.cancel {
-                break false;
+                break None;
             }
             check(request, issuer, taken)?;
             check_room()?;
-            match approval_rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(approved) => break approved,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err("SSH approval unavailable".into()),
+            if let Some(slot) = ApprovalSlot::try_take(&conversation) {
+                break Some(slot);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        };
+        let approved = match slot {
+            None => false,
+            Some(slot) => {
+                let (approval_tx, approval_rx) = std::sync::mpsc::sync_channel(1);
+                app
+                    .dialog()
+                    .message(message)
+                    .title("bycoda — SSH command approval")
+                    .buttons(MessageDialogButtons::OkCancelCustom(
+                        "Run this exact command".into(),
+                        "Cancel".into(),
+                    ))
+                    .show(move |approved| {
+                        // A late answer after the request ended has no receiver and starts nothing.
+                        let _ = approval_tx.send(approved);
+                        drop(slot);
+                    });
+                loop {
+                    if job.lock().map_err(|_| "SSH execution unavailable")?.cancel {
+                        break false;
+                    }
+                    check(request, issuer, taken)?;
+                    check_room()?;
+                    match approval_rx.recv_timeout(Duration::from_millis(100)) {
+                        Ok(approved) => break approved,
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err("SSH approval unavailable".into()),
+                    }
+                }
             }
         };
         if !approved {

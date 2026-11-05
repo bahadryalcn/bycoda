@@ -15,6 +15,7 @@ const MAX_CHUNK_BYTES: usize = 1024 * 1024;
 const MAX_CACHE_BYTES: u64 = 4 * MAX_FILE_BYTES;
 const STORAGE: &str = "remote-file-copies";
 const MANIFEST: &str = ".bycoda-copy.json";
+const IDLE_TRANSFER_TTL: std::time::Duration = std::time::Duration::from_secs(600);
 
 #[derive(Serialize, Deserialize)]
 struct CopyManifest {
@@ -148,6 +149,45 @@ fn cached(base: &Path, key: &str) -> Result<Option<PathBuf>, String> {
     Ok(None)
 }
 
+/// Abandoned transfers (renderer reload or window closed mid-copy) never reach
+/// finish or cancel. Expire them so they stop holding capacity and partial files.
+fn expire_idle(now: Instant) -> Result<(), String> {
+    let entries: Vec<(String, Arc<Mutex<CopyTransfer>>)> = transfers()
+        .lock()
+        .map_err(|_| "File transfers are unavailable")?
+        .iter()
+        .map(|(id, transfer)| (id.clone(), transfer.clone()))
+        .collect();
+    for (id, transfer) in entries {
+        // A locked transfer is serving a request right now, so it is not idle.
+        let Ok(guard) = transfer.try_lock() else {
+            continue;
+        };
+        if now.saturating_duration_since(guard.touched) < IDLE_TRANSFER_TTL {
+            continue;
+        }
+        // Map lock is taken while holding the transfer lock; no path takes them in reverse order.
+        let removed = {
+            let mut map = transfers()
+                .lock()
+                .map_err(|_| "File transfers are unavailable")?;
+            if map
+                .get(&id)
+                .is_some_and(|current| Arc::ptr_eq(current, &transfer))
+            {
+                map.remove(&id)
+            } else {
+                None
+            }
+        };
+        drop(guard);
+        // Dropping the last handle deletes the partial file outside the map lock.
+        drop(removed);
+        drop(transfer);
+    }
+    Ok(())
+}
+
 fn begin(base: &Path, name: &str, size: u64, key: &str) -> Result<String, String> {
     if size > MAX_FILE_BYTES {
         return Err("File is too large to open on this computer (maximum 1 GB).".into());
@@ -157,6 +197,7 @@ fn begin(base: &Path, name: &str, size: u64, key: &str) -> Result<String, String
     // finish, or cancel on filesystem scans.
     static ADMISSION: Mutex<()> = Mutex::new(());
     let _admission = ADMISSION.lock().map_err(|_| "File transfers are unavailable")?;
+    expire_idle(Instant::now())?;
     let active: Vec<_> = transfers().lock().map_err(|_| "File transfers are unavailable")?
         .values().cloned().collect();
     if active.len() >= 4 {
