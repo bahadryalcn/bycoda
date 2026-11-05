@@ -1,11 +1,11 @@
 import type { HostStore } from "../store";
-import type { HostGoals } from "../goals";
-import type { HostCheckpoints } from "../checkpoints";
-import type { HostStewards } from "../stewards";
-import type { HostAutomations } from "../automations";
-import type { RuntimeLogPrincipal } from "../runtime-log-tools";
-import { scrubRuntimeLogText } from "../runtime-logs";
-import { readSessionUsage } from "../usage-report";
+import type { HostGoals } from "../goals/goals";
+import type { HostCheckpoints } from "../checkpoints/checkpoints";
+import type { HostStewards } from "../stewards/stewards";
+import type { HostAutomations } from "../automations/automations";
+import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
+import { scrubRuntimeLogText } from "../execution/runtime-logs";
+import { readSessionUsage } from "../usage/usage-report";
 import {
   REMOTE_PROVIDERS,
   type HostModelCatalog,

@@ -62,6 +62,7 @@ vi.mock("../../core/child", () => ({
   },
   openHarnessSse: async () => undefined,
   resolveOpenCodeBinary: async () => ({ path: "/fake/opencode" }),
+  capturedChildRoute: (handle: { sessionId: string }) => handle.sessionId,
   spawnChild: async (...args: unknown[]) => {
     processIo.spawn(...args);
     onStdout?.("opencode server listening on http://127.0.0.1:4096");

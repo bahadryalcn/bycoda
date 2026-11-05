@@ -17,6 +17,9 @@ export function createSyncWindowOwner(
     queueMicrotask(() => {
       if (!stopped && owner) acquired();
     });
+  const reportAcquireFailure = (error: unknown) => {
+    console.warn("Sync ownership is unavailable; retry after the window recovers.", error);
+  };
   const acquire = async () => {
     try {
       await locks!.request("bycoda-library-sync", { ifAvailable: true }, async (lock) => {
@@ -29,19 +32,19 @@ export function createSyncWindowOwner(
         owner = false;
         release = undefined;
       });
-      if (!stopped) retry = setTimeout(() => void acquire(), 5_000);
+      if (!stopped) retry = setTimeout(() => void acquire().catch(reportAcquireFailure), 5_000);
     } catch (error) {
       if (native) {
         // A failed native ownership check is unknown, not proof of retirement.
         console.warn("Sync ownership is unavailable; retry after the window recovers.", error);
-        if (!stopped) retry = setTimeout(() => { void acquire(); }, 5_000);
+        if (!stopped) retry = setTimeout(() => { void acquire().catch(reportAcquireFailure); }, 5_000);
       } else {
         owner = true;
         notify();
       }
     }
   };
-  if (locks) void acquire();
+  if (locks) void acquire().catch(reportAcquireFailure);
   else if (owner) notify();
   else console.warn("Sync ownership is unavailable; retry after the window recovers.");
   return {

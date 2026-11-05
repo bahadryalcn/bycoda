@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { CommandDispatchParamsSchema } from "../../src/shared/model/host-contracts/session-commands";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import {
   SESSION_MANAGEMENT_TOOLS,
   SESSION_MANAGEMENT_READS,

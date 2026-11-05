@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { HostStore } from "../../store";
-import type { HostTasks } from "../../tasks";
-import type { HostGoals } from "../../goals";
+import type { HostTasks } from "../../tasks/tasks";
+import type { HostGoals } from "../../goals/goals";
 import { parseHostTask, type HostTask } from "../../../src/features/tasks/model/hostTasks";
 import { parseHostGoal, type HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import { hasUnmergedBranch, orderTasksForDeletion } from "../../../src/features/tasks/model/taskRules";

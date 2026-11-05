@@ -9,7 +9,7 @@ import type {
 } from "../../../src/shared/model/host-contracts/assistant";
 import type { AssistantThreadSummaryProof } from "../../../src/shared/model/assistantThreadSummary";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
-import { RUNTIME_LOG_TOOLS } from "../../runtime-log-tools";
+import { RUNTIME_LOG_TOOLS } from "../../execution/runtime-log-tools";
 import {
   AssistantVoiceDisclosureSourceSchema,
   type AssistantVoiceDisclosureSource,

@@ -7,7 +7,7 @@ import { HostEngine } from "../../engine";
 import { HostAssistant, type AssistantPorts } from "../service";
 import { HostAssistantManualSessions } from "./assistant-manual-sessions";
 import { assistantSessionRuntime } from "./assistant-session-runtime";
-import type { HostProvider } from "../../providers";
+import type { HostProvider } from "../../providers/providers";
 import type { SendTurnInput } from "../../../src/integrations/harness/core/types";
 import { readManualSessionUsage } from "../core/assistant-runtime";
 

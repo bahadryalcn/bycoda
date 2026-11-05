@@ -13,13 +13,13 @@ import { existsSync } from "node:fs";
 import { access, cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DevPortLeases } from "../../host/dev-port-leases.ts";
+import { DevPortLeases } from "../../host/dev-servers/dev-port-leases.ts";
 import { prepareProviderGuardian } from "../../host/provider-guardian-deployment.ts";
 import {
   WorkspaceBootstrapService,
   BuildCacheSettledFailure,
   workspaceEnvironmentVariables,
-} from "../../host/workspace-bootstrap.ts";
+} from "../../host/workspaces/workspace-bootstrap.ts";
 import { sourceIdentity, fingerprintFiles, parseBuildIdentity } from "./build-info.mjs";
 import { chromium } from "@playwright/test";
 import { verifyNativeIdentity } from "./dev-shot.mjs";

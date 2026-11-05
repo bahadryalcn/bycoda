@@ -1517,22 +1517,20 @@ export function execChild(
   const request = Object.freeze({ command, args: Object.freeze([...args]), cwd, binaryProvider, binaryPath });
   const purposePage = purpose && !originalBackend && typeof isTauri === "function" && isTauri()
     ? tauriInvoke<string>("canonical_store_page_token")
-    : Promise.resolve(undefined);
+    : undefined;
+  const dispatch = (pageToken?: string): Promise<string> => {
+    const invokeExec = (grant?: { token: string; routeId: string }) => originalInvoke<string>("harness_exec", {
+      ...request,
+      ...(purpose && pageToken ? { nativeProcessPurpose: { kind: purpose, pageToken } } : {}),
+      ...(grant ? { nativeManagementToken: grant.token, nativeManagementRouteId: grant.routeId } : {}),
+    });
+    return purpose === "management" && pageToken
+      ? originalInvoke<{ token: string; routeId: string }>("harness_management_grant", { pageToken, command: request }).then(invokeExec)
+      : invokeExec();
+  };
   let actual: Promise<string>;
   try {
-    actual = trackNativeOutputWork(
-      purposePage.then(async (pageToken) => {
-        const grant = purpose === "management" && pageToken
-          ? await originalInvoke<{ token: string; routeId: string }>("harness_management_grant", { pageToken, command: request })
-          : undefined;
-        return originalInvoke<string>("harness_exec", {
-          ...request,
-          ...(purpose && pageToken ? { nativeProcessPurpose: { kind: purpose, pageToken } } : {}),
-          ...(grant ? { nativeManagementToken: grant.token, nativeManagementRouteId: grant.routeId } : {}),
-        });
-      }),
-      work,
-    );
+    actual = trackNativeOutputWork(purposePage ? purposePage.then(dispatch) : dispatch(), work);
   } catch (error) {
     work?.fail("cli-probe-invoke-threw");
     throw error;

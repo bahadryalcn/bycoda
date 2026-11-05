@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ProviderInboxBridge } from "../../provider-inbox";
+import { ProviderInboxBridge } from "../../providers/provider-inbox";
 import { StoreDatabase } from "../../store-db";
 
 it("does not admit a projectless Jira result from another project's discovery", async () => {

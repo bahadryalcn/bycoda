@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 
 const bridge = vi.hoisted(() => ({ command: "/fake/node", args: ["/fake/host.mjs"] }));
 const prepareSkill = vi.hoisted(() =>
@@ -23,7 +23,7 @@ vi.mock("../src/integrations/harness/core/conversationToolsBridge", async (impor
   >()),
   conversationToolsBridge: vi.fn(async () => bridge),
 }));
-vi.mock("./prompt-skills", () => ({ prepareHostSkillPrompt: prepareSkill }));
+vi.mock("./skills/prompt-skills", () => ({ prepareHostSkillPrompt: prepareSkill }));
 
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";

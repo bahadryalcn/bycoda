@@ -7,7 +7,7 @@ import {
   DesktopOperationAuditSchema,
   desktopOperationAuditId,
   type DesktopOperationAudit,
-} from "../desktop-control-audit";
+} from "../desktop/desktop-control-audit";
 import type { HostStore } from "../store";
 import {
   AssistantRequestValidationSchema,
@@ -1488,7 +1488,12 @@ export class HostAssistant {
     return [...result].map(([accountId, version]) => ({ accountId, version }));
   }
   private async messageProjectProofs(message: AssistantMessage, ancestors = new Set<string>()): Promise<{ projectId: string; cwd: string }[] | undefined> {
-    if (message.role !== "assistant") return [];
+    if (message.role !== "assistant") {
+      const captured = await this.runtime<{ threadId: string; proofs: { projectId: string; cwd: string }[] } | null>(`messageProjectOrigins:${message.id}`, null);
+      if (captured) return captured.threadId === message.threadId && Array.isArray(captured.proofs) ? captured.proofs : undefined;
+      const scope = await this.messageProjectScope(message);
+      return scope.projectIds?.length === 0 ? [] : undefined;
+    }
     if (message.via === "voice") {
       const voice = await this.runtime<{ contextId: string; version: number; threadId: string } | null>(`messageScopeVoice:${message.id}`, null);
       if (voice) return voice.threadId === message.threadId ? this.voiceContexts.historicalProjectProofs(voice.contextId, voice.version, message.threadId) : undefined;
@@ -1610,18 +1615,22 @@ export class HostAssistant {
     }, [...scope.projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })));
   }
   private async accountSafeMessage(message: AssistantMessage): Promise<AssistantMessage> {
+    const redact = (): AssistantMessage => {
+      const { projectIds: _projectIds, visibilityProjectIds: _visibility, ...rest } = message;
+      return { ...rest, text: "This message is unavailable because its source access changed.", unverifiedToolContext: true };
+    };
     const nativeProofs = await this.messageNativeProofs(message);
-    if (!nativeProofs || (nativeProofs.length && (!this.ports.roomNativeProofsValid || !(await this.ports.roomNativeProofsValid(nativeProofs))))) return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+    if (!nativeProofs || (nativeProofs.length && (!this.ports.roomNativeProofsValid || !(await this.ports.roomNativeProofsValid(nativeProofs))))) return redact();
     const proofs = await this.messageAccountProofs(message);
     const projectProofs = await this.messageProjectProofs(message);
     const scoped = message.role === "assistant" ? await this.messageProjectScope(message) : message;
     const projectIds = new Set([...(scoped.projectIds ?? []), ...(scoped.visibilityProjectIds ?? [])]);
     if (message.role === "assistant" && projectIds.size && (!projectProofs || [...projectIds].some(id => !projectProofs.some(proof => proof.projectId === id))))
-      return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
-    if (!projectProofs || (projectProofs.length && (!this.ports.roomProjectProofsValid || !(await this.ports.roomProjectProofsValid(projectProofs)))))
-      return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+      return redact();
+    if (message.role === "assistant" && (!projectProofs || (projectProofs.length && (!this.ports.roomProjectProofsValid || !(await this.ports.roomProjectProofsValid(projectProofs))))))
+      return redact();
     if (!proofs || (proofs.length && (!this.ports.roomAccountProofsValid || !(await this.ports.roomAccountProofsValid(message.threadId, proofs)))))
-      return { ...message, text: "This message is unavailable because its source access changed.", projectIds: undefined, unverifiedToolContext: true };
+      return redact();
     return message;
   }
   private async messageProjectScopes(messages: AssistantMessage[]): Promise<AssistantMessage[]> {
@@ -2959,6 +2968,21 @@ export class HostAssistant {
             0,
             key,
           );
+          if (input.role === "user") {
+            const ids = new Set<string>();
+            if (thread.projectId) ids.add(thread.projectId);
+            if (input.sessionId) ids.add((await this.store.session(input.sessionId)).projectId);
+            for (const jobId of input.jobIds ?? []) {
+              const job = await this.require<AssistantJob>("jobs", jobId);
+              for (const id of assistantJobProjectIds(job)) ids.add(id);
+            }
+            try {
+              const proofs = await Promise.all([...ids].sort().map(async projectId => ({ projectId, cwd: (await this.store.project(projectId)).cwd })));
+              await this.setRuntime(`messageProjectOrigins:${message.id}`, { threadId: message.threadId, proofs });
+            } catch {
+              // The accepted transcript remains; unverified project identity cannot authorize derived output.
+            }
+          }
           if (input.causalContextId) {
             await this.setRuntime(`messageVoiceContextInput:${message.id}`, {
               contextId: input.causalContextId,
@@ -2996,6 +3020,16 @@ export class HostAssistant {
           if (message.jobIds.includes(job.id)) return { message };
           if (message.jobIds.length >= 20)
             throw new Error("This message already links twenty jobs.");
+          const origins = await this.runtime<{ threadId: string; proofs: { projectId: string; cwd: string }[] } | null>(`messageProjectOrigins:${message.id}`, null);
+          if (origins?.threadId === message.threadId && Array.isArray(origins.proofs)) {
+            const captured = new Map(origins.proofs.map(proof => [proof.projectId, proof.cwd]));
+            for (const projectId of projects) {
+              const cwd = (await this.store.project(projectId)).cwd;
+              if (captured.has(projectId) && captured.get(projectId) !== cwd) throw new Error("Message project source changed.");
+              captured.set(projectId, cwd);
+            }
+            await this.setRuntime(`messageProjectOrigins:${message.id}`, { threadId: message.threadId, proofs: [...captured].map(([projectId, cwd]) => ({ projectId, cwd })) });
+          }
           return {
             message: await this.repository.put(
               "messages",

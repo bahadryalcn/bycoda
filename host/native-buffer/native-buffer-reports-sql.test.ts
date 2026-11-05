@@ -6,8 +6,8 @@ import { HostStore } from "../store";
 import { createNativeBufferReports, type NativeBufferSnapshot } from "./native-buffer-reports";
 import { createNativeBufferPersistenceStore } from "./native-buffer-persistence-store";
 import { createNativeBufferRetention } from "./native-buffer-retention";
-import { durableWrite } from "../turn-git-history";
-import type { ManagedWorkspace } from "../workspace-contracts";
+import { durableWrite } from "../git/turn-git-history";
+import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
 import type {
   NativeBufferDeliveryBinding,
   NativeBufferDeliveryProof,

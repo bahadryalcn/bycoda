@@ -18,7 +18,7 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
 
 ## Persistence, source admission and recovery
 
-- `host/store.ts`, `host/domains/commands/service.ts`, `host/desktopLive.ts`, `host/desktop-command-delivery.ts` and adjacent tests own durable desktop command admission, original-principal status, one-time offer and page-scoped ACK. `src/features/connections/model/{desktopLive,useDesktopLive}.ts` and `src-tauri/src/desktop_control_page.rs` own original turn/page routing and receiver checks.
+- `host/store.ts`, `host/domains/commands/service.ts`, `host/desktop/desktopLive.ts`, `host/desktop/desktop-command-delivery.ts` and adjacent tests own durable desktop command admission, original-principal status, one-time offer and page-scoped ACK. `src/features/connections/model/{desktopLive,useDesktopLive}.ts` and `src-tauri/src/desktop_control_page.rs` own original turn/page routing and receiver checks.
 
 - `host/store-db.ts` and workers, `host/storage/persistence-health.ts`, `host/storage/authority-journal.ts`, `host/storage/snapshots.ts`: durable transactions, staged immutable snapshots, permanent generation decisions and recovery. Host-only snapshots are not proof of coherent Native+Host restore.
 - `src-tauri/src/session_store.rs` and submodules: physical Store/window ownership, SQLite writers, source fences and restore. `src-tauri/src/native_provider_output.rs` retains native output lineage.
@@ -34,6 +34,6 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
   keep blocked transport state separate from ordinary operation errors. An HTTP
   success alone must not clear a blocked native lane. `src-tauri/src/remote.rs`
   and `host_ws/` own identity-verified explicit recovery without mutation replay;
-  workspace path confinement remains in `host/workspace-commands.ts`.
+  workspace path confinement remains in `host/workspaces/workspace-commands.ts`.
 
 Start with tests beside the changed schema/service/provider/native module. For actual interop choose isolated Host/native profiles and original process/window/Store owners; use fake repositories and scoped data. Include unauthorized/old clients, late original callbacks, duplicate commands, unknown write/cleanup outcomes, restart/recovery and capacity refusal when affected. Never turn an earlier checkpoint's test count, all26 label or installed version into present acceptance.

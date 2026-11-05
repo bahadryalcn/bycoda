@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { hostGitAction } from "../workspace";
+import { hostGitAction } from "../workspaces/workspace";
 import { gitManagementSnapshot, runGitAction, verifyGitManagementSnapshot } from "./git-actions";
 
 const roots: string[] = [];

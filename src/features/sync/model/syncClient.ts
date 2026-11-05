@@ -447,7 +447,9 @@ export function startSyncLoop(
       if (!stopped) await runSyncCycle(slot.id, requestFor(slot.id, cycleId), environmentFor?.(slot.id), () => !stopped && shouldRunAutomatically());
     } catch (error) {
       failed = true;
-      if (!cycleId) uncertain = true;
+      // Cancellation guards run only after awaited work settled. A stopped local
+      // continuation is not an unknown transport outcome and may release Web Lock.
+      if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED")) uncertain = true;
       if (!began) recordSyncStatus(slot.id, { state: "error", lastError: `Sync ownership is unavailable: ${String(error)}` });
     }
     if (began && cycleId) {

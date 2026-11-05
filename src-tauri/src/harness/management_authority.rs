@@ -120,6 +120,12 @@ fn spawn_policy(input: &ManagementSpawn) -> Option<InputPolicy> {
         let isolated = match input.binary_provider.as_deref()? {
             "opencode" => args.len() == 3 && args[0] == "serve" && args[1] == "--hostname=127.0.0.1" && args[2].strip_prefix("--port=").and_then(|port| port.parse::<u16>().ok()).is_some_and(|port| port != 0),
             "cursor" => args == ["acp"],
+            "antigravity" => args.is_empty() || args == ["--uid="]
+                || ((args.len() == 10 || args.len() == 12)
+                    && args[..3] == ["--agent", "bycoda-text", "--log-file"]
+                    && std::path::Path::new(args[3]).starts_with(std::path::Path::new(&input.cwd))
+                    && args[4..10] == ["--print=", "--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]
+                    && (args.len() == 10 || (args[10] == "--model" && !args[11].is_empty()))),
             "grok" => args.len() == 10 && args[..6] == ["--no-auto-update", "--permission-mode", "dontAsk", "agent", "--no-leader", "--model"] && args[7..] == ["--reasoning-effort", "low", "stdio"],
             "pi" | "omp" => args.starts_with(&["--mode", "rpc"]) && args.contains(&"--no-session") && args.contains(&"--no-extensions"),
             "claude" => args.contains(&"--no-session-persistence") && args.contains(&"--strict-mcp-config") && args.windows(2).any(|pair| pair[0] == "--mcp-config" && serde_json::from_str::<serde_json::Value>(pair[1]).ok() == Some(serde_json::json!({"mcpServers":{}}))) && args.windows(2).any(|pair| pair[0] == "--settings" && serde_json::from_str::<serde_json::Value>(pair[1]).ok().and_then(|value| value.get("disableAllHooks").and_then(|value| value.as_bool())) == Some(true)),

@@ -10,22 +10,22 @@ import { request } from "node:http";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { createHostServer } from "./server";
-import { BrowserRuntime } from "./browser-runtime";
+import { BrowserRuntime } from "./browser/browser-runtime";
 import { DeviceHost } from "./devices/device-host";
-import * as expoGo from "./expo-go";
-import { RuntimeLogsService } from "./runtime-logs";
+import * as expoGo from "./devices/expo-go";
+import { RuntimeLogsService } from "./execution/runtime-logs";
 import { HostChildBackend } from "./child-backend";
-import { HostTasks } from "./tasks";
-import { HostCrews } from "./crews";
-import { HostGoals } from "./goals";
-import { DesktopSessions } from "./desktopSessions";
-import { HostTerminals } from "./terminals";
+import { HostTasks } from "./tasks/tasks";
+import { HostCrews } from "./crews/crews";
+import { HostGoals } from "./goals/goals";
+import { DesktopSessions } from "./desktop/desktopSessions";
+import { HostTerminals } from "./terminals/terminals";
 import { AsyncHostNotes } from "./host-notes-async";
-import { GenericAcpService } from "./generic-acp";
+import { GenericAcpService } from "./providers/generic-acp";
 import * as accessCenter from "./security/access/access-center";
 import { ConversationDesktopRelay } from "./conversation/conversation-tools";
 import { DevicePreviews } from "./devices/device-preview";
-import { ProviderInboxBridge } from "./provider-inbox";
+import { ProviderInboxBridge } from "./providers/provider-inbox";
 import { VoiceSetupService } from "./voice/voice-setup";
 import { LocalVoiceService } from "./voice/voice-local";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
@@ -34,15 +34,15 @@ import type { RemoteProvider } from "../src/features/connections/model/protocol"
 import { requireWorkspaceCapability } from "../src/features/connections/model/protocol";
 import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
 import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
-import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
-import { AttachmentOwnership } from "./attachment-ownership";
+import { CLAIM_GRACE_MS, SessionQueues } from "./sessions/session-queue";
+import { AttachmentOwnership } from "./attachments/attachment-ownership";
 import { SocialService } from "./social/social";
-import * as accountCatalog from "./provider-accounts";
+import * as accountCatalog from "./providers/provider-accounts";
 
 const modelProbe = vi.hoisted(() => vi.fn());
 // Model-discovery fixtures never inspect the developer's real account profiles.
-vi.mock("./provider-accounts", async (original) => {
-  const module = await original<typeof import("./provider-accounts")>();
+vi.mock("./providers/provider-accounts", async (original) => {
+  const module = await original<typeof import("./providers/provider-accounts")>();
   return {
     ...module,
     hostProviderAccounts: (roots?: string[]) => module.hostProviderAccounts(roots ?? []),
@@ -83,6 +83,7 @@ it("resolves uploaded question files before forwarding answers to the owning des
   });
   const question = {
     requestId: 7,
+    occurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
     questions: [
       { id: "q", prompt: "Attach report", allowCustom: true, multiSelect: false, options: [] },
     ],
@@ -90,7 +91,8 @@ it("resolves uploaded question files before forwarding answers to the owning des
   const beat = () =>
     s.call("sessions.desktopLive", {
       clientId: "desktop-file-owner",
-      sessions: [{ id: sessionId, busy: true, patch: { pendingQuestion: question } }],
+      pageToken: "7e1c4dc0-6f53-4a8c-b8d8-000000000010",
+      sessions: [{ id: sessionId, turnReceipt: { version: 1, sessionId, turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000011" }, busy: true, patch: { pendingQuestion: question } }],
     });
   await beat();
   const file = {
@@ -100,7 +102,7 @@ it("resolves uploaded question files before forwarding answers to the owning des
     kind: "file",
     size: 3,
   };
-  await s.call("attachments.upload", { id: file.id, size: 3, offset: 0, data: "YWJj" });
+  await s.call("attachments.upload", { id: file.id, size: 3, offset: 0, data: "YWJj", questionSessionId: sessionId, questionRunId: "desktop", questionRequestId: 7 });
   const dispatched = await s.call("commands.dispatch", {
     type: "answer",
     commandId: "desktop-file-answer",
@@ -1680,6 +1682,8 @@ it("joins an accepted listening phase before resource shutdown and prevents late
   try {
     const s = await setup([]);
     await started;
+    const startsBeforeClose = socialStart.mock.calls.length;
+    expect(startsBeforeClose).toBe(1);
     const closing = s.server.closeResources();
     expect(s.server.closeResources()).toBe(closing);
     let closed = false;
@@ -1690,7 +1694,7 @@ it("joins an accepted listening phase before resource shutdown and prevents late
     expect(closed).toBe(false);
     release();
     await closing;
-    expect(socialStart).not.toHaveBeenCalled();
+    expect(socialStart).toHaveBeenCalledTimes(startsBeforeClose);
   } finally {
     release?.();
     attachmentStart.mockRestore();
@@ -4431,7 +4435,9 @@ describe("remote host API", () => {
       { type: "test" },
     );
     const loadedBlockIds = loaded.session.blocks.map((block) => block.id);
+    const baseline = await s.call("sessions.sync", { sessionId: created.sessionId });
     const delta = await s.call("sessions.sync", {
+      sourceEpoch: baseline.value.result.value.sourceEpoch,
       sessionId: created.sessionId,
       revision: base.revision,
       partial: true,
@@ -4454,6 +4460,7 @@ describe("remote host API", () => {
     expect(
       (
         await s.call("sessions.sync", {
+          sourceEpoch: baseline.value.result.value.sourceEpoch,
           sessionId: created.sessionId,
           partial: true,
           loadedBlockIds: ["not-present"],
@@ -4545,7 +4552,9 @@ describe("remote host API", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
+    const baseline = await s.call("sessions.sync", { sessionId: created.sessionId });
     const waiting = s.call("sessions.sync", {
+      sourceEpoch: baseline.value.result.value.sourceEpoch,
       sessionId: created.sessionId,
       revision: created.revision,
       waitMs: 10_000,

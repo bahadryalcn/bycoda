@@ -1,4 +1,4 @@
-import type { ProviderChild } from "./provider-child";
+import type { ProviderChild } from "./providers/provider-child";
 
 /** A healthy CLI can take many seconds to start reading stdin; only a stuck pipe is a failure. */
 const PROVIDER_WRITE_TIMEOUT_MS = 90_000;

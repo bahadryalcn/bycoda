@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   locked: false,
   privacy: { lock: {} } as { lock: object },
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => false }));
 vi.mock("../../connections/model/connections", () => ({
   remoteRequest: mocks.remoteRequest,
 }));

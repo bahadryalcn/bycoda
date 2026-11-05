@@ -1,0 +1,587 @@
+import { HostStore } from "../store";
+import { WorkspaceBootstrapReceipts } from "./workspace-bootstrap-receipts";
+import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, expect, it, vi } from "vitest";
+import {
+  WorkspaceBootstrapService,
+  runBootstrapCommand,
+  workspaceEnvironmentVariables,
+  type BootstrapCommand,
+} from "./workspace-bootstrap";
+import { DevPortLeases } from "../dev-servers/dev-port-leases";
+
+const roots: string[] = [];
+const lock = "lockfileVersion: '9.0'\n";
+const fingerprint = createHash("sha256").update(lock).digest("hex");
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), "bycoda-bootstrap-"));
+  roots.push(root);
+  await writeFile(join(root, "package.json"), JSON.stringify({ packageManager: "pnpm@12.15.0" }));
+  await writeFile(join(root, "pnpm-lock.yaml"), lock);
+  await mkdir(join(root, "src-tauri"));
+  await writeFile(join(root, "src-tauri", "Cargo.lock"), "cargo lock");
+  return root;
+}
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
+const request = {
+  workspaceId: "workspace",
+  lockfileFingerprint: fingerprint,
+  idempotencyKey: "request",
+};
+
+it("deduplicates concurrent preparation by workspace and lock identity and uses pinned frozen pnpm without overriding its shared store", async () => {
+  const root = await fixture();
+  const run = vi.fn<BootstrapCommand>(async ({ args }) =>
+    args[0] === "--version" ? "12.15.0" : "",
+  );
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    runCommand: run,
+  });
+  const [one, two] = await Promise.all([
+    service.prepare(request),
+    service.prepare({ ...request, idempotencyKey: "other" }),
+  ]);
+  expect(one.id).toBe(two.id);
+  expect(await service.wait(one.id)).toMatchObject({ state: "ready" });
+  expect(run.mock.calls.map(([command]) => command.args)).toEqual([
+    ["--version"],
+    ["install", "--frozen-lockfile", "--prefer-offline"],
+  ]);
+  expect((await service.prepare(request)).id).toBe(one.id);
+});
+
+it("runs the pinned package manager against a real isolated workspace with a frozen lockfile", async () => {
+  const root = await fixture();
+  const initialLock =
+    "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n";
+  await writeFile(join(root, "pnpm-lock.yaml"), initialLock);
+  // The pinned executable must not let its self-management shim rewrite source
+  // metadata during a read-only version probe.
+  await runBootstrapCommand({
+    command: "pnpm",
+    args: ["--version"],
+    cwd: root,
+    signal: new AbortController().signal,
+  });
+  const actualLock = await readFile(join(root, "pnpm-lock.yaml"), "utf8");
+  expect(actualLock).toBe(initialLock);
+  const service = new WorkspaceBootstrapService({ resolveWorkspace: async () => root });
+  const operation = await service.prepare({
+    ...request,
+    lockfileFingerprint: createHash("sha256").update(actualLock).digest("hex"),
+  });
+  const result = await service.wait(operation.id);
+  expect(result, result.error?.code).toMatchObject({ state: "ready" });
+  expect(await readFile(join(root, "pnpm-lock.yaml"), "utf8")).toBe(actualLock);
+}, 30_000);
+
+it("cancels active preparation, awaits its child settlement, then permits an explicit retry", async () => {
+  const root = await fixture();
+  let started!: () => void;
+  const installing = new Promise<void>((done) => {
+    started = done;
+  });
+  let settleChild!: () => void;
+  const childClosed = new Promise<void>((done) => {
+    settleChild = done;
+  });
+  let sawAbort!: () => void;
+  const aborted = new Promise<void>((done) => {
+    sawAbort = done;
+  });
+  const run: BootstrapCommand = async ({ args, signal }) => {
+    if (args[0] === "--version") return "12.15.0";
+    signal.addEventListener("abort", sawAbort, { once: true });
+    started();
+    // An abort notification alone does not prove physical settlement.
+    await childClosed;
+    return "";
+  };
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    runCommand: run,
+  });
+  const first = await service.prepare(request);
+  await installing;
+  let cancellationSettled = false;
+  const cancellation = service.cancel(first.id).then((status) => {
+    cancellationSettled = true;
+    return status;
+  });
+  await aborted;
+  expect(cancellationSettled).toBe(false);
+  settleChild();
+  expect(await cancellation).toMatchObject({ state: "cancelled" });
+  const retried = await service.prepare({ ...request, idempotencyKey: "retry" });
+  expect(retried.id).not.toBe(first.id);
+  // A retry can also be cancelled while resolving its workspace.
+  await service.cancel(retried.id);
+});
+
+it("rejects stale locks, package-manager mismatches and dependency junctions before install", async () => {
+  const root = await fixture();
+  const run = vi.fn<BootstrapCommand>(async () => "12.14.0");
+  let service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    runCommand: run,
+  });
+  let result = await service.prepare({ ...request, lockfileFingerprint: "stale" });
+  expect(await service.wait(result.id)).toMatchObject({
+    state: "failed",
+    error: { code: "LOCKFILE_CHANGED" },
+  });
+  result = await service.prepare({ ...request, idempotencyKey: "current" });
+  expect(await service.wait(result.id)).toMatchObject({
+    state: "failed",
+    error: { code: "PNPM_VERSION_MISMATCH" },
+  });
+  const target = await fixture();
+  await symlink(
+    target,
+    join(root, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  service = new WorkspaceBootstrapService({ resolveWorkspace: async () => root, runCommand: run });
+  result = await service.prepare(request);
+  expect(await service.wait(result.id)).toMatchObject({
+    state: "failed",
+    error: { code: "NODE_MODULES_LINK" },
+  });
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+it("detects lockfile changes during installation without exposing installer diagnostics", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    runCommand: async ({ args }) => {
+      if (args[0] === "--version") return "12.15.0";
+      await writeFile(join(root, "pnpm-lock.yaml"), "changed");
+      return "token=secret";
+    },
+  });
+  const result = await service.prepare(request);
+  expect(await service.wait(result.id)).toMatchObject({
+    state: "failed",
+    error: { code: "LOCKFILE_CHANGED" },
+  });
+  expect(JSON.stringify(await service.status(result.id))).not.toContain("secret");
+});
+
+it("isolates two runs and serializes keyed shared build outputs before copying immutable executables", async () => {
+  const root = await fixture();
+  const secondRoot = await fixture();
+  const cacheRoot = join(root, "shared-cache");
+  const waits: string[] = [];
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async (id) => (id === "workspace" ? root : secondRoot),
+    sharedCargoTargetRoot: cacheRoot,
+    toolchain: "rustc-version-1",
+    buildLeasePollMs: 10,
+    onBuildCacheState: (_, state) => waits.push(state),
+  });
+  const leases = new DevPortLeases();
+  const onePorts = await leases.acquire({
+    workspaceId: "workspace",
+    runId: "one",
+    kinds: ["vite", "host"],
+  });
+  const twoPorts = await leases.acquire({
+    workspaceId: "other",
+    runId: "two",
+    kinds: ["vite", "host"],
+  });
+  try {
+    const one = await service.devEnvironment({
+      workspaceId: "workspace",
+      runId: "one",
+      ports: onePorts,
+    });
+    const two = await service.devEnvironment({
+      workspaceId: "other",
+      runId: "two",
+      ports: twoPorts,
+    });
+    expect(one.cargoTargetDir).toBe(two.cargoTargetDir);
+    expect(one.hostDataPath).not.toBe(two.hostDataPath);
+    expect(one.desktopDataPath).not.toBe(two.desktopDataPath);
+    expect(one.instanceId).not.toBe(two.instanceId);
+    expect(workspaceEnvironmentVariables(one)).toMatchObject({
+      BYCODA_HOST_DIR: one.hostDataPath,
+      BYCODA_DEV_PROFILE_ID: one.instanceId,
+    });
+    let release!: () => void;
+    let entered!: () => void;
+    const ready = new Promise<void>((done) => {
+      entered = done;
+    });
+    const blocked = new Promise<void>((done) => {
+      release = done;
+    });
+    const controller = new AbortController();
+    const first = service.withBuildCache(
+      "workspace",
+      controller.signal,
+      async ({ cargoTargetDir }) => {
+        entered();
+        await blocked;
+        const source = join(cargoTargetDir, "bycoda.exe");
+        await writeFile(source, "completed executable");
+        return service.copyExecutable({
+          workspaceId: "workspace",
+          runId: "one",
+          sourcePath: source,
+        });
+      },
+    );
+    await ready;
+    let secondEntered = false;
+    const second = service.withBuildCache("other", controller.signal, async () => {
+      secondEntered = true;
+    });
+    await vi.waitFor(() => expect(waits).toContain("waitingForBuildCache"));
+    expect(secondEntered).toBe(false);
+    release();
+    const copied = await first;
+    await second;
+    expect(await readFile(copied, "utf8")).toBe("completed executable");
+    expect(copied).toContain(one.executableRunDir);
+    await expect(
+      service.copyExecutable({
+        workspaceId: "workspace",
+        runId: "one",
+        sourcePath: join(one.cargoTargetDir, "bycoda.exe"),
+      }),
+    ).rejects.toMatchObject({ code: "EEXIST" });
+  } finally {
+    await leases.release(onePorts.id);
+    await leases.release(twoPorts.id);
+  }
+});
+
+it("cancels a queued cross-process build lease without entering or removing the holder's lock", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const controller = new AbortController();
+  let release!: () => void;
+  let entered!: () => void;
+  const enteredPromise = new Promise<void>((done) => {
+    entered = done;
+  });
+  const first = service.withBuildCache("workspace", new AbortController().signal, async () => {
+    entered();
+    await new Promise<void>((done) => {
+      release = done;
+    });
+  });
+  await enteredPromise;
+  const build = vi.fn(async () => {});
+  const waiting = service.withBuildCache("workspace", controller.signal, build);
+  controller.abort();
+  await expect(waiting).rejects.toBeDefined();
+  expect(build).not.toHaveBeenCalled();
+  release();
+  await first;
+});
+
+it("recovers a matching abandoned generation once, even when its PID was reused", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const nonce = "2b6a8d07-d77b-4b05-a00d-7fb50a91aa01";
+  const db = new DatabaseSync(join(target, ".bycoda-build-lease.db"));
+  db.prepare("UPDATE lease_generation SET nonce=? WHERE id=1").run(nonce);
+  db.close();
+  await writeFile(
+    join(target, ".bycoda-build-lease"),
+    JSON.stringify({ version: 2, phase: "owned", nonce, pid: process.pid, workspaceId: "old" }),
+  );
+  let active = 0;
+  let maximum = 0;
+  const build = async () => {
+    maximum = Math.max(maximum, ++active);
+    await new Promise((done) => setTimeout(done, 30));
+    active--;
+  };
+  await Promise.all([
+    service.withBuildCache("workspace", new AbortController().signal, build),
+    service.withBuildCache("workspace", new AbortController().signal, build),
+  ]);
+  expect(maximum).toBe(1);
+});
+
+it.each(["empty temporary", "synced temporary", "committed generation", "published sentinel"])(
+  "recovers safely after interruption at %s",
+  async (phase) => {
+    const root = await fixture();
+    const service = new WorkspaceBootstrapService({
+      resolveWorkspace: async () => root,
+      buildLeasePollMs: 10,
+    });
+    const target = await service.withBuildCache(
+      "workspace",
+      new AbortController().signal,
+      async (env) => env.cargoTargetDir,
+    );
+    const nonce = "2b6a8d07-d77b-4b05-a00d-7fb50a91aa03";
+    const owner = JSON.stringify({ version: 2, nonce, pid: process.pid, workspaceId: "old" });
+    await writeFile(
+      join(target, `.bycoda-build-lease-${nonce}.tmp`),
+      phase === "empty temporary" ? "" : owner,
+    );
+    if (phase === "committed generation" || phase === "published sentinel") {
+      const db = new DatabaseSync(join(target, ".bycoda-build-lease.db"));
+      db.exec("PRAGMA synchronous=FULL");
+      db.prepare("UPDATE lease_generation SET nonce=? WHERE id=1").run(nonce);
+      db.close();
+    }
+    if (phase === "published sentinel") await writeFile(join(target, ".bycoda-build-lease"), owner);
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async () => "built"),
+    ).resolves.toBe("built");
+  },
+);
+
+it("waits for a live kernel witness and recovers after its process exits", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const nonce = "2b6a8d07-d77b-4b05-a00d-7fb50a91aa02";
+  const dbPath = join(target, ".bycoda-build-lease.db");
+  const db = new DatabaseSync(dbPath);
+  db.prepare("UPDATE lease_generation SET nonce=? WHERE id=1").run(nonce);
+  db.close();
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      "const {DatabaseSync}=require('node:sqlite'); const d=new DatabaseSync(process.argv[1]); d.exec('BEGIN EXCLUSIVE'); process.stdout.write('ready'); setInterval(()=>{},1000)",
+      dbPath,
+    ],
+    { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
+  );
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.once("data", () => resolve());
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error("witness exited early")));
+  });
+  await writeFile(
+    join(target, ".bycoda-build-lease"),
+    JSON.stringify({ version: 2, phase: "owned", nonce, pid: child.pid, workspaceId: "old" }),
+  );
+  const build = vi.fn(async () => {});
+  const waiting = service.withBuildCache("workspace", new AbortController().signal, build);
+  try {
+    await new Promise((done) => setTimeout(done, 50));
+    expect(build).not.toHaveBeenCalled();
+  } finally {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill();
+    await exited;
+  }
+  await waiting;
+  expect(build).toHaveBeenCalledOnce();
+});
+
+it("holds an uncertain generation when its callback fails with a surviving child", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  let target = "";
+  try {
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async (environment) => {
+        target = environment.cargoTargetDir;
+        throw new Error("builder connection lost");
+      }),
+    ).rejects.toThrow("builder connection lost");
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+    ).rejects.toThrow("previous build completion is unknown");
+    expect(child.exitCode).toBeNull();
+    await unlink(join(target, ".bycoda-build-lease"));
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+    ).rejects.toThrow("previous build completion is unknown");
+  } finally {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill();
+    await exited;
+  }
+});
+
+it("recovers only an exact-generation verified retirement receipt under the cache witness", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  let receipt!: { nonce: string; path: string };
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async (env) => {
+      receipt = env.buildReceipt;
+      throw new Error("lost owner");
+    }),
+  ).rejects.toThrow("lost owner");
+  await writeFile(
+    receipt.path,
+    JSON.stringify({ version: 1, nonce: "wrong", retirement: "verified" }),
+  );
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+  ).rejects.toThrow("previous build completion is unknown");
+  await writeFile(receipt.path, "{partial");
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async () => {}),
+  ).rejects.toThrow("previous build completion is unknown");
+  await writeFile(
+    receipt.path,
+    JSON.stringify({ version: 1, nonce: receipt.nonce, retirement: "verified" }),
+  );
+  expect(
+    await service.withBuildCache(
+      "workspace",
+      new AbortController().signal,
+      async () => "recovered",
+    ),
+  ).toBe("recovered");
+  await expect(readFile(receipt.path)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("retires only each settled build's exact receipt and leaves unrelated files", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({ resolveWorkspace: async () => root });
+  const seen: string[] = [];
+  for (let index = 0; index < 2; index++) {
+    await service.withBuildCache(
+      "workspace",
+      new AbortController().signal,
+      async ({ buildReceipt, cargoTargetDir }) => {
+        seen.push(buildReceipt.path);
+        await writeFile(join(cargoTargetDir, ".bycoda-build-retired-unrelated.json"), "keep");
+        await writeFile(
+          buildReceipt.path,
+          JSON.stringify({ version: 1, nonce: buildReceipt.nonce, retirement: "verified" }),
+        );
+      },
+    );
+  }
+  expect(seen[0]).not.toBe(seen[1]);
+  for (const path of seen) await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(
+    await readFile(
+      join(root, "temp/build/cargo-target/.bycoda-build-retired-unrelated.json"),
+      "utf8",
+    ),
+  ).toBe("keep");
+});
+
+it.each([
+  "corrupt",
+  JSON.stringify({ pid: 123 }),
+  JSON.stringify({ version: 2, phase: "owned", nonce: "wrong", pid: 123, workspaceId: "old" }),
+])("retains unknown sentinel %s when a waiter is cancelled", async (sentinel) => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const path = join(target, ".bycoda-build-lease");
+  await writeFile(path, sentinel);
+  const abort = new AbortController();
+  const build = vi.fn(async () => {});
+  const waiting = service.withBuildCache("workspace", abort.signal, build);
+  await new Promise((done) => setTimeout(done, 50));
+  abort.abort();
+  await expect(waiting).rejects.toBeDefined();
+  expect(await readFile(path, "utf8")).toBe(sentinel);
+  expect(build).not.toHaveBeenCalled();
+});
+
+
+it("bounds settled bootstrap hot snapshots with exact durable replay after eviction and restart", async () => {
+  const root = await fixture();
+  const store = new HostStore(join(root, "bootstrap-host.db"));
+  try {
+    const receipts = new WorkspaceBootstrapReceipts(store);
+    const run = vi.fn<BootstrapCommand>(async ({ args }) => args[0] === "--version" ? "12.15.0" : "");
+    const options = { receipts, resolveWorkspace: async () => root, runCommand: run };
+    const service = new WorkspaceBootstrapService(options);
+    let original = "";
+    for (let index = 0; index < 130; index++) {
+      const value = await service.prepare({ ...request, workspaceId: `workspace-${index}` });
+      if (!index) original = value.id;
+      expect((await service.wait(value.id)).state).toBe("ready");
+    }
+    const cache = service as unknown as { operations: Map<string, unknown>; identities: Map<string, unknown>; requests: Map<string, unknown> };
+    expect(cache.operations.size).toBeLessThanOrEqual(128);
+    expect(cache.operations.has(original)).toBe(false);
+    expect(cache.identities.size).toBe(0);
+    expect(cache.requests.size).toBe(0);
+    const before = run.mock.calls.length;
+    expect((await service.status(original)).state).toBe("ready");
+    const restarted = new WorkspaceBootstrapService(options);
+    expect((await restarted.prepare({ ...request, workspaceId: "workspace-0" })).id).toBe(original);
+    expect(run.mock.calls).toHaveLength(before);
+    await expect(restarted.prepare({ ...request, workspaceId: "workspace-0", lockfileFingerprint: "changed" })).rejects.toThrow("already used");
+  } finally {
+    await store.close();
+  }
+});
+
+it("keeps rejected-command ownership held across restart without replaying install", async () => {
+  const root = await fixture();
+  const store = new HostStore(join(root, "bootstrap-held-host.db"));
+  try {
+    const receipts = new WorkspaceBootstrapReceipts(store);
+    const run = vi.fn<BootstrapCommand>(async () => { throw new Error("physical completion unknown"); });
+    const options = { receipts, resolveWorkspace: async () => root, runCommand: run };
+    const service = new WorkspaceBootstrapService(options);
+    const original = await service.prepare(request);
+    expect((await service.wait(original.id)).state).toBe("failed");
+    const restarted = new WorkspaceBootstrapService(options);
+    expect((await restarted.prepare(request)).id).toBe(original.id);
+    expect((await restarted.status(original.id)).error?.code).toBe("BOOTSTRAP_OWNER_UNRESOLVED");
+    await expect(restarted.wait(original.id)).rejects.toThrow("unresolved original owner");
+    await expect(restarted.prepare({ ...request, idempotencyKey: "replacement" })).rejects.toThrow("already running");
+    expect(run).toHaveBeenCalledTimes(1);
+  } finally {
+    await store.close();
+  }
+});

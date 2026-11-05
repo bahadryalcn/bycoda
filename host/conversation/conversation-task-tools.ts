@@ -3,7 +3,7 @@ import { hasUnmergedBranch, type HostTask } from "../../src/features/tasks/model
 /** S1 applies these after untrusted task arguments at the agent-tool boundary.
  * They never grant delivery. Review-failure correction does not depend on them:
  * every reviewed task corrects itself up to MAX_REPAIR_ATTEMPTS, then finishes
- * with owner notices instead of blocking (host/tasks.ts repairOrBlock). */
+ * with owner notices instead of blocking (host/tasks/tasks.ts repairOrBlock). */
 export const CONVERSATION_TASK_EXECUTION_DEFAULTS = Object.freeze({
   autoMerge: false,
   continueUntilDone: false,

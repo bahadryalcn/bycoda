@@ -5,8 +5,8 @@ import {
   type ConversationDesktopControlPorts,
 } from "./conversation-desktop-control-tools";
 import { conversationToolCatalog, validateConversationTool } from "./conversation-tools";
-import { createManagedToolCatalog } from "../tool-management";
-import type { RuntimeLogPrincipal, RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import { createManagedToolCatalog } from "./tool-management";
+import type { RuntimeLogPrincipal, RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import type { DesktopControlResponse } from "../../src/shared/model/host-contracts/desktop-control";
 import { voiceThreadToolAllowed } from "../../src/shared/model/voiceToolScope";
 

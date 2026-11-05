@@ -14,7 +14,7 @@ const code = Array.from(
   (_, i) => `const value${i} = { text: "line ${i}", count: ${i} };`,
 ).join("\n");
 const table =
-  "| File | Result | Details |\n| --- | --- | --- |\n| src/features/long-file-name.tsx | passed | A longer explanation that wraps within a readable column. |\n| host/checkpoints.ts | passed | More details |";
+  "| File | Result | Details |\n| --- | --- | --- |\n| src/features/long-file-name.tsx | passed | A longer explanation that wraps within a readable column. |\n| host/checkpoints/checkpoints.ts | passed | More details |";
 function Fixture() {
   const [lightbox, setLightbox] = useState(false);
   const [text, setText] = useState("```typescript\n" + code.slice(0, 500));

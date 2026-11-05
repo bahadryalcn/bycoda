@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostTasks } from "../../tasks";
-import { HostGoals } from "../../goals";
+import { HostTasks } from "../../tasks/tasks";
+import { HostGoals } from "../../goals/goals";
 import { HostAssistant, type AssistantPorts } from "../service";
 import { HostAssistantOwnerQuestions } from "./assistant-owner-questions";
 import { assistantDomain } from "../../domains/assistant/service";
@@ -17,7 +17,7 @@ import {
   validateAssistantOwnerAnswer,
   type AssistantOwnerQuestion,
 } from "../../../src/shared/model/assistantOwnerQuestions";
-import type { HostProvider } from "../../providers";
+import type { HostProvider } from "../../providers/providers";
 import { chiefActions } from "./assistant-text";
 const closes: Array<() => Promise<void>> = [];
 afterEach(async () => {

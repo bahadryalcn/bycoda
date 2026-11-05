@@ -41,7 +41,7 @@ native/live-provider qualification are separate from browser fixture checks.
   contracts and bounded Git stash/pull inside `host/domains/git/service.ts` locks.
 - `host/conversation/conversation-thread-work-tools.ts`: real assistant-thread task/goal/
   automation routes, explicit execution settings and durable uncertain receipts.
-- `host/conversation/conversation-thread-crew-tools.ts`, `host/crews.ts`: real-thread Crew
+- `host/conversation/conversation-thread-crew-tools.ts`, `host/crews/crews.ts`: real-thread Crew
   reads and native-reviewed canonical controls, separate operation/run identities
   and revision revalidation through model discovery and effect admission.
 - `src/features/assistant/model/useAssistantControlSource.ts`,

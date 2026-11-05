@@ -1,6 +1,6 @@
-import { readHostFile } from "../workspace";
-import { previewInlineVisual } from "../inline-visual-preview";
-import type { BrowserLoader } from "../shared-browser";
+import { readHostFile } from "../workspaces/workspace";
+import { previewInlineVisual } from "./inline-visual-preview";
+import type { BrowserLoader } from "../browser/shared-browser";
 import { inlineVisualSnapshot } from "../../src/features/sessions/model/inlineVisual";
 
 const schema = {

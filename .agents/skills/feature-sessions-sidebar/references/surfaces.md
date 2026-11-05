@@ -41,7 +41,7 @@ turn marker; `src/features/sessions/data/sessionHistory.ts` and model modules
 `src/app/model/appLifecycle.ts` uses the activity-preserving session write for
 quit/recovery. Native `src-tauri/src/session_store.rs` stores `last_activity_at`
 separately from the update/conflict stamp and orders/cuts off list queries by
-activity. Host `host/desktopSessions.ts` retains interruption and activity in its
+activity. Host `host/desktop/desktopSessions.ts` retains interruption and activity in its
 desktop projection. Existing pre-migration activity falls back to its stored
 update timestamp; do not claim reconstruction of older poisoned timestamps.
 Remote projections in `src/features/connections/model/remoteRailSessions.ts`,
@@ -52,7 +52,7 @@ after schema changes.
 
 Provider-history projection: `src/features/sessions/model/sessionProviderHistory.ts`,
 `src-tauri/src/session_store/provider_history.rs`, `host/store.ts`,
-`host/desktopSessions.ts`; preserve optional summary metadata in remote protocol mappings.
+`host/desktop/desktopSessions.ts`; preserve optional summary metadata in remote protocol mappings.
 Project identity: `src/app/shell/useSessionProjectAppearance.tsx` reuses rail appearance
 resolvers and ActionHost ground. Layout/interaction fixtures: `tests/browser/session-row-layout.spec.ts`.
 

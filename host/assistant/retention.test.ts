@@ -17,8 +17,14 @@ async function fixture() {
   const ports = {
     now: () => now,
     listProjects: async () => [{ id: "project-two", path: dir, name: "Two" }],
+    roomProjectProofsValid: async (proofs: { projectId: string; cwd: string }[]) => {
+      try { return (await Promise.all(proofs.map(async proof => (await store.project(proof.projectId)).cwd === proof.cwd))).every(Boolean); }
+      catch { return false; }
+    },
   };
   await store.ready;
+  const project = await store.addProject(dir, "Two");
+  await store.db.prepare("UPDATE projects SET id='project-two' WHERE id=?").run(project.id);
   let assistant = new HostAssistant(store, ports);
   await assistant.ready;
   closes.push(async () => {
@@ -99,8 +105,10 @@ it("clears an entire conversation beyond the visible page, preserving summary an
   expect(
     (await f.service.request({ op: "snapshot" }, "owner")).snapshot!.threads.find(
       (value) => value.id === thread.id,
-    )!.summary,
-  ).toBe("A retained summary");
+    ),
+  ).toMatchObject({ summary: "", summaryState: { status: "blocked" } });
+  const retained = await f.store.db.prepare("SELECT value FROM assistant_threads WHERE id=?").get(thread.id);
+  expect(JSON.parse(String(retained!.value)).summary).toBe("A retained summary");
   expect(
     (
       await f.service.request({ op: "threads.messages", threadId: other.id }, "owner")

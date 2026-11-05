@@ -8,7 +8,7 @@ alone does not establish runtime support.
 
 ## Implemented service graph and acceptance limits
 
-`host/managed-workspace-runtime.ts` composes the production services once. Startup
+`host/managed/managed-workspace-runtime.ts` composes the production services once. Startup
 reconciles provably stopped Host activities and recovers creation, rewind,
 delivery and removal journals before admitting new writers. Sessions, tasks,
 goals, automations and stewards use authoritative registry execution paths.
@@ -27,7 +27,7 @@ capture, native process/buffer admission and native rewind coordination through
 the trusted transports below. Isolated native acceptance is described below;
 live provider and installed/released acceptance remain separate.
 
-`host/managed-workspaces.e2e.test.ts` exercises the production graph with real
+`host/managed/managed-workspaces.e2e.test.ts` exercises the production graph with real
 temporary Git repositories and SQLite, independently committed sessions,
 rewind/Undo, owner delivery with unrelated dirty target preservation, and
 junction-safe retirement retaining branches and recovery refs. Its providers are
@@ -108,8 +108,8 @@ workspace ID, not its shortened display form. Creation failure never falls back
 to main. Unsupported managed operations on older Hosts require a visible update
 explanation; current-checkout creation uses the existing compatible path.
 
-`host/managed-workspaces.ts` implements branch/directory naming and
-`host/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
+`host/managed/managed-workspaces.ts` implements branch/directory naming and
+`host/git/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
 and the 12-character display ID length; implementations validate Git ref
 components and full ownership.
 
@@ -215,7 +215,7 @@ duplicating a successful push or PR.
 ## RPCs and capabilities
 
 RPC request/response types are frozen in
-[`host/workspace-rpc-contracts.ts`](../../host/workspace-rpc-contracts.ts).
+[`host/workspaces/workspace-rpc-contracts.ts`](../../host/workspaces/workspace-rpc-contracts.ts).
 `host/server.ts` routes owner operations through the shared runtime; delivery and
 publication require authenticated owner transport, not agent credentials.
 
@@ -271,9 +271,9 @@ alone do not establish inclusion.
 | S7     | Instructions, feature cards, maintained guides and acceptance inventory                      |
 
 Records, policy and naming contracts live in
-[`host/workspace-contracts.ts`](../../host/workspace-contracts.ts); service
+[`host/workspaces/workspace-contracts.ts`](../../host/workspaces/workspace-contracts.ts); service
 boundaries live in
-[`host/workspace-service-contracts.ts`](../../host/workspace-service-contracts.ts).
+[`host/workspaces/workspace-service-contracts.ts`](../../host/workspaces/workspace-service-contracts.ts).
 The app consumes type-only mirrors from
 [`src/features/workspaces/model/contracts.ts`](../../src/features/workspaces/model/contracts.ts).
 S2 and S3 acquire S4 execution-activity reservations before destructive Git or
@@ -285,7 +285,7 @@ native, installed or released acceptance.
 
 Tracked project feature cards live under `.agents/skills/feature-<name>/SKILL.md`.
 Their `name` and `description` frontmatter makes them discoverable by the existing
-project skill loader in `host/skills.ts`. Use the
+project skill loader in `host/skills/skills.ts`. Use the
 [card template](../../.agents/skills/feature-card-template/SKILL.md) for a concise
 developer workflow, feature-specific preservation contracts and conditional source
 references. Keep shared architecture here rather than duplicating it in callers.

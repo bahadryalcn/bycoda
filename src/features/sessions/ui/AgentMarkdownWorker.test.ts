@@ -30,15 +30,15 @@ function fixture() {
     close() { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); },
   };
 }
-it("uses explicit pending first paint instead of raw large Markdown", () => {
+it("uses explicit pending first paint instead of raw large Markdown", async () => {
   const f = fixture();
   const text = "**Formatted beginning**\n\n" + "Long paragraph.\n\n".repeat(2500);
   try {
     f.render(text);
     expect(f.container.textContent).toContain("Rendering Markdown");
     expect(f.container.textContent).not.toContain("**Formatted beginning**");
-    ControlledWorker.current.complete();
-    expect(f.container.querySelector("strong")?.textContent).toBe("Formatted beginning");
+    await act(async () => ControlledWorker.current.complete());
+    expect(f.container.querySelector('[data-streamdown="strong"]')?.textContent).toBe("Formatted beginning");
     expect(f.container.querySelector('[aria-busy="true"]')).toBeNull();
   } finally { f.close(); }
 });

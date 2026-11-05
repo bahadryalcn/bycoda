@@ -21,26 +21,26 @@ import {
   canonicalWorkspacePathSync,
   ordinaryWorkspacePath,
   workspacePathKey,
-} from "./workspace-paths";
+} from "./workspaces/workspace-paths";
 import type {
   ManagedWorkspace,
   WorkspaceActivity,
   WorkspaceCleanupPlan,
   WorkspaceRemovalOperation,
   WorkspaceReservation,
-} from "./workspace-contracts";
+} from "./workspaces/workspace-contracts";
 import type {
   ExecutionActivityReservations,
   WorkspaceOwnerAuthorization,
   WorkspaceRegistry,
   WorkspaceRemovalService,
-} from "./workspace-service-contracts";
+} from "./workspaces/workspace-service-contracts";
 import type {
   WorkspaceActivityPersistence,
   WorkspaceActivityReconciliation,
   WorkspaceActivityReconciliationRequest,
-} from "./workspace-activity-store";
-import type { WorkspaceMutation, WorkspaceOperation } from "./workspace-contracts";
+} from "./workspaces/workspace-activity-store";
+import type { WorkspaceMutation, WorkspaceOperation } from "./workspaces/workspace-contracts";
 
 export const sameWorkspacePath = (a: string, b: string) =>
   workspacePathKey(canonicalWorkspaceDirectorySync(a)) ===

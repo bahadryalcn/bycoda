@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { HostDesktopControl, DesktopControlPrincipal } from "../desktop-control-host";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { HostDesktopControl, DesktopControlPrincipal } from "../desktop/desktop-control-host";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import {
   DesktopControlRequestValidationSchema,
   isForbiddenDesktopShortcut,

@@ -18,7 +18,7 @@ import {
   waitForNativePage,
   frozenSourceIdentity,
 } from "./dev-native.mjs";
-import { WorkspaceBootstrapService } from "../../host/workspace-bootstrap.ts";
+import { WorkspaceBootstrapService } from "../../host/workspaces/workspace-bootstrap.ts";
 import { fingerprintFiles } from "./build-info.mjs";
 
 test("a normally closed failing build releases its cache for a retry", async () => {
@@ -80,7 +80,7 @@ test(
   async () => {
     const root = await mkdtemp(join(tmpdir(), "bycoda-build-guardian-crash-"));
     const script = join(root, "parent.mjs");
-    const bootstrapUrl = pathToFileURL(join(process.cwd(), "host/workspace-bootstrap.ts")).href;
+    const bootstrapUrl = pathToFileURL(join(process.cwd(), "host/workspaces/workspace-bootstrap.ts")).href;
     const guardianUrl = pathToFileURL(join(process.cwd(), "host/provider-guardian.ts")).href;
     const worker =
       "const c=require('child_process').spawn(process.execPath,['-e',\"console.log('grand-ready');setInterval(()=>{},1000)\"],{stdio:['ignore','pipe','ignore']}); c.stdout.on('data',()=>console.log('TREE_READY:'+c.pid));setInterval(()=>{},1000)";

@@ -6,7 +6,7 @@ import {
   CONVERSATION_TASK_EXECUTION_DEFAULTS,
 } from "./conversation-task-tools";
 import { HostStore } from "../store";
-import { HostTasks } from "../tasks";
+import { HostTasks } from "../tasks/tasks";
 
 const task = (id: string, patch: Partial<HostTask> = {}): HostTask => ({
   id,

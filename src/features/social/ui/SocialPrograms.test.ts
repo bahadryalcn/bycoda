@@ -397,7 +397,10 @@ it("shares unchanged polling data without rendering and refreshes after hidden t
   const { request, commits } = await render();
   await act(async () => vi.advanceTimersByTimeAsync(10));
   commits.mockClear();
-  for (let i = 0; i < 3; i++) await act(async () => vi.advanceTimersByTimeAsync(5_010));
+  await act(async () => vi.advanceTimersByTimeAsync(5_010));
+  expect(request).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTimeAsync(25_000));
+  for (let i = 0; i < 2; i++) await act(async () => vi.advanceTimersByTimeAsync(30_010));
   expect(request).toHaveBeenCalledTimes(4);
   expect(commits).not.toHaveBeenCalled();
   await act(async () => focusManager.setFocused(false));

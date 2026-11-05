@@ -11,7 +11,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   }
   return nextResolve(specifier, context);
 } });
-const { DesktopSessions } = await import("./desktopSessions.ts");
+const { DesktopSessions } = await import("./desktop/desktopSessions.ts");
 const { createHostNotesDatabaseFactory } = await import("./host-notes-admission.ts");
 let admitted = false;
 process.on("message", ({ id, request, comparison }) => {

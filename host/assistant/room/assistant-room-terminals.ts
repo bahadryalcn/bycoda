@@ -3,8 +3,8 @@ import { isAbsolute } from "node:path";
 import { z } from "zod";
 import { ConversationManagementTools, managementPage, managementReceiptKey, type ManagementPorts } from "../../conversation/conversation-management-tools";
 import { roomOperationInput } from "./assistant-room-operation-input";
-import { scrubRuntimeLogText } from "../../runtime-logs";
-import type { HostTerminals } from "../../terminals";
+import { scrubRuntimeLogText } from "../../execution/runtime-logs";
+import type { HostTerminals } from "../../terminals/terminals";
 
 const id = z.string().min(1).max(200);
 const page = { offset: z.number().int().nonnegative().safe().optional(), limit: z.number().int().min(1).max(100).optional() };

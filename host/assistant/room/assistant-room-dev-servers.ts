@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ConversationManagementTools, managementPage, managementReceiptKey, type ManagementPorts } from "../../conversation/conversation-management-tools";
-import type { DevServerProject } from "../../dev-servers";
-import { scrubRuntimeLogText } from "../../runtime-logs";
+import type { DevServerProject } from "../../dev-servers/dev-servers";
+import { scrubRuntimeLogText } from "../../execution/runtime-logs";
 import { roomOperationInput } from "./assistant-room-operation-input";
 
 const reads = new Set(["devServers.list", "devServers.details", "devServers.logs", "devServers.operation.status"]);

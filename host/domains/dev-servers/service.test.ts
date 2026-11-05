@@ -5,9 +5,9 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { spawn, ChildProcess, SpawnOptions } from "node:child_process";
-import { DevServersService, type DevServerProcessDiscovery } from "../../dev-servers";
-import { DevPortLeases } from "../../dev-port-leases";
-import { DevServerAccess } from "../../dev-server-access";
+import { DevServersService, type DevServerProcessDiscovery } from "../../dev-servers/dev-servers";
+import { DevPortLeases } from "../../dev-servers/dev-port-leases";
+import { DevServerAccess } from "../../dev-servers/dev-server-access";
 import * as dto from "../../../src/shared/model/host-contracts/dev-servers";
 import { createDevServersService, type DevServersContext } from "./service";
 

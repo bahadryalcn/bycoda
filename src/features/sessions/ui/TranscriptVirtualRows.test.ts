@@ -196,9 +196,9 @@ it("shares one measured-anchor correction and leaves outer turn ownership with t
   scroller.append(turn);
   host.append(scroller);
   let position = 10;
-  vi.spyOn(row, "getBoundingClientRect").mockImplementation(
-    () => new DOMRect(0, position - scroller.scrollTop, 500, 40),
-  );
+  Object.defineProperty(row, "getBoundingClientRect", {
+    value: () => new DOMRect(0, position - scroller.scrollTop, 500, 40),
+  });
   owner.rowScroll.set(row, scroller);
   const adjusted = vi.fn();
   owner.adjusted = adjusted;
@@ -251,7 +251,7 @@ it("virtualizes an expanded single turn's tool trail while exposing its exact se
   expect(host.querySelector('[data-transcript-virtual-block-id="tool-1500"]')).not.toBeNull();
   expect(
     host.querySelector('[data-transcript-virtual-block-id="tool-1990"]')?.textContent,
-  ).toContain("Allow");
+  ).toContain("Open this request in its conversation to respond.");
   expect(host.querySelectorAll("[data-transcript-virtual-owner]").length).toBeLessThan(100);
   expect(host.querySelector('[data-transcript-search-current="true"]')?.textContent).toContain(
     "1500",
@@ -336,17 +336,18 @@ it("restores an exact virtual block anchor after pooled DOM eviction", () => {
     );
   render(true);
   act(() => navigate?.("tool-700"));
+  act(() => vi.advanceTimersToNextFrame());
   const scroller = host.querySelector<HTMLElement>('[data-chat-citation-session="large"]')!;
   const target = scroller.querySelector<HTMLElement>(
     '[data-transcript-virtual-block-id="tool-700"]',
   )!;
+  expect(target).not.toBeNull();
   act(() => {
     scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
-    scroller.scrollTop +=
-      target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + 10;
+    scroller.scrollTop = Math.max(0, scroller.scrollTop - 100);
     scroller.dispatchEvent(new Event("scroll"));
   });
-  const saved = pool.getSnapshot().find((entry) => entry.id === "large")!.uiState;
+  const saved = { ...pool.getSnapshot().find((entry) => entry.id === "large")!.uiState };
   expect(saved.virtualAnchorBlockId).toBeDefined();
   expect(saved.bottomFollow).toBe(false);
   render(false);

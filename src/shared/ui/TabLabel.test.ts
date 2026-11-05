@@ -46,9 +46,10 @@ it("fades only real overflow, remeasures resize/rename and disconnects observers
     textWidth = 160;
     act(() => root.render(createElement(TabLabel, null, "A longer renamed tab")));
     expect(label.getAttribute("data-overflow")).toBe("true");
-    expect(observers[0].disconnect).toHaveBeenCalledOnce();
+    expect(observers).toHaveLength(1);
+    expect(observers[0].disconnect).not.toHaveBeenCalled();
     act(() => root.render(null));
-    expect(observers[1].disconnect).toHaveBeenCalledOnce();
+    expect(observers[0].disconnect).toHaveBeenCalledOnce();
   } finally {
     act(() => root.unmount());
     vi.restoreAllMocks();

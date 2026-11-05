@@ -1,12 +1,12 @@
 import { z } from "zod";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
-import type { ManagedWorkspace, WorkspaceOwner } from "../workspace-contracts";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
+import type { ManagedWorkspace, WorkspaceOwner } from "../workspaces/workspace-contracts";
 import type {
   BranchDeliveryService,
   WorkspaceFeatureClaims,
   WorkspaceRegistry,
   WorkspaceRemovalService,
-} from "../workspace-service-contracts";
+} from "../workspaces/workspace-service-contracts";
 
 const text = z
   .string()

@@ -173,7 +173,7 @@ export function DeliveryProgressNotice({
       <div
         className="flex flex-wrap items-center gap-x-2 gap-y-1"
       >
-        <LiveText className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]" text={t(summary)} />
+        <LiveText className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]" text={t(summary)} mode={stage === "rejected" ? "assertive" : "polite"} />
         {pending ? (
           <span className="shrink-0 tabular-nums text-(--ui-text-muted)">
             {t("{p0}s elapsed", { p0: elapsed })}

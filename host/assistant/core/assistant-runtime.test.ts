@@ -9,8 +9,8 @@ vi.mock("../chief/assistant-chief-context", () => ({
 }));
 import { assistantExecutionPorts, readManualSessionUsage } from "./assistant-runtime";
 import type { HostStore } from "../../store";
-import type { HostGoals } from "../../goals";
-import type { HostTasks } from "../../tasks";
+import type { HostGoals } from "../../goals/goals";
+import type { HostTasks } from "../../tasks/tasks";
 import type { AsyncHostNotes } from "../../host-notes-async";
 import type { AssistantProfile, AssistantJob } from "../../../src/shared/model/host-contracts/assistant";
 function fixture() {

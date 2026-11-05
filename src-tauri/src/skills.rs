@@ -873,7 +873,7 @@ fn slug_name(raw: &str) -> String {
 
 // ---- Copying a skill between machines -------------------------------------
 // `skill_export` / `skill_import` have the same names, arguments and results as
-// the host's workspace commands (host/skills.ts), so one UI call works on
+// the host's workspace commands (host/skills/skills.ts), so one UI call works on
 // either machine.
 
 const MAX_TRANSFER_FILES: usize = 200;
@@ -1106,7 +1106,7 @@ const WINDOWS_DEVICE_NAMES: [&str; 22] = [
 ];
 
 /// A relative, `/`-separated path that stays inside the skill folder on every
-/// platform (the same rules as host/skills.ts).
+/// platform (the same rules as host/skills/skills.ts).
 fn validate_transfer_path(path: &str) -> Result<(), String> {
     let bad = |why: &str| Err(format!("Cannot copy file \"{path}\": {why}."));
     if path.is_empty() || path.len() > MAX_TRANSFER_PATH_LEN {

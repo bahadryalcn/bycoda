@@ -279,6 +279,33 @@ describe("adoptLocalProjects", () => {
     expect(loadRecents()).toEqual([]);
   });
 
+  it("rechecks cancellation inside a queued privacy mutation", async () => {
+    const sync = await loadWithOwnHost();
+    applyRemoteProjectRecords(PEER, [pathRecord(SHOP, "env-own")]);
+    const privacy = await import("../../group-lock/model/roomPrivacyProjection");
+    let release!: () => void;
+    let entered!: () => void;
+    const queued = new Promise<void>((resolve) => { entered = resolve; });
+    const waiting = new Promise<void>((resolve) => { release = resolve; });
+    const mutation = vi.spyOn(privacy, "withRoomPrivacyMutation").mockImplementation(async <T>(write: (token: import("../../group-lock/model/roomPrivacyProjection").PrivacyMutationToken) => T | Promise<T>): Promise<T> => {
+      entered();
+      await waiting;
+      return write({} as never);
+    });
+    let current = true;
+    try {
+      const adopting = sync.adoptLocalProjects(async () => true, () => current);
+      await queued;
+      current = false;
+      release();
+      await expect(adopting).rejects.toThrow("SYNC_STOPPED");
+      expect(loadRecents()).toEqual([]);
+    } finally {
+      release();
+      mutation.mockRestore();
+    }
+  });
+
   it("adds a folder on this machine that another desktop opened remotely, once", async () => {
     const sync = await loadWithOwnHost();
     const pc = target("env-own");

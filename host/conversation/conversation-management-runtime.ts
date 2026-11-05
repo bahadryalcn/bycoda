@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import type { GlobalManagementPrincipal } from "./conversation-management-tools";
 import { withTimeout } from "../../src/shared/lib/withTimeout";
 const integer = { type: "integer", minimum: 0 };

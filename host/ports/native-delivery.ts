@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HostStore } from "../store";
-import { createNativeDeliveryStore, type NativeDeliveryKind } from "../native-delivery-store";
+import { createNativeDeliveryStore, type NativeDeliveryKind } from "../native-delivery/native-delivery-store";
 import type {
   NativeDeliveryOwnerPorts,
   NativeBufferDeliveryBinding,

@@ -1,10 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { ConversationThreadWorkTools } from "./conversation-thread-work-tools";
 import type { HostStore } from "../store";
-import type { HostTasks } from "../tasks";
-import type { HostGoals } from "../goals";
-import type { HostAutomations } from "../automations";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { HostTasks } from "../tasks/tasks";
+import type { HostGoals } from "../goals/goals";
+import type { HostAutomations } from "../automations/automations";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 
 function fixture() {
   const receipts = new Map<string, string>();

@@ -28,7 +28,7 @@ import type {
   ManagedWorkspace,
   WorkspaceOperation,
   WorkspaceRemovalOperation,
-} from "./workspace-contracts";
+} from "./workspaces/workspace-contracts";
 import type { WorkspaceCleanupDependencies } from "./workspace-cleanup";
 
 const roots: string[] = [];

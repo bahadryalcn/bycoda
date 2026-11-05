@@ -11,22 +11,22 @@
     "host/assistant/service.ts": {
       "ts-date-toisostring-unguarded": 7
     },
-    "host/attachments.ts": {
+    "host/attachments/attachments.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/automations.ts": {
+    "host/automations/automations.ts": {
       "oxlint/no-restricted-properties": 1
     },
-    "host/branch-delivery.ts": {
+    "host/git/branch-delivery.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/browser-runtime.ts": {
+    "host/browser/browser-runtime.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/checkpoint-leases.ts": {
+    "host/checkpoints/checkpoint-leases.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/checkpoints.ts": {
+    "host/checkpoints/checkpoints.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 1
     },
@@ -40,7 +40,7 @@
     "host/conversation/conversation-file-mutations.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/desktopSessions.ts": {
+    "host/desktop/desktopSessions.ts": {
       "ts-void-promise-without-catch": 3
     },
     "host/devices/device-host.ts": {
@@ -52,19 +52,19 @@
     "host/engine.ts": {
       "ts-void-promise-without-catch": 2
     },
-    "host/expo-go.ts": {
+    "host/devices/expo-go.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/generated-images.ts": {
+    "host/files/generated-images.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/generic-acp.ts": {
+    "host/providers/generic-acp.ts": {
       "oxlint/no-restricted-imports": 1
     },
     "host/git/git-actions.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/handoff-history.ts": {
+    "host/tasks/handoff-history.ts": {
       "oxlint/no-restricted-imports": 2
     },
     "host/host-notes-async.ts": {
@@ -92,40 +92,40 @@
     "host/native-buffer/native-buffer-catalog.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/native-devices.test-support.ts": {
+    "host/devices/native-devices.test-support.ts": {
       "oxlint/no-restricted-imports": 1
     },
     "host/package.mjs": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/provider-activity-retirement.ts": {
+    "host/providers/provider-activity-retirement.ts": {
       "ts-void-promise-without-catch": 1
     },
     "host/provider-process-lifecycle.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/runtime-logs.ts": {
+    "host/execution/runtime-logs.ts": {
       "ts-text-truncate-utf16": 1
     },
     "host/service.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/session-file-revert.ts": {
+    "host/sessions/session-file-revert.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/shared-browser.ts": {
+    "host/browser/shared-browser.ts": {
       "ts-date-toisostring-unguarded": 1
     },
-    "host/shell.ts": {
+    "host/execution/shell.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "host/shellProfiles.ts": {
+    "host/execution/shellProfiles.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/skill-policy.ts": {
+    "host/skills/skill-policy.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/skills.ts": {
+    "host/skills/skills.ts": {
       "oxlint/no-restricted-imports": 1
     },
     "host/social/social-browser-platforms.ts": {
@@ -151,25 +151,25 @@
       "ts-date-toisostring-unguarded": 5,
       "ts-void-promise-without-catch": 1
     },
-    "host/stewards.ts": {
+    "host/stewards/stewards.ts": {
       "oxlint/no-restricted-properties": 1
     },
     "host/storage/snapshots.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/task-budgets.ts": {
+    "host/tasks/task-budgets.ts": {
       "oxlint/no-restricted-properties": 1
     },
-    "host/transcriptPage.ts": {
+    "host/sessions/transcriptPage.ts": {
       "ts-text-truncate-utf16": 1
     },
-    "host/tunnel-process.ts": {
+    "host/tunnels/tunnel-process.ts": {
       "ts-void-promise-without-catch": 5
     },
-    "host/tunnels.ts": {
+    "host/tunnels/tunnels.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/turn-git-history.ts": {
+    "host/git/turn-git-history.ts": {
       "oxlint/no-restricted-imports": 1
     },
     "host/voice/voice-python-install.ts": {
@@ -178,7 +178,7 @@
     "host/workspace-cleanup.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/workspace-commands.ts": {
+    "host/workspaces/workspace-commands.ts": {
       "ts-text-truncate-utf16": 1
     },
     "src-tauri/src/azure_devops.rs": {

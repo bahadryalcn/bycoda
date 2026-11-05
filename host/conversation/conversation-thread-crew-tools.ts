@@ -1,6 +1,6 @@
 import { ConversationManagementTools, type ManagementPorts } from "./conversation-management-tools";
-import type { HostCrews } from "../crews";
-import type { AssistantThreadPrincipal } from "../session-authority";
+import type { HostCrews } from "../crews/crews";
+import type { AssistantThreadPrincipal } from "../sessions/session-authority";
 
 export const THREAD_CREW_READS = new Set([
   "crews.list", "crews.schema", "crews.inspect", "crews.get",

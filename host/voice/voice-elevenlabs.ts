@@ -1,4 +1,4 @@
-import { HttpStreamScope } from "../http-stream-scope";
+import { HttpStreamScope } from "../transport/http/http-stream-scope";
 import { voicePlaybackTimeoutMs } from "../../src/features/voice/model/voicePlaybackDeadline";
 /** ElevenLabs reply voice: only the reply text is sent; PCM streams back. */
 export const ELEVENLABS_MODEL = "eleven_flash_v2_5";

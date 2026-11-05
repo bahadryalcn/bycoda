@@ -13,13 +13,16 @@ database transaction. Rollback publishes neither. Retained source counters
 distinguish deletion and recreation of the same ID; timestamps are not revisions.
 
 The Host producers cover its sessions, tasks, goals and Social records/jobs.
-Crew settings produce scoped invalidation metadata where project ownership is
-known. Native Notes use a transactional outbox. Saved Servers use durable
+Crew settings produce project-scoped invalidations and a separate Host-library
+source for global definitions. Native admission does not change that producer's
+Host identity. Native Notes use a transactional outbox. Saved Servers use durable
 write-ahead metadata beside the canonical file store, with exact-state restart
 reconciliation. Failed reconciliation produces a source gap rather than a false
 atomicity claim. Native library scope is the verified installation identity,
 exclusive of project or account; models cannot choose an installation identity.
-Native-only sessions and unscoped Crew records require their own source owners.
+Native sessions use a distinct `native-session` source, bound to the producer
+installation and exact project directory. They cannot complete the Host-session
+source. Content-block streaming does not produce session metadata events.
 These producers are not a universal event feed. Project scope does not grant access to
 Social account events; account policy remains a separate admission boundary.
 
@@ -30,8 +33,10 @@ source or incomplete snapshot never means an empty complete account.
 ## Room cursors and recovery
 
 `observations.read`, `observations.ack` and `observations.resnapshot` use the
-real Room thread as consumer identity. The caller chooses exactly one project
-or account target. Account consumer identity also includes the trusted grant
+real Room thread as consumer identity. The caller chooses exactly one project,
+account, verified Native library or Host-library target. Native installation
+identity comes from the signed capture, not model input. Account consumer
+identity also includes the trusted grant
 generation, so reenrollment cannot acknowledge an older grant's offered data.
 Models cannot choose another consumer or inject a generation.
 
@@ -48,7 +53,8 @@ snapshots cannot be combined. Larger baselines report incomplete explicitly.
 Recovery establishes a current baseline; missed changes are not replayed.
 
 Project recovery accepts source-qualified task, Host session and goal baselines.
-Each source owns a distinct consumer. Goal pages require current Native captures
+Each source owns a distinct consumer. Native-session recovery additionally binds
+the exact producer installation. Goal pages require current Native captures
 for every contributing project and bind their exact directories to the receipt.
 They cannot clear another source's gap or the aggregate project cursor.
 
@@ -58,7 +64,11 @@ no source coverage. Recovery retains ordered page disclosure receipts and requir
 the original Native source to acknowledge the matching fingerprint and watermark.
 Lost completion stays uncertain without automatic replay. A Native-only recovery
 does not fabricate a journal floor or skip prior journal events. Project recovery
-for additional sources still requires their owning baseline.
+for additional sources still requires their owning baseline. Global Crew uses
+its own Host-library baseline and cannot borrow Native-library coverage. Source
+continuity does not prove zero outbox publication lag. Resnapshot eligibility
+uses read-only cursor inspection; inspecting a source never offers unseen events
+for acknowledgement.
 
 ## Admission and delivery
 

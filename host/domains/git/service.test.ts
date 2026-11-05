@@ -6,7 +6,7 @@ import { execFileAsync as exec } from "../../../src/shared/lib/processExecution.
 import { hostBranches, createHostBranch, switchHostBranch } from "../../git/git-branches";
 import { hostWorktrees, resolveHostWorktreeAsync, createHostWorktree } from "../../git/git-worktrees";
 import { withHostGitMutation } from "../../git/git-mutations";
-import { hostGitAction, hostGitIndex, hostFileDiff } from "../../workspace";
+import { hostGitAction, hostGitIndex, hostFileDiff } from "../../workspaces/workspace";
 import { createHostGitService, type HostGitServicePorts } from "./service";
 
 const roots: string[] = [];

@@ -5,7 +5,7 @@ The optional bycoda adapter targets Vercel Labs agent-desktop source commit
 
 - Source: https://github.com/vercel-labs/agent-desktop/tree/9eb9b296192fcb70bda25e918cd6dd66abfa3d0d
 - License: Apache-2.0, copied unchanged to `LICENSE`.
-- Adapter: `host/desktop-control-host.ts`.
+- Adapter: `host/desktop/desktop-control-host.ts`.
 - Wire contracts: `src/shared/model/host-contracts/desktop-control.ts`.
 
 No upstream executable or agent skill is checked into this directory. The

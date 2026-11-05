@@ -291,11 +291,12 @@ async function startLive(
     return preserveProviderFailure(
       error,
       (async () => {
+        const cleanup = session ? await prepareTextSessionCleanup(session) : undefined;
         await settleProviderRetirements([
           stopping,
           ...(admitted ? [retirements.retire([textProcess])] : []),
         ]);
-        if (session) await deleteTextSession(session);
+        await finishTextSessionCleanup(cleanup);
       })(),
     );
   } finally {
@@ -354,16 +355,22 @@ async function dropLive(
     current.closed = true;
     current.acp.close();
   }
-  const cleanup = current && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(current.acpSessionId)
-    ? await prepareUtilitySessionCleanup(current.process, current.binaryPath,
-      ["--no-auto-update", "sessions", "delete", current.acpSessionId], current.cwd, "grok")
-      .then((run) => ({ run }), (error: unknown) => ({ error }))
-    : undefined;
+  const cleanup = current ? await prepareTextSessionCleanup(current) : undefined;
   const originals = new Set([current?.process, pending]);
   await (expected
     ? retirements.retire(originals)
     : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(originals)]));
   // Stop the writer first so it cannot recreate the session after deletion.
+  await finishTextSessionCleanup(cleanup);
+}
+
+async function prepareTextSessionCleanup(session: LiveText) {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(session.acpSessionId)) return undefined;
+  return prepareUtilitySessionCleanup(session.process, session.binaryPath,
+    ["--no-auto-update", "sessions", "delete", session.acpSessionId], session.cwd, "grok")
+    .then((run) => ({ run }), (error: unknown) => ({ error }));
+}
+async function finishTextSessionCleanup(cleanup: Awaited<ReturnType<typeof prepareTextSessionCleanup>>) {
   if (cleanup && "run" in cleanup) await cleanup.run().catch((error) => console.debug("[bycoda] Grok text session cleanup", error));
   else if (cleanup) console.debug("[bycoda] Grok text session cleanup grant", cleanup.error);
 }

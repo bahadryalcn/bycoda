@@ -63,7 +63,7 @@ jobs:
           node-version: 24
       - run: node scripts/checks/check-repository-hygiene.mjs
       - run: node --test .github/scripts/issue-labels.test.cjs
-      - name: Repository quality gates (format, lint baseline, locales, feature skills, theme colors, UI drift)
+      - name: Repository quality gates (format, lint baseline, locales, feature skills, theme colors, UI drift, code structure)
         run: |
           pnpm format:check
           pnpm lint:baseline
@@ -71,6 +71,7 @@ jobs:
           pnpm check:feature-skills
           pnpm check:colors
           pnpm check:ui-drift
+          pnpm check:structure
 
   preflight:
     # Deterministic contract/format failures stop expensive VM builds and browser

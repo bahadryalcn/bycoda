@@ -3,7 +3,7 @@ import { lstat, open, readlink } from "node:fs/promises";
 import type { Stats } from "node:fs";
 import { relative, sep } from "node:path";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
-import { existingPath, workspacePath } from "../workspace";
+import { existingPath, workspacePath } from "../workspaces/workspace";
 import { hostGitStarts } from "../git/git-start-gate";
 
 const MAX_BYTES = 16 * 1024 * 1024;

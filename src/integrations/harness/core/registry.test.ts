@@ -98,6 +98,14 @@ describe("harness registry", () => {
     nativeEnabled.mockReturnValue(true);
     let next = 0;
     nativeInvoke.mockImplementation(async (command, raw) => {
+      // Protocol fixture: explicitly model the canonical owner admission seam.
+      if (command === "canonical_store_page_token") return "00000000-0000-4000-8000-000000000001";
+      if (command === "canonical_store_session_guard_ready") return true;
+      if (command === "canonical_store_get") return (raw as { scope: string }).scope === "host-session-bindings-migration.v1"
+        ? { key: "legacy-import", version: 1, value: true } : null;
+      if (command === "canonical_store_list") return { entries: [], revision: 0 };
+      if (command === "canonical_store_transaction") return { applied: true, entries: [] };
+      if (command === "canonical_store_settle") return true;
       if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
       if (command === "list_skills") {
         const provider = (raw as { provider?: string }).provider;

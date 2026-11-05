@@ -1,7 +1,7 @@
 import { SocialBrowserLaunch } from "../social-browser-launch";
 import { randomUUID } from "node:crypto";
 import { existsSync, watch } from "node:fs";
-import { waitForProfileUnlock } from "../profile-unlock";
+import { waitForProfileUnlock } from "../security/profile-unlock";
 import { lstat, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";

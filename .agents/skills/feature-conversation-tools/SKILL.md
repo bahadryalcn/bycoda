@@ -15,7 +15,7 @@ Code paths below are repository-root relative.
 - `src/features/host-tools/ToolsWorkspace.tsx`
 - `src/features/host-tools/toolsSessionRegistry.ts`, `toolsHubTransport.ts` and `HostToolsWindow.tsx`
 - `src/features/connections/model/hostFeatureClient.ts`
-- `host/tool-management.ts`, `host/conversation/conversation-preview.ts` and `host/conversation/conversation-tools.ts`
+- `host/conversation/tool-management.ts`, `host/conversation/conversation-preview.ts` and `host/conversation/conversation-tools.ts`
 - `src/integrations/harness/core/toolWorkflowGuidance.ts` and `runtimeGuidance.ts`
 
 ## Workflow

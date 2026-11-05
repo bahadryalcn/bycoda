@@ -4,9 +4,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
-import { withMachineSkillPolicy, type HostProvider } from "./providers";
+import { withMachineSkillPolicy, type HostProvider } from "./providers/providers";
 import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
-import type { TurnGitRecord, TurnGitSnapshot } from "./workspace-contracts";
+import type { TurnGitRecord, TurnGitSnapshot } from "./workspaces/workspace-contracts";
 import { HostStore } from "./store";
 
 it.each(["success", "known-empty", "missing", "pending", "failed", "wrong-token", "reused-token", "late"] as const)(
@@ -94,8 +94,8 @@ it.each(["configure", "draft"] as const)("rejects stale %s revisions atomically 
   expect(await engine.command(accepted)).toEqual(receipt);
   expect((await store.session(id)).revision).toBe(receipt.revision);
 });
-import { launchSessionRun } from "./sessionRuns";
-import { readAttachmentChunk, writeAttachmentChunk } from "./attachments";
+import { launchSessionRun } from "./sessions/sessionRuns";
+import { readAttachmentChunk, writeAttachmentChunk } from "./attachments/attachments";
 import {
   applySessionSync,
   REMOTE_PROVIDERS,
@@ -109,8 +109,8 @@ import { mergeAdoptedSession } from "../src/features/connections/model/adoptedSe
 import { appendReadyHandoff } from "../src/features/sessions/model/handoff";
 import { setHarnessModels, resetHarnessModelOverlays } from "../src/features/sessions/model/models";
 import * as runtimeGuidance from "../src/integrations/harness/core/runtimeGuidance";
-import { HandoffHistoryStore } from "./handoff-history";
-import * as skillPrompts from "./prompt-skills";
+import { HandoffHistoryStore } from "./tasks/handoff-history";
+import * as skillPrompts from "./skills/prompt-skills";
 import { withChatCitations } from "../src/features/sessions/model/chatCitation";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 

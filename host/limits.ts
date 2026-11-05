@@ -5,7 +5,7 @@ import {
   type HostSettingsState,
 } from "../src/features/tasks/model/hostSettings";
 import type { HostStore } from "./store";
-import { confirmedRunElapsed } from "./run-duration";
+import { confirmedRunElapsed } from "./execution/run-duration";
 
 const MINUTE_MS = 60_000;
 /** How many days of usage are kept. */

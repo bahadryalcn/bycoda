@@ -11,12 +11,12 @@ import {
   searchHostFiles,
   createHostPath,
   writeHostFile,
-} from "../workspace";
+} from "../workspaces/workspace";
 import { hostBranches } from "../git/git-branches";
 import { hostWorktrees } from "../git/git-worktrees";
-import { scrubRuntimeLogText } from "../runtime-logs";
+import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { inspectConversationPath, mutateConversationPath } from "./conversation-file-mutations";
-import type { WorkspaceCommands } from "../workspace-commands";
+import type { WorkspaceCommands } from "../workspaces/workspace-commands";
 
 const path = { type: "string", minLength: 1, maxLength: 4096 };
 const expectedHash = { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" };

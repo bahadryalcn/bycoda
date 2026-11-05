@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConversationProjectTools, PROJECT_CONVERSATION_TOOLS } from "./conversation-project-tools";
 import type { HostStore } from "../store";
-import type { HostGoals } from "../goals";
+import type { HostGoals } from "../goals/goals";
 import type { HostModelCatalog } from "../../src/features/connections/model/protocol";
-import { HostAutomations } from "../automations";
+import { HostAutomations } from "../automations/automations";
 
 function setup() {
   const principal = {

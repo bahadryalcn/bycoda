@@ -109,6 +109,14 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
         ...invariants,
       ]),
     );
+  if (invariants.length)
+    steps.push(
+      node("Changed-file code structure ratchet", [
+        path.join(root, "scripts/checks/check-code-structure.mjs"),
+        "--files",
+        ...invariants,
+      ]),
+    );
   const hooks = code.filter((file) => file.startsWith("src/"));
   if (hooks.length)
     steps.push(

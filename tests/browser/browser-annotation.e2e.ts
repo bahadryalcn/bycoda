@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
-import { SharedBrowser, type BrowserLoader } from "../../host/shared-browser";
+import { SharedBrowser, type BrowserLoader } from "../../host/browser/shared-browser";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
 
 const site =

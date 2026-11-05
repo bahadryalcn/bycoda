@@ -21,7 +21,7 @@ Paths are repository-root relative. Follow only the lane affected by the change.
   `host/engine.ts`, `host/server.ts`, `host/store.ts`.
 - Queue priority and measured worker cache: `src/shared/model/assistantJobPriority.ts`,
   `host/assistant/work/assistant-cache-usage.ts`, `host/assistant/core/assistant-runtime.ts`.
-- Read-only task badges: `host/assistant/work/assistant-task-metadata.ts`, `host/tasks.ts`,
+- Read-only task badges: `host/assistant/work/assistant-task-metadata.ts`, `host/tasks/tasks.ts`,
   `src/features/tasks/ui/AssistantTaskBadge.tsx`. Cache by task revision and canonical
   source membership; metadata invalidation cannot block accepted-action bookkeeping.
 - Header withdrawal: `src/features/assistant/model/assistantSessionDetach.ts`,
@@ -51,10 +51,10 @@ Paths are repository-root relative. Follow only the lane affected by the change.
   Presence presentation: `model/assistantPresencePresentation.ts` and
   `ui/AssistantPresenceIndicator.tsx`, `AssistantPresenceStatus.tsx`,
   `AssistantPresenceMenu.tsx` under that feature; TitleBar consumes the same menu.
-- Project display metadata: `host/project-display-names.ts`, `host/desktopLive.ts`,
+- Project display metadata: `host/projects/project-display-names.ts`, `host/desktop/desktopLive.ts`,
   `host/server.ts`; voice aliases and finite resolution:
   `src/features/voice/model/voiceProjectNames.ts`, `voiceWorkspaceActions.ts` there.
-- Desktop: `host/desktop-control-host.ts`, `host/conversation/conversation-desktop-control-tools.ts`,
+- Desktop: `host/desktop/desktop-control-host.ts`, `host/conversation/conversation-desktop-control-tools.ts`,
   `src-tauri/src/conversation_tools_bridge.rs`.
 - Voice: `src/features/voice/model/realtimeVoice.ts`, `voiceOverlay.ts` there,
   `src/features/voice/ui/VoiceCompanion.tsx`.

@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
-import { HostTasks } from "./tasks";
+import { HostTasks } from "./tasks/tasks";
 import { HostAssistant } from "./assistant/service";
 import { assistantSessionRuntime } from "./assistant/sessions/assistant-session-runtime";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 
 const cleanups: Array<() => Promise<void>> = [];

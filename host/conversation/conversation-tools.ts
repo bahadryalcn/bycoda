@@ -15,7 +15,7 @@ import {
   searchManagedTools,
   describeManagedTools,
   managedToolStatus,
-} from "../tool-management";
+} from "./tool-management";
 import { APPROVAL_OCCURRENCE_PATTERN } from "../../src/shared/model/approvalOccurrence";
 import {
   CONVERSATION_VISUAL_TOOLS,
@@ -26,7 +26,7 @@ import { callConversationAppRead } from "./conversation-app-read";
 import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../../src/app/model/appUiControl";
 import { createInterface } from "node:readline";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { REMOTE_PROVIDERS } from "../../src/features/connections/model/protocol";
 import { CONVERSATION_CREW_READ_TOOLS } from "./conversation-crew-tools";
 import { THREAD_CREW_WRITES, threadCrewReviewFields } from "./conversation-thread-crew-tools";

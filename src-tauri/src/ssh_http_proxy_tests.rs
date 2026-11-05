@@ -34,13 +34,20 @@ fn readiness_wait_observes_original_lease_shutdown() {
     });
     state.track(&socket).unwrap();
     let (entered, waiting) = mpsc::channel();
+    let (finished, completion) = mpsc::channel();
+    let original = state.clone();
     let waiter = std::thread::spawn(move || {
         entered.send(()).unwrap();
-        wait_tcp_ready(&[(&socket, true, false)], TLS_READY_SLICE)
+        while !original.stopped.load(Ordering::Acquire) {
+            wait_tcp_ready(&[(&socket, true, false)], TLS_READY_SLICE)?;
+        }
+        finished.send(()).unwrap();
+        Ok::<(), std::io::Error>(())
     });
     waiting.recv_timeout(Duration::from_secs(1)).unwrap();
     state.stop();
-    assert!(waiter.join().unwrap().unwrap() > 0);
+    completion.recv_timeout(Duration::from_secs(1)).unwrap();
+    waiter.join().unwrap().unwrap();
 }
 
 #[test]

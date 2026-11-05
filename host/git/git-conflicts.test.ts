@@ -20,7 +20,7 @@ import {
   hostUnmerged,
   parseUnmerged,
 } from "./git-conflicts";
-import { hostGitAction, hostGitIndex } from "../workspace";
+import { hostGitAction, hostGitIndex } from "../workspaces/workspace";
 import parity from "../fixtures/git-conflicts-parity.json";
 
 it("Rust ile ortak fixture üzerinde stage, whitespace path ve conflict türleri eşleşir", () => {

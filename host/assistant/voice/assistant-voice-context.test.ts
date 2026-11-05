@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { HostStore } from "../../store";
 import { HostAssistant } from "../service";
 import { assistantDomain } from "../../domains/assistant/service";
-import { RUNTIME_LOG_TOOLS } from "../../runtime-log-tools";
+import { RUNTIME_LOG_TOOLS } from "../../execution/runtime-log-tools";
 import {
   AssistantRequestValidationSchema,
   AssistantResponseValidationSchema,

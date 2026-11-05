@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { HostTerminals } from "../../terminals";
+import { HostTerminals } from "../../terminals/terminals";
 import { createTerminalService } from "./service";
 import { getHostRpcMethod } from "../../../src/shared/model/host-contracts";
 

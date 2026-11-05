@@ -1,9 +1,9 @@
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { hostGitStarts } from "../git/git-start-gate";
-import { existingPath, hostGitIndex, workspacePath } from "../workspace";
+import { existingPath, hostGitIndex, workspacePath } from "../workspaces/workspace";
 import { relative, sep } from "node:path";
 import { lstat } from "node:fs/promises";
-import { scrubRuntimeLogText } from "../runtime-logs";
+import { scrubRuntimeLogText } from "../execution/runtime-logs";
 const text = { type: "string", minLength: 1, maxLength: 4096 };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",

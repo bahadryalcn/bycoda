@@ -19,7 +19,7 @@ import { StoreDatabase } from "../../../../host/store-db";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { setImmediate as nextWorkerTurn } from "node:timers/promises";
-import { SessionQueues } from "../../../../host/session-queue";
+import { SessionQueues } from "../../../../host/sessions/session-queue";
 import {
   heldSharedQueueLeases,
   sharedLocalQueueReady,

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { browseHostDirectories, createHostDirectory } from "../../browse";
+import { browseHostDirectories, createHostDirectory } from "../../browser/browse";
 import { createProjectsService } from "./service";
 
 const roots: string[] = [];

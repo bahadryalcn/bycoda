@@ -1,4 +1,4 @@
-import type { HostCrews } from "../crews";
+import type { HostCrews } from "../crews/crews";
 
 const text = { type: "string", minLength: 1, maxLength: 300 };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({

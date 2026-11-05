@@ -989,8 +989,12 @@ mod tests {
         assert!(registry.escaped_existing_grant(&requested, &canonical));
         assert!(canonical_target(&folder.join("dangling/new.txt")).is_err());
         let destination = folder.join("copy");
+        let visited = std::cell::RefCell::new(Vec::new());
+        // Copy recreates link entries without traversing their targets. Direct
+        // reads through the escaping or dangling junction remain denied above.
         assert!(
             validate_copy_paths(&folder, &destination, &|path, mutation| {
+                visited.borrow_mut().push(path.to_path_buf());
                 let canonical = canonical_target(path)?;
                 if registry.allowed(&canonical, mutation) {
                     Ok(canonical)
@@ -998,8 +1002,9 @@ mod tests {
                     Err("denied".into())
                 }
             })
-            .is_err()
+            .is_ok()
         );
+        assert!(visited.borrow().iter().all(|path| path.starts_with(&folder)));
         assert!(!destination.exists());
     }
 

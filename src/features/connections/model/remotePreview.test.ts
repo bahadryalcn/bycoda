@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewBlock } from "../../../../host/transcriptPage";
+import { previewBlock } from "../../../../host/sessions/transcriptPage";
 import type { Attachment, Block } from "../../sessions/model/session";
 import { keepFullContent, keepFullTranscript, sameRemoteBlock } from "./remotePreview";
 

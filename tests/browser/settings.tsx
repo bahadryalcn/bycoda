@@ -25,6 +25,55 @@ import "../../src/styles/index.css";
 // Memory-only desktop transport. Unknown commands fail closed; no owner host,
 // accounts, filesystem, credential store or native deletion can be reached.
 mockWindows("main");
+// Synthetic canonical authority for this UI fixture only. No Native durability or
+// cross-process retirement is claimed. Keep CAS, receipts and page identity real.
+type FixtureEntry = { key: string; version: number; value: unknown };
+const canonicalPage = crypto.randomUUID();
+const canonicalScopes = new Map<string, { revision: number; entries: Map<string, FixtureEntry> }>();
+const canonicalReceipts = new Map<string, { request: string; result: unknown }>();
+function canonicalFixture(command: string, args: Record<string, unknown>): unknown {
+  if (command === "canonical_store_page_token") return canonicalPage;
+  if (command === "canonical_store_session_guard_ready") return true;
+  const scope = String(args.scope);
+  const store = canonicalScopes.get(scope) ?? { revision: 0, entries: new Map<string, FixtureEntry>() };
+  canonicalScopes.set(scope, store);
+  const entry = (key: string) => store.entries.get(key) ?? null;
+  if (command === "canonical_store_get") return structuredClone(entry(String(args.key)));
+  if (command === "canonical_store_read") return structuredClone({ revision: store.revision,
+    entries: (args.keys as string[]).flatMap((key) => entry(key) ? [entry(key)] : []) });
+  if (command === "canonical_store_list") {
+    if (args.expectedRevision != null && args.expectedRevision !== store.revision) throw new Error("Fixture canonical snapshot changed");
+    return structuredClone({ revision: store.revision, entries: [...store.entries.values()]
+      .filter((value) => args.after == null || value.key > String(args.after))
+      .sort((a, b) => a.key.localeCompare(b.key)).slice(0, Number(args.limit ?? 128)) });
+  }
+  const receiptKey = JSON.stringify([scope, args.operationId]);
+  if (command === "canonical_store_receipt") return structuredClone(canonicalReceipts.get(receiptKey)?.result ?? null);
+  if (command === "canonical_store_transaction") {
+    if (args.pageToken !== canonicalPage) throw new Error("Fixture canonical page changed");
+    if (args.claim != null) throw new Error("Claimed effects unavailable in Settings fixture");
+    const request = JSON.stringify(args);
+    const previous = canonicalReceipts.get(receiptKey);
+    if (previous) {
+      if (previous.request !== request) throw new Error("Fixture canonical operation reused");
+      return structuredClone(previous.result);
+    }
+    const checks = (args.checks ?? []) as Array<{ key: string; version: number | null }>;
+    const writes = (args.writes ?? []) as Array<{ key: string; value: unknown }>;
+    const applied = (args.expectedRevision == null || args.expectedRevision === store.revision) &&
+      checks.every((check) => (entry(check.key)?.version ?? null) === check.version);
+    if (applied && writes.length) {
+      store.revision++;
+      for (const write of writes) store.entries.set(write.key, { key: write.key,
+        version: (entry(write.key)?.version ?? 0) + 1, value: structuredClone(write.value) });
+    }
+    const result = { applied, revision: store.revision, compacted: false,
+      entries: writes.flatMap((write) => entry(write.key) ? [entry(write.key)] : []) };
+    canonicalReceipts.set(receiptKey, { request, result: structuredClone(result) });
+    return structuredClone(result);
+  }
+  throw new Error(`Unsupported canonical Settings fixture command: ${command}`);
+}
 const skillDocuments = new Map(
   Array.from({ length: 35 }, (_, index) => [
     `/fixture/settings-project/.agents/skills/${index === 0 ? "arc" : `skill-${index}`}/SKILL.md`,
@@ -33,6 +82,7 @@ const skillDocuments = new Map(
 );
 mockIPC(
   (command, args) => {
+    if (command.startsWith("canonical_store_")) return canonicalFixture(command, args);
     // Voice setup is entirely synthetic. It never reaches the owner's host or installs files.
     const voiceFixture = new URLSearchParams(location.search).get("voice");
     if (voiceFixture) {

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostTasks } from "../../tasks";
-import { HostStewards, type StewardWorkspaceServices } from "../../stewards";
+import { HostTasks } from "../../tasks/tasks";
+import { HostStewards, type StewardWorkspaceServices } from "../../stewards/stewards";
 import * as dto from "../../../src/shared/model/host-contracts/stewards";
 import { createHostStewardsService } from "./service";
 

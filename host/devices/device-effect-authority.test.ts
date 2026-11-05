@@ -5,7 +5,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION, DeviceHost } from "./device-host";
 import * as processes from "./device-process";
-import * as expo from "../expo-go";
+import * as expo from "./expo-go";
 
 afterEach(() => vi.restoreAllMocks());
 const turn = () => new Promise<void>((ready) => setImmediate(ready));

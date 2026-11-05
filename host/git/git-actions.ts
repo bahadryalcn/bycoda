@@ -17,7 +17,7 @@ import {
   hostUnmerged,
   unmergedMessage,
 } from "./git-conflicts";
-import { hostGitAction, invalidateHostGitIndex, safeGitPath } from "../workspace";
+import { hostGitAction, invalidateHostGitIndex, safeGitPath } from "../workspaces/workspace";
 
 /** Source-control commands beyond staging and committing: branches, tags,
  * remotes, stashes, history rewriting, conflicts, blame. They take the same

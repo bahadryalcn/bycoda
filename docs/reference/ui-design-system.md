@@ -12,6 +12,57 @@ and [component selection](ui-component-catalog.md) for the coverage map. Policie
 below apply to new and migrated code. Sections marked **target API** are a migration
 specification, not a claim that the props or components already exist.
 
+## Rules checklist for agents
+
+The short form of this document. `AGENTS.md` points here; the sections below explain
+each rule.
+
+- Choose controls for the task and Arc use-case guidance, reconsidering complete
+  groups. Preserve capabilities, not tag/button counts. Compare segmented/radio
+  choices, split actions and menus. Short stable lists may use Select; long, growing
+  or name-searchable lists need Combobox/autocomplete; multiple values need
+  searchable MultiSelect. Preserve free entry.
+- Search `src/shared/ui/`, settings controls and the feature before creating a
+  control. Reuse first, extend shared APIs for reusable gaps, and create a shared
+  component only for a concrete unmet need. Standard actions use
+  `src/shared/ui/Button.tsx` or a delegating wrapper. No screen-specific button
+  styling or visual-only IconButton/ToolbarButton/CardAction duplicates; keep color,
+  size, shape, focus, disabled and loading presentation centralized.
+- Prefer shared TextField, TextareaField, SearchableSelect, settings controls and Arc
+  adapters. Registry source belongs under `src/shared/ui/arc/`; application code uses
+  adapters. Preserve native props and ref contracts. Tabs, trees, menus, window
+  controls and drag targets keep keyboard, selection, focus, drag and native-window
+  behavior; do not mechanically replace them with buttons.
+- Reuse Popover, Modal, `overlay.ts` and native popup routing. Do not add another
+  overlay stack, focus trap, Escape framework or dialog/menu library. Use shared
+  appearance/motion tokens, icons and scoped `.bycoda-arc` roles; no global Arc
+  foundation imports or copied design systems.
+- Use shared semantic color tokens directly in CSS, Tailwind and inline styles. No
+  literal hex/RGB/HSL/OKLCH/named colors, arbitrary color utilities, or local
+  color-mix/opacity/gradient recipes. Standard panel/card surfaces use
+  `var(--ui-surface)`; use existing raised, hover, pressed, selected, text, border and
+  status roles. Define genuinely new roles once in their owning shared theme under
+  `src/styles/` (palette.css, index.css, bycoda.css or arc.css), supporting light/dark/
+  custom themes. Keep mixing there and preserve neutral surface hues.
+- Keep headers/actions compact. Collection filters and advanced options go in
+  icon-triggered popovers with active indication and reset. Keep frequent actions
+  direct; secondary actions use overflow menus. Icons need accessible names and
+  tooltips; hover cannot be the only discovery/operation path.
+- Remove repetitive instructions and decorative cards. Optional help uses an
+  information control; long details use disclosure. Keep necessary labels, errors,
+  operation/approval state and recovery visible. Compactness must retain fields,
+  data, functions and drafts.
+- Separate sections primarily with spacing and subtle surface tones; retain clear
+  input, selection, focus and drag boundaries. Preserve the user's density settings.
+  Make pane, task and action ownership readable before reducing containment.
+- Preserve state ownership, persistence, validation, async callbacks, permission
+  gates and recovery. Restyling grants no new operation authority. Loading controls
+  prevent duplicate actions.
+- Shared-control changes need representative consumers checked for keyboard use,
+  narrow layouts, both themes and reduced motion. Legacy native controls do not
+  justify duplicates: within the named feature, migrate affected instances you find
+  and leave unrelated screens alone.
+
 ## Design direction
 
 Apply the compact, quiet product language in [DESIGN.md](DESIGN.md): content and

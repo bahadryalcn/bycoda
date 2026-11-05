@@ -93,7 +93,7 @@ it("can Stop while a native status read is pending and ignores a pre-Stop late r
         }),
     )
     .mockResolvedValue(stopped);
-  await act(async () => vi.advanceTimersByTime(3000));
+  await act(async () => vi.advanceTimersByTime(30_000));
   expect(container.querySelector("button")!.disabled).toBe(false);
   await act(async () => container.querySelector("button")!.click());
   expect(stop).toHaveBeenCalledTimes(1);

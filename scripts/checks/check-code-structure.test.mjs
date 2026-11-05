@@ -1,0 +1,131 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  compare,
+  countFindings,
+  resolveSpecifier,
+  scanFile,
+  scanImports,
+} from "./check-code-structure.mjs";
+
+const rulesOf = (file, text) =>
+  scanFile(file, text)
+    .map((finding) => finding.rule)
+    .sort();
+
+test("file-lines flags a source file over its layer budget and records the line count", () => {
+  const tsx = "export const A = 1;\n".repeat(601);
+  const [finding] = scanFile("src/features/demo/ui/A.tsx", tsx);
+  assert.equal(finding.rule, "file-lines");
+  assert.equal(finding.lines, 602);
+  assert.deepEqual(rulesOf("src/features/demo/ui/B.tsx", "export const B = 1;\n".repeat(599)), []);
+  assert.deepEqual(rulesOf("host/tasks/launch.ts", "x;\n".repeat(801)), ["file-lines"]);
+  assert.deepEqual(rulesOf("host/tasks/launch.test.ts", "x;\n".repeat(801)), []);
+  assert.deepEqual(rulesOf("src-tauri/src/fs.rs", "fn a() {}\n".repeat(1501)), ["file-lines"]);
+  assert.deepEqual(rulesOf("src-tauri/src/fs/fs_tests.rs", "fn a() {}\n".repeat(1501)), []);
+});
+
+test("loose files at host and feature roots are findings; entry files and folders are not", () => {
+  assert.deepEqual(rulesOf("host/social-browser-launch.ts", "export {};"), ["loose-host-file"]);
+  assert.deepEqual(rulesOf("host/cli.ts", "export {};"), []);
+  assert.deepEqual(rulesOf("host/social/social.ts", "export {};"), []);
+  assert.deepEqual(rulesOf("src/features/devices/DevicePanel.tsx", "export {};"), [
+    "loose-feature-file",
+  ]);
+  assert.deepEqual(rulesOf("src/features/devices/index.ts", "export {};"), []);
+  assert.deepEqual(rulesOf("src/features/devices/ui/DevicePanel.tsx", "export {};"), []);
+  assert.deepEqual(rulesOf("src/features/devices/DevicePanel.test.tsx", "export {};"), []);
+});
+
+test("layer imports: foundation and features may not reach app; host may not reach UI", () => {
+  assert.deepEqual(
+    scanImports("src/shared/ui/Modal.tsx", 'import { x } from "../../app/shell/overlay";').map(
+      (f) => f.rule,
+    ),
+    ["foundation-imports-app"],
+  );
+  assert.deepEqual(
+    scanImports(
+      "src/shared/hooks/useColorScheme.ts",
+      'import { s } from "@/features/settings/model/settings";',
+    ).map((f) => f.rule),
+    ["foundation-imports-app"],
+  );
+  assert.deepEqual(
+    scanImports(
+      "src/features/voice/ui/VoiceCompanion.tsx",
+      'import { a } from "../../../app/App";',
+    ).map((f) => f.rule),
+    ["feature-imports-app"],
+  );
+  assert.deepEqual(
+    scanImports(
+      "host/server.ts",
+      'import { v } from "../src/features/voice/ui/VoiceCompanion";',
+    ).map((f) => f.rule),
+    ["host-imports-ui"],
+  );
+  assert.deepEqual(
+    scanImports("host/server.ts", 'import { v } from "../src/shared/model/host-contracts";'),
+    [],
+  );
+  assert.deepEqual(
+    scanImports("src/features/voice/ui/A.tsx", 'import { t } from "../../../shared/i18n";'),
+    [],
+  );
+  assert.deepEqual(scanImports("src/features/voice/ui/A.tsx", 'import x from "react";'), []);
+});
+
+test("cross-feature imports are advisory and only count deep paths", () => {
+  const deep = scanImports(
+    "src/features/tasks/ui/A.tsx",
+    'import { s } from "../../sessions/data/sessionStore";',
+  );
+  assert.deepEqual(
+    deep.map((f) => f.rule),
+    ["cross-feature-deep-import"],
+  );
+  assert.deepEqual(
+    scanImports("src/features/tasks/ui/A.tsx", 'import { s } from "../../sessions";'),
+    [],
+  );
+  assert.deepEqual(
+    scanImports("src/features/tasks/ui/A.tsx", 'import { s } from "../model/tasks";'),
+    [],
+  );
+  const { counts, details } = countFindings(
+    ["src/features/tasks/ui/A.tsx"],
+    () => 'import { s } from "../../sessions/data/sessionStore";',
+  );
+  assert.deepEqual(counts, {});
+  assert.equal(details.length, 1);
+});
+
+test("compare reports only counts above the baseline and honours the file scope", () => {
+  const counts = {
+    "host/server.ts": { "file-lines": 8300 },
+    "host/new-thing.ts": { "loose-host-file": 1 },
+    "src/shared/ui/X.tsx": { "foundation-imports-app": 2 },
+  };
+  const baseline = {
+    "host/server.ts": { "file-lines": 8248 },
+    "src/shared/ui/X.tsx": { "foundation-imports-app": 2 },
+  };
+  assert.deepEqual(
+    compare(counts, baseline, null).map((i) => `${i.file}:${i.rule}`),
+    ["host/server.ts:file-lines", "host/new-thing.ts:loose-host-file"],
+  );
+  assert.deepEqual(compare(counts, baseline, ["src/shared/ui/X.tsx"]), []);
+});
+
+test("specifiers resolve through the @ alias and relative paths", () => {
+  assert.equal(
+    resolveSpecifier("src/features/a/ui/A.tsx", "@/shared/ui/Button"),
+    "src/shared/ui/Button",
+  );
+  assert.equal(
+    resolveSpecifier("src/features/a/ui/A.tsx", "../../b/model/x"),
+    "src/features/b/model/x",
+  );
+  assert.equal(resolveSpecifier("src/features/a/ui/A.tsx", "zustand"), null);
+});

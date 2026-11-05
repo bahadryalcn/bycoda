@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
-import { SessionQueues, QUEUE_RENEW_AFTER_MS } from "../../session-queue";
+import { SessionQueues, QUEUE_RENEW_AFTER_MS } from "../../sessions/session-queue";
 import {
   createSessionQueueService,
   type QueueDomainContext,

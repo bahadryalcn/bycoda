@@ -5,7 +5,7 @@ import {
   type CommandServicePorts,
   type CommandQueueSnapshot,
 } from "./service";
-import { DesktopLive } from "../../desktopLive";
+import { DesktopLive } from "../../desktop/desktopLive";
 
 const send: SessionCommand = { type: "send", commandId: "c", sessionId: "s", text: "hello" };
 const contextual: SessionCommand = {

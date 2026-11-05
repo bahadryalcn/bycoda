@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import type { ManagedWorkspace, WorkspaceOperation } from "../workspace-contracts";
+import type { ManagedWorkspace, WorkspaceOperation } from "../workspaces/workspace-contracts";
 import {
   dispatchWorkspaceManagement,
   WORKSPACE_MANAGEMENT_TOOLS,

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostTasks } from "../../tasks";
-import { HostGoals } from "../../goals";
+import { HostTasks } from "../../tasks/tasks";
+import { HostGoals } from "../../goals/goals";
 import { HostAssistant } from "../service";
 import { assistantExecutionPorts } from "../core/assistant-runtime";
 import { assistantDomain } from "../../domains/assistant/service";
@@ -17,7 +17,7 @@ import {
 import { HostGoalSchema } from "../../../src/shared/model/host-contracts/goals";
 import type { HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
-import type { HostProvider } from "../../providers";
+import type { HostProvider } from "../../providers/providers";
 import type { SendTurnInput } from "../../../src/integrations/harness/core/types";
 
 const closes: Array<() => Promise<void>> = [];

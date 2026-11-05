@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import { AssistantTurnPolicyDeferredError, deferredAssistantTurn } from "./assistant/core/assistant-turn-policy";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

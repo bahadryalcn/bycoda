@@ -142,7 +142,7 @@ export async function saveNoteImagesFromFiles(
 ): Promise<NoteImageAsset[]> {
   const work = requireNoteWork("note-image-files", parent);
   try {
-    return await saveNoteImageAttachments(noteId, await attachmentsFromFiles(files), work);
+    return await saveNoteImageAttachments(noteId, await attachmentsFromFiles(files, { persistBlobs: false }), work);
   } finally {
     work();
   }

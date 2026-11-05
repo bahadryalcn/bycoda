@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HostStore } from "../../store";
-import { hostInbox } from "../../host-notes";
+import { hostInbox } from "../../notes/host-notes";
 import type { HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { HostSteward } from "../../../src/features/tasks/model/hostStewards";

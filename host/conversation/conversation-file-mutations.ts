@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { existingPath, workspacePath } from "../workspace";
-import type { WorkspaceCommands } from "../workspace-commands";
+import { existingPath, workspacePath } from "../workspaces/workspace";
+import type { WorkspaceCommands } from "../workspaces/workspace-commands";
 
 const queues = new Map<string, Promise<void>>();
 const MAX_ENTRIES = 2000;

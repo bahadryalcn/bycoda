@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "./store";
 import { HostEngine, type ManagedTurnHistoryAdapter } from "./engine";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanup: (() => Promise<void>)[] = [];

@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
-import type { GuardianProviderChild } from "./provider-child";
+import type { GuardianProviderChild } from "./providers/provider-child";
 
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_DATA_BYTES = 64 * 1024;

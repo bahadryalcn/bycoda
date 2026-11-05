@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { HostEngine } from "./engine";
 import { HostStore, summary } from "./store";
 import { createHostServer } from "./server";
-import { DesktopSessions } from "./desktopSessions";
+import { DesktopSessions } from "./desktop/desktopSessions";
 import { branchCache } from "./git/git-actions";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";

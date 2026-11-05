@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { HostStore } from "../../store";
 import type { AsyncHostNotes } from "../../host-notes-async";
-import type { HostNote } from "../../host-notes";
+import type { HostNote } from "../../notes/host-notes";
 import type {
   AssistantQuickNoteJob,
   AssistantQuickJob,

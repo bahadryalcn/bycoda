@@ -1,9 +1,9 @@
 import type { HostStore } from "../../store";
 import type { HostEngine } from "../../engine";
 import type { HostAssistant } from "../service";
-import type { HostTasks } from "../../tasks";
+import type { HostTasks } from "../../tasks/tasks";
 import { HostAssistantSessions, type AssistantSessionPorts } from "./assistant-sessions";
-import { sessionRunState } from "../../sessionRuns";
+import { sessionRunState } from "../../sessions/sessionRuns";
 import { createHash } from "node:crypto";
 import type { HostAssistantManualSessions } from "./assistant-manual-sessions";
 import { buildDeterministicHandoff } from "../../../src/features/sessions/model/handoff";

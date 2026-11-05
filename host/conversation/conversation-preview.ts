@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sharedBrowserUrl, sharedBrowserViewport } from "../shared-browser";
+import { sharedBrowserUrl, sharedBrowserViewport } from "../browser/shared-browser";
 import { RetiredRequestFence } from "../storage/request-fence";
 
 const RECEIPT_TTL = 10 * 60 * 1000;

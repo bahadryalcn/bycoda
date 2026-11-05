@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP_SKILLS, installAppSkills } from "./app-skills";
-import { appSkillsRoot, deleteHostSkill, listHostSkills } from "../skills";
-import { readHarnessSkill, searchHarnessSkills } from "../harness-skills";
-import { prepareHostSkillPrompt } from "../prompt-skills";
-import { saveSkillPolicy } from "../skill-policy";
+import { appSkillsRoot, deleteHostSkill, listHostSkills } from "../skills/skills";
+import { readHarnessSkill, searchHarnessSkills } from "../skills/harness-skills";
+import { prepareHostSkillPrompt } from "../skills/prompt-skills";
+import { saveSkillPolicy } from "../skills/skill-policy";
 
 const homes: string[] = [];
 afterEach(() => {

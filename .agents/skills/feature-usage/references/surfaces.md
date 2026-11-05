@@ -30,7 +30,7 @@ Paths are repository-relative. Read the affected subsection only; reports and ru
 
 ## Host/mobile boundaries
 
-- Host task budget/limit/report owners: `host/task-budgets.ts`, `tasks.ts`, `limits.ts`, `usage-report.ts`; local desktop rule gates do not enforce all of these.
+- Host task budget/limit/report owners: `host/tasks/task-budgets.ts`, `tasks.ts`, `limits.ts`, `usage-report.ts`; local desktop rule gates do not enforce all of these.
 - `usage.sessions.read` is a bounded Host reader in `host/conversation/conversation-project-tools.ts`; mobile `mobile/src/features/tools/usage-screen.tsx` uses its own report/paging contract.
 - Mobile provider views include `mobile/src/features/tools/provider-desktop.tsx`, `provider-desktop-model.ts`, `provider-account-editor.tsx`; capability families `providers.desktop.v1` and `providers.desktop.quotaRefresh.v1` retain explicit refresh/cooldown/consent.
 - Verify current route and capability support before claiming local-budget management parity.

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { WorkspaceCommands } from "../workspace-commands";
+import { WorkspaceCommands } from "../workspaces/workspace-commands";
 
 function commands(output: string, error?: Error) {
   const ghCommand = error ? vi.fn().mockRejectedValue(error) : vi.fn().mockResolvedValue(output);

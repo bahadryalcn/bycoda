@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { DeviceHost } from "../../devices/device-host";
 import { RPC_ERROR_CODES, WS_LIMITS } from "../../../src/shared/model/host-contracts";
-import { fixture, sha } from "../../native-devices.test-support";
+import { fixture, sha } from "../../devices/native-devices.test-support";
 
 it("binds inspection and input to the claimed device and rejects stale nodes", async () => {
   const f = await fixture("2026-11-04-device-control-test"), ws = await f.connect();

@@ -9,7 +9,7 @@ All code paths are repository-relative. Application workspace preferences and ex
 | File/editor consumers | `src/features/files/ui/FileTree.tsx`, `FileEditor.tsx`, `CodeMirrorEditor.tsx`; file-tree/editor-timing models and app file-open owner                                                                          |
 | Tool visibility       | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/app/workspace/layout/WorkspaceToolPanels.tsx`; follow Notes/composer/agent-view/housekeeping consumers                                                     |
 | Quick composer        | `src/features/quick-composer/model/quickComposer.ts`; native registration in `src-tauri/src/quick_composer.rs`                                                                                                  |
-| Local Host experiment | `src/features/settings/model/exactGitRewind.ts`; `host/exact-git-rewind.ts` and managed runtime/dispatcher                                                                                                      |
+| Local Host experiment | `src/features/settings/model/exactGitRewind.ts`; `host/git/exact-git-rewind.ts` and managed runtime/dispatcher                                                                                                      |
 
 ## Data and authority
 

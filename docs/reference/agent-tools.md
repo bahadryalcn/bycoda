@@ -23,7 +23,7 @@ discovery can describe all three built-in groups; this is not proof that all
 groups are offered or connected. External MCP discovery includes only the
 credential's existing allowlisted operations and read/write scopes.
 
-`host/tool-management.ts` owns the pure metadata/projection logic. Catalog inputs
+`host/conversation/tool-management.ts` owns the pure metadata/projection logic. Catalog inputs
 remain in the owning schema modules. The management contract distinguishes
 legacy authorization scope, effects, identity-bound retry, preconditions,
 readback, cancellation, presentation and capability evidence. Unknown extensions

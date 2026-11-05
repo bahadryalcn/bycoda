@@ -643,11 +643,11 @@ mod tests {
         changes
             .request("m", "w", request("old"), |value| {
                 assert_eq!(value["tasksKnown"], "");
-                Ok(json!({}))
+                Ok(json!({"instanceId":"host.1"}))
             })
             .unwrap();
         changes
-            .request("m", "w", request("new"), |_| Ok(json!({})))
+            .request("m", "w", request("new"), |_| Ok(json!({"instanceId":"host.1"})))
             .unwrap();
         changes
             .request(
@@ -765,7 +765,7 @@ mod tests {
                 |value| {
                     sent.set(true);
                     assert_eq!(value["git"][0]["cwd"], "/r");
-                    Ok(json!({}))
+                    Ok(json!({"instanceId":"host.1"}))
                 },
             )
             .unwrap();
@@ -787,10 +787,10 @@ mod tests {
         let request =
             |id, cwd| json!({"subscriptionId":id,"sessions":[],"projects":[],"git":[{"cwd":cwd}]});
         changes
-            .request("m", "a", request("a", "/a"), |_| Ok(json!({})))
+            .request("m", "a", request("a", "/a"), |_| Ok(json!({"instanceId":"host.1"})))
             .unwrap();
         changes
-            .request("m", "b", request("b", "/b"), |_| Ok(json!({})))
+            .request("m", "b", request("b", "/b"), |_| Ok(json!({"instanceId":"host.1"})))
             .unwrap();
         changes
             .request(
@@ -803,7 +803,7 @@ mod tests {
         changes
             .request("m", "b", request("b", "/b"), |value| {
                 assert_eq!(value["git"], json!([{"cwd":"/b"}]));
-                Ok(json!({}))
+                Ok(json!({"instanceId":"host.1"}))
             })
             .unwrap();
         let entries = changes.entries.lock().unwrap();

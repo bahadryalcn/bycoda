@@ -11,8 +11,8 @@ Own execution workspace contracts, not general Git UI. Read the canonical worksp
 
 Code paths below are repository-root relative.
 
-- `host/managed-workspace-runtime.ts`
-- `host/workspace-contracts.ts`
+- `host/managed/managed-workspace-runtime.ts`
+- `host/workspaces/workspace-contracts.ts`
 - `src/features/workspaces/model/contracts.ts`
 
 ## Workflow

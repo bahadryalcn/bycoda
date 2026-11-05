@@ -12,7 +12,7 @@ vi.mock("node:child_process", async (original) => ({
 }));
 import { materializeManagedWorkspace } from "./git-worktrees";
 import { hostGitRepositoryKey } from "./git-mutations";
-import type { ManagedWorkspace } from "../workspace-contracts";
+import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
 
 it("bounds failed reservation diagnostics and retains the inherited Git deadline", async () => {
   const root = mkdtempSync(join(tmpdir(), "bycoda-ref-reservation-"));

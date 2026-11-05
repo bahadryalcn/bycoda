@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
-import { durableWrite } from "../turn-git-history";
+import { durableWrite } from "../git/turn-git-history";
 import type {
   NativeBufferClockBacking,
   NativeBufferClockState,

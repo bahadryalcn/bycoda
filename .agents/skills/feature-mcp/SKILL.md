@@ -14,7 +14,7 @@ Use for Settings MCP list/discovery/add/login/remove/config and External MCP acc
 ## Start here
 
 - `src/features/settings/ui/McpSettings.tsx` and `ExternalMcpAccess.tsx` own outgoing configuration and incoming grants.
-- `src/features/settings/model/mcp.ts`, `mcpSettingsCache.ts`, native `src-tauri/src/mcp.rs` and Host `host/mcp-tokens.ts` own data/authority.
+- `src/features/settings/model/mcp.ts`, `mcpSettingsCache.ts`, native `src-tauri/src/mcp.rs` and Host `host/mcp/mcp-tokens.ts` own data/authority.
 - Read [surfaces](references/surfaces.md) for operation identifiers, bridge boundaries and checks.
 
 ## Preserve

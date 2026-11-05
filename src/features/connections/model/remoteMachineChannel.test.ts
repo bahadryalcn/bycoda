@@ -647,7 +647,7 @@ it("adapts a full session snapshot to a replacement delta while preserving hidde
         revision: 5,
         sync: expect.objectContaining({
           kind: "delta",
-          base: 4,
+          base: 0,
           blockIds: ["b"],
           blocks: [{ id: "b", role: "assistant", text: "new" }],
         }),

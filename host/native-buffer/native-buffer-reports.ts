@@ -5,8 +5,8 @@ import {
   canonicalWorkspaceDirectory,
   canonicalWorkspaceEntry,
   workspacePathKey,
-} from "../workspace-paths";
-import { durableWrite } from "../turn-git-history";
+} from "../workspaces/workspace-paths";
+import { durableWrite } from "../git/turn-git-history";
 import { createNativeBufferClock } from "./native-buffer-clock";
 import { createNativeBufferRetention } from "./native-buffer-retention";
 import {
@@ -29,8 +29,8 @@ import {
   type NativeBufferRecoveryCursor,
 } from "./native-buffer-catalog";
 export type { NativeBufferRecoveryCursor } from "./native-buffer-catalog";
-import type { ManagedWorkspace, WorkspaceActivity } from "../workspace-contracts";
-import type { WorkspaceOwnerAuthorization } from "../workspace-service-contracts";
+import type { ManagedWorkspace, WorkspaceActivity } from "../workspaces/workspace-contracts";
+import type { WorkspaceOwnerAuthorization } from "../workspaces/workspace-service-contracts";
 import { NativeDeliveryIdentitySchema } from "../../src/shared/model/host-contracts/native-delivery-identity";
 import type {
   NativeBufferDeliveryBinding,

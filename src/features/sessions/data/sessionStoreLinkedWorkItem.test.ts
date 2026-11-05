@@ -2,7 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setSessionLinkedWorkItem } from "./sessionStore";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset().mockResolvedValue(undefined);

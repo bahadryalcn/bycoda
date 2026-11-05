@@ -42,8 +42,8 @@ import { conversationSessionPage } from "../src/shared/model/conversationSession
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import { bindNativeDevicesOwner } from "./ports/native-devices";
 import { bindNativeDeliveryOwner } from "./ports/native-delivery";
-import { createNativeDeliveryStore } from "./native-delivery-store";
-import { assertNativeDeliveryEffect } from "./native-delivery-epochs";
+import { createNativeDeliveryStore } from "./native-delivery/native-delivery-store";
+import { assertNativeDeliveryEffect } from "./native-delivery/native-delivery-epochs";
 import { createNativeDeliveryService } from "./domains/native-delivery/service";
 import {
   NATIVE_DELIVERY_METHODS,
@@ -54,9 +54,9 @@ import {
   DEVICE_LIFECYCLE_METHODS,
   MOBILE_DEVICE_PREVIEW_METHODS,
 } from "../src/shared/model/host-contracts/native-devices";
-import { ModelCatalogCache } from "./model-catalog-cache";
-import { projectDisplayNames } from "./project-display-names";
-import { hostProviderAccounts } from "./provider-accounts";
+import { ModelCatalogCache } from "./providers/model-catalog-cache";
+import { projectDisplayNames } from "./projects/project-display-names";
+import { hostProviderAccounts } from "./providers/provider-accounts";
 import { createRealtimeSecret, createVoiceClientSecret } from "./voice/voice";
 import { VoiceCloudCredentials } from "./voice/voice-cloud-credentials";
 import { LocalVoiceService } from "./voice/voice-local";
@@ -93,7 +93,7 @@ import { createRoomNativeSourceAdapter } from "./assistant/room/assistant-room-n
 import { AssistantObservationJournal } from "./assistant/observations/assistant-observation-journal";
 import { installAssistantObservationProducers } from "./assistant/observations/assistant-observation-producers";
 import { voiceGlobalToolAllowed } from "../src/shared/model/voiceToolScope";
-import { readSessionUsage } from "./usage-report";
+import { readSessionUsage } from "./usage/usage-report";
 import {
   desktopActorId,
   desktopOperationId,
@@ -103,10 +103,10 @@ import {
   openDesktopResource,
   sealDesktopResource,
   type DesktopReviewScope,
-} from "./reviewed-desktop-scope";
+} from "./desktop/reviewed-desktop-scope";
 import { readHostAccess } from "./security/access/access-center";
-import { inlineSessionSync } from "./inlineSessionSync";
-import { HostCrews } from "./crews";
+import { inlineSessionSync } from "./sessions/inlineSessionSync";
+import { HostCrews } from "./crews/crews";
 import { ConversationProjectTools, isProjectConversationTool } from "./conversation/conversation-project-tools";
 import { callFileConversationTool, isFileConversationTool } from "./conversation/conversation-file-tools";
 import { callVisualConversationTool, isVisualConversationTool } from "./conversation/conversation-visual-tools";
@@ -137,7 +137,7 @@ import { createSessionReadService } from "./domains/sessions/service";
 import { createCommandService } from "./domains/commands/service";
 import { createFileService } from "./domains/files/service";
 import { createTerminalService, type TerminalAction } from "./domains/terminals/service";
-import { fileRevertGeneration } from "./session-file-revert";
+import { fileRevertGeneration } from "./sessions/session-file-revert";
 import { createHostGitService } from "./domains/git/service";
 import { createHostNotesService } from "./domains/notes/service";
 import { createHostTasksService } from "./domains/tasks/service";
@@ -155,7 +155,7 @@ import {
 import { withHostGitMutation } from "./git/git-mutations";
 import { createHostPersistenceService } from "./domains/environment/persistence-service";
 import { SafeCounterSchema } from "../src/shared/model/host-contracts/schemas";
-import { rewindAuthorityGeneration } from "./session-rewind";
+import { rewindAuthorityGeneration } from "./sessions/session-rewind";
 import {
   createSessionQueueService,
   type SessionQueueAction,
@@ -204,23 +204,23 @@ import {
 } from "./transport/http/bulk";
 import { MobileTlsAuthority } from "./security/mobile-tls";
 import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
-import { McpHttp, managedMcpCatalog, managedDiscoveryResult } from "./mcp-http";
+import { McpHttp, managedMcpCatalog, managedDiscoveryResult } from "./mcp/mcp-http";
 import {
   ConversationPreviewWorkflow,
   type ConversationPreviewInput,
   type PreviewBrowserState,
   type PreviewPresentation,
 } from "./conversation/conversation-preview";
-import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
+import { readHarnessSkill, searchHarnessSkills } from "./skills/harness-skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { hostname, homedir } from "node:os";
-import { RuntimeTerminalLogs } from "./runtime-terminal-logs";
-import { HostTerminals } from "./terminals";
-import { createManagedWorkspaceRuntime, inManagedWorkspace } from "./managed-workspace-runtime";
+import { RuntimeTerminalLogs } from "./execution/runtime-terminal-logs";
+import { HostTerminals } from "./terminals/terminals";
+import { createManagedWorkspaceRuntime, inManagedWorkspace } from "./managed/managed-workspace-runtime";
 import { readHostBuildIdentity } from "./build-identity";
-import { WORKSPACE_CAPABILITIES } from "./workspace-contracts";
+import { WORKSPACE_CAPABILITIES } from "./workspaces/workspace-contracts";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
-import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
+import type { WorkspaceRpcRequest } from "./workspaces/workspace-rpc-contracts";
 import { createHash, randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import {
@@ -233,19 +233,19 @@ import {
 } from "../src/features/connections/model/protocol";
 import { HostEngine, parseCommand } from "./engine";
 import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
-import { HostAutomations } from "./automations";
+import { HostAutomations } from "./automations/automations";
 import { SocialService, type SocialPrincipal } from "./social/social";
-import { createSessionAuthorityResolver } from "./session-authority";
+import { createSessionAuthorityResolver } from "./sessions/session-authority";
 import { socialAgentGenerator } from "./social/social-agent";
 import { OsSocialCredentials } from "./social/social-credentials";
 import { SocialTransport } from "./social/social-transport";
 import { XBrowserSessions } from "./social/social-browser";
 import { SocialPeers } from "./social/social-peers";
 import { createSocialAdapters } from "../src/integrations/social/platformAdapters";
-import { HostTasks } from "./tasks";
-import { HostSprints } from "./sprints";
-import { AttachmentOwnership } from "./attachment-ownership";
-import { HostGoals } from "./goals";
+import { HostTasks } from "./tasks/tasks";
+import { HostSprints } from "./sprints/sprints";
+import { AttachmentOwnership } from "./attachments/attachment-ownership";
+import { HostGoals } from "./goals/goals";
 import { HostAssistant } from "./assistant/service";
 import type { ConversationTool } from "./conversation/conversation-tools";
 import { assistantExecutionPorts } from "./assistant/core/assistant-runtime";
@@ -260,33 +260,33 @@ import { verifyAssistantNotificationReceipt } from "./assistant/native/assistant
 import { assistantSessionRuntime } from "./assistant/sessions/assistant-session-runtime";
 import { HostAssistantManualSessions } from "./assistant/sessions/assistant-manual-sessions";
 import { HostAssistantKeepAwake } from "./assistant/core/assistant-keep-awake";
-import { HostDesktopControl } from "./desktop-control-host";
-import { desktopControlDomain } from "./desktop-control-domain";
+import { HostDesktopControl } from "./desktop/desktop-control-host";
+import { desktopControlDomain } from "./desktop/desktop-control-domain";
 import { HostDesktopHelper } from "./desktop-helper";
 import { desktopHelperDomain } from "./desktop-helper-domain";
-import { readDesktopPresence } from "./desktop-presence";
+import { readDesktopPresence } from "./desktop/desktop-presence";
 import {
   ConversationDesktopControlTools,
   isDesktopControlConversationTool,
 } from "./conversation/conversation-desktop-control-tools";
-import { HostStewards } from "./stewards";
+import { HostStewards } from "./stewards/stewards";
 import { dirname, join } from "node:path";
 import { DeviceHost } from "./devices/device-host";
 import { DevicePreviews } from "./devices/device-preview";
 import type { DeviceAction } from "../src/features/devices/types";
-import { GenericAcpService, type GenericAcpMetadataPatch } from "./generic-acp";
-import { HandoffHistoryStore } from "./handoff-history";
-import { ResourceDiagnostics } from "./resource-diagnostics";
-import { perfMetrics, mcpMetricName } from "./perf-metrics";
+import { GenericAcpService, type GenericAcpMetadataPatch } from "./providers/generic-acp";
+import { HandoffHistoryStore } from "./tasks/handoff-history";
+import { ResourceDiagnostics } from "./diagnostics/resource-diagnostics";
+import { perfMetrics, mcpMetricName } from "./diagnostics/perf-metrics";
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
 import { performance } from "node:perf_hooks";
-import { BrowserRuntime } from "./browser-runtime";
-import { SessionBrowserRegistry } from "./shared-browser";
-import { RuntimeLogMonitors } from "./runtime-log-monitors";
-import { DevServersService } from "./dev-servers";
-import { DevServerAccess } from "./dev-server-access";
-import { RuntimeLogsService, scrubRuntimeLogText } from "./runtime-logs";
-import { RuntimeLogAccess, runtimeLogToolQuery } from "./runtime-log-tools";
+import { BrowserRuntime } from "./browser/browser-runtime";
+import { SessionBrowserRegistry } from "./browser/shared-browser";
+import { RuntimeLogMonitors } from "./execution/runtime-log-monitors";
+import { DevServersService } from "./dev-servers/dev-servers";
+import { DevServerAccess } from "./dev-servers/dev-server-access";
+import { RuntimeLogsService, scrubRuntimeLogText } from "./execution/runtime-logs";
+import { RuntimeLogAccess, runtimeLogToolQuery } from "./execution/runtime-log-tools";
 import {
   ConversationDesktopRelay,
   sessionConversationToolCatalog,
@@ -294,15 +294,15 @@ import {
   validateSessionConversationTool,
   validateConversationTool,
 } from "./conversation/conversation-tools";
-import { openDevServerBrowser } from "./dev-server-browser";
+import { openDevServerBrowser } from "./dev-servers/dev-server-browser";
 import type { DevServerDetails } from "../src/features/host-tools/devServerTypes";
-import { WebControl } from "./web-control";
+import { WebControl } from "./web/web-control";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
 import type { HandoffHistory } from "../src/features/sessions/model/handoffBudget";
-import { DesktopSessions, type DesktopSessionMeta } from "./desktopSessions";
-import { DesktopCommandDelivery } from "./desktop-command-delivery";
-import { QueueDrainer, queueRowCommands } from "./queue-drainer";
-import { SessionQueues } from "./session-queue";
+import { DesktopSessions, type DesktopSessionMeta } from "./desktop/desktopSessions";
+import { DesktopCommandDelivery } from "./desktop/desktop-command-delivery";
+import { QueueDrainer, queueRowCommands } from "./sessions/queue-drainer";
+import { SessionQueues } from "./sessions/session-queue";
 import { RequestAuthorizationError } from "./store-db";
 import {
   HostDomainAuthorizationError,
@@ -310,34 +310,34 @@ import {
   assertDomainAuthority,
   type HostDomainContext,
 } from "./domains/context";
-import { RunLeases } from "./run-lease";
+import { RunLeases } from "./execution/run-lease";
 import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
 import { AdoptedChanges } from "./workspaces/adoptedChanges";
 import { sameQueuedModelTarget } from "../src/features/sessions/model/messageQueue";
-import { parseRemoteAttachments, resolveAttachments, resolveQuestionAttachments } from "./attachments";
-import { DesktopDelete } from "./desktopDelete";
-import { hostInbox } from "./host-notes";
+import { parseRemoteAttachments, resolveAttachments, resolveQuestionAttachments } from "./attachments/attachments";
+import { DesktopDelete } from "./desktop/desktopDelete";
+import { hostInbox } from "./notes/host-notes";
 import { AsyncHostNotes } from "./host-notes-async";
 import {
   ConversationWorkspaceTools,
   isWorkspaceConversationTool,
 } from "./conversation/conversation-workspace-tools";
-import { ProviderInboxBridge } from "./provider-inbox";
+import { ProviderInboxBridge } from "./providers/provider-inbox";
 import { MobilePairing } from "./mobile/mobile-pairing";
 import { createMobileAccessService } from "./mobile/mobile-access";
 import { MobileLanAccess } from "./mobile/mobile-lan";
-import { ExternalTunnels } from "./tunnels";
+import { ExternalTunnels } from "./tunnels/tunnels";
 import {
   parseRemoteInboxOperation,
   inboxOperationWrites,
 } from "../src/features/inbox/model/remoteInbox";
 import { branchCache } from "./git/git-actions";
-import { withOverlay } from "./desktopLive";
-import { writeAttachmentChunk, readAttachmentChunk, attachmentUploadStatus } from "./attachments";
+import { withOverlay } from "./desktop/desktopLive";
+import { writeAttachmentChunk, readAttachmentChunk, attachmentUploadStatus } from "./attachments/attachments";
 import { sessionWorkCwd, type LinkedWorkItem } from "../src/features/sessions/model/session";
 import { parseGithubWorkItemUrl } from "../src/shared/lib/githubWorkItem";
-import { SyncTransfers, serializedResponse } from "./sync-transfer";
-import { RevisionWaits } from "./revisionWait";
+import { SyncTransfers, serializedResponse } from "./sync/sync-transfer";
+import { RevisionWaits } from "./storage/revisionWait";
 import {
   TranscriptPages,
   transcriptPage,
@@ -345,12 +345,12 @@ import {
   previewRewindHistory,
   previewSession,
   withHead,
-} from "./transcriptPage";
-import { RemoteChanges } from "./remoteChanges";
+} from "./sessions/transcriptPage";
+import { RemoteChanges } from "./workspaces/remoteChanges";
 import { GitWatches } from "./git/git-watch";
-import { syncPull, syncPush } from "./sync";
+import { syncPull, syncPush } from "./sync/sync";
 import type { SyncOp } from "../src/features/sync/model/syncProtocol";
-import { browseHostDirectories, createHostDirectory } from "./browse";
+import { browseHostDirectories, createHostDirectory } from "./browser/browse";
 import { createHostBranch, hostBranches, switchHostBranch } from "./git/git-branches";
 import { createHostWorktree, hostWorktrees, resolveHostWorktreeAsync } from "./git/git-worktrees";
 import {
@@ -364,8 +364,8 @@ import {
   searchHostContent,
   searchHostFiles,
   writeHostFile,
-} from "./workspace";
-import { WorkspaceCommands } from "./workspace-commands";
+} from "./workspaces/workspace";
+import { WorkspaceCommands } from "./workspaces/workspace-commands";
 import { discoverCodexModels } from "../src/integrations/harness/providers/codex/codexCatalog";
 import { discoverClaudeModels } from "../src/integrations/harness/providers/claude/claudeCatalog";
 import { discoverCursorModels } from "../src/integrations/harness/providers/cursor/cursorCatalog";
@@ -379,8 +379,8 @@ import { discoverFxModels } from "../src/integrations/harness/providers/fx/fxCat
 import { discoverHermesModels } from "../src/integrations/harness/providers/hermes/hermesCatalog";
 import { discoverAntigravityModels } from "../src/integrations/harness/providers/antigravity/antigravityCatalog";
 import { setHarnessModels, type AgentModel } from "../src/features/sessions/model/models";
-import { listShellProfiles, setChosenProfile, setReviewedProfile } from "./shellProfiles";
-import { hasShellPhysicalOwner } from "./shell-ownership";
+import { listShellProfiles, setChosenProfile, setReviewedProfile } from "./execution/shellProfiles";
+import { hasShellPhysicalOwner } from "./execution/shell-ownership";
 import {
   resolveAntigravityBinary,
   resolveClaudeBinary,
@@ -520,9 +520,9 @@ export async function createHostServer(
   const inWorkspace = inManagedWorkspace;
   const managed = createManagedWorkspaceRuntime(engine.store, engine, {
     probe: async (workspace) => {
-      const activities: import("./workspace-contracts").WorkspaceActivity[] = [];
+      const activities: import("./workspaces/workspace-contracts").WorkspaceActivity[] = [];
       const add = (
-        kind: import("./workspace-contracts").WorkspaceActivity["kind"],
+        kind: import("./workspaces/workspace-contracts").WorkspaceActivity["kind"],
         ownerId: string,
       ) =>
         activities.push({
@@ -588,7 +588,7 @@ export async function createHostServer(
   const buildIdentity = readHostBuildIdentity();
   const startWorkspaceActivity = async (
     cwd: string,
-    kind: import("./workspace-contracts").WorkspaceActivity["kind"],
+    kind: import("./workspaces/workspace-contracts").WorkspaceActivity["kind"],
     ownerId: string,
   ) => {
     const entries: { id: string; workspaceId: string }[] = [];
@@ -630,7 +630,7 @@ export async function createHostServer(
   const withWorkspaceOwner = async <T>(
     token: string,
     action: (
-      owner: import("./workspace-service-contracts").WorkspaceOwnerAuthorization,
+      owner: import("./workspaces/workspace-service-contracts").WorkspaceOwnerAuthorization,
     ) => Promise<T>,
   ) => managed.withOwner(await workspaceOwnerDeviceId(token), action);
   const requestWorkspaceOwner =
@@ -2369,8 +2369,13 @@ export async function createHostServer(
   const desktopCommandDelivery = new DesktopCommandDelivery(desktop.live, engine.store);
   const questionBinding = async (sessionId: string, runId: string, requestId: number) => {
     const view = await readSessionView(sessionId);
-    const question = view.session.pendingQuestion;
-    if (view.runId !== runId || question?.requestId !== requestId || !question.occurrenceId)
+    // A live desktop may own a Host-backed conversation whose native transcript
+    // is unavailable here. Its authenticated original heartbeat owns the prompt.
+    const desktopQuestion = runId === DESKTOP_RUN_ID && desktop.live.busyClient(sessionId)
+      ? desktop.live.overlay(sessionId)?.patch.pendingQuestion : undefined;
+    const question = desktopQuestion ?? view.session.pendingQuestion;
+    const currentRun = desktopQuestion ? DESKTOP_RUN_ID : view.runId;
+    if (currentRun !== runId || question?.requestId !== requestId || !question.occurrenceId)
       throw new Error("The original question is no longer available");
     return question.occurrenceId;
   };
@@ -2549,7 +2554,7 @@ export async function createHostServer(
   const sprintsService = createHostSprintsService({ sprints });
   const approveManagementOperation = async (
     operation: { action: string; input: Record<string, unknown>; operationHash: string },
-    principal: import("./runtime-log-tools").RuntimeLogSubjectPrincipal,
+    principal: import("./execution/runtime-log-tools").RuntimeLogSubjectPrincipal,
     authorized: () => Promise<boolean>,
   ) => {
     const decision = await conversationDesktop.call(

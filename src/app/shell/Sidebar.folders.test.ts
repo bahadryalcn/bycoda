@@ -112,41 +112,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("sidebar session folder pruning under StrictMode", () => {
-  // StrictMode replays the mount effect once with the same closure; the effect
-  // skips the replayed write when storage already holds the pruned value.
-  it("persists a mount-time stale-session prune with the pruned value only", async () => {
+describe("sidebar folder retention under StrictMode with partial history", () => {
+  it("retains absent session IDs without publishing a mount-time prune", async () => {
     seedFolders([{ id: "work", name: "Work", sessionIds: ["keep-1", "gone-1"], collapsed: false }]);
     await renderStrict();
 
     const calls = vi.mocked(saveSessionFolders).mock.calls;
-    expect(calls).toHaveLength(1);
-    for (const [cwd, folders] of calls) {
-      expect(cwd).toBe(CWD);
-      expect(folders).toEqual([expect.objectContaining({ id: "work", sessionIds: ["keep-1"] })]);
-    }
-    expect(storeWrites).toHaveLength(calls.length);
-    expect(changeEvents).toBe(calls.length);
-    expect(loadSessionFolders(CWD)[0].sessionIds).toEqual(["keep-1"]);
+    expect(calls).toHaveLength(0);
+    expect(storeWrites).toHaveLength(0);
+    expect(changeEvents).toBe(0);
+    expect(loadSessionFolders(CWD)[0].sessionIds).toEqual(["keep-1", "gone-1"]);
     expect(container.querySelector('[data-session-folder="work"]')).not.toBeNull();
   });
 
-  it("removes a folder emptied by a mount-time prune", async () => {
+  it("retains a folder whose sessions are absent from partial history", async () => {
     seedFolders([
       { id: "stale", name: "Stale", sessionIds: ["gone-1", "gone-2"], collapsed: false },
       { id: "work", name: "Work", sessionIds: ["keep-2"], collapsed: false },
     ]);
     await renderStrict();
 
-    for (const [, folders] of vi.mocked(saveSessionFolders).mock.calls) {
-      expect(folders.map((folder) => folder.id)).toEqual(["work"]);
-    }
-    expect(loadSessionFolders(CWD).map((folder) => folder.id)).toEqual(["work"]);
-    expect(container.querySelector('[data-session-folder="stale"]')).toBeNull();
+    expect(saveSessionFolders).not.toHaveBeenCalled();
+    expect(storeWrites).toHaveLength(0);
+    expect(changeEvents).toBe(0);
+    expect(loadSessionFolders(CWD).map((folder) => folder.id)).toEqual(["stale", "work"]);
+    expect(loadSessionFolders(CWD)[0].sessionIds).toEqual(["gone-1", "gone-2"]);
     expect(container.querySelector('[data-session-folder="work"]')).not.toBeNull();
   });
 
-  it("writes and announces exactly once when a session disappears after mount", async () => {
+  it("keeps membership without writes when a session disappears from the visible page", async () => {
     seedFolders([{ id: "work", name: "Work", sessionIds: ["keep-1", "keep-2"], collapsed: false }]);
     await renderStrict();
     expect(saveSessionFolders).not.toHaveBeenCalled();
@@ -154,13 +148,10 @@ describe("sidebar session folder pruning under StrictMode", () => {
     props = { ...props, sessions: [session("keep-1")] };
     await renderStrict();
 
-    expect(saveSessionFolders).toHaveBeenCalledTimes(1);
-    expect(saveSessionFolders).toHaveBeenCalledWith(CWD, [
-      expect.objectContaining({ id: "work", sessionIds: ["keep-1"] }),
-    ]);
-    expect(storeWrites).toHaveLength(1);
-    expect(changeEvents).toBe(1);
-    expect(loadSessionFolders(CWD)[0].sessionIds).toEqual(["keep-1"]);
+    expect(saveSessionFolders).not.toHaveBeenCalled();
+    expect(storeWrites).toHaveLength(0);
+    expect(changeEvents).toBe(0);
+    expect(loadSessionFolders(CWD)[0].sessionIds).toEqual(["keep-1", "keep-2"]);
   });
 
   it("does not write or announce when every folder session is known", async () => {

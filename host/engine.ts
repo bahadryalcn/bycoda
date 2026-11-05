@@ -1,27 +1,27 @@
 import { EngineOperations } from "./engine-operations";
-import { admitRunDuration, finishRunDuration } from "./run-duration";
+import { admitRunDuration, finishRunDuration } from "./execution/run-duration";
 import {
   AssistantTurnPolicyDeferredError,
   recordDeferredAssistantTurn,
 } from "./assistant/core/assistant-turn-policy";
-import { hostQuestionToken } from "./question-source";
+import { hostQuestionToken } from "./sessions/question-source";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { executionUserIndex } from "../src/features/sessions/model/executionTurn";
-import { HostRunWriters } from "./run-writers";
+import { HostRunWriters } from "./execution/run-writers";
 import type { HostRunHandle } from "../src/integrations/harness/core/hostRun";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
 import { createHash, randomUUID } from "node:crypto";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
-import { assertHostProviderAccount } from "./provider-accounts";
+import { assertHostProviderAccount } from "./providers/provider-accounts";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
-import { HostCheckpoints } from "./checkpoints";
-import type { TurnGitHistory } from "./workspace-service-contracts";
-import type { ConversationRewindAdapter } from "./session-rewind";
-import { durableWrite, refComponent } from "./turn-git-history";
-import { previewContextualSession } from "./contextual-session";
+import { HostCheckpoints } from "./checkpoints/checkpoints";
+import type { TurnGitHistory } from "./workspaces/workspace-service-contracts";
+import type { ConversationRewindAdapter } from "./sessions/session-rewind";
+import { durableWrite, refComponent } from "./git/turn-git-history";
+import { previewContextualSession } from "./sessions/contextual-session";
 import {
   composeNoteContext,
   noteContextMeta,
@@ -29,7 +29,7 @@ import {
 } from "../src/features/notes/noteContext";
 import { isEditTool } from "../src/integrations/harness/core/preview";
 import { homedir } from "node:os";
-import { HandoffHistoryStore } from "./handoff-history";
+import { HandoffHistoryStore } from "./tasks/handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { renameHostWorktreeBranch, resolveHostWorktreeAsync } from "./git/git-worktrees";
 import {
@@ -92,19 +92,19 @@ import {
   type RemoteProvider,
   type ContextualSessionInput,
 } from "../src/features/connections/model/protocol";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import {
   ProviderActivityRetirements,
   stopCapturedProvider,
   type ProviderActivityRetirement,
-} from "./provider-activity-retirement";
+} from "./providers/provider-activity-retirement";
 import { HostStore } from "./store";
-import { isSessionRunActivity } from "./session-run-activity";
-import { parseRemoteAttachments, resolveAttachments, resolveQuestionAttachments } from "./attachments";
-import { runHostShell } from "./shell";
-import { assertShellOwnershipAvailable, reserveShellOwnership } from "./shell-ownership";
-import { isTaskWorktreeRemoving } from "./task-worktree-cleanup";
-import { prepareHostSkillPrompt } from "./prompt-skills";
+import { isSessionRunActivity } from "./sessions/session-run-activity";
+import { parseRemoteAttachments, resolveAttachments, resolveQuestionAttachments } from "./attachments/attachments";
+import { runHostShell } from "./execution/shell";
+import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
+import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
+import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import {
   forgetRuntimeHint,

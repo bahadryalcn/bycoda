@@ -17,7 +17,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `src/features/files/ui/FileTree.tsx` and `useFileTreeOperations.ts`: rendered tree and action admission.
 - `src/features/files/model/`: selection, names, listing/cache state.
 - `src/app/shell/Sidebar.tsx`: root identity, keyed lifecycle and mounted tabs.
-- `src/platform/tauri/fs.ts`, `src/features/connections/model/remoteCommands.ts`, `host/workspace-commands.ts`, `src-tauri/src/fs.rs`: operation routing and permission owners.
+- `src/platform/tauri/fs.ts`, `src/features/connections/model/remoteCommands.ts`, `host/workspaces/workspace-commands.ts`, `src-tauri/src/fs.rs`: operation routing and permission owners.
 
 ## Preserve
 

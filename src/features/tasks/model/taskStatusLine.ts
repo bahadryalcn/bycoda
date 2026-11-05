@@ -6,7 +6,7 @@ import {
   taskRequiresInstructions,
 } from "./taskRules";
 
-/** Host copy for an owner stop (host/sessionRuns.ts STOPPED_BY_USER). */
+/** Host copy for an owner stop (host/sessions/sessionRuns.ts STOPPED_BY_USER). */
 const STOPPED_BY_OWNER = "Stopped by you.";
 /** Host copy for interrupted or crashed runs. */
 const INTERRUPTED = /\binterrupted\b|^Host (?:stopped|restarted)\b|could not be stopped/i;

@@ -9,7 +9,7 @@ import { deviceBinaryCommand, deviceCommand, stopDeviceChild } from "./device-pr
 import { androidDeviceControl, quoteAndroidShell } from "./android-device-control";
 import { DeviceControlLeases } from "./device-control-leases";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
-import { cachedExpoGo, expoPreviewUrl } from "../expo-go";
+import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
 import type {
   DeviceAction,
   DeviceFrame,

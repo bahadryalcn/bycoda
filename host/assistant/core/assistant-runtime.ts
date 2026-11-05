@@ -1,7 +1,7 @@
 import type { HostStore } from "../../store";
-import type { HostGoals } from "../../goals";
-import type { HostTasks } from "../../tasks";
-import type { HostAutomations } from "../../automations";
+import type { HostGoals } from "../../goals/goals";
+import type { HostTasks } from "../../tasks/tasks";
+import type { HostAutomations } from "../../automations/automations";
 import { HostAssistantJobDeletion } from "../work/assistant-job-deletion";
 import type { AssistantPorts, AssistantUsageTurn } from "../service";
 import type { AsyncHostNotes } from "../../host-notes-async";
@@ -19,7 +19,7 @@ import {
   assistantGoalSessionIds as goalSessionIds,
 } from "../work/assistant-job-scope";
 import { readAssistantRecovery } from "../work/assistant-worker-recovery";
-import type { HostNote } from "../../host-notes";
+import type { HostNote } from "../../notes/host-notes";
 import type { AssistantNote } from "../../../src/shared/model/host-contracts/assistant";
 import { assistantRoleExecution, assistantRoleProfile } from "../../../src/shared/model/assistantRoles";
 import { readAssistantQuestionStatus, type AssistantQuestionStatus } from "./assistant-questions";

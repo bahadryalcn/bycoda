@@ -1,9 +1,11 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const environment = vi.hoisted(() => ({ native: false }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => environment.native }));
 import { createSyncWindowOwner } from "./syncWindowOwner";
+import { isTauri } from "@tauri-apps/api/core";
 
-afterEach(() => { environment.native = false; vi.useRealTimers(); });
+beforeEach(() => { vi.stubGlobal("navigator", {}); });
+afterEach(() => { environment.native = false; vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 it("runs one background owner and transfers ownership after its window closes", async () => {
   vi.useFakeTimers();
@@ -63,6 +65,7 @@ it("preserves background functionality when Web Locks are unavailable or denied"
 
 it("does not grant native sync ownership when the lock service is unavailable", async () => {
   environment.native = true;
+  expect(isTauri()).toBe(true);
   const acquired = vi.fn();
   const unavailable = createSyncWindowOwner(acquired, undefined);
   expect(unavailable.isOwner()).toBe(false);

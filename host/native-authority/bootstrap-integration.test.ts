@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
-import { DesktopSessions } from "../desktopSessions";
+import { DesktopSessions } from "../desktop/desktopSessions";
 import { createHostServer, type HostPrivateControlHandler } from "../server";
 import { createNativeAuthorityBootstrap, NATIVE_AUTHORITY_BOOTSTRAP_PATH } from "./bootstrap";
 

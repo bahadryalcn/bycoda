@@ -10,7 +10,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-// Shutdown of tracked sockets wakes readiness immediately; this bound also lets
+// Shutdown of tracked sockets can wake readiness; this bound also lets
 // the original lease/deadline be rechecked if a platform reports no wakeup.
 const TLS_READY_SLICE: Duration = Duration::from_millis(100);
 
@@ -19,7 +19,6 @@ pub(crate) fn wait_tcp_ready<T: std::os::fd::AsRawFd>(
     interests: &[(&T, bool, bool)],
     timeout: Duration,
 ) -> std::io::Result<usize> {
-    use std::os::fd::AsRawFd;
     let mut descriptors: Vec<libc::pollfd> = interests.iter()
         .filter(|(_, read, write)| *read || *write)
         .map(|(socket, read, write)| libc::pollfd {
@@ -44,7 +43,6 @@ pub(crate) fn wait_tcp_ready<T: std::os::windows::io::AsRawSocket>(
     interests: &[(&T, bool, bool)],
     timeout: Duration,
 ) -> std::io::Result<usize> {
-    use std::os::windows::io::AsRawSocket;
     use windows_sys::Win32::Networking::WinSock::{WSAGetLastError, WSAPoll, WSAPOLLFD, POLLRDNORM, POLLWRNORM};
     let mut descriptors: Vec<WSAPOLLFD> = interests.iter()
         .filter(|(_, read, write)| *read || *write)

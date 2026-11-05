@@ -129,9 +129,9 @@ export function useCommitDraft({
     try {
       const headMessage = await gitHeadMessage(cwd);
       // The checkout owns the live draft, including edits made while Git reads HEAD.
-      if (original.runtime.state.message !== draft || original.runtime.state.amendTarget !== target ||
+      if (original.runtime.state.amendTarget !== target ||
           original.runtime.generationIndex.identity !== context || original.runtime.generationIndex.version !== mutation) return;
-      if (!draft.trim()) setStoredMessage(headMessage);
+      if (original.runtime.state.message === draft && !draft.trim()) setStoredMessage(headMessage);
       setStoredAmendTarget({
         branch: index?.branch ?? null,
         head: index?.head ?? null,

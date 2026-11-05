@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
-import { HostTasks } from "../tasks";
-import { HostGoals } from "../goals";
+import { HostTasks } from "../tasks/tasks";
+import { HostGoals } from "../goals/goals";
 import { HostAssistant } from "./service";
 import { AssistantRepository } from "./repository";
 import { assistantExecutionPorts } from "./core/assistant-runtime";
@@ -19,7 +19,7 @@ import {
   type AssistantProfilePatch,
   type AssistantJob,
 } from "../../src/shared/model/host-contracts/assistant";
-import type { HostProvider } from "../providers";
+import type { HostProvider } from "../providers/providers";
 const closes: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of closes.splice(0).reverse()) await close();

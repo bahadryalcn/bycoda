@@ -1,8 +1,8 @@
 import { expect, it, vi } from "vitest";
-import { fixture } from "../../native-devices.test-support";
-import { deliveryIdentity, deliverySha } from "../../native-delivery.test-support";
-import { createNativeDeliveryStore } from "../../native-delivery-store";
-import { WorkspaceCommands } from "../../workspace-commands";
+import { fixture } from "../../devices/native-devices.test-support";
+import { deliveryIdentity, deliverySha } from "../../native-delivery/native-delivery.test-support";
+import { createNativeDeliveryStore } from "../../native-delivery/native-delivery-store";
+import { WorkspaceCommands } from "../../workspaces/workspace-commands";
 
 const target = "native.services.workspace.format";
 const maximum = 4 * 1024 * 1024;

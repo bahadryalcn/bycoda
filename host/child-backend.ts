@@ -1,15 +1,15 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
-import { createProbeGrantWarningFilter } from "./probe-grant-warning";
+import { createProbeGrantWarningFilter } from "./security/probe-grant-warning";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import {
   SessionToolsRelay,
   type SessionToolGroup,
   type SessionToolCapability,
-} from "./session-tools-relay";
+} from "./sessions/session-tools-relay";
 import { authorizeSocialAcpFrame } from "./social/social-tools";
-import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
+import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./execution/runtime-log-tools";
 import { authorizeConversationAcpFrame } from "./conversation/conversation-tools";
 import { join, basename, dirname, extname, isAbsolute, relative } from "node:path";
 import {
@@ -27,9 +27,9 @@ import {
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { homedir, tmpdir } from "node:os";
-import { GenericAcpService } from "./generic-acp";
+import { GenericAcpService } from "./providers/generic-acp";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
-import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./generated-images";
+import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./files/generated-images";
 import type { ChildBackend } from "../src/integrations/harness/core/child";
 import {
   isHarnessConstructionId,
@@ -38,30 +38,30 @@ import {
 } from "../src/shared/model/harnessProcess";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { binaryNames, providerLaunch, resolveProvider } from "./process";
-import { providerAccountEnvironment } from "./provider-accounts";
-import { providerAuthStatus } from "./provider-auth";
+import { providerAccountEnvironment } from "./providers/provider-accounts";
+import { providerAuthStatus } from "./providers/provider-auth";
 import {
   ProviderLines,
   PROVIDER_STDOUT_LINE_BYTES,
   PROVIDER_STDERR_LINE_BYTES,
-} from "./provider-lines";
+} from "./providers/provider-lines";
 import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
-import type { ProviderChild } from "./provider-child";
+import type { ProviderChild } from "./providers/provider-child";
 import { NativeGuardianChild, ProviderGuardianError } from "./provider-guardian";
 import { prepareProviderGuardian } from "./provider-guardian-deployment";
-import { ProviderConstructions } from "./provider-constructions";
+import { ProviderConstructions } from "./providers/provider-constructions";
 import {
   HostRunWriters,
   type HostRunProcessReservation,
   type HostRunProcessSource,
   type HostRunCwdGrant,
-} from "./run-writers";
-import { canonicalWorkspacePath, workspacePathKey } from "./workspace-paths";
+} from "./execution/run-writers";
+import { canonicalWorkspacePath, workspacePathKey } from "./workspaces/workspace-paths";
 import {
   HostRunHttpTargets,
   type HostHttpOrigin,
   type HostHttpSourceHint,
-} from "./run-http-targets";
+} from "./execution/run-http-targets";
 import { parseServerUrlFromOutput } from "../src/integrations/harness/providers/opencode/opencodeProtocol";
 import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 

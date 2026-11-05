@@ -17,9 +17,9 @@ All source paths below are repository-root relative.
 - `src/features/files/ui/FileEditor.tsx`: actual filesystem save, conflict and
   draft ownership. A formatter result does not prove a successful save.
 - `src/shared/lib/format.ts`: owning-machine formatter and bundled fallback.
-- `host/editor-format.ts`: bounded project formatter worker. Project plugins
+- `host/files/editor-format.ts`: bounded project formatter worker. Project plugins
   execute code; do not assume an uncertain formatter can be replayed safely.
-- `host/native-delivery-store.ts`, `host/domains/native-services/service.ts`:
+- `host/native-delivery/native-delivery-store.ts`, `host/domains/native-services/service.ts`:
   original receipt, result reservation, recording, status and cleanup.
 - `src-tauri/src/fs.rs`, `remote.rs`, `remote_native_service.rs` and
   `remote_native_service_delivery.rs`: native editor admission, original route,

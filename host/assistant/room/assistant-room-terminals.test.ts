@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { HostTerminals } from "../../terminals";
+import { HostTerminals } from "../../terminals/terminals";
 import { createRoomTerminalTools, type RoomTerminalPrincipal } from "./assistant-room-terminals";
 import type { ManagementReceipt } from "../../conversation/conversation-management-tools";
 

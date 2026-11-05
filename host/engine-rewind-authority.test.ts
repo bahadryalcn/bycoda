@@ -4,7 +4,7 @@ import { basename, join, resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
-import { createManagedNativeRewind } from "./managed-native-rewind";
+import { createManagedNativeRewind } from "./managed/managed-native-rewind";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanups: Array<() => Promise<unknown>> = [];

@@ -4,19 +4,19 @@
   "policy": "Only unchanged reviewed runtime graphs run once. Any source drift, missing input or unknown test falls back to all-OS integration coverage.",
   "tests": [
     {
-      "file": "host/browser-annotation.test.ts",
+      "file": "host/browser/browser-annotation.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/browser-annotation.test.ts": "812f628bec2769a1329c0b8cb3b30347d54487e5c9149f8b565b656ebc22e5cd",
-        "host/browser-annotation.ts": "3b962c1659dc77b654a6b4e5b70ae7c66784db30209d21ef4fc9200324e5a340"
+        "host/browser/browser-annotation.test.ts": "812f628bec2769a1329c0b8cb3b30347d54487e5c9149f8b565b656ebc22e5cd",
+        "host/browser/browser-annotation.ts": "3b962c1659dc77b654a6b4e5b70ae7c66784db30209d21ef4fc9200324e5a340"
       }
     },
     {
-      "file": "host/browser-shadow-masks.test.ts",
+      "file": "host/browser/browser-shadow-masks.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/browser-shadow-masks.test.ts": "e29f199099d99adbfa0d196e2c772d6616360be751677606a4fcbb472033435b",
-        "host/browser-shadow-masks.ts": "73f30995aeab0d30d9bab75ea5a60bf0f0022158deda1c7bd8b5a8c978bf23bf"
+        "host/browser/browser-shadow-masks.test.ts": "e29f199099d99adbfa0d196e2c772d6616360be751677606a4fcbb472033435b",
+        "host/browser/browser-shadow-masks.ts": "73f30995aeab0d30d9bab75ea5a60bf0f0022158deda1c7bd8b5a8c978bf23bf"
       }
     },
     {
@@ -24,7 +24,7 @@
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
         "host/conversation/conversation-task-queue-tools.test.ts": "1869158e0b1bb47cf91dafb70435b4555f4cd3e2a5f1d438b87ea08b7f80ac37",
-        "host/conversation/conversation-task-queue-tools.ts": "10ccc95db1a67f67022c54a74fbabf60fa5f639b9599ca41d6b0759d8b4d5a71"
+        "host/conversation/conversation-task-queue-tools.ts": "72d3a72c0e9975adcc71d816a342a1843b616b451bbbcbb70aa0a810f25818f4"
       }
     },
     {
@@ -45,53 +45,53 @@
       }
     },
     {
-      "file": "host/inlineSessionSync.test.ts",
+      "file": "host/sessions/inlineSessionSync.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/inlineSessionSync.test.ts": "9a649cbf9e47e1971d0e0cc405fe21ad4b3291e3b1802948383bbbee032b9cc1",
-        "host/inlineSessionSync.ts": "c76822dcfd94adb56c57aea450c2e9006f1de3926a3d8c964b4d6a8dfcf3ad5f"
+        "host/sessions/inlineSessionSync.test.ts": "9a649cbf9e47e1971d0e0cc405fe21ad4b3291e3b1802948383bbbee032b9cc1",
+        "host/sessions/inlineSessionSync.ts": "c76822dcfd94adb56c57aea450c2e9006f1de3926a3d8c964b4d6a8dfcf3ad5f"
       }
     },
     {
-      "file": "host/model-catalog-cache.test.ts",
+      "file": "host/providers/model-catalog-cache.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/model-catalog-cache.test.ts": "5bf7fd68e4455cde1a58f771fe3083aea156420d337761dca3515cf0053e2d38",
-        "host/model-catalog-cache.ts": "1ee7fc26670ef0541242d900f6de02d518166b583335484dfcc03b5bb5cc6de3"
+        "host/providers/model-catalog-cache.test.ts": "8be43f5548f3fb440f67574a65aee0213b5d173172927082c06d318f7aaf51ab",
+        "host/providers/model-catalog-cache.ts": "3b3ad6fb7c16a271d33a9a95baaaa9c433c1afcedbfef49a5d8e5441de48bcd3"
       }
     },
     {
-      "file": "host/provider-lines.test.ts",
+      "file": "host/providers/provider-lines.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/provider-lines.test.ts": "8fb0fa7888994e19ffa875824b4d44cbf70d3778b95b0154515c03e7b8f8d6c6",
-        "host/provider-lines.ts": "0e5ea2cb0aecd4101510e72de778c6e469f73ff694651682629f8fa4ea1cda51"
+        "host/providers/provider-lines.test.ts": "8fb0fa7888994e19ffa875824b4d44cbf70d3778b95b0154515c03e7b8f8d6c6",
+        "host/providers/provider-lines.ts": "0e5ea2cb0aecd4101510e72de778c6e469f73ff694651682629f8fa4ea1cda51"
       }
     },
     {
-      "file": "host/revisionWait.test.ts",
+      "file": "host/storage/revisionWait.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
         "host/changeSignal.ts": "469dc87aad8d42c65fe20941a8a9c0653052444fc3741eb92858c9510a4d79ad",
-        "host/revisionWait.test.ts": "834776948fd7e0572aa95dbf5a487e3ce054fb123b13c8c23d0e4a0078723924",
-        "host/revisionWait.ts": "5dcec31af3cee5569252b6213d2bcbe6d51a72f2d3c5be8ab257a90f0c209a87"
+        "host/storage/revisionWait.test.ts": "2de1edb584f57a2dc98c7e4e1de85b22be4fe38c367f36ea31b164e747cf4744",
+        "host/storage/revisionWait.ts": "076b2b9b17198166597dd344b5a02a641a31442c5f883db27773e82b2f9618ea"
       }
     },
     {
-      "file": "host/run-lease.test.ts",
+      "file": "host/execution/run-lease.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/run-lease.test.ts": "f5adb636b8bdacd710a703fe16d5e35db4c8254383322db48b717aef80925d10",
-        "host/run-lease.ts": "e285eeb8428a516b552fb82b5d832787693a9b3c48e34eed0113ce21e458bb5f",
+        "host/execution/run-lease.test.ts": "f5adb636b8bdacd710a703fe16d5e35db4c8254383322db48b717aef80925d10",
+        "host/execution/run-lease.ts": "e285eeb8428a516b552fb82b5d832787693a9b3c48e34eed0113ce21e458bb5f",
         "src/features/sync/model/runLease.ts": "d486318f59c7825b20c858250c51f4408a6cb512d29e504351c8b163e57b5f31"
       }
     },
     {
-      "file": "host/session-layout.test.ts",
+      "file": "host/sessions/session-layout.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/session-layout.test.ts": "40ff23878e84fc32abc74910c00a1b0a8d68f5faf6e309d80f84fee153ac6348",
-        "host/session-layout.ts": "d97ff9704c30a1dc253a2ab5d9bd3a344b60746b01e0ac2711546739111da7a9"
+        "host/sessions/session-layout.test.ts": "40ff23878e84fc32abc74910c00a1b0a8d68f5faf6e309d80f84fee153ac6348",
+        "host/sessions/session-layout.ts": "d97ff9704c30a1dc253a2ab5d9bd3a344b60746b01e0ac2711546739111da7a9"
       }
     },
     {
@@ -103,11 +103,11 @@
       }
     },
     {
-      "file": "host/task-handoff.test.ts",
+      "file": "host/tasks/task-handoff.test.ts",
       "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
       "sources": {
-        "host/task-handoff.test.ts": "cc29e52f0eee6a5a411935b33eb9f95a46af08804efa7dac9e8e30b76c9f414a",
-        "host/task-handoff.ts": "34e05d8977e52f3cfbc3e552e429b3f1d0ccc0ba75fc000fd84457308d756bb7",
+        "host/tasks/task-handoff.test.ts": "99b3c130a0c129d5faa7878216b9afead0a6e06f0f19adf1b8a59bb7e1852042",
+        "host/tasks/task-handoff.ts": "a3349d69002ae8440f5715b5745a9cdfd4cbaa953603d7925ba7534a9d523269",
         "src/features/tasks/model/taskInstructions.ts": "6bcf0061d82c6130875a893d0b3df4300c23333cbef43324aca9730332cd8341"
       }
     }

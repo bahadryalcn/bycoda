@@ -14,9 +14,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createNativeBufferReports, type NativeBufferSnapshot } from "./native-buffer-reports";
-import { durableWrite } from "../turn-git-history";
-import type { ManagedWorkspace } from "../workspace-contracts";
-import { createManagedWorkspaceRuntime } from "../managed-workspace-runtime";
+import { durableWrite } from "../git/turn-git-history";
+import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
+import { createManagedWorkspaceRuntime } from "../managed/managed-workspace-runtime";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 

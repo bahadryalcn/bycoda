@@ -14,6 +14,7 @@ vi.mock("@tauri-apps/api/core", async () => ({
   ...(await vi.importActual<object>("@tauri-apps/api/core")),
   invoke: mocks.invoke,
 }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ label: "main" }) }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, handler: (value: { payload: any }) => void) => {
     mocks.handlers.set(name, handler);

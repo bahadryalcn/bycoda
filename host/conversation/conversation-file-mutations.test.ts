@@ -12,10 +12,10 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../store";
-import { WorkspaceCommands } from "../workspace-commands";
+import { WorkspaceCommands } from "../workspaces/workspace-commands";
 import { callFileConversationTool } from "./conversation-file-tools";
 import { inspectConversationPath } from "./conversation-file-mutations";
-import { writeHostFile } from "../workspace";
+import { writeHostFile } from "../workspaces/workspace";
 
 const cleanup: (() => void)[] = [];
 afterEach(() => {

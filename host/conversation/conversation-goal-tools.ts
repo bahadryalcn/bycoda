@@ -1,8 +1,8 @@
 import type { HostStore } from "../store";
 import { THREAD_WORK_EXECUTION_SCHEMA } from "./conversation-thread-work-tools";
-import type { HostGoals } from "../goals";
-import type { HostTasks } from "../tasks";
-import type { RuntimeLogPrincipal } from "../runtime-log-tools";
+import type { HostGoals } from "../goals/goals";
+import type { HostTasks } from "../tasks/tasks";
+import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
 import {
   assertConversationWorkspaceIntent,
   TASK_CONFIGURATION_FIELDS,

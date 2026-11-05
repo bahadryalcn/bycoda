@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SessionBrowserRegistry } from "../../shared-browser";
+import type { SessionBrowserRegistry } from "../../browser/shared-browser";
 import { ConversationPreviewWorkflow, type ConversationPreviewInput, type PreviewBrowserState, type PreviewPresentation } from "../../conversation/conversation-preview";
 import { managementReceiptKey, type ManagementReceipt } from "../../conversation/conversation-management-tools";
 import { roomOperationInput } from "./assistant-room-operation-input";

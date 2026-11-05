@@ -7,7 +7,7 @@ import {
   type SessionCommand,
 } from "../../src/shared/model/host-contracts/session-commands";
 import type { HostSession, RemoteAttachment } from "../../src/features/connections/model/protocol";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 
 const identity = z.string().min(1).max(300);
 const revision = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HostStore } from "../../store";
-import type { HostTasks } from "../../tasks";
+import type { HostTasks } from "../../tasks/tasks";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { AssistantJob } from "../../../src/shared/model/host-contracts/assistant";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";

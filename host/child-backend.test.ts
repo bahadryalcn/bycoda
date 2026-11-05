@@ -6,13 +6,13 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
-import { ProviderConstructions } from "./provider-constructions";
+import { ProviderConstructions } from "./providers/provider-constructions";
 import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
-import { HostRunWriters } from "./run-writers";
+import { HostRunWriters } from "./execution/run-writers";
 import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import type { SocialService } from "./social/social";
-import { PROVIDER_STDERR_LINE_BYTES } from "./provider-lines";
+import { PROVIDER_STDERR_LINE_BYTES } from "./providers/provider-lines";
 import {
   requireHarnessProcessReceipt,
   type HarnessProcessReceipt,

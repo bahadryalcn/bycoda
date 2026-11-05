@@ -29,7 +29,7 @@ All code paths below are repository-relative. This is a starting map; follow cur
 - Navigation/search: `src/features/settings/ui/SettingsView.tsx`, `SettingsSearch.tsx`; `src/features/settings/model/settings.ts`; `src/app/shell/SettingsRail.tsx`. Follow `src/app/workspace/layout/WorkspaceSettingsSurface.tsx` for app wiring.
 - Common controls/layout: `src/features/settings/ui/settingsControls.tsx`, `BycodaSettings.css`; inspect current collection adapters before changing external consumers.
 - Preference routing: `src/features/sessions/model/desktopPreferencesControl.ts`, `src/app/workspace/control/useAppControlRequests.ts`, `src-tauri/src/control.rs`; ordinary local preferences and capability-gated remote control are distinct.
-- Native registration/bridge: `src-tauri/src/lib.rs`, `remote.rs`. Host contracts: `host/workspace-rpc-contracts.ts`; verify the actual dispatcher/service before claiming an RPC exists.
+- Native registration/bridge: `src-tauri/src/lib.rs`, `remote.rs`. Host contracts: `host/workspaces/workspace-rpc-contracts.ts`; verify the actual dispatcher/service before claiming an RPC exists.
 - Localization: `src/shared/i18n/locales/`, `en-overrides.json`, `tr-overrides.json`. Search actual source messages; do not assume feature-key namespaces.
 
 ## Policies

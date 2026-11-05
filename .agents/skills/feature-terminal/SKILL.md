@@ -14,7 +14,7 @@ Code paths below are repository-root relative.
 - `src/features/terminal/ui/TerminalView.tsx`
 - `src/features/terminal/ui/TerminalTools.tsx`
 - `src/features/terminal/`
-- `host/terminals.ts`, `host/terminal-process.ts`
+- `host/terminals/terminals.ts`, `host/terminal-process.ts`
 - `src-tauri/src/mobile_pty.rs`, `src-tauri/src/pty.rs`
 
 ## Workflow

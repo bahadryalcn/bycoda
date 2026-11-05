@@ -5,13 +5,13 @@ import {
   RUNTIME_LOG_TOOLS,
   RUNTIME_LOG_TOOL_SCHEMAS,
   runtimeLogToolName,
-} from "../runtime-log-tools";
-import type { SessionGrantScope } from "../session-authority";
+} from "../execution/runtime-log-tools";
+import type { SessionGrantScope } from "../sessions/session-authority";
 import {
   assertAssistantThreadScope,
   type AssistantThreadAuthorityResolver,
   type AssistantThreadGrantScope,
-} from "../session-authority";
+} from "../sessions/session-authority";
 import { voiceThreadToolAllowed } from "../../src/shared/model/voiceToolScope";
 export { voiceThreadToolAllowed } from "../../src/shared/model/voiceToolScope";
 import { createHash } from "node:crypto";

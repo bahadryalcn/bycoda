@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HostStore } from "../../store";
-import type { HostAutomations } from "../../automations";
+import type { HostAutomations } from "../../automations/automations";
 import {
   parseHostAutomation,
   type HostAutomation,

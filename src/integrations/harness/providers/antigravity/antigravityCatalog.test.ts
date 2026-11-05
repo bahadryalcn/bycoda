@@ -42,6 +42,8 @@ describe("antigravity catalog on the stream-json transport", () => {
       ["models"],
       undefined,
       "antigravity",
+      undefined,
+      "management",
     );
     expect(mock.setModels).toHaveBeenCalledWith("antigravity", [
       {

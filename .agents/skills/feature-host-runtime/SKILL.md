@@ -15,14 +15,17 @@ Code paths below are repository-root relative.
 - `host/server.ts`
 - `host/owner.ts`, `host/lifecycle-state.ts` and `host/storage/atomic-write.ts`
 - `src/features/connections/model/remoteOutbox.ts` and `remoteOutboxDatabase.ts` for desktop remote-command evidence.
-- `host/workspace.ts` and `host/storage/workspace-publication.ts`
-- `host/storage/request-fence.ts`, `host/terminals.ts`, `host/devices/device-preview.ts`
+- `host/workspaces/workspace.ts` and `host/storage/workspace-publication.ts`
+- `host/storage/request-fence.ts`, `host/terminals/terminals.ts`, `host/devices/device-preview.ts`
 - `host/conversation/conversation-preview.ts`
-- `host/desktop-command-delivery.ts`, `host/desktopLive.ts`, `host/domains/commands/service.ts`
+- `host/desktop/desktop-command-delivery.ts`, `host/desktop/desktopLive.ts`, `host/domains/commands/service.ts`
 - `host/transport/read-budget.ts`, `host/transport/dispatch.ts`, `host/transport/ws/server.ts`
 - `src/shared/lib/host-runtime/environmentRuntime.ts`, `src-tauri/src/host_ws/`
-- `host/child-backend.ts` and `host/run-writers.ts`
+- `host/child-backend.ts` and `host/execution/run-writers.ts`
 - `src/integrations/harness/core/`
+- `src-tauri/src/session_store/canonical_store.rs`, `src-tauri/src/sync_owner.rs`
+  and [storage epoch contracts](references/storage-epoch.md) for native migration,
+  effect admission and exact owner retirement.
 
 ## Workflow
 

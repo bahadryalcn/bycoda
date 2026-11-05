@@ -527,6 +527,14 @@ Generation updates cannot replace a pinned owner, regress a known generation or
 reopen a deleted binding. Pinned requests also verify the actual Native saved
 environment before dispatch, independently of the renderer's machine cache.
 
+Native profiles migrate binding and outbox evidence to versioned SQLite storage
+after verifying the native effect guard. Original legacy bytes remain recoverable;
+only unchanged, durably backed-up localStorage mirrors are removed. New admissions
+refresh canonical ownership, and compact receipts require an authoritative value
+reread. Browser storage retains its separate adapter. See the
+[native storage epoch contracts](../../.agents/skills/feature-host-runtime/references/storage-epoch.md)
+for migration, owner retirement and the recorded compatibility decisions.
+
 Host sessions obtain models and optional Codex/Claude account choices from their
 Host. Owner-only `models.list.accounts` contains bounded safe IDs/labels, never
 Native desktop account IDs or credential contents. Canonical configure accepts

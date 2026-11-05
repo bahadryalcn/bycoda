@@ -2,10 +2,10 @@ import { basename, resolve } from "node:path";
 import { statSync } from "node:fs";
 import type { HostStore } from "../store";
 import type { HostLimits } from "../limits";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
-import { listShellProfiles } from "../shellProfiles";
-import { attachmentPath, readAttachmentChunk, MAX_REMOTE_ATTACHMENT_BYTES } from "../attachments";
-import { scrubRuntimeLogText } from "../runtime-logs";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
+import { listShellProfiles } from "../execution/shellProfiles";
+import { attachmentPath, readAttachmentChunk, MAX_REMOTE_ATTACHMENT_BYTES } from "../attachments/attachments";
+import { scrubRuntimeLogText } from "../execution/runtime-logs";
 
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",

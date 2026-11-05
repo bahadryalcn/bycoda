@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceCommands } from "../workspace-commands";
+import { WorkspaceCommands } from "../workspaces/workspace-commands";
 import {
   BranchCache,
   GIT_ACTION_COMMANDS,

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
-import { windowsUtf8ConsoleSetup, type ShellProfile } from "./shellProfiles";
+import { windowsUtf8ConsoleSetup, type ShellProfile } from "./execution/shellProfiles";
 
 export type OwnedTerminalProcess = {
   write(data: string): Promise<void>;

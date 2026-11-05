@@ -3,7 +3,7 @@ import {
   ConversationManagementRuntime,
   runtimeStatusProjection,
 } from "./conversation-management-runtime";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 const principal = {
   kind: "assistant-thread",
   threadId: "thread",

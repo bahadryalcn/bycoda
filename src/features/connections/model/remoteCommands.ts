@@ -9,7 +9,7 @@ import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath, remotePath } from "./remoteProjects";
 
 /** File commands a connected machine answers exactly as this computer does
- * (see host/workspace-commands.ts). */
+ * (see host/workspaces/workspace-commands.ts). */
 export const HOST_COMMANDS = new Set([
   "session_checkpoint_status",
   "session_checkpoint_file_diff",

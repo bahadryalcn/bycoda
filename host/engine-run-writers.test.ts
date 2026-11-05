@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostChildBackend } from "./child-backend";
 import { HostEngine } from "./engine";
-import { HostRunWriters } from "./run-writers";
+import { HostRunWriters } from "./execution/run-writers";
 import { HostStore } from "./store";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import {
   acquireHarnessBridge,
   configureChildBackend,

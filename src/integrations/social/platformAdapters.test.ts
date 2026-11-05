@@ -408,7 +408,9 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     const source = vi.fn(async (after?: string) => ({ posts: after ? ["known-2"] : ["known-0", "known-1"], next: after ? undefined : "job-1" }));
     const initial = await adapter.poll(acct, "token", [], undefined, source);
     expect(source.mock.calls).toEqual([[undefined]]);
-    expect(JSON.parse(initial.cursor!).posts).toEqual(["known-0"]);
+    // The bounded first poll drains known-0 including its second comment page;
+    // known-1 still owns the remaining original batch.
+    expect(JSON.parse(initial.cursor!).posts).toEqual(["known-1"]);
     const drained = await adapter.poll(acct, "token", [], initial.cursor, source);
     expect(source).toHaveBeenCalledOnce();
     expect(JSON.parse(drained.cursor!).posts).toEqual([]);

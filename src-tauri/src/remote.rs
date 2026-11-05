@@ -487,7 +487,7 @@ fn write_store_values_inner(path: &Path, records: &[Value]) -> Result<(), String
 }
 
 /// Hosts split large session syncs into pieces below this cap
-/// (`host/sync-transfer.ts`), so it bounds memory without limiting transcripts.
+/// (`host/sync/sync-transfer.ts`), so it bounds memory without limiting transcripts.
 const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 static RPC_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
@@ -3396,7 +3396,7 @@ mod tests {
         for (method, params, value, effect) in [
             (
                 "devices.action",
-                serde_json::json!({"deviceId":"device","action":{"type":"home"}}),
+                serde_json::json!({"deviceId":"device","leaseId":"original-lease","requestId":"original-action","action":{"type":"home"}}),
                 serde_json::json!("accepted"),
                 true,
             ),

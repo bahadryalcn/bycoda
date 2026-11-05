@@ -91,6 +91,7 @@ async function startTurn(
     intent?: TurnIntent;
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
+    providerSessionId?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -128,7 +129,7 @@ async function startTurn(
       (message) =>
         (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
     )!;
-  emit({ type: "system", subtype: "init", session_id: "sess_1" });
+  emit({ type: "system", subtype: "init", session_id: options.providerSessionId ?? "sess_1" });
   emit({
     type: "control_response",
     response: { subtype: "success", request_id: initialize.request_id },
@@ -1264,6 +1265,7 @@ describe("claude legacy account resume", () => {
     bindClaudeSession("s1", "legacy-session", "/repo");
     const { turn } = await startTurn("s1", {
       providerAccountId: "default",
+      providerSessionId: "legacy-session",
     });
     expect(spawned[0]).toEqual(expect.arrayContaining(["--resume", "legacy-session"]));
     expect(spawned[0]).not.toContain("--session-id");

@@ -10,7 +10,7 @@ import {
 import { createProviderRetirementLedger } from "../src/integrations/harness/core/providerRetirement";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import { HostEngine, type ManagedTurnHistoryAdapter } from "./engine";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import { HostStore } from "./store";
 
 function deferred<T = void>() {

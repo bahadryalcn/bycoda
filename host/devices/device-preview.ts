@@ -5,8 +5,8 @@ import type {
   DevicePreviewStage as Stage,
   DevicePreviewSnapshot as Preview,
 } from "../../src/shared/model/host-contracts/native-devices";
-import { expoManifest, expoPreviewUrl } from "../expo-go";
-import { scrubRuntimeLogText } from "../runtime-logs";
+import { expoManifest, expoPreviewUrl } from "./expo-go";
+import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { RetiredRequestFence } from "../storage/request-fence";
 
 const OPEN_LABELS = ["Open", "Aç", "Öffnen", "Ouvrir", "Abrir", "打开", "開く"];

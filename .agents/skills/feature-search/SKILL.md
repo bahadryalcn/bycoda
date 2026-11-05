@@ -17,7 +17,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `src/features/search/ui/SearchView.tsx`, `ChatSearchResults.tsx`: result composition and navigation.
 - `src/features/search/model/`: file/conversation requests, indexing state and result identities.
 - `src/app/workspace/actions/useSearchActions.ts`, `layout/LiveSearchView.tsx`: dialog/page ownership and retained context.
-- `host/workspace-commands.ts`, `host/workspace-search-stream.test.ts`, `src-tauri/src/`: trace the actual file/content/conversation search commands and visibility gates.
+- `host/workspaces/workspace-commands.ts`, `host/workspaces/workspace-search-stream.test.ts`, `src-tauri/src/`: trace the actual file/content/conversation search commands and visibility gates.
 
 ## Preserve
 

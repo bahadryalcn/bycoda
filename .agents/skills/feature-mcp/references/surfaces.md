@@ -8,7 +8,7 @@ Code paths are repository-relative.
 | Cache/parsing                  | `src/features/settings/model/mcpSettingsCache.ts`, `mcp.ts`                                                                                         |
 | Native provider config/auth    | `src-tauri/src/mcp.rs`, `harness.rs`; registration in `lib.rs`                                                                                      |
 | Incoming grant UI              | `src/features/settings/ui/ExternalMcpAccess.tsx`, `ExternalMcpAccess.module.css`                                                                    |
-| Host tokens/HTTP/catalog/proxy | `host/mcp-tokens.ts`, `mcp-http.ts`, `mcp-entry.ts`, `mcp-proxy.ts`, `server.ts`                                                                    |
+| Host tokens/HTTP/catalog/proxy | `host/mcp/mcp-tokens.ts`, `mcp-http.ts`, `mcp-entry.ts`, `mcp-proxy.ts`, `server.ts`                                                                    |
 | Native incoming RPC allowlist  | `src-tauri/src/remote.rs`                                                                                                                           |
 
 ## Operations and limits

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { HostTasks } from "../../tasks";
+import { HostTasks } from "../../tasks/tasks";
 it("migrates the prior reason constraint atomically while retaining saved budget and owner holds", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-hours-migration-")),
     store = new HostStore(join(dir, "host.db"));

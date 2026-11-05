@@ -7,9 +7,10 @@ import {
   globalDesktopAttachmentInventory,
 } from "./desktopAttachmentInventory";
 import { savePendingRemoteCommand } from "./remoteOutbox";
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 const database = vi.hoisted(() => ({ unavailable: false }));
-vi.mock("./remoteOutboxDatabase", () => ({
+vi.mock("./remoteOutboxDatabase", async (original) => ({
+  ...(await original<typeof import("./remoteOutboxDatabase")>()),
   readOutboxDatabasePage: async () => {
     if (database.unavailable) throw new Error("storage unavailable");
     return { values: [], revision: 0 };

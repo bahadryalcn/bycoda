@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { SessionBrowserRegistry, type BrowserLoader } from "../../shared-browser";
-import { RuntimeLogsService } from "../../runtime-logs";
+import { SessionBrowserRegistry, type BrowserLoader } from "../../browser/shared-browser";
+import { RuntimeLogsService } from "../../execution/runtime-logs";
 import { createRoomBrowserTools } from "./assistant-room-browser";
 import { ConversationPreviewWorkflow } from "../../conversation/conversation-preview";
 import type { ManagementReceipt } from "../../conversation/conversation-management-tools";

@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
-import { HostNotes } from "../host-notes";
-import { HostAutomations } from "../automations";
-import { ProviderInboxBridge } from "../provider-inbox";
+import { HostNotes } from "../notes/host-notes";
+import { HostAutomations } from "../automations/automations";
+import { ProviderInboxBridge } from "../providers/provider-inbox";
 import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
 import { validateConversationTool, type ConversationTool } from "./conversation-tools";
-import { writerWorkspaces } from "../writer-workspaces.test-support";
+import { writerWorkspaces } from "../workspaces/writer-workspaces.test-support";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {

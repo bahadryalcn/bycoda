@@ -101,7 +101,8 @@ const outboxFixture = vi.hoisted(() => ({
   failWrites: false,
   afterCommit: undefined as Promise<void> | undefined,
 }));
-vi.mock("../model/remoteOutboxDatabase", () => ({
+vi.mock("../model/remoteOutboxDatabase", async (original) => ({
+  ...(await original<typeof import("../model/remoteOutboxDatabase")>()),
   readOutboxDatabasePage: async (
     kind: "entries" | "settlements",
     prefix: string,

@@ -131,6 +131,19 @@ function snapshot(): AssistantSnapshot {
   };
 }
 beforeEach(() => {
+  // Browser fixture grants the same per-origin send lock as supported browsers.
+  let sendLocked = false;
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: {
+      request: async (_name: string, _options: unknown, callback: (lock: object | null) => Promise<unknown>) => {
+        if (sendLocked) return callback(null);
+        sendLocked = true;
+        try { return await callback({ name: _name }); }
+        finally { sendLocked = false; }
+      },
+    },
+  });
   mock.environmentId = "room-fixture";
   mock.automations = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -163,6 +176,7 @@ afterEach(async () => {
   localStorage.clear();
   vi.clearAllMocks();
   vi.useRealTimers();
+  Reflect.deleteProperty(navigator, "locks");
 });
 async function render(props: Parameters<typeof AssistantView>[0] = {}) {
   if (!root) {
@@ -1859,26 +1873,17 @@ it.each(["original-Host", undefined])(
     await render({ initialTab: "conversations", sessionId: "replacement-session" });
     await click("Send");
     const sends = mock.request.mock.calls.filter(([input]) => input.op === "threads.send");
-    if (origin) {
-      expect(sends).toHaveLength(1);
-      expect(sends[0]).toEqual([
-        {
-          op: "threads.send",
-          threadId: thread.id,
-          text: "Original unsent text",
-          idempotencyKey: "retained-key",
-          via: "text",
-          sessionId: "original-session",
-        },
-        origin,
-      ]);
-    } else expect(sends).toHaveLength(0);
+    // A retained identity is uncertain evidence, not permission to replay on
+    // either the replacement Host or its original Host.
+    expect(sends).toHaveLength(0);
+    expect(container.textContent).toContain("The reply has not been confirmed");
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "Original unsent text",
     );
-    expect(JSON.parse(localStorage.getItem("bycoda.assistant.send-intents")!)[thread.id].key).toBe(
-      "retained-key",
-    );
+    expect(JSON.parse(localStorage.getItem("bycoda.assistant.send-intents")!)[thread.id]).toEqual({
+      text: "Original unsent text", key: "retained-key",
+      ...(origin ? { environmentId: origin } : {}), sessionId: "original-session",
+    });
   },
 );
 

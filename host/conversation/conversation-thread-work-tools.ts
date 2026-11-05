@@ -6,10 +6,10 @@ import {
   ModelSettingsSchema,
 } from "../../src/shared/model/host-contracts/session-commands";
 import type { HostStore } from "../store";
-import type { HostTasks } from "../tasks";
-import type { HostGoals } from "../goals";
-import type { HostAutomations } from "../automations";
-import type { RuntimeLogSubjectPrincipal } from "../runtime-log-tools";
+import type { HostTasks } from "../tasks/tasks";
+import type { HostGoals } from "../goals/goals";
+import type { HostAutomations } from "../automations/automations";
+import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { normalizeConversationTaskConfiguration } from "./conversation-task-tools";
 import type { DelegatedRoomPrincipal } from "../assistant/room/assistant-room-delegation";
 

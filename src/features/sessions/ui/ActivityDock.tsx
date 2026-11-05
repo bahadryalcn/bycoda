@@ -286,7 +286,7 @@ function DockBody({
                 aria-expanded={open}
                 aria-controls={listId}
                 data-dock-toggle=""
-                aria-label={t(
+                label={t(
                   open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
                   { p0: counts },
                 )}

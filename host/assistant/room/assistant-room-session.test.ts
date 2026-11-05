@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
-import { writerWorkspaces } from "../../writer-workspaces.test-support";
+import { writerWorkspaces } from "../../workspaces/writer-workspaces.test-support";
 import { executeRoomSessionAction, validateRoomSessionAction } from "./assistant-room-session";
 import type { SendTurnInput } from "../../../src/integrations/harness/core/types";
 

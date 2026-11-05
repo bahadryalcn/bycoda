@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BuildIdentityManifest } from "./workspace-service-contracts";
-import type { BuildIdentity } from "./workspace-contracts";
+import type { BuildIdentityManifest } from "./workspaces/workspace-service-contracts";
+import type { BuildIdentity } from "./workspaces/workspace-contracts";
 import {
   captureBuildIdentity,
   parseBuildIdentity,

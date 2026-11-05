@@ -197,7 +197,22 @@ function MeasuredTranscriptRows({
       else update();
     };
     const changed = () => selected();
-    const copying = () => selected(true);
+    const copying = () => {
+      const element = root.current;
+      const selection = element?.ownerDocument.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      const wholeList = !!element && !!range && range.startContainer === element &&
+        range.startOffset === 0 && range.endContainer === element &&
+        range.endOffset === element.childNodes.length;
+      selected(true);
+      // Inserting rows at the old end boundary leaves native Range.endOffset
+      // before those rows. Preserve Select All through synchronous materialization.
+      if (wholeList && element && range && selection) {
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    };
     document.addEventListener("selectionchange", changed);
     document.addEventListener("copy", copying, true);
     return () => {

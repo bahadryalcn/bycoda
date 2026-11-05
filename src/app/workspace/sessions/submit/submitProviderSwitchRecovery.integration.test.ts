@@ -51,6 +51,10 @@ import {
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
+vi.mock("../../../../features/connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../../../features/connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 vi.mock("../../../../features/settings/model/exactGitRewind", () => ({
   getExactGitRewindEnabled: vi.fn(async () => false),
 }));

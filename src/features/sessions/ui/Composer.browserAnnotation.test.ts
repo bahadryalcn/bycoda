@@ -12,7 +12,7 @@ import {
 import { clearComposerDraft } from "../model/draftCache";
 import { persistableQueue, restoreQueuedMessages } from "../model/queuePersistence";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []), isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));

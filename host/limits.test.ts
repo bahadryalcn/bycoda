@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { HostStore } from "./store";
 import { HostLimits, localDay } from "./limits";
-import { confirmedRunElapsed, forgetRunSamples } from "./run-duration";
+import { confirmedRunElapsed, forgetRunSamples } from "./execution/run-duration";
 
 const stores: HostStore[] = [];
 afterEach(async () => {

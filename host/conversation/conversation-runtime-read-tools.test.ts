@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../store";
-import { attachmentPath, writeAttachmentChunk } from "../attachments";
+import { attachmentPath, writeAttachmentChunk } from "../attachments/attachments";
 import { ConversationRuntimeReadTools } from "./conversation-runtime-read-tools";
 
 const closes: (() => void)[] = [];

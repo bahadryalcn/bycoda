@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
-import * as accounts from "./provider-accounts";
+import * as accounts from "./providers/provider-accounts";
 
 const validate = accounts.assertHostProviderAccount;
 const cleanup: (() => Promise<void>)[] = [];

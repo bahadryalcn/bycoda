@@ -387,9 +387,9 @@ export function VoiceSettings() {
           onChange={(enabled) => change({ enabled })}
         />
       </Row>
+      <MicrophonePermissionSettings />
       {speechEnabled ? (
         <>
-          <MicrophonePermissionSettings />
           {settings.enabled ? (
             <>
               <Row

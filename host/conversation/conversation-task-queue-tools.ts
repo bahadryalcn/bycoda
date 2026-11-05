@@ -1,5 +1,5 @@
-import type { HostTasks } from "../tasks";
-import type { RuntimeLogPrincipal } from "../runtime-log-tools";
+import type { HostTasks } from "../tasks/tasks";
+import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
 
 const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
 const version = { type: "integer", minimum: 0 };

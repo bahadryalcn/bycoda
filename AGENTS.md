@@ -1,209 +1,176 @@
+# Start here
+
+Every task follows this order; each step links the section that owns it.
+
+1. Read Git state and live feature claims; never touch others' edits (Checkout workflow).
+2. State the tier and the feature in one line (Scope, tiers and done).
+3. For T1/T2 read the feature skill; for new files read `docs/reference/code-structure.md`
+   (Feature skills, Code structure).
+4. Implement completely, delegating mechanical parts to small models, running only
+   fast changed-file checks meanwhile (Working rhythm).
+5. Verify once in the documented order, capture evidence by tier, then report or hand
+   off within the time budget (Working rhythm, Scope, tiers and done).
+
 # Checkout workflow
 
-Sessions, tasks, goal tasks, writing automations and stewards default to current
-checkout. Worktree is opt-in per session or project policy. Inspect Git state
-first. In shared checkouts, keep changes uncommitted unless directed otherwise.
-Preserve others' edits, drafts and state; never stage, reset, stash or clean them.
+Sessions, tasks, goal tasks, writing automations and stewards default to the current
+checkout. Worktree is opt-in per session or project policy. Inspect Git state first.
+In shared checkouts, keep changes uncommitted unless directed otherwise. Preserve
+others' edits, drafts and state; never stage, reset, stash or clean them.
 
 In a host-assigned managed worktree, use its directory/branch; do not create another
-or change branches. Keep project identity separate from execution cwd; run edits,
-terminals, checks and dev servers there. Commit your own coherent changes and
-leave a clean tree at handoff. Never modify main from another workspace, commit
-to main, push, create a PR or merge into an integration branch; delivery requires
-the owner's UI approval. Never
-rewrite published history or fall back to main after worktree preparation fails.
+or change branches. Run edits, terminals, checks and dev servers there. Commit your
+own coherent changes and leave a clean tree at handoff. Never modify main from
+another workspace, commit to main, push, create a PR or merge into an integration
+branch; delivery requires the owner's UI approval. Never rewrite published history or
+fall back to main after worktree preparation fails. Stay in a host-assigned task
+workspace; the host owns task commits when the execution brief says so. Explicit
+owner instructions take precedence. Finished means ready for review, separate from
+merged, installed or released. Details: `docs/reference/managed-workspaces.md`.
 
-Read cards and live feature claims first; coordinate concurrent work and
-dependencies instead of duplicating redesigns.
-Never edit or reset another workspace. Do not stash or clean work to make a check
-pass. Stay in a host-assigned task workspace; the host owns task commits when the
-execution brief says so. Explicit owner instructions take precedence.
-
-Use handoff tiers below. Finished means ready for review, separate from merged,
-installed or released. Leave directory retirement to the managed
-lifecycle service. Ownership, cleanup, recovery and development details:
-`docs/reference/managed-workspaces.md`.
-
-# Scope, features and done
+# Scope, tiers and done
 
 The owner's outcome sets scope. A screenshot is one example; "sadece bu ekran"
-limits work to that screen. Start with tier, feature and estimated surface count;
-include an applicable card path.
+limits work to that screen. Start by stating the tier and the feature.
 
 - T0: one surface, no Host/API change. Complete and verify it.
 - T1: a named defect, component or screenshot. Search components, copy, classes,
-  i18n keys and RPC/tool names; enumerate and fix every affected surface within
-  the feature.
+  i18n keys and RPC/tool names; fix every affected surface within the feature.
 - T2: a feature, redesign, "everywhere", new Host/RPC/tool/Rust behavior, or more
-  than about eight surfaces. Maintain a complete surface checklist and run a
-  meaningful completeness check before reporting.
+  than about eight surfaces. Keep a surface checklist in `temp/local/<id>/` and run a
+  completeness check before reporting.
 
-For named features, search skills and read recent Git history.
-For T1/T2, read its existing `.agents/skills/feature-<name>/SKILL.md` and only
-the linked references needed for the affected scope. Feature skills are concise
-developer workflows and preservation contracts, not chronological work logs. Check
-live feature claims across worktrees; a tracked card is not a concurrency lock.
-Continue existing work or record an explicit dependency/sub-scope. If claim APIs
-are unavailable, report the coordination gap and inspect available session state;
-do not pretend a local card reserves a feature. Create cards only for T2 using
-`.agents/skills/feature-card-template/SKILL.md`. Update current contracts and source
-maps in place; reuse canonical architecture/user docs rather than copying them.
-Keep task checklists, delivered scope, commit references, verification results and
-build inclusion in the task handoff, not repeated dated sections in the skill.
-Record durable owner decisions only with an exact quote, date and session/source
-in a conditional reference; historical permissions do not authorize a new task.
-Label agent ideas as proposals. Update user
-guides when behavior changes.
-For feature-skill documentation changes, run
-`node scripts/checks/check-feature-skills.mjs` and review preserved contracts;
-structural checks do not validate historical runtime or acceptance claims.
+For T1/T2 read the feature's `.agents/skills/feature-<name>/SKILL.md` and only the
+references the scope needs. Check live feature claims across worktrees; a card is not
+a lock. Continue existing work or record an explicit dependency. If claim APIs are
+unavailable, report the gap and inspect available session state.
 
 A requested capability includes the Host, API, tool and Rust work it needs behind
-existing permission gates. Preserve functions, drafts, persistence, validation,
-async state and recovery. Complete authorized work; do not stop at a screenshot
-or end with an offer to finish it. /task requests managed tasks; otherwise finish
-in this session. Delegate independent parts with one writer per file.
+existing permission gates. Preserve functions, drafts, persistence, validation, async
+state and recovery. Complete authorized work; do not stop at a screenshot or end with
+an offer to finish it. /task requests managed tasks; otherwise finish in this session.
+Delegate independent parts with one writer per file.
 
 Done means exercised, scaled by tier:
 
-- T0: focused code checks; one screenshot of the changed surface only
-  for visual changes. No card; short report.
+- T0: focused code checks; one screenshot of the changed surface only for visual
+  changes. Short report.
 - T1: focused checks and screenshots of affected UI surfaces in light/dark at the
-  default width; add 800 px only for layout changes. Update existing cards.
-- T2: focused checks; screenshots of all affected UI surfaces in light/dark at 1280 and
-  800 px; create/update the card and give the full report below.
+  default width; add 800 px only for layout changes.
+- T2: focused checks; screenshots of all affected UI surfaces in light/dark at 1280
+  and 800 px; the full report below.
 
 Save captures in `temp/verification/<id>/`, open them and fix defects. Use isolated
-native/dev-host runs for integration; label fixture evidence. Report UNVERIFIED
-only for a named check you could not run and its concrete blocker. Never use
-production data for a destructive test.
-
-Check build status and source identity before treating an owner screenshot as a
-new defect. Compare and exercise an already implemented change in the relevant
-build instead of redesigning it. Equal versions or capture times do not prove
+native/dev-host runs for integration; label fixture evidence. Report UNVERIFIED only
+for a named check you could not run and its concrete blocker. Never use production
+data for a destructive test. Check build status and source identity before treating
+an owner screenshot as a new defect; equal versions or capture times do not prove
 inclusion. Build/install/release remain owner-directed actions.
 
-T0/T1 reports briefly state outcome, paths, checks, required screenshots,
-blockers and branch/SHA. T2 reports also list done by surface with path:line,
-exact unverified checks, readiness, blocker owners and build stamp with inclusion
-marked included/excluded/unknown.
+T0/T1 reports briefly state outcome, paths, checks, screenshots, blockers and
+branch/SHA. T2 reports also list done by surface, exact unverified checks, readiness,
+blocker owners and build stamp with inclusion marked included/excluded/unknown.
+Reports and handoffs live in the session or `temp/local/<id>/`, never in skills.
+
+# Feature skills: read often, write rarely
+
+Feature skills are short developer guides: entry points, change workflow, the
+non-obvious contracts and focused checks. They are not work logs.
+
+- Edit a skill only when a contract, owner or entry point changed, or a pointer broke.
+  A fix or perf change that is covered by its regression test adds no bullet.
+- Never add dated sections, commit SHAs, session IDs, test counts, screenshots,
+  `path:line` pointers or verification claims. Owner decisions go in the task handoff;
+  only a decision that changes a lasting contract is recorded, with quote and date, in
+  `references/decisions.md`.
+- Create a skill only for a new T2 feature, using
+  `.agents/skills/feature-card-template/SKILL.md`. Reuse `docs/reference/` and
+  `docs/guides/` by link; do not copy them.
+- Update the named user guide in `docs/guides/` when user-visible behavior changes.
+- After editing anything under `.agents/skills/`, run
+  `node scripts/checks/check-feature-skills.mjs`.
+
+# Code structure
+
+Read `docs/reference/code-structure.md` before adding a file or growing one. One
+feature, one folder per layer: `src/features/<feature>/` (`model/`, `ui/`, `hooks/`,
+`index.ts`), `host/<feature>/`, `src-tauri/src/<feature>/`. No loose files at `host/`
+root or a feature root; `server.ts`, `engine.ts`, `App.tsx`, `Sidebar.tsx` and the
+Rust root modules only compose and register. Ceilings: 600 lines for `.tsx`, 800 for
+`.ts`, 1,500 for Rust. Files already over budget may not grow; move the part you touch
+into the owning folder. `src/shared|platform|integrations` never import `features` or
+`app`; `features` never import `app`; `host` never imports UI. `pnpm check:structure`
+is a ratchet whose baseline may only fall.
+
+# Working rhythm: cheap first, verify once, stop on time
+
+The owner picks the session's agent, model, effort and mode in bycoda; that choice
+wins. Inside the session, spend capability where it matters:
+
+- Delegate mechanical work (search and inventory, path repair after moves, renames,
+  locale keys, boilerplate, formatting, screenshots, log reading) to the smallest
+  model offered for subagents, tasks or crew members. Keep design, scope decisions,
+  risky edits, review and final verification on the capable model. When defining a
+  crew or task, give specialists a small model and reviewers a strong one; do not
+  let every role inherit the first catalog model.
+- Build first, verify once. While implementing, run only `tsc-rs --fast` on the
+  changed project and `pnpm check:changed` (bounded changed-file checks). Do not run
+  the full `vitest`, `check:web`, browser suites or `cargo test` after every edit.
+- Verification order when the change set is complete: `check:changed`; focused
+  tests for the touched folders by path filter; one full `pnpm check:web` (or the
+  Host/Rust gate the change needs); screenshots; then review. Details and commands:
+  `docs/reference/testing.md`, section "Order of verification".
+- Time budget. A single task runs at most a working day. If it is not finished,
+  stop, leave a clean tree, write the handoff under `temp/local/<id>/` and report
+  what remains; do not keep iterating for days. A check that has failed twice for the
+  same reason is a blocker to report, not a loop to retry.
 
 # Checks and file placement
 
-Use `tsc-rs` for TypeScript compilation and checking. Normal mode is default;
-`:fast` commands explicitly enable `tsc-rs --fast`. Desktop commands are
-`pnpm build`, `pnpm host:build`, `pnpm check:web`, `pnpm check:types:rust`, each
-with a `:fast` variant. Mobile is a separate Expo Git repository; when checked out at `mobile/`, it
-uses `pnpm typecheck` or `pnpm typecheck:fast` from there. Preserve all other checks and name fast mode in reports.
-Compiler API consumers may retain their TypeScript packages.
+Use `tsc-rs` for TypeScript. Normal mode is default; `:fast` commands enable
+`tsc-rs --fast`. Desktop commands are `pnpm build`, `pnpm host:build`,
+`pnpm check:web`, `pnpm check:types:rust`, each with a `:fast` variant. Mobile is a
+separate Expo repository under `mobile/` using `pnpm typecheck` from there. Name fast
+mode in reports.
 
-Read `.artifact` before creating or moving files. Project skills and feature
-cards live in `.agents/skills/`. Keep local plans/helpers/research under
-`temp/local/<id>/` and check logs/screenshots under `temp/verification/<id>/`,
-with a short purpose/origin/reuse README. Preserve useful retired files under
-`temp/archive/`. Confirm outputs with `git check-ignore`; never force-add them.
-Update dependent paths when moving maintained files and run
-`node scripts/checks/check-repository-hygiene.mjs` before committing.
+Read `.artifact` before creating or moving files. Local plans and helpers go under
+`temp/local/<id>/`, logs and screenshots under `temp/verification/<id>/`, each with a
+short README. Confirm outputs with `git check-ignore`; never force-add them. When
+moving maintained files, update imports, docs links and skill pointers in the same
+change and run `node scripts/checks/check-repository-hygiene.mjs` before committing.
 
 # Code invariants
 
-`docs/reference/code-invariants.md` lists enforced rules with their sanctioned
-helpers; `pnpm check:invariants` and `pnpm check:ui-drift` are ratchets whose
-baselines may only fall. In short: listen for native events with `listenWindow`
-and emit them with `emit_to`; write state files with `writeFileAtomic` and read
-them with `readStateFile`; decode child-process output lossily per line; give
-every discarded promise a rejection handler and every external command a
-deadline; truncate with `truncateGraphemes`; measure durations with
-`elapsedSince`, not `Date.now()`; format dates, numbers, bytes and durations
-with the shared `src/shared/i18n` helpers; open links with `openExternal`; use
-the shared feedback, dialog and form controls instead of native elements or
-hand-written `role`/`aria-live`. Suppress one line only, with `-- <reason>`.
-Rules, messages and documentation are written in English. A new fix for one
-of these defect classes adds a regression test.
+`docs/reference/code-invariants.md` lists enforced rules and their helpers;
+`pnpm check:invariants` and `pnpm check:ui-drift` are ratchets whose baselines may
+only fall. In short: listen for native events with `listenWindow` and emit with
+`emit_to`; write state files with `writeFileAtomic` and read with `readStateFile`;
+decode child-process output lossily per line; give every discarded promise a
+rejection handler and every external command a deadline; truncate with
+`truncateGraphemes`; measure durations with `elapsedSince`; format dates, numbers,
+bytes and durations with `src/shared/i18n`; open links with `openExternal`; use the
+shared feedback, dialog and form controls instead of native elements or hand-written
+`role`/`aria-live`. Suppress one line only, with `-- <reason>`. Code, rules and
+documentation are written in English. A fix for one of these defect classes adds a
+regression test.
 
-# Shared UI and component reuse
+# Shared UI
 
-Read `docs/reference/DESIGN.md` for the product design language, then
-`docs/reference/arc-ui.md` and relevant shared controls before UI work.
-Consult relevant ownership/control sections in
-`docs/reference/ui-design-system.md` and `docs/reference/ui-component-catalog.md`.
-Use Arc through bycoda's adapters and theme; distinguish target APIs from current
-adapters. Keep the interface compact, minimal and modern.
-Keep toolbars and lists compact, with more breathing room for reading and forms.
-Separate sections primarily with spacing and subtle surface tones; retain clear
-input, selection, focus and drag boundaries. Preserve the user's density settings.
-Make pane, task and action ownership readable before reducing containment.
-Keep independent panes and editable regions distinct at rest; subordinate metadata
-and debugging detail to useful task titles, content, consequences and recovery.
+Read `docs/reference/DESIGN.md`, then the rules checklist at the top of
+`docs/reference/ui-design-system.md`, `docs/reference/arc-ui.md` and the relevant
+shared controls before UI work. Reuse `src/shared/ui/` first; standard actions use
+`src/shared/ui/Button.tsx`; no screen-specific button styling, no second overlay
+stack, no literal colors. Use semantic tokens; new roles are defined once under
+`src/styles/`. Keep the interface compact and preserve the user's density settings.
+Restyling grants no new operation authority; send, publish, merge, push, install and
+credential changes keep their owner approvals. Within the named feature, migrate
+legacy native controls you find; leave unrelated screens alone.
 
-- Choose controls for the task and Arc use-case guidance, reconsidering complete
-  groups. Preserve capabilities, not tag/button counts. Compare segmented/radio
-  choices, split actions and menus. Short stable lists may use Select; long,
-  growing or name-searchable lists need Combobox/autocomplete; multiple values
-  need searchable MultiSelect. Preserve free entry.
-- Search `src/shared/ui/`, settings controls and the feature before creating a
-  control. Reuse first, extend shared APIs for reusable gaps, and create a shared
-  component only for a concrete unmet need. Standard actions use
-  `src/shared/ui/Button.tsx` or a delegating wrapper. No screen-specific button
-  styling or visual-only IconButton/ToolbarButton/CardAction duplicates; keep
-  color, size, shape, focus, disabled and loading presentation centralized.
-- Prefer shared TextField, TextareaField, SearchableSelect, settings controls and
-  Arc adapters. Registry source belongs under `src/shared/ui/arc/`; application
-  code uses adapters. Preserve native props and ref contracts. Native elements
-  inside primitives/composites may retain required semantics and events. Tabs,
-  trees, menus, window controls and drag targets keep keyboard, selection, focus,
-  drag and native-window behavior; do not mechanically replace them with buttons.
-- Reuse Popover, Modal, `overlay.ts` and native popup routing. Do not add another
-  overlay stack, focus trap, Escape framework or dialog/menu library. Use shared
-  appearance/motion tokens, icons and scoped `.bycoda-arc` roles; no global Arc
-  foundation imports or copied design systems.
-- Use shared semantic color tokens directly in CSS, Tailwind and inline styles.
-  No literal hex/RGB/HSL/OKLCH/named colors, arbitrary color utilities, or local
-  color-mix/opacity/gradient recipes inventing UI colors. Standard panel/card
-  surfaces use `var(--ui-surface)`; use existing raised, hover, pressed, selected,
-  text, border and status roles. Define genuinely new roles once in their owning
-  shared theme under `src/styles/` (palette.css, index.css, bycoda.css or arc.css),
-  supporting light/dark/custom themes. Keep mixing there and preserve neutral
-  surface hues. These rules override generic skill color examples.
-- Keep headers/actions compact. Collection filters and advanced options go in
-  icon-triggered popovers with active indication and reset. Keep frequent actions
-  direct; secondary actions use overflow menus. Icons need accessible names and
-  tooltips; hover cannot be the only discovery/operation path.
-- Remove repetitive instructions and decorative cards. Optional help uses an
-  information control; long details use disclosure. Keep necessary labels,
-  errors, operation/approval state and recovery visible. Compactness must retain
-  fields, data, functions and drafts.
-- Preserve state ownership, persistence, validation, async callbacks, permission
-  gates and recovery. Restyling grants no new operation authority; requested
-  capabilities include necessary Host/API/tool/Rust work behind existing gates.
-  Loading controls prevent duplicate actions. Send, publish, merge, push, install
-  and credential changes still require applicable owner authorization.
-- Shared-control changes need representative consumers checked for keyboard use,
-  narrow layouts, both themes and reduced motion. Use meaningful focused checks;
-  avoid implementation-mirroring tests and unrelated release gates for docs.
+# Local updates and isolation
 
-Legacy native controls do not justify duplicates. Within the named feature,
-migrate affected instances you find; leave unrelated screens alone.
-
-# Local app/host updates and development isolation
-
-For owner-directed local builds/installs, read `docs/local-update.md` and use
-`scripts/update-local.ps1`: `-Plan` reviews options, `-InstallOnly` reuses its
-package, `-Status` reports actual completion. Preserve pnpm/Cargo/runtime caches,
-services, databases, credentials and rollback files. Host/app idle gates are
-separate; failed reads mean unknown, never idle. Never kill active work to update
-or report a scheduled install as complete. Hand over installers from
-`~/.bycoda-build/packages/`, never ad-hoc copies. A local update gives no authority
-to publish, push or expose signing/authentication state. Honor stop-before-build
-requests and report build/installation as unverified.
-
-Use packageManager-pinned pnpm; each worktree owns its dependency links and
-outputs. Share the pnpm store, never another checkout's entire node_modules.
-Use isolated Host/desktop data and allocated Vite/HMR/Host/CDP ports for parallel
-runs. Do not assume changing one port isolates a native run. Keep running native
-executables separate from mutable build output. See the managed-workspace
-reference for leases, bootstrap and build identity contracts.
-
-On Windows, all shell calls use `exec_command` with `tty=true` and long-running
-sessions use `write_stdin`; background helpers/children stay hidden. Do not launch
-visible terminal windows unless the owner requests them.
+For owner-directed local builds/installs follow `docs/local-update.md` and
+`scripts/update-local.ps1` (`-Plan`, `-InstallOnly`, `-Status`). Never kill active
+work to update, report a scheduled install as complete, or publish anything. Use the
+pinned pnpm, isolated Host/desktop data and allocated ports for parallel runs. On
+Windows, shell calls use `exec_command` with `tty=true`; long-running sessions use
+`write_stdin`; do not open visible terminal windows unless the owner asks.

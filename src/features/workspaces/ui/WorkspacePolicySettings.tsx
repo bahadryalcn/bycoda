@@ -44,7 +44,7 @@ type Stage = "inventory" | "policy" | "storage";
 const samePolicy = (a: WorkspacePolicy, b: WorkspacePolicy) =>
   JSON.stringify(a) === JSON.stringify(b);
 
-/** The Host accepts only positive, safe-integer byte counts (host/workspace-policy.ts). */
+/** The Host accepts only positive, safe-integer byte counts (host/workspaces/workspace-policy.ts). */
 const positiveBytes = (value: number) =>
   Number.isFinite(value) && value > 0 && Number.isSafeInteger(value);
 

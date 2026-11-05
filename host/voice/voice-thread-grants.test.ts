@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { HostStore } from "../store";
-import { RuntimeLogAccess } from "../runtime-log-tools";
+import { RuntimeLogAccess } from "../execution/runtime-log-tools";
 import { SocialService } from "../social/social";
 import { prepareVoiceToolDispatch } from "./voice-tools";
 const cleanups: (() => Promise<void>)[] = [];

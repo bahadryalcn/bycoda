@@ -5,7 +5,7 @@ import {
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
 import { RUNTIME_READ_ACTIONS } from "../host/conversation/conversation-runtime-read-tools";
 import { conversationToolCatalog, validateConversationTool } from "../host/conversation/conversation-tools";
-import { assertSessionGrantScope } from "../host/session-authority";
+import { assertSessionGrantScope } from "../host/sessions/session-authority";
 import { HOST_RPC_METHODS } from "../src/shared/model/host-contracts/methods";
 import { SessionSyncSchema } from "../src/shared/model/host-contracts/session-reads";
 import { RpcSuccessResponseSchema } from "../src/shared/model/host-contracts/schemas";
@@ -68,7 +68,7 @@ export function buildCasePrompt(item: EvalCase): string {
     item.suite === "tool-routing"
       ? `${workflow}\n${JSON.stringify(toolCatalog)}`
       : item.suite === "permission"
-        ? `${SKILL_INVOCATION_GUIDANCE}\n${skillPolicyInstructions({ disabledNames: ["restricted-demo"], disabledPaths: [] })}\nExact session grants bind environmentId, projectId, sessionId and provider; a changed scope requires explicit reconnect (host/session-authority.ts).`
+        ? `${SKILL_INVOCATION_GUIDANCE}\n${skillPolicyInstructions({ disabledNames: ["restricted-demo"], disabledPaths: [] })}\nExact session grants bind environmentId, projectId, sessionId and provider; a changed scope requires explicit reconnect (host/sessions/session-authority.ts).`
         : item.id === "recovery-uncertain-social-send"
           ? `${workflow}\n${JSON.stringify(socialToolCatalog().filter((tool) => ["jobs.status", "replies.send"].includes(tool.action)))}`
           : JSON.stringify(

@@ -1,10 +1,10 @@
 import type { HostStore } from "../store";
-import type { HostStewards } from "../stewards";
-import type { RuntimeLogPrincipal } from "../runtime-log-tools";
+import type { HostStewards } from "../stewards/stewards";
+import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
 import type { Session } from "../../src/features/sessions/model/session";
-import { scrubRuntimeLogText } from "../runtime-logs";
+import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import type { StewardRun } from "../../src/features/tasks/model/hostStewards";
-import type { HostTasks } from "../tasks";
+import type { HostTasks } from "../tasks/tasks";
 
 const text = { type: "string", minLength: 1, maxLength: 300 };
 const schedule = {

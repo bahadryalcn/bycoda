@@ -143,7 +143,13 @@ class ScrollAnchor {
       : null;
   };
   blockId(): string | undefined {
-    return this.anchor?.node.dataset.transcriptVirtualBlockId;
+    const node = this.anchor?.node;
+    if (!node?.isConnected) return undefined;
+    const rect = node.getBoundingClientRect();
+    const top = this.scroll.getBoundingClientRect().top;
+    return rect.bottom > top && rect.top < top + this.scroll.clientHeight
+      ? node.dataset.transcriptVirtualBlockId
+      : undefined;
   }
   reset(): void {
     this.anchor = null;

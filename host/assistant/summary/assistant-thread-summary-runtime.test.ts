@@ -8,8 +8,8 @@ vi.mock("../chief/assistant-chief-context", () => ({
 }));
 import { assistantExecutionPorts } from "../core/assistant-runtime";
 import type { HostStore } from "../../store";
-import type { HostGoals } from "../../goals";
-import type { HostTasks } from "../../tasks";
+import type { HostGoals } from "../../goals/goals";
+import type { HostTasks } from "../../tasks/tasks";
 import type {
   AssistantProfile,
   AssistantThread,

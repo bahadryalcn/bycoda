@@ -1,0 +1,1348 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of an over-budget file. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
+  "counts": {
+    "host/assistant/service.ts": {
+      "file-lines": 5697
+    },
+    "host/assistant/sessions/assistant-sessions.ts": {
+      "file-lines": 938
+    },
+    "host/assistant/voice/assistant-voice-context.ts": {
+      "file-lines": 951
+    },
+    "host/async-collections.ts": {
+      "loose-host-file": 1
+    },
+    "host/browser/shared-browser.ts": {
+      "file-lines": 1342
+    },
+    "host/build-identity.ts": {
+      "loose-host-file": 1
+    },
+    "host/changeSignal.ts": {
+      "loose-host-file": 1
+    },
+    "host/checkpoints/checkpoints.ts": {
+      "file-lines": 1032
+    },
+    "host/child-backend.test.ts": {
+      "file-lines": 1743
+    },
+    "host/child-backend.ts": {
+      "file-lines": 1520,
+      "loose-host-file": 1
+    },
+    "host/configurationConflict.ts": {
+      "loose-host-file": 1
+    },
+    "host/conversation/conversation-tools.ts": {
+      "file-lines": 1378,
+      "host-imports-ui": 1
+    },
+    "host/crews/crews.ts": {
+      "file-lines": 1713
+    },
+    "host/desktop-helper-domain.ts": {
+      "loose-host-file": 1
+    },
+    "host/desktop-helper.ts": {
+      "loose-host-file": 1
+    },
+    "host/desktop/desktop-control-host.ts": {
+      "file-lines": 1160
+    },
+    "host/desktop/desktopLive.ts": {
+      "file-lines": 820
+    },
+    "host/desktop/desktopSessions.test.ts": {
+      "file-lines": 1744
+    },
+    "host/desktop/desktopSessions.ts": {
+      "file-lines": 1502
+    },
+    "host/dev-server-guardian.ts": {
+      "loose-host-file": 1
+    },
+    "host/dev-servers/dev-servers.ts": {
+      "file-lines": 1472
+    },
+    "host/devices/device-host.ts": {
+      "file-lines": 1428
+    },
+    "host/engine-operations.ts": {
+      "loose-host-file": 1
+    },
+    "host/engine.test.ts": {
+      "file-lines": 6211
+    },
+    "host/engine.ts": {
+      "file-lines": 5029,
+      "loose-host-file": 1
+    },
+    "host/git/git-actions.ts": {
+      "file-lines": 1047
+    },
+    "host/git/turn-git-history.ts": {
+      "file-lines": 896
+    },
+    "host/goals/goals.test.ts": {
+      "file-lines": 2118
+    },
+    "host/goals/goals.ts": {
+      "file-lines": 1967
+    },
+    "host/host-notes-admission.ts": {
+      "loose-host-file": 1
+    },
+    "host/host-notes-async.ts": {
+      "loose-host-file": 1
+    },
+    "host/lifecycle-state.ts": {
+      "loose-host-file": 1
+    },
+    "host/limits.ts": {
+      "loose-host-file": 1
+    },
+    "host/native-admission-cli.ts": {
+      "loose-host-file": 1
+    },
+    "host/native-admission-lock.ts": {
+      "loose-host-file": 1
+    },
+    "host/native-buffer/native-buffer-reports.ts": {
+      "file-lines": 1576
+    },
+    "host/node-engine.ts": {
+      "loose-host-file": 1
+    },
+    "host/owner.ts": {
+      "loose-host-file": 1
+    },
+    "host/process.ts": {
+      "loose-host-file": 1
+    },
+    "host/provider-guardian-deployment.ts": {
+      "loose-host-file": 1
+    },
+    "host/provider-guardian.ts": {
+      "loose-host-file": 1
+    },
+    "host/provider-process-lifecycle.ts": {
+      "loose-host-file": 1
+    },
+    "host/server.test.ts": {
+      "file-lines": 6319
+    },
+    "host/server.ts": {
+      "file-lines": 8253
+    },
+    "host/session-read-process.ts": {
+      "loose-host-file": 1
+    },
+    "host/sessions/session-file-revert.ts": {
+      "file-lines": 1036
+    },
+    "host/skills/skills.ts": {
+      "file-lines": 878
+    },
+    "host/social-browser-launch.ts": {
+      "loose-host-file": 1
+    },
+    "host/social/social-browser-meta.ts": {
+      "file-lines": 1145
+    },
+    "host/social/social-browser-publishing.ts": {
+      "file-lines": 1768
+    },
+    "host/social/social-browser-registration.ts": {
+      "file-lines": 1121
+    },
+    "host/social/social-browser-workflows.ts": {
+      "file-lines": 843
+    },
+    "host/social/social-browser.ts": {
+      "file-lines": 1388
+    },
+    "host/social/social-programs.ts": {
+      "file-lines": 1472
+    },
+    "host/social/social.test.ts": {
+      "file-lines": 4488
+    },
+    "host/social/social.ts": {
+      "file-lines": 5879
+    },
+    "host/stewards/stewards.ts": {
+      "file-lines": 859
+    },
+    "host/store-db.ts": {
+      "loose-host-file": 1
+    },
+    "host/store.test.ts": {
+      "file-lines": 1700
+    },
+    "host/store.ts": {
+      "file-lines": 2952,
+      "loose-host-file": 1
+    },
+    "host/suppress-sqlite-warning.ts": {
+      "loose-host-file": 1
+    },
+    "host/tasks/tasks.test.ts": {
+      "file-lines": 4270
+    },
+    "host/tasks/tasks.ts": {
+      "file-lines": 5651
+    },
+    "host/terminal-process.ts": {
+      "loose-host-file": 1
+    },
+    "host/transport/ws/server.ts": {
+      "file-lines": 921
+    },
+    "host/windows-service-launcher.ts": {
+      "loose-host-file": 1
+    },
+    "host/windows.ts": {
+      "loose-host-file": 1
+    },
+    "host/workspace-cleanup.ts": {
+      "file-lines": 1170,
+      "loose-host-file": 1
+    },
+    "host/workspaces/workspace-commands.ts": {
+      "file-lines": 1520
+    },
+    "host/workspaces/workspace.ts": {
+      "file-lines": 1682
+    },
+    "src-tauri/src/automations.rs": {
+      "file-lines": 1870
+    },
+    "src-tauri/src/azure_devops.rs": {
+      "file-lines": 2462
+    },
+    "src-tauri/src/checkpoint.rs": {
+      "file-lines": 3022
+    },
+    "src-tauri/src/checkpoint/file_revert.rs": {
+      "file-lines": 2418
+    },
+    "src-tauri/src/control.rs": {
+      "file-lines": 3150
+    },
+    "src-tauri/src/conversation_tools_bridge.rs": {
+      "file-lines": 1811
+    },
+    "src-tauri/src/fs.rs": {
+      "file-lines": 14243
+    },
+    "src-tauri/src/harness.rs": {
+      "file-lines": 9560
+    },
+    "src-tauri/src/host_ws/mod.rs": {
+      "file-lines": 1609
+    },
+    "src-tauri/src/mcp.rs": {
+      "file-lines": 1675
+    },
+    "src-tauri/src/native_provider_output.rs": {
+      "file-lines": 2096
+    },
+    "src-tauri/src/notes.rs": {
+      "file-lines": 1646
+    },
+    "src-tauri/src/provider_usage.rs": {
+      "file-lines": 1605
+    },
+    "src-tauri/src/pty.rs": {
+      "file-lines": 2808
+    },
+    "src-tauri/src/remote_ssh.rs": {
+      "file-lines": 1836
+    },
+    "src-tauri/src/remote.rs": {
+      "file-lines": 5516
+    },
+    "src-tauri/src/session_import.rs": {
+      "file-lines": 1693
+    },
+    "src-tauri/src/session_rewind.rs": {
+      "file-lines": 2301
+    },
+    "src-tauri/src/session_store.rs": {
+      "file-lines": 7986
+    },
+    "src-tauri/src/session_store/authority.rs": {
+      "file-lines": 2115
+    },
+    "src-tauri/src/session_store/content_search.rs": {
+      "file-lines": 2451
+    },
+    "src-tauri/src/skills.rs": {
+      "file-lines": 2450
+    },
+    "src-tauri/src/ssh_sftp_transfer.rs": {
+      "file-lines": 1522
+    },
+    "src-tauri/src/window.rs": {
+      "file-lines": 1750
+    },
+    "src-tauri/src/worktrees.rs": {
+      "file-lines": 2438
+    },
+    "src/app/App.tsx": {
+      "file-lines": 3585
+    },
+    "src/app/model/appLifecycle.ts": {
+      "file-lines": 1301
+    },
+    "src/app/shell/MenuBar.tsx": {
+      "file-lines": 662
+    },
+    "src/app/shell/ProjectRail.tsx": {
+      "file-lines": 2714
+    },
+    "src/app/shell/SessionRecoveryPanel.tsx": {
+      "file-lines": 674
+    },
+    "src/app/shell/Sidebar.tsx": {
+      "file-lines": 6892
+    },
+    "src/app/shell/SidebarRename.test.ts": {
+      "file-lines": 2828
+    },
+    "src/app/shell/TitleBar.tsx": {
+      "file-lines": 1427
+    },
+    "src/app/shell/UsageProviderChip.tsx": {
+      "file-lines": 1202
+    },
+    "src/app/shell/useProjectMenu.tsx": {
+      "file-lines": 1470
+    },
+    "src/app/workspace/layout/WorkspaceToolPanels.tsx": {
+      "file-lines": 644
+    },
+    "src/features/assistant/ui/AssistantProfileFields.tsx": {
+      "file-lines": 702
+    },
+    "src/features/assistant/ui/AssistantView.test.ts": {
+      "file-lines": 2474
+    },
+    "src/features/assistant/ui/AssistantView.tsx": {
+      "feature-imports-app": 1,
+      "file-lines": 3991
+    },
+    "src/features/automations/ui/AutomationsView.tsx": {
+      "feature-imports-app": 3,
+      "file-lines": 2022
+    },
+    "src/features/connections/model/adoptedSessions.test.ts": {
+      "file-lines": 1752
+    },
+    "src/features/connections/model/adoptedSessions.ts": {
+      "file-lines": 984
+    },
+    "src/features/connections/model/connections.ts": {
+      "file-lines": 1504
+    },
+    "src/features/connections/model/remoteMachineChannel.ts": {
+      "file-lines": 892
+    },
+    "src/features/connections/model/remoteOutbox.ts": {
+      "file-lines": 980
+    },
+    "src/features/connections/model/sharedQueueClient.ts": {
+      "file-lines": 858
+    },
+    "src/features/connections/model/useSharedLocalQueues.ts": {
+      "file-lines": 933
+    },
+    "src/features/connections/ui/ConnectionsSettings.tsx": {
+      "file-lines": 1110
+    },
+    "src/features/connections/ui/RemoteSession.test.ts": {
+      "file-lines": 5206
+    },
+    "src/features/connections/ui/RemoteSession.tsx": {
+      "file-lines": 4107
+    },
+    "src/features/connections/ui/ServersTerminalWorkspace.tsx": {
+      "feature-imports-app": 2,
+      "file-lines": 730
+    },
+    "src/features/connections/ui/ServersView.tsx": {
+      "feature-imports-app": 3,
+      "file-lines": 987
+    },
+    "src/features/connections/ui/ServersWorkspaceView.tsx": {
+      "feature-imports-app": 1
+    },
+    "src/features/connections/ui/SshRunbooks.tsx": {
+      "file-lines": 838
+    },
+    "src/features/crews/ui/CrewEditor.tsx": {
+      "file-lines": 1298
+    },
+    "src/features/crews/ui/CrewRailSection.tsx": {
+      "feature-imports-app": 1
+    },
+    "src/features/devices/deviceComposer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/devices/deviceImageComposer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/devices/deviceImageTransfer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/devices/deviceInspector.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/devices/DevicePanel.tsx": {
+      "file-lines": 2306,
+      "loose-feature-file": 1
+    },
+    "src/features/devices/types.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/files/data/editorDraftPersistence.ts": {
+      "file-lines": 1095
+    },
+    "src/features/files/editor/editorGit.ts": {
+      "file-lines": 1027
+    },
+    "src/features/files/editor/editorSearch.ts": {
+      "file-lines": 863
+    },
+    "src/features/files/ui/CodeMirrorEditor.tsx": {
+      "file-lines": 1480
+    },
+    "src/features/files/ui/FileEditor.tsx": {
+      "file-lines": 1562
+    },
+    "src/features/files/ui/FilePane.tsx": {
+      "feature-imports-app": 2
+    },
+    "src/features/files/ui/FilePicker.tsx": {
+      "file-lines": 614
+    },
+    "src/features/files/ui/FilePreviewSearch.tsx": {
+      "file-lines": 627
+    },
+    "src/features/files/ui/FileTree.tsx": {
+      "file-lines": 1867
+    },
+    "src/features/files/ui/PdfViewer.tsx": {
+      "file-lines": 618
+    },
+    "src/features/host-tools/BrowserAnnotationDetails.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/browserComposer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/browserDraftTransfer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/BrowserInspectorNavigation.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/BrowserPanel.tsx": {
+      "file-lines": 1952,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/ConversationToolsButton.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/desktopControlClient.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/desktopControlIndicator.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DesktopControlIndicatorStrip.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DesktopControlSettings.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DesktopControlStrip.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DesktopControlStripView.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/desktopControlWindowMain.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DesktopHelperSetup.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/desktopStopShortcut.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DevServersPanel.tsx": {
+      "file-lines": 1152,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/devServerTypes.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/DiagnosticsPanel.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/HostToolsWindow.tsx": {
+      "feature-imports-app": 4,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/logsComposer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/mobilePtyTypes.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/runtimeLogPresentation.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/runtimeLogsModel.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/RuntimeLogsPanel.tsx": {
+      "file-lines": 1261,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/runtimeLogTypes.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/SessionHostTools.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/terminalTypes.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/toolPaneState.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/toolsDraftTransfer.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/toolsHubTransport.ts": {
+      "feature-imports-app": 1,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/toolsSessionRegistry.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/toolsTransferLedger.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/toolsUiControl.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/ToolsWorkspace.tsx": {
+      "feature-imports-app": 1,
+      "file-lines": 1002,
+      "loose-feature-file": 1
+    },
+    "src/features/inbox/model/githubTasks.ts": {
+      "file-lines": 1653
+    },
+    "src/features/inbox/ui/InboxComments.tsx": {
+      "file-lines": 859
+    },
+    "src/features/inbox/ui/InboxDetail.tsx": {
+      "file-lines": 828
+    },
+    "src/features/inbox/ui/InboxPrChecks.tsx": {
+      "file-lines": 872
+    },
+    "src/features/inbox/ui/InboxView.tsx": {
+      "feature-imports-app": 4,
+      "file-lines": 1558
+    },
+    "src/features/inbox/ui/JiraBoardView.tsx": {
+      "file-lines": 1270
+    },
+    "src/features/notes/markdownCommands.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteContext.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteDrafts.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteImages.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteLibrary.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteLibraryMenu.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteLibraryWindow.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteNavigation.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/notes.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteServiceIntents.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/notesInputClosure.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/notesInputOwners.ts": {
+      "file-lines": 945,
+      "loose-feature-file": 1
+    },
+    "src/features/notes/notesPanel.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/previewBlocks.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/ui/NotesView.tsx": {
+      "feature-imports-app": 3,
+      "file-lines": 2602
+    },
+    "src/features/notes/ui/SessionNotesPanel.tsx": {
+      "file-lines": 1143
+    },
+    "src/features/notes/useNoteDetail.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/notes/useNoteInput.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/onboarding/ui/OnboardingDialog.tsx": {
+      "file-lines": 693
+    },
+    "src/features/orchestration/model/orchestration.test.ts": {
+      "file-lines": 1656
+    },
+    "src/features/orchestration/model/orchestration.ts": {
+      "file-lines": 2179
+    },
+    "src/features/orchestration/ui/OrchestrationPreview.tsx": {
+      "file-lines": 788
+    },
+    "src/features/providers/model/accountUsage.ts": {
+      "feature-imports-app": 1
+    },
+    "src/features/providers/ui/GenericAcpSettings.tsx": {
+      "file-lines": 624
+    },
+    "src/features/providers/ui/ProviderStatusGroup.tsx": {
+      "feature-imports-app": 1
+    },
+    "src/features/quick-composer/main.tsx": {
+      "feature-imports-app": 2,
+      "loose-feature-file": 1
+    },
+    "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "file-lines": 1052
+    },
+    "src/features/search/ui/SearchView.tsx": {
+      "feature-imports-app": 2,
+      "file-lines": 946
+    },
+    "src/features/sessions/data/composerClosure.ts": {
+      "file-lines": 917
+    },
+    "src/features/sessions/data/nativeProjectionCheckpoint.test.ts": {
+      "file-lines": 1556
+    },
+    "src/features/sessions/data/nativeProjectionCheckpoint.ts": {
+      "file-lines": 808
+    },
+    "src/features/sessions/data/parentInputClosure.ts": {
+      "file-lines": 1097
+    },
+    "src/features/sessions/data/sessionOutputProjection.ts": {
+      "file-lines": 809
+    },
+    "src/features/sessions/data/sessionStore.ts": {
+      "feature-imports-app": 1,
+      "file-lines": 2574
+    },
+    "src/features/sessions/model/approvalIntents.ts": {
+      "file-lines": 934
+    },
+    "src/features/sessions/model/models.ts": {
+      "file-lines": 1252
+    },
+    "src/features/sessions/model/session.ts": {
+      "file-lines": 1004
+    },
+    "src/features/sessions/model/sessionFolders.ts": {
+      "file-lines": 945
+    },
+    "src/features/sessions/model/transcriptActivity.ts": {
+      "file-lines": 1143
+    },
+    "src/features/sessions/ui/AgentMarkdown.tsx": {
+      "file-lines": 1557
+    },
+    "src/features/sessions/ui/AgentTranscript.tsx": {
+      "file-lines": 2870
+    },
+    "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
+      "file-lines": 1896
+    },
+    "src/features/sessions/ui/ApprovalToasts.tsx": {
+      "file-lines": 795
+    },
+    "src/features/sessions/ui/BtwSheet.tsx": {
+      "file-lines": 682
+    },
+    "src/features/sessions/ui/Composer.test.ts": {
+      "file-lines": 2488
+    },
+    "src/features/sessions/ui/Composer.tsx": {
+      "file-lines": 4752
+    },
+    "src/features/sessions/ui/crewCodeArt.ts": {
+      "file-lines": 2770
+    },
+    "src/features/sessions/ui/crewYoung.ts": {
+      "file-lines": 3011
+    },
+    "src/features/sessions/ui/LiveAgentsPreview.tsx": {
+      "feature-imports-app": 1
+    },
+    "src/features/sessions/ui/ModelPicker.test.ts": {
+      "file-lines": 1604
+    },
+    "src/features/sessions/ui/ModelPicker.tsx": {
+      "file-lines": 1262
+    },
+    "src/features/sessions/ui/ParentInputClosure.test.ts": {
+      "file-lines": 1624
+    },
+    "src/features/sessions/ui/QuestionForm.tsx": {
+      "file-lines": 950
+    },
+    "src/features/sessions/ui/SecondOpinionButton.tsx": {
+      "file-lines": 613
+    },
+    "src/features/sessions/ui/SessionImportDialog.tsx": {
+      "file-lines": 929
+    },
+    "src/features/sessions/ui/SessionPane.tsx": {
+      "feature-imports-app": 1,
+      "file-lines": 2028
+    },
+    "src/features/sessions/ui/SubagentSheet.tsx": {
+      "file-lines": 762
+    },
+    "src/features/settings/model/appearance.ts": {
+      "file-lines": 1263
+    },
+    "src/features/settings/model/settings.ts": {
+      "file-lines": 2907
+    },
+    "src/features/settings/ui/AppearancePreviews.tsx": {
+      "file-lines": 723
+    },
+    "src/features/settings/ui/AppearanceSettings.tsx": {
+      "file-lines": 834
+    },
+    "src/features/settings/ui/ExternalMcpAccess.tsx": {
+      "file-lines": 637
+    },
+    "src/features/settings/ui/GeneralSettings.tsx": {
+      "feature-imports-app": 1
+    },
+    "src/features/settings/ui/InboxSettings.tsx": {
+      "file-lines": 895
+    },
+    "src/features/settings/ui/live-background/latentFace.ts": {
+      "file-lines": 904
+    },
+    "src/features/settings/ui/McpSettings.tsx": {
+      "file-lines": 1055
+    },
+    "src/features/settings/ui/ProviderAccountsSettings.tsx": {
+      "file-lines": 669
+    },
+    "src/features/settings/ui/ProviderSettings.tsx": {
+      "feature-imports-app": 1,
+      "file-lines": 1219
+    },
+    "src/features/settings/ui/settingsControls.tsx": {
+      "file-lines": 758
+    },
+    "src/features/settings/ui/SettingsView.test.ts": {
+      "file-lines": 2082
+    },
+    "src/features/settings/ui/SettingsView.tsx": {
+      "feature-imports-app": 3,
+      "file-lines": 631
+    },
+    "src/features/settings/ui/ShortcutSettings.tsx": {
+      "file-lines": 762
+    },
+    "src/features/settings/ui/TerminalSettings.tsx": {
+      "file-lines": 602
+    },
+    "src/features/skills/ui/SkillsPage.tsx": {
+      "file-lines": 1278
+    },
+    "src/features/social/ui/CampaignBrowser.tsx": {
+      "file-lines": 668
+    },
+    "src/features/social/ui/CampaignComposer.tsx": {
+      "file-lines": 932
+    },
+    "src/features/social/ui/ProductKnowledge.tsx": {
+      "file-lines": 731
+    },
+    "src/features/social/ui/ProgramSetupForm.tsx": {
+      "file-lines": 1364
+    },
+    "src/features/social/ui/RuleSimplifyReview.tsx": {
+      "file-lines": 1014
+    },
+    "src/features/social/ui/SocialAccounts.tsx": {
+      "file-lines": 1291
+    },
+    "src/features/social/ui/SocialHistory.tsx": {
+      "file-lines": 798
+    },
+    "src/features/social/ui/SocialInbox.tsx": {
+      "file-lines": 603
+    },
+    "src/features/social/ui/SocialManagement.tsx": {
+      "file-lines": 1770
+    },
+    "src/features/social/ui/SocialPublishingPlans.tsx": {
+      "file-lines": 1020
+    },
+    "src/features/social/ui/SocialView.tsx": {
+      "feature-imports-app": 3,
+      "file-lines": 805
+    },
+    "src/features/source-control/ui/ConflictLayout.tsx": {
+      "file-lines": 666
+    },
+    "src/features/source-control/ui/GitActionsMenu.tsx": {
+      "file-lines": 790
+    },
+    "src/features/source-control/ui/GitChangesPanel.test.ts": {
+      "file-lines": 2363
+    },
+    "src/features/source-control/ui/GitChangesPanel.tsx": {
+      "file-lines": 2226
+    },
+    "src/features/source-control/ui/GitHistoryGraph.tsx": {
+      "file-lines": 634
+    },
+    "src/features/source-control/ui/UnifiedDiffView.tsx": {
+      "file-lines": 1487
+    },
+    "src/features/tasks/model/taskClient.ts": {
+      "file-lines": 834
+    },
+    "src/features/tasks/ui/SprintManagement.tsx": {
+      "file-lines": 714
+    },
+    "src/features/tasks/ui/TaskBoardCard.tsx": {
+      "file-lines": 732
+    },
+    "src/features/tasks/ui/TaskGoals.tsx": {
+      "file-lines": 1352
+    },
+    "src/features/tasks/ui/TaskStewards.tsx": {
+      "file-lines": 686
+    },
+    "src/features/tasks/ui/TasksView.test.ts": {
+      "file-lines": 2805
+    },
+    "src/features/tasks/ui/TasksView.tsx": {
+      "feature-imports-app": 3,
+      "file-lines": 1658
+    },
+    "src/features/terminal/model/mobilePtyControl.ts": {
+      "feature-imports-app": 1
+    },
+    "src/features/terminal/ui/ProjectTerminalDock.tsx": {
+      "feature-imports-app": 1,
+      "file-lines": 659
+    },
+    "src/features/terminal/ui/TerminalTools.tsx": {
+      "file-lines": 641
+    },
+    "src/features/terminal/ui/TerminalView.tsx": {
+      "file-lines": 775
+    },
+    "src/features/usage/ui/UsageBudgets.tsx": {
+      "file-lines": 617
+    },
+    "src/features/usage/ui/UsageOverview.tsx": {
+      "file-lines": 1036
+    },
+    "src/features/usage/ui/UsagePage.tsx": {
+      "feature-imports-app": 1
+    },
+    "src/features/voice/model/realtimeVoice.test.ts": {
+      "file-lines": 2418
+    },
+    "src/features/voice/model/realtimeVoice.ts": {
+      "file-lines": 1772
+    },
+    "src/features/voice/ui/VoiceCompanion.test.ts": {
+      "file-lines": 2827
+    },
+    "src/features/voice/ui/VoiceCompanion.tsx": {
+      "feature-imports-app": 1,
+      "file-lines": 3489
+    },
+    "src/features/voice/ui/VoiceSettings.tsx": {
+      "file-lines": 909
+    },
+    "src/features/voice/voiceOverlayMain.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/workspace/model/layout.ts": {
+      "feature-imports-app": 1,
+      "file-lines": 1426
+    },
+    "src/features/workspace/model/tabGroups.ts": {
+      "feature-imports-app": 1,
+      "file-lines": 819
+    },
+    "src/features/workspace/model/workspaceSnapshot.ts": {
+      "feature-imports-app": 1
+    },
+    "src/features/workspace/ui/PaneTree.tsx": {
+      "feature-imports-app": 2,
+      "file-lines": 1104
+    },
+    "src/features/workspace/ui/SurfaceTabs.tsx": {
+      "feature-imports-app": 4,
+      "file-lines": 809
+    },
+    "src/features/workspace/ui/TabGroupMenu.tsx": {
+      "file-lines": 630
+    },
+    "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "file-lines": 605
+    },
+    "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
+      "file-lines": 929
+    },
+    "src/integrations/harness/core/acpSubagents.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/apply.test.ts": {
+      "file-lines": 2191
+    },
+    "src/integrations/harness/core/apply.ts": {
+      "file-lines": 1714,
+      "foundation-imports-app": 17
+    },
+    "src/integrations/harness/core/auth.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/core/authStatus.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/authSupport.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/availability.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/core/availabilityState.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/child.ts": {
+      "file-lines": 1542,
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/conversationToolsBridge.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/gitGeneration.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/handoffPhase.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/nativeCommands.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/nativeOutputDelivery.ts": {
+      "file-lines": 1044
+    },
+    "src/integrations/harness/core/preview.ts": {
+      "file-lines": 1032,
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/core/registry.test.ts": {
+      "file-lines": 1836
+    },
+    "src/integrations/harness/core/registry.ts": {
+      "file-lines": 1445,
+      "foundation-imports-app": 9
+    },
+    "src/integrations/harness/core/runtimeGuidance.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/runtimeLogsBridge.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/skillPolicy.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/socialBridge.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/core/textHarness.ts": {
+      "foundation-imports-app": 7
+    },
+    "src/integrations/harness/core/titleGeneration.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/core/types.ts": {
+      "foundation-imports-app": 3
+    },
+    "src/integrations/harness/index.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/antigravity/antigravity.ts": {
+      "file-lines": 1011,
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/antigravity/antigravityCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/antigravity/antigravityProtocol.ts": {
+      "foundation-imports-app": 4
+    },
+    "src/integrations/harness/providers/antigravity/antigravityStream.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/antigravity/antigravityStreamProtocol.ts": {
+      "foundation-imports-app": 3
+    },
+    "src/integrations/harness/providers/claude/claude.ts": {
+      "file-lines": 2580,
+      "foundation-imports-app": 6
+    },
+    "src/integrations/harness/providers/claude/claudeCatalog.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/claude/claudeGit.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/claude/claudeLive.test.ts": {
+      "file-lines": 3252
+    },
+    "src/integrations/harness/providers/claude/claudeProtocol.ts": {
+      "file-lines": 1332,
+      "foundation-imports-app": 6
+    },
+    "src/integrations/harness/providers/claude/claudeText.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/claude/claudeTitle.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/codex/codex.ts": {
+      "file-lines": 2446,
+      "foundation-imports-app": 5
+    },
+    "src/integrations/harness/providers/codex/codexCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/codex/codexElicitation.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/codex/codexGit.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/codex/codexLive.test.ts": {
+      "file-lines": 3934
+    },
+    "src/integrations/harness/providers/codex/codexProtocol.ts": {
+      "file-lines": 1573,
+      "foundation-imports-app": 6
+    },
+    "src/integrations/harness/providers/codex/codexQuestions.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/codex/codexText.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/codex/codexTitle.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/cursor/cursor.ts": {
+      "file-lines": 1775,
+      "foundation-imports-app": 5
+    },
+    "src/integrations/harness/providers/cursor/cursorCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/cursor/cursorSubagents.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/cursor/cursorTitle.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/fx/fx.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/fx/fxCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/fx/fxProtocol.ts": {
+      "foundation-imports-app": 4
+    },
+    "src/integrations/harness/providers/fx/fxTool.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/generic-acp/genericAcpAdapter.ts": {
+      "foundation-imports-app": 3
+    },
+    "src/integrations/harness/providers/grok/grok.ts": {
+      "file-lines": 915,
+      "foundation-imports-app": 3
+    },
+    "src/integrations/harness/providers/grok/grokCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/grok/grokProtocol.ts": {
+      "foundation-imports-app": 6
+    },
+    "src/integrations/harness/providers/grok/grokText.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/grok/grokTitle.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/hermes/hermes.ts": {
+      "file-lines": 932,
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/hermes/hermesCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/hermes/hermesProtocol.ts": {
+      "foundation-imports-app": 3
+    },
+    "src/integrations/harness/providers/opencode/opencode.ts": {
+      "file-lines": 2241,
+      "foundation-imports-app": 5
+    },
+    "src/integrations/harness/providers/opencode/opencodeCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/opencode/opencodeClient.ts": {
+      "file-lines": 867
+    },
+    "src/integrations/harness/providers/opencode/opencodeLive.test.ts": {
+      "file-lines": 2380
+    },
+    "src/integrations/harness/providers/opencode/opencodeProtocol.ts": {
+      "foundation-imports-app": 3
+    },
+    "src/integrations/harness/providers/opencode/opencodeService.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/opencode/opencodeText.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/opencode/opencodeTitle.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/pi/piCatalog.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/pi/piFamily.ts": {
+      "file-lines": 1845,
+      "foundation-imports-app": 4
+    },
+    "src/integrations/harness/providers/pi/piFlavor.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/pi/piProtocol.ts": {
+      "foundation-imports-app": 4
+    },
+    "src/integrations/harness/providers/pi/piSubagents.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/pi/piText.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/harness/providers/pi/piTitle.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/harness/providers/questionDelivery.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/adapter.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/social/browserCapabilities.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/capabilities.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/integrations/social/facebookReels.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/linkedinMedia.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/messaging.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/metaMedia.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/platformAdapters.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/publishingFormats.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/snapchat.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/telegramChannel.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/tiktok.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/xMedia.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/integrations/social/youtube.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/platform/tauri/clipboard.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/platform/tauri/fs.ts": {
+      "file-lines": 1377,
+      "foundation-imports-app": 2
+    },
+    "src/platform/tauri/turnProbe.ts": {
+      "foundation-imports-app": 2
+    },
+    "src/shared/hooks/useCodeTheme.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/hooks/useColorScheme.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/hooks/useImageZoom.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/lib/host-runtime/environmentRuntime.ts": {
+      "file-lines": 866
+    },
+    "src/shared/model/build-info.ts": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/model/host-contracts/assistant.ts": {
+      "file-lines": 1076
+    },
+    "src/shared/model/host-contracts/methods.ts": {
+      "file-lines": 1023
+    },
+    "src/shared/ui/arc/activity-heatmap/activity-heatmap.tsx": {
+      "file-lines": 843
+    },
+    "src/shared/ui/arc/bar-chart/bar-chart.tsx": {
+      "file-lines": 983
+    },
+    "src/shared/ui/arc/combobox/combobox.tsx": {
+      "file-lines": 615
+    },
+    "src/shared/ui/arc/confirm-morph/confirm-morph.tsx": {
+      "file-lines": 876
+    },
+    "src/shared/ui/arc/date-range-picker/date-range-picker.tsx": {
+      "file-lines": 1306
+    },
+    "src/shared/ui/arc/donut-chart/donut-chart.tsx": {
+      "file-lines": 948
+    },
+    "src/shared/ui/arc/expanding-search/expanding-search.tsx": {
+      "file-lines": 663
+    },
+    "src/shared/ui/arc/inline-edit/inline-edit.tsx": {
+      "file-lines": 1013
+    },
+    "src/shared/ui/arc/json-viewer/json-viewer.tsx": {
+      "file-lines": 1059
+    },
+    "src/shared/ui/arc/line-chart/line-chart.tsx": {
+      "file-lines": 912
+    },
+    "src/shared/ui/arc/morph-select/morph-select.tsx": {
+      "file-lines": 902
+    },
+    "src/shared/ui/arc/shortcut-recorder/shortcut-recorder.tsx": {
+      "file-lines": 853
+    },
+    "src/shared/ui/arc/slider/slider.tsx": {
+      "file-lines": 786
+    },
+    "src/shared/ui/arc/sortable-data-table/sortable-data-table.tsx": {
+      "file-lines": 802
+    },
+    "src/shared/ui/arc/tag-input/tag-input.tsx": {
+      "file-lines": 740
+    },
+    "src/shared/ui/arc/timeline/timeline.tsx": {
+      "file-lines": 654
+    },
+    "src/shared/ui/arc/usage-meter/usage-meter.tsx": {
+      "file-lines": 777
+    },
+    "src/shared/ui/ControlBehaviorMatrix.tsx": {
+      "file-lines": 1409
+    },
+    "src/shared/ui/ControlSpecimen.tsx": {
+      "file-lines": 981
+    },
+    "src/shared/ui/identity/HarnessIcon.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/Modal.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/ParticleText.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/Popover.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/PrivateEmail.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/SearchableSelect.tsx": {
+      "file-lines": 893
+    },
+    "src/shared/ui/Sheet.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/SlotText.tsx": {
+      "foundation-imports-app": 1
+    }
+  }
+}

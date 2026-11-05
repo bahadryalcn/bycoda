@@ -1,4 +1,4 @@
-import { HttpStreamScope, readHttpBytes } from "../http-stream-scope";
+import { HttpStreamScope, readHttpBytes } from "../transport/http/http-stream-scope";
 import type {
   ImageCapability,
   ImageProvider,

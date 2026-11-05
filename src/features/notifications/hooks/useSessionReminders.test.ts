@@ -22,11 +22,13 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({ label: "main" }),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ message }));
-vi.mock("../../settings/model/sounds", () => ({
+vi.mock("../../settings/model/sounds", async (original) => ({
+  ...(await original<typeof import("../../settings/model/sounds")>()),
   loadSoundsEnabled: () => false,
   SOUNDS_CHANGE_EVENT: "sounds-change",
 }));
-vi.mock("../model/notifications", () => ({
+vi.mock("../model/notifications", async (original) => ({
+  ...(await original<typeof import("../model/notifications")>()),
   loadNotificationsEnabled: () => false,
   NOTIFICATIONS_CHANGE_EVENT: "notifications-change",
 }));

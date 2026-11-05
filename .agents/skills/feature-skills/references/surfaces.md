@@ -9,13 +9,13 @@ All source paths are repository-relative. Canonical policy semantics live in `do
 | Catalog/policy                | `src/features/skills/model/skills.ts`, `skillPreferences.ts`, `machineSkills.ts`, `cliCommands.ts`, `cliCommandCatalog.ts`; follow current imports instead of assuming a separate skillCatalog implementation module |
 | Transfer/create/delete        | `src/features/skills/model/transferSkill.ts`, `createSkill.ts`, `deleteSkill.ts`; remote-command client                                                                                                              |
 | Native/IPC policy             | `src/platform/tauri/fs.ts`; `src/integrations/harness/core/skillPolicy.ts`; `src-tauri/src/skills.rs`, `remote.rs`, `lib.rs`                                                                                         |
-| Host/tool/provider boundaries | `host/skills.ts`, `skill-policy.ts`, `app-skills.ts`, `harness-skills.ts`, `prompt-skills.ts`, `workspace-commands.ts`, `conversation-tools.ts`                                                                      |
+| Host/tool/provider boundaries | `host/skills/skills.ts`, `skill-policy.ts`, `app-skills.ts`, `harness-skills.ts`, `prompt-skills.ts`, `workspace-commands.ts`, `conversation-tools.ts`                                                                      |
 | Composer integration          | `src/features/sessions/model/sessionSkills.ts`; provider discovery and structured skill input consumers                                                                                                              |
 
 ## Operations and data
 
 - Recommended catalog: `src/features/skills/ui/RecommendedSkills.tsx`, `RecommendedSkills.module.css`, `src/features/skills/model/recommendedSkills.ts`; source metadata only, ranked by general usefulness rather than benchmark scores.
-- Opt-in source installation: `skillInstallation.ts`, `skillInstallTypes.ts`, `skillInstallRecipe.ts`, `host/skill-install.ts`; visible public installer command/reference and owner-only `skill_catalog_install` / `skill_catalog_install_status` workspace commands, with durable receipts in `~/.bycoda-host/skill-installs/` and `.bycoda-install.json` provenance/provider markers. These are not model installation tools.
+- Opt-in source installation: `skillInstallation.ts`, `skillInstallTypes.ts`, `skillInstallRecipe.ts`, `host/skills/skill-install.ts`; visible public installer command/reference and owner-only `skill_catalog_install` / `skill_catalog_install_status` workspace commands, with durable receipts in `~/.bycoda-host/skill-installs/` and `.bycoda-install.json` provenance/provider markers. These are not model installation tools.
 
 - Commands: `list_skills`, `skill_policy_get`, `skill_policy_set`, `skill_export`, `skill_import`, `skill_delete`, `read_text_file`, `write_text_file`; remote dispatch uses `workspace.run` with exact machine/cwd.
 - Changes notify `bycoda:skills-change`. Current explicit refresh must refresh owning-machine policy and fence older in-flight results; a stale cache must not re-enable or re-disable a skill.

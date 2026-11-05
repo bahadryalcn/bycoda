@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+// Keep this Native write-order fixture independent of Host owner storage.
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 
 type Deferred = { promise: Promise<unknown>; resolve: () => void };
 

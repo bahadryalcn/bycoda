@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { WorkspaceCommands } from "../../workspace-commands";
+import { WorkspaceCommands } from "../../workspaces/workspace-commands";
 import { inspectConversationPath } from "../../conversation/conversation-file-mutations";
 
 vi.mock("../../git/git-worktrees", () => ({ hostWorktrees: vi.fn(async (cwd: string) => ({ defaultRoot: cwd, worktrees: [{ path: cwd }] })) }));

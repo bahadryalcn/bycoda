@@ -6,7 +6,7 @@ import { validateConversationTool } from "../../conversation/conversation-tools"
 import { ConversationManagementTools, managementReceiptKey, type ManagementReceipt } from "../../conversation/conversation-management-tools";
 import { roomOperationInput } from "./assistant-room-operation-input";
 export { ROOM_FILE_STATUS_TOOL } from "./assistant-room-tool-schemas";
-import type { AssistantThreadPrincipal } from "../../session-authority";
+import type { AssistantThreadPrincipal } from "../../sessions/session-authority";
 
 const reads = new Set(["files.inspect", "files.list", "files.index", "files.search", "files.searchContent", "files.read"]);
 const writes = new Set(["files.create", "files.write", "files.rename", "files.move", "files.copy", "files.delete"]);

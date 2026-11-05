@@ -1,4 +1,4 @@
-import { hostQuestionToken } from "../../question-source";
+import { hostQuestionToken } from "../../sessions/question-source";
 import type { HostStore } from "../../store";
 import type { HostSession } from "../../../src/features/connections/model/protocol";
 import type { UserQuestion, UserQuestionReply } from "../../../src/features/sessions/model/userQuestion";

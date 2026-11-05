@@ -2,18 +2,18 @@ import { basename } from "node:path";
 import type { HostStore } from "../store";
 import type { SocialService } from "../social/social";
 import type { SocialPeers } from "../social/social-peers";
-import type { RuntimeLogAccess } from "../runtime-log-tools";
-import type { RuntimeTerminalLogs } from "../runtime-terminal-logs";
+import type { RuntimeLogAccess } from "../execution/runtime-log-tools";
+import type { RuntimeTerminalLogs } from "../execution/runtime-terminal-logs";
 import type { ConversationDesktopRelay } from "../conversation/conversation-tools";
-import type { HostDesktopControl } from "../desktop-control-host";
-import type { WorkspaceCommands } from "../workspace-commands";
+import type { HostDesktopControl } from "../desktop/desktop-control-host";
+import type { WorkspaceCommands } from "../workspaces/workspace-commands";
 import type {
   NativeServiceKind,
   NativeServiceOwnerPorts,
   NativeAssistantPresence,
 } from "../domains/native-services/ports";
 import { HostDomainAuthorizationError } from "../domains/context";
-import { assertNativeDeliveryEffect } from "../native-delivery-epochs";
+import { assertNativeDeliveryEffect } from "../native-delivery/native-delivery-epochs";
 
 export interface NativeServicesAdapters {
   browserPanel?(input: Record<string, unknown>): Promise<unknown>;

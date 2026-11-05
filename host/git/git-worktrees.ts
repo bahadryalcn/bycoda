@@ -4,14 +4,14 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import type { ManagedWorkspace, WorkspaceNames, WorkspaceOwner } from "../workspace-contracts";
+import type { ManagedWorkspace, WorkspaceNames, WorkspaceOwner } from "../workspaces/workspace-contracts";
 import {
   canonicalWorkspaceDirectory,
   canonicalWorkspaceEntry,
   canonicalWorkspacePath,
   canonicalWorkspacePathSync,
   workspacePathKey,
-} from "../workspace-paths";
+} from "../workspaces/workspace-paths";
 
 const options = (cwd: string, mutation = false) => ({
   cwd,

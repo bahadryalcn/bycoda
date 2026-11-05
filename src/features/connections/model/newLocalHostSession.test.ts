@@ -11,7 +11,7 @@ import {
 import { setWorktreeFocus } from "../../source-control/model/worktreeFocus";
 import { newDefaultSession } from "../../sessions/model/session";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 vi.mock("./sessionExecutionBinding", async (original) => ({
   ...(await original<typeof import("./sessionExecutionBinding")>()),
   flushHostSessionBindings: vi.fn().mockResolvedValue(undefined),

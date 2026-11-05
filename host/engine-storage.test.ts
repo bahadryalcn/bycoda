@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import * as models from "../src/features/sessions/model/models";
 import { HostEngine } from "./engine";
-import type { HostProvider } from "./providers";
+import type { HostProvider } from "./providers/providers";
 import { HostStore } from "./store";
 
 const cleanups: Array<() => Promise<unknown>> = [];

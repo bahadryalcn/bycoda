@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { ProviderChild } from "./provider-child";
+import type { ProviderChild } from "./providers/provider-child";
 import { HostChildBackend } from "./child-backend";
 import {
   acquireHarnessBridge,

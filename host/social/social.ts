@@ -15,7 +15,7 @@ import {
   type AssistantThreadAuthorityResolver,
   type AssistantThreadGrantScope,
   type SessionGrantScope,
-} from "../session-authority";
+} from "../sessions/session-authority";
 import type { HostSession } from "../../src/features/connections/model/protocol";
 import type {
   CampaignVariant,

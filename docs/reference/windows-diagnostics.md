@@ -3,7 +3,7 @@
 `Manual Windows file diagnostics` is an optional workflow for one named source test file on Windows. It is independent of required Windows CI, native package smoke and installed-app acceptance. It does not build, install, update, sign or publish an app/Host, stop a service, clean a checkout, change credentials or accept an arbitrary shell command.
 
 ```sh
-node scripts/checks/windows-diagnostics.mjs --suite host --file host/session-authority.test.ts
+node scripts/checks/windows-diagnostics.mjs --suite host --file host/sessions/session-authority.test.ts
 node scripts/checks/windows-diagnostics.mjs --run --suite scripts --file scripts/checks/context-metrics.test.mjs --output temp/verification/windows-diagnostics/unique-run
 ```
 

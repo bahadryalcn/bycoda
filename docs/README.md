@@ -49,6 +49,7 @@
 - [Arc integration](reference/arc-ui.md): implemented desktop adapters and local
   adaptations.
 - [Repository layout](reference/repository-layout.md): source, scripts, documentation, and local archives.
+- [Code structure](reference/code-structure.md): feature folders per layer, file size budgets, import boundaries and the `check:structure` ratchet.
 - [Testing and evidence](reference/testing.md): command scope, browser suite ownership and native acceptance boundaries.
 - [Quality tooling](reference/quality.md): offline evals, advisory context/usage reports and dependency patch governance.
 - [Platform foundation](reference/platform-foundation.md): module ownership, build inputs and release gates.

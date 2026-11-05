@@ -3,6 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+// This suite exercises Native persistence ordering; Host owner admission has
+// independent coverage in hostSessionStoreBoundary.test.ts.
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 
 type Deferred<T> = {
   promise: Promise<T>;

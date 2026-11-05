@@ -17,8 +17,8 @@ registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const { HostNotes } = await import("./host-notes.ts");
-const { DesktopSessions } = await import("./desktopSessions.ts");
+const { HostNotes } = await import("./notes/host-notes.ts");
+const { DesktopSessions } = await import("./desktop/desktopSessions.ts");
 const { createHostNotesDatabaseFactory, isHostNotesAdmissionFault, HostNotesAdmissionError } =
   await import("./host-notes-admission.ts");
 let paths = [];

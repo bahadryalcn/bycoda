@@ -1138,6 +1138,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   );
   const lastBlock = markdownBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
+  // Streamdown's memo comparator ignores the parser callback. Its children must
+  // change when a worker parse arrives, even when the original source is unchanged.
+  const parsedSource = useMemo(() => markdownBlocks.join(""), [markdownBlocks]);
   const pacedFadeOptions = useWordFadeWindow(paced.text);
   const arrivalFadeOptions = useArrivalFadeWindow(
     text,
@@ -1220,7 +1223,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   remarkPlugins={remarkPlugins}
                   rehypePlugins={rehypePlugins}
                 >
-                  {paced.text}
+                  {parsedSource}
                 </Streamdown>
               )}
               {markdownPending ? <LoadingText>{t("Rendering Markdown…")}</LoadingText> : null}

@@ -13,7 +13,7 @@ Code paths below are repository-root relative.
 
 - `src/features/crews/ui/CrewEditor.tsx`
 - `src/features/crews/model/crewClient.ts`
-- `host/crews.ts`
+- `host/crews/crews.ts`
 
 ## Workflow
 
@@ -37,7 +37,7 @@ Code paths below are repository-root relative.
 
 ## Verification and references
 
-- Choose crew/crewClient/crewRoster/crewPresentation tests and changed UI tests; Host changes need relevant crews, lifecycle/defaults and dispatcher suites. Use `host/crew-native-session.test.ts` for native coordinator resolution, ownership races and command routing.
+- Choose crew/crewClient/crewRoster/crewPresentation tests and changed UI tests; Host changes need relevant crews, lifecycle/defaults and dispatcher suites. Use `host/crews/crew-native-session.test.ts` for native coordinator resolution, ownership races and command routing.
 - Use the affected UI matrix for Team/library/settings/work/rail states. Exercise isolated Host/native orchestration separately from browser fixtures; review scene motion and keyboard only when affected.
 - Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
 - [Crew behavior](../../../docs/guides/crews.md)

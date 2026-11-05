@@ -7,7 +7,7 @@ import bycodaWorkspace from "./bycoda/references/workspace.md?raw";
 import bycodaRuntime from "./bycoda/references/runtime.md?raw";
 import bycodaInboxSocial from "./bycoda/references/inbox-social.md?raw";
 import bycodaSkillRouter from "./bycoda-skill-router/SKILL.md?raw";
-import { appSkillsRoot } from "../skills";
+import { appSkillsRoot } from "../skills/skills";
 
 /** App-owned skills bundled into the host, keyed by skill folder then relative path. */
 export const APP_SKILLS: Record<string, Record<string, string>> = {

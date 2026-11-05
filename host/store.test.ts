@@ -14,7 +14,7 @@ import type {
   WorkspaceCreateOperation,
   WorkspaceFeatureClaim,
   WorkspaceRewindOperation,
-} from "./workspace-contracts";
+} from "./workspaces/workspace-contracts";
 const cleanups: Array<() => void | Promise<void>> = [];
 describe("durable desktop command receipts", () => {
   const identity = () => ({

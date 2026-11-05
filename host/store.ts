@@ -1,5 +1,5 @@
 import { SessionReadProcesses } from "./session-read-process";
-import { ProjectIdentityFence } from "./project-identity-fence";
+import { ProjectIdentityFence } from "./projects/project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
 import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
 import { assistantJobSessionBelongs } from "./assistant/work/assistant-job-scope";
@@ -16,10 +16,10 @@ import {
   captureHostSnapshot,
   type HostSnapshotManifest,
 } from "./storage/snapshots";
-import { normalizeProjectPath } from "./desktopSessions";
+import { normalizeProjectPath } from "./desktop/desktopSessions";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { StoreDatabase, type StoreStatement } from "./store-db";
-import { initializeNativeDeliveryStore } from "./native-delivery-store";
+import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import type {
@@ -35,21 +35,21 @@ import { sessionNeedsInput, type Block } from "../src/features/sessions/model/se
 import { changedBlocks } from "../src/features/sessions/model/blockChanges";
 import { streamingTextUpdate } from "../src/features/sessions/model/stableBlocks";
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
-import { blockRevisions } from "./block-revisions";
+import { blockRevisions } from "./sessions/block-revisions";
 import type { BlockChanges } from "../src/features/sessions/model/blockChanges";
-import type { UsageMetadataPage, UsageTurnMetadata } from "./usage-report";
+import type { UsageMetadataPage, UsageTurnMetadata } from "./usage/usage-report";
 import type {
   ManagedWorkspace,
   WorkspaceFeatureClaim,
   WorkspaceOperation,
   WorkspacePolicyOverride,
   WorkspaceState,
-} from "./workspace-contracts";
-import type { WorkspaceActivityPersistence } from "./workspace-activity-store";
+} from "./workspaces/workspace-contracts";
+import type { WorkspaceActivityPersistence } from "./workspaces/workspace-activity-store";
 import { replaceControlCharacters } from "../src/shared/lib/controlCharacters";
 import type { DesktopCommandAcceptance } from "./domains/commands/service";
 export type { DesktopCommandAcceptance } from "./domains/commands/service";
-export { blockRevisions } from "./block-revisions";
+export { blockRevisions } from "./sessions/block-revisions";
 const CACHED_SESSIONS = 32;
 // Retried commands are deduplicated by receipt; a week far outlives any retry.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;

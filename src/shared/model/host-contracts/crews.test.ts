@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { declaredTypeKeys } from "../../../../scripts/checks/host-rpc-source-fixture.mjs";
 import { exportWireSchema } from "./manifest";
 import * as dto from "./crews";
-import { HostCrews } from "../../../../host/crews";
+import { HostCrews } from "../../../../host/crews/crews";
 import { HostStore } from "../../../../host/store";
-import type { HostTasks } from "../../../../host/tasks";
+import type { HostTasks } from "../../../../host/tasks/tasks";
 import type { HostEngine } from "../../../../host/engine";
 import type { HostTask } from "../../../features/tasks/model/hostTasks";
 import {
