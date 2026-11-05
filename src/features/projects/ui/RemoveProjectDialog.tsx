@@ -2,8 +2,9 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { projectSessionCount } from "../model/projectData";
+import { useProjectConfirmDialog } from "../hooks/useProjectConfirmDialog";
 import { Alert } from "../../../shared/ui/Alert";
-import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
+import type { ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 
@@ -50,73 +51,65 @@ export function RemoveProjectDialog({
     };
   }, [path, paths, revision]);
 
-  return (
-    <ConfirmDialog
-      request={{
-        title: t("Delete {p0}", { p0: name }),
-        message: paths
-          ? t(
-              "All conversations for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
-            )
-          : t(
-              "All conversations for this project will be deleted. It also leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
-            ),
-        confirmLabel: t("Delete"),
-        pendingLabel: t("Deleting…"),
-        confirmDisabled: Boolean(confirmDisabled) || sessions == null || countError != null,
-        consequences:
-          sessions != null && sessions > 0
-            ? [
-                {
-                  tone: "danger",
-                  content:
-                    sessions === 1
-                      ? t("1 saved conversation will be removed.")
-                      : t("{p0} saved conversations will be removed.", { p0: sessions }),
-                },
-              ]
-            : undefined,
-        details: (
-          <div className="max-h-40 overflow-y-auto text-ui-micro leading-tight text-(--ui-text-muted)">
-            {(paths ?? [path]).map((entry) => (
-              <p key={entry} className="break-all">
-                {prettyCwd(entry)}
-              </p>
-            ))}
-          </div>
+  const request: ConfirmRequest = {
+    title: t("Delete {p0}", { p0: name }),
+    message: paths
+      ? t(
+          "All conversations for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
+        )
+      : t(
+          "All conversations for this project will be deleted. It also leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
         ),
-        body: (
-          <>
-            {countError ? (
-              <InlineError retry={{ onRetry: () => setRevision((value) => value + 1) }}>
-                {countError}
-              </InlineError>
-            ) : sessions == null ? (
-              <LoadingText>{t("Loading…")}</LoadingText>
-            ) : null}
-            {confirmDisabled ? (
-              <Alert tone="danger">
-                {t(
-                  "Selection changed or a project is working. Close this dialog and review your selection.",
-                )}
-              </Alert>
-            ) : null}
-          </>
-        ),
-        onConfirm: async () => {
-          try {
-            await onConfirm();
-          } catch (reason) {
-            // A partial deletion may have removed some conversations. Re-read before
-            // offering the same confirmed project snapshot for a retry.
-            setRevision((value) => value + 1);
-            throw reason;
-          }
-        },
-      }}
-      onSettle={(confirmed) => {
-        if (!confirmed) onCancel();
-      }}
-    />
-  );
+    confirmLabel: t("Delete"),
+    pendingLabel: t("Deleting…"),
+    confirmDisabled: Boolean(confirmDisabled) || sessions == null || countError != null,
+    consequences:
+      sessions != null && sessions > 0
+        ? [
+            {
+              tone: "danger",
+              content:
+                sessions === 1
+                  ? t("1 saved conversation will be removed.")
+                  : t("{p0} saved conversations will be removed.", { p0: sessions }),
+            },
+          ]
+        : undefined,
+    details: (
+      <div className="max-h-40 overflow-y-auto text-ui-micro leading-tight text-(--ui-text-muted)">
+        {(paths ?? [path]).map((entry) => (
+          <p key={entry} className="break-all">
+            {prettyCwd(entry)}
+          </p>
+        ))}
+      </div>
+    ),
+    body: (
+      <>
+        {countError ? (
+          <InlineError retry={{ onRetry: () => setRevision((value) => value + 1) }}>
+            {countError}
+          </InlineError>
+        ) : sessions == null ? (
+          <LoadingText>{t("Loading…")}</LoadingText>
+        ) : null}
+        {confirmDisabled ? (
+          <Alert tone="danger">
+            {t(
+              "Selection changed or a project is working. Close this dialog and review your selection.",
+            )}
+          </Alert>
+        ) : null}
+      </>
+    ),
+    onConfirm: async () => {
+      try {
+        await onConfirm();
+      } catch (reason) {
+        setRevision((value) => value + 1);
+        throw reason;
+      }
+    },
+  };
+  return useProjectConfirmDialog(request, onCancel);
 }

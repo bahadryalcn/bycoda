@@ -5,6 +5,8 @@ import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { copyWithFeedback, errorText, machineAddress } from "./serverActionFeedback";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
@@ -61,28 +63,12 @@ import {
 } from "../../../shared/ui/icons";
 import { disconnectMachine, requestMachineEdit } from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
-import type { RemoteMachine } from "../model/protocol";
 import { MachineStatus, ReconnectAction } from "./ServerStatus";
 import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 import { ServerItem, type ServerMenuAt } from "./ServerItem";
 import { ServerColorPopover } from "./ServerColorPopover";
 import { serverAccentColor } from "./serverColor";
 import { useServersLayout, type ServersLayout } from "./serversLayout";
-
-/** Display addresses without URL credentials or query strings. Records stay native-owned. */
-function machineAddress(machine: RemoteMachine) {
-  if (machine.ssh) return machine.ssh.target;
-  try {
-    const url = new URL(machine.endpoint);
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return t("Address unavailable");
-  }
-}
-
-function errorText(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
-}
 
 function ViewToggle({
   layout,
@@ -135,6 +121,7 @@ export function ServersView({
   compactRail = false,
 }: ServersViewProps = {}) {
   useLocale();
+  const copyFeedback = useCopyFeedback();
   const { servers, loaded, loading, error, refresh } = useServerInventory();
   const openQuick = useOpenQuickServerTerminal();
   const openTerminal = useOpenServerTerminal();
@@ -362,7 +349,12 @@ export function ServersView({
         updateServerMetadata(server.id, { favorite: !server.metadata.favorite }),
       );
     else if (id === "color") setColorTarget({ serverId: server.id, at });
-    else if (id === "copy") void runAction(() => navigator.clipboard.writeText(address(server)));
+    else if (id === "copy")
+      void runAction(() =>
+        copyWithFeedback(copyFeedback.copyAsync, () =>
+          navigator.clipboard.writeText(address(server)),
+        ),
+      );
     else if (id === "delete") {
       setActionError("");
       setDeleteTarget({ server, at });

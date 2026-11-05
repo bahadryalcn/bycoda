@@ -1,7 +1,6 @@
-import { useRef } from "react";
-import { useT } from "../../../shared/i18n";
-import { prettyCwd } from "../../../shared/lib/paths";
-import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
+import { useLayoutEffect, useRef } from "react";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { useSessionDeleteDialogRequest } from "./sessionDeleteDialogRequest";
 
 export type SessionDeleteChoice = {
   confirmed: boolean;
@@ -17,37 +16,38 @@ export function DeleteSessionDialog({
   unusedWorktree: string;
   onClose: (choice: SessionDeleteChoice) => void;
 }) {
-  const t = useT();
-  const deleteWorktree = useRef(false);
-  return (
-    <ConfirmDialog
-      request={{
-        title: t("Delete session?"),
-        message: (
-          <>
-            “{title}
-            {t("” will be permanently deleted.")}
-          </>
-        ),
-        confirmLabel: t("Delete session"),
-        acknowledge: {
-          label: t("Also delete the unused worktree"),
-          description: (
-            <>
-              <span className="block break-all">{prettyCwd(unusedWorktree)}</span>
-              <span className="mt-1 block">
-                {t("The branch is kept. If files have uncommitted changes, the worktree stays.")}
-              </span>
-            </>
-          ),
+  const { confirmWith, renderDialog } = useConfirm();
+  const onCloseRef = useRef(onClose);
+  const generationRef = useRef(0);
+  onCloseRef.current = onClose;
+  const request = useSessionDeleteDialogRequest(title, unusedWorktree);
+  const requestRef = useRef(request);
+  useLayoutEffect(() => {
+    const generation = ++generationRef.current;
+    void confirmWith(requestRef.current)
+      .then(
+        (result) => {
+          if (generation === generationRef.current) {
+            onCloseRef.current({
+              confirmed: result !== null,
+              deleteWorktree: result?.acknowledged ?? false,
+            });
+          }
         },
-      }}
-      onResult={(result) => {
-        deleteWorktree.current = result.acknowledged;
-      }}
-      onSettle={(confirmed) =>
-        onClose({ confirmed, deleteWorktree: confirmed && deleteWorktree.current })
-      }
-    />
-  );
+        (error: unknown) => {
+          console.error("Session delete confirmation failed", error);
+          if (generation === generationRef.current) {
+            onCloseRef.current({ confirmed: false, deleteWorktree: false });
+          }
+        },
+      )
+      .catch((error: unknown) => {
+        console.error("Session delete confirmation callback failed", error);
+      });
+    return () => {
+      generationRef.current += 1;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once; renderDialog supplies current display request.
+  }, []);
+  return renderDialog(request);
 }

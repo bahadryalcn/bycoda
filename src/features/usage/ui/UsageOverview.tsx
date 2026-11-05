@@ -65,12 +65,7 @@ import {
   metricNames,
   UsageDataNotes,
 } from "./UsageCharts";
-import {
-  Contribution,
-  TimeDistribution,
-  UsageShare,
-  UsageTrend,
-} from "./UsageVisualizations";
+import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";

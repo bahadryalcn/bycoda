@@ -8,6 +8,7 @@ import { TextField } from "../../shared/ui/TextField";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
+import { useCopyFeedback } from "../../shared/hooks/useCopyFeedback";
 import { pathKey } from "../../shared/lib/paths";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -140,6 +141,7 @@ function ProjectDevServersPanel({
   transferScope?: ToolsDraftScope;
 }) {
   useLocale();
+  const { copyAsync } = useCopyFeedback({ resetKeys: [cwd] });
   const saved = transferScope ? peekToolsDraftPart(transferScope, "servers") : undefined;
   const [scan, setScan] = useState<DevServerScan>();
   const [busy, setBusy] = useState(false);
@@ -489,17 +491,15 @@ function ProjectDevServersPanel({
         await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address }),
       );
     });
-  const copyUrl = (server: DevServer, address: DevServerEndpoint) =>
-    void action(
-      `${server.id}:copy`,
-      async () => {
-        const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
-        if (!alive.current) return;
-        await navigator.clipboard.writeText(url);
-        if (alive.current) setNotice(t("URL copied."));
-      },
-      false,
-    );
+  const copyUrl = (server: DevServer, address: DevServerEndpoint) => void action(`${server.id}:copy`, async () => {
+      const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
+      if (!alive.current) return;
+      const copied = await copyAsync(() => navigator.clipboard.writeText(url).catch((cause) => {
+        if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+        throw cause;
+      }));
+      if (copied && alive.current) setNotice(t("URL copied."));
+    }, false);
   const pickMenu = (id: string) => {
     setMenu(null);
     if (!selected) return;

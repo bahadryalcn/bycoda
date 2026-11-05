@@ -45,6 +45,7 @@ import {
 } from "react";
 import { leafName, validateFileName, type NameIssue } from "../model/fileName";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import {
   loadShowExcludedFiles,
@@ -110,6 +111,7 @@ import { useFileTreeExternalDrop } from "./useFileTreeExternalDrop";
 import { rowPath, useFileTreeKeyboard } from "./useFileTreeKeyboard";
 import { transferVerdict, useFileTreeOperations } from "./useFileTreeOperations";
 import { useFileTreePolling } from "./useFileTreePolling";
+import { copyAsyncWithFeedback, copyText } from "./clipboard";
 import {
   selectTreePaths,
   topLevelTreePaths,
@@ -276,27 +278,6 @@ function useTreeActions(): TreeActions {
   return ctx;
 }
 
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const el = document.createElement("textarea");
-    el.value = text;
-    el.style.position = "fixed";
-    el.style.left = "-9999px";
-    document.body.appendChild(el);
-    const focused = document.activeElement;
-    try {
-      el.select();
-      if (!document.execCommand("copy")) throw new Error(t("Could not copy. Try again."));
-    } finally {
-      el.remove();
-      if (focused instanceof HTMLElement && focused.isConnected)
-        focused.focus({ preventScroll: true });
-    }
-  }
-}
-
 /** Click suppression after a drag reads the clock only in event handlers. */
 function clickStillSuppressed(until: number): boolean {
   return performance.now() < until;
@@ -363,7 +344,8 @@ function FileTreeInner({
   // An inline create/rename that has been submitted and is waiting on the filesystem.
   const [editPending, setEditPending] = useState(false);
   const [copyNotice, setCopyNotice] = useState<CopyNotice | null>(null);
-  const [copyFailedText, setCopyFailedText] = useState<string | null>(null);
+  const [copyFailedText, setCopyFailedText] = useState<string | null>(null),
+    copyFeedback = useCopyFeedback({ resetKeys: [cwd] });
   const [headerMenu, setHeaderMenu] = useState(false);
   const headerMenuRef = useRef<HTMLButtonElement>(null);
   // The tree is keyed by cwd, so its root never changes for this instance.
@@ -455,7 +437,10 @@ function FileTreeInner({
     setCopyFailedText(null);
     setOpError(null);
     try {
-      await copyText(value);
+      const { copied, error } = await copyAsyncWithFeedback(copyFeedback.copyAsync, () =>
+        copyText(value),
+      );
+      if (!copied) throw error ?? new Error(t("Could not copy. Try again."));
       if (activeRoot.current === cwd) setCopyNotice(t("Copied"));
     } catch (error) {
       if (activeRoot.current === cwd) {

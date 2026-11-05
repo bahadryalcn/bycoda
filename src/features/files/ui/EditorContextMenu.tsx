@@ -2,8 +2,11 @@ import { selectAll } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
 import { t, useLocale } from "../../../shared/i18n/technical";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { copyAsyncWithFeedback } from "./clipboard";
+import { createEditorContextMenuItem } from "./editorContextMenuItem";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
-import { formatShortcutLabel, usePlatform } from "../../../shared/ui/shortcut";
+import { usePlatform } from "../../../shared/ui/shortcut";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import {
@@ -34,24 +37,14 @@ export function EditorContextMenu({
   onError: (message: string) => void;
 }) {
   useLocale();
-  const platform = usePlatform();
+  const platform = usePlatform(),
+    copyFeedback = useCopyFeedback({ resetKeys: [path] });
+  const item = createEditorContextMenuItem(platform);
   const { view } = target;
   const writable = () =>
     target.isCurrent() && !view.state.readOnly && view.state.facet(EditorView.editable);
   const selection = editorCodeSelection(view.state, path);
   const hasSelection = view.state.selection.ranges.some((range) => !range.empty);
-  const item = (
-    id: string,
-    label: string,
-    disabled = false,
-    shortcut?: string,
-  ): ContextMenuItem => ({
-    kind: "item",
-    id,
-    label,
-    disabled,
-    shortcut: shortcut ? formatShortcutLabel(shortcut, platform).text : undefined,
-  });
   const items: ContextMenuItem[] = [
     item("undo", t("Undo"), !writable() || sharedUndoDepth(view) === 0, "Mod+Z"),
     item("redo", t("Redo"), !writable() || sharedRedoDepth(view) === 0, "Mod+Shift+Z"),
@@ -95,7 +88,10 @@ export function EditorContextMenu({
           const text = ranges.ranges
             .map((range) => view.state.sliceDoc(range.from, range.to))
             .join(view.state.lineBreak);
-          await navigator.clipboard.writeText(text);
+          const { copied, error } = await copyAsyncWithFeedback(copyFeedback.copyAsync, () =>
+            navigator.clipboard.writeText(text),
+          );
+          if (!copied) throw error ?? new Error(t("Could not copy. Try again."));
           if (id === "cut" && stillCurrent())
             view.dispatch(view.state.replaceSelection(""), {
               userEvent: "delete.cut",

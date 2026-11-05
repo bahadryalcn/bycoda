@@ -7,6 +7,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -594,6 +595,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const setTitle = (value: string, parent?: NoteInputWork) =>
     setTitleState({ value, publication: inputOwner.publishControl("title", value, parent) });
   const [body, setBody] = useState(restored?.body ?? note.body);
+  const { copyAsync } = useCopyFeedback({ resetKeys: [note.id, body] });
   const [saveError, setSaveErrorState] = useState<string | null>(restored.error ?? null);
   const setSaveError = (error: string | null) => {
     restored.error = error;
@@ -813,15 +815,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     };
   }, [saveNow, restored, inputOwner, draftKey]);
 
-  const copy = async () => {
-    if (!navigator.clipboard) return false;
-    try {
-      await navigator.clipboard.writeText(bodyRef.current);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const copy = () =>
+    copyAsync(() => navigator.clipboard.writeText(bodyRef.current), { parallel: true });
 
   const sendToChat = () => {
     const el = field.current;
