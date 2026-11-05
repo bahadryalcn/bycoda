@@ -1089,6 +1089,7 @@ pub fn run() {
             open_host_tools_window,
             window::hide_window,
             window::destroy_window,
+            window::workspace_primary_label,
             window::quit_poll_reply,
             window::quit_decision,
             window::quit_commit_dialog,

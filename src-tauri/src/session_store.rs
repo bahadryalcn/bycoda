@@ -1876,7 +1876,9 @@ pub async fn session_set_in_flight(
                     crate::harness::PageRetirement::Confirmed
                 )
             {
-                let _ = app.emit_to("main", "session-recovery-changed", ());
+                if let Some(primary) = crate::window::primary_workspace_label(&app) {
+                    let _ = app.emit_to(primary.as_str(), "session-recovery-changed", ());
+                }
             }
         }
         result.map(|_| ())
@@ -2106,7 +2108,7 @@ pub async fn session_recovery_candidates(
     app: tauri::AppHandle,
     window: tauri::Window,
 ) -> Result<SessionRecoveryCandidates, String> {
-    if window.label() != "main" {
+    if !crate::window::is_primary_workspace(&app, window.label()) {
         return Err("Only the primary workspace can read recovery candidates".into());
     }
     let owner_page = crate::harness::page_incarnation(&window)?;
@@ -2170,7 +2172,7 @@ pub async fn session_take_in_flight(
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
             let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            if window.label() != "main" {
+            if !crate::window::is_primary_workspace(&app, window.label()) {
                 return Err("Only the primary workspace can take interrupted sessions".into());
             }
             let stale = interrupted_processes(&conn, |id, page| {
@@ -2213,14 +2215,15 @@ pub async fn workspace_set_snapshot(
     crate::harness::run_blocking("workspace_set_snapshot", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::persistence_write(&window, || {
-            if window.label() != "main" {
+            if !crate::window::is_primary_workspace(&app, window.label()) {
                 return Err("Only the primary workspace can save its snapshot".into());
             }
             if !snapshot.is_object() {
                 return Err("workspace snapshot must be an object".into());
             }
             let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-            let owner = window.label() == "main";
+            // The primary check above guarantees this window owns the snapshot.
+            let owner = true;
             let previous = if owner && snapshot.get("serversRestore").is_some() {
                 None
             } else {
