@@ -441,6 +441,16 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
     let effectStarted = false;
     let settled = false;
     let cleanedUp = false;
+    // An owner releases its sentinel after its last witness, so a reader holding the
+    // witness can see it disappear between reads. Missing is a state, not an error.
+    const readSentinel = async () => {
+      try {
+        return await readFile(path, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        return undefined;
+      }
+    };
     const removeTemporary = async () => {
       try {
         await unlink(temporary);
@@ -608,12 +618,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
             generation.uncertain = 0;
             recoveredNonce = priorNonce;
           }
-          let old: string | undefined;
-          try {
-            old = await readFile(path, "utf8");
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          }
+          const old = await readSentinel();
           if (old !== undefined) {
             let record: unknown;
             try {
@@ -636,7 +641,7 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
                 Number(record.pid) > 0 &&
                 "workspaceId" in record &&
                 typeof record.workspaceId === "string" &&
-                (await readFile(path, "utf8")) === old
+                (await readSentinel()) === old
               )
             ) {
               db.close();
@@ -644,7 +649,11 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
               await pause();
               continue;
             }
-            await unlink(path);
+            try {
+              await unlink(path);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            }
           }
           db.prepare(
             "INSERT INTO lease_generation(id, nonce, uncertain) VALUES (1, ?, 0) ON CONFLICT(id) DO UPDATE SET nonce=excluded.nonce, uncertain=0",
