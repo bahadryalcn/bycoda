@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 mod account_identity;
 #[path = "assistant/assistant_presence.rs"]
