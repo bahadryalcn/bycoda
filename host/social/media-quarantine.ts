@@ -1,8 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, realpath, rename } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { HostStore } from "../store";
 import type { MediaCustodyScope } from "./media-custody";
+
+const UNOWNED_UPLOAD_MS = 7 * 86_400_000;
+const QUARANTINE_RETENTION_MS = 30 * 86_400_000;
+const SWEEP_INTERVAL_MS = 60 * 60_000;
+const SWEEP_BATCH = 50;
 
 type ManagedRow = {
   id: string;
@@ -19,10 +24,117 @@ type ManagedRow = {
 
 /** Quarantine is recoverable; unknown or replaced files are never unlinked. */
 export class SocialMediaQuarantine {
+  private nextSweepAt = performance.now() + SWEEP_INTERVAL_MS;
+
   constructor(
     private readonly store: HostStore,
     private readonly directory: string,
   ) {}
+
+  /** Runs the retention sweep at most hourly; called from the Social tick. */
+  async sweepIfDue(): Promise<void> {
+    const now = performance.now();
+    if (now < this.nextSweepAt) return;
+    this.nextSweepAt = now + SWEEP_INTERVAL_MS;
+    await this.sweep();
+  }
+
+  /**
+   * Bounded retention. An active upload with no live owner (a referencing record or job holds
+   * a durable claim; an editor holds a live claim) is quarantined after 7 days, releasing its
+   * owner-less upload claim first. Quarantined bytes are purged after 30 days, and only when
+   * the file identity still verifies; otherwise they stay for review.
+   */
+  async sweep(): Promise<void> {
+    const unowned = (await this.store.db
+      .prepare(
+        `SELECT * FROM social_media_files f
+        WHERE f.state='active' AND f.volume IS NOT NULL AND f.file_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM social_media_claims c
+            WHERE c.media_id=f.id AND c.owner_kind!='upload' AND c.state='active')
+        ORDER BY f.rowid LIMIT ?`,
+      )
+      .all(SWEEP_BATCH)) as ManagedRow[];
+    for (const row of unowned) {
+      try {
+        const age = await ageMs(row.path, "mtimeMs");
+        if (age === undefined || age < UNOWNED_UPLOAD_MS) continue;
+        const revision = await this.store.transaction(async () => {
+          const current = await this.store.db
+            .prepare("SELECT revision,state FROM social_media_files WHERE id=?")
+            .get(row.id);
+          if (!current || current.state !== "active") return undefined;
+          const owned = await this.store.db
+            .prepare(
+              "SELECT 1 FROM social_media_claims WHERE media_id=? AND owner_kind!='upload' AND state='active' LIMIT 1",
+            )
+            .get(row.id);
+          if (owned) return undefined;
+          await this.store.db
+            .prepare(
+              "UPDATE social_media_claims SET state='released' WHERE media_id=? AND owner_kind='upload' AND state='active'",
+            )
+            .run(row.id);
+          await this.store.db
+            .prepare("UPDATE social_media_files SET revision=revision+1 WHERE id=?")
+            .run(row.id);
+          return Number(current.revision) + 1;
+        });
+        if (revision !== undefined)
+          await this.quarantine({ accountId: row.account_id }, row.id, revision);
+      } catch (error) {
+        console.error("Social media retention skipped an upload:", error);
+      }
+    }
+
+    const retired = (await this.store.db
+      .prepare(
+        "SELECT * FROM social_media_files WHERE state IN ('quarantined','purging') AND quarantine_path IS NOT NULL ORDER BY rowid LIMIT ?",
+      )
+      .all(SWEEP_BATCH)) as ManagedRow[];
+    for (const row of retired) {
+      try {
+        const path = row.quarantine_path!;
+        if (row.state === "quarantined") {
+          // ctime moves on rename, so it dates the quarantine itself.
+          const age = await ageMs(path, "ctimeMs");
+          if (age === undefined || age < QUARANTINE_RETENTION_MS) continue;
+          // Mark first: a crash after this point is retried as "purging" by the next sweep.
+          const moved = await this.store.transaction(async () =>
+            this.store.db
+              .prepare(
+                "UPDATE social_media_files SET state='purging',revision=revision+1 WHERE id=? AND state='quarantined' AND revision=?",
+              )
+              .run(row.id, row.revision),
+          );
+          if (Number(moved.changes) !== 1) continue;
+        }
+        const present = await lstat(path).then(
+          () => true,
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return false;
+            throw error;
+          },
+        );
+        if (present) {
+          if (!(await this.verified(path, row))) {
+            console.error("Quarantined media identity changed; retained for review.", row.id);
+            continue;
+          }
+          await unlink(path);
+        }
+        await this.store.transaction(async () => {
+          await this.store.db
+            .prepare(
+              "UPDATE social_media_files SET state='purged',revision=revision+1 WHERE id=? AND state='purging'",
+            )
+            .run(row.id);
+        });
+      } catch (error) {
+        console.error("Social media purge skipped a quarantined upload:", error);
+      }
+    }
+  }
 
   async status(scope: MediaCustodyScope, id: string) {
     const row = (await this.store.db
@@ -149,5 +261,14 @@ export class SocialMediaQuarantine {
         throw new Error("Managed media quarantine changed; retained for review.");
     });
     return this.status(scope, id);
+  }
+}
+
+/** File times are absolute wall-clock instants, so a monotonic clock cannot age them. */
+async function ageMs(path: string, clock: "mtimeMs" | "ctimeMs"): Promise<number | undefined> {
+  try {
+    return Date.now() - (await lstat(path))[clock];
+  } catch {
+    return undefined;
   }
 }
