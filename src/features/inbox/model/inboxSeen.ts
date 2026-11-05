@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createStore } from "../../../shared/lib/store";
 import { sameProjectPath } from "../../projects/model/recents";
 import {
   mergeInboxSeenStorage,
@@ -27,7 +28,7 @@ type SeenStore = {
 
 type Listener = () => void;
 
-const listeners = new Set<Listener>();
+const listeners = createStore();
 let cachedRaw: string | null | undefined;
 let cachedStore: SeenStore | undefined;
 const knownItems = new Map<string, InboxSeenEntry & { projectPaths: string[] }>();
@@ -253,7 +254,7 @@ export function inboxUpdatedAt(item: { updatedAt: string }): number {
 }
 
 function notifyInboxSeen() {
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 function isSeenMap(value: unknown): value is SeenMap {
@@ -506,9 +507,9 @@ export function subscribeInboxSeen(listener: Listener): () => void {
     window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onFocus);
   }
-  listeners.add(listener);
+  const unsubscribe = listeners.subscribe(listener);
   return () => {
-    listeners.delete(listener);
+    unsubscribe();
     if (listeners.size === 0 && typeof window !== "undefined") {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", onFocus);

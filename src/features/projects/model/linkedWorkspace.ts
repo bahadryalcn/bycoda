@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
+import { createStore } from "../../../shared/lib/store";
 
 export type WorkspaceReconcileInput = {
   /** Folders the file listed at the last sync. */
@@ -80,7 +81,7 @@ export type LinkedGroupStatus =
   | { state: "invalid"; message: string };
 
 const statuses = new Map<string, LinkedGroupStatus>();
-const listeners = new Set<() => void>();
+const store = createStore();
 
 /** Records why a linked group could not follow its file; null clears it. */
 export function setLinkedGroupStatus(groupId: string, status: LinkedGroupStatus | null): void {
@@ -91,13 +92,10 @@ export function setLinkedGroupStatus(groupId: string, status: LinkedGroupStatus 
     if (previous?.state === status.state && previous.message === status.message) return;
     statuses.set(groupId, status);
   }
-  for (const listener of listeners) listener();
+  store.notify();
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+const subscribe = store.subscribe;
 
 export function useLinkedGroupStatus(groupId: string): LinkedGroupStatus | undefined {
   return useSyncExternalStore(

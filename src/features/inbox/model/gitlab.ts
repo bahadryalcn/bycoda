@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 import { normalizeProjectPath } from "../../projects/model/recents";
 
@@ -81,11 +82,6 @@ function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
   cache.delete(key);
   cache.set(key, value);
   return value;
-}
-function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
 }
 
 /** Patches can be megabytes, so the diff cache is also bounded by their total size. */
@@ -193,7 +189,7 @@ export async function gitlabWorkItemDetails(
     kind,
     number,
   });
-  boundedSet(detailsByKey, itemKey(repo, kind, number), details);
+  boundedSet(detailsByKey, itemKey(repo, kind, number), details, DETAILS_CACHE_LIMIT);
   return details;
 }
 
@@ -263,7 +259,7 @@ export async function gitlabMrDiff(repo: string, number: number): Promise<Gitlab
   if (cached) return cached;
   const pending = invoke<GitlabMrDiff>("gitlab_mr_diff", { repo, number })
     .then((diff) => {
-      boundedSet(diffByKey, key, diff);
+      boundedSet(diffByKey, key, diff, DETAILS_CACHE_LIMIT);
       trimDiffCache(diffByKey);
       return diff;
     })

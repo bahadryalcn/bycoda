@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { createWindowStore } from "../../../shared/lib/store";
 
 /** A shell this computer can open a terminal in (src-tauri terminal_profiles.rs). */
 export type ShellProfile = {
@@ -19,6 +20,7 @@ export type ShellProfiles = {
 
 const KEY = "bycoda.terminalProfile";
 const CHANGE = "bycoda:terminal-profile";
+const profileStore = createWindowStore({ event: CHANGE, storageKeys: [KEY] });
 
 /** The profile the user chose for new terminals and `!commands`; undefined
  * leaves the choice to the system default. */
@@ -75,17 +77,7 @@ export function syncTerminalProfileMirror(id: string | undefined): boolean {
   return remember(id);
 }
 
-function subscribe(listener: () => void): () => void {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEY || event.key === null) listener();
-  };
-  window.addEventListener(CHANGE, listener);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(CHANGE, listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
+const subscribe = profileStore.subscribe;
 
 export function useTerminalProfile(): string | undefined {
   return useSyncExternalStore(subscribe, loadTerminalProfile, () => undefined);

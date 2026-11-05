@@ -1,5 +1,6 @@
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import {
   gitBranches,
   isGitWatched,
@@ -20,7 +21,7 @@ const PENDING: ProjectBranchesState = { branches: null, settled: false };
 type Entry = {
   cwd: string;
   state: ProjectBranchesState;
-  listeners: Set<() => void>;
+  listeners: ReturnType<typeof createStore<[]>>;
   inFlight: boolean;
   pending: boolean;
   /** A change arrived while the window was hidden. */
@@ -61,7 +62,7 @@ function entryFor(cwd: string): Entry {
   const entry: Entry = {
     cwd,
     state: PENDING,
-    listeners: new Set(),
+    listeners: createStore(),
     inFlight: false,
     pending: false,
     missed: false,
@@ -80,7 +81,7 @@ function publish(entry: Entry, branches: GitBranches | null) {
   }
   entry.state = { branches, settled: true };
   entries.refresh(entry.cwd);
-  for (const listener of entry.listeners) listener();
+  entry.listeners.notify();
 }
 
 /** Carry an already loaded snapshot into a separate picker webview before
@@ -155,10 +156,10 @@ export function useProjectBranchesState(cwd: string, enabled: boolean): ProjectB
     (listener: () => void) => {
       if (!active) return () => undefined;
       const entry = entryFor(cwd);
-      entry.listeners.add(listener);
+      const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
       return () => {
-        entry.listeners.delete(listener);
+        unsubscribe();
         if (entry.listeners.size === 0) stop(entry);
         entries.prune();
       };

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
+import { createStore } from "../../../shared/lib/store";
 
 export type DeliveryReviewOutcome = "delivered" | "retry" | "keep" | "discard";
 
@@ -9,14 +10,9 @@ export type DeliveryReviewOutcome = "delivered" | "retry" | "keep" | "discard";
  * focus, so Resume always answers with something visible.
  */
 const requests = new Map<string, number>();
-const listeners = new Set<() => void>();
-const notify = () => listeners.forEach((listener) => listener());
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+const store = createStore();
+const notify = () => store.notify();
+const subscribe = store.subscribe;
 
 export function requestDeliveryReview(sessionId: string): void {
   requests.set(sessionId, (requests.get(sessionId) ?? 0) + 1);

@@ -25,6 +25,7 @@ import {
 } from "../model/assistantNativeSend";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
 import { formatBytes } from "../../../shared/i18n/format";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { AssistantMemoryPanel } from "./AssistantMemoryPanel";
 import { AssistantRemoteAccess } from "./AssistantRemoteAccess";
@@ -3972,12 +3973,13 @@ function ConversationPanel({
             <InlineError className={styles.error}>{summaryError.text}</InlineError>
           )}
           {hasMore[threadId] && (
-            <Button
-              disabled={pending || clearing}
-              onClick={() => void load(threadId, messages[threadId]?.[0])}
-            >
-              {t("Load earlier messages")}
-            </Button>
+            <CollectionFooter
+              standalone
+              hasMore
+              loadMoreButtonProps={{ variant: "secondary", disabled: pending || clearing }}
+              loadMoreLabel={t("Load earlier messages")}
+              onLoadMore={() => void load(threadId, messages[threadId]?.[0])}
+            />
           )}
           {searching && <p>{t("Loading...")}</p>}
           {!searching && !visible.length && (
@@ -4145,9 +4147,12 @@ function ConversationPanel({
                 </p>
               )}
               {draftRecovery.next && (
-                <Button
-                  disabled={draftRecovery.loading}
-                  onClick={() => {
+                <CollectionFooter
+                  standalone
+                  hasMore
+                  loadMoreButtonProps={{ variant: "secondary", disabled: draftRecovery.loading }}
+                  loadMoreLabel={t("Load more")}
+                  onLoadMore={() => {
                     const current = draftRecovery;
                     setDraftRecovery({ ...current, loading: true });
                     void loadDraftBackups(
@@ -4159,9 +4164,7 @@ function ConversationPanel({
                       setError(cause instanceof Error ? cause.message : String(cause)),
                     );
                   }}
-                >
-                  {t("Load more")}
-                </Button>
+                />
               )}
               <Button
                 disabled={draftRecovery.loading}

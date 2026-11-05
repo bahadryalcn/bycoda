@@ -1,3 +1,5 @@
+import { createStore } from "../../../shared/lib/store";
+
 export type SessionDeletionStage =
   | "preparing"
   | "stopping"
@@ -16,14 +18,9 @@ export type SessionDeletionStatus = {
 };
 
 let snapshot: readonly SessionDeletionStatus[] = [];
-const listeners = new Set<() => void>();
+const store = createStore();
 export const getSessionDeletionStatus = () => snapshot;
-export const subscribeSessionDeletionStatus = (listener: () => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+export const subscribeSessionDeletionStatus = store.subscribe;
 
 export function setSessionDeletionStatus(status: SessionDeletionStatus) {
   // Successful removal is already visible in the list. Keep only progress and
@@ -32,10 +29,10 @@ export function setSessionDeletionStatus(status: SessionDeletionStatus) {
     ...snapshot.filter((entry) => !entry.outcome && entry.sessionId !== status.sessionId),
     ...(status.outcome === "deleted" && !status.error ? [] : [status]),
   ];
-  listeners.forEach((listener) => listener());
+  store.notify();
 }
 
 export function dismissSessionDeletionStatus(sessionId: string) {
   snapshot = snapshot.filter((entry) => entry.sessionId !== sessionId);
-  listeners.forEach((listener) => listener());
+  store.notify();
 }

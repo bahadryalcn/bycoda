@@ -12,6 +12,7 @@ import {
   saveTerminalProviderAccount,
   defaultProviderAccountId,
   PROVIDER_ACCOUNT_COLORS,
+  subscribeProviderAccounts,
   providerAccountColor,
   sessionProviderAccountId,
   setDefaultProviderAccount,
@@ -20,6 +21,26 @@ import {
 
 beforeEach(() => {
   localStorage.clear();
+});
+
+it("keeps per-subscription account events and filters storage changes", () => {
+  const listener = vi.fn();
+  const first = subscribeProviderAccounts(listener);
+  const second = subscribeProviderAccounts(listener);
+  window.dispatchEvent(new Event("bycoda-provider-accounts-changed"));
+  expect(listener).toHaveBeenCalledTimes(2);
+
+  window.dispatchEvent(new StorageEvent("storage", { key: "unrelated" }));
+  expect(listener).toHaveBeenCalledTimes(2);
+  window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.providerAccounts.v1" }));
+  expect(listener).toHaveBeenCalledTimes(4);
+
+  first();
+  window.dispatchEvent(new Event("bycoda-provider-accounts-changed"));
+  expect(listener).toHaveBeenCalledTimes(5);
+  second();
+  window.dispatchEvent(new Event("bycoda-provider-accounts-changed"));
+  expect(listener).toHaveBeenCalledTimes(5);
 });
 
 describe("provider accounts", () => {

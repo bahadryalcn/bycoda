@@ -2,7 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Badge } from "../../../shared/ui/Badge";
-import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -885,14 +885,18 @@ export function JiraBoardView({
           </Alert>
         ) : null}
         {group.token || !group.loaded || group.stale || group.error ? (
-          <Button
-            variant="ghost"
-            loading={readingGroup === group.id}
-            disabled={locked && readingGroup !== group.id}
-            onClick={() => void loadMore(group, !group.loaded || !!group.stale)}
-          >
-            {group.error ? t("Retry") : group.loaded ? t("Load more issues") : t("Load issues")}
-          </Button>
+          <CollectionFooter
+            standalone
+            hasMore
+            loadMoreButtonProps={{
+              loading: readingGroup === group.id,
+              disabled: locked && readingGroup !== group.id,
+            }}
+            onLoadMore={() => void loadMore(group, !group.loaded || !!group.stale)}
+            loadMoreLabel={
+              group.error ? t("Retry") : group.loaded ? t("Load more issues") : t("Load issues")
+            }
+          />
         ) : null}
       </div>
     );

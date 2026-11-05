@@ -1,3 +1,4 @@
+export { formatAttachmentSize } from "../../../shared/i18n/format";
 import type { Attachment } from "./session";
 
 export type AttachmentPresentationKind =
@@ -37,14 +38,6 @@ for (const [kind, names] of Object.entries({
   archive: "zip gz gzip tgz tar bz2 xz 7z rar zst",
 })) {
   for (const name of names.split(" ")) extensions[name] = kind as AttachmentPresentationKind;
-}
-
-/** `113 KB`, or null when the size is unknown. */
-export function formatAttachmentSize(size: number): string | null {
-  if (!Number.isFinite(size) || size <= 0) return null;
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** UI metadata only. Does not change provider attachment kinds or token identities. */

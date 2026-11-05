@@ -67,3 +67,61 @@ it("publishes ready provider items and replays them to a joined reader before a 
   expect((await pending).items).toHaveLength(1);
   expect((await pending).pendingProviders).toBeUndefined();
 });
+
+it("deduplicates concurrent progress subscriptions for the same callback", async () => {
+  let release!: (value: { connected: boolean }) => void;
+  const held = new Promise<{ connected: boolean }>((resolve) => {
+    release = resolve;
+  });
+  const item: GithubWorkItem = {
+    kind: "issue",
+    number: 1,
+    title: "Ready",
+    url: "https://example.invalid/1",
+    state: "open",
+    updatedAt: "2026-10-25",
+    labels: [],
+    assignees: [],
+    draft: false,
+    repo: "acme/repo",
+  };
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "git_github_repositories") return ["acme/repo"];
+    if (command === "git_github_work_items") return [item];
+    if (command === "linear_status") return held;
+    if (["jira_status", "gitlab_status", "azure_devops_status"].includes(String(command)))
+      return { connected: false };
+    throw new Error(`Unexpected command ${command}`);
+  });
+  const onProgress = vi.fn<(result: object) => void>();
+  const projects = [{ path: "/project" }],
+    query = { assignedToMe: false, state: "open", search: "", githubKinds: ["issue"] } as const;
+  const pending = listInboxItems(projects, query, { onProgress });
+  let joined: ReturnType<typeof listInboxItems> | undefined;
+  let replayedPayload: object | undefined;
+  try {
+    await vi.waitFor(() =>
+      expect(onProgress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [expect.objectContaining({ title: "Ready" })],
+          pendingProviders: expect.arrayContaining(["linear"]),
+        }),
+      ),
+    );
+    replayedPayload = onProgress.mock.calls.at(-1)?.[0];
+    const callsBeforeJoin = onProgress.mock.calls.length;
+    joined = listInboxItems(projects, query, { onProgress });
+    expect(onProgress).toHaveBeenCalledTimes(callsBeforeJoin + 1);
+    expect(onProgress.mock.calls.at(-1)?.[0]).toBe(replayedPayload);
+  } finally {
+    release({ connected: false });
+    await Promise.all([pending, joined]);
+  }
+  const seen = new Map<object, number>();
+  for (const [result] of onProgress.mock.calls) {
+    const payload = result as object;
+    seen.set(payload, (seen.get(payload) ?? 0) + 1);
+  }
+  expect(seen.get(replayedPayload!)).toBe(2);
+  for (const [payload, count] of seen) if (payload !== replayedPayload) expect(count).toBe(1);
+});

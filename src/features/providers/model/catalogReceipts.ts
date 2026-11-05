@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { catalogModelsFor, hasLiveCatalog } from "../../sessions/model/models";
 import type { HarnessId } from "../../sessions/model/session";
@@ -22,20 +23,17 @@ type Settled = Exclude<CatalogReceipt, { status: "refreshing" }>;
 
 const receipts = new Map<HarnessId, CatalogReceipt>();
 const inflight = new Map<HarnessId, Promise<Settled>>();
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let version = 0;
 
 function publish(harness: HarnessId, receipt: CatalogReceipt) {
   receipts.set(harness, receipt);
   version += 1;
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 export function subscribeCatalogReceipts(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }
 
 export function getCatalogReceiptsSnapshot(): number {

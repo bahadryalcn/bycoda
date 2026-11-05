@@ -1,3 +1,4 @@
+export { formatFileSize, formatMediaDuration } from "../../../shared/i18n/format";
 import { basename } from "../../../platform/tauri/fs";
 import { documentKind } from "./documentViewer";
 import { mediaKind } from "./mediaPreview";
@@ -78,31 +79,6 @@ export function sniffDocumentImageMime(path: string, bytes: Uint8Array): string 
   if (!/\.svg$/i.test(path) || bytes.includes(0)) return null;
   const text = new TextDecoder().decode(bytes.subarray(0, 64 * 1024));
   return /<svg[\s>]/i.test(text) ? "image/svg+xml" : null;
-}
-
-/** Byte count for the viewer footer, in the units a file manager would show. */
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let size = bytes / 1024;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-  return `${size < 10 ? size.toFixed(1) : Math.round(size)} ${units[unit]}`;
-}
-
-/** Native metadata can report NaN, Infinity or an initial zero before it is ready. */
-export function formatMediaDuration(duration: number | undefined): string | null {
-  if (duration === undefined || !Number.isFinite(duration) || duration <= 0) return null;
-  const seconds = Math.floor(duration);
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor(seconds / 60) % 60;
-  const remainder = String(seconds % 60).padStart(2, "0");
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
-    : `${minutes}:${remainder}`;
 }
 
 function startsWith(bytes: Uint8Array, magic: number[]): boolean {

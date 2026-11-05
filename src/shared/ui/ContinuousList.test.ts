@@ -124,6 +124,26 @@ it("shows continuation failures and partial coverage after retained records; loa
   expect(load).toHaveBeenCalledOnce();
 });
 
+it("keeps a standalone continuation button in its owner's layout", async () => {
+  const load = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(CollectionFooter, {
+        standalone: true,
+        hasMore: true,
+        onLoadMore: load,
+        loadMoreLabel: "Load older work",
+        loadMoreButtonProps: { disabled: true },
+      }),
+    ),
+  );
+  const button = container.querySelector("button")!;
+  expect(container.firstElementChild).toBe(button);
+  expect(button.textContent).toBe("Load older work");
+  await act(async () => button.click());
+  expect(load).not.toHaveBeenCalled();
+});
+
 it("distinguishes loading, empty and failed initial reads", async () => {
   await act(async () =>
     root.render(createElement(ContinuousList<string>, { ...props, items: [], loading: true })),

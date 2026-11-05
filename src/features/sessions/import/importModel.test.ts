@@ -5,6 +5,7 @@ import {
   countSelection,
   dominantRoot,
   filterCandidates,
+  formatBytes,
   groupByFolder,
   importedSessionId,
   isAlreadyImported,
@@ -36,6 +37,18 @@ const everything: ImportFilters = {
   root: null,
   showAutomation: false,
 };
+
+describe("formatBytes", () => {
+  it.each([
+    [0, "0 B"],
+    [1_535, "1 KB"],
+    [1_536, "2 KB"],
+    [1_572_864, "1.5 MB"],
+    [10 * 1_048_576, "10 MB"],
+  ])("preserves import size presentation for %s bytes", (size, expected) => {
+    expect(formatBytes(size)).toBe(expected);
+  });
+});
 
 describe("filterCandidates", () => {
   const list = [

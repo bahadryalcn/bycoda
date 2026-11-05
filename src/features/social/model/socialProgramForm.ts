@@ -1,5 +1,4 @@
-import { dateTimeFormat } from "../../../shared/lib/intl";
-import { t } from "../../../shared/i18n";
+import { dateTimeFormat, t } from "../../../shared/i18n";
 import type { HostProject } from "../../connections/model/protocol";
 import type { CampaignVariant, SocialSnapshot } from "./social";
 import type { ProgramConfig, SocialProgram } from "./socialProgram";
@@ -73,7 +72,7 @@ export function summarizeProgramSuggestion(
   const { locale, snapshot, projects } = context;
   const scheduleDate = (at: number) => {
     try {
-      return new Intl.DateTimeFormat(locale, {
+      return dateTimeFormat(locale, {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: value.schedule.timeZone,
@@ -134,7 +133,7 @@ export function summarizeProgramSuggestion(
     case "image":
       return `${t(value.image.mode === "none" ? "No media" : value.image.mode === "generate" ? "Generate image" : "Existing media")} · ${value.image.aspectRatio}\n${value.image.mode === "generate" ? `${value.image.provider} · ${value.image.model || t("Use project defaults")}` : mediaSummary(value.image.media)}`;
     case "schedule":
-      return `${scheduleDate(value.schedule.startsAt)} · ${value.schedule.timeZone}\n${t("Days")}: ${value.schedule.days.map((day) => new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2024, 0, day))).join(", ")}\n${value.schedule.mode === "times" ? value.schedule.times.join(", ") : value.schedule.mode === "frequency" ? `${value.schedule.frequency} / ${t(value.schedule.period === "day" ? "Day" : "Week")}` : `${value.schedule.minIntervalMinutes}–${value.schedule.maxIntervalMinutes} ${t("Minutes")}`} · ${value.schedule.startTime}–${value.schedule.endTime}${value.schedule.endsAt ? `\n${t("End date")}: ${scheduleDate(value.schedule.endsAt)}` : ""}`;
+      return `${scheduleDate(value.schedule.startsAt)} · ${value.schedule.timeZone}\n${t("Days")}: ${value.schedule.days.map((day) => dateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2024, 0, day))).join(", ")}\n${value.schedule.mode === "times" ? value.schedule.times.join(", ") : value.schedule.mode === "frequency" ? `${value.schedule.frequency} / ${t(value.schedule.period === "day" ? "Day" : "Week")}` : `${value.schedule.minIntervalMinutes}–${value.schedule.maxIntervalMinutes} ${t("Minutes")}`} · ${value.schedule.startTime}–${value.schedule.endTime}${value.schedule.endsAt ? `\n${t("End date")}: ${scheduleDate(value.schedule.endsAt)}` : ""}`;
     case "limits":
       return `${t("Daily posts")}: ${value.limits.dailyPosts} · ${t("Daily generations")}: ${value.limits.dailyGenerations}\n${t("Total generations")}: ${value.limits.totalGenerations} · ${t("Image generations")}: ${value.limits.maxImageGenerations}`;
     case "totalPosts":

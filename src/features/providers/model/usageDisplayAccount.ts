@@ -1,9 +1,16 @@
 import { useSyncExternalStore } from "react";
+import { createWindowStore } from "../../../shared/lib/store";
 import type { ProviderAccountProvider } from "./providerAccounts";
 
 const CHANGE_EVENT = "bycoda:usage-display-account-change";
 const unsaved = new Map<ProviderAccountProvider, string>();
 const keyFor = (provider: ProviderAccountProvider) => `bycoda.usageDisplayAccount.v1.${provider}`;
+const store = createWindowStore({
+  event: CHANGE_EVENT,
+  acceptStorage: (event) =>
+    event.key === null || event.key.startsWith("bycoda.usageDisplayAccount.v1."),
+  onStorage: () => unsaved.clear(),
+});
 
 function load(provider: ProviderAccountProvider): string | null {
   if (unsaved.has(provider)) return unsaved.get(provider)!;
@@ -30,22 +37,8 @@ export function saveUsageDisplayAccount(
 
 export function useUsageDisplayAccount(provider: ProviderAccountProvider): string | null {
   return useSyncExternalStore(
-    subscribe,
+    store.subscribe,
     () => load(provider),
     () => null,
   );
-}
-
-function subscribe(onChange: () => void): () => void {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key !== null && !event.key.startsWith("bycoda.usageDisplayAccount.v1.")) return;
-    unsaved.clear();
-    onChange();
-  };
-  window.addEventListener(CHANGE_EVENT, onChange);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, onChange);
-    window.removeEventListener("storage", onStorage);
-  };
 }

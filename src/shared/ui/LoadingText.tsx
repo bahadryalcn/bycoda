@@ -16,6 +16,8 @@ export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" 
    * Defaults on for `fill` (Suspense fallbacks), off for `inline`.
    */
   delay?: boolean;
+  /** Text-only status for surfaces whose existing layout owns its presentation. */
+  presentation?: "standard" | "text";
 };
 
 /**
@@ -28,12 +30,20 @@ export function LoadingText({
   children,
   layout = "inline",
   delay,
+  presentation = "standard",
   className,
   style,
   ...props
 }: LoadingTextProps) {
   const t = useT();
   const held = delay ?? layout === "fill";
+  if (presentation === "text") {
+    return (
+      <p {...props} role="status" style={style} className={className}>
+        {children ?? t("Loading…")}
+      </p>
+    );
+  }
   return (
     <div
       {...props}

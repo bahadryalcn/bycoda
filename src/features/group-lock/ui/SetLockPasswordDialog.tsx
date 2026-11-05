@@ -5,7 +5,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { changeLockPassword, lockCooldownMs, setLockPassword } from "../model/groupLock";
 import { PASSWORD_MIN_LENGTH, passwordProblem } from "../model/passwordRecord";
-import { PasswordField } from "./PasswordField";
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { pause, useCooldown, verifyFailureMessage } from "./PasswordPromptDialog";
@@ -138,15 +138,31 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             label={t("Current password")}
             ref={current}
             autoFocus
-            invalid={message != null}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            aria-invalid={message != null || undefined}
           />
         ) : null}
-        <PasswordField label={t("New password")} ref={next} autoFocus={mode === "set"} />
+        <PasswordField
+          label={t("New password")}
+          ref={next}
+          autoFocus={mode === "set"}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
         <PasswordField
           label={t("Confirm new password")}
           ref={confirm}
-          describedBy={message ? "set-lock-password-error" : undefined}
-          invalid={message != null && mode === "set"}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          aria-describedby={message ? "set-lock-password-error" : undefined}
+          aria-invalid={(message != null && mode === "set") || undefined}
         />
         {message ? (
           <Alert id="set-lock-password-error" tone="danger">

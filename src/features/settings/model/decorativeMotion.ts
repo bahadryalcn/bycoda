@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import {
@@ -15,7 +16,7 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 let unsaved: boolean | null = null;
 let media: MediaQueryList | null = null;
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let nativeVisible = true;
 /** DOM focus: the only focus signal outside Tauri, and before the first native read. */
 let domFocused = typeof document === "undefined" || document.hasFocus();
@@ -95,7 +96,7 @@ function notify(): void {
   if (next === published) return;
   published = next;
   syncDecorativeMotionAttribute();
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 function onStorage(event: StorageEvent): void {
@@ -159,7 +160,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   // Wrap callbacks so subscribing the same callback twice remains independent.
   const subscription = () => listener();
-  listeners.add(subscription);
+  const unsubscribe = listeners.subscribe(subscription);
   if (listeners.size === 1) {
     media = reducedMotionMedia();
     releaseLifecycle = installWindowLifecycle();
@@ -173,7 +174,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
   return () => {
     if (!subscribed) return;
     subscribed = false;
-    listeners.delete(subscription);
+    unsubscribe();
     if (listeners.size !== 0) return;
     media?.removeEventListener("change", notify);
     media = null;

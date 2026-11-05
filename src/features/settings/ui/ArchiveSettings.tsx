@@ -2,6 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
+import { formatArchiveDate as formatDate } from "../../../shared/i18n/format";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
@@ -36,6 +37,8 @@ import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
 import { CollectionToolbar } from "./SettingsCollection";
 import "./ArchiveSettings.css";
+
+export { formatDate };
 
 /** The stored lists can change in another window; a focused window re-reads them too. */
 function subscribeWindowStorage(onChange: () => void) {
@@ -465,17 +468,4 @@ export function ArchivePage({
       ) : null}
     </div>
   );
-}
-
-export function formatDate(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(value));
-  } catch {
-    return "";
-  }
 }

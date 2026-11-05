@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import {
   pendingSshRunbookIntents,
   listSshRunbooks,
@@ -10,11 +11,11 @@ import {
 type Snapshot = { intents: SshRunbookIntent[]; error: string };
 let snapshot: Snapshot = { intents: [], error: "" };
 let pending: Promise<void> | undefined;
-const listeners = new Set<() => void>();
+const store = createStore();
 function publish(next: Snapshot) {
   if (JSON.stringify(snapshot) === JSON.stringify(next)) return;
   snapshot = next;
-  listeners.forEach((listener) => listener());
+  store.notify();
 }
 export function refreshSshRunbookQueue(): Promise<void> {
   if (pending) return pending;
@@ -46,12 +47,7 @@ export function refreshSshRunbookQueue(): Promise<void> {
 }
 export function useSshRunbookQueue() {
   return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    (listener) => store.subscribe(listener),
     () => snapshot,
   );
 }

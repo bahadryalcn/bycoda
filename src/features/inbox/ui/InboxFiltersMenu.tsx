@@ -20,6 +20,7 @@ import {
 import type { JiraProject } from "../model/jira";
 import type { LinearTeam } from "../model/linear";
 import { Popover } from "../../../shared/ui/Popover";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 
 export const INBOX_FILTER_MENU_WIDTH = 228;
 
@@ -196,7 +197,7 @@ export function InboxFiltersMenu({
         onClick={toggleAssigned}
       />
 
-      <SectionLabel>{t("Status")}</SectionLabel>
+      <SectionLabel variant="menu">{t("Status")}</SectionLabel>
       <FilterItem
         label={t("Open")}
         checked={filters.status.open}
@@ -222,7 +223,7 @@ export function InboxFiltersMenu({
         />
       ) : null}
 
-      <SectionLabel>{t("Time")}</SectionLabel>
+      <SectionLabel variant="menu">{t("Time")}</SectionLabel>
       <NativeSelect
         aria-label={t("Time")}
         value={filters.time}
@@ -237,7 +238,7 @@ export function InboxFiltersMenu({
 
       {!tracker ? (
         <>
-          <SectionLabel>{t("Type")}</SectionLabel>
+          <SectionLabel variant="menu">{t("Type")}</SectionLabel>
           {KIND_OPTIONS.map((option) => (
             <FilterItem
               key={option.id}
@@ -252,7 +253,7 @@ export function InboxFiltersMenu({
 
       {source === "linear" && linearTeams.length > 0 ? (
         <>
-          <SectionLabel>{t("Teams")}</SectionLabel>
+          <SectionLabel variant="menu">{t("Teams")}</SectionLabel>
           <SearchableSelect
             multiple
             label={t("Teams")}
@@ -275,7 +276,7 @@ export function InboxFiltersMenu({
 
       {source === "linear" && linearProjects.length > 0 ? (
         <>
-          <SectionLabel>{t("Projects")}</SectionLabel>
+          <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
           <SearchableSelect
             multiple
             label={t("Projects")}
@@ -298,7 +299,7 @@ export function InboxFiltersMenu({
 
       {source === "jira" && jiraProjects.length > 0 ? (
         <>
-          <SectionLabel>{t("Projects")}</SectionLabel>
+          <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
           <SearchableSelect
             multiple
             label={t("Projects")}
@@ -326,7 +327,9 @@ export function InboxFiltersMenu({
               {codeHostError}
             </Alert>
           ) : null}
-          {codeHostProjects.length ? <SectionLabel>{t("Projects")}</SectionLabel> : null}
+          {codeHostProjects.length ? (
+            <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
+          ) : null}
           <SearchableSelect
             multiple
             label={t("Projects")}
@@ -351,7 +354,7 @@ export function InboxFiltersMenu({
       !((source === "gitlab" || source === "azuredevops") && filters.assignedToMe) &&
       projects.length > 0 ? (
         <>
-          <SectionLabel>{t("Projects")}</SectionLabel>
+          <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
           <SearchableSelect
             multiple
             label={t("Projects")}
@@ -372,15 +375,6 @@ export function InboxFiltersMenu({
         </>
       ) : null}
     </Popover>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  useLocale();
-  return (
-    <div className="px-2 pb-0.5 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
-      {children}
-    </div>
   );
 }
 

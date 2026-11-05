@@ -1,3 +1,5 @@
+import { formatResetDuration } from "../../../shared/i18n/format";
+export { formatResetDuration } from "../../../shared/i18n/format";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 
 export type RateLimitProvider = "claude" | "codex" | "opencode";
@@ -160,24 +162,6 @@ export function formatWindowLabel(windowMinutes: number): string {
   }
   if (windowMinutes % 60 === 0) return `${windowMinutes / 60}h`;
   return `${windowMinutes}m`;
-}
-
-/**
- * Compact remaining duration, flooring to whole units: "47m", "3h 54m",
- * "6d 7h". Returns "now" once the window has already reset.
- */
-export function formatResetDuration(ms: number): string {
-  if (ms <= 0) return "now";
-  const totalMins = Math.floor(ms / 60_000);
-  if (totalMins < 60) return `${totalMins}m`;
-  const hours = Math.floor(totalMins / 60);
-  const mins = totalMins % 60;
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-    return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
-  }
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
 export function formatResetCountdown(ms: number): string {

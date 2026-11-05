@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 
 /**
  * How session rows are drawn in the sidebar. A view preference, kept apart
@@ -35,7 +36,7 @@ const DISPLAY_KEY = "bycoda.sessionListDisplay.v1";
 const CHANGE_EVENT = "bycoda:sessionlistdisplaychange";
 
 let cached: SessionListDisplay | null = null;
-const listeners = new Set<() => void>();
+const store = createStore();
 
 export function parseSessionListDisplay(raw: string | null): SessionListDisplay {
   if (!raw) return DEFAULT_SESSION_LIST_DISPLAY;
@@ -92,7 +93,7 @@ export function updateSessionListDisplay(patch: Partial<SessionListDisplay>): vo
 }
 
 function notify(): void {
-  for (const listener of listeners) listener();
+  store.notify();
 }
 
 function onStorage(event: StorageEvent): void {
@@ -105,13 +106,17 @@ function onStorage(event: StorageEvent): void {
 function subscribe(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   const subscription = () => listener();
-  listeners.add(subscription);
-  if (listeners.size === 1) {
+  const unsubscribe = store.subscribe(subscription);
+  if (store.size === 1) {
     window.addEventListener(CHANGE_EVENT, notify);
     window.addEventListener("storage", onStorage);
   }
+  let active = true;
   return () => {
-    if (!listeners.delete(subscription) || listeners.size !== 0) return;
+    if (!active) return;
+    active = false;
+    unsubscribe();
+    if (store.size !== 0) return;
     window.removeEventListener(CHANGE_EVENT, notify);
     window.removeEventListener("storage", onStorage);
   };

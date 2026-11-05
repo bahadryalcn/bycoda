@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as sharedI18n from "../../../shared/i18n";
+import * as connections from "../../connections/model/connections";
 import { LOCAL_SYNC_MACHINE_NAME } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { draftFromAutomation, newAutomationDraft } from "./automations";
@@ -8,6 +10,7 @@ import {
   backgroundMachineFor,
   hostAutomationFromDraft,
   hostProjectCwd,
+  previewHostAutomation,
 } from "./hostAutomationClient";
 import type { HostAutomation } from "./hostAutomations";
 import { createAutomationTrigger } from "./automations";
@@ -49,6 +52,20 @@ const stored: HostAutomation = {
 };
 
 describe("background automations", () => {
+  it("validates host timezone with runtime-default shared date formatting", async () => {
+    const remote = vi
+      .spyOn(connections, "remoteRequest")
+      .mockResolvedValue({ timeZone: "Europe/Istanbul", nextRunAt: 10 });
+    const formatter = vi.spyOn(sharedI18n, "dateTimeFormat");
+    try {
+      await previewHostAutomation("machine", {} as Parameters<typeof previewHostAutomation>[1]);
+      expect(formatter).toHaveBeenCalledWith(undefined, { timeZone: "Europe/Istanbul" });
+    } finally {
+      remote.mockRestore();
+      formatter.mockRestore();
+    }
+  });
+
   it("runs a remote project on its own machine and a local one on this computer", () => {
     expect(backgroundMachineFor([mac, local], "remote://env-mac/Users/me/app")).toBe(mac);
     expect(backgroundMachineFor([mac, local], "G:/Projects/app")).toBe(local);

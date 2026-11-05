@@ -3,7 +3,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { archiveProject, rememberProject } from "../../projects/model/recents";
-import { ArchivePage } from "./ArchiveSettings";
+import { formatDate, ArchivePage } from "./ArchiveSettings";
+import { formatArchiveDate } from "../../../shared/i18n/format";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -31,6 +32,12 @@ const button = (label: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (item) => item.textContent === label,
   );
+
+it("keeps Archive date formatting aligned with shared i18n formatting", () => {
+  expect(formatDate(0)).toBe("");
+  expect(formatDate(Number.NaN)).toBe("");
+  expect(formatDate(1_782_000_000_000)).toBe(formatArchiveDate(1_782_000_000_000));
+});
 
 it("does not read a failed or pending history load as an empty archive", async () => {
   const onRetry = vi.fn();

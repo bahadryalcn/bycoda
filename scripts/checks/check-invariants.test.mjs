@@ -64,6 +64,65 @@ const tsFixture = [
   "",
 ].join("\n");
 
+test("K-FORMAT rejects feature and app formatter definitions and Intl construction", (t) => {
+  const root = fixtureRoot(t);
+  const rejected = [
+    "function formatBytes(value: number) { return String(value); }",
+    "export function formatFileSize(value: number) { return String(value); }",
+    "async function formatRelativeTimeLabel() { return ''; }",
+    "function formatRelative() { return ''; }",
+    "function formatDuration() { return ''; }",
+    "function formatElapsed() { return ''; }",
+    "function formatDate() { return ''; }",
+    "function formatCompactCount() { return ''; }",
+    "const formatBytes = (value: number) => String(value);",
+    "const formatDuration = function(value: number) { return String(value); };",
+    "const helpers = { formatElapsed() { return ''; } };",
+    "class Labels { formatDate() { return ''; } }",
+    "const helpers = { formatCompactCount: () => '' };",
+    "const value = new Intl.RelativeTimeFormat('en');",
+    "const value = new Intl.NumberFormat('en');",
+    "const value = new Intl.DateTimeFormat('en');",
+  ];
+  for (const [index, source] of rejected.entries()) {
+    write(root, `src/features/demo/reject-${index}.tsx`, source);
+  }
+  write(root, "src/app/reject.ts", "function formatDateLabel() { return ''; }");
+  const findings = scanAll(root).filter(({ rule }) => rule === "ts-feature-local-format");
+  assert.equal(findings.length, rejected.length + 1);
+  for (const [index] of rejected.entries()) {
+    assert.equal(findings.filter(({ file }) => file.endsWith(`reject-${index}.tsx`)).length, 1);
+  }
+});
+
+test("K-FORMAT accepts shared imports, re-exports, calls and non-formatter functions", (t) => {
+  const root = fixtureRoot(t);
+  write(
+    root,
+    "src/features/demo/accepted.ts",
+    [
+      'import { formatBytes } from "../../../shared/i18n/format";',
+      'export { formatElapsed } from "../../../shared/i18n/format";',
+      "const formatCompact = formatBytes;",
+      "const label = formatBytes(1024);",
+      "function reformatDate() { return ''; }",
+      "function formatModel() { return ''; }",
+      "const compare = new Intl.Collator();",
+    ].join("\n"),
+  );
+  for (const file of [
+    "src/shared/i18n/format.ts",
+    "host/demo/format.ts",
+    "src/features/demo/format.test.ts",
+  ]) {
+    write(root, file, "function formatBytes() {}\nconst format = new Intl.NumberFormat();");
+  }
+  assert.deepEqual(
+    scanAll(root).filter(({ rule }) => rule === "ts-feature-local-format"),
+    [],
+  );
+});
+
 const rustFixture = [
   "fn serve(listener: &std::net::TcpListener) {",
   "    match listener.accept() {",

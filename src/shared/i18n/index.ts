@@ -9,6 +9,7 @@ import {
   type t,
 } from "./core";
 export * from "./core";
+export { dateTimeFormat, relativeTimeFormat } from "../lib/intl";
 
 /** React subscriptions update labels without remounting sessions or inputs. */
 export function useLocale(domain?: LanguageDomain): Locale {

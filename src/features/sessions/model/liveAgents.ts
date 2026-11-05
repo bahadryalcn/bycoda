@@ -1,3 +1,4 @@
+export { formatLiveElapsed } from "../../../shared/i18n/format";
 import { sessionIssue } from "./sessionIssue";
 import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
@@ -66,17 +67,6 @@ export function workingProjectPaths(agents: readonly LiveAgent[]): string[] {
         .map((agent) => agent.cwd),
     ),
   ];
-}
-
-export function formatLiveElapsed(startedAt: number, now: number): string {
-  const seconds = Math.max(1, Math.round((now - startedAt) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const minRest = minutes % 60;
-  return minRest ? `${hours}h ${minRest}m` : `${hours}h`;
 }
 
 function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {

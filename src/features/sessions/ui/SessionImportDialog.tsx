@@ -11,7 +11,8 @@ import { Progress } from "../../../shared/ui/Progress";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Switch } from "../../../shared/ui/Switch";
-import { getLocale, useT } from "../../../shared/i18n";
+import { formatNumber, getLocale, useT } from "../../../shared/i18n";
+import { formatImportDate as formatDate } from "../../../shared/i18n/format";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -73,16 +74,7 @@ const PROVIDER_LABEL: Record<ImportProvider, string> = {
 const ITEM_PAGE = 150;
 
 function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count.toLocaleString(getLocale())} ${count === 1 ? one : many}`;
-}
-
-function formatDate(at: number): string {
-  if (!at) return "unknown date";
-  return new Date(at).toLocaleDateString(getLocale(), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return `${formatNumber(count)} ${count === 1 ? one : many}`;
 }
 
 /** Whether the chat will only be history, with no way to continue it. */

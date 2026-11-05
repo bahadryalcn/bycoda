@@ -11,3 +11,4 @@ export function useT(): typeof t {
   const locale = useLocale();
   return useMemo(() => (message, values) => translateAt(locale, message, values), [locale]);
 }
+export { dateTimeFormat, relativeTimeFormat } from "../lib/intl";

@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import {
   acceptAppearanceStorageChange,
   readAppearanceSaveIssues,
@@ -15,7 +16,7 @@ import {
 export { WORKSPACE_BACKGROUND_DEFAULT, WORKSPACE_BACKGROUND_PRESETS };
 export type { WorkspaceBackground };
 const KEY = "bycoda.workspaceBackground.v1";
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let cachedRaw: string | null | undefined;
 let snapshot: WorkspaceBackground = WORKSPACE_BACKGROUND_DEFAULT;
 let baseline: WorkspaceBackground = WORKSPACE_BACKGROUND_DEFAULT;
@@ -26,7 +27,7 @@ export const readWorkspaceBackgroundIssue = () => issue;
 function setIssue(next: typeof issue, emit = true) {
   if (issue === next) return;
   issue = next;
-  if (emit) listeners.forEach((listener) => listener());
+  if (emit) listeners.notify();
 }
 
 export function normalizeWorkspaceBackground(input: unknown): WorkspaceBackground {
@@ -94,7 +95,7 @@ function notify() {
   cachedRaw = undefined;
   applyWorkspaceBackground(loadWorkspaceBackground());
   if (!readAppearanceSaveIssues().some((entry) => entry.key === KEY)) pendingBaseline = undefined;
-  listeners.forEach((listener) => listener());
+  listeners.notify();
 }
 
 export function saveWorkspaceBackground(
@@ -215,10 +216,7 @@ export function saveWorkspaceBackground(
 }
 
 export function subscribeWorkspaceBackground(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }
 
 export function initWorkspaceBackground() {

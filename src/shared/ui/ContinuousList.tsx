@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { defaultRangeExtractor } from "@tanstack/react-virtual";
 import {
   COLLECTION_WINDOW_THRESHOLD,
@@ -21,6 +21,10 @@ export type CollectionFooterProps = {
   hasMore?: boolean;
   onLoadMore?: () => void;
   onRetry?: () => void;
+  /** Render only the continuation button where the surrounding list owns layout. */
+  standalone?: boolean;
+  loadMoreLabel?: ReactNode;
+  loadMoreButtonProps?: Omit<ComponentProps<typeof Button>, "children" | "onClick" | "iconOnly">;
 };
 
 /** Remote continuation stays explicit; a failed continuation never hides loaded rows. */
@@ -33,8 +37,18 @@ export function CollectionFooter({
   hasMore,
   onLoadMore,
   onRetry,
+  standalone = false,
+  loadMoreLabel,
+  loadMoreButtonProps,
 }: CollectionFooterProps) {
   const t = useT();
+  if (standalone) {
+    return hasMore ? (
+      <Button variant="ghost" size="sm" {...loadMoreButtonProps} onClick={onLoadMore}>
+        {loadMoreLabel ?? t("Load more")}
+      </Button>
+    ) : null;
+  }
   return (
     <div className={styles.footer} data-collection-footer>
       {loading && !(hasMore && onLoadMore) && !(error && onRetry) ? (

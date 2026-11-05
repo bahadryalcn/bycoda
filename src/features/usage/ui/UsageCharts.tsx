@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getLocale, t, useLocale } from "../../../shared/i18n";
+import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -17,12 +17,12 @@ export const metricNames: Record<UsageMetric, string> = {
 };
 export function formatMetric(value: number, metric: UsageMetric): string {
   if (metric === "cost")
-    return new Intl.NumberFormat(getLocale(), {
+    return formatNumber(value, {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value);
+    });
   if (metric === "duration") {
     const minutes = Math.floor(value / 60_000);
     return minutes >= 60
@@ -31,27 +31,27 @@ export function formatMetric(value: number, metric: UsageMetric): string {
         ? `${minutes}m`
         : `${Math.round(value / 1000)}s`;
   }
-  return new Intl.NumberFormat(getLocale(), {
+  return formatNumber(value, {
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value);
+  });
 }
 export function formatUsagePercent(value: number): string {
-  return new Intl.NumberFormat(getLocale(), {
+  return formatNumber(value / 100, {
     style: "percent",
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
-  }).format(value / 100);
+  });
 }
 /** Axis space is bounded; tooltips and tables keep the exact formatted value. */
 export function formatMetricTick(value: number, metric: UsageMetric): string {
   if (metric !== "cost") return formatMetric(value, metric);
-  return new Intl.NumberFormat(getLocale(), {
+  return formatNumber(value, {
     style: "currency",
     currency: "USD",
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value);
+  });
 }
 export function formatBucket(at: number, resolution: UsageResolution): string {
   return new Date(at).toLocaleString(

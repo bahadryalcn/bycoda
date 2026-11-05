@@ -1,3 +1,4 @@
+export { formatImportBytes as formatBytes } from "../../../shared/i18n/format";
 import type { ImportCandidate, ImportProvider } from "../../../platform/tauri/sessionImport";
 import { isEqualOrInside, pathKey, slash } from "../../../shared/lib/paths";
 
@@ -108,15 +109,6 @@ export function dominantRoot(candidates: readonly ImportCandidate[]): string | n
   }
   if (counts.size < 2) return null;
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-  }
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export type ImportCounts = {

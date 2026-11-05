@@ -11,6 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -674,9 +675,9 @@ export function UsageOverview({
         </p>
       ) : null}
       {view !== "limits" && firstLoad && (
-        <p role="status" className="usage-empty">
+        <LoadingText presentation="text" className="usage-empty">
           {t("Loading usage…")}
-        </p>
+        </LoadingText>
       )}
       {view !== "limits" && unavailable && (
         <Alert tone="danger" role="alert">
@@ -719,9 +720,9 @@ export function UsageOverview({
       {view !== "limits" && showAnalytics && (
         <>
           {refreshing && load.refreshedAt > 0 && (
-            <p role="status" className="usage-muted">
+            <LoadingText presentation="text" className="usage-muted">
               {t("Refreshing usage… Previous results remain visible.")}
-            </p>
+            </LoadingText>
           )}
           {view === "overview" && (
             <>

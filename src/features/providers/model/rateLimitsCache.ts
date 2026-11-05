@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import { useSyncExternalStore } from "react";
 import { replaceEqualDeep } from "@tanstack/react-query";
 import { recordRateLimitHistory } from "./rateLimitHistory";
@@ -18,7 +19,7 @@ const snapshots = new Map<string, ProviderRateLimits>();
 const pending = new Map<string, Promise<ProviderRateLimits>>();
 const queuedRefreshes = new Map<string, Promise<ProviderRateLimits>>();
 const generations = new Map<string, symbol>();
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let allSnapshots: Record<string, ProviderRateLimits> = {};
 
 function keyFor(provider: RateLimitProvider, accountId: string): string {
@@ -32,13 +33,12 @@ function publish(key: string, value: ProviderRateLimits): ProviderRateLimits {
   if (previous === value) return value;
   snapshots.set(key, value);
   allSnapshots = { ...allSnapshots, [key]: value };
-  for (const listener of listeners) listener();
+  listeners.notify();
   return value;
 }
 
 export function subscribeRateLimits(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return listeners.subscribe(listener);
 }
 
 export function getAllRateLimits(): Record<string, ProviderRateLimits> {
@@ -243,5 +243,5 @@ export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: 
     snapshots.clear();
     allSnapshots = {};
   }
-  for (const listener of listeners) listener();
+  listeners.notify();
 }

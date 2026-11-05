@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../connections/model/connections";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
@@ -38,7 +39,7 @@ export async function previewHostAutomation(machineId: string, schedule: Automat
   if (!preview || typeof preview.timeZone !== "string" || !Number.isFinite(preview.nextRunAt))
     throw new Error("Host schedule preview unavailable");
   // Validate the host's IANA zone before the render path formats its instant.
-  new Intl.DateTimeFormat(undefined, { timeZone: preview.timeZone }).format(preview.nextRunAt);
+  dateTimeFormat(undefined, { timeZone: preview.timeZone }).format(preview.nextRunAt);
   return preview;
 }
 

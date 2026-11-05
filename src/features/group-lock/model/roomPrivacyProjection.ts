@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { createStore } from "../../../shared/lib/store";
 
 declare const privacyMutationBrand: unique symbol;
 export type PrivacyMutationToken = { readonly [privacyMutationBrand]: true };
@@ -36,7 +37,10 @@ let operation: {
   rebaseSnapshot?: unknown;
   rebaseExpected?: number | null;
 } | null = null;
-const listeners = new Set<() => void>();
+const listeners = createStore({
+  snapshot: true,
+  onError: (error) => console.error("Room privacy status listener failed", error),
+});
 
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -66,20 +70,11 @@ export function requireRoomPrivacyAdmission(): void {
   if (state.pending || state.error) throw new Error("Room privacy protection is not confirmed.");
 }
 export function subscribeRoomPrivacyStatus(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }
 function publish(next: RoomPrivacyStatus) {
   status = next;
-  for (const listener of [...listeners]) {
-    try {
-      listener();
-    } catch (error) {
-      console.error("Room privacy status listener failed", error);
-    }
-  }
+  listeners.notify();
 }
 
 function startDrain(): void {
