@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ConfirmDialog, type ConfirmRequest } from "./ConfirmDialog";
+import { ConfirmDialog, useConfirm, type ConfirmRequest } from "./ConfirmDialog";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -41,6 +41,29 @@ const click = (el: Element) =>
   act(async () => {
     el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
+
+it("renders updated caller content without resetting an open confirmation", async () => {
+  let open!: () => Promise<boolean>;
+  const request = (message: string): ConfirmRequest => ({
+    title: "Delete?", message, confirmLabel: "Delete", acknowledge: { label: "Also remove", control: "switch" },
+  });
+  function Probe({ message }: { message: string }) {
+    const confirmation = useConfirm();
+    open = () => confirmation.confirm(request(message));
+    return confirmation.renderDialog(request(message));
+  }
+  await act(async () => root.render(createElement(Probe, { message: "First" })));
+  let result!: Promise<boolean>;
+  await act(async () => { result = open(); });
+  expect(document.body.textContent).toContain("First");
+  const toggle = document.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  await click(toggle);
+  await act(async () => root.render(createElement(Probe, { message: "Updated" })));
+  expect(document.body.textContent).toContain("Updated");
+  expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+  await click(button("Delete"));
+  expect(await result).toBe(true);
+});
 const escape = () =>
   act(async () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

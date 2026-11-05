@@ -18,6 +18,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `src/shared/ui/SectionLabel.tsx`: section and compact menu captions.
 - `src/shared/ui/ContinuousList.tsx`: retained collections and continuation footer.
 - `src/shared/ui/LoadingText.tsx`: loading status lines.
+- `src/shared/ui/ConfirmDialog.tsx`, `src/shared/hooks/useCopyFeedback.ts`: confirmation and copy feedback.
 - `src/shared/ui/arc/`: registry source and reviewed local adaptations; application consumers use public adapters.
 - `src/styles/arc.css`, `index.css`, `bycoda.css`: semantic role mapping and shared presentation.
 - `tests/browser/arc-controls*` and affected feature consumers: verification entry points.

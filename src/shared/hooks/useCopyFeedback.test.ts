@@ -84,6 +84,41 @@ it("treats a synchronous throw as a failure", async () => {
   expect(latest.error).toBe("sync");
 });
 
+it("returns the settled result and rejects a second concurrent operation", async () => {
+  render(["a"]);
+  const work = deferred();
+  let first!: Promise<boolean>;
+  let second!: Promise<boolean>;
+  act(() => {
+    first = latest.copyAsync(() => work.promise);
+    second = latest.copyAsync(() => Promise.resolve());
+  });
+  expect(await second).toBe(false);
+  await act(async () => work.resolve());
+  expect(await first).toBe(true);
+  let failure!: Promise<boolean>;
+  await act(async () => { failure = latest.copyAsync(() => Promise.reject(new Error("denied"))); });
+  expect(await failure).toBe(false);
+  expect(latest.error).toBe("denied");
+});
+
+it("allows explicitly parallel copies and retains the newest feedback", async () => {
+  render(["a"]);
+  const older = deferred();
+  const newer = deferred();
+  let first!: Promise<boolean>;
+  let second!: Promise<boolean>;
+  act(() => {
+    first = latest.copyAsync(() => older.promise, { parallel: true });
+    second = latest.copyAsync(() => newer.promise, { parallel: true });
+  });
+  await act(async () => newer.resolve());
+  expect(await second).toBe(true);
+  await act(async () => older.reject(new Error("older failure")));
+  expect(await first).toBe(false);
+  expect(latest.status).toBe("copied");
+});
+
 it("ignores a result that settles after the content identity changed", async () => {
   render(["a"]);
   const late = deferred();

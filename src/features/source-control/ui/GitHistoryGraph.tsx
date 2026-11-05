@@ -47,6 +47,8 @@ import { RefNameDialog } from "./RefNameDialog";
 import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback, GitLoading } from "./GitFeedback";
 import { confirmGitAction } from "../model/gitConfirmation";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { copyText } from "../../../platform/tauri/clipboard";
 const GitGraphWorkspace = lazy(() =>
   import("./GitGraphWorkspace").then((module) => ({
     default: module.GitGraphWorkspace,
@@ -76,6 +78,7 @@ export function GitHistoryGraph({
   onOpenCommit,
 }: Props) {
   useLocale();
+  const { copyAsync } = useCopyFeedback({ resetKeys: [cwd], successMs: 1200 });
   // Commit actions and the wider scope need this computer or a host with `git.actions`.
   const actions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const stateKey = `git-history:${pathKey(cwd)}`;
@@ -201,10 +204,19 @@ export function GitHistoryGraph({
         return;
       }
       case "copy-sha":
-        await navigator.clipboard.writeText(sha);
+        if (!(await copyAsync(() => copyText(sha), { parallel: true }))) {
+          throw new Error(t("Clipboard write failed."));
+        }
         return;
       case "copy-message":
-        await navigator.clipboard.writeText((await gitCommitMessage(cwd, sha)).trimEnd());
+        if (
+          !(await copyAsync(
+            async () => copyText((await gitCommitMessage(cwd, sha)).trimEnd()),
+            { parallel: true },
+          ))
+        ) {
+          throw new Error(t("Clipboard write failed."));
+        }
         return;
     }
   };

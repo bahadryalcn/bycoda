@@ -32,6 +32,9 @@ export type JiraMove = {
   afterKey?: string;
 };
 
+export const jiraErrorMessage = (reason: unknown) =>
+  reason instanceof Error ? reason.message : String(reason);
+
 async function visibleProjectIds() {
   const hidden = requireHiddenJiraProjectIds();
   return hidden.length ? jiraProjectIdsForFetch(await listJiraProjects(), hidden) : null;

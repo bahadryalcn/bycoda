@@ -83,6 +83,9 @@ test("K-FORMAT rejects feature and app formatter definitions and Intl constructi
     "const value = new Intl.RelativeTimeFormat('en');",
     "const value = new Intl.NumberFormat('en');",
     "const value = new Intl.DateTimeFormat('en');",
+    "const value = new Intl.RelativeTimeFormat;",
+    "const value = new Intl.NumberFormat;",
+    "const value = new Intl.DateTimeFormat;",
   ];
   for (const [index, source] of rejected.entries()) {
     write(root, `src/features/demo/reject-${index}.tsx`, source);

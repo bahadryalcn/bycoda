@@ -47,3 +47,6 @@ rule:
     - pattern: new Intl.RelativeTimeFormat($$$)
     - pattern: new Intl.NumberFormat($$$)
     - pattern: new Intl.DateTimeFormat($$$)
+    - pattern: new Intl.RelativeTimeFormat
+    - pattern: new Intl.NumberFormat
+    - pattern: new Intl.DateTimeFormat
