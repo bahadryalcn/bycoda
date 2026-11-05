@@ -9,6 +9,7 @@ mod bulk;
 mod commit;
 mod connection;
 mod demand;
+mod native_status;
 pub(crate) mod native_profile;
 mod permits;
 mod schema;
@@ -36,14 +37,7 @@ pub type EventSink = Arc<dyn Fn(NativeEvent) + Send + Sync>;
 // compatibility decision conservative for every legal caller request ID;
 // generated-envelope boundary tests prevent this reservation drifting silently.
 const MAX_REQUEST_ID_BYTES: usize = 200;
-fn native_profile_recovery(method: &str) -> bool {
-    matches!(
-        method,
-        "native.buffers.recovery.list"
-            | "native.buffers.recovery.read"
-            | "native.buffers.recovery.status"
-    )
-}
+use native_profile::native_profile_recovery;
 
 fn private_native_method(method: &str) -> bool {
     method.starts_with("native.") || method.starts_with("devServers.bridge")
@@ -95,8 +89,6 @@ fn native_service_method(method: &str) -> bool {
         method,
         "native.services.runtimeLogs.bridge.describe"
             | "native.services.desktop.stop"
-            | "native.services.desktop.status"
-            | "native.services.desktop.status.wait"
             | "native.services.assistant.presence.get"
             | "native.services.assistant.presence.set"
             | "native.services.assistant.visibility.epoch"
@@ -113,6 +105,7 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.assistant.visibility.reopen"
             | "native.services.runtimeLogs.access.issue"
             | "native.services.runtimeLogs.terminals.append"
+            | "native.services.runtimeLogs.terminals.demand"
             | "native.services.conversation.bridge.describe"
             | "native.services.conversation.access.issue"
             | "native.services.conversation.desktop.take"
@@ -135,7 +128,7 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.delivery.status"
             | "native.services.delivery.ack"
             | "native.services.delivery.result.read"
-    ) || native_delivery_epoch_method(method)
+    ) || native_delivery_epoch_method(method) || native_status::is_status(method)
 }
 
 #[cfg(test)]

@@ -1,3 +1,5 @@
+import { joined, alreadyExists } from "./workspace-path-labels";
+import { moveWithRecovery } from "./cross-volume-move";
 import { renameWithRetry } from "../storage/rename-retry";
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import {
@@ -165,12 +167,6 @@ const ROOTS_TTL_MS = 5_000;
 // Connections may own different command instances. Windows cannot replace the
 // same destination concurrently, so serialize canonical destinations host-wide.
 const textFileSaves = new Map<string, Promise<void>>();
-
-const slashed = (path: string) => path.replace(/\\/g, "/");
-const joined = (parent: string, name: string) =>
-  `${slashed(parent).replace(/\/+$/, "")}/${slashed(name).replace(/^\/+|\/+$/g, "")}`;
-const alreadyExists = (name: string) =>
-  `A file or folder ${name} already exists at this location. Please choose a different name.`;
 
 type Located = { root: string; relative: string };
 
@@ -1059,7 +1055,7 @@ export class WorkspaceCommands {
     destParent: unknown,
     expectedHash?: unknown,
     authorized?: () => Promise<boolean>,
-  ): Promise<string> {
+  ): Promise<string | { path: string; recoveryPath: string; receiptPath: string }> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const to = resolve(parent, name);
@@ -1072,10 +1068,9 @@ export class WorkspaceCommands {
     )
       throw new Error(alreadyExists(name));
     await this.verifyExpectedPath(root, from, source, expectedHash);
-    if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
-    await rename(source, to);
+    const result = await moveWithRecovery(source, to, authorized);
     invalidateHostFilePaths(root);
-    return joined(destParent as string, name);
+    return result ?? joined(destParent as string, name);
   }
 
   private async gitRoot(input: unknown): Promise<string> {

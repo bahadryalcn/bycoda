@@ -503,7 +503,7 @@ pub fn run() {
                     let _ = window.set_decorations(false);
                     let _ = window.set_shadow(true);
                     #[cfg(target_os = "linux")]
-                    enable_linux_media_stream(&window);
+                    voice_media_origin::enable(&window);
                 }
             }
             if !package_smoke::active() {
@@ -1134,6 +1134,8 @@ pub fn run() {
             quick_composer::git_popup::quick_composer_dismiss,
             window_transfer::take_window_transfer,
             window_transfer::window_transfer_ready,
+            window_transfer::window_transfer_probe_reply,
+            fs::entry_spelling::resolve_file_entry_spelling,
             window_transfer::reject_window_transfer,
             window_transfer::move_window_tabs,
             window_transfer::try_relocate_workspace_window,
@@ -1343,35 +1345,9 @@ pub fn ensure_macos_dev_bundle() {
     macos::ensure_dev_bundle();
 }
 
-/// WebKitGTK disables getUserMedia by default; enable it for the voice feature
-/// and grant only audio capture requests.
-#[cfg(target_os = "linux")]
-fn enable_linux_media_stream(window: &tauri::WebviewWindow) {
-    use webkit2gtk::glib::prelude::Cast;
-    use webkit2gtk::{
-        PermissionRequestExt, SettingsExt, UserMediaPermissionRequestExt, WebViewExt,
-    };
-    let _ = window.with_webview(|webview| {
-        let view = webview.inner();
-        if let Some(settings) = WebViewExt::settings(&view) {
-            settings.set_enable_media_stream(true);
-            settings.set_enable_webaudio(true);
-        }
-        view.connect_permission_request(|_, request| {
-            if let Some(media) = request.downcast_ref::<webkit2gtk::UserMediaPermissionRequest>() {
-                if UserMediaPermissionRequestExt::is_for_audio_device(media)
-                    && !UserMediaPermissionRequestExt::is_for_video_device(media)
-                {
-                    request.allow();
-                } else {
-                    request.deny();
-                }
-                return true;
-            }
-            false
-        });
-    });
-}
+#[cfg(any(target_os = "linux", test))]
+#[path = "voice/media_origin.rs"]
+mod voice_media_origin;
 
 #[cfg(test)]
 mod tests {

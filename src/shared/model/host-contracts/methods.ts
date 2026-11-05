@@ -1,3 +1,5 @@
+import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
+import { desktopStatusMethods } from "./desktop-status-methods";
 import {
   DEVICE_LIFECYCLE_RPC_SCHEMAS,
   MOBILE_DEVICE_PREVIEW_RPC_SCHEMAS,
@@ -455,15 +457,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.services.upload.commit": nativeServiceUploadOperation("native.services.upload.commit"),
   "native.services.upload.status": nativeServiceUploadOperation("native.services.upload.status"),
   "native.services.upload.cancel": nativeServiceUploadOperation("native.services.upload.cancel"),
-  "native.services.runtimeLogs.bridge.describe": nativeServiceOperation(
-    "native.services.runtimeLogs.bridge.describe",
-  ),
-  "native.services.runtimeLogs.access.issue": nativeServiceOperation(
-    "native.services.runtimeLogs.access.issue",
-  ),
-  "native.services.runtimeLogs.terminals.append": nativeServiceOperation(
-    "native.services.runtimeLogs.terminals.append",
-  ),
+  ...nativeRuntimeLogMethods(nativeServiceOperation),
   "native.services.conversation.bridge.describe": nativeServiceOperation(
     "native.services.conversation.bridge.describe",
   ),
@@ -528,8 +522,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.services.assistant.presence.set": nativeServiceOperation(
     "native.services.assistant.presence.set",
   ),
-  "native.services.desktop.status": nativeServiceOperation("native.services.desktop.status"),
-  "native.services.desktop.status.wait": nativeServiceOperation("native.services.desktop.status.wait"),
+  ...desktopStatusMethods(nativeServiceOperation),
   "native.services.conversation.desktop.finish": nativeServiceOperation(
     "native.services.conversation.desktop.finish",
   ),

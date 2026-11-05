@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "../../../shared/lib/intl";
 import { t } from "../../../shared/i18n";
 import type { HostProject } from "../../connections/model/protocol";
 import type { CampaignVariant, SocialSnapshot } from "./social";
@@ -163,4 +164,29 @@ export function summarizeProgramSuggestion(
     default:
       return t("Review the exact settings below.");
   }
+}
+
+export function formatScheduledDate(locale: string, timeZone: string, at: number): string {
+  return dateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(at);
+}
+
+export function programSetupMissing(config: ProgramConfig, snapshot: SocialSnapshot) {
+  const purposeMissing =
+    !config.name.trim() ||
+    !config.projectId ||
+    !config.brief.topic.trim() ||
+    !config.brief.description.trim() ||
+    !config.accountIds.length ||
+    config.accountIds.some(
+      (id) =>
+        !snapshot.accounts
+          .find((account) => account.id === id)
+          ?.grants[config.projectId]?.includes("draft"),
+    );
+  const scheduleMissing =
+    !config.schedule.timeZone ||
+    !Number.isFinite(config.schedule.startsAt) ||
+    !config.schedule.days.length ||
+    (config.schedule.mode === "times" && !config.schedule.times.length);
+  return { purposeMissing, scheduleMissing };
 }

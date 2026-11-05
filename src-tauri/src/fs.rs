@@ -1,4 +1,5 @@
 pub mod question_attachment;
+pub mod entry_spelling;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -15,6 +16,10 @@ use uuid::Uuid;
 use crate::dirs_home;
 use crate::native_window_lifecycle::{admit_window_buffers, run_admitted_blocking};
 mod attachment_reads;
+mod cross_volume_move;
+use cross_volume_move::move_path_outcome;
+#[cfg(test)]
+use cross_volume_move::move_path_sync;
 #[cfg(test)]
 mod buffer_actor_tests;
 mod text_admission;
@@ -6318,45 +6323,36 @@ impl GitSpawnGate {
         }
     }
 
-    fn enter_cancellable(&'static self, cancel: Option<&AtomicBool>) -> Option<GitSpawnTurn> {
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-            return None;
-        }
-        if cfg!(windows) {
-            self.wait_turn_cancellable(cancel)
-        } else {
-            Some(GitSpawnTurn(None))
-        }
-    }
-
     fn wait_turn(&'static self) -> GitSpawnTurn {
-        self.wait_turn_cancellable(None)
+        self.wait_turn_cancellable(None, None)
             .unwrap_or(GitSpawnTurn(None))
     }
 
-    fn wait_turn_cancellable(&'static self, cancel: Option<&AtomicBool>) -> Option<GitSpawnTurn> {
+    fn enter_until(&'static self, cancel: Option<&AtomicBool>, deadline: Instant) -> Option<GitSpawnTurn> {
+        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) { return None; }
+        if cfg!(windows) { self.wait_turn_cancellable(cancel, Some(deadline)) } else { Some(GitSpawnTurn(None)) }
+    }
+
+    fn wait_turn_cancellable(&'static self, cancel: Option<&AtomicBool>, deadline: Option<Instant>) -> Option<GitSpawnTurn> {
         let Ok(mut holder) = self.holder.lock() else {
             return Some(GitSpawnTurn(None));
         };
         while let Some((_, since)) = *holder {
-            if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
                 return None;
             }
             let Some(left) = GIT_STARTUP_WINDOW.checked_sub(since.elapsed()) else {
                 break;
             };
             // A busy gate must not hide cancellation behind other Git callers.
-            let wait = if cancel.is_some() {
-                left.min(Duration::from_millis(50))
-            } else {
-                left
-            };
+            let wait = deadline.map_or(left, |deadline| left.min(deadline.saturating_duration_since(Instant::now())));
+            let wait = if cancel.is_some() { wait.min(Duration::from_millis(50)) } else { wait };
             holder = match self.freed.wait_timeout(holder, wait) {
                 Ok((holder, _)) => holder,
                 Err(_) => return Some(GitSpawnTurn(None)),
             };
         }
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
             return None;
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed);
@@ -6545,8 +6541,8 @@ fn git_stream_command(
     }
     let lease = GitStreamLease::acquire(nested)?;
     let turn = GIT_SPAWN_GATE
-        .enter_cancellable(None)
-        .ok_or("Git startup unavailable")?;
+        .enter_until(None, deadline)
+        .ok_or("Git output timed out")?;
     if Instant::now() >= deadline {
         return Err("Git output timed out".into());
     }
@@ -6705,7 +6701,11 @@ mod git_stream_process_tests {
     #[test]
     #[ignore = "isolated child fixture"]
     fn silent_child() {
-        std::thread::sleep(Duration::from_secs(5));
+        if let Some(marker) = std::env::var_os("BYCODA_GIT_SILENT_READY") {
+            std::fs::write(marker, b"ready").unwrap();
+        }
+        println!("SILENT_CHILD_READY");
+        std::thread::sleep(Duration::from_secs(30));
     }
 
     #[test]
@@ -6729,17 +6729,17 @@ mod git_stream_process_tests {
 
     #[test]
     fn deadline_retires_silent_child_and_releases_capacity() {
-        let _test = TEST_LOCK.lock().unwrap();
+        let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
-        let started = Instant::now();
+        let mut observed = Vec::new();
         let result = git_stream_command(
             child("fs::git_stream_process_tests::silent_child"),
-            started + Duration::from_millis(200),
+            Instant::now() + Duration::from_secs(5),
             false,
-            |_| Ok(()),
+            |chunk| { observed.extend_from_slice(chunk); Ok(()) },
         );
-        assert!(result.is_err());
-        assert!(started.elapsed() < Duration::from_secs(3));
+        assert_eq!(result.unwrap_err(), "Git output timed out");
+        assert!(observed.windows(b"SILENT_CHILD_READY".len()).any(|window| window == b"SILENT_CHILD_READY"));
         let deadline = Instant::now() + Duration::from_secs(2);
         while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
             std::thread::yield_now();
@@ -6769,7 +6769,7 @@ mod git_stream_process_tests {
 
     #[test]
     fn inherited_pipe_retains_capacity_until_reader_retires() {
-        let _test = TEST_LOCK.lock().unwrap();
+        let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
         let release =
             std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
@@ -6828,103 +6828,11 @@ fn git_output_capped_with_timeout(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let _turn = GIT_SPAWN_GATE.enter_cancellable(cancel)?;
-    let mut child = child.spawn().ok()?;
-    let Some(mut stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return None;
-    };
-    let (sender, receiver) = mpsc::sync_channel(GIT_OUTPUT_QUEUE_CHUNKS);
-    let reader = thread::Builder::new()
-        .name("git-output-reader".to_string())
-        .spawn(move || {
-            let mut chunk = vec![0u8; 8192];
-            loop {
-                match stdout.read(&mut chunk) {
-                    Ok(0) => {
-                        let _ = sender.send(Ok(Vec::new()));
-                        break;
-                    }
-                    Ok(read) => {
-                        if sender.send(Ok(chunk[..read].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                    Err(error) => {
-                        let _ = sender.send(Err(error));
-                        break;
-                    }
-                }
-            }
-        });
-    let mut reader = match reader {
-        Ok(reader) => Some(reader),
-        Err(_) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-    };
-    let stop = |child: &mut std::process::Child, reader: &mut Option<thread::JoinHandle<()>>| {
-        let _ = child.kill();
-        let _ = child.wait();
-        // Dropping the handle detaches the reader. A killed git process can leave
-        // a shell descendant holding the pipe, so joining here would re-block the
-        // cancelled search until that unrelated descendant exits.
-        reader.take();
-    };
-
-    let mut buf = Vec::new();
-    loop {
-        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-            stop(&mut child, &mut reader);
-            return None;
-        }
-        match receiver.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(chunk)) if chunk.is_empty() => break,
-            Ok(Ok(chunk)) => {
-                let remaining = max_bytes.saturating_sub(buf.len());
-                if chunk.len() > remaining {
-                    buf.extend_from_slice(&chunk[..remaining]);
-                    stop(&mut child, &mut reader);
-                    return Some((buf, true));
-                }
-                buf.extend_from_slice(&chunk);
-            }
-            Ok(Err(_)) => {
-                stop(&mut child, &mut reader);
-                return None;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-                    stop(&mut child, &mut reader);
-                    return None;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                stop(&mut child, &mut reader);
-                return None;
-            }
-        }
-    }
-    let _ = reader.take().map(thread::JoinHandle::join);
-    let status = loop {
-        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-            stop(&mut child, &mut reader);
-            return None;
-        }
-        if let Some(status) = child.try_wait().ok()? {
-            break status;
-        }
-        thread::sleep(Duration::from_millis(10));
-    };
-    if git_status_ok(&status, args) {
-        Some((buf, false))
-    } else {
-        None
-    }
+    git_bounded_output::run(child, args, max_bytes, cancel, deadline)
 }
+
+#[path = "fs/git_bounded_output.rs"]
+mod git_bounded_output;
 
 fn git_status_ok(status: &std::process::ExitStatus, args: &[&str]) -> bool {
     status.success()
@@ -9281,37 +9189,13 @@ pub async fn copy_path(
     .await
 }
 
-fn move_path_sync(from: &str, dest_parent: &str) -> Result<String, String> {
-    let from = expand_home(from);
-    if !from.exists() {
-        return Err(format!("{}: No such file or directory", from.display()));
-    }
-    let dest_parent = expand_home(dest_parent);
-    if !dest_parent.is_dir() {
-        return Err(format!("{} is not a folder", dest_parent.display()));
-    }
-    if from.is_dir() && dir_contains(&from, &dest_parent) {
-        return Err("Cannot paste a folder into itself.".into());
-    }
-    let name = file_label(&from, from.to_str().unwrap_or("item"));
-    let dest = dest_parent.join(&name);
-    if same_entry(&from, &dest) {
-        return Ok(from.to_string_lossy().into_owned());
-    }
-    if dest.exists() {
-        return Err(already_exists(&name));
-    }
-    std::fs::rename(&from, &dest).map_err(|e| e.to_string())?;
-    Ok(dest.to_string_lossy().into_owned())
-}
-
 #[tauri::command]
 pub async fn move_path(
     app: AppHandle,
     window: tauri::Window,
     from: String,
     dest_parent: String,
-) -> Result<String, String> {
+) -> Result<cross_volume_move::MoveOutcome, String> {
     let admission = admit_window_buffers(&window)?;
     run_admitted_blocking(admission, move || {
         let source = expand_home(&from);
@@ -9320,7 +9204,7 @@ pub async fn move_path(
         crate::file_access::require(&app, &parent, false)?;
         let destination = parent.join(file_label(&source, "item"));
         crate::file_access::validate_copy_tree(&app, &source, &destination)?;
-        move_path_sync(&from, &dest_parent)
+        move_path_outcome(&from, &dest_parent)
     })
     .await
 }
@@ -13222,9 +13106,21 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
             setter.store(true, Ordering::Release);
         });
-        assert!(GATE.wait_turn_cancellable(Some(&cancel)).is_none());
+        assert!(GATE.wait_turn_cancellable(Some(&cancel), None).is_none());
         worker.join().unwrap();
         // Cancellation must not replace the claim of the running process.
+        assert_eq!(GATE.holder.lock().unwrap().as_ref().unwrap().0, 0);
+    }
+
+    #[test]
+    fn queued_git_spawn_respects_original_deadline_without_replacing_owner() {
+        static GATE: GitSpawnGate = GitSpawnGate {
+            holder: Mutex::new(None),
+            freed: std::sync::Condvar::new(),
+            next: std::sync::atomic::AtomicU64::new(0),
+        };
+        let _held = GATE.wait_turn();
+        assert!(GATE.wait_turn_cancellable(None, Some(Instant::now())).is_none());
         assert_eq!(GATE.holder.lock().unwrap().as_ref().unwrap().0, 0);
     }
 
@@ -13257,19 +13153,15 @@ mod tests {
     #[test]
     fn git_output_capped_deadline_stops_a_silent_child_without_cancellation() {
         let dir = tmp("git-output-deadline-silent");
-        if !init_git_commit(&dir.0, &[("a.txt", "a\n")]) {
-            return;
-        }
-        let started = Instant::now();
-        let result = git_output_capped_with_timeout(
-            &dir.0,
-            &["-c", "alias.slow=!sleep 5", "slow"],
-            1024,
-            None,
-            Duration::from_millis(150),
-        );
+        let marker = dir.0.join("child-ready");
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        crate::hide_window_console(&mut command);
+        command.args(["--exact", "fs::git_stream_process_tests::silent_child", "--ignored", "--nocapture"])
+            .env("BYCODA_GIT_SILENT_READY", &marker)
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+        let result = git_bounded_output::run(&mut command, &[], 1024, None, Instant::now() + Duration::from_secs(5));
         assert!(result.is_none());
-        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(marker.is_file(), "the actual child must reach its silent wait before the deadline");
     }
 
     #[test]

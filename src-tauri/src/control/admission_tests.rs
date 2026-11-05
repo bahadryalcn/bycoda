@@ -17,10 +17,8 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("temp/verification/2026-10-30-native-buffer-continuation/control/fixtures");
+        // Scratch admission requires a canonical child of the native temp root.
+        let base = std::env::temp_dir().join("bycoda-control-admission-fixtures");
         std::fs::create_dir_all(&base).unwrap();
         let base = base.canonicalize().unwrap();
         let root = base.join(format!("control-{}", uuid::Uuid::new_v4()));

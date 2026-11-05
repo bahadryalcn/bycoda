@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { TunnelError } from "../../src/integrations/external-tunnels";
+import { startNativeTunnel } from "./native-tunnel-process";
 import {
   tunnelEnvironment,
   tunnelOutput,
@@ -148,6 +149,13 @@ export function startTunnelGuardian(
   command: TunnelCommand,
   emit: (event: TunnelEvent) => void,
 ): OwnedTunnelProcess {
+  return startNativeTunnel(command, emit, () => startLegacyTunnelGuardian(command, emit));
+}
+
+export function startLegacyTunnelGuardian(
+  command: TunnelCommand,
+  emit: (event: TunnelEvent) => void,
+): OwnedTunnelProcess {
   const child = spawn(process.execPath, [process.argv[1], "tunnel-worker"], {
     windowsHide: true,
     shell: false,
@@ -155,7 +163,7 @@ export function startTunnelGuardian(
     stdio: ["ignore", "ignore", "ignore", "ipc"],
   });
   let closed = false;
-  let stopping = false;
+  let confirmed = false;
   let stopPromise: Promise<void> | undefined;
   const startup = setTimeout(() => {
     emit({ type: "error", issue: "startup-timeout" });
@@ -169,6 +177,7 @@ export function startTunnelGuardian(
   child.on("message", (event: TunnelEvent) => {
     if (!event || !["ready", "error", "exit"].includes(event.type)) return;
     if (event.type === "ready" || event.type === "error") clearTimeout(startup);
+    if (event.type === "exit") confirmed = true;
     emit(event);
   });
   child.once("error", () => {
@@ -182,18 +191,18 @@ export function startTunnelGuardian(
   child.once("exit", () => {
     clearTimeout(startup);
     closed = true;
-    if (!stopping) emit({ type: "error", issue: "unexpected-exit" });
-    emit({ type: "exit" });
+    if (!confirmed) emit({ type: "error", issue: "stop-failed" });
   });
   const stop = (): Promise<void> => {
-    if (closed) return Promise.resolve();
+    if (closed)
+      return confirmed ? Promise.resolve() : Promise.reject(new TunnelError("stop-failed"));
     if (stopPromise) return stopPromise;
-    stopping = true;
     clearTimeout(startup);
     stopPromise = new Promise<void>((resolve, reject) => {
       const finish = () => {
         clearTimeout(timeout);
-        resolve();
+        if (confirmed) resolve();
+        else reject(new TunnelError("stop-failed"));
       };
       const timeout = setTimeout(() => {
         child.off("exit", finish);

@@ -44,11 +44,16 @@ export interface NativeServiceOwnerPorts {
     currentAction?: { app: string; action: string };
     assistantName?: string;
   }>;
-  waitDesktopStatus?(afterRevision: string, timeoutMs: number, signal?: AbortSignal): Promise<{ revision: string }>;
+  waitDesktopStatus?(
+    afterRevision: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<{ revision: string }>;
   stopDesktop?(): Promise<{ stopped: true }>;
   describe(kind: NativeServiceKind): Promise<unknown>;
   issue(kind: NativeServiceKind, sessionId: string, expectedScope: unknown): Promise<unknown>;
   appendTerminal(params: Record<string, unknown>): Promise<unknown>;
+  terminalDemand?(params: Record<string, unknown>): Promise<unknown>;
   desktop: {
     take(): Promise<unknown>;
     finish(id: string, result: unknown, error?: string): Promise<unknown>;

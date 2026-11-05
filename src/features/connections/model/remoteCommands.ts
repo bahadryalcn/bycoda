@@ -280,6 +280,15 @@ async function runOnMachine(
       entries: folder.entries.map((entry) => ({ ...entry, path: fromHost(entry.path) })),
     };
   }
+  if (command === "move_path" && result && typeof result === "object") {
+    const moved = result as { path: string; recoveryPath: string; receiptPath: string };
+    return {
+      ...moved,
+      path: fromHost(moved.path),
+      recoveryPath: fromHost(moved.recoveryPath),
+      receiptPath: fromHost(moved.receiptPath),
+    };
+  }
   if (PATH_RESULTS.has(command) && typeof result === "string") return fromHost(result);
   if (ENTRY_RESULTS.has(command) && Array.isArray(result))
     return result.map((entry: { path: string }) => ({

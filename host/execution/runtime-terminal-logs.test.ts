@@ -99,3 +99,43 @@ it("recognizes PEM openers beyond the retained line length", () => {
   );
   expect(JSON.stringify(logs.read())).not.toContain("SYNTHETIC");
 });
+
+it("bulk-processes ASCII newline chunks with the same redaction and gap behavior", () => {
+  const logs = new RuntimeLogsService();
+  const terminals = new RuntimeTerminalLogs(logs);
+  terminals.append("project", packet("first\r\npassword=secret\nthird", 0));
+  terminals.append("project", packet("-part\n", 1));
+  expect(logs.read({ projectId: "project" }).entries.map((entry) => entry.message)).toEqual([
+    "first",
+    "password=[REDACTED]",
+    "third-part",
+  ]);
+});
+
+it("preserves background capture by default and expires opt-out monitor leases", () => {
+  let now = 1_000;
+  const logs = new RuntimeLogsService();
+  const standard = new RuntimeTerminalLogs(logs);
+  expect(standard.demand("project")).toEqual({ enabled: true, background: true });
+  const demand = new RuntimeTerminalLogs(logs, false, () => now);
+  expect(demand.demand("project").enabled).toBe(false);
+  demand.monitor("owner", "panel", "project", true, 1);
+  expect(demand.demand("project").enabled).toBe(true);
+  expect(demand.demand("other").enabled).toBe(false);
+  demand.monitor("owner", "panel", "project", false, 2);
+  demand.monitor("owner", "panel", "project", true, 1);
+  expect(demand.demand("project").enabled).toBe(false);
+  demand.monitor("owner", "panel", "project", true, 3);
+  now += 30_001;
+  expect(demand.demand("project").enabled).toBe(false);
+});
+
+it("records missing coverage when a terminal closes before any captured output", () => {
+  const logs = new RuntimeLogsService();
+  const terminals = new RuntimeTerminalLogs(logs, false);
+  terminals.append("project", packet("", 0, { interrupted: true, closed: true }));
+  expect(logs.read({ projectId: "project" }).entries[0]).toMatchObject({
+    details: { captureGap: true, interrupted: true },
+  });
+  expect(logs.sources({ projectId: "project" })[0].available).toBe(false);
+});

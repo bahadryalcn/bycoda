@@ -2,7 +2,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-import { prepareQuestionAttachments } from "./questionAttachments";
+import {
+  listQuestionAttachmentDrafts,
+  pendingQuestionAttachment,
+  prepareQuestionAttachments,
+  questionAttachmentIdentity,
+} from "./questionAttachments";
 import { buildQuestionReply, selectedAnswerLabels, type UserQuestion } from "./userQuestion";
 const file = {
   id: "image",
@@ -22,6 +27,24 @@ beforeEach(() => {
   invoke.mockReset();
 });
 describe("question file answers", () => {
+  it("does not recover legacy question attachments without an occurrence or run", async () => {
+    const prompt = { requestId: 7, callId: "reused", questions: [question] };
+    expect(questionAttachmentIdentity(prompt, "q")).toBeNull();
+    expect(await listQuestionAttachmentDrafts("session", "scope", prompt)).toEqual([]);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(() =>
+      pendingQuestionAttachment({ ...file, data: "YWJj" }, "scope", "session", null),
+    ).toThrow("identity is unavailable");
+    expect(
+      pendingQuestionAttachment({ ...file, path: "/existing" }, "scope", "session", null).path,
+    ).toBe("/existing");
+    expect(questionAttachmentIdentity({ ...prompt, occurrenceId: "old" }, "q")).not.toEqual(
+      questionAttachmentIdentity({ ...prompt, occurrenceId: "new" }, "q"),
+    );
+    expect(questionAttachmentIdentity({ ...prompt, providerTurnId: "run" }, "q")).not.toBeNull();
+    expect(questionAttachmentIdentity({ ...prompt, providerTurnId: "  " }, "q")).toBeNull();
+  });
+
   it("saves pasted images before returning durable metadata", async () => {
     invoke.mockResolvedValue("/saved/shot.png");
     expect(

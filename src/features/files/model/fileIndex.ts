@@ -5,6 +5,7 @@ import { resolveWorkspacePath, slash } from "../../../shared/lib/paths";
 import { looksLikeProject } from "../../projects/public/recents";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { normalizeEditorPath, type FileOpenOptions } from "../../search/model/search";
+import { resolveFileEntrySpelling } from "../../../platform/tauri/fileEntry";
 
 const MAX_RECENTS = 30;
 const MAX_RESULTS = 80;
@@ -402,8 +403,8 @@ export async function resolveFileOpenRequest(
   path: string,
   options?: FileOpenOptions,
 ): Promise<string> {
-  if (options?.exact) return path;
-  return (await resolveOpenablePath(cwd, path)) ?? path;
+  const resolved = options?.exact ? path : ((await resolveOpenablePath(cwd, path)) ?? path);
+  return resolveFileEntrySpelling(resolved);
 }
 
 function relativePathHint(href: string, cwd: string, direct: string): string {

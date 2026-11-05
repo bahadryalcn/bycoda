@@ -36,7 +36,7 @@ export function workspaceRepositoryPaths(
     return root && pathKey(root) === key;
   });
   if (!group || isProjectLockedIn(lock, cwd)) return undefined;
-  const seen = new Set([key]);
+  const seen = new Set<string>();
   return [
     ...(group.workspaceFolders ?? []),
     ...rememberedPaths.filter((path) => assignments[pathKey(path)] === group.id),

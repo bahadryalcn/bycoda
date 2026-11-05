@@ -86,6 +86,15 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
       "window_transfer_available",
       async ({ payload: transferId }) => {
         if (disposed || receiving.has(transferId)) return;
+        if (transferId.startsWith("probe:")) {
+          if (
+            receiving.size === 0 &&
+            movingTabIds.current.size === 0 &&
+            movingSessionIds.current.size === 0
+          )
+            await invoke("window_transfer_probe_reply", { probeId: transferId }).catch(() => {});
+          return;
+        }
         receiving.add(transferId);
         let rollback: (() => void) | undefined;
         let incomingTabIds: string[] = [];
@@ -225,7 +234,8 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
             try {
               // Native retains the exact receipt, so retry cannot transfer twice.
               await invoke("window_transfer_ready", { transferId });
-            } catch {
+            } catch (error) {
+              if (String(error).includes("This transfer has expired")) throw error;
               // The acknowledgement may have committed despite a lost response.
               // Keep both copies and let native ownership prevent execution until recovery.
               rollback = undefined;

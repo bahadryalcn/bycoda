@@ -159,8 +159,11 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
     }),
   },
   "native.services.desktop.status.wait": {
-    params: z.strictObject({ afterRevision: z.string().max(100), timeoutMs: z.number().int().min(1).max(25000) }),
-    result: z.strictObject({ revision: z.string().max(100) }),
+    params: z.strictObject({
+      afterRevision: z.string(),
+      timeoutMs: z.number().int().min(1).max(25000),
+    }),
+    result: z.strictObject({ revision: z.string() }),
   },
   "native.services.desktop.stop": {
     params: empty,
@@ -168,6 +171,10 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
   },
   "native.services.runtimeLogs.bridge.describe": { params: empty, result: describe },
   "native.services.runtimeLogs.access.issue": { params: access, result: grant },
+  "native.services.runtimeLogs.terminals.demand": {
+    params: z.strictObject({ cwd: z.string(), terminalId: z.string() }),
+    result: z.strictObject({ enabled: z.boolean(), background: z.boolean() }),
+  },
   "native.services.runtimeLogs.terminals.append": {
     params: z.strictObject({
       cwd: z.string(),

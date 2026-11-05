@@ -1,4 +1,14 @@
 import { SessionReadProcesses } from "./session-read-process";
+import {
+  compactCommandReceipts,
+  initializeCommandReceiptRetention,
+  readCommandReceipt,
+  readWorkspaceReceipt,
+} from "./storage/command-receipt-retention";
+import {
+  initializeWorkspaceSessionProbe,
+  startupSessionStates,
+} from "./storage/workspace-session-probe";
 import { dispatchCommittedEffect, TransactionEffects } from "./storage/transaction-effects";
 import { ProjectIdentityFence } from "./projects/project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
@@ -52,7 +62,7 @@ import type { DesktopCommandAcceptance } from "./domains/commands/service";
 export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./sessions/block-revisions";
 const CACHED_SESSIONS = 32;
-// Retried commands are deduplicated by receipt; a week far outlives any retry.
+// Original request signatures compact after a week; replay answers never expire.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
 const MAX_DESKTOP_COMMAND_RECEIPTS = 4096;
@@ -633,6 +643,7 @@ export class HostStore {
     await this.db.exec(
       "CREATE INDEX IF NOT EXISTS workspace_receipts_created_at ON workspace_mutation_receipts(created_at)",
     );
+    await initializeCommandReceiptRetention(this.db);
     await this.pruneReceipts();
     await this.migrateSessionState();
     // Covering partial index: adopted() is answered from the index alone.
@@ -677,6 +688,7 @@ export class HostStore {
     CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);
     CREATE INDEX IF NOT EXISTS session_state_workspace_probe ON session_state(json_extract(summary, '$.workspaceId')) WHERE json_valid(summary);
     CREATE INDEX IF NOT EXISTS session_state_worktree_probe ON session_state(json_extract(summary, '$.worktreeCwd')) WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL;`);
+    await initializeWorkspaceSessionProbe(this.db);
     // An older host binary only knows `sessions`; these keep the side table
     // current when it writes there after a rollback.
     await this.db
@@ -1120,20 +1132,9 @@ export class HostStore {
   /** Receipts deliberately have no age-based pruning: retries after retirement
    * or restart must not repeat Git mutations. Scope is a host-selected namespace. */
   async workspaceReceipt<T>(scope: string, key: string, request: unknown): Promise<T | null> {
-    return this.db.storeScope(async () => {
-      const row = await this.db
-        .prepare(
-          "SELECT signature, response FROM workspace_mutation_receipts WHERE scope=? AND idempotency_key=?",
-        )
-        .get(scope, key);
-      if (!row) return null;
-      if (row.signature !== canonicalWorkspaceJson(request))
-        throw Object.assign(
-          new Error("Idempotency key was already used with a different request"),
-          { code: "WORKSPACE_IDEMPOTENCY_CONFLICT" },
-        );
-      return JSON.parse(String(row.response)) as T;
-    });
+    return this.db.storeScope(() =>
+      readWorkspaceReceipt<T>(this.db, scope, key, canonicalWorkspaceJson(request)),
+    );
   }
   async saveWorkspaceReceipt(
     scope: string,
@@ -1632,85 +1633,17 @@ export class HostStore {
     });
   }
   /** Everything startup needs per session, without parsing transcripts. */
-  async startupStates(candidateWorkspaceId?: string): Promise<
-    {
-      id: string;
-      projectId: string;
-      revision: number;
-      status: HostSession["status"];
-      hasAuthority: boolean;
-      hasDesktop: boolean;
-      running: boolean;
-      shellRunning: boolean;
-      workspaceId?: string;
-      worktreeCwd?: string;
-      providerSessionId: string | null;
-      harness: string | null;
-      cwd: string | null;
-    }[]
-  > {
-    return this.db.storeScope(async () => {
-      const columns = `SELECT id, project_id, revision, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
-          json_valid(summary) AS summary_valid,
-          CASE WHEN json_valid(summary) THEN json_extract(summary, '$.workspaceId') END AS workspace_id,
-          CASE WHEN json_valid(summary) THEN json_extract(summary, '$.worktreeCwd') END AS worktree_cwd,
-          EXISTS(SELECT 1 FROM host_authority_heads h WHERE h.session_id=session_state.id) AS has_authority
-        FROM session_state`;
-      const rows =
-        candidateWorkspaceId === undefined
-          ? await this.db.prepare(`${columns} ORDER BY updated_at DESC`).all()
-          : await this.db
-              .prepare(`${columns} WHERE id IN (
-            SELECT id FROM session_state WHERE json_valid(summary) AND json_extract(summary, '$.workspaceId')=?
-            UNION SELECT id FROM session_state WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL
-            UNION SELECT id FROM session_state WHERE NOT json_valid(summary)
-            UNION SELECT value FROM json_each(?)
-          )`)
-              .all(candidateWorkspaceId, JSON.stringify([...this.pending.keys()]));
-      const legacy = new Map<string, HostSession>();
-      for (const row of rows) {
-        const id = String(row.id);
-        if (!Number(row.summary_valid) && !this.pending.has(id))
-          legacy.set(id, await this.session(id));
-      }
-      return rows.map((row) => {
-        const unwritten = this.pending.get(String(row.id))?.value ?? legacy.get(String(row.id));
-        if (unwritten)
-          return {
-            id: unwritten.session.id,
-            projectId: unwritten.projectId,
-            revision: unwritten.revision,
-            status: unwritten.status,
-            hasAuthority:
-              unwritten.authorityGeneration !== undefined || !!Number(row.has_authority),
-            hasDesktop: unwritten.desktop != null,
-            running: unwritten.status === "running",
-            shellRunning: unwritten.session.blocks.some(
-              (block) => block.shell?.running || block.shell?.terminationFailed,
-            ),
-            workspaceId: unwritten.session.workspaceId,
-            worktreeCwd: unwritten.session.worktreeCwd,
-            providerSessionId: unwritten.session.providerSessionId || null,
-            harness: unwritten.session.harness ?? null,
-            cwd: unwritten.session.cwd ?? null,
-          };
-        return {
-          id: String(row.id),
-          projectId: String(row.project_id),
-          revision: Number(row.revision),
-          status: String(row.status) as HostSession["status"],
-          hasAuthority: !!Number(row.has_authority),
-          hasDesktop: !!Number(row.has_desktop),
-          running: row.status === "running",
-          shellRunning: !!Number(row.shell_running),
-          workspaceId: row.workspace_id == null ? undefined : String(row.workspace_id),
-          worktreeCwd: row.worktree_cwd == null ? undefined : String(row.worktree_cwd),
-          providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
-          harness: row.harness == null ? null : String(row.harness),
-          cwd: row.session_cwd == null ? null : String(row.session_cwd),
-        };
-      });
-    });
+  async startupStates(candidateWorkspaceId?: string, candidatePath?: string) {
+    return this.db.storeScope(() =>
+      startupSessionStates(
+        this.db,
+        [...this.pending.keys()],
+        (id) => this.pending.get(id)?.value,
+        (id) => this.session(id),
+        candidateWorkspaceId,
+        candidatePath,
+      ),
+    );
   }
   async sessions(projectId?: string): Promise<HostSession[]> {
     return this.db.storeScope(async () => {
@@ -2590,25 +2523,10 @@ export class HostStore {
     });
   }
   async receipt(id: string, signature: string): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(async () => {
-      const row = await this.db.prepare("SELECT * FROM receipts WHERE id=?").get(id);
-      if (!row) return undefined;
-      if (await this.db.prepare("SELECT id FROM desktop_command_delivery WHERE id=?").get(id))
-        throw new Error("Command ID belongs to a desktop control.");
-      if (row.signature !== signature)
-        throw new Error("Command ID was already used with a different payload");
-      return JSON.parse(String(row.receipt)) as CommandReceipt;
-    });
+    return this.db.storeScope(() => readCommandReceipt(this.db, id, signature));
   }
   async receiptStatus(id: string): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(async () => {
-      const row = await this.db
-        .prepare(
-          "SELECT receipt FROM receipts WHERE id=? AND NOT EXISTS (SELECT 1 FROM desktop_command_delivery WHERE desktop_command_delivery.id=receipts.id)",
-        )
-        .get(id);
-      return row ? (JSON.parse(String(row.receipt)) as CommandReceipt) : undefined;
-    });
+    return this.db.storeScope(() => readCommandReceipt(this.db, id));
   }
   async recordReceipt(signature: string, receipt: CommandReceipt): Promise<void> {
     return this.db.storeScope(() =>
@@ -2800,13 +2718,12 @@ export class HostStore {
         .run(id, Number(over.revision));
   }
   async pruneReceipts(now = Date.now()): Promise<void> {
-    return this.db.storeScope(async () => {
-      await this.db
-        .prepare(
-          "DELETE FROM receipts WHERE (created_at IS NULL OR created_at < ?) AND id NOT IN (SELECT id FROM desktop_command_delivery)",
-        )
-        .run(now - RECEIPT_RETENTION_MS);
-    });
+    return this.db.storeScope(() =>
+      this.transaction(
+        () => compactCommandReceipts(this.db, now - RECEIPT_RETENTION_MS),
+        "critical",
+      ),
+    );
   }
   async events(
     id: string,

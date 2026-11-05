@@ -29,13 +29,15 @@ it("accepts only known legacy Prettier metadata for formatter recovery", () => {
 });
 
 it("registers private services and uploads without exposing old HTTP helper aliases", () => {
-  expect(NATIVE_SERVICE_METHODS).toHaveLength(36);
+  expect(NATIVE_SERVICE_METHODS).toHaveLength(38);
   expect(NATIVE_SERVICE_METHODS).toEqual(
     expect.arrayContaining([
       "native.services.assistant.presence.get",
       "native.services.assistant.presence.set",
       "native.services.assistant.browser.panel",
       "native.services.desktop.status",
+      "native.services.desktop.status.wait",
+      "native.services.runtimeLogs.terminals.demand",
       "native.services.desktop.stop",
     ]),
   );

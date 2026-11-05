@@ -2,6 +2,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useSharedSocialMediaEditor } from "./useSocialMediaEditor";
 import { Button } from "../../../shared/ui/Button";
 import { Progress } from "../../../shared/ui/Progress";
 import { TextField } from "../../../shared/ui/TextField";
@@ -28,6 +29,7 @@ export function XMediaFields({
   allowDocuments = false,
   disabled = false,
   onVideoMetadataChange,
+  onMediaRemove,
 }: {
   value: SocialMedia[];
   client: SocialClient;
@@ -46,12 +48,14 @@ export function XMediaFields({
   allowAltText?: boolean;
   allowDocuments?: boolean;
   disabled?: boolean;
+  onMediaRemove?: (media: SocialMedia[]) => void;
   onVideoMetadataChange?: (metadata?: {
     durationSeconds: number;
     width: number;
     height: number;
   }) => void;
 }) {
+  const mediaEditor = useSharedSocialMediaEditor(client);
   const socialLocked = useSocialContext(SocialLockContext) || disabled;
   useLocale();
   const [busy, setBusy] = useState(false);
@@ -78,6 +82,7 @@ export function XMediaFields({
     onVideoDurationChange,
     onVideoMetadataChange,
     client,
+    value,
   });
   // Latest props for the async upload and the unmount cleanup, published after commit.
   useLayoutEffect(() => {
@@ -87,8 +92,9 @@ export function XMediaFields({
       onVideoDurationChange,
       onVideoMetadataChange,
       client,
+      value,
     };
-  }, [onChange, onBusyChange, onVideoDurationChange, onVideoMetadataChange, client]);
+  }, [onChange, onBusyChange, onVideoDurationChange, onVideoMetadataChange, client, value]);
   const count = Math.max(1, Math.min(4, maxCount ?? (message ? 1 : 4)));
   useEffect(() => {
     mounted.current = true;
@@ -170,6 +176,8 @@ export function XMediaFields({
             );
             return;
           }
+          mediaEditor.invalidate();
+          const originalValue = JSON.stringify(value);
           uploading.current = true;
           setBusy(true);
           callbacks.current.onBusyChange?.(true);
@@ -194,6 +202,10 @@ export function XMediaFields({
                     : kind === "video"
                       ? await client.uploadVideo(file, setProgress)
                       : await client.upload(file);
+                if (!mounted.current || callbacks.current.client !== client) return;
+                if (kind === "image" || kind === "document")
+                  await mediaEditor.adoptUpload(uploaded);
+                if (!mounted.current || callbacks.current.client !== client) return;
                 next.push({
                   kind,
                   uploadId: uploaded.uploadId,
@@ -202,7 +214,12 @@ export function XMediaFields({
                     : {}),
                 });
               }
-              if (!mounted.current || callbacks.current.client !== client) return;
+              if (
+                !mounted.current ||
+                callbacks.current.client !== client ||
+                JSON.stringify(callbacks.current.value) !== originalValue
+              )
+                return;
               callbacks.current.onChange(next);
               if (showPreview && next.length === 1 && next[0].kind !== "document") {
                 setPreview({
@@ -331,6 +348,7 @@ export function XMediaFields({
               onVideoDurationChange?.(0);
               onVideoMetadataChange?.();
               onChange([]);
+              onMediaRemove?.(value);
             }}
           >
             {t("Remove attachments")}

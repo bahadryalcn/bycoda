@@ -55,7 +55,8 @@ export interface NativeServicesAdapters {
   runtimeLogs: RuntimeLogAccess;
   terminalLogs: RuntimeTerminalLogs;
   desktop: ConversationDesktopRelay;
-  desktopControl?: Pick<HostDesktopControl, "request" | "indicatorStatus"> & Partial<Pick<HostDesktopControl, "statusChanges">>;
+  desktopControl?: Pick<HostDesktopControl, "request" | "indicatorStatus"> &
+    Partial<Pick<HostDesktopControl, "statusChanges">>;
   assistantName?(): Promise<string>;
   assistantPresence?(): Promise<NativeAssistantPresence>;
   setAssistantPresence?(state: "present" | "away" | "dnd"): Promise<void>;
@@ -172,6 +173,18 @@ export function bindNativeServicesOwner(
           environmentId: adapters.store.environmentId,
         };
         return { ...access, command: process.execPath, args: [process.argv[1]] };
+      }),
+    terminalDemand: (params) =>
+      guarded(async () => {
+        const cwd = String(params.cwd ?? "");
+        if (!cwd || cwd.length > 4096) throw new Error("Terminal project directory is required");
+        if (
+          typeof params.terminalId !== "string" ||
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(params.terminalId)
+        )
+          throw new Error("Invalid terminal log stream");
+        const project = (await adapters.store.projects()).find((entry) => entry.cwd === cwd);
+        return adapters.terminalLogs.demand(project?.id ?? "");
       }),
     appendTerminal: (params) =>
       guarded(async () => {

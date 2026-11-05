@@ -15,6 +15,7 @@ export async function handleConversationRpc(
 
     case "conversation.access.issue":
 
+    case "runtimeLogs.terminals.demand":
     case "runtimeLogs.terminals.append":
 
     case "runtimeLogs.bridge.describe":

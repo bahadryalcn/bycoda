@@ -1,3 +1,5 @@
+import { SocialMediaEditorContext, useSocialMediaEditor } from "./useSocialMediaEditor";
+import { socialMediaIds } from "../model/socialMediaEditor";
 import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
@@ -80,6 +82,7 @@ function Draft({
   snapshot?: SocialSnapshot;
   recipientInParent: boolean;
 }) {
+  const mediaEditor = useSocialMediaEditor(client, false);
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -295,8 +298,12 @@ function Draft({
                     });
                   }, t("Draft updated. The new content must be approved again before sending.")),
                 )
-              )
+              ) {
                 setEditing(false);
+                void mediaEditor
+                  .discard()
+                  .catch(() => setPolicyError(t("Unable to release media for this draft.")));
+              }
             })();
           }}
         >
@@ -372,33 +379,43 @@ function Draft({
             </Alert>
           ) : null}
           {canEditMedia ? (
-            <XMediaFields
-              value={media}
-              client={client}
-              onChange={setMedia}
-              onBusyChange={setMediaBusy}
-              message={messageDraft}
-              label={
-                account?.platform === "x"
-                  ? undefined
-                  : t("{p0} attachments", {
-                      p0: account!.platform === "whatsapp" ? "WhatsApp" : "Telegram",
-                    })
-              }
-              help={
-                account?.platform === "x"
-                  ? undefined
-                  : account?.connection !== "browser"
-                    ? t(
-                        "One PNG/JPEG up to 5 MiB or MP4 up to {p0} MiB. Captions fit 1024 UTF-16 characters.",
-                        { p0: account?.platform === "whatsapp" ? 16 : 50 },
-                      )
-                    : t("Files are uploaded to the selected host and attached through the browser.")
-              }
-              maxVideoMiB={apiMessagingMedia ? (account?.platform === "whatsapp" ? 16 : 50) : 64}
-              maxCount={account?.platform === "x" ? undefined : 1}
-              allowAltText={account?.platform === "x"}
-            />
+            <SocialMediaEditorContext.Provider value={mediaEditor}>
+              <XMediaFields
+                value={media}
+                client={client}
+                onChange={setMedia}
+                onMediaRemove={(removed) => {
+                  for (const id of socialMediaIds(removed))
+                    void mediaEditor
+                      .releaseCurrent(id)
+                      .catch(() => setPolicyError(t("Unable to release media for this draft.")));
+                }}
+                onBusyChange={setMediaBusy}
+                message={messageDraft}
+                label={
+                  account?.platform === "x"
+                    ? undefined
+                    : t("{p0} attachments", {
+                        p0: account!.platform === "whatsapp" ? "WhatsApp" : "Telegram",
+                      })
+                }
+                help={
+                  account?.platform === "x"
+                    ? undefined
+                    : account?.connection !== "browser"
+                      ? t(
+                          "One PNG/JPEG up to 5 MiB or MP4 up to {p0} MiB. Captions fit 1024 UTF-16 characters.",
+                          { p0: account?.platform === "whatsapp" ? 16 : 50 },
+                        )
+                      : t(
+                          "Files are uploaded to the selected host and attached through the browser.",
+                        )
+                }
+                maxVideoMiB={apiMessagingMedia ? (account?.platform === "whatsapp" ? 16 : 50) : 64}
+                maxCount={account?.platform === "x" ? undefined : 1}
+                allowAltText={account?.platform === "x"}
+              />
+            </SocialMediaEditorContext.Provider>
           ) : null}
           <div className="social-actions">
             <Button
@@ -421,7 +438,12 @@ function Draft({
               disabled={socialLocked}
               variant="secondary"
               type="button"
-              onClick={() => setEditing(false)}
+              onClick={() => {
+                setEditing(false);
+                void mediaEditor
+                  .discard()
+                  .catch(() => setPolicyError(t("Unable to release media for this draft.")));
+              }}
             >
               {t("Cancel editing")}
             </Button>
@@ -479,10 +501,19 @@ function Draft({
               variant="secondary"
               disabled={socialLocked || !!job || draft.generation?.status === "running"}
               onClick={() => {
-                setText(draft.text);
-                setFactIds(draft.factIds);
-                setMedia(draft.media ?? []);
-                setEditing(true);
+                void pendingUi
+                  .run("draft.open", () =>
+                    run(async () => {
+                      for (const id of socialMediaIds(draft.media))
+                        await mediaEditor.claimExisting(id);
+                      if (mediaEditor.isClosed()) return;
+                      setText(draft.text);
+                      setFactIds(draft.factIds);
+                      setMedia(draft.media ?? []);
+                      setEditing(true);
+                    }),
+                  )
+                  .catch(() => setPolicyError(t("Unable to retain media for this draft.")));
               }}
             >
               {t("Edit")}

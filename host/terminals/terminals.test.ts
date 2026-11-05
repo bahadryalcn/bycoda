@@ -40,6 +40,20 @@ function setup(locate = async (root: string) => root, now?: () => number) {
   };
 }
 
+it("indexes actual running workspace terminals and retires them on the original exit", async () => {
+  const s = setup();
+  const terminal = await s.service.create(
+    project,
+    { requestId: "indexed-01" },
+    "owner",
+    () => true,
+  );
+  expect(s.service.runningInWorkspace(project.cwd).map((entry) => entry.id)).toEqual([terminal.id]);
+  expect(s.service.runningInWorkspace("/project-other")).toEqual([]);
+  s.exit(0);
+  expect(s.service.runningInWorkspace(project.cwd)).toEqual([]);
+});
+
 it("rejects reserved terminal admission before process launch and deduplicates the rejected request", async () => {
   const s = setup();
   const gate = vi.fn(async () => {

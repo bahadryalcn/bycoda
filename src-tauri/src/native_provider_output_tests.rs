@@ -1426,6 +1426,21 @@ fn duplicate_reader_receipt_and_wrong_expected_reader_count_are_not_seals() {
 }
 
 #[test]
+fn terminal_observation_without_physical_retirement_does_not_evict_source() {
+    let (registry, original, _) = fixture(1);
+    let original_epoch = original.epoch().to_owned();
+    original.reader(0).finish(true, false);
+    original.terminal_complete(true, false);
+    original.terminal_delivery(true);
+    drop(original);
+    let _later = registry.begin(
+        OutputSource::fixture("other"), StreamKind::Sse, None, 1,
+        Arc::new(|| true), Arc::new(|_| true),
+    );
+    assert!(registry.retained("session").iter().any(|stream| stream.epoch() == original_epoch));
+}
+
+#[test]
 fn retention_overflow_revokes_old_seal_without_suppressing_new_legacy_delivery() {
     let (registry, first, _) = fixture(1);
     first.reader(0).finish(true, false);

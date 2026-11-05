@@ -16,7 +16,53 @@ type Stream = {
 /** Receives only authenticated desktop PTY output, not agent tool input. */
 export class RuntimeTerminalLogs {
   private streams = new Map<string, Stream>();
-  constructor(private logs: RuntimeLogsService) {}
+  private monitors = new Map<
+    string,
+    { projectId?: string; expiresAt: number; active: boolean; sequence: number }
+  >();
+  constructor(
+    private logs: RuntimeLogsService,
+    private readonly backgroundCapture = true,
+    private readonly now = Date.now,
+  ) {}
+
+  monitor(
+    owner: string,
+    id: string,
+    projectId: string | undefined,
+    active: boolean,
+    sequence: number,
+  ): void {
+    if (
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(id) ||
+      !owner ||
+      !Number.isSafeInteger(sequence) ||
+      sequence < 0
+    )
+      throw new Error("Invalid terminal log monitor");
+    const key = `${owner}:${id}`;
+    const now = this.now();
+    for (const [key, lease] of this.monitors) if (lease.expiresAt <= now) this.monitors.delete(key);
+    const previous = this.monitors.get(key);
+    if (previous && sequence <= previous.sequence) return;
+    if (previous && previous.projectId !== projectId)
+      throw new Error("Terminal log monitor scope changed");
+    if (!previous && this.monitors.size >= 256) throw new Error("Too many terminal log monitors");
+    this.monitors.set(key, { projectId, active, sequence, expiresAt: now + 30_000 });
+  }
+
+  demand(projectId: string): { enabled: boolean; background: boolean } {
+    const now = this.now();
+    for (const [key, lease] of this.monitors) if (lease.expiresAt <= now) this.monitors.delete(key);
+    return {
+      enabled:
+        this.backgroundCapture ||
+        [...this.monitors.values()].some(
+          (lease) => lease.active && (!lease.projectId || lease.projectId === projectId),
+        ),
+      background: this.backgroundCapture,
+    };
+  }
 
   append(projectId: string, params: Record<string, unknown>) {
     const id = String(params.terminalId ?? "");
@@ -37,7 +83,7 @@ export class RuntimeTerminalLogs {
     const key = `${projectId}:${id}`;
     let stream = this.streams.get(key);
     if (!stream) {
-      if (params.closed) return { accepted: false };
+      if (params.closed && !params.interrupted) return { accepted: false };
       if (this.streams.size >= 128) {
         const oldest = this.streams.keys().next().value!;
         const retired = this.streams.get(oldest)!;
@@ -127,14 +173,30 @@ export class RuntimeTerminalLogs {
   private consume(stream: Stream, text: string) {
     // Ordinary ASCII output without control sequences can be appended in bulk.
     // Keep overflow observation so redaction still sees delimiters beyond the cap.
-    if (stream.escape === "text" && /^[\x20-\x7e\t]*$/.test(text)) {
-      const room = Math.max(0, 8192 - stream.line.length);
-      const retained = text.slice(0, room);
-      stream.line += retained;
-      const overflow = text.slice(room);
-      if (overflow) {
-        stream.redactor.observeOverflow(overflow, stream.line);
-        stream.truncated = true;
+    if (stream.escape === "text" && /^[\x20-\x7e\t\r\n]*$/.test(text)) {
+      let start = 0;
+      while (start <= text.length) {
+        const newline = text.indexOf("\n", start);
+        const carriage = text.indexOf("\r", start);
+        const index =
+          newline < 0
+            ? carriage < 0
+              ? text.length
+              : carriage
+            : carriage < 0
+              ? newline
+              : Math.min(newline, carriage);
+        const segment = text.slice(start, index);
+        const room = Math.max(0, 8192 - stream.line.length);
+        stream.line += segment.slice(0, room);
+        const overflow = segment.slice(room);
+        if (overflow) {
+          stream.redactor.observeOverflow(overflow, stream.line);
+          stream.truncated = true;
+        }
+        if (index === text.length) break;
+        this.emit(stream);
+        start = index + 1;
       }
       return;
     }

@@ -35,7 +35,10 @@ export function createWorkspacesRuntime(
         add("provider", workspace.owner.id);
       for (const terminal of dependencies.terminals.runningInWorkspace(workspace.path))
         add("shell", terminal.id);
-      for (const summary of await dependencies.engine.store.startupStates(workspace.id)) {
+      for (const summary of await dependencies.engine.store.startupStates(
+        workspace.id,
+        workspace.path,
+      )) {
         if (
           summary.workspaceId !== workspace.id &&
           !(summary.worktreeCwd && inWorkspace(summary.worktreeCwd, workspace.path))

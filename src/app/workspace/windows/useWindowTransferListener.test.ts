@@ -178,6 +178,27 @@ describe("receiving a tab from another window", () => {
     expect(native.event).toBe("window_transfer_available");
   });
 
+  it("answers a readiness probe without consuming a transfer", async () => {
+    mount();
+    await act(async () => {});
+    await act(async () => {
+      await native.handler!({ payload: "probe:one" });
+    });
+    expect(calls.window_transfer_probe_reply).toEqual([{ probeId: "probe:one" }]);
+    expect(calls.take_window_transfer).toBeUndefined();
+    expect(state.tabs).toEqual([existing]);
+  });
+
+  it("restores the destination draft when native acceptance expired", async () => {
+    respond("window_transfer_ready", async () => {
+      throw new Error("This transfer has expired.");
+    });
+    mount();
+    await receive();
+    expect(state.tabs).toEqual([existing]);
+    expect(calls.reject_window_transfer).toHaveLength(1);
+  });
+
   it("adds the tab, then acknowledges it, and publishes nothing", async () => {
     const ready = deferred<undefined>();
     respond("window_transfer_ready", () => ready.promise);

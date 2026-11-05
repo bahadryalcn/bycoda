@@ -76,6 +76,7 @@ type Dependencies = Pick<
   | "refreshLogSources"
   | "featureMeta"
   | "runtimeLogs"
+  | "terminalLogs"
   | "devServersService"
   | "diagnostics"
   | "browserRuntime"
@@ -210,6 +211,7 @@ const handlers: Record<
   "native.services.runtimeLogs.bridge.describe": handleNativeRpc,
   "native.services.runtimeLogs.access.issue": handleNativeRpc,
   "native.services.runtimeLogs.terminals.append": handleNativeRpc,
+  "native.services.runtimeLogs.terminals.demand": handleNativeRpc,
   "native.services.conversation.bridge.describe": handleNativeRpc,
   "native.services.conversation.access.issue": handleNativeRpc,
   "native.services.conversation.desktop.take": handleNativeRpc,
@@ -300,6 +302,7 @@ const handlers: Record<
   "conversation.bridge.describe": handleConversationRpc,
   "conversation.access.issue": handleConversationRpc,
   "runtimeLogs.terminals.append": handleConversationRpc,
+  "runtimeLogs.terminals.demand": handleConversationRpc,
   "runtimeLogs.bridge.describe": handleConversationRpc,
   "runtimeLogs.access.issue": handleConversationRpc,
   "runtimeLogs.monitors.list": handleRuntimeLogsRpc,

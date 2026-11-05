@@ -2,6 +2,7 @@
 import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { chooseManualEndingFromMenu, floatVoiceFromMenu } from "./VoiceCompanion.testSupport";
 import type { Session } from "../../sessions/model/session";
 import type { VoiceAssistantInput } from "../model/voiceAssistant";
 import * as historyTransport from "../model/voiceHistoryTransport";
@@ -500,23 +501,8 @@ async function click(label: string) {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(),
   );
 }
-async function chooseManualEnding() {
-  await click("Reply when I pause");
-  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
-    (button) => button.textContent?.startsWith("I'll finish when ready"),
-  )!;
-  expect(option).toBeDefined();
-  await act(async () => option.click());
-}
-/** Floating is an item of the voice options menu. */
-async function floatOut() {
-  await click("Voice options");
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) =>
-    element.textContent?.includes("Float outside the app"),
-  );
-  expect(item).toBeDefined();
-  await act(async () => item!.click());
-}
+const chooseManualEnding = () => chooseManualEndingFromMenu(click);
+const floatOut = () => floatVoiceFromMenu(click);
 async function speech(text: string, binding?: any) {
   let turn = binding;
   if (!turn)
@@ -1230,9 +1216,18 @@ it("uses playback events rather than reply text to announce assistant speech", a
   await setup();
   await act(async () => mock.callbacks.playback(true));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("assistant");
-  expect(container.querySelector('[role="status"]')?.textContent).toBe("Assistant speaking");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some(
+      (element) => element.textContent === "Assistant speaking",
+    ),
+  ).toBe(true);
   await act(async () => mock.callbacks.playback(false));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("listening");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some(
+      (element) => element.textContent === "Assistant speaking",
+    ),
+  ).toBe(false);
   await act(async () => mock.callbacks.error("Playback failed"));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("error");
 });

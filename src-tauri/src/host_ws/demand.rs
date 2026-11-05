@@ -939,6 +939,34 @@ impl DemandUnion {
         if demand.first.is_none() {
             demand.first = Some(cursor);
         }
+        // Once retained history reaches half its budget, detach only members
+        // whose own applied cursor is behind a proven progressing peer. They
+        // receive resync and must reopen through the normal snapshot/proof path.
+        if demand.phase == Phase::Active && demand.members.len() > 1
+            && (demand.events.len() >= (self.max_events / 2).max(1)
+                || demand.bytes >= (self.max_group_bytes / 2).max(1)) {
+            let maximum = demand.members.values().filter_map(|member| member.applied.as_ref())
+                .filter(|cursor| demand.first.as_ref().is_some_and(|first| first.epoch == cursor.epoch))
+                .map(|cursor| cursor.sequence).max();
+            if let Some(maximum) = maximum {
+                let slow: Vec<_> = demand.members.iter().filter(|(_, member)| {
+                    member.applied.as_ref().is_none_or(|cursor| demand.first.as_ref().is_none_or(|first| cursor.epoch != first.epoch) || cursor.sequence < maximum)
+                }).map(|(id, _)| id.clone()).collect();
+                let cursor = demand.first.clone().unwrap();
+                let resync = json!({"jsonrpc":"2.0","method":"subscription.event","params":{"subscriptionId":demand.wire,"streamId":demand.virtual_stream.clone().unwrap_or_else(|| "native-resync".into()),"cursor":cursor.value(),"kind":"resync-required"}});
+                for id in slow {
+                    if let Some(member) = demand.members.remove(&id) {
+                        self.members.remove(&id);
+                        if member.waiting { effects.notices.push(Notice::Rejected { member: id }); }
+                        else {
+                            effects.notices.push(Notice::Event { event: Self::rewrite(demand, &id, &resync), member: id.clone() });
+                            effects.notices.push(Notice::Rejected { member: id });
+                        }
+                    }
+                }
+                effects.append(Self::schedule_ack(&key, demand));
+            }
+        }
         demand.events.push_back(event.clone());
         demand.bytes += bytes;
         Self::emit_event(demand, event, &mut effects)?;

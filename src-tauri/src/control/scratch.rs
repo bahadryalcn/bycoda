@@ -41,10 +41,9 @@ impl Scratch {
     fn cleanup_with(&self, remove: impl FnOnce(&Path) -> std::io::Result<()>) -> Result<(), String> {
         if std::fs::canonicalize(&self.root).map_err(|e| e.to_string())? != self.root || std::fs::canonicalize(&self.path).map_err(|e| e.to_string())? != self.path || identity(&self.path)? != self.identity { return Err("scratch identity changed".into()); }
         let quarantine = self.root.join(format!("bycoda-retired-{}", uuid::Uuid::new_v4()));
-        std::fs::rename(&self.path, &quarantine).map_err(|e| e.to_string())?;
+        bycoda_physical_store_admission::rename_no_replace(&self.path, &quarantine).map_err(|e| e.to_string())?;
         if identity(&quarantine).ok().as_ref() != Some(&self.identity) {
-            let _ = std::fs::rename(&quarantine, &self.path);
-            return Err("scratch identity changed during retirement".into());
+            return Err(format!("scratch identity changed during retirement; directory retained at {}", quarantine.display()));
         }
         remove(&quarantine).map_err(|e| format!("scratch retained at {}: {e}", quarantine.display()))
     }
@@ -104,6 +103,7 @@ mod tests {
     fn replacement_and_failed_removal_preserve_data() {
         let (path, scratch) = fixture();
         let moved = path.with_extension("original");
+        // ast-grep-ignore: rust-rename-without-fsync -- fixture moves a directory to simulate identity replacement, not state-file persistence
         std::fs::rename(&path, &moved).unwrap();
         std::fs::create_dir(&path).unwrap();
         std::fs::write(path.join("user-data"), b"keep").unwrap();

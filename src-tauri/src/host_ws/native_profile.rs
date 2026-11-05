@@ -4,6 +4,15 @@
 use super::*;
 use std::sync::Weak;
 
+pub(super) fn native_profile_recovery(method: &str) -> bool {
+    matches!(
+        method,
+        "native.buffers.recovery.list"
+            | "native.buffers.recovery.read"
+            | "native.buffers.recovery.status"
+    )
+}
+
 const MAX_CALLERS: usize = 128;
 const ANCHOR: &str = "native-profile-owner";
 

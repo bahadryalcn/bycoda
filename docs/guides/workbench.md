@@ -169,6 +169,11 @@ name show their parent folder next to the name. Right-click retains the full con
 menu; keyboard users can use the context-menu key or Shift+F10 on supported rows
 and tabs. Tab close shortcuts and middle-click behavior remain available.
 
+A linked workspace lists the folders declared in its `.code-workspace` file; it
+does not discover subfolders automatically. The workspace name opens the containing
+folder. A declared containing folder (`.`) also stays visible as a child project,
+including after the workspace is moved into another group.
+
 A workspace group is identified by its Workspace icon and tooltip. Its linked
 file, Git and lock controls appear with row interaction; Git change counts and
 link warnings stay visible. Narrow rail layouts retain their compact presentation.

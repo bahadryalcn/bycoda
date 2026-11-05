@@ -36,6 +36,7 @@ function identity(stat: Stats): string {
 
 export type PreparedGuardian = {
   supportsBuildReceipt(): Promise<boolean>;
+  supportsTunnelCustody(): Promise<boolean>;
   spawn(
     launch: GuardianLaunch,
     beforeStart?: () => Promise<void>,
@@ -49,6 +50,7 @@ export type PreparedGuardian = {
  * the caller falls back to the plain provider-guard spawn. */
 export async function prepareProviderGuardian(
   directory: string,
+  options?: { allowLinuxOriginalChild?: boolean },
 ): Promise<PreparedGuardian | undefined> {
   let executable: FileHandle | undefined;
   const unavailable = () =>
@@ -120,7 +122,11 @@ export async function prepareProviderGuardian(
       throw unavailable();
     // Unix original-child ownership is not descendant containment. Do not enable
     // a packaged stronger lifecycle contract on a platform that cannot supply it.
-    if (process.platform !== "win32") throw unavailable();
+    if (
+      process.platform !== "win32" &&
+      !(process.platform === "linux" && options?.allowLinuxOriginalChild)
+    )
+      throw unavailable();
     const path = join(base, artifact);
     const link = await lstat(path);
     if (!link.isFile() || link.isSymbolicLink() || link.size !== manifest.size) throw unavailable();
@@ -139,7 +145,12 @@ export async function prepareProviderGuardian(
         offset,
       );
       if (!bytesRead) break;
-      if (offset === 0 && (bytesRead < 2 || buffer[0] !== 77 || buffer[1] !== 90))
+      if (
+        offset === 0 &&
+        (process.platform === "win32"
+          ? bytesRead < 2 || buffer[0] !== 77 || buffer[1] !== 90
+          : bytesRead < 4 || !buffer.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])))
+      )
         throw unavailable();
       digest.update(buffer.subarray(0, bytesRead));
       offset += bytesRead;
@@ -155,6 +166,26 @@ export async function prepareProviderGuardian(
     let used = false;
     let disposed = false;
     return {
+      async supportsTunnelCustody() {
+        if (disposed || !["win32", "linux"].includes(process.platform)) return false;
+        try {
+          const result = await new Promise<boolean>((done) => {
+            execFile(
+              path,
+              ["--tunnel-custody-capability"],
+              { windowsHide: true, timeout: 3_000, maxBuffer: 1024 },
+              (error, stdout) => done(!error && stdout.trim() === "bycoda-tunnel-custody-v1"),
+            );
+          });
+          return (
+            result &&
+            identity(lstatSync(path)) === identity(before) &&
+            identity(fstatSync(original.fd)) === identity(before)
+          );
+        } catch {
+          return false;
+        }
+      },
       async supportsBuildReceipt() {
         if (disposed || process.platform !== "win32") return false;
         try {

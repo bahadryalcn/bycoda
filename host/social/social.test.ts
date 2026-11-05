@@ -1,3 +1,4 @@
+import { seedThreadCopies } from "./social-thread-test-support";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -133,7 +134,12 @@ it("pages explicit job history while retaining the legacy complete array and exa
   for (let offset = 0; offset < 258; offset += 100) {
     const page = await s.call<SocialJobsPage>("jobs.status", { page: true, offset, limit: 100 });
     expect(page.jobs.length).toBeLessThanOrEqual(100);
-    expect(page.page).toEqual({ offset, limit: 100, total: 258 });
+    expect(page.page).toEqual({
+      offset,
+      limit: 100,
+      total: 258,
+      ...(offset + page.jobs.length < 258 ? { nextOffset: offset + page.jobs.length } : {}),
+    });
     ids.push(...page.jobs.map((job) => job.id));
   }
   expect(new Set(ids).size).toBe(258);
@@ -301,21 +307,6 @@ it.each([
     }
   },
 );
-async function seedThreadCopies(store: HostStore, source: SocialThread, count: number, offset = 0) {
-  const insert = store.db.prepare("INSERT INTO social_records VALUES ('thread',?,?)");
-  // Seed history together so the query-count regression does not measure disk flushes.
-  await store.transaction(async () => {
-    for (let index = offset; index < offset + count; index++) {
-      const thread = {
-        ...source,
-        id: `page-thread-${index}`,
-        platformThreadId: `remote-${index}`,
-        lastInboundAt: index + 1,
-      };
-      await insert.run(thread.id, JSON.stringify(thread));
-    }
-  });
-}
 async function fixture(
   generateText?: import("./social-generation").SocialTextGenerator,
   browserAdapter?: SocialAdapter,

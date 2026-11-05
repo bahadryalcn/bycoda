@@ -35,7 +35,10 @@ export function createDevicesRuntime(
   const diagnostics = new ResourceDiagnostics(Date.now, () => perfMetrics.snapshot());
   const browserRuntime = new BrowserRuntime(featureDirectory);
   const runtimeLogs = new RuntimeLogsService();
-  const terminalLogs = new RuntimeTerminalLogs(runtimeLogs);
+  const terminalLogs = new RuntimeTerminalLogs(
+    runtimeLogs,
+    process.env.BYCODA_TERMINAL_LOG_BACKGROUND !== "0",
+  );
   const touchTerminalWorkspace = (projectId: string, terminalId: unknown, closedCwd?: string) =>
     dependencies.recordWorkspaceActivity(async () => {
       const terminal = dependencies.terminals

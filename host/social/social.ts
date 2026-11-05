@@ -1,7 +1,10 @@
 import { SocialPeerUnavailable } from "./social-peer-errors";
 import { forEachAsync, mapAsync } from "../async-collections";
 import { randomUUID, createHash, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { SocialMediaCustody } from "./media-custody";
+import { SocialMediaQuarantine } from "./media-quarantine";
+import { SocialJobArchive } from "./social-job-archive";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { HostStore } from "../store";
@@ -205,6 +208,9 @@ const ESCALATE =
 const SOCIAL_TICK_MS = 5000;
 const SOCIAL_IDLE_TICK_MS = 30_000;
 export class SocialService {
+  private readonly mediaCustody: SocialMediaCustody;
+  private readonly mediaQuarantine: SocialMediaQuarantine;
+  private readonly jobArchive: SocialJobArchive;
   /** Installed by Host composition. Missing or revoked source admission fails closed. */
   roomSendSourceAdmission?: (source: {
     threadId: string;
@@ -489,7 +495,7 @@ export class SocialService {
   async suspendLocalExecution() {
     await this.ready;
 
-    if (await this.jobExists("status='running'"))
+    if (await this.jobArchive.jobExists("status='running'"))
       throw new Error("Wait for active social sends before switching authority.");
     await this.setSetting("sending", "false");
     await this.setSetting("polling", "false");
@@ -552,6 +558,9 @@ export class SocialService {
     private readonly browserAdapter?: SocialAdapter,
     imageAdapters?: SocialImageAdapters,
   ) {
+    this.mediaCustody = new SocialMediaCustody(store, directory);
+    this.mediaQuarantine = new SocialMediaQuarantine(store, directory);
+    this.jobArchive = new SocialJobArchive(store);
     this.ready = (async () => {
       await store.ready;
       await store.db.scope(async () => {
@@ -705,7 +714,7 @@ export class SocialService {
                 (
                   await this.store.db
                     .prepare(
-                      "SELECT max(json_extract(value,'$.dispatchedAt')) AS at FROM social_jobs WHERE account_id=? AND json_extract(value,'$.programId')=?",
+                      "SELECT max(json_extract(value,'$.dispatchedAt')) AS at FROM social_jobs_all WHERE account_id=? AND json_extract(value,'$.programId')=?",
                     )
                     .get(accountId, programId)
                 )?.at ?? 0,
@@ -713,7 +722,7 @@ export class SocialService {
               recent: (
                 await this.store.db
                   .prepare(
-                    "SELECT json_extract(value,'$.dispatchedAt') AS at FROM social_jobs WHERE account_id=? AND json_extract(value,'$.programId')=? AND json_extract(value,'$.dispatchedAt')>=?",
+                    "SELECT json_extract(value,'$.dispatchedAt') AS at FROM social_jobs_all WHERE account_id=? AND json_extract(value,'$.programId')=? AND json_extract(value,'$.dispatchedAt')>=?",
                   )
                   .all(accountId, programId, since)
               ).map((row) => Number(row.at)),
@@ -758,6 +767,8 @@ export class SocialService {
       CREATE INDEX IF NOT EXISTS social_jobs_status_id ON social_jobs(status,id);
       CREATE INDEX IF NOT EXISTS social_jobs_campaign_order ON social_jobs(json_extract(value,'$.campaignId'),scheduled_at,id);`);
         await this.programs.ready;
+        await this.jobArchive.initialize();
+        await this.mediaCustody.initialize();
         await store.db.registerFunction("social_text_matches");
         // A small durable change clock lets polling skip historical reads entirely.
         // Triggers cover writes from every entry point, including transactions/rollback.
@@ -1001,89 +1012,40 @@ export class SocialService {
     )!;
     if (capability.status !== "available") throw new Error(capability.reason);
   }
-  /** Never silently truncate legacy arrays: direct large callers to bounded reads. */
-  private async legacyJobs(where: string, values: (string | number)[]): Promise<SocialJob[]> {
-    const rows = await this.store.db
-      .prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1001`)
-      .all(...values);
-    if (rows.length > 1000)
-      throw new Error(
-        "Social job history exceeds the legacy response capacity. Use jobs.status or campaigns.status with page=true, or workspace.snapshot for the workspace.",
-      );
-    return rows.map((row) => JSON.parse(String(row.value)) as SocialJob);
-  }
-  private async jobPage(
-    where: string,
-    values: (string | number)[],
-    input: Record<string, unknown>,
-  ) {
-    const offset = finite(input.offset ?? 0, "job offset", 0, Number.MAX_SAFE_INTEGER);
-    const limit = finite(input.limit ?? 50, "job limit", 1, 100);
-    if (!Number.isInteger(offset) || !Number.isInteger(limit)) throw new Error("Invalid job page.");
-    const total = await this.jobCount(where, values);
-    const jobs = (
-      await this.store.db
-        .prepare(
-          `SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT ? OFFSET ?`,
-        )
-        .all(...values, limit, offset)
-    ).map((row) => JSON.parse(String(row.value)) as SocialJob);
-    return { jobs, page: { offset, limit, total } };
-  }
-  private async jobExists(where: string, values: (string | number)[] = []): Promise<boolean> {
-    return !!(await this.store.db
-      .prepare(`SELECT 1 FROM social_jobs WHERE ${where} LIMIT 1`)
-      .get(...values));
-  }
-  private async firstJob(
-    where: string,
-    values: (string | number)[],
-  ): Promise<SocialJob | undefined> {
-    const row = await this.store.db
-      .prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1`)
-      .get(...values);
-    return row ? (JSON.parse(String(row.value)) as SocialJob) : undefined;
-  }
-  private async jobCount(where: string, values: (string | number)[]): Promise<number> {
-    return Number(
-      (await this.store.db
-        .prepare(`SELECT COUNT(*) AS total FROM social_jobs WHERE ${where}`)
-        .get(...values))!.total,
-    );
-  }
-  /** Recovery/mutation walks keep every relevant owner without materializing history. */
-  private async *jobPages(where: string, values: (string | number)[]): AsyncGenerator<SocialJob[]> {
-    let after: string | undefined;
-    for (;;) {
-      const rows = await this.store.db
-        .prepare(
-          `SELECT id,value FROM social_jobs WHERE ${where}${after === undefined ? "" : " AND id>?"} ORDER BY id LIMIT 128`,
-        )
-        .all(...values, ...(after === undefined ? [] : [after]));
-      if (!rows.length) return;
-      yield rows.map((row) => JSON.parse(String(row.value)) as SocialJob);
-      after = String(rows[rows.length - 1].id);
-      if (rows.length < 128) return;
-    }
-  }
   private async job(id: string): Promise<SocialJob> {
-    const row = await this.store.db.prepare("SELECT value FROM social_jobs WHERE id=?").get(id);
+    const row = await this.store.db.prepare("SELECT value FROM social_jobs_all WHERE id=?").get(id);
     if (!row) throw new Error("Social job not found.");
     return JSON.parse(String(row.value)) as SocialJob;
   }
   private async writeJob(job: SocialJob): Promise<SocialJob> {
     if (job.delivery) {
       const current = await this.store.db
-        .prepare("SELECT json_extract(value,'$.delivery') AS delivery FROM social_jobs WHERE id=?")
+        .prepare(
+          "SELECT json_extract(value,'$.delivery') AS delivery FROM social_jobs_all WHERE id=?",
+        )
         .get(job.id);
       if (current?.delivery)
         job.delivery = mergeDelivery(JSON.parse(String(current.delivery)), job.delivery);
     }
-    await this.store.db
-      .prepare(
-        "INSERT INTO social_jobs VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET dedupe_key=excluded.dedupe_key,status=excluded.status,scheduled_at=excluded.scheduled_at,value=excluded.value",
-      )
-      .run(job.id, job.dedupeKey, job.accountId, job.status, job.scheduledAt, JSON.stringify(job));
+    await this.transaction(async () => {
+      const collision = await this.store.db
+        .prepare("SELECT id FROM social_jobs_cold WHERE dedupe_key=? AND id!=?")
+        .get(job.dedupeKey, job.id);
+      if (collision) throw new Error("Social job dedupe identity already exists.");
+      await this.store.db.prepare("DELETE FROM social_jobs_cold WHERE id=?").run(job.id);
+      await this.store.db
+        .prepare(
+          "INSERT INTO social_jobs VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET dedupe_key=excluded.dedupe_key,status=excluded.status,scheduled_at=excluded.scheduled_at,value=excluded.value",
+        )
+        .run(
+          job.id,
+          job.dedupeKey,
+          job.accountId,
+          job.status,
+          job.scheduledAt,
+          JSON.stringify(job),
+        );
+    });
     this.wake();
     return job;
   }
@@ -1107,7 +1069,7 @@ export class SocialService {
       const id = hash(`${accountId}:${receipt.platformId}`);
       const rows = await this.store.db
         .prepare(
-          "SELECT value FROM social_jobs WHERE account_id=? AND json_extract(value,'$.platformId')=? LIMIT 2",
+          "SELECT value FROM social_jobs_all WHERE account_id=? AND json_extract(value,'$.platformId')=? LIMIT 2",
         )
         .all(accountId, receipt.platformId);
       if (rows.length > 1) return;
@@ -1144,7 +1106,7 @@ export class SocialService {
   }
   private async queuedJob(key: string): Promise<SocialJob | undefined> {
     const row = await this.store.db
-      .prepare("SELECT id FROM social_jobs WHERE dedupe_key=?")
+      .prepare("SELECT id FROM social_jobs_all WHERE dedupe_key=?")
       .get(key);
     if (!row) return;
     const previous = await this.job(String(row.id));
@@ -1756,6 +1718,15 @@ export class SocialService {
       ].includes(action)
     )
       throw new Error("This operation is not available to account-scoped Assistant access.");
+    if (action === "media.status" || action === "media.quarantine") {
+      this.owner(p);
+      exact(input, action === "media.status" ? ["id"] : ["id", "expectedRevision"]);
+      const id = str(input.id, "media upload");
+      const scope = { accountId: `owner:${p.actorId}` };
+      return action === "media.status"
+        ? this.mediaQuarantine.status(scope, id)
+        : this.mediaQuarantine.quarantine(scope, id, Number(input.expectedRevision));
+    }
     if (action === "programs.media-preview") {
       this.owner(p);
       exact(input, ["uploadId"]);
@@ -1975,7 +1946,7 @@ export class SocialService {
       case "accounts.executor": {
         this.owner(p);
         const account = await this.access(p, str(input.accountId, "account"), "read");
-        if (await this.jobExists("account_id=? AND status='running'", [account.id]))
+        if (await this.jobArchive.jobExists("account_id=? AND status='running'", [account.id]))
           throw new Error("Wait for the active send before changing executor ownership.");
         await this.cancelBrowserWorkflow?.(account.id);
         account.executorId = str(input.executorId, "executor", 200);
@@ -2093,13 +2064,19 @@ export class SocialService {
         if (input.page === true)
           return {
             campaign,
-            ...(await this.jobPage("json_extract(value,'$.campaignId')=?", [campaign.id], input)),
+            ...(await this.jobArchive.jobPage(
+              "json_extract(value,'$.campaignId')=?",
+              [campaign.id],
+              input,
+            )),
           };
         if (input.offset !== undefined || input.limit !== undefined)
           throw new Error("Set page=true to request bounded job history.");
         return {
           campaign,
-          jobs: await this.legacyJobs("json_extract(value,'$.campaignId')=?", [campaign.id]),
+          jobs: await this.jobArchive.legacyJobs("json_extract(value,'$.campaignId')=?", [
+            campaign.id,
+          ]),
         };
       }
       case "campaigns.pause": {
@@ -2349,11 +2326,23 @@ export class SocialService {
         if (input.page === true) {
           const scope = await this.readScope(p);
           const filter = this.visibleJobCriteria(p, scope);
-          return await this.jobPage(filter.where, filter.values, input);
+          return await this.jobArchive.jobPage(filter.where, filter.values, input);
         }
         if (input.offset !== undefined || input.limit !== undefined)
           throw new Error("Set page=true to request bounded job history.");
         return await this.visibleJobs(p);
+      }
+      case "jobs.archive-status": {
+        this.owner(p);
+        exact(input, []);
+        return this.jobArchive.status();
+      }
+      case "jobs.archive": {
+        this.owner(p);
+        exact(input, ["ids"]);
+        if (!Array.isArray(input.ids) || input.ids.some((id) => typeof id !== "string"))
+          throw new Error("Invalid social job IDs.");
+        return this.jobArchive.archive(input.ids as string[]);
       }
       case "jobs.cancel": {
         const job = await this.job(str(input.id, "job"));
@@ -2488,7 +2477,7 @@ export class SocialService {
   private async visibleJobs(p: SocialPrincipal, scope?: SocialReadScope): Promise<SocialJob[]> {
     scope ??= await this.readScope(p);
     const filter = this.visibleJobCriteria(p, scope);
-    return await this.legacyJobs(filter.where, filter.values);
+    return await this.jobArchive.legacyJobs(filter.where, filter.values);
   }
   private visibleJobCriteria(
     p: SocialPrincipal,
@@ -2499,7 +2488,7 @@ export class SocialService {
       ? { where: "1", values: [] }
       : {
           where:
-            "account_id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM json_each(social_jobs.value,'$.projectIds') WHERE value=?)",
+            "account_id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM json_each(social_jobs_all.value,'$.projectIds') WHERE value=?)",
           values: [JSON.stringify([...scope.allowedAccountIds]), p.projectId!],
         };
   }
@@ -2801,7 +2790,7 @@ export class SocialService {
         clauses.push(`(SELECT CASE WHEN max(j.status='review') THEN 'review' WHEN max(j.status='failed') THEN 'failed'
           WHEN max(j.status='running') THEN 'running' WHEN json_extract(${alias}.value,'$.paused') THEN 'paused'
           WHEN max(j.status='queued') THEN 'queued' WHEN max(j.status='succeeded') THEN CASE WHEN max(j.status='cancelled') THEN 'partial' ELSE 'succeeded' END
-          WHEN max(j.status='cancelled') THEN 'cancelled' ELSE 'draft' END FROM social_jobs j WHERE ${jobs.sql}
+          WHEN max(j.status='cancelled') THEN 'cancelled' ELSE 'draft' END FROM social_jobs_all j WHERE ${jobs.sql}
           AND json_extract(j.value,'$.campaignId')=${alias}.id)=?`);
         values.push(...jobs.values, filter.status);
       }
@@ -2894,7 +2883,7 @@ export class SocialService {
     };
     for (const collection of SOCIAL_COLLECTIONS) {
       const { sql, values } = await criteria(collection);
-      const from = collection === "jobs" ? "social_jobs r" : "social_records r";
+      const from = collection === "jobs" ? "social_jobs_all r" : "social_records r";
       const where = collection === "jobs" ? sql : `r.kind=? AND ${sql}`;
       const args = collection === "jobs" ? values : [kinds[collection], ...values];
       const total = Number(
@@ -2938,7 +2927,7 @@ export class SocialService {
       const unique = [...new Set(ids.filter((id): id is string => !!id))];
       if (!unique.length) return [];
       const { sql, values } = await criteria(collection, "r", false);
-      const from = collection === "jobs" ? "social_jobs r" : "social_records r";
+      const from = collection === "jobs" ? "social_jobs_all r" : "social_records r";
       const where = collection === "jobs" ? sql : `r.kind=? AND ${sql}`;
       const args = collection === "jobs" ? values : [kinds[collection], ...values];
       return (
@@ -2969,7 +2958,7 @@ export class SocialService {
       const rows = await this.store.db
         .prepare(`SELECT value FROM (
         SELECT r.value,ROW_NUMBER() OVER (PARTITION BY json_extract(r.value,'$.draftId') ORDER BY r.rowid DESC) AS position
-        FROM social_jobs r WHERE ${filter.sql} AND r.status!='cancelled'
+        FROM social_jobs_all r WHERE ${filter.sql} AND r.status!='cancelled'
         AND json_extract(r.value,'$.draftId') IN (SELECT value FROM json_each(?))
       ) WHERE position=1`)
         .all(...filter.values, JSON.stringify(snapshot.drafts.map((draft) => draft.id)));
@@ -3003,7 +2992,7 @@ export class SocialService {
     snapshot.campaignJobCounts = { ...snapshot.jobCounts };
     for (const row of await this.store.db
       .prepare(
-        `SELECT status,json_extract(r.value,'$.campaignId') IS NOT NULL AS campaign,COUNT(*) AS count FROM social_jobs r WHERE ${jobCriteria.sql} GROUP BY status,campaign`,
+        `SELECT status,json_extract(r.value,'$.campaignId') IS NOT NULL AS campaign,COUNT(*) AS count FROM social_jobs_all r WHERE ${jobCriteria.sql} GROUP BY status,campaign`,
       )
       .all(...jobCriteria.values)) {
       const status = String(row.status) as SocialJob["status"],
@@ -3013,7 +3002,7 @@ export class SocialService {
     }
     const campaignJobs = await this.store.db
       .prepare(
-        `SELECT json_extract(r.value,'$.campaignId') AS campaignId,status,COUNT(*) AS count FROM social_jobs r WHERE ${jobCriteria.sql} AND json_extract(r.value,'$.campaignId') IN (SELECT value FROM json_each(?)) GROUP BY campaignId,status`,
+        `SELECT json_extract(r.value,'$.campaignId') AS campaignId,status,COUNT(*) AS count FROM social_jobs_all r WHERE ${jobCriteria.sql} AND json_extract(r.value,'$.campaignId') IN (SELECT value FROM json_each(?)) GROUP BY campaignId,status`,
       )
       .all(...jobCriteria.values, JSON.stringify(campaigns.map((campaign) => campaign.id)));
     const campaignCounts = new Map<string, Record<string, number>>();
@@ -3574,7 +3563,7 @@ export class SocialService {
       );
     // A campaign variant has one global dedupe key, including normal one-off scheduling.
     for (const entry of plan.campaigns.slice(plan.nextIndex)) {
-      const existing = await this.firstJob(
+      const existing = await this.jobArchive.firstJob(
         "dedupe_key=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)",
         [`campaign:${entry.campaignId}:${entry.revision}:${plan.accountId}`],
       );
@@ -3899,7 +3888,7 @@ export class SocialService {
       );
     if (
       previous &&
-      (await this.jobExists(
+      (await this.jobArchive.jobExists(
         "json_extract(value,'$.campaignId')=? AND status IN ('queued','running','succeeded','review')",
         [previous.id],
       ))
@@ -4196,7 +4185,7 @@ export class SocialService {
     if (draft.generation?.status === "running" || this.generationControllers.has(draft.id))
       throw new Error("Wait for AI generation to finish before editing this draft.");
     if (
-      await this.jobExists(
+      await this.jobArchive.jobExists(
         "json_extract(value,'$.draftId')=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)",
         [draft.id],
       )
@@ -4729,7 +4718,7 @@ export class SocialService {
     contact.commentEligible = false;
     if (contact.consent) contact.consent.allowed = false;
     await this.put("contact", contact.id, contact);
-    for await (const page of this.jobPages(
+    for await (const page of this.jobArchive.jobPages(
       "json_extract(value,'$.contactId')=? AND status='queued'",
       [contact.id],
     ))
@@ -4850,7 +4839,7 @@ export class SocialService {
           );
           const linked = event.postId
             ? (
-                await this.firstJob(
+                await this.jobArchive.firstJob(
                   "account_id=? AND json_extract(value,'$.platformId')=? AND json_array_length(value,'$.projectIds')=1",
                   [accountId, event.postId],
                 )
@@ -4973,7 +4962,7 @@ export class SocialService {
       const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
       const quotaDayStart = Math.floor(this.now() / 86_400_000) * 86_400_000;
       if (
-        (await this.jobCount(
+        (await this.jobArchive.jobCount(
           "json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
           [rule.id, quotaDayStart, quotaDayStart + 86_400_000],
         )) >= rule.dailyLimit
@@ -5367,41 +5356,25 @@ export class SocialService {
     format: "image" | "document" = "image",
   ): Promise<{
     uploadId: string;
+    managed?: { mediaId: string; uploadClaimId: string; revision: number };
   }> {
     return this.operation(async () => {
       await this.ready;
 
       this.owner(p);
-      const bytes = Buffer.from(base64, "base64");
-      if (
-        format === "document" &&
-        (!bytes.length ||
-          bytes.length > 5 * 1024 * 1024 ||
-          !/^%PDF-(?:1\.[0-7]|2\.0)(?:\r|\n)/.test(bytes.subarray(0, 10).toString("ascii")) ||
-          !/%%EOF\s*$/.test(bytes.subarray(-1024).toString("ascii")))
-      )
-        throw new Error("Upload a complete PDF document up to 5 MiB.");
-      if (
-        format === "image" &&
-        (!bytes.length ||
-          bytes.length > 5 * 1024 * 1024 ||
-          !(
-            (bytes[0] === 0xff && bytes[1] === 0xd8) ||
-            bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-          ))
-      )
-        throw new Error("Upload a JPEG/PNG image up to 5 MiB.");
-      const uploadId = randomUUID();
-      await mkdir(join(this.directory, "media"), {
-        recursive: true,
-        mode: 0o700,
-      });
       await this.store.db.checkAuthorization();
-      await writeFile(join(this.directory, "media", uploadId), bytes, {
-        flag: "wx",
-        mode: 0o600,
-      });
-      return { uploadId };
+      return this.mediaCustody.upload({ accountId: `owner:${p.actorId}` }, base64, format);
+    });
+  }
+  async mediaEditorClaim(
+    p: SocialPrincipal,
+    action: "claim" | "transfer" | "releaseLogical",
+    input: Record<string, unknown>,
+  ) {
+    return this.operation(async () => {
+      await this.ready;
+      this.owner(p);
+      return this.mediaCustody.editorOperation({ accountId: `owner:${p.actorId}` }, action, input);
     });
   }
   async readOwnerMedia(p: SocialPrincipal, id: string) {
@@ -5521,7 +5494,7 @@ export class SocialService {
         if (epoch !== this.backgroundEpoch) return;
       }
     // A dispatch marker survives crashes. Never put uncertain sends back in the queue.
-    for await (const page of this.jobPages("status='running'", [])) {
+    for await (const page of this.jobArchive.jobPages("status='running'", [])) {
       if (epoch !== this.backgroundEpoch) return;
       for (const job of page) {
         job.status = "review";
@@ -5639,7 +5612,7 @@ export class SocialService {
     try {
       return !(await this.store.db
         .prepare(
-          "SELECT 1 FROM social_records UNION ALL SELECT 1 FROM social_jobs UNION ALL SELECT 1 FROM social_programs LIMIT 1",
+          "SELECT 1 FROM social_records UNION ALL SELECT 1 FROM social_jobs_all UNION ALL SELECT 1 FROM social_programs LIMIT 1",
         )
         .get());
     } catch {
@@ -5667,6 +5640,8 @@ export class SocialService {
     const background: Promise<unknown>[] = [];
     let generation: Promise<boolean> | undefined;
     try {
+      // Archival never blocks delivery; failures retain hot rows for a later tick.
+      await this.jobArchive.compactIfDue().catch(() => {});
       if ((await this.setting("stopped")) === "true") return;
       // A host that never used social media has nothing to refresh, generate,
       // poll or send: skip the scans this 5 s tick would otherwise repeat.
@@ -6032,7 +6007,7 @@ export class SocialService {
             const rule = await this.get<SocialRule>("rule", draft.ruleId);
             const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
             if (
-              (await this.jobCount(
+              (await this.jobArchive.jobCount(
                 "id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?",
                 [job.id, rule.id, day, day + 86_400_000],
               )) >= rule.dailyLimit
@@ -6049,7 +6024,8 @@ export class SocialService {
         throw new SocialPlatformError("expired");
       await check(); // Credential lookup yielded; opt-out/stop can have arrived meanwhile.
       await this.transaction(async () => {
-        if (!isDeepStrictEqual(await this.job(id), job)) throw new Error("Job changed before dispatch.");
+        if (!isDeepStrictEqual(await this.job(id), job))
+          throw new Error("Job changed before dispatch.");
         job.dispatchedAt = this.now();
         await this.writeJob(job);
       });
@@ -6226,7 +6202,7 @@ export class SocialService {
       const ownedPosts = async (after?: string) => {
         await currentConnection();
         const rows = await this.store.db
-          .prepare(`SELECT id,json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+          .prepare(`SELECT id,json_extract(value,'$.platformId') AS platform_id FROM social_jobs_all
             WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
               AND json_extract(value,'$.platformId') IS NOT NULL AND id>?
             ORDER BY id LIMIT 3`)
@@ -6244,7 +6220,7 @@ export class SocialService {
           ? []
           : (
               await this.store.db
-                .prepare(`SELECT json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+                .prepare(`SELECT json_extract(value,'$.platformId') AS platform_id FROM social_jobs_all
            WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
              AND json_extract(value,'$.platformId') IS NOT NULL ORDER BY scheduled_at,id`)
                 .all(account.id)

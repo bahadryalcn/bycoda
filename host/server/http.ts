@@ -72,6 +72,7 @@ export function createHttpRuntime(
     | "browserRuntime"
     | "workspace"
     | "runtimeLogs"
+    | "terminalLogs"
     | "refreshLogSources"
     | "logMonitors"
     | "deviceHost"

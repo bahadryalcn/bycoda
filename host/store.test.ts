@@ -1360,7 +1360,7 @@ describe("HostStore device credentials", () => {
 });
 describe("HostStore receipts", () => {
   const receipt = (commandId: string) => ({ commandId }) as unknown as CommandReceipt;
-  it("prunes old receipts but keeps recent ones deduplicating retries", async () => {
+  it("compacts old request signatures while preserving exact retry answers", async () => {
     const directory = open();
     const path = join(directory, "host.db");
     const store = new HostStore(path);
@@ -1370,7 +1370,7 @@ describe("HostStore receipts", () => {
       .prepare("UPDATE receipts SET created_at=? WHERE id='old'")
       .run(Date.now() - 8 * 24 * 3600000);
     await store.pruneReceipts();
-    expect(await store.receipt("old", "sig")).toBeUndefined();
+    expect(await store.receipt("old", "sig")).toEqual(receipt("old"));
     expect(await store.receipt("recent", "sig")).toEqual(receipt("recent"));
     await expect((async () => await store.receipt("recent", "other"))()).rejects.toThrow(
       /different payload/,

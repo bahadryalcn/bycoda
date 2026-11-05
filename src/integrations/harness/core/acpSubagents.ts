@@ -23,6 +23,8 @@ export class AcpSubagents {
     if (!parent) {
       return events.flatMap<HarnessEvent>((event) => {
         if (event.type !== "tool.started" && event.type !== "tool.updated") return [event];
+        const owner = this.owners.get(event.callId);
+        if (owner) return this.route({ parentToolCallId: owner }, [event]);
         this.tools.add(event.callId);
         const backlog = this.pending.get(event.callId) ?? [];
         this.pending.delete(event.callId);
@@ -37,7 +39,8 @@ export class AcpSubagents {
     for (const event of events) {
       if (event.type === "tool.started" || event.type === "tool.updated") {
         this.owners.set(event.callId, parent);
-        if (event.type === "tool.updated" && terminal(event.status)) this.liveChildren.delete(event.callId);
+        if (event.type === "tool.updated" && terminal(event.status))
+          this.liveChildren.delete(event.callId);
         else this.liveChildren.add(event.callId);
         this.prose.delete(parent);
         output.push({
@@ -148,7 +151,10 @@ export class AcpSubagents {
 }
 
 function terminal(status: string | undefined): boolean {
-  return !!status && ["completed", "failed", "error", "cancelled", "canceled"].includes(status.toLowerCase());
+  return (
+    !!status &&
+    ["completed", "failed", "error", "cancelled", "canceled"].includes(status.toLowerCase())
+  );
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

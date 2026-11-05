@@ -4,6 +4,7 @@ import {
   writeAssistantRecovery,
 } from "../assistant/work/assistant-worker-recovery";
 import { createHash, randomUUID } from "node:crypto";
+import { shouldFingerprintFailedCheck } from "./fingerprint";
 import {
   canTakeOverBlockedTask,
   TASK_INPUT_REQUIRED,
@@ -426,9 +427,12 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
         timedOut: result.timedOut,
       };
       if (result.timedOut || result.exitCode !== 0) {
-        const workspace = readTaskInstructions(task.prompt)?.acceptance.length
-          ? await context.acceptanceFingerprint(task)
-          : await context.workspaceFingerprint(task);
+        if (!(await current())) return;
+        const workspace = !shouldFingerprintFailedCheck(result)
+          ? undefined
+          : readTaskInstructions(task.prompt)?.acceptance.length
+            ? await context.acceptanceFingerprint(task)
+            : await context.workspaceFingerprint(task);
         const checkFailureFingerprint =
           workspace &&
           createHash("sha256")
@@ -491,7 +495,7 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
       ? await context.workspaceFingerprint(task)
       : undefined;
     const acceptanceFingerprint = acceptanceRequired
-      ? await context.acceptanceFingerprint(task)
+      ? await context.acceptanceFingerprint(task, crewReviewFingerprint)
       : undefined;
     if ((await current())?.updatedAt !== latest.updatedAt) return;
     if (task.crewRunId && !crewReviewFingerprint) {

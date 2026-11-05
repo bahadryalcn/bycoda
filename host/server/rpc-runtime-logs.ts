@@ -3,7 +3,7 @@ import type { OwnerRpcRequest } from "./owner-rpc-context";
 export async function handleRuntimeLogsRpc(
   dependencies: Pick<
     ServerBindings,
-    "engine" | "logMonitors" | "refreshLogSources" | "featureMeta" | "runtimeLogs"
+    "engine" | "logMonitors" | "refreshLogSources" | "featureMeta" | "runtimeLogs" | "terminalLogs"
   >,
   request: OwnerRpcRequest,
 ): Promise<void> {
@@ -37,6 +37,28 @@ export async function handleRuntimeLogsRpc(
           session.projectId !== request.params.projectId
         )
           throw new Error("Runtime logs belong to another project");
+      }
+      if (
+        request.input.method === "runtimeLogs.read" &&
+        request.params.terminalMonitor !== undefined
+      ) {
+        const monitor = request.params.terminalMonitor;
+        if (!monitor || typeof monitor !== "object" || Array.isArray(monitor))
+          throw new Error("Invalid terminal log monitor");
+        const value = monitor as Record<string, unknown>;
+        if (
+          typeof value.id !== "string" ||
+          typeof value.active !== "boolean" ||
+          !Number.isSafeInteger(value.sequence)
+        )
+          throw new Error("Invalid terminal log monitor");
+        dependencies.terminalLogs.monitor(
+          request.tokenHash,
+          value.id,
+          request.params.projectId === undefined ? undefined : String(request.params.projectId),
+          value.active,
+          Number(value.sequence),
+        );
       }
       request.result =
         request.input.method === "runtimeLogs.sources"

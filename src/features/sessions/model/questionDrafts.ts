@@ -98,6 +98,7 @@ export function subscribeQuestionDraftCapacity(listener: () => void) {
 export function questionDraftKey(scope: string | undefined, prompt: UserQuestionPrompt): string {
   return JSON.stringify([
     scope ?? null,
+    ...(prompt.occurrenceId ? [prompt.occurrenceId] : []),
     prompt.providerTurnId ?? null,
     prompt.callId ?? null,
     prompt.requestId,
@@ -121,7 +122,12 @@ export function questionDraftKey(scope: string | undefined, prompt: UserQuestion
   ]);
 }
 function sourceKey(prompt: UserQuestionPrompt) {
-  return JSON.stringify([prompt.providerTurnId ?? null, prompt.callId ?? null, prompt.requestId]);
+  return JSON.stringify([
+    ...(prompt.occurrenceId ? [prompt.occurrenceId] : []),
+    prompt.providerTurnId ?? null,
+    prompt.callId ?? null,
+    prompt.requestId,
+  ]);
 }
 function pending(entry: Entry) {
   return (

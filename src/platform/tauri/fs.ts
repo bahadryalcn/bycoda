@@ -1,3 +1,5 @@
+import { createWorkspacePathMutations } from "./fs/pathMutations";
+export type { MovePathResult } from "./fs/pathMutations";
 import { invoke as invokeLocal } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
@@ -1028,21 +1030,8 @@ export function createPath(parent: string, name: string, isDir: boolean): Promis
   return invoke<string>("create_path", { parent, name, isDir }).then(slash);
 }
 
-export function renamePath(path: string, name: string): Promise<string> {
-  return invoke<string>("rename_path", { path, name }).then(slash);
-}
-
-export function deletePath(path: string): Promise<void> {
-  return invoke<void>("delete_path", { path });
-}
-
-export function copyPath(from: string, destParent: string): Promise<string> {
-  return invoke<string>("copy_path", { from, destParent }).then(slash);
-}
-
-export function movePath(from: string, destParent: string): Promise<string> {
-  return invoke<string>("move_path", { from, destParent }).then(slash);
-}
+export const { renamePath, deletePath, copyPath, movePath } =
+  createWorkspacePathMutations(invokeWorkspace);
 
 /**
  * Paths for files copied in a file manager, on macOS, Linux and Windows.

@@ -1,7 +1,7 @@
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
-import { useContext, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -11,6 +11,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import type { SocialClient } from "../model/socialClient";
 import type { XProfilePatch, XProfileState } from "../model/socialBrowser";
 import { SocialBusyContext } from "./socialContext";
+import { useSocialMediaEditor } from "./useSocialMediaEditor";
+import { uploadForSocialEditor } from "../model/socialMediaEditor";
 
 export function XProfileManager({
   accountId,
@@ -24,6 +26,10 @@ export function XProfileManager({
   client: SocialClient;
   platform?: "x" | "linkedin" | "facebook" | "instagram";
 }) {
+  const mediaEditor = useSocialMediaEditor(client, false);
+  useEffect(() => {
+    mediaEditor.invalidate();
+  }, [accountId, mediaEditor]);
   const linkedIn = platform === "linkedin";
   const facebook = platform === "facebook";
   const instagram = platform === "instagram";
@@ -112,6 +118,9 @@ export function XProfileManager({
               setSaved(profile);
               setValues(profile);
               setImages({});
+              void mediaEditor
+                .discard()
+                .catch(() => setError(t("Unable to release media for this draft.")));
               setStatus(t("Profile save was verified by reading it back."));
             });
           }}
@@ -188,7 +197,7 @@ export function XProfileManager({
                     event.target.value = "";
                     if (!file || busy) return;
                     void run(key, async () => {
-                      const upload = await client.upload(file);
+                      const upload = await uploadForSocialEditor(mediaEditor, client, file);
                       setImages((current) => ({ ...current, [key]: upload.uploadId }));
                       setStatus(t("Image is ready; it will be applied when the profile is saved."));
                     });
@@ -201,13 +210,23 @@ export function XProfileManager({
                     type="button"
                     variant="secondary"
                     tone="danger"
-                    onClick={() =>
+                    onClick={() => {
+                      const removed = images[key];
+                      if (
+                        removed &&
+                        !Object.entries(images).some(
+                          ([other, id]) => other !== key && id === removed,
+                        )
+                      )
+                        void mediaEditor
+                          .releaseCurrent(removed)
+                          .catch(() => setError(t("Unable to release media for this draft.")));
                       setImages((current) => {
                         const next = { ...current };
                         delete next[key];
                         return next;
-                      })
-                    }
+                      });
+                    }}
                   >
                     {t("Remove selected image")}
                   </Button>

@@ -675,3 +675,28 @@ fn resnapshot_of_an_already_committed_cursor_still_acknowledges_the_new_host_reg
     );
     assert_eq!(acknowledgement.params["cursor"], cursor(1));
 }
+
+#[test]
+fn lagging_member_is_resynced_without_fabricating_its_ack() {
+    let mut union = DemandUnion::new(64, 64, 512, 8, 2_097_152, 8_388_608);
+    let (fast, opened_effects) = union.open("fast", &params("a", "session")).unwrap();
+    let (slow, _) = union.open("slow", &params("b", "session")).unwrap();
+    let open = operation(&opened_effects, OperationKind::Open);
+    union.complete(&open, &json!({"subscriptionId":open.params["subscriptionId"],"streamId":"host-stream"})).unwrap();
+    union.event(&event(&open, "snapshot", 1)).unwrap();
+    union.acknowledge(&fast, &cursor(1)).unwrap();
+    let first_ack = operation(&union.acknowledge(&slow, &cursor(1)).unwrap(), OperationKind::Ack);
+    union.complete(&first_ack, &json!({"accepted":true})).unwrap();
+    for sequence in 2..=5 {
+        union.event(&event(&open, "delta", sequence)).unwrap();
+        union.acknowledge(&fast, &cursor(sequence)).unwrap();
+    }
+    let isolated = union.event(&event(&open, "delta", 6)).unwrap();
+    assert!(isolated.notices.iter().any(|notice| matches!(notice, Notice::Event { member, event } if member == &slow && event["params"]["kind"] == "resync-required")));
+    let ack = operation(&isolated, OperationKind::Ack);
+    assert_eq!(ack.params["cursor"], cursor(5));
+    assert!(union.acknowledge(&slow, &cursor(6)).is_err());
+    assert!(union.acknowledge(&fast, &cursor(6)).is_ok());
+    let (_, reopening) = union.open("slow", &params("b", "session")).unwrap();
+    assert!(reopening.operations.iter().any(|op| op.kind == OperationKind::Close));
+}

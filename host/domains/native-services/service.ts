@@ -14,6 +14,7 @@ const NATIVE_SERVICE_LEGACY_METHODS = Object.freeze({
   "runtimeLogs.bridge.describe": "native.services.runtimeLogs.bridge.describe",
   "runtimeLogs.access.issue": "native.services.runtimeLogs.access.issue",
   "runtimeLogs.terminals.append": "native.services.runtimeLogs.terminals.append",
+  "runtimeLogs.terminals.demand": "native.services.runtimeLogs.terminals.demand",
   "conversation.bridge.describe": "native.services.conversation.bridge.describe",
   "conversation.access.issue": "native.services.conversation.access.issue",
   "conversation.desktop.take": "native.services.conversation.desktop.take",
@@ -116,7 +117,16 @@ export function createNativeServicesService() {
       result = await owner.desktopStatus();
     } else if (method === "native.services.desktop.status.wait") {
       if (!owner.waitDesktopStatus) throw new Error("Native desktop status wait is unavailable.");
-      result = await owner.waitDesktopStatus(String(params.afterRevision), Number(params.timeoutMs), context.signal);
+      const afterRevision = String(params.afterRevision);
+      if (afterRevision.length > 100) throw new Error("Invalid desktop status revision");
+      const status = await owner.waitDesktopStatus(
+        afterRevision,
+        Number(params.timeoutMs),
+        context.signal,
+      );
+      if (typeof status.revision !== "string" || status.revision.length > 100)
+        throw new Error("Invalid desktop status revision");
+      result = status;
     } else if (method === "native.services.desktop.stop") {
       if (!owner.stopDesktop) throw new Error("Native desktop Stop is unavailable.");
       result = await owner.stopDesktop();
@@ -138,7 +148,10 @@ export function createNativeServicesService() {
         String(params.sessionId ?? ""),
         params.expectedScope,
       );
-    else if (method === "native.services.runtimeLogs.terminals.append")
+    else if (method === "native.services.runtimeLogs.terminals.demand") {
+      if (!owner.terminalDemand) throw new Error("Terminal log demand is unavailable");
+      result = await owner.terminalDemand(params);
+    } else if (method === "native.services.runtimeLogs.terminals.append")
       result = await owner.appendTerminal(params);
     else if (method === "native.services.conversation.desktop.take")
       result = await owner.desktop.take();

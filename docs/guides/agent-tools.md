@@ -135,3 +135,11 @@ and key/agent authentication must already work without an interactive prompt.
 This command route cannot approve proxy credential use.
 Commands use the saved remote shell setting (POSIX by default, PowerShell when
 configured). Timeout defaults to 60 seconds and can be set up to 300 seconds.
+
+
+## Terminal log capture
+
+Terminal logs continue in the background by default. To capture only while a
+Logs panel is actively monitoring, set `BYCODA_TERMINAL_LOG_BACKGROUND=0` in
+the Host environment before starting it. Output outside that interval cannot
+be recovered; retained logs remain available.

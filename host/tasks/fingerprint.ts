@@ -8,6 +8,12 @@ import { acceptanceOutputFingerprint } from "./task-acceptance-snapshot";
 import { DIFF_STAT_LIMIT } from "./constants";
 import { git } from "./git";
 import type { TaskContext } from "./context";
+export function shouldFingerprintFailedCheck(result: {
+  timedOut: boolean;
+  exitCode: number | null;
+}): boolean {
+  return !result.timedOut && result.exitCode !== null && result.exitCode !== 0;
+}
 /** Consume bounded I/O batches in legacy order, including errors and limits. */
 export async function fingerprintPaths(
   hash: ReturnType<typeof createHash>,

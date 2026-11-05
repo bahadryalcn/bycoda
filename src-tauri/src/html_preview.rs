@@ -438,6 +438,7 @@ fn preview_response(
         .header("Cache-Control", "no-store")
         .header("X-Content-Type-Options", "nosniff")
         .header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'")
+        .header("Permissions-Policy", "microphone=(), camera=(), display-capture=()")
         .body(body)
         .expect("static preview response headers")
 }

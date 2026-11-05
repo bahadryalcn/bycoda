@@ -138,6 +138,16 @@ export class SocialTransport {
       if (method === "social.browser.status")
         return this.browser.status(this.service, p, String(params.accountId ?? ""));
     }
+    if (
+      method === "social.media.claim" ||
+      method === "social.media.transfer" ||
+      method === "social.media.releaseLogical"
+    )
+      return this.service.mediaEditorClaim(
+        p,
+        method.slice("social.media.".length) as "claim" | "transfer" | "releaseLogical",
+        params,
+      );
     if (method === "social.media.upload")
       return params.mode
         ? this.service.uploadVideo(p, params)

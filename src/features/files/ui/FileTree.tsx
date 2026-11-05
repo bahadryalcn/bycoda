@@ -1,3 +1,4 @@
+import { MoveRecoveryNotice, type CopyNotice } from "./MoveRecoveryNotice";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   TreeRow,
@@ -330,7 +331,7 @@ function FileTreeInner({
   const [operationPending, setOperationPending] = useState(false);
   // An inline create/rename that has been submitted and is waiting on the filesystem.
   const [editPending, setEditPending] = useState(false);
-  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<CopyNotice | null>(null);
   const [copyFailedText, setCopyFailedText] = useState<string | null>(null);
   const [headerMenu, setHeaderMenu] = useState(false);
   const headerMenuRef = useRef<HTMLButtonElement>(null);
@@ -1152,11 +1153,7 @@ function FileTreeInner({
               ) : null}
             </div>
           ) : null}
-          {copyNotice ? (
-            <p role="status" className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
-              {copyNotice}
-            </p>
-          ) : null}
+          {copyNotice ? <MoveRecoveryNotice notice={copyNotice} /> : null}
           {operationPending ? (
             <div
               role="status"

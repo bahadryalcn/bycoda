@@ -28422,6 +28422,34 @@
       "retry": "never",
       "scope": "device"
     },
+    "native.services.desktop.status.wait": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "afterRevision": { "type": "string" },
+          "timeoutMs": { "maximum": 25000, "minimum": 1, "type": "integer" }
+        },
+        "required": ["afterRevision", "timeoutMs"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "revision": { "type": "string" } },
+        "required": ["revision"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "native.services.desktop.stop": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -28557,6 +28585,31 @@
         "additionalProperties": false,
         "properties": { "accepted": { "type": "boolean" } },
         "required": ["accepted"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "native.services.runtimeLogs.terminals.demand": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "cwd": { "type": "string" }, "terminalId": { "type": "string" } },
+        "required": ["cwd", "terminalId"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "background": { "type": "boolean" }, "enabled": { "type": "boolean" } },
+        "required": ["enabled", "background"],
         "type": "object"
       },
       "retry": "never",
@@ -49340,6 +49393,25 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.runtimeLogs.terminals.demand", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "cwd": { "type": "string" }, "terminalId": { "type": "string" } },
+              "required": ["cwd", "terminalId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "native.services.runtimeLogs.terminals.append", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -49912,6 +49984,28 @@
             "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "native.services.desktop.status", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.desktop.status.wait", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "afterRevision": { "type": "string" },
+                "timeoutMs": { "maximum": 25000, "minimum": 1, "type": "integer" }
+              },
+              "required": ["afterRevision", "timeoutMs"],
+              "type": "object"
+            }
           },
           "required": ["jsonrpc", "id", "method", "params"],
           "type": "object"
@@ -61769,5 +61863,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2c9b5fadf2a6d8f1024cbb17b36de0155ab8a907a5b9ec336ae58946569c14f8"
+  "schemaHash": "eecc3c40027cbd1d5e1906782664135dc9ca9ed00e399349b4f3de4c3098bc5f"
 }

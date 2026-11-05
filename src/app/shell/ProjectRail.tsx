@@ -116,6 +116,8 @@ import {
   projectGroupIdForPath,
   projectGroupParentId,
   projectGroupWorkspaceRoot,
+  projectGroupWorkspaceRootKeys,
+  addListedWorkspaceRoots,
   reorderProjectGroups,
   updateProjectGroup,
   type ProjectGroup,
@@ -369,9 +371,7 @@ export function ProjectRail({
     y: number;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // The compact flyout is a dialog whose popover frame is measured hidden first, so the row can only take
-  // focus once the frame is placed. Landing on the active project (or the first row) lets PageDown/End scroll the
-  // list; the popover returns focus to its trigger on close.
+  // Focus after flyout placement; active/first-row focus enables paging. Closing restores trigger focus.
   useEffect(() => {
     if (!navigator || !visible) return;
     let frame = 0;
@@ -392,8 +392,7 @@ export function ProjectRail({
     frame = requestAnimationFrame(focusRow);
     return () => cancelAnimationFrame(frame);
   }, [navigator, visible]);
-  // Scrolls a project's row into view. A row inside a collapsed group is not
-  // rendered, so this does nothing there and never expands anything.
+  // Scroll mounted rows into view without expanding collapsed groups.
   const revealProject = (path: string) => {
     requestAnimationFrame(() => {
       const root = scrollRef.current;
@@ -410,8 +409,7 @@ export function ProjectRail({
       }
     });
   };
-  // The folder picker reports nothing back, so compare the remembered projects
-  // before and after: a cancelled pick adds none and changes nothing.
+  // Detect picker additions by comparing remembered projects; cancellation changes nothing.
   const addProjectToGroup = (groupId: string) => {
     const before = loadRecents().map((item) => item.path);
     void (async () => {
@@ -488,13 +486,7 @@ export function ProjectRail({
     [cwd, pinnedPaths, railOrder, recents],
   );
   const workspaceRootKeys = useMemo(
-    () =>
-      new Set(
-        projectGroups.flatMap((group) => {
-          const root = projectGroupWorkspaceRoot(group);
-          return root ? [pathKey(root)] : [];
-        }),
-      ),
+    () => projectGroupWorkspaceRootKeys(projectGroups),
     [projectGroups],
   );
   const filterQuery = projectFilter.trim().toLocaleLowerCase();
@@ -537,6 +529,14 @@ export function ProjectRail({
       if (items) items.push(project);
       else ungrouped.push(project);
     }
+    addListedWorkspaceRoots(
+      projectGroups,
+      sections,
+      byGroup,
+      (project, groupId) =>
+        !isProjectLockedIn(lock, project.path) &&
+        (projectMatches(project.path) || groupNameMatches(groupId)),
+    );
     const workspaceItemsOf = (groupId: string) =>
       [...sections.pinned, ...sections.projects].filter(
         (project) =>
@@ -600,14 +600,12 @@ export function ProjectRail({
     if (synced.join("\0") === railOrder.join("\0")) return;
     commitProjectRailOrder(synced);
   }, [allProjects, railOrder]);
-
   useEffect(() => {
     // Saving announces the change, which reloads `pinnedPaths`.
     const pinned = loadPinnedProjects();
     const next = pinned.filter((path) => allProjects.has(path));
     if (next.length !== pinned.length) savePinnedProjects(next);
   }, [allProjects]);
-
   // Follow the active project. Adding a project makes it the active one, so a
   // new row (it lands in "Projects", below every group) is brought into view
   // too. Keyed on the project, so scrolling by hand is left alone.
@@ -615,7 +613,6 @@ export function ProjectRail({
     if (!visible || !cwd) return;
     revealProject(cwd);
   }, [cwd, visible]);
-
   const closeProjectMenu = useStableCallback(projectMenu.close);
   useEffect(() => {
     if (!projectMenu.isOpen) return;
@@ -625,7 +622,6 @@ export function ProjectRail({
     scrollParent.addEventListener("scroll", onScroll, true);
     return () => scrollParent.removeEventListener("scroll", onScroll, true);
   }, [projectMenu.isOpen, closeProjectMenu]);
-
   const reorderSubset = (fullOrder: string[], subsetOrder: string[], subsetPaths: Set<string>) => {
     const next: string[] = [];
     let subsetIndex = 0;

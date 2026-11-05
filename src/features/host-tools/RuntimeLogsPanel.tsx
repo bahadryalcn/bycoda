@@ -1,3 +1,5 @@
+import { ObjectInspector } from "./ui/RuntimeLogObjectInspector";
+import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
@@ -14,16 +16,7 @@ import { Button } from "../../shared/ui/Button";
 import { FilterTrigger } from "../../shared/ui/FilterTrigger";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { SurfaceSelection } from "../sessions/ui/SurfaceSelection";
@@ -53,7 +46,6 @@ import {
   groupRuntimeLogs,
   MAX_RENDERED_RUNTIME_LOGS,
   mergeRuntimeLogs,
-  runtimeLogDetailsText,
   runtimeLogFileTarget,
   runtimeLogsAgentPrompt,
   type RuntimeLogGroup,
@@ -131,6 +123,8 @@ function ScopedRuntimeLogsPanel({
   const [buffer, setBuffer] = useState(() => saved?.buffer ?? createRuntimeLogsBuffer());
   const bufferRef = useRef(buffer);
   const targetRef = useRef(target);
+  const terminalMonitorId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`).current;
+  const terminalMonitorSequence = useRef(0);
   const [paused, setPaused] = useState(saved?.paused ?? false);
   const pausedRef = useRef(saved?.paused ?? false);
   const [started, setStarted] = useState(saved?.started ?? true);
@@ -265,6 +259,15 @@ function ScopedRuntimeLogsPanel({
             ...(current.cursor ? { after: current.cursor } : {}),
             ...(current.streamId ? { streamId: current.streamId } : {}),
             limit: 1_000,
+            ...(!pausedRef.current
+              ? {
+                  terminalMonitor: {
+                    id: terminalMonitorId,
+                    active: true,
+                    sequence: ++terminalMonitorSequence.current,
+                  },
+                }
+              : {}),
           },
           targetRef.current,
         );
@@ -298,7 +301,7 @@ function ScopedRuntimeLogsPanel({
         }
       }
     },
-    [cwd, sessionId],
+    [cwd, sessionId, terminalMonitorId],
   );
 
   useEffect(() => {
@@ -320,11 +323,16 @@ function ScopedRuntimeLogsPanel({
     };
   }, [read]);
 
-  useEffect(() => {
-    clearTimeout(timer.current);
-    if (active && !pausedRef.current) void read(false).catch(() => {});
-    return () => clearTimeout(timer.current);
-  }, [active, read]);
+  useRuntimeTerminalMonitor(
+    cwd,
+    targetRef.current,
+    active,
+    paused,
+    terminalMonitorId,
+    terminalMonitorSequence,
+    timer,
+    read,
+  );
 
   const filtered = useMemo(
     () =>
@@ -1224,37 +1232,3 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
     </li>
   );
 });
-
-function ObjectInspector({ value }: { value: unknown }) {
-  const budget = { remaining: 160 };
-  const seen = new WeakSet<object>();
-  const render = (item: unknown, depth: number): ReactNode => {
-    if (--budget.remaining < 0) return <code>…</code>;
-    if (!item || typeof item !== "object") return <code>{runtimeLogDetailsText(item, 2_000)}</code>;
-    if (seen.has(item)) return <code>[Circular]</code>;
-    seen.add(item);
-    if (depth >= 5) return <pre>{runtimeLogDetailsText(item, 3_000)}</pre>;
-    const entries = Object.entries(item);
-    return (
-      <details open={depth === 0} className="runtime-log-object-node">
-        <summary>
-          {Array.isArray(item) ? t("Array") : t("Object")} ({entries.length})
-        </summary>
-        <ul>
-          {entries.slice(0, 30).map(([key, child]) => (
-            <li key={key}>
-              <code className="runtime-log-object-key">{key}:</code>
-              {render(child, depth + 1)}
-            </li>
-          ))}
-          {entries.length > 30 ? (
-            <li>
-              <code>…</code>
-            </li>
-          ) : null}
-        </ul>
-      </details>
-    );
-  };
-  return <div className="runtime-log-object-tree">{render(value, 0)}</div>;
-}

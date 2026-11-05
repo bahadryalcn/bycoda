@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+#[cfg(not(windows))]
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -125,12 +126,34 @@ impl Original {
         }
         #[cfg(not(windows))]
         {
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::process::CommandExt;
+                let parent = unsafe { libc::getpid() };
+                unsafe {
+                    command.pre_exec(move || {
+                        if libc::setpgid(0, 0) != 0
+                            || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0
+                        {
+                            return Err(io::Error::last_os_error());
+                        }
+                        if libc::getppid() != parent {
+                            libc::_exit(127);
+                        }
+                        Ok(())
+                    });
+                }
+            }
             command.spawn().map(|child| Self { child })
         }
     }
     fn stop(&mut self, uncertain: &AtomicBool) {
         #[cfg(windows)]
         self.job.terminate();
+        #[cfg(target_os = "linux")]
+        if unsafe { libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL) } != 0 {
+            uncertain.store(true, Ordering::Release);
+        }
         #[cfg(not(windows))]
         if self.child.kill().is_err() {
             uncertain.store(true, Ordering::Release);

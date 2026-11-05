@@ -168,11 +168,15 @@ export async function settleVerification(
       : [];
   // Acceptance already includes the repository snapshot. Crew reviews also
   // need it for exact independent-review validation, including passing reviews.
+  const eligibleFingerprint = outcome.status === "succeeded" && review.note !== NO_VERDICT;
   const repositoryFingerprint =
-    (task.crewRunId || (!acceptance && review.verdict === "fail")) && outcome.status === "succeeded"
+    eligibleFingerprint && (task.crewRunId || (!acceptance && review.verdict === "fail"))
       ? await context.workspaceFingerprint(task)
       : undefined;
-  const acceptanceFingerprint = acceptance ? await context.acceptanceFingerprint(task, repositoryFingerprint) : undefined;
+  const acceptanceFingerprint =
+    acceptance && eligibleFingerprint
+      ? await context.acceptanceFingerprint(task, repositoryFingerprint)
+      : undefined;
   const workspaceFingerprint = acceptanceRequired ? acceptanceFingerprint : repositoryFingerprint;
   const currentReview = await context.find(task.id);
   if (
@@ -183,6 +187,7 @@ export async function settleVerification(
     return;
   if (
     task.crewRunId &&
+    eligibleFingerprint &&
     (!repositoryFingerprint || repositoryFingerprint !== task.crewReviewFingerprint)
   ) {
     const reason =
@@ -202,6 +207,7 @@ export async function settleVerification(
   }
   if (acceptance) {
     if (
+      eligibleFingerprint &&
       task.reviewer.workspaceFingerprint &&
       acceptanceFingerprint !== task.reviewer.workspaceFingerprint
     ) {

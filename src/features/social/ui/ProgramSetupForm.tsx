@@ -25,6 +25,8 @@ import {
 } from "../model/socialProgram";
 import {
   localDateTimeInput,
+  formatScheduledDate,
+  programSetupMissing,
   programConfigFromProgram,
   PROGRAM_STEP_LABELS,
   PROGRAM_SUGGESTION_FIELD_LABELS,
@@ -36,6 +38,9 @@ import { SocialMultiSelect } from "./SocialMultiSelect";
 import { Notice, closeComposer, names, type Props } from "./socialShared";
 import { SocialSetupEditor } from "./SocialSetupEditor";
 import { useSocialPending } from "./useSocialPending";
+import { useSocialMediaEditor } from "./useSocialMediaEditor";
+import { useSocialMediaEditRequest } from "./useSocialMediaEditRequest";
+import { uploadForSocialEditor } from "../model/socialMediaEditor";
 import "./social-programs.css";
 
 /** A request from the program detail to load that program into the setup form. */
@@ -61,6 +66,7 @@ export function ProgramSetupForm({
   editRequest?: ProgramEditRequest;
   onError: (message: string) => void;
 }) {
+  const mediaEditor = useSocialMediaEditor(client);
   const pendingUi = useSocialPending();
   const socialLocked = useContext(SocialBusyContext);
   const busy = socialLocked;
@@ -78,20 +84,18 @@ export function ProgramSetupForm({
     questions: string[];
     base: string;
   }>();
-  const [appliedEdit, setAppliedEdit] = useState(0);
-  // Loading a program into the form is a one-shot request identified by its version.
-  if (editRequest && editRequest.version !== appliedEdit) {
-    setAppliedEdit(editRequest.version);
-    setConfig(programConfigFromProgram(editRequest.program));
-    setEdit(editRequest.program);
-  }
-  const displayDate = (at: number) =>
-    dateTimeFormat(locale, {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: config.schedule.timeZone,
-    }).format(at);
+  useSocialMediaEditRequest(
+    editRequest,
+    mediaEditor,
+    (request) => {
+      setConfig(programConfigFromProgram(request.program));
+      setEdit(request.program);
+    },
+    () => onError(t("Unable to retain media for this draft.")),
+  );
+  const displayDate = (at: number) => formatScheduledDate(locale, config.schedule.timeZone, at);
   const set = <K extends keyof ProgramConfig>(key: K, value: ProgramConfig[K]) => {
+    mediaEditor.invalidate();
     setConfig((c) => ({
       ...c,
       [key]: value,
@@ -113,23 +117,7 @@ export function ProgramSetupForm({
     key: K,
     value: ProgramConfig["schedule"][K],
   ) => set("schedule", { ...config.schedule, [key]: value });
-  const purposeMissing =
-    !config.name.trim() ||
-    !config.projectId ||
-    !config.brief.topic.trim() ||
-    !config.brief.description.trim() ||
-    !config.accountIds.length ||
-    config.accountIds.some(
-      (id) =>
-        !snapshot.accounts
-          .find((account) => account.id === id)
-          ?.grants[config.projectId]?.includes("draft"),
-    );
-  const scheduleMissing =
-    !config.schedule.timeZone ||
-    !Number.isFinite(config.schedule.startsAt) ||
-    !config.schedule.days.length ||
-    (config.schedule.mode === "times" && !config.schedule.times.length);
+  const { purposeMissing, scheduleMissing } = programSetupMissing(config, snapshot);
   const stepReason =
     setupStep === 0 && purposeMissing
       ? t("Complete the name, project, brief and eligible target accounts before continuing.")
@@ -760,7 +748,12 @@ export function ProgramSetupForm({
                             .flatMap((c) => c.variants)
                             .flatMap((v) => v.media)
                             .find((m) => (m.uploadId ?? m.url) === nextValue);
-                          if (media) set("image", { ...config.image, media: [media] });
+                          if (media)
+                            void run(async () => {
+                              if (media.uploadId) await mediaEditor.claimExisting(media.uploadId);
+                              if (!mediaEditor.isClosed())
+                                set("image", { ...config.image, media: [media] });
+                            }).catch(() => onError(t("Unable to retain media for this draft.")));
                         }}
                         searchLocale={getLocale()}
                       />
@@ -775,9 +768,7 @@ export function ProgramSetupForm({
                         if (file)
                           void pendingUi.run("program.upload-media", () =>
                             run(async () => {
-                              const asset = file.type.startsWith("video/")
-                                ? await client.uploadVideo(file)
-                                : await client.upload(file);
+                              const asset = await uploadForSocialEditor(mediaEditor, client, file);
                               set("image", {
                                 ...config.image,
                                 media: [
@@ -852,9 +843,7 @@ export function ProgramSetupForm({
                         if (file)
                           void pendingUi.run(`program.upload-override:${id}`, () =>
                             run(async () => {
-                              const asset = file.type.startsWith("video/")
-                                ? await client.uploadVideo(file)
-                                : await client.upload(file);
+                              const asset = await uploadForSocialEditor(mediaEditor, client, file);
                               setConfig((c) => ({
                                 ...c,
                                 mediaOverrides: {
@@ -1349,6 +1338,9 @@ export function ProgramSetupForm({
               variant="secondary"
               type="button"
               onClick={() => {
+                void mediaEditor
+                  .discard()
+                  .catch(() => onError(t("Unable to release media for this draft.")));
                 setEdit(undefined);
                 setConfig(defaultProgram(initialProject));
               }}

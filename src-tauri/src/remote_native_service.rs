@@ -78,6 +78,7 @@ fn wire_method(method: &str) -> Option<String> {
             | "assistant.presence.set"
             | "runtimeLogs.access.issue"
             | "runtimeLogs.terminals.append"
+            | "runtimeLogs.terminals.demand"
             | "conversation.bridge.describe"
             | "conversation.access.issue"
             | "conversation.desktop.take"

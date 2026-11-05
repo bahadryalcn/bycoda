@@ -161,6 +161,46 @@ it("represents the root once even when it is recent or pinned", async () => {
   expect(host.querySelector('[data-project-path="G:/wallet/mobile"]')).not.toBeNull();
 });
 
+it("keeps declared root and nested projects visible after moving the workspace into a parent", async () => {
+  saveProjectGroups([
+    { id: "team", name: "Team", collapsed: false },
+    {
+      id: "wallet",
+      name: "Wallet",
+      collapsed: false,
+      workspaceFile: "G:/wallet/wallet.code-workspace",
+      workspaceFolders: ["G:/wallet", "G:/wallet/core-pack"],
+    },
+  ]);
+  saveProjectGroupAssignments({ "g:/wallet": "team", "g:/wallet/core-pack": "wallet" });
+  savePinnedProjects(["G:/wallet"]);
+  await render("G:/wallet", ["G:/wallet", "G:/wallet/core-pack"]);
+  const parent = host.querySelector('[data-project-group="team"]')!;
+  const group = parent.querySelector('[data-project-group="wallet"]')!;
+  expect(group.querySelectorAll("[data-project-path]")).toHaveLength(2);
+  expect(host.querySelectorAll('[data-project-path="G:/wallet"]')).toHaveLength(1);
+  const row = group.querySelector<HTMLButtonElement>('[data-project-path="G:/wallet"] button')!;
+  await act(async () => row.click());
+  expect(select).toHaveBeenCalledWith("G:/wallet");
+  savePinnedProjects([]);
+  await render("G:/other", ["G:/wallet/core-pack"]);
+  expect(group.querySelector('[data-project-path="G:/wallet"]')).not.toBeNull();
+  expect(group.querySelectorAll("[data-project-path]")).toHaveLength(2);
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: "G:/wallet",
+        recents: [{ path: "G:/wallet/core-pack", openedAt: 1 }],
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+        projectFilter: "core-pack",
+      }),
+    ),
+  );
+  expect(group.querySelector('[data-project-path="G:/wallet"]')).toBeNull();
+  expect(group.querySelector('[data-project-path="G:/wallet/core-pack"]')).not.toBeNull();
+});
+
 it("opens the normal Changes tab for the workspace root from its Git shortcut", async () => {
   await render();
   const opened = vi.fn();

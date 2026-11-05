@@ -13,7 +13,15 @@
 //! use. Unsupported platforms and detected namespace changes fail explicitly.
 
 mod os;
+#[cfg(windows)]
+mod windows_copy_preflight;
+pub mod guarded_copy;
+mod guarded_metadata;
+pub mod guarded_move;
+pub mod guarded_move_paths;
+pub mod guarded_snapshot;
 mod rename_no_replace;
+pub mod rename_no_replace_at;
 pub use rename_no_replace::rename_no_replace;
 
 use std::{

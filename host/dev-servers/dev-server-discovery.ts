@@ -1,3 +1,8 @@
+import { WindowsBirthBatch, type WindowsBirthLookup } from "./windows-birth-batch";
+import {
+  loadBundledWindowsProcessBirths,
+  loadBundledWindowsListeners,
+} from "../host-notes-admission.js";
 import { execFile } from "node:child_process";
 import { parseProcessJson } from "../parse-process-json.mjs";
 import { readFile, readdir, readlink } from "node:fs/promises";
@@ -316,6 +321,9 @@ export class DevServerDiscovery implements ProcessDiscovery {
   private readonly files: DiscoveryFileSystem;
   private readonly cacheMs: number;
   private readonly commandTimeoutMs: number;
+  private readonly windowsBirths?: WindowsBirthLookup;
+  private readonly windowsListeners?: () => Listener[];
+  private windowsBirthBatch?: WindowsBirthBatch;
   private listenerCache?: { time: number; value: DiscoveredDevProcess[] };
   private listenerFlight?: Promise<DiscoveredDevProcess[]>;
   private processCache?: { time: number; value: DevProcess[] };
@@ -331,6 +339,8 @@ export class DevServerDiscovery implements ProcessDiscovery {
       cacheMs?: number;
       /** Per-command budget; tests driving real system commands on loaded runners raise it. */
       commandTimeoutMs?: number;
+      windowsBirths?: WindowsBirthLookup;
+      windowsListeners?: () => Listener[];
     } = {},
   ) {
     this.platform = options.platform ?? process.platform;
@@ -338,6 +348,17 @@ export class DevServerDiscovery implements ProcessDiscovery {
     this.files = options.files ?? procFiles;
     this.cacheMs = options.cacheMs ?? 1_000;
     this.commandTimeoutMs = options.commandTimeoutMs ?? COMMAND_TIMEOUT;
+    this.windowsListeners = options.windowsListeners;
+    if (options.windowsBirths) this.windowsBirths = options.windowsBirths;
+    else if (this.platform === "win32" && process.platform === "win32" && !options.command) {
+      try {
+        this.windowsBirths = loadBundledWindowsProcessBirths();
+        this.windowsListeners = loadBundledWindowsListeners();
+      } catch {
+        /* Safe legacy helper remains available. */
+      }
+    }
+    if (this.windowsBirths) this.windowsBirthBatch = new WindowsBirthBatch(this.windowsBirths);
   }
   private run(executable: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -419,10 +440,18 @@ export class DevServerDiscovery implements ProcessDiscovery {
     this.processFlight = flight;
     return flight;
   }
-  /** Always fresh: callers must never signal using a cached identity. */
   async identity(pid: number): Promise<DevProcess | undefined> {
     if (!validPid(pid)) return undefined;
     if (this.platform === "win32") {
+      if (this.windowsBirths) {
+        const result = await this.windowsBirthBatch!.get(pid);
+        if (result.state === "missing") return undefined;
+        const startedAt = result.startedAt ?? "";
+        const previous = this.processCache?.value.find(
+          (item) => item.pid === pid && item.startedAt === startedAt && startedAt !== "",
+        );
+        return previous ?? { pid, startedAt, name: "Unknown process" };
+      }
       const rows = jsonProcesses(
         parseProcessJson(
           await this.powershell(
@@ -466,7 +495,9 @@ export class DevServerDiscovery implements ProcessDiscovery {
     this.invalidate();
     if (this.platform === "win32") {
       if (!/^\d+$/.test(identity.startedAt))
-        throw new Error("Invalid Windows process birth identity");
+        throw new Error(
+          "Process identity changed or Windows birth identity is invalid; refresh before stopping it",
+        );
       // Opening Handle pins the process object. Kill() uses that cached handle,
       // so PID reuse between validation and the actual signal cannot target a new process.
       await this.powershell(
@@ -587,8 +618,44 @@ kill -"$sig" "$pid" 2>/dev/null || [ ! -e "/proc/$pid" ]`,
     }
   }
   private async scanListeners(): Promise<DiscoveredDevProcess[]> {
-    if (this.platform === "win32")
-      return parseWindowsListeners(await this.powershell(windowsListeners));
+    if (this.platform === "win32") {
+      if (!this.windowsBirths || !this.windowsListeners)
+        return parseWindowsListeners(await this.powershell(windowsListeners));
+      try {
+        const first = this.windowsListeners();
+        const processes = await this.processes();
+        const second = this.windowsListeners();
+        const endpointKey = (item: Listener) => JSON.stringify([item.pid, item.address, item.port]);
+        const firstSet = new Set(first.map(endpointKey));
+        const secondSet = new Set(second.map(endpointKey));
+        const candidates = second.filter((item) => firstSet.has(endpointKey(item)));
+        const ids = [...new Set(candidates.map((item) => item.pid))].filter(validPid);
+        if (ids.length > 4096) throw new Error("Windows listener identity batch exceeds its limit");
+        const before = new Map(this.windowsBirths(ids).map((item) => [item.pid, item]));
+        const third = this.windowsListeners();
+        const after = new Map(this.windowsBirths(ids).map((item) => [item.pid, item]));
+        const unstable = new Set(
+          third
+            .filter((item) => !firstSet.has(endpointKey(item)) || !secondSet.has(endpointKey(item)))
+            .map((item) => item.pid),
+        );
+        const owners = processes.filter((process) => {
+          const a = before.get(process.pid),
+            b = after.get(process.pid);
+          return (
+            !unstable.has(process.pid) &&
+            a?.state === "alive" &&
+            b?.state === "alive" &&
+            !!a.startedAt &&
+            a.startedAt === b.startedAt &&
+            a.startedAt === process.startedAt
+          );
+        });
+        return groupListeners(third, owners);
+      } catch {
+        return parseWindowsListeners(await this.powershell(windowsListeners));
+      }
+    }
     if (this.platform === "darwin") {
       const deadline = Date.now() + SCAN_TIMEOUT;
       let output: string;

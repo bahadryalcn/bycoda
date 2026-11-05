@@ -20,6 +20,7 @@ import { HostCrews } from "./crews/crews";
 import { HostGoals } from "./goals/goals";
 import { DesktopSessions } from "./desktop/desktopSessions";
 import { HostTerminals } from "./terminals/terminals";
+import { mockWorkspaceTerminal } from "./workspaces/terminal-test-fixture";
 import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./providers/generic-acp";
 import * as accessCenter from "./security/access/access-center";
@@ -442,21 +443,7 @@ describe("managed workspace owner RPCs", () => {
       createdAt: Date.now(),
       exitCode: null,
     };
-    const terminalList = vi.spyOn(HostTerminals.prototype, "list").mockImplementation((id) => ({
-      terminals: id === alias.id ? [terminal] : [],
-      writable: true,
-      profiles: [],
-    }));
-    const terminalWrite = vi
-      .spyOn(HostTerminals.prototype, "write")
-      .mockResolvedValue({ written: true });
-    const terminalRead = vi.spyOn(HostTerminals.prototype, "read").mockImplementation(() => ({
-      terminal,
-      cursor: 1,
-      output: "done",
-      truncated: false,
-      hasMore: false,
-    }));
+    const restoreTerminal = mockWorkspaceTerminal(terminal, workspace.path);
     try {
       const writeFailure = vi
         .spyOn(s.store, "updateManagedWorkspace")
@@ -471,7 +458,7 @@ describe("managed workspace owner RPCs", () => {
               text: "echo test",
             })
           ).value.result,
-        ).toEqual({ written: true });
+        ).toEqual({ accepted: true });
         expect(warning).toHaveBeenCalledWith(
           "Managed workspace activity metadata could not be recorded",
         );
@@ -508,9 +495,7 @@ describe("managed workspace owner RPCs", () => {
         (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.state,
       ).toBe("idle");
     } finally {
-      terminalList.mockRestore();
-      terminalWrite.mockRestore();
-      terminalRead.mockRestore();
+      restoreTerminal();
     }
     const afterTerminal = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
       .result;

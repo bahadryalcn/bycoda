@@ -2139,7 +2139,7 @@ pub async fn control_load(
         let store = app.state::<crate::session_store::SessionStore>();
 
     use rusqlite::OptionalExtension;
-    store
+    let result = store
         .lock_conn()?
         .query_row(
             "SELECT state FROM orchestration_runs WHERE lead_id=?1",
@@ -2147,8 +2147,8 @@ pub async fn control_load(
             |r| r.get(0),
         )
         .optional()
-        .map_err(|e| e.to_string())
-
+        .map_err(|e| e.to_string());
+    result
     }).await.map_err(|error| error.to_string())?
 }
 

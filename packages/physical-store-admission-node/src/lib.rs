@@ -2,7 +2,12 @@
 //! Neither creates application permission or complete writer enrollment.
 //! Live guards belong to a pinned process-native registry, not JavaScript GC.
 mod image_pin;
+mod process_identity;
+pub use process_identity::{windows_listeners, windows_process_births, WindowsListener, WindowsProcessBirth};
+mod guarded_move;
 mod rename_no_replace;
+pub use guarded_move::{guarded_move, GuardedMoveResult, GuardedMoveTask};
+pub use rename_no_replace::rename_no_replace;
 mod sqlite_extension;
 
 pub use sqlite_extension::{

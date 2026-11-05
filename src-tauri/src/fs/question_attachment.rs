@@ -88,6 +88,7 @@ mod lock_tests {
         let path = base.join("content");
         std::fs::write(&path, b"same").unwrap();
         let original = directory_identity(&path).unwrap();
+        // ast-grep-ignore: rust-rename-without-fsync -- fixture moves a file to test physical identity, not state-file persistence
         std::fs::rename(&path, base.join("original")).unwrap();
         std::fs::write(&path, b"same").unwrap();
         assert_ne!(directory_identity(&path).unwrap(), original);

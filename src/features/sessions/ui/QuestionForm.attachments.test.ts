@@ -96,6 +96,7 @@ beforeEach(() => {
   scope = `question-attachment-test-${++sequence}`;
   prompt = {
     requestId: sequence,
+    occurrenceId: `occurrence-${sequence}`,
     callId: scope,
     questions: [
       {
@@ -119,6 +120,17 @@ afterEach(() => {
 });
 
 describe("question attachments", () => {
+  it("keeps legacy questions usable for text answers", () => {
+    prompt = { ...prompt, occurrenceId: undefined, providerTurnId: undefined };
+    const onReply = render();
+    type("Text only");
+    act(() => button("Send answer").click());
+    expect(onReply).toHaveBeenCalledWith(
+      prompt.requestId,
+      expect.objectContaining({ kind: "answered" }),
+    );
+  });
+
   it("sends a picked file as an attachment-only answer", async () => {
     const onReply = render();
     expect(button("Send answer").disabled).toBe(true);

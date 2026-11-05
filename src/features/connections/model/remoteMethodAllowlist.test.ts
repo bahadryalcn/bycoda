@@ -10,7 +10,7 @@ import {
 } from "../../../../scripts/checks/host-rpc-source-fixture.mjs";
 
 // The desktop's native layer forwards only allowlisted host methods
-// (`supported_remote_method` in src-tauri/src/remote.rs). A method the app
+// (`supported_remote_method` in src-tauri/src/remote/method_catalog.rs). A method the app
 // calls but the allowlist lacks fails at runtime with "Unsupported remote
 // operation", which unit tests that mock `remoteRequest` never see.
 
@@ -18,10 +18,14 @@ const root = join(__dirname, "..", "..", "..", "..");
 // This module declares canonical RPC metadata; its method keys are not desktop
 // callsites. Exclude only this declaration file, so actual consumers elsewhere
 // still reveal missing native forwarding when they start calling a method.
-const methodDeclarations = join(root, "src", "shared", "model", "host-contracts", "methods.ts");
+const methodDeclarations = new Set(
+  ["methods.ts", "desktop-status-methods.ts", "native-runtime-log-methods.ts"].map((name) =>
+    join(root, "src", "shared", "model", "host-contracts", name),
+  ),
+);
 
 function allowlist(): Set<string> {
-  const rust = readFileSync(join(root, "src-tauri", "src", "remote.rs"), "utf8");
+  const rust = readFileSync(join(root, "src-tauri", "src", "remote", "method_catalog.rs"), "utf8");
   const body = rust.match(/fn supported_remote_method[\s\S]*?matches!\(([\s\S]*?)\n\s*\)/);
   if (!body) throw new Error("supported_remote_method not found");
   return new Set([...body[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]));
@@ -42,7 +46,7 @@ function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) return sourceFiles(path);
-    if (path === methodDeclarations) return [];
+    if (methodDeclarations.has(path)) return [];
     return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
   });
 }

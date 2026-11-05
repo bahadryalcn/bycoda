@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildSync } from "esbuild";
 import { createServer } from "node:net";
-import { startProviderProcess, startTunnelGuardian, runTunnelWorker } from "./tunnel-process";
+import { startProviderProcess, startLegacyTunnelGuardian, runTunnelWorker } from "./tunnel-process";
 import {
   tunnelCommand,
   tunnelEnvironment,
@@ -152,7 +152,7 @@ describe("tunnel provider adapters", () => {
       send: vi.fn((_message, callback) => callback?.(null)),
     });
     vi.mocked(spawn).mockReturnValueOnce(fake as unknown as ChildProcess);
-    const processHandle = startTunnelGuardian(
+    const processHandle = startLegacyTunnelGuardian(
       tunnelCommand(
         "ngrok",
         "/fake/ngrok",
@@ -175,8 +175,22 @@ describe("tunnel provider adapters", () => {
     );
     const stopping = processHandle.stop();
     expect(fake.send).toHaveBeenLastCalledWith({ type: "stop" }, expect.any(Function));
+    fake.emit("message", { type: "exit" });
     fake.emit("exit", 0);
     await stopping;
+  });
+
+  it("does not report retirement when the worker crashes", async () => {
+    const fake = Object.assign(new EventEmitter(), { connected: true, send: vi.fn() });
+    vi.mocked(spawn).mockReturnValueOnce(fake as unknown as ChildProcess);
+    const events: TunnelEvent[] = [];
+    const processHandle = startLegacyTunnelGuardian(
+      tunnelCommand("cloudflare", "fake", "http://127.0.0.1:3000", "fake"),
+      (event) => events.push(event),
+    );
+    fake.emit("exit", null, "SIGKILL");
+    expect(events).not.toContainEqual({ type: "exit" });
+    await expect(processHandle.stop()).rejects.toThrow();
   });
 
   it("stops its provider handle after host IPC disconnect", async () => {

@@ -125,8 +125,57 @@ describe("bounded discovery and birth-safe signals", () => {
     await expect(discovery.listeners()).resolves.toEqual([]);
     expect(command).toHaveBeenCalledTimes(2);
   });
+  it("batches fresh native births and distinguishes missing from unknown", async () => {
+    const command = vi.fn<DiscoveryCommand>();
+    const windowsBirths = vi.fn((pids: number[]) =>
+      pids.map((pid) =>
+        pid === 1234
+          ? { pid, state: "alive" as const, startedAt: birth }
+          : pid === 1235
+            ? { pid, state: "missing" as const }
+            : { pid, state: "unknown" as const },
+      ),
+    );
+    const discovery = new DevServerDiscovery({ platform: "win32", command, windowsBirths });
+    const [first, same, missing, unknown] = await Promise.all([
+      discovery.identity(1234),
+      discovery.identity(1234),
+      discovery.identity(1235),
+      discovery.identity(1236),
+    ]);
+    expect(windowsBirths).toHaveBeenCalledOnce();
+    expect(windowsBirths).toHaveBeenCalledWith([1234, 1235, 1236]);
+    expect(first?.startedAt).toBe(birth);
+    expect(same?.startedAt).toBe(birth);
+    expect(missing).toBeUndefined();
+    expect(unknown?.startedAt).toBe("");
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it("uses the native port table and keeps PID-reused owners unknown", async () => {
+    const command = vi.fn<DiscoveryCommand>().mockResolvedValue(JSON.stringify([processRow]));
+    const windowsBirths = vi.fn((pids: number[]) =>
+      pids.map((pid) => ({ pid, state: "alive" as const, startedAt: "638999999999999999" })),
+    );
+    const windowsListeners = vi.fn(() => [{ pid: 1234, address: "127.0.0.1", port: 5173 }]);
+    const discovery = new DevServerDiscovery({
+      platform: "win32",
+      command,
+      windowsBirths,
+      windowsListeners,
+    });
+    const result = await discovery.listeners();
+    expect(windowsListeners).toHaveBeenCalledTimes(3);
+    expect(result[0].process.startedAt).toBe("");
+    expect(result[0].process.name).toBe("Unknown process");
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(script(command.mock.calls[0][1])).not.toContain("Get-NetTCPConnection");
+  });
+
   it("checks a fresh birth on the pinned Windows handle before signalling", async () => {
-    const command = vi.fn<DiscoveryCommand>().mockRejectedValue(new Error("Process identity changed"));
+    const command = vi
+      .fn<DiscoveryCommand>()
+      .mockRejectedValue(new Error("Process identity changed"));
     const discovery = new DevServerDiscovery({ platform: "win32", command });
     await expect(discovery.signal(processRow, true)).rejects.toThrow("identity changed");
     expect(command).toHaveBeenCalledTimes(1);
@@ -134,7 +183,9 @@ describe("bounded discovery and birth-safe signals", () => {
     expect(helper.indexOf("$target.Handle")).toBeLessThan(helper.indexOf("$target.StartTime"));
     expect(helper.indexOf("$birth -cne")).toBeLessThan(helper.indexOf("$target.Kill()"));
     expect(helper).not.toContain("taskkill");
-    await expect(discovery.signal({ pid: 1234, startedAt: "" }, true)).rejects.toThrow("unavailable");
+    await expect(discovery.signal({ pid: 1234, startedAt: "" }, true)).rejects.toThrow(
+      "unavailable",
+    );
     expect(command).toHaveBeenCalledTimes(1);
   });
   it("makes a graceful Windows attempt without disguising forced termination", async () => {

@@ -144,6 +144,7 @@ export function HtmlPreview({
           title={t("HTML live preview")}
           src={state.url}
           sandbox="allow-scripts allow-forms"
+          allow="microphone 'none'; camera 'none'; display-capture 'none'"
           referrerPolicy="no-referrer"
           className="min-h-0 w-full flex-1 border-0"
           hidden={sourceVisible}
