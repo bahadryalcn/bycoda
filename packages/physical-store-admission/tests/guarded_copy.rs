@@ -1,21 +1,11 @@
 use bycoda_physical_store_admission::guarded_copy::copy_child_no_follow;
 use cap_std::{ambient_authority, fs::Dir};
-use std::{
-    ffi::OsStr,
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{ffi::OsStr, fs, path::PathBuf};
 
+// Tests run as parallel threads of one process and macOS clocks tick in
+// microseconds, so a pid plus timestamp can give two fixtures the same root.
 fn fixture() -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "guarded-copy-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let root = std::env::temp_dir().join(format!("guarded-copy-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(root.join("source/tree")).unwrap();
     fs::create_dir(root.join("destination")).unwrap();
     root
