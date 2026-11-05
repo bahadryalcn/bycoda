@@ -52,6 +52,7 @@ import {
 import { steerAppliesModelSettings, type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
 import { isSendStarting } from "./submit/submitStarting";
+import { takeRequeuedHeadSignal } from "./submit/submitBusySteer";
 import { t } from "../../../shared/i18n";
 
 export interface QueuedMessageActionDeps {
@@ -141,6 +142,8 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
   const manualActions = useRef(new Set<string>());
   const retryAfter = useRef(new Map<string, number>());
   const retryAttempts = useRef(new Map<string, number>());
+  /** Queue length seen by the last drain; a shorter queue means a row was sent. */
+  const queueLengths = useRef(new Map<string, number>());
   /** Consecutive real refusals of a queue's head; deferrals never count toward the pause. */
   const refusedDrains = useRef(new Map<string, number>());
   const retryTimer = useRef<number>(undefined);
@@ -167,6 +170,12 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     let waitingForCleanup = false;
     for (const session of sessions) {
       const queued = session.queuedMessages ?? [];
+      const previousLength = queueLengths.current.get(session.id);
+      queueLengths.current.set(session.id, queued.length);
+      // A row left the queue because it was sent: the next wait starts its backoff afresh.
+      // Acceptance alone must not reset it: a dispatch counts as accepted before a refusal puts the row back.
+      if (previousLength !== undefined && queued.length < previousLength)
+        retryAttempts.current.delete(session.id);
       if (
         windowTransferPending ||
         movingSessionIds.current.has(session.id) ||
@@ -181,6 +190,8 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         refusedDrains.current.delete(session.id);
         retryAttempts.current.delete(session.id);
         retryAfter.current.delete(session.id);
+        // A paused queue waits for an explicit resume, not for a refusal's backoff.
+        takeRequeuedHeadSignal(session.id);
       }
 
       if (session.queueStatus === "resuming") {
@@ -241,6 +252,12 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
 
       const next = queued[0];
       if (!next) continue;
+      // The provider refused this head after it was accepted and put it back: it waits
+      // with the same capped backoff as a deferral before it is offered again.
+      if (takeRequeuedHeadSignal(session.id)) {
+        scheduleRetry(session.id);
+        continue;
+      }
       queueDispatchingRef.current.add(session.id);
       scheduled.add(session.id);
       timers.push(
@@ -308,7 +325,6 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                 return;
               }
               refusedDrains.current.delete(session.id);
-              retryAttempts.current.delete(session.id);
               retryAfter.current.delete(session.id);
             })
             .catch((error) => {

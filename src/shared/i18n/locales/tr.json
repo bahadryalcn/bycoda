@@ -11285,5 +11285,19 @@
   "This follow-up is already being delivered. Your message is kept.": "Bu takip mesajı zaten iletiliyor. Mesajınız korunuyor.",
   "This conversation is busy. Your message is kept.": "Bu konuşma meşgul. Mesajınız korunuyor.",
   "Reconnecting — will send automatically.": "Yeniden bağlanılıyor — otomatik olarak gönderilecek.",
-  "The conversation changed before this message was sent. Your message is kept.": "Bu mesaj gönderilmeden önce konuşma değişti. Mesajınız korunuyor."
+  "The conversation changed before this message was sent. Your message is kept.": "Bu mesaj gönderilmeden önce konuşma değişti. Mesajınız korunuyor.",
+  "The conversation is busy. The queued message stays queued and sends when it is free.": "Konuşma meşgul. Sıraya alınmış ileti sırada kalır ve boşalınca gönderilir.",
+  "The conversation changed while this queued message was waiting. It remains queued.": "Bu sıraya alınmış ileti beklerken konuşma değişti. İleti sırada kalmaya devam ediyor.",
+  "The queued message is waiting and will be retried automatically.": "Sıraya alınmış ileti bekliyor ve otomatik olarak yeniden denenecek.",
+  "This request is older than 29 days, so it will not be sent automatically. Its outcome is unknown: check the conversation before sending it again.": "Bu istek 29 günden eski olduğu için otomatik olarak gönderilmeyecek. Sonucu bilinmiyor: yeniden göndermeden önce konuşmayı kontrol edin.",
+  "Another send is still in progress. The message remains queued and sends when it is free.": "Başka bir gönderim hâlâ sürüyor. İleti sırada kalır ve boşalınca gönderilir.",
+  "Tunnel settings were damaged and repaired; {p0} entries could not be recovered.": "Tünel ayarları bozuktu ve onarıldı; {p0} girdi kurtarılamadı.",
+  "Moved. Recovery copy retained": "Taşındı. Kurtarma kopyası saklandı",
+  "Receipt": "Makbuz",
+  "Show recovery copy": "Kurtarma kopyasını göster",
+  "Question attachment identity is unavailable. Text answers remain available.": "Soru ekinin kimliği kullanılamıyor. Metin yanıtları kullanılabilir durumda kalır.",
+  "Question attachment session identity is unavailable": "Soru ekinin oturum kimliği kullanılamıyor",
+  "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "Soru ekinin sahipliği doğrulanamıyor. Özgün taslak kurtarma için kullanılabilir durumda kalır.",
+  "Unable to retain media for this draft.": "Bu taslak için medya saklanamıyor.",
+  "Unable to release media for this draft.": "Bu taslak için medya serbest bırakılamıyor."
 }

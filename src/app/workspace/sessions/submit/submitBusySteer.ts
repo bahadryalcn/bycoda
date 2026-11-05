@@ -96,6 +96,16 @@ export function queueSubmittedFollowUp(
   return true;
 }
 
+/** Sessions whose queued head was put back after a provider refusal and must wait
+ * with the queue's backoff before it is offered again (see takeRequeuedHeadSignal). */
+const requeuedHeads = new Set<string>();
+
+/** True once for a head put back by requeueQueuedRowHead; the queue hook then waits
+ * with its capped backoff instead of re-offering the head at once. */
+export function takeRequeuedHeadSignal(sessionId: string): boolean {
+  return requeuedHeads.delete(sessionId);
+}
+
 /**
  * A queue row whose send the provider refused before any write (TurnNotReadyError)
  * goes back to the head of the queue with the same id, as the steer path restores it.
@@ -105,6 +115,7 @@ export function requeueQueuedRowHead(sessionId: string, input: SubmitInput, pre:
   const { storedCurrent } = pre;
   const messageId = input.options?.queuedMessageId;
   if (!messageId) return;
+  requeuedHeads.add(sessionId);
   const original = storedCurrent.queuedMessages?.find((row) => row.id === messageId);
   const row = original ?? {
     id: messageId,
