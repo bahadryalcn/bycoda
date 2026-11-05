@@ -141,6 +141,8 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
   const manualActions = useRef(new Set<string>());
   const retryAfter = useRef(new Map<string, number>());
   const retryAttempts = useRef(new Map<string, number>());
+  /** Consecutive real refusals of a queue's head; deferrals never count toward the pause. */
+  const refusedDrains = useRef(new Map<string, number>());
   const retryTimer = useRef<number>(undefined);
   // Since when a dispatchable queue waits for the Host; the value is -1 once explained.
   const hostWaitSince = useRef(new Map<string, number>());
@@ -176,6 +178,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       // A hold (the refusal itself paused the queue, e.g. a reached usage budget) waits
       // for an explicit resume, which must not meet the backoff of the refused attempt.
       if (session.queueStatus === "paused") {
+        refusedDrains.current.delete(session.id);
         retryAttempts.current.delete(session.id);
         retryAfter.current.delete(session.id);
       }
@@ -261,13 +264,16 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           ) {
             return;
           }
-          void Promise.resolve(
-            onSubmit(session.id, head.text, head.attachments, {
-              queuedMessageId: head.id,
-              noteCard: head.noteCard,
-              handoffCard: head.handoffCard,
-              intent: head.intent,
-            }),
+          // A submit that throws synchronously becomes a rejection, not an escaped error.
+          void new Promise<boolean>((resolve) =>
+            resolve(
+              onSubmit(session.id, head.text, head.attachments, {
+                queuedMessageId: head.id,
+                noteCard: head.noteCard,
+                handoffCard: head.handoffCard,
+                intent: head.intent,
+              }),
+            ),
           )
             .then((accepted) => {
               if (accepted === false) {
@@ -278,8 +284,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                   sessionsRef.current.find((entry) => entry.id === session.id)?.queuedMessages?.[0]
                     ?.id === head.id;
                 if (!stillHead) return;
-                const refused = scheduleRetry(session.id);
+                scheduleRetry(session.id);
+                const refused = (refusedDrains.current.get(session.id) ?? 0) + 1;
+                refusedDrains.current.set(session.id, refused);
                 if (refused < MAX_REFUSED_DRAINS) return;
+                refusedDrains.current.delete(session.id);
                 retryAttempts.current.delete(session.id);
                 retryAfter.current.delete(session.id);
                 setSessions((sessions) =>
@@ -298,6 +307,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                 flushHarnessEvents();
                 return;
               }
+              refusedDrains.current.delete(session.id);
               retryAttempts.current.delete(session.id);
               retryAfter.current.delete(session.id);
             })

@@ -42,13 +42,18 @@ import {
   adoptedFollowUpPending,
   sendAdoptedFollowUp,
 } from "../../../../features/connections/model/adoptedSessionCommands";
-import { wakeSharedLocalQueues } from "../../../../features/connections/model/useSharedLocalQueues";
+import {
+  requeueSharedLocalHead,
+  sharedLocalQueueKept,
+  wakeSharedLocalQueues,
+} from "../../../../features/connections/model/useSharedLocalQueues";
 import { sameQueueValue } from "../../../../features/connections/model/sharedQueue";
 import { showSubmitNotice } from "./submitNotice";
 
 /** Parks the submitted message in the conversation's queue: it is sent when the
  * conversation is free. A queue-row action already owns retained content, so it
- * leaves that row in place rather than appending a copy. */
+ * leaves that row in place rather than appending a copy: the row stays queued and
+ * the wait is a deferral (`QueueDeferredError`), not a refusal. */
 export function queueSubmittedFollowUp(
   ctx: SubmitDeps,
   input: SubmitInput,
@@ -57,7 +62,10 @@ export function queueSubmittedFollowUp(
   const { dismissNoticesForContinuedSession } = ctx;
   const { sessionId, text, attachments, options } = input;
   const { storedCurrent, intent, noteCard, handoffCard, rawCommand } = pre;
-  if (options?.queuedMessageId) return false;
+  if (options?.queuedMessageId)
+    throw new QueueDeferredError(
+      t("The conversation is busy. The queued message stays queued and sends when it is free."),
+    );
   setSessions((prev) =>
     prev.map((s) =>
       s.id === sessionId
@@ -86,6 +94,48 @@ export function queueSubmittedFollowUp(
   );
   dismissNoticesForContinuedSession(sessionId);
   return true;
+}
+
+/**
+ * A queue row whose send the provider refused before any write (TurnNotReadyError)
+ * goes back to the head of the queue with the same id, as the steer path restores it.
+ * It is a wait, not an error: the queue is not held and no session error is shown.
+ */
+export function requeueQueuedRowHead(sessionId: string, input: SubmitInput, pre: SubmitPreflight) {
+  const { storedCurrent } = pre;
+  const messageId = input.options?.queuedMessageId;
+  if (!messageId) return;
+  const original = storedCurrent.queuedMessages?.find((row) => row.id === messageId);
+  const row = original ?? {
+    id: messageId,
+    text: input.text,
+    attachments: input.attachments,
+    noteCard: pre.noteCard,
+    handoffCard: pre.handoffCard,
+    intent: pre.intent,
+    modelTarget: queuedModelTarget(storedCurrent),
+  };
+  // The shared queue writes the row back itself (under a new id, see requeueSharedLocalHead).
+  if (requeueSharedLocalHead(sessionId, row)) return;
+  // A window that keeps a shared queue but could not write now restores the row with a new
+  // id too: the Host would drop the removed id on the next write, and the row with it.
+  const restored = sharedLocalQueueKept(sessionId) ? { ...row, id: crypto.randomUUID() } : row;
+  setSessions((prev) =>
+    prev.map((entry) => {
+      if (entry.id !== sessionId) return entry;
+      return {
+        ...entry,
+        // Taking the last row off the queue cleared its status: a wait restores the
+        // status it had (a paused or restored hold stays one), unless it changed since.
+        queueStatus: entry.queueStatus ?? storedCurrent.queueStatus,
+        queuedMessages: [
+          restored,
+          ...(entry.queuedMessages ?? []).filter((queued) => queued.id !== messageId),
+        ],
+      };
+    }),
+  );
+  wakeSharedLocalQueues([sessionId]);
 }
 
 export function steerBusySubmit(

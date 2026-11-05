@@ -48,6 +48,8 @@ type Entry = {
   stateKey: string;
   /** Whether this window could send the head at the last look: a change wakes the dispatcher. */
   ready: boolean;
+  /** A row whose deferred send is put back at the head: applied by the next `apply`. */
+  restore?: QueuedMessage;
   apply: (allowClaim?: boolean) => void;
   publish: () => boolean;
   read: () => RemoteQueue;
@@ -238,7 +240,11 @@ export async function submitSharedLocalQueue(
       t("The conversation is still getting ready. This message will be sent when it is free."),
     );
   }
-  if (entry.claiming) return false;
+  // Another send owns the queue: a temporary hold, so the row waits instead of refusing.
+  if (entry.claiming)
+    throw new QueueDeferredError(
+      t("Another send is still in progress. The message remains queued and sends when it is free."),
+    );
   const { release, owns } = takeQueue(entry);
   const progress = beginDeliveryProgress(sessionId, id, "syncing");
   const heldStatus = entry.read().status;
@@ -254,10 +260,10 @@ export async function submitSharedLocalQueue(
     if (steer) {
       await entry.client.retry();
       if (entry.client.snapshot().error) throw new Error(entry.client.snapshot().error);
-      if (!isCurrent()) {
-        failure = "The selected message or turn changed while waiting. The message remains queued.";
-        return false;
-      }
+      if (!isCurrent())
+        throw new QueueDeferredError(
+          "The selected message or turn changed while waiting. The message remains queued.",
+        );
       // A single selected send is not permission to release the rest of a held queue.
       if (!entry.client.update((queue) => ({ ...queue, editingId: undefined }), true))
         throw new QueueNotReadyError(
@@ -272,8 +278,10 @@ export async function submitSharedLocalQueue(
         entry.client.snapshot().error ?? "Another send owns this queue. Wait for its confirmation.",
       );
     if (!isCurrent() || !owns()) {
-      failure = "The selected message or turn changed while waiting. The message remains queued.";
-      return false;
+      // The selected message or turn moved on: the row stays queued for the next look.
+      throw new QueueDeferredError(
+        "The selected message or turn changed while waiting. The message remains queued.",
+      );
     }
     entry.apply(true);
     const message = entry.client.snapshot().queue.messages.find((row) => row.id === id);
@@ -314,6 +322,8 @@ export async function submitSharedLocalQueue(
         : t(
             "The send was cancelled or rejected. The message remains queued and the queue is paused.",
           );
+      // A temporary hold is a deferral: the dispatcher retries without counting a refusal.
+      if (transientHold) throw new QueueDeferredError(failure);
     }
     return accepted;
   } catch (caught) {
@@ -430,6 +440,35 @@ export async function submitSharedLocalQueue(
         failure,
       );
   }
+}
+
+/**
+ * A queue row whose send was deferred before any provider write goes back to the
+ * head of the shared queue. The row is written and shown by the next apply, which
+ * takes the queue back for this window. It gets a new id: the Host never admits
+ * again a row id it removed for a delivered claim (`session_queue_removed`), so a
+ * same-id restore would be dropped silently. False when no shared queue is kept
+ * for the conversation or the restore could not be applied now; the caller then
+ * restores the row on the session itself.
+ */
+export function requeueSharedLocalHead(sessionId: string, row: QueuedMessage): boolean {
+  const entry = localQueues.get(sessionId);
+  if (!entry) return false;
+  entry.restore = { ...row, id: crypto.randomUUID() };
+  entry.nextIdleSyncAt = 0;
+  entry.apply();
+  if (entry.restore) {
+    // Not applied yet (the queue is still claimed or not loaded): do not leave it pending.
+    entry.restore = undefined;
+    return false;
+  }
+  runTick?.();
+  return true;
+}
+
+/** This window keeps a shared queue for the conversation (its rows are the Host's). */
+export function sharedLocalQueueKept(sessionId: string): boolean {
+  return localQueues.has(sessionId);
 }
 
 /** Marks the queue as busy with one owner; the returned release is a no-op once superseded. */
@@ -716,6 +755,32 @@ export function useSharedLocalQueues(
             current.apply = (allowClaim = false) => {
               const state = client.snapshot();
               if (!state.loaded || (current.claiming && !allowClaim) || stopped) return;
+              const restored = current.restore;
+              if (restored && !current.claiming) {
+                // Written to the host and shown in this window at once, so the publish
+                // below sees the row on both sides and does not read it as removed.
+                current.restore = undefined;
+                const headed = (queue: RemoteQueue): RemoteQueue => ({
+                  ...queue,
+                  // An emptied queue has no status; a row in it is sent as an active queue.
+                  status: queue.status ?? "active",
+                  messages: [restored, ...queue.messages.filter((row) => row.id !== restored.id)],
+                });
+                client.update(headed, true);
+                setSessions((sessions) =>
+                  sessions.map((value) =>
+                    value.id === session.id
+                      ? {
+                          ...value,
+                          queuedMessages: [
+                            restored,
+                            ...(value.queuedMessages ?? []).filter((row) => row.id !== restored.id),
+                          ],
+                        }
+                      : value,
+                  ),
+                );
+              }
               if (!current.claiming && !current.publish()) return;
               const latest = client.snapshot();
               const queue: RemoteQueue = {

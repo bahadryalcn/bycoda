@@ -459,6 +459,69 @@ it("keeps retrying repeated safe deferrals with capped backoff without removing 
   }
 });
 
+it("pauses only after real refusals: deferrals neither count nor reset the count", async () => {
+  vi.useFakeTimers();
+  // Real refusals are `false`; a deferral is a temporary hold (busy elsewhere, turn changed).
+  const outcomes: (boolean | Error)[] = [
+    false,
+    new QueueDeferredError("Busy elsewhere"),
+    false,
+    false,
+    false,
+  ];
+  const submit = vi.fn<Submit>(() => {
+    const next = outcomes.shift();
+    if (next instanceof Error) return Promise.reject(next);
+    return Promise.resolve(next ?? false);
+  });
+  const harness = await queueHarness("active", false, submit);
+  try {
+    // Retry delays double from 2 s: the attempts land at 0, 2, 6, 14 and 30 s.
+    for (const delay of [1, 2_001, 4_001, 8_001, 16_001]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+    }
+    expect(submit).toHaveBeenCalledTimes(5);
+    // The fourth real refusal, at 30 s, pauses the queue; the deferral does not count.
+    expect(getSessions()[0].queueStatus).toBe("paused");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(submit).toHaveBeenCalledTimes(5);
+    expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+  } finally {
+    await harness.cleanup();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a queue active through repeated busy-elsewhere holds", async () => {
+  vi.useFakeTimers();
+  const submit = vi.fn<Submit>(() => Promise.reject(new QueueDeferredError("Busy elsewhere")));
+  const harness = await queueHarness("active", false, submit);
+  try {
+    for (const delay of [1, 2_001, 4_001, 8_001, 16_001, 32_001, 60_001]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+    }
+    // Attempts at 0, 2, 6, 14, 30, 62 and 122 s: every deferral was retried.
+    expect(submit).toHaveBeenCalledTimes(7);
+    expect(getSessions()[0].queueStatus).toBe("active");
+    expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+  } finally {
+    await harness.cleanup();
+    vi.useRealTimers();
+  }
+});
+
 it.each(["paused", "restored"] as const)(
   "returns waiting when a manual steer is deferred from a %s queue",
   async (status) => {
