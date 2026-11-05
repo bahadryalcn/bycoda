@@ -818,7 +818,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           items={shown}
           itemKey={(skill) => skill.path}
           renderItem={(skill) => renderRow(skill, machine)}
-          stateKey={`skills:${pathKey(machine?.cwd ?? cwd)}:${machine?.environmentId ?? "local"}:${needle}`}
+          stateKey={`skills:${pathKey(machine?.cwd ?? cwd)}:${machine?.environmentId ?? "local"}`}
           requiredKey={previewSkill?.path ?? null}
           estimateSize={52}
         />

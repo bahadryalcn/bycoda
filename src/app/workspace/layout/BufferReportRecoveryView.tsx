@@ -121,7 +121,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           {pathRows.length ? (
             <ContinuousList
               items={pathRows}
-              stateKey={`buffer-recovery:${scopeKey}:paths:${reportKey(details.record)}:${pathQuery.trim()}`}
+              stateKey={`buffer-recovery:${scopeKey}:paths:${reportKey(details.record)}`}
               itemKey={({ buffer, index }) => `${index}:${buffer.path}`}
               estimateSize={56}
               label={t("Reported files")}
@@ -223,7 +223,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
         {rows.length ? (
           <ContinuousList
             items={rows}
-            stateKey={`buffer-recovery:${scopeKey}:reports:${filter}:${query.trim()}`}
+            stateKey={`buffer-recovery:${scopeKey}:reports:${filter}`}
             itemKey={reportKey}
             requiredKey={recovery.pending}
             estimateSize={112}

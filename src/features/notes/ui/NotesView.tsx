@@ -1112,7 +1112,7 @@ export function NotesView({
               className="p-1.5 overscroll-none"
               label={t("Notes")}
               items={libraryRows}
-              stateKey={`notes:${JSON.stringify([libraryPreferences.grouping, libraryPreferences.sort, deferredQuery, projectFilter, tagFilter])}`}
+              stateKey={`notes:${JSON.stringify([libraryPreferences.grouping, libraryPreferences.sort, projectFilter, tagFilter])}`}
               itemKey={(row) =>
                 row.kind === "heading"
                   ? `group:${row.group.key}`
