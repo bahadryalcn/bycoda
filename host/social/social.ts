@@ -559,7 +559,7 @@ export class SocialService {
     imageAdapters?: SocialImageAdapters,
   ) {
     this.mediaCustody = new SocialMediaCustody(store, directory);
-    this.mediaQuarantine = new SocialMediaQuarantine(store, directory);
+    this.mediaQuarantine = new SocialMediaQuarantine(store, directory, this.mediaCustody);
     this.jobArchive = new SocialJobArchive(store);
     this.ready = (async () => {
       await store.ready;

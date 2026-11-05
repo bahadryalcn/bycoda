@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { HostStore } from "../store";
-import type { MediaCustodyScope } from "./media-custody";
+import type { MediaCustodyScope, SocialMediaCustody } from "./media-custody";
 
 const UNOWNED_UPLOAD_MS = 7 * 86_400_000;
 const QUARANTINE_RETENTION_MS = 30 * 86_400_000;
@@ -29,6 +29,7 @@ export class SocialMediaQuarantine {
   constructor(
     private readonly store: HostStore,
     private readonly directory: string,
+    private readonly custody: SocialMediaCustody,
   ) {}
 
   /** Runs the retention sweep at most hourly; called from the Social tick. */
@@ -46,6 +47,16 @@ export class SocialMediaQuarantine {
    * the file identity still verifies; otherwise they stay for review.
    */
   async sweep(): Promise<void> {
+    // Without a completed reference rebuild, a referenced upload could look unowned.
+    try {
+      await this.custody.reconciled();
+    } catch (error) {
+      console.error(
+        "Social media retention skipped this pass; reference rebuild incomplete:",
+        error,
+      );
+      return;
+    }
     const unowned = (await this.store.db
       .prepare(
         `SELECT * FROM social_media_files f
@@ -196,6 +207,8 @@ export class SocialMediaQuarantine {
   async quarantine(scope: MediaCustodyScope, id: string, expectedRevision: number) {
     if (!/^[a-f0-9-]{36}$/.test(id) || !Number.isSafeInteger(expectedRevision))
       throw new Error("Invalid managed media request.");
+    // Claims must be fully rebuilt before the active-owner check below can be trusted.
+    await this.custody.reconciled();
     const row = await this.store.transaction(async () => {
       const found = (await this.store.db
         .prepare("SELECT * FROM social_media_files WHERE id=? AND account_id=?")
