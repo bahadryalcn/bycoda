@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { writeFileAtomic } from "../storage/atomic-write";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   TUNNEL_PROVIDERS,
@@ -86,49 +86,18 @@ export class ExternalTunnels {
     this.initialization ??= (async () => {
       try {
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
-        let text: string;
-        try {
-          text = await readFile(join(this.directory, "state.json"), "utf8");
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-          throw error;
-        }
-        if (text.length > 128 * 1024) throw new Error();
-        const saved = JSON.parse(text);
-        if (
-          saved.version !== 1 ||
-          saved.environmentId !== this.environmentId ||
-          !Array.isArray(saved.tunnels) ||
-          saved.tunnels.length > MAX_RECORDS
-        )
-          throw new Error();
-        this.records = saved.tunnels.map((record: ExternalTunnel) => {
-          if (
-            !record ||
-            !/^[a-f0-9-]{36}$/.test(record.id) ||
-            !TUNNEL_PROVIDERS.includes(record.provider) ||
-            !["host", "dev-server"].includes(record.target) ||
-            !["starting", "ready", "stopping", "stopped", "error", "interrupted"].includes(
-              record.state,
-            ) ||
-            !Number.isFinite(record.startedAt)
-          )
-            throw new Error();
-          // Copy only the public contract, never deserialize process ownership.
-          return {
-            id: record.id,
-            provider: record.provider,
-            target: record.target,
-            localUrl: tunnelLocalUrl(record.localUrl),
-            startedAt: record.startedAt,
-            state: tunnelActive(record.state) ? "interrupted" : record.state,
-            ...(tunnelActive(record.state)
-              ? { issue: "host-restarted" as const }
-              : record.issue && TUNNEL_ISSUES.includes(record.issue)
-                ? { issue: record.issue }
-                : {}),
-          };
-        });
+        const state = await readStateFile(join(this.directory, "state.json"), (text) =>
+          this.parseRecords(text),
+        );
+        if (state.status === "missing") return;
+        if (state.status === "corrupt") {
+          // Owned processes never survive a Host restart, so unreadable records carry no
+          // authority. Keep the bytes as evidence and start with an empty control lane.
+          console.warn(
+            `Tunnel state was unreadable; retained evidence at ${state.quarantined ?? "an unavailable path"} and starting with no saved tunnels.`,
+          );
+          this.records = [];
+        } else this.records = state.value;
         await this.persist();
       } catch {
         throw new TunnelError("storage-unavailable");
@@ -141,6 +110,45 @@ export class ExternalTunnels {
       this.initialization = undefined;
       throw error;
     }
+  }
+
+  private parseRecords(text: string): ExternalTunnel[] {
+    if (text.length > 128 * 1024) throw new Error();
+    const saved = JSON.parse(text);
+    if (
+      saved.version !== 1 ||
+      saved.environmentId !== this.environmentId ||
+      !Array.isArray(saved.tunnels) ||
+      saved.tunnels.length > MAX_RECORDS
+    )
+      throw new Error();
+    return saved.tunnels.map((record: ExternalTunnel) => {
+      if (
+        !record ||
+        !/^[a-f0-9-]{36}$/.test(record.id) ||
+        !TUNNEL_PROVIDERS.includes(record.provider) ||
+        !["host", "dev-server"].includes(record.target) ||
+        !["starting", "ready", "stopping", "stopped", "error", "interrupted"].includes(
+          record.state,
+        ) ||
+        !Number.isFinite(record.startedAt)
+      )
+        throw new Error();
+      // Copy only the public contract, never deserialize process ownership.
+      return {
+        id: record.id,
+        provider: record.provider,
+        target: record.target,
+        localUrl: tunnelLocalUrl(record.localUrl),
+        startedAt: record.startedAt,
+        state: tunnelActive(record.state) ? "interrupted" : record.state,
+        ...(tunnelActive(record.state)
+          ? { issue: "host-restarted" as const }
+          : record.issue && TUNNEL_ISSUES.includes(record.issue)
+            ? { issue: record.issue }
+            : {}),
+      };
+    });
   }
 
   private async persist(): Promise<void> {

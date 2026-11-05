@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdir, readdir, readFile, rm, stat, unlink, utimes } from "node:fs/promises";
+import { mkdirSync, readFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic, writeFileAtomicSync } from "../storage/atomic-write";
 import type { HandoffHistory } from "../../src/features/sessions/model/handoffBudget";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const HASH = /^[a-f0-9]{64}$/;
+// Blobs and exports younger than this may belong to a save that has not published its manifest yet.
+const COLLECT_GRACE_MS = 60 * 60 * 1000;
 type Manifest = { version: 1; metadata: string; messages: string[] };
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -98,7 +100,8 @@ function parseMetadata(text: string, sessionId: string): HandoffHistory & Record
 }
 
 /** Archives live on the session-owning host, never in the project working tree.
- * Immutable blobs and materializations are retained until exact reader retirement exists. */
+ * Blobs and materializations are content-addressed; `collectUnreferenced` deletes the ones
+ * no live manifest names, and `retireSession` drops a deleted session's manifest. */
 export class HandoffHistoryStore {
   constructor(private readonly directory: string) {}
   private base(): string {
@@ -154,6 +157,8 @@ export class HandoffHistoryStore {
   private putSync(hash: string, text: string): void {
     try {
       if (this.blobSync(hash) !== text) throw new Error("Corrupt handoff history blob");
+      // Refresh the mtime so a concurrent sweep keeps a blob this save is about to reference.
+      utimesSync(this.blobPath(hash), new Date(), new Date());
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -163,6 +168,8 @@ export class HandoffHistoryStore {
   private async put(hash: string, text: string): Promise<void> {
     try {
       if ((await this.blob(hash)) !== text) throw new Error("Corrupt handoff history blob");
+      const now = new Date();
+      await utimes(this.blobPath(hash), now, now);
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -174,19 +181,93 @@ export class HandoffHistoryStore {
     const { manifest, blobs } = prepare(history);
     mkdirSync(join(this.base(), "blobs"), { recursive: true });
     for (const [hash, text] of blobs) this.putSync(hash, text);
-    writeFileAtomicSync(this.manifestPath(history.sessionId), JSON.stringify(manifest), {
-      mode: 0o600,
-    });
+    const manifestText = JSON.stringify(manifest);
+    if (!this.manifestUnchangedSync(history.sessionId, manifestText))
+      writeFileAtomicSync(this.manifestPath(history.sessionId), manifestText, { mode: 0o600 });
     return this.result(manifest, history.sessionId);
   }
   async save(history: HandoffHistory): Promise<{ path: string }> {
     const { manifest, blobs } = prepare(history);
     await mkdir(join(this.base(), "blobs"), { recursive: true });
     for (const [hash, text] of blobs) await this.put(hash, text);
-    await writeFileAtomic(this.manifestPath(history.sessionId), JSON.stringify(manifest), {
-      mode: 0o600,
-    });
+    const manifestText = JSON.stringify(manifest);
+    if (!(await this.manifestUnchanged(history.sessionId, manifestText)))
+      await writeFileAtomic(this.manifestPath(history.sessionId), manifestText, { mode: 0o600 });
     return this.result(manifest, history.sessionId);
+  }
+  private manifestUnchangedSync(sessionId: string, text: string): boolean {
+    try {
+      return readFileSync(this.manifestPath(sessionId), "utf8") === text;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+  private async manifestUnchanged(sessionId: string, text: string): Promise<boolean> {
+    try {
+      return (await readFile(this.manifestPath(sessionId), "utf8")) === text;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+  /** Called after a session is deleted and its history can no longer be read. */
+  async retireSession(sessionId: string, now = Date.now()): Promise<void> {
+    await rm(this.manifestPath(sessionId), { force: true });
+    await rm(this.legacyPath(sessionId), { force: true });
+    await this.collectUnreferenced(now);
+  }
+  /**
+   * Delete blobs and exports that no manifest references. Any live manifest that cannot be
+   * parsed aborts the sweep, because its references are unknown. Files modified within the
+   * grace period are kept.
+   */
+  async collectUnreferenced(now = Date.now()): Promise<{ removed: number }> {
+    const base = this.base();
+    let names: string[];
+    try {
+      names = await readdir(base);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { removed: 0 };
+      throw error;
+    }
+    const blobs = new Set<string>();
+    const exports = new Set<string>();
+    for (const name of names) {
+      if (!name.endsWith(".manifest.json")) continue;
+      const manifest = parseManifest(await readFile(join(base, name), "utf8"));
+      blobs.add(manifest.metadata);
+      for (const hash of manifest.messages) blobs.add(hash);
+      exports.add(digest(JSON.stringify(manifest)));
+    }
+    let removed = 0;
+    // `keep` holds content hashes; blob and export names are `<hash>.json`.
+    const sweep = async (directory: string, keep: Set<string>) => {
+      let entries: string[];
+      try {
+        entries = await readdir(join(base, directory));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+      for (const entry of entries) {
+        if (!entry.endsWith(".json")) continue;
+        const hash = entry.slice(0, -".json".length);
+        if (!HASH.test(hash) || keep.has(hash)) continue;
+        const path = join(base, directory, entry);
+        const info = await stat(path).catch(() => undefined);
+        if (!info || info.mtimeMs > now - COLLECT_GRACE_MS) continue;
+        try {
+          await unlink(path);
+          removed++;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+    };
+    await sweep("blobs", blobs);
+    await sweep("exports", exports);
+    return { removed };
   }
   async read(
     sessionId: string,

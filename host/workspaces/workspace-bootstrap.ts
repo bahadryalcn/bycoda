@@ -220,11 +220,18 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       operation.durableSettled = settled;
       if (settled && this.activeWorkspaces.get(request.workspaceId) === id)
         this.activeWorkspaces.delete(request.workspaceId);
-      if (this.options.receipts && settled) {
-        // Durable exact lookup backs bounded settled hot snapshots.
+      if (settled) {
+        // Durable exact lookup backs bounded settled hot snapshots. Without receipts, the
+        // in-memory idempotency maps must follow the same bound, so evicted entries go too.
         const ready = [...this.operations].filter(([, value]) => value.durableSettled === true);
-        for (const [oldId, original] of ready.slice(0, Math.max(0, ready.length - 128)))
-          if (this.operations.get(oldId) === original) this.operations.delete(oldId);
+        for (const [oldId, original] of ready.slice(0, Math.max(0, ready.length - 128))) {
+          if (this.operations.get(oldId) !== original) continue;
+          this.operations.delete(oldId);
+          for (const [key, value] of this.requests)
+            if (value.id === oldId) this.requests.delete(key);
+          for (const [key, value] of this.identities)
+            if (value === oldId) this.identities.delete(key);
+        }
       }
     });
     void operation.finished.catch(() => undefined);

@@ -94,9 +94,14 @@ export async function acquireHostOwner(directory: string): Promise<() => void> {
     } catch {
       throw new Error("A host already owns this data directory");
     }
-    const state = readStateFileSync(path, parseOwner, { quarantine: false });
-    if (state.status === "corrupt")
-      throw new Error("Host lock is incomplete; inspect owner.lock before removing it");
+    const state = readStateFileSync(path, parseOwner, { quarantine: true });
+    if (state.status === "corrupt") {
+      // The exclusive SQLite lock above proves no version 2 owner is alive, so a corrupt
+      // sentinel carries no authority. Keep its bytes as evidence and replace it.
+      console.warn(
+        `Host owner.lock was unreadable; retained evidence at ${state.quarantined ?? "an unavailable path"} and replacing it.`,
+      );
+    }
     if (state.status === "ok") {
       // Version 2 owners hold the SQLite lock we just acquired. Their leftover
       // PID file is therefore stale, regardless of which process owns that PID.
