@@ -454,13 +454,15 @@ export class DevServerDiscovery implements ProcessDiscovery {
     if (!validPid(identity.pid) || !identity.startedAt)
       throw new Error("Process birth identity is unavailable; management is disabled");
     if (identity.pid === process.pid) throw new Error("The bycoda host process cannot be stopped");
-    const current = await this.identity(identity.pid);
-    // Linux returns undefined only for ENOENT/ESRCH or an exited zombie. A child
-    // or its waiting shell can exit after the service's check, leaving no target.
-    // Unavailable birth identities and present reused PIDs still fail closed.
-    if (!current && this.platform === "linux") return;
-    if (!current || current.startedAt !== identity.startedAt)
-      throw new Error("Process identity changed; refresh the server list before stopping it");
+    // Windows validates birth on the pinned process handle in the signal helper.
+    // A separate identity lookup would add a process spawn without closing a race.
+    if (this.platform !== "win32") {
+      const current = await this.identity(identity.pid);
+      // Linux returns undefined only for a proven absent or exited process.
+      if (!current && this.platform === "linux") return;
+      if (!current || current.startedAt !== identity.startedAt)
+        throw new Error("Process identity changed; refresh the server list before stopping it");
+    }
     this.invalidate();
     if (this.platform === "win32") {
       if (!/^\d+$/.test(identity.startedAt))

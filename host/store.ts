@@ -2806,11 +2806,6 @@ export class HostStore {
           "DELETE FROM receipts WHERE (created_at IS NULL OR created_at < ?) AND id NOT IN (SELECT id FROM desktop_command_delivery)",
         )
         .run(now - RECEIPT_RETENTION_MS);
-      await this.db
-        .prepare(`DELETE FROM workspace_mutation_receipts WHERE created_at < ? AND
-        (scope LIKE 'workspace-policy:%' OR scope LIKE 'workspace-feature-acquire:%' OR
-         scope LIKE 'workspace-feature-release:%')`)
-        .run(now - RECEIPT_RETENTION_MS);
     });
   }
   async events(

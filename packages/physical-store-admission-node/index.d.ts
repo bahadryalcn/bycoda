@@ -44,6 +44,8 @@ export interface PhysicalRegistry {
 }
 export interface PhysicalStoreAdmission {
   mechanicalAbiVersion(): 2;
+  /** Optional additive capability; absent on older artifacts. */
+  renameNoReplace?(from: string, to: string): void;
   openRegistry(protectedRoot: string): PhysicalRegistry;
   /** Shared Core location derivation only; caller establishes canonical provenance. */
   registryRootForDatabase(canonicalAbsDbPath: string): string;

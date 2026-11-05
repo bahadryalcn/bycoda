@@ -529,6 +529,7 @@ export const HOST_RPC_METHODS = Object.freeze({
     "native.services.assistant.presence.set",
   ),
   "native.services.desktop.status": nativeServiceOperation("native.services.desktop.status"),
+  "native.services.desktop.status.wait": nativeServiceOperation("native.services.desktop.status.wait"),
   "native.services.conversation.desktop.finish": nativeServiceOperation(
     "native.services.conversation.desktop.finish",
   ),

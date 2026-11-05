@@ -1,3 +1,4 @@
+import { ownerDayBounds } from "../../src/shared/lib/time/ownerDay";
 import { randomUUID } from "node:crypto";
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { automationLimits } from "../../src/features/automations/model/automationLimits";
@@ -366,13 +367,13 @@ export class HostAutomations {
   ): Promise<string | null> {
     const { maxRunsPerDay } = automationLimits(automation);
     if (maxRunsPerDay <= 0) return null;
-    const dayStart = new Date(now);
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = ownerDayBounds(now, Intl.DateTimeFormat().resolvedOptions().timeZone)?.start;
+    if (dayStart === undefined) throw new Error("Could not resolve automation owner day.");
     const row = await this.store.db
       .prepare(
         "SELECT COUNT(*) AS count FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.startedAt')>=? AND id<>? AND COALESCE(json_extract(value, '$.status'),'')<>'skipped'",
       )
-      .get(automation.id, dayStart.getTime(), runId);
+      .get(automation.id, dayStart, runId);
     if (!row) throw new Error("Could not read automation daily run count.");
     if (Number(row.count) < maxRunsPerDay) return null;
     return `Skipped: reached the limit of ${maxRunsPerDay} ${maxRunsPerDay === 1 ? "run" : "runs"} per day.`;
@@ -665,13 +666,13 @@ export class HostAutomations {
                 .get(run.automationId),
             ) || undefined,
         });
-      const dayStart = new Date(now);
-      dayStart.setHours(0, 0, 0, 0);
+      const dayStart = ownerDayBounds(now, Intl.DateTimeFormat().resolvedOptions().timeZone)?.start;
+      if (dayStart === undefined) throw new Error("Could not resolve automation owner day.");
       await this.store.db
         .prepare(
           "DELETE FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status') NOT IN ('pending','running') AND NOT COALESCE(json_extract(value, '$.cleanupPending'), 0) AND COALESCE(json_extract(value, '$.startedAt'), 0) < ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
         )
-        .run(run.automationId, dayStart.getTime(), run.automationId, MAX_RUNS_PER_AUTOMATION);
+        .run(run.automationId, dayStart, run.automationId, MAX_RUNS_PER_AUTOMATION);
       return finished;
     });
   }

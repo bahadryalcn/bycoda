@@ -218,7 +218,8 @@ export async function resolveQuestionAttachments(
     refs.map(async (ref) => {
       const path = attachmentPath(store, ref.id);
       touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
-      if ((await stat(path)).size !== ref.size)
+      const info = await stat(path);
+      if (!info.isFile() || info.size !== ref.size)
         throw new Error(`Attachment ${ref.name} is incomplete`);
       return { ...ref, path };
     }),

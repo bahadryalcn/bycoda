@@ -125,6 +125,24 @@ const count = (f: ReturnType<typeof fixture>, suffix: string) =>
   f.fetcher.mock.calls.filter(([raw]) => new URL(String(raw)).pathname.endsWith(suffix)).length;
 
 describe("Snapchat Public Profile API Spotlight", () => {
+  it("encrypts only the supplied view when media shares a larger buffer", async () => {
+    const f = fixture();
+    f.live();
+    const backing = new Uint8Array(80);
+    backing.fill(7);
+    const bytes = backing.subarray(12, 36);
+    bytes.set(mp4());
+    const original = backing.slice();
+    await f.adapter.send(account, job(), "token", async () => bytes, f.checkpoint);
+    expect(backing).toEqual(original);
+    const create = f.fetcher.mock.calls.find(([raw]) => String(raw).endsWith(`/${actorId}/media`))!;
+    const metadata = JSON.parse(create[1]!.body as string);
+    const keyBytes = Uint8Array.from(atob(metadata.key), (character) => character.charCodeAt(0));
+    const iv = Uint8Array.from(atob(metadata.iv), (character) => character.charCodeAt(0));
+    const key = await crypto.subtle.importKey("raw", keyBytes, "AES-CBC", false, ["decrypt"]);
+    const file = f.parts[0].get("file") as Blob;
+    expect(new Uint8Array(await crypto.subtle.decrypt({ name: "AES-CBC", iv }, key, await file.arrayBuffer()))).toEqual(bytes);
+  });
   it("encrypts owner bytes with AES-256-CBC, uploads/finalizes and confirms the exact LIVE Spotlight under its actor", async () => {
     const f = fixture();
     f.live();

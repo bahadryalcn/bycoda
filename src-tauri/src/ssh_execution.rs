@@ -845,10 +845,16 @@ impl ProcessWork<'_> {
         }
         // Failed wait/kill is never terminal proof. This is observation only,
         // not a new execution or a replay, and the original admission stays live.
+        let mut observation_delay = Duration::from_millis(25);
         while !self.exited {
             match self.child.try_wait() {
                 Ok(Some(_)) => self.exited = true,
-                Ok(None) | Err(_) => std::thread::sleep(Duration::from_millis(25)),
+                Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+                Err(_) => {
+                    self.batch.fail_observation();
+                    std::thread::sleep(observation_delay);
+                    observation_delay = (observation_delay * 2).min(Duration::from_secs(30));
+                }
             }
         }
     }

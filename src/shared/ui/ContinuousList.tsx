@@ -90,7 +90,7 @@ function ContinuousListWindow<T>({
 }: ContinuousListProps<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
   const retainedRef = useRetainedScroll<HTMLDivElement>(stateKey, { ready: items.length > 0 });
-  const [position] = useRetainedState(`${stateKey}:scroll`, () => ({ top: 0, left: 0 }));
+  const [position] = useRetainedState(`${stateKey}:scroll`, () => ({ top: 0, left: 0 }), "view");
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const requiredIndex = items.findIndex((item) => itemKey(item) === requiredKey);
   const focusedIndex = items.findIndex((item) => itemKey(item) === focusedKey);

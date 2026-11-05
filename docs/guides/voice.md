@@ -125,6 +125,9 @@ update, your proactive-speech preference and an available conversation. Routine
 zero-work summaries, old daily artifacts and interrupted or uncertain deliveries
 are not automatically read again. **Important** accepts only classified important
 return updates. Reading a briefing explicitly remains available in the Room.
+For an interrupted or uncertain briefing, **Retry briefing** starts a new attempt
+after the prior playback has stopped. Held announcements, mute and availability
+still apply; Voice does not replay the earlier attempt automatically.
 
 If the provider cannot confirm cleanup of an unrecognized audio fragment, Voice
 stops capture and asks you to start it again with **Talk**. It does not resend that

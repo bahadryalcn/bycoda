@@ -40,7 +40,7 @@ export function queueProviderOperation<Result>(
   return work;
 }
 
-export { retireProviderEpoch } from "../core/providerEpoch";
+export { holdProviderEpoch, retireProviderEpoch, retireProviderEpochs } from "../core/providerEpoch";
 
 /** Each call captures one original process/client/control tuple before binding.
  * A facade shares its transport multiplexer but never changes a current writer. */

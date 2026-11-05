@@ -206,6 +206,7 @@ const handlers: Record<
   "native.services.assistant.visibility.reopen": handleNativeRpc,
   "native.services.assistant.presence.set": handleNativeRpc,
   "native.services.desktop.status": handleNativeRpc,
+  "native.services.desktop.status.wait": handleNativeRpc,
   "native.services.runtimeLogs.bridge.describe": handleNativeRpc,
   "native.services.runtimeLogs.access.issue": handleNativeRpc,
   "native.services.runtimeLogs.terminals.append": handleNativeRpc,

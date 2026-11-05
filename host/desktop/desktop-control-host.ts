@@ -1,4 +1,6 @@
-import { execFile } from "node:child_process";
+import { nativeRun, type DesktopRunner } from "./desktop-control-runner";
+export type { DesktopRunner } from "./desktop-control-runner";
+import { DesktopStatusChanges } from "./desktop-status-changes";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
@@ -20,11 +22,6 @@ import {
 import { hasControlCharacters } from "../../src/shared/lib/controlCharacters";
 
 export type DesktopControlPrincipal = { kind: "owner" | "assistant" | "chief"; id: string };
-export type DesktopRunner = (
-  binary: string,
-  args: string[],
-  options: { signal: AbortSignal; timeoutMs: number; maxBuffer: number; env: NodeJS.ProcessEnv },
-) => Promise<{ stdout: string; exitCode: number }>;
 export interface DesktopControlPorts {
   run?: DesktopRunner;
   presence?(): Promise<{ locked: boolean; supported: boolean }>;
@@ -38,27 +35,6 @@ export interface DesktopControlPorts {
   onOperation?(event: DesktopOperationAudit): Promise<void>;
   now?(): number;
 }
-const nativeRun: DesktopRunner = (binary, args, options) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      binary,
-      args,
-      {
-        windowsHide: true,
-        shell: false,
-        signal: options.signal,
-        timeout: options.timeoutMs,
-        maxBuffer: options.maxBuffer,
-        env: options.env,
-        encoding: "utf8",
-      },
-      (error, stdout) => {
-        if (error && typeof error.code !== "number")
-          return reject(new Error("Desktop helper did not return a complete result."));
-        resolve({ stdout, exitCode: typeof error?.code === "number" ? error.code : 0 });
-      },
-    );
-  });
 const envelopeSchema = z.object({
   version: z.literal(AGENT_DESKTOP_PROTOCOL),
   ok: z.boolean(),
@@ -103,6 +79,8 @@ const empty: DesktopControlConfiguration = {
  * commands are constructed; output content is neither logged nor persisted. */
 export class HostDesktopControl {
   readonly ready: Promise<void>;
+  readonly statusChanges = new DesktopStatusChanges();
+  private statusChanged() { this.statusChanges.changed(); this.ports.onChange?.(); }
   private tail: Promise<unknown> = Promise.resolve();
   private active?: AbortController;
   private currentAction?: { app: string; action: string };
@@ -140,6 +118,7 @@ export class HostDesktopControl {
   }
   async close() {
     this.closing = true;
+    this.statusChanged();
     clearTimeout(this.auditTimer);
     this.auditTimer = undefined;
     this.halted = true;
@@ -299,6 +278,7 @@ export class HostDesktopControl {
       this.stopGeneration++;
       this.halted = true;
       this.active?.abort();
+      this.statusChanged();
       this.snapshots.clear();
     }
     if (input.op === "configure" && !input.configuration.enabled) {
@@ -306,6 +286,7 @@ export class HostDesktopControl {
       this.stopGeneration++;
       this.halted = true;
       this.active?.abort();
+      this.statusChanged();
     }
     const generation = this.stopGeneration;
     const execute = async () => {
@@ -324,7 +305,7 @@ export class HostDesktopControl {
       if (response.clipboard && !(await this.sensitiveAuthorities.getStore()?.()))
         return { operation: response.operation };
       DesktopControlResponseSchema.parse(response);
-      this.ports.onChange?.();
+      if (input.op !== "status") this.statusChanged();
       return response;
     };
     const scoped = () =>
@@ -408,6 +389,7 @@ export class HostDesktopControl {
     env.AGENT_DESKTOP_SESSION = this.namespace;
     const controller = new AbortController();
     this.active = controller;
+    this.statusChanged();
     try {
       if (args[0].startsWith("clipboard-") && !(await this.sensitiveAuthorities.getStore()?.()))
         throw new Error("Clipboard approval expired before dispatch.");
@@ -438,7 +420,7 @@ export class HostDesktopControl {
         throw new Error("Desktop helper exit status contradicted its result.");
       return output;
     } finally {
-      if (this.active === controller) this.active = undefined;
+      if (this.active === controller) { this.active = undefined; this.statusChanged(); }
     }
   }
   private requireData(envelope: Envelope) {
@@ -594,6 +576,7 @@ export class HostDesktopControl {
             ? ["clipboard-set", "--", input.text!]
             : ["clipboard-clear"];
     this.currentAction = { app, action };
+    this.statusChanged();
     try {
       // Authority may change while the critical journal write is pending.
       if (input.op === "clipboard" && !(await this.sensitiveAuthorities.getStore()?.()))
@@ -656,6 +639,7 @@ export class HostDesktopControl {
       return { operation };
     } finally {
       this.currentAction = undefined;
+      this.statusChanged();
       if (input.op === "launch")
         for (const [id, snapshot] of this.snapshots)
           if (snapshot.app === input.app) this.snapshots.delete(id);
@@ -1101,6 +1085,7 @@ export class HostDesktopControl {
             : [input.ref, ...(requiresText ? [input.text!] : [])]),
         ];
         this.currentAction = { app: snapshot.app, action: input.action };
+        this.statusChanged();
         try {
           const envelope = await this.invoke(configuration, args, principal, true);
           const report = envelope.ok ? envelope.data : envelope.error;
@@ -1144,6 +1129,7 @@ export class HostDesktopControl {
           return { operation };
         } finally {
           this.currentAction = undefined;
+          this.statusChanged();
           this.scheduleAuditDrain();
         }
       }

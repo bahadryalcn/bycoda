@@ -637,3 +637,26 @@ fn checkpoint_refs_do_not_grow_with_every_turn_of_a_session() {
         refs.len()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn finalization_filters_unrelated_non_utf8_paths_before_decoding() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    let repo = tmp("turn-non-utf8");
+    assert!(init_git_commit(&repo.0, &[("own.txt", "base\n")]));
+    let invalid = repo.0.join(OsString::from_vec(b"external-\xff.txt".to_vec()));
+    std::fs::write(&invalid, "before").unwrap();
+    assert!(git(&repo.0, &["add", "--all"]));
+    assert!(git(&repo.0, &["commit", "-m", "external file"]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    store.begin_turn("session", &cwd, "one").unwrap();
+    store.prepare("session", &cwd, &["own.txt".into()]).unwrap();
+    std::fs::write(repo.0.join("own.txt"), "agent\n").unwrap();
+    store.capture("session", &cwd, &["own.txt".into()]).unwrap();
+    std::fs::write(&invalid, "external").unwrap();
+    store.finish_turn("session", &cwd, "one", false).unwrap();
+    assert_eq!(relatives(&store.status("session", &cwd).unwrap()), vec!["own.txt"]);
+    assert_eq!(std::fs::read(&invalid).unwrap(), b"external");
+}

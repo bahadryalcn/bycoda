@@ -1,3 +1,4 @@
+import { renameWithRetry, renameWithRetrySync } from "./rename-retry";
 /**
  * Crash-safe state files for the Host.
  *
@@ -19,12 +20,11 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  renameSync,
   unlinkSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -79,7 +79,7 @@ export async function writeFileAtomic(
     } finally {
       await handle.close();
     }
-    await rename(temp, target);
+    await renameWithRetry(temp, target);
   } catch (error) {
     await unlink(temp).catch(() => undefined);
     throw error;
@@ -109,7 +109,7 @@ export function writeFileAtomicSync(
     } finally {
       closeSync(descriptor);
     }
-    renameSync(temp, target);
+    renameWithRetrySync(temp, target);
   } catch (error) {
     try {
       unlinkSync(temp);

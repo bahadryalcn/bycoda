@@ -247,3 +247,58 @@ it("loads durable peer identities without a lifetime Map and re-verifies source 
     await authority.store.db.prepare("SELECT value FROM social_peer_identities WHERE id=?").get(id),
   ).toEqual(persisted);
 });
+
+async function queuedPeerJob() {
+  const f = await pair();
+  const sourceId = crypto.randomUUID();
+  f.source.sessions.set(sourceId, { projectId: f.source.project.id, session: { id: sourceId, harness: "claude" } } as HostSession);
+  const enrollment = await f.source.peers.enroll(f.authority.store.environmentId, f.source.deviceHash);
+  const mapping = { [f.source.project.id]: f.authority.project.id };
+  await f.authority.peers.register({ ...enrollment, endpoint: f.source.endpoint, mapping }, f.authority.deviceHash);
+  await f.source.peers.useAuthority({ environmentId: f.authority.store.environmentId, endpoint: f.authority.endpoint, mapping });
+  const grant = await f.source.social.remoteAccess!(sourceId);
+  const principal = (await f.authority.social.principalForToken(grant!.token))!;
+  const account = await f.authority.social.call(owner, "accounts.create", { platform: "x", name: "Account", accountType: "member", projectIds: [f.authority.project.id] }) as SocialAccount;
+  await f.authority.social.connectAccount(account.id, { platformId: "account", name: "Account", scopes: ["tweet.read", "tweet.write", "users.read"], accessApproved: true }, { accessToken: "test-token" });
+  await f.authority.social.call(owner, "accounts.grants", { accountId: account.id, projectId: f.authority.project.id, permissions: ["read", "draft", "publish"] });
+  const campaign = await f.authority.social.call(owner, "campaigns.create", { name: "Campaign", projectIds: [f.authority.project.id], variants: [{ accountId: account.id, text: "hello", media: [], factIds: [], scheduledAt: Date.now() + 600_000 }] }) as SocialCampaign;
+  await f.authority.social.call(owner, "campaigns.approve", { id: campaign.id });
+  const [job] = await f.authority.social.call(principal, "campaigns.schedule", { id: campaign.id }) as SocialJob[];
+  await f.authority.social.call(owner, "execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+  const execute = () => (f.authority.social as unknown as { execute(id: string): Promise<boolean> }).execute(job.id);
+  const read = () => f.authority.social.call(owner, "jobs.status", { id: job.id }) as Promise<SocialJob>;
+  return { ...f, sourceId, job, execute, read };
+}
+
+it("retries an unavailable peer with the same job and offers it once after wake", async () => {
+  const f = await queuedPeerJob();
+  const originalFetch = vi.mocked(f.fetcher).getMockImplementation()!;
+  vi.mocked(f.fetcher).mockImplementationOnce(originalFetch).mockRejectedValueOnce(new TypeError("offline"));
+  await f.execute();
+  expect(await f.read()).toMatchObject({ id: f.job.id, operationId: f.job.operationId, status: "queued" });
+  expect(f.authority.send).not.toHaveBeenCalled();
+  await f.execute();
+  expect(await f.read()).toMatchObject({ id: f.job.id, status: "succeeded" });
+  expect(f.authority.send).toHaveBeenCalledTimes(1);
+});
+
+it("denies a changed peer identity before offer", async () => {
+  const f = await queuedPeerJob();
+  f.source.sessions.set(f.sourceId, { projectId: f.source.project.id, session: { id: f.sourceId, harness: "codex" } } as HostSession);
+  await f.execute();
+  expect(await f.read()).toMatchObject({ status: "cancelled" });
+  expect(f.authority.send).not.toHaveBeenCalled();
+});
+
+it("holds an unavailable peer after offer for review", async () => {
+  const f = await queuedPeerJob();
+  (f.authority.send as unknown as { mockImplementation(fn: (...args: any[]) => Promise<never>): void }).mockImplementation(async (...args) => {
+    vi.mocked(f.fetcher).mockRejectedValueOnce(new TypeError("offline"));
+    await args[5]();
+    throw new Error("unexpected");
+  });
+  await f.execute();
+  expect(await f.read()).toMatchObject({ status: "review" });
+  await f.execute();
+  expect(f.authority.send).toHaveBeenCalledTimes(1);
+});

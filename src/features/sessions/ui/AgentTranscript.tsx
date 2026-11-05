@@ -1,3 +1,4 @@
+import { captureCodeDisclosure, stableCodeDisclosureIdentity } from "./stableCodeDisclosureIdentity";
 import { flushSync } from "react-dom";
 import { TranscriptVirtualRows, type TranscriptVirtualRow } from "./TranscriptVirtualRows";
 import {
@@ -560,7 +561,6 @@ function AgentTranscriptComponent({
   const stableSendDraft = useStableCallback(onSendDraft);
   const stableEditDraft = useStableCallback(onEditDraft);
   const stableRemoveDraft = useStableCallback(onRemoveDraft);
-  // Image files preview in a dialog first (Ctrl/Cmd+click skips it); every other file opens a tab.
   const imageOpen = useTranscriptImageOpen(cwd, onOpenFile);
   const stableOpenFile = imageOpen.open;
   const stableOpenDiff = useStableCallback(onOpenDiff);
@@ -570,6 +570,7 @@ function AgentTranscriptComponent({
   const stableHandoff = useStableCallback(onHandoff);
   const stableEditLastTurn = useStableCallback(onEditLastTurn);
   const stableRewindMessage = useStableCallback(onRewindMessage);
+  const stableAddToChat = useStableCallback(onAddToChat), stableSaveSelectionNote = useStableCallback(onSaveSelectionNote);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -580,8 +581,8 @@ function AgentTranscriptComponent({
       const disclosures = retention.read().disclosures;
       if (!disclosures) return;
       for (const turn of el.querySelectorAll<HTMLElement>("[data-transcript-turn]")) {
-        [...turn.querySelectorAll<HTMLElement>(".markdown-code-shell")].forEach((shell, index) => {
-          const collapsed = disclosures[`code:${turn.dataset.transcriptTurn}:${index}`];
+        stableCodeDisclosureIdentity([...turn.querySelectorAll<HTMLElement>(".markdown-code-shell")]).forEach((identity, shell) => {
+          const collapsed = disclosures[`code:${turn.dataset.transcriptTurn}:${identity}`];
           if (typeof collapsed === "boolean" && collapsed !== (shell.dataset.collapsed === "true"))
             shell.querySelector<HTMLButtonElement>(".markdown-code-toggle")?.click();
         });
@@ -625,17 +626,7 @@ function AgentTranscriptComponent({
         tabIndex={-1}
         onClickCapture={(event) => {
           imageOpen.noteClick(event);
-          const control = (event.target as HTMLElement).closest<HTMLButtonElement>(
-            ".markdown-code-toggle, .markdown-code-summary",
-          );
-          const shell = control?.closest<HTMLElement>(".markdown-code-shell");
-          const turn = shell?.closest<HTMLElement>("[data-transcript-turn]");
-          if (!control || !shell || !turn || !retention) return;
-          const index = [...turn.querySelectorAll(".markdown-code-shell")].indexOf(shell);
-          retention.setDisclosure(
-            `code:${turn.dataset.transcriptTurn}:${index}`,
-            control.matches(".markdown-code-summary") ? false : shell.dataset.collapsed !== "true",
-          );
+          captureCodeDisclosure(event.target, retention);
         }}
         onPointerDown={(event) => {
           const id = (event.target as HTMLElement)
@@ -860,8 +851,8 @@ function AgentTranscriptComponent({
             enabled={visible}
             sessionId={sessionId}
             blocks={persistedBlocks}
-            onAddToChat={onAddToChat}
-            onAddToNotes={onSaveSelectionNote}
+            onAddToChat={stableAddToChat}
+            onAddToNotes={stableSaveSelectionNote}
             onTranslate={translateSelection}
           />
         ) : null}

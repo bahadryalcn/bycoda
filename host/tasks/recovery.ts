@@ -50,6 +50,7 @@ export async function queueTakeover(
   task: HostTask,
   now: number,
   reviewed?: HostTask,
+  generation?: number,
 ): Promise<HostTask> {
   return await context.write(
     {
@@ -75,6 +76,7 @@ export async function queueTakeover(
     },
     undefined,
     reviewed,
+    generation,
   );
 }
 

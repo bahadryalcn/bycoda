@@ -4,7 +4,7 @@ import {
   assistantTaskMetadataSourceStamp,
 } from "../assistant/work/assistant-task-metadata";
 import { createHash, randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
+import { mergeQueueAdmission } from "./queue-admission-merge";
 import {
   NO_VERDICT,
   parseReviewVerdict,
@@ -511,6 +511,7 @@ export async function write(
   task: HostTask,
   persisted?: Map<string, string>,
   reviewed?: HostTask,
+  generation?: number,
 ): Promise<HostTask> {
   const sourceGeneration = task.workspaceGenerationId;
   task = suspendedTaskDelivery(task);
@@ -525,13 +526,15 @@ export async function write(
   )
     task = { ...task, runStall: undefined };
   task = { ...task, workspaceGenerationId: task.workspaceGenerationId ?? randomUUID() };
-  return await context.store.db.scope(async () => {
+  const persist = async () => {
     await context.store.db.checkAuthorization();
-    if (
-      reviewed &&
-      !isDeepStrictEqual(await context.find(task.id), JSON.parse(JSON.stringify(reviewed)))
-    )
-      throw new Error("Task changed before queue admission. Read it again.");
+    if (reviewed) {
+      if (generation !== undefined && Number((await context.store.db.prepare(
+        "SELECT generation FROM task_admission_generation WHERE id=?",
+      ).get(task.id))?.generation ?? 0) !== generation)
+        throw new Error("Task changed before queue admission. Read it again.");
+      task = mergeQueueAdmission(task, reviewed, await context.find(task.id));
+    }
     if (context.invalidatedAssistantGenerations.get(task.id)?.has(sourceGeneration))
       throw new Error(
         "The original assistant task execution was retired; stale callbacks cannot restore it.",
@@ -580,5 +583,6 @@ export async function write(
     context.schedulerTasks?.set(task.id, task);
     if (context.schedulerTasks) await context.hydrateDependencies(context.schedulerTasks, [task]);
     return task;
-  });
+  };
+  return reviewed ? await context.store.transaction(persist) : await context.store.db.scope(persist);
 }

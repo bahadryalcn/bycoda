@@ -14,6 +14,13 @@ Reloading or closing the desktop window retires its old preview capabilities;
 another window cannot close a live preview it does not own. If opening fails,
 the error and Reload preview action remain beside the original source.
 
+The preview sandbox restricts external data requests and hidden files, including
+secret configuration folders. Its information control explains these limits.
+For a saved HTML file, **Open saved file in default app** explicitly opens that
+file outside the app sandbox. It opens the saved bytes, not unsaved editor changes;
+failure stays visible without closing the live preview. Inline-only content has
+no external-file action. No network or file-access permission is relaxed.
+
 When a reply names an output folder and then lists filenames, file links also
 check that folder. A project-prefixed folder such as `ui-tests/investor-deck/`
 works when the conversation already runs inside `ui-tests`. Existing direct

@@ -104,9 +104,10 @@ export async function resultFingerprint(
 export async function acceptanceFingerprint(
   context: TaskContext,
   task: HostTask,
+  knownWorkspace?: string,
 ): Promise<string | undefined> {
   const cwd = task.worktreeCwd ?? (await context.store.project(task.projectId)).cwd;
-  const workspace = await context.workspaceFingerprint(task);
+  const workspace = knownWorkspace ?? (await context.workspaceFingerprint(task));
   const outputs = await acceptanceOutputFingerprint(
     cwd,
     readTaskInstructions(task.prompt)?.deliverables ?? [],

@@ -27,6 +27,16 @@ export function createCommandsRuntime(
     | "crews"
   >,
 ) {
+  const commandServiceValidation = async (command: import("../../src/shared/model/host-contracts/session-commands").SessionCommand, context: import("../domains/context").HostDomainContext) => {
+    if (command.type !== "answer" || command.reply.kind !== "answered" || !command.reply.attachments) return;
+    if (!(await context.authorized())) throw new HostDomainAuthorizationError();
+    if (!context.principalId || !command.runId) throw new Error("Question attachment identity is unavailable");
+    const ids = Object.values(command.reply.attachments).flat().map((file) => file.id);
+    if (!ids.length) return;
+    const occurrence = await dependencies.questionBinding(command.sessionId, command.runId, command.requestId);
+    await dependencies.attachmentOwnership.assertQuestion(context.principalId, ids, command.sessionId, command.runId, command.requestId, occurrence);
+    if (!(await context.authorized())) throw new HostDomainAuthorizationError();
+  };
   const commandService = createCommandService<HostSession>({
     repository: {
       receiptStatus: (id) => dependencies.engine.store.receiptStatus(id),
@@ -47,36 +57,16 @@ export function createCommandsRuntime(
       validateCommand: (command) => {
         parseCommand(command);
       },
-      validateQuestionAttachments: async (command, context) => {
-        if (
-          command.type !== "answer" ||
-          command.reply.kind !== "answered" ||
-          !command.reply.attachments
-        )
-          return;
-        if (!context.principalId || !command.runId)
-          throw new Error("Question attachment identity is unavailable");
-        const ids = Object.values(command.reply.attachments)
-          .flat()
-          .map((file) => file.id);
-        if (!ids.length) return;
-        const occurrence = await dependencies.questionBinding(
-          command.sessionId,
-          command.runId,
-          command.requestId,
-        );
-        await dependencies.attachmentOwnership.assertQuestion(
-          context.principalId,
-          ids,
-          command.sessionId,
-          command.runId,
-          command.requestId,
-          occurrence,
-        );
-      },
+      validateQuestionAttachments: commandServiceValidation,
       attachmentRefs: parseRemoteAttachments,
       previewContextual: (command, value) => dependencies.engine.previewContextual(command, value),
-      command: (command) => dependencies.engine.command(command),
+      command: (command, context) => {
+        const original = context && { ...context, principalId: context.principalId };
+        return dependencies.engine.command(command, async () => {
+          if (!original) throw new Error("Question attachment identity is unavailable");
+          await commandServiceValidation(command, original);
+        });
+      },
       clearConversation: (command) => dependencies.engine.clearConversation(command),
       rewind: (command) => dependencies.engine.rewind(command),
       assertHostMayRun: dependencies.assertHostMayRun,
@@ -102,6 +92,7 @@ export function createCommandsRuntime(
           command.reply.kind === "answered" &&
           command.reply.attachments
         ) {
+          await commandServiceValidation(command, context);
           const parsed = parseCommand(command);
           if (parsed.type !== "answer" || parsed.reply.kind !== "answered")
             throw new Error("Invalid question answer");
@@ -125,6 +116,7 @@ export function createCommandsRuntime(
               }),
             ),
           );
+          await commandServiceValidation(command, context);
           if (
             dependencies.desktop.live.overlay(command.sessionId)?.patch.pendingQuestion !== pending
           )

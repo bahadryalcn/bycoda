@@ -70,6 +70,7 @@ import { TabStrip } from "../../../shared/ui/Tabs";
 import { Badge } from "../../../shared/ui/Badge";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Popover } from "../../../shared/ui/Popover";
@@ -854,6 +855,8 @@ export function AssistantView(props: AssistantViewProps) {
 
   return (
     <main className={styles.room} aria-label={identity.room}>
+      <LiveText className="sr-only" mode="assertive" text={error?.text || readError || projectReadError || ""} />
+      <LiveText className="sr-only" text={pending?.label || returnMessage || (undo ? `${t("Deleted")}: ${undo.label}` : deletedNoteWithoutReceipt ? `${t("Deleted")}: ${deletedNoteWithoutReceipt}` : "")} />
       <header className={styles.header}>
         <div className={styles.heading}>
           <h1>{identity.name || identity.title}</h1>
@@ -1013,7 +1016,7 @@ export function AssistantView(props: AssistantViewProps) {
         <InlineError className={styles.feedback}>{error.text}</InlineError>
       )}
       {!snapshot ? (
-        <div className={styles.empty} role="status">
+        <div className={styles.empty}>
           {loading ? t("Loading...") : t("Connect to the local Host to open this room.")}
         </div>
       ) : !snapshot.profile.setupComplete ? (
@@ -1094,14 +1097,14 @@ export function AssistantView(props: AssistantViewProps) {
           {errorFor("presence")}
           {errorFor("presence.return")}
           {returnMessage && (
-            <p role="status" className={styles.muted}>
+            <p className={styles.muted}>
               {returnMessage}
             </p>
           )}
           {errorFor("pauseAll")}
           {snapshot.chiefReview?.blocked && (
             <div className={styles.feedback}>
-              <span role="status">
+              <span>
                 <strong>{t("Supervisor review needs attention")}</strong> ·{" "}
                 {snapshot.chiefReview.message}
               </span>
@@ -1143,7 +1146,7 @@ export function AssistantView(props: AssistantViewProps) {
             aria-label={t(view)}
           >
             {(view === "Today" || view === "Jobs") && snapshot.workHoursActive === false && (
-              <p role="status" className={styles.muted}>
+              <p className={styles.muted}>
                 {t("Outside working hours. Accepted turns can finish; new work waits.")}
               </p>
             )}
@@ -1442,7 +1445,7 @@ export function AssistantView(props: AssistantViewProps) {
                   </div>
                 </div>
                 {!jobDraftVisible && (
-                  <p role="status" className={styles.muted}>
+                  <p className={styles.muted}>
                     {t("The selected project is no longer visible.")}
                   </p>
                 )}
@@ -1579,7 +1582,7 @@ export function AssistantView(props: AssistantViewProps) {
                 {dailySummary &&
                   dailySummary.environmentId === environmentId &&
                   dailySummary.scopeKey === privacy.key && (
-                    <div role="status" className={styles.stack}>
+                    <div className={styles.stack}>
                       {dailySummary.snapshot.briefing && canReadBriefing(dailySummary.snapshot) ? (
                         <>
                           <h3>{t("Daily summary")}</h3>
@@ -1599,7 +1602,7 @@ export function AssistantView(props: AssistantViewProps) {
                     </div>
                   )}
                 {!snapshot.capabilities.notes && (
-                  <p role="status" className={styles.muted}>
+                  <p className={styles.muted}>
                     {t("Global notes are unavailable on this Host.")}
                   </p>
                 )}
@@ -1727,7 +1730,7 @@ export function AssistantView(props: AssistantViewProps) {
           </section>
           {pending && (
             <footer className={styles.footer}>
-              <span role="status">{pending.label}</span>
+              <span>{pending.label}</span>
             </footer>
           )}
         </>
@@ -1739,7 +1742,7 @@ export function AssistantView(props: AssistantViewProps) {
             { projectId: undo.projectId, projectIds: undo.projectIds },
             canSeeProject,
           )) && (
-          <div role="status" className={styles.undo}>
+          <div className={styles.undo}>
             <span>
               {t("Deleted")}: {undo.label}
             </span>
@@ -1770,7 +1773,7 @@ export function AssistantView(props: AssistantViewProps) {
           </div>
         )}
       {deletedNoteWithoutReceipt && (
-        <div role="status" className={styles.undo}>
+        <div className={styles.undo}>
           <span>
             {t("Deleted")}: {deletedNoteWithoutReceipt}
           </span>
@@ -2061,7 +2064,7 @@ export function AssistantView(props: AssistantViewProps) {
               ))}
             </details>
             {openJob.awaitingOwnerRestart && (
-              <p role="status">
+              <p>
                 {t(
                   "Restoring keeps the goal and tasks stopped. Review them in the task board before restarting.",
                 )}
@@ -2510,13 +2513,9 @@ function JobOwnerEditDialog({
             }
           />
         )}
-        {draft.intent && (
-          <p role="status" className={styles.muted}>
-            {t(
-              "This request is retained on its original computer. Check its status before taking another action.",
-            )}
-          </p>
-        )}
+        <LiveText className={styles.muted} text={draft.intent ? t(
+          "This request is retained on its original computer. Check its status before taking another action.",
+        ) : ""} />
         {error && <InlineError className={styles.error}>{error}</InlineError>}
         {draftStorageError && (
           <InlineError className={styles.error}>
@@ -3965,7 +3964,7 @@ function ConversationPanel({
           }}
         >
           {(summaryRefreshing || summaryLabel) && (
-            <p role="status" className={styles.muted}>
+            <p className={styles.muted}>
               {summaryRefreshing ? t("Updating conversation summary") : summaryLabel}
             </p>
           )}
@@ -3980,21 +3979,20 @@ function ConversationPanel({
               {t("Load earlier messages")}
             </Button>
           )}
-          {searching && <p role="status">{t("Loading...")}</p>}
+          {searching && <p>{t("Loading...")}</p>}
           {!searching && !visible.length && (
             <p className={styles.empty}>
               {t(threadId ? "No messages to display" : "Open a conversation to begin")}
             </p>
           )}
           {messageElements}
-          {error && (
-            <div className={styles.feedback} role="alert">
-              <span>{error}</span>
-              <Button disabled={pending || clearing} onClick={() => void checkConversation()}>
-                {t("Check conversation")}
-              </Button>
-            </div>
-          )}
+          <LiveText className="sr-only" mode="assertive" text={error} />
+          <LiveText className="sr-only" text={searching ? t("Loading...") : summaryRefreshing ? t("Updating conversation summary") : summaryLabel || ""} />
+          {error && <InlineError className={styles.feedback} live="off">{error}{" "}
+            <Button disabled={pending || clearing} onClick={() => void checkConversation()}>
+              {t("Check conversation")}
+            </Button>
+          </InlineError>}
         </div>
         {draftSaveError && (
           <InlineError className={`${styles.error} shrink-0 px-5 py-2`}>
@@ -4296,11 +4294,8 @@ function NoteEditor({
             setDraft(controller.value);
           }}
         />
-        {draft.intent && !pending && (
-          <p role="status" className={styles.muted}>
-            {t("Note save is pending. Retry to verify the original note.")}
-          </p>
-        )}
+        <LiveText className={styles.muted} text={draft.intent && !pending
+          ? t("Note save is pending. Retry to verify the original note.") : ""} />
       </form>
     </Modal>
   );

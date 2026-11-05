@@ -7,6 +7,7 @@ import type { TranscriptSelection } from "../../sessions";
 import { readHtmlPreviewSelection, withHtmlSelectionBridge } from "../model/htmlPreviewSelection";
 import { Button } from "../../../shared/ui/Button";
 import { PreviewSelectionMenu } from "./PreviewSelection";
+import { HtmlPreviewSecurityActions } from "./HtmlPreviewSecurityActions";
 
 /** A separate protocol and opaque sandbox keep generated scripts out of the app. */
 export function HtmlPreview({
@@ -99,6 +100,7 @@ export function HtmlPreview({
       }
     >
       {toolbar}
+      <HtmlPreviewSecurityActions key={path} path={path} />
       <Button
         variant="ghost"
         size="sm"

@@ -1,3 +1,4 @@
+import { SocialPeerUnavailable } from "./social-peer-errors";
 import { forEachAsync, mapAsync } from "../async-collections";
 import { randomUUID, createHash, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -5977,6 +5978,7 @@ export class SocialService {
         // Revalidate original session authorization and project ACL at execution time.
         if (job.sessionId) {
           const s = await this.sessionIdentity(job.sessionId);
+          if (s.session.harness !== job.provider) throw new Error("Session provider changed.");
           if (s.projectId !== job.projectIds[0] && !job.projectIds.includes(s.projectId))
             throw new Error("Session project changed.");
           await this.access(
@@ -6040,30 +6042,17 @@ export class SocialService {
           this.eligibility(currentAccount, contact, job.kind, thread, !draft.projectId);
         } else this.capability(currentAccount, "publish");
       };
-      if (job.sessionId && this.verifyPeer) {
-        try {
-          await this.verifyPeer(job.sessionId);
-        } catch {
-          // A previously dispatched job may have an unresolved external effect.
-          // Only retry verification automatically before any dispatch.
-          if (job.dispatchedAt) {
-            job.status = "review";
-            job.error = "Source session unavailable; send outcome requires review.";
-          } else {
-            job.status = "queued";
-            job.scheduledAt = this.now() + 60000;
-            job.error = "Source session unavailable; verification will be retried.";
-          }
-          return true;
-        }
-      }
+      if (job.sessionId) await this.verifyPeer?.(job.sessionId);
       await check();
       const credential = await this.credentials.get(account.id);
       if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= this.now()))
         throw new SocialPlatformError("expired");
       await check(); // Credential lookup yielded; opt-out/stop can have arrived meanwhile.
-      job.dispatchedAt = this.now();
-      await this.writeJob(job);
+      await this.transaction(async () => {
+        if (!isDeepStrictEqual(await this.job(id), job)) throw new Error("Job changed before dispatch.");
+        job.dispatchedAt = this.now();
+        await this.writeJob(job);
+      });
       const result = await this.adapterFor(account).send(
         account,
         job,
@@ -6132,6 +6121,10 @@ export class SocialService {
       } else if (job.roomSource && job.dispatchedAt) {
         job.status = "review";
         job.error = "Send outcome requires review.";
+      } else if (error instanceof SocialPeerUnavailable && !job.dispatchedAt) {
+        job.status = "queued";
+        job.scheduledAt = this.now() + 60000;
+        job.error = "Source session unavailable; verification will be retried.";
       } else if (error instanceof SocialPlatformError) {
         job.error = error.message;
         if (error.code === "rate_limit" || error.code === "processing") {

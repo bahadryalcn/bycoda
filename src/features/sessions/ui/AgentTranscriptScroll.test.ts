@@ -456,6 +456,27 @@ it("keeps following when a slow streamed layout replays an older bottom offset",
   }
 });
 
+it("expires old followed offsets even after a newer pin", () => {
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    const { scroller, geometry, observer } = mountScroller();
+    geometry.height = 2000;
+    act(() => observer.resize());
+    now = 32_000;
+    geometry.height = 2100;
+    act(() => observer.resize());
+    now = 32_020;
+    geometry.top = 1600;
+    act(() => scroller.dispatchEvent(new Event("scroll")));
+    geometry.height = 2200;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1600);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 it("does not resume paused history merely because a newer wheel points downward", () => {
   const { scroller, geometry, observer } = mountScroller();
   act(() => {

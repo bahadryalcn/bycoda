@@ -832,6 +832,7 @@
   "Couldn’t reach {p0}. Trying again…": "{p0}に到達できませんでした。もう一度試してみます…",
   "Couldn’t load sessions": "セッションをロードできませんでした",
   "Retry": "再試行",
+  "Retry briefing": "ブリーフィングを再試行",
   "No matching sessions": "一致するセッションがありません",
   "No sessions match these filters": "これらのフィルターに一致するセッションはありません",
   "Clear filters (": "フィルターをクリア (",

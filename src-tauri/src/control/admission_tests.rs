@@ -307,7 +307,7 @@ fn attach_preserves_actual_lead_window_check_private_scope_and_same_worker_retry
         Some("lead")
     );
     assert!(!inner.app_grants.contains_key("worker"));
-    assert_eq!(inner.scratch.get("worker"), Some(&scratch));
+    assert_eq!(inner.scratch.get("worker").map(|entry| entry.path()), Some(scratch.as_path()));
     assert!(!inner.workers.contains_key("foreign-worker"));
     drop(inner);
     assert!(barrier.try_close_idle_target_admission("cut").is_ok());
@@ -385,7 +385,7 @@ fn accepted_attach_keeps_original_buffers_admission_through_real_creation_after_
         inner.workers.get("worker").map(String::as_str),
         Some("lead")
     );
-    assert!(inner.scratch.get("worker").unwrap().is_dir());
+    assert!(inner.scratch.get("worker").unwrap().path().is_dir());
     assert_eq!(std::fs::read_dir(&fixture.root).unwrap().count(), 1);
     drop(inner);
     barrier.reopen_target_admission(closed).unwrap();

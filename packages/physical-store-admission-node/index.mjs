@@ -28,6 +28,7 @@ export function loadPhysicalStoreAdmission(explicitArtifact) {
     throw new Error("Unsupported physical admission mechanical ABI");
   return Object.freeze({
     mechanicalAbiVersion: native.mechanicalAbiVersion,
+    renameNoReplace: typeof native.renameNoReplace === "function" ? native.renameNoReplace : undefined,
     openRegistry: native.openRegistry,
     registryRootForDatabase: native.registryRootForDatabase,
     sqliteExtensionEntryPoint: native.sqliteExtensionEntryPoint,

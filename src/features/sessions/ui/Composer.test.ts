@@ -32,7 +32,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
         ? Promise.resolve(`/attachments/${(args as { name: string }).name}`)
         : command === "mcp_discover" || command === "claude_mcp_list"
           ? mcpInvoke(command, args)
-          : original.invoke(command, args),
+          : command === "list_question_attachment_drafts" ? Promise.resolve([]) : original.invoke(command, args),
   };
 });
 

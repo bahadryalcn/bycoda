@@ -410,41 +410,20 @@ it.each([QueueNotReadyError, QueueDeferredError])(
   },
 );
 
-it("keeps retrying safely deferred heads past the refusal limit without pausing or duplicating them", async () => {
+it("pauses repeated safe deferrals without removing or replaying the head", async () => {
   vi.useFakeTimers();
-  let attempts = 0;
-  const submit = vi.fn<Submit>((sessionId, _text, _attachments, options) => {
-    attempts++;
-    if (attempts <= 5) return Promise.reject(new QueueDeferredError("Turn not ready"));
-    setSessions((all) =>
-      all.map((session) =>
-        session.id === sessionId ? sentQueuedMessage(session, options!.queuedMessageId!) : session,
-      ),
-    );
-    return true;
-  });
+  const submit = vi.fn<Submit>(() => Promise.reject(new QueueDeferredError("Turn not ready")));
   const harness = await queueHarness("active", false, submit);
   try {
-    for (const delay of [1, 2_001, 4_001, 8_001, 16_001]) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(delay);
-      });
-      // The retry timer rerenders first; its effect schedules the dispatch next.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(10);
-      });
-      expect(getSessions()[0].queueStatus).toBe("active");
-      expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+    for (const delay of [1, 2_001, 4_001, 8_001]) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(delay); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     }
-    expect(submit).toHaveBeenCalledTimes(5);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(32_001);
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10);
-    });
-    expect(submit).toHaveBeenCalledTimes(6);
-    expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
+    expect(submit).toHaveBeenCalledTimes(4);
+    expect(getSessions()[0].queueStatus).toBe("paused");
+    expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["head"]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(submit).toHaveBeenCalledTimes(4);
   } finally {
     await harness.cleanup();
     vi.useRealTimers();

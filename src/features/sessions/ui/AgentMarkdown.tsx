@@ -591,7 +591,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const isPlaintextFallback = PLAINTEXT_FENCE_LANGUAGES.has(fence.language.toLowerCase());
 
   return (
-    <MarkdownCodeShell code={code}>
+    <MarkdownCodeShell code={code} language={fence.language}>
       {iconName ? (
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name={iconName} isDir={false} />
@@ -615,7 +615,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   );
 }
 
-function MarkdownCodeShell({ code, children }: { code: string; children: ReactNode }) {
+function MarkdownCodeShell({ code, language, children }: { code: string; language: string; children: ReactNode }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
@@ -634,7 +634,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
   return (
     <div
       className="markdown-code-shell markdown-code-resizable"
-      data-collapsed={collapsed}
+      data-collapsed={collapsed} data-code-identity={JSON.stringify([language, code])}
       dir="ltr"
       tabIndex={0}
       role="region"
@@ -1392,7 +1392,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
 
   if (incomplete || failed) {
     return (
-      <MarkdownCodeShell code={code}>
+      <MarkdownCodeShell code={code} language="mermaid">
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name="diagram.mmd" isDir={false} />
         </span>

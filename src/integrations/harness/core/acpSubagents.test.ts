@@ -209,3 +209,23 @@ describe("ACP child routing", () => {
     });
   });
 });
+
+it("retains a live child until its completed parent and child both settle", () => {
+  const router = new AcpSubagents();
+  router.route({}, [{ type: "tool.started", callId: "parent", title: "Task" }]);
+  router.route({ parentToolCallId: "parent" }, [{ type: "tool.started", callId: "child", title: "Read" }]);
+  router.route({}, [{ type: "tool.updated", callId: "parent", status: "completed" }]);
+  expect(router.route({}, [{ type: "tool.updated", callId: "child", status: "completed" }]))
+    .toMatchObject([{ type: "agent.step", callId: "parent", status: "completed" }]);
+  expect((router as unknown as { owners: Map<string, string> }).owners.size).toBe(0);
+  expect((router as unknown as { tools: Set<string> }).tools.size).toBe(0);
+});
+
+it("does not evict unknown pending child work when other parents arrive", () => {
+  const router = new AcpSubagents();
+  for (let i = 0; i < 40; i++) {
+    router.route({ parentToolCallId: `parent-${i}` }, [{ type: "message.delta", text: `${i}` }]);
+  }
+  expect(router.route({}, [{ type: "tool.started", callId: "parent-0", title: "Task" }]))
+    .toContainEqual(expect.objectContaining({ type: "agent.step", text: "0" }));
+});

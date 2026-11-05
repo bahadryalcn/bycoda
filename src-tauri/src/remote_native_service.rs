@@ -73,6 +73,7 @@ fn wire_method(method: &str) -> Option<String> {
             | "assistant.observations.ingest"
             | "desktop.stop"
             | "desktop.status"
+            | "desktop.status.wait"
             | "assistant.presence.get"
             | "assistant.presence.set"
             | "runtimeLogs.access.issue"

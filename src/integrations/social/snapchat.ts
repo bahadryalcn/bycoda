@@ -166,7 +166,7 @@ export function createSnapchatAdapter(http: SocialHttp, now = Date.now): SocialA
         const iv = crypto.getRandomValues(new Uint8Array(16));
         const key = await crypto.subtle.importKey("raw", keyBytes, "AES-CBC", false, ["encrypt"]);
         const encrypted = new Uint8Array(
-          await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, new Uint8Array(bytes)),
+          await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, bytes as BufferSource),
         );
         const createdAt = now();
         const { value: media } = await http.json(

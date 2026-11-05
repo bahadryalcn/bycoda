@@ -125,38 +125,23 @@ describe("bounded discovery and birth-safe signals", () => {
     await expect(discovery.listeners()).resolves.toEqual([]);
     expect(command).toHaveBeenCalledTimes(2);
   });
-  it("always refreshes identity and refuses a reused PID without invoking a signal helper", async () => {
-    const command = vi
-      .fn<DiscoveryCommand>()
-      .mockResolvedValueOnce(JSON.stringify([processRow]))
-      .mockResolvedValueOnce(JSON.stringify([{ ...processRow, startedAt: "99999" }]));
-    const discovery = new DevServerDiscovery({ platform: "win32", command });
-    expect(await discovery.identity(1234)).toEqual(processRow);
-    await expect(discovery.signal(processRow, true)).rejects.toThrow("identity changed");
-    expect(command).toHaveBeenCalledTimes(2);
-    await expect(discovery.signal({ pid: 1234, startedAt: "" }, true)).rejects.toThrow(
-      "unavailable",
-    );
-  });
-  it("pins the Windows native handle and checks birth inside force helper before killing", async () => {
-    const command = vi
-      .fn<DiscoveryCommand>()
-      .mockResolvedValueOnce(JSON.stringify([processRow]))
-      .mockRejectedValueOnce(new Error("Process identity changed"));
+  it("checks a fresh birth on the pinned Windows handle before signalling", async () => {
+    const command = vi.fn<DiscoveryCommand>().mockRejectedValue(new Error("Process identity changed"));
     const discovery = new DevServerDiscovery({ platform: "win32", command });
     await expect(discovery.signal(processRow, true)).rejects.toThrow("identity changed");
-    const helper = script(command.mock.calls[1][1]);
+    expect(command).toHaveBeenCalledTimes(1);
+    const helper = script(command.mock.calls[0][1]);
     expect(helper.indexOf("$target.Handle")).toBeLessThan(helper.indexOf("$target.StartTime"));
     expect(helper.indexOf("$birth -cne")).toBeLessThan(helper.indexOf("$target.Kill()"));
     expect(helper).not.toContain("taskkill");
+    await expect(discovery.signal({ pid: 1234, startedAt: "" }, true)).rejects.toThrow("unavailable");
+    expect(command).toHaveBeenCalledTimes(1);
   });
   it("makes a graceful Windows attempt without disguising forced termination", async () => {
-    const command = vi
-      .fn<DiscoveryCommand>()
-      .mockResolvedValueOnce(JSON.stringify([processRow]))
-      .mockResolvedValueOnce("");
+    const command = vi.fn<DiscoveryCommand>().mockResolvedValue("");
     await new DevServerDiscovery({ platform: "win32", command }).signal(processRow, false);
-    const helper = script(command.mock.calls[1][1]);
+    expect(command).toHaveBeenCalledTimes(1);
+    const helper = script(command.mock.calls[0][1]);
     expect(helper).toContain("CloseMainWindow()");
     expect(helper).not.toContain(".Kill()");
   });

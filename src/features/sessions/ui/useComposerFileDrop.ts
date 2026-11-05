@@ -32,6 +32,7 @@ type Options = {
   sinkRef: RefObject<AttachmentSink>;
   /** The draft's current attachments, so the badge can say how many will fit. */
   attachmentsRef?: RefObject<readonly unknown[]>;
+  persistBlobs?: boolean;
   readDroppedAttachments: (read: () => Promise<Attachment[]>) => void;
   setPasteError: Dispatch<SetStateAction<string | null>>;
 };
@@ -50,6 +51,7 @@ export function useComposerFileDrop({
   boxRef,
   sinkRef,
   attachmentsRef,
+  persistBlobs,
   readDroppedAttachments,
   setPasteError,
 }: Options): void {
@@ -119,7 +121,7 @@ export function useComposerFileDrop({
       if (Date.now() - nativeDropAt < 250) return;
       const files = filesFromClipboard(data);
       if (files.length === 0) return;
-      readDroppedAttachments(() => attachmentsFromFiles(files));
+      readDroppedAttachments(() => persistBlobs === undefined ? attachmentsFromFiles(files) : attachmentsFromFiles(files, { persistBlobs }));
     };
 
     const onExplorerFilePointerDrag = (event: Event) => {
@@ -213,7 +215,7 @@ export function useComposerFileDrop({
       window.removeEventListener("dragend", hide);
       unlisten?.();
     };
-  }, [disabled, enabled, readDroppedAttachments]);
+  }, [disabled, enabled, persistBlobs, readDroppedAttachments]);
 
   // The verdict changes with the provider; the next drag event draws the new one.
   useEffect(() => {

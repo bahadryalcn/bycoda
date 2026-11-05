@@ -906,7 +906,7 @@ export function JiraBoardView({
         fill={mode === "kanban"}
         className="px-1 overscroll-none"
         items={filtered}
-        stateKey={`jira-board:${boardId}:${scope}:${group.id}:${column?.name ?? "all"}:${search.trim()}`}
+        stateKey={`jira-board:${boardId}:${scope}:${group.id}:${column?.name ?? "all"}`}
         itemKey={(issue) => issue.id}
         requiredKey={selectedIssueId}
         estimateSize={150}

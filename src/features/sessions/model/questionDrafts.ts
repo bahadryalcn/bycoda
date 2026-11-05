@@ -1,5 +1,5 @@
 import type { UserQuestionPrompt } from "./userQuestion";
-import type { Attachment } from "./session";
+import type { QuestionDraftAttachment } from "./questionAttachments";
 import { registerParentInput, canPublishParentInput } from "../data/parentInputClosure";
 import { copyNativeCaptureData } from "../../../shared/lib/native-capture-json";
 
@@ -8,7 +8,7 @@ export type QuestionDraft = {
   answers: Record<string, string[]>;
   custom: Record<string, string>;
   notes?: Record<string, string>;
-  attachments?: Record<string, Attachment[]>;
+  attachments?: Record<string, QuestionDraftAttachment[]>;
   /** A void decision callback is not proof that the provider consumed it. */
   delivery?: "sending" | "unknown";
   pendingAction?: "answer" | "dismiss";

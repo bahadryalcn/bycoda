@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub(crate) mod receipts;
 #[path = "control_writes.rs"]
 pub(crate) mod writes;
+mod scratch;
 pub use receipts::ControlTurnReceipt;
 use receipts::WindowIssuer;
 #[path = "workspace_effect_receipts.rs"]
@@ -212,7 +213,7 @@ struct Inner {
     app_grants: HashMap<String, Grant>,
     pending: HashMap<String, Pending>,
     workers: HashMap<String, String>,
-    scratch: HashMap<String, PathBuf>,
+    scratch: HashMap<String, Arc<scratch::Scratch>>,
     active: HashMap<String, ActiveTurn>,
     /// Original turn work, including superseded/pending/unknown originals.
     turn_writes: writes::TurnLedger,
@@ -1467,14 +1468,17 @@ fn conversation_ui_request_inner(
     }
 }
 
-#[tauri::command(async)]
-pub fn control_enable(
+#[tauri::command]
+pub async fn control_enable(
     window: WebviewWindow,
-    host: State<'_, ControlHost>,
     session_id: String,
     cwd: String,
-) -> Result<String, String> {
+) -> Result<String, String>  {
+    let app = window.app_handle().clone();
     let issuer = receipts::capture(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let host = app.state::<ControlHost>();
+
     issuer.with_live(|| {
     let cwd = std::fs::canonicalize(crate::fs::expand_home(&cwd)).map_err(|e| e.to_string())?;
     if !cwd.is_dir() {
@@ -1520,6 +1524,8 @@ pub fn control_enable(
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     Ok(executable.to_string_lossy().into_owned())
     })
+
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -1623,14 +1629,17 @@ pub fn control_disable(
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn control_attach_worker(
+#[tauri::command]
+pub async fn control_attach_worker(
     window: tauri::Window,
-    host: State<'_, ControlHost>,
     lead_id: String,
     session_id: String,
-) -> Result<String, String> {
+) -> Result<String, String>  {
+    let app = window.app_handle().clone();
     let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let host = app.state::<ControlHost>();
+
     admission.finish(control_attach_worker_with(
         &host,
         window.label(),
@@ -1638,6 +1647,8 @@ pub fn control_attach_worker(
         session_id,
         create_worker_scratch,
     ))
+
+    }).await.map_err(|error| error.to_string())?
 }
 
 fn control_attach_worker_with(
@@ -1659,13 +1670,13 @@ fn control_attach_worker_with(
         return Err("Lead connection is inactive".into());
     }
     let scratch = match inner.scratch.get(&session_id) {
-        Some(path) if path.is_dir() => path.clone(),
-        _ => create_scratch()?,
+        Some(path) if path.path().is_dir() => path.clone(),
+        _ => scratch::Scratch::capture(create_scratch()?)?,
     };
     inner.workers.insert(session_id.clone(), lead_id);
     inner.app_grants.remove(&session_id);
     inner.scratch.insert(session_id, scratch.clone());
-    Ok(scratch.to_string_lossy().into_owned())
+    Ok(scratch.path().to_string_lossy().into_owned())
 }
 
 fn create_worker_scratch() -> Result<PathBuf, String> {
@@ -1693,20 +1704,23 @@ fn configure_worker_scratch(cmd: &mut Command, path: &Path) {
     cmd.env("TMPDIR", path).env("TMP", path).env("TEMP", path);
 }
 
-#[tauri::command(async)]
-pub fn control_authorize_turn(
+#[tauri::command]
+pub async fn control_authorize_turn(
     window: WebviewWindow,
-    host: State<'_, ControlHost>,
     session_id: String,
     cwd: String,
     app_access: bool,
-) -> Result<ControlTurnReceipt, String> {
+) -> Result<ControlTurnReceipt, String>  {
+    let app = window.app_handle().clone();
+    let issuer = receipts::capture(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let host = app.state::<ControlHost>();
+
     if session_id.is_empty() {
         return Err("NATIVE_CONTROL_TURN_INVALID".into());
     }
     let cwd = std::fs::canonicalize(crate::fs::expand_home(&cwd)).map_err(|e| e.to_string())?;
     let cwd = comparison_path(&cwd);
-    let issuer = receipts::capture(&window)?;
     issuer.with_live(|| {
     let mut inner = host
         .inner
@@ -1725,6 +1739,8 @@ pub fn control_authorize_turn(
     }
     inner.install_authorized_turn(window.label(), &issuer, session_id, cwd, app_access)
     })
+
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command(async)]
@@ -1876,17 +1892,15 @@ pub(crate) fn configure_child(
     session_id: &str,
     cmd: &mut Command,
     turn: Option<&Arc<ChildControlTurn>>,
-) {
+) -> Option<scratch::ProcessScratch> {
     cmd.env_remove("BYCODA_CONTROL_ENDPOINT")
         .env_remove("BYCODA_CONTROL_TOKEN")
         .env_remove("BYCODA_APP_ENDPOINT")
         .env_remove("BYCODA_APP_TOKEN");
-    let Some(host) = app.try_state::<ControlHost>() else {
-        return;
-    };
-    if let Ok(inner) = host.inner.lock() {
-        configure_child_grants(&inner, &host.endpoint, session_id, cmd, turn);
-    };
+    let host = app.try_state::<ControlHost>()?;
+    let inner = host.inner.lock().ok()?;
+    configure_child_grants(&inner, &host.endpoint, session_id, cmd, turn);
+    inner.scratch.get(session_id).cloned().map(scratch::ProcessScratch::new)
 }
 
 fn configure_child_grants(
@@ -1908,15 +1922,16 @@ fn configure_child_grants(
             .env("BYCODA_APP_TOKEN", &grant.token);
     }
     if let Some(scratch) = inner.scratch.get(session_id) {
-        configure_worker_scratch(cmd, scratch);
+        configure_worker_scratch(cmd, scratch.path());
     }
 }
 
 #[tauri::command]
-pub fn app_cli_path() -> Result<String, String> {
-    std::env::current_exe()
+pub async fn app_cli_path() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| std::env::current_exe()
         .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string()))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -2085,16 +2100,19 @@ pub fn control_desktop_authorize_effect(
     Ok(allowed)
 }
 
-#[tauri::command(async)]
-pub fn control_save(
+#[tauri::command]
+pub async fn control_save(
     window: tauri::Window,
-    store: State<'_, crate::session_store::SessionStore>,
     lead_id: String,
     state: String,
-) -> Result<(), String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
-        control_save_with(&store, &lead_id, &state)
-    })
+) -> Result<(), String>  {
+    let app = window.app_handle().clone();
+    let admission = crate::native_window_lifecycle::admit_window_persistence(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        admission.finish(control_save_with(&store, &lead_id, &state))
+
+    }).await.map_err(|error| error.to_string())?
 }
 
 fn control_save_with(
@@ -2112,11 +2130,14 @@ fn control_save_with(
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn control_load(
-    store: State<'_, crate::session_store::SessionStore>,
+#[tauri::command]
+pub async fn control_load(
+    app: AppHandle,
     lead_id: String,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, String>  {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+
     use rusqlite::OptionalExtension;
     store
         .lock_conn()?
@@ -2127,79 +2148,25 @@ pub fn control_load(
         )
         .optional()
         .map_err(|e| e.to_string())
+
+    }).await.map_err(|error| error.to_string())?
 }
 
-fn resolve_scope(root: &Path, value: &str) -> Result<String, String> {
-    let path = Path::new(value);
-    if value.is_empty()
-        || path.is_absolute()
-        || path
-            .components()
-            .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
-    {
-        return Err("Write scopes must be project-relative paths without '..'".into());
-    }
-    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
-    let mut existing = root.join(path);
-    let mut missing = Vec::new();
-    while !existing.exists() {
-        missing.push(existing.file_name().ok_or("Invalid scope")?.to_os_string());
-        if !existing.pop() {
-            return Err("Invalid scope".into());
-        }
-    }
-    existing = std::fs::canonicalize(existing).map_err(|e| e.to_string())?;
-    if !existing.starts_with(&root) {
-        return Err("Write scope points outside the project".into());
-    }
-    for part in missing.into_iter().rev() {
-        existing.push(part);
-    }
-    Ok(comparison_path(&existing))
+mod fs_commands;
+use fs_commands::{control_scopes_inner, control_write_path_inner};
+#[cfg(test)]
+use fs_commands::resolve_scope;
+
+#[tauri::command]
+pub async fn control_write_path(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || control_write_path_inner(path))
+        .await.map_err(|error| error.to_string())?
 }
 
-/// Resolve reported writes as well as scopes: aliases and symlinks must not
-/// turn a private scratch directory into an exemption for another worker's files.
-#[tauri::command(async)]
-pub fn control_write_path(path: String) -> Result<String, String> {
-    let path = Path::new(&path);
-    if !path.is_absolute() {
-        return Err("Reported write paths must be absolute".into());
-    }
-    let mut existing = path;
-    let mut missing = Vec::new();
-    while !existing.exists() {
-        // A dangling symlink cannot be treated as a new ordinary file.
-        if std::fs::symlink_metadata(existing).is_ok() {
-            return Err("Reported write path contains a dangling symlink".into());
-        }
-        missing.push(
-            existing
-                .file_name()
-                .ok_or("Invalid write path")?
-                .to_os_string(),
-        );
-        existing = existing.parent().ok_or("Invalid write path")?;
-    }
-    let mut resolved = std::fs::canonicalize(existing).map_err(|e| e.to_string())?;
-    for part in missing.into_iter().rev() {
-        resolved.push(part);
-    }
-    Ok(resolved.to_string_lossy().replace('\\', "/"))
-}
-
-#[tauri::command(async)]
-pub fn control_scopes(cwd: String, files: Vec<String>) -> Result<Vec<String>, String> {
-    if files.len() > 64 {
-        return Err("At most 64 write scopes per task".into());
-    }
-    files
-        .iter()
-        .map(|file| {
-            resolve_scope(&crate::fs::expand_home(&cwd), file)
-                .map_err(|error| format!("Invalid write scope \"{file}\": {error}"))
-        })
-        .collect()
+#[tauri::command]
+pub async fn control_scopes(cwd: String, files: Vec<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || control_scopes_inner(cwd, files))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]
@@ -3014,14 +2981,14 @@ mod tests {
         }
         let new_file = first.join("new/helper.py");
         assert_eq!(
-            control_write_path(new_file.to_string_lossy().into_owned()).unwrap(),
+            control_write_path_inner(new_file.to_string_lossy().into_owned()).unwrap(),
             new_file.to_string_lossy().replace('\\', "/")
         );
-        assert!(control_write_path("relative.py".into()).is_err());
+        assert!(control_write_path_inner("relative.py".into()).is_err());
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&second, first.join("escape")).unwrap();
-            let resolved = control_write_path(
+            let resolved = control_write_path_inner(
                 first
                     .join("escape/helper.py")
                     .to_string_lossy()
@@ -3030,7 +2997,7 @@ mod tests {
             .unwrap();
             assert_eq!(resolved, second.join("helper.py").to_string_lossy());
             std::os::unix::fs::symlink(first.join("missing"), first.join("dangling")).unwrap();
-            assert!(control_write_path(
+            assert!(control_write_path_inner(
                 first
                     .join("dangling/helper.py")
                     .to_string_lossy()
@@ -3124,7 +3091,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         assert!(resolve_scope(&root, "../escape").is_err());
         assert!(resolve_scope(&root, "/absolute").is_err());
-        assert!(control_scopes(
+        assert!(control_scopes_inner(
             root.to_string_lossy().into_owned(),
             vec!["../escape".into()]
         )

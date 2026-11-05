@@ -1292,6 +1292,7 @@
   "Couldn’t reach {p0}. Trying again…": "Couldn’t reach {p0}. Trying again…",
   "Couldn’t load sessions": "Couldn’t load sessions",
   "Retry": "Retry",
+  "Retry briefing": "Retry briefing",
   "No matching sessions": "No matching sessions",
   "No sessions match these filters": "No sessions match these filters",
   "Clear filters (": "Clear filters (",

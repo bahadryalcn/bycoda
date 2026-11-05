@@ -27,7 +27,7 @@ const PTY_QUEUE_CHUNKS: usize = 64;
 /// Keystrokes or pastes queued for a terminal whose child is not reading.
 const WRITE_QUEUE_LEN: usize = 256;
 #[cfg(unix)]
-const KILL_ESCALATE: Duration = Duration::from_secs(1);
+mod unix_child;
 /// Output a hidden terminal may hold before it goes out as one batch anyway.
 const HIDDEN_FLUSH_BYTES: usize = 1024 * 1024;
 
@@ -194,6 +194,8 @@ struct LivePty {
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
     master_fd: std::fs::File,
+    #[cfg(unix)]
+    child: Option<Arc<unix_child::UnixChild>>,
     #[cfg(windows)]
     master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     pid: u32,
@@ -348,6 +350,15 @@ impl PtyHost {
         sessions.remove(id)
     }
 
+    #[cfg(unix)]
+    fn remove_if_child(&self, id: &str, child: &Arc<unix_child::UnixChild>) -> Option<Arc<LivePty>> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if !sessions.get(id).and_then(|live| live.child.as_ref()).is_some_and(|live| Arc::ptr_eq(live, child)) {
+            return None;
+        }
+        sessions.remove(id)
+    }
+
     pub(crate) fn kill_all(&self) {
         let kids: Vec<Arc<LivePty>> = {
             let mut map = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
@@ -415,20 +426,19 @@ impl LivePty {
 }
 
 fn reap(kids: Vec<Arc<LivePty>>) {
-    let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
-    for live in kids {
-        live.output.set_enabled(false);
-        #[cfg(unix)]
-        {
-            hangup(live.pid);
-        }
-        #[cfg(not(unix))]
-        drop(live);
+    if kids.is_empty() {
+        return;
     }
-    // Quit and `Drop` both exit the process, so the SIGKILL has to land
-    // before this returns. `terminate`'s detached escalate thread never gets
-    // to run, and every shell is its own `setsid` session that outlives us.
-    crate::harness::terminate_all(&pids);
+    #[cfg(unix)]
+    unix_child::reap(kids);
+    #[cfg(not(unix))]
+    {
+        let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
+        for live in kids {
+            live.output.set_enabled(false);
+        }
+        crate::harness::terminate_all(&pids);
+    }
 }
 
 impl Drop for PtyHost {
@@ -1017,7 +1027,9 @@ pub fn pty_kill(window: tauri::Window, host: State<PtyHost>, id: String) -> Resu
         }
         #[cfg(not(windows))]
         {
-            terminate(live.pid);
+            if let Some(child) = &live.child {
+                child.terminate();
+            }
         }
     }
     Ok(())
@@ -1115,13 +1127,14 @@ fn spawn_unix(
     };
     let spawned = cmd.spawn();
     drop(slave);
-    let mut child = match spawned {
+    let child = match spawned {
         Ok(child) => child,
         Err(error) => {
             return Err(format!("Failed to start {shell}: {error}"));
         }
     };
     let pid = child.id();
+    let child = Arc::new(unix_child::UnixChild::new(child));
     if let Some(activity) = workspace_activity.as_mut() {
         activity.started();
     }
@@ -1135,6 +1148,7 @@ fn spawn_unix(
         completion_shell: (!private).then(|| shell.clone()),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(writer)))),
         master_fd: master,
+        child: Some(child.clone()),
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
         output: Arc::new(OutputGate::for_desktop(!crate::mobile_pty::registered(
@@ -1152,6 +1166,7 @@ fn spawn_unix(
     let data_id = id.clone();
     let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
     let data_generation = mobile_generation.clone();
+    let data_child = child.clone();
     thread::spawn(move || {
         let mut file = reader;
         let fd = file.as_raw_fd();
@@ -1159,7 +1174,21 @@ fn spawn_unix(
         let mut acc = Vec::with_capacity(READ_CHUNK);
         let mut last_emit = Instant::now();
         let mut complete = false;
+        let mut exit_deadline = None;
         loop {
+            let timeout = if acc.is_empty() {
+                Duration::from_millis(250)
+            } else {
+                PTY_COALESCE.saturating_sub(last_emit.elapsed())
+            };
+            if !unix_child::reader_ready(fd, &data_child, &mut exit_deadline, timeout) {
+                if exit_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                    break;
+                }
+                if acc.is_empty() {
+                    continue;
+                }
+            }
             if acc.is_empty() {
                 match file.read(&mut buf) {
                     Ok(0) => {
@@ -1245,9 +1274,14 @@ fn spawn_unix(
         // Only announce this child. A remount/respawn reuses the id, and the
         // previous wait thread must not paint "[process exited]" on the new PTY
         // or yank the replacement out of the host map.
-        let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
-            release_held_output(&host, &wait_app, &wait_id, pid);
-            host.remove_if_pid(&wait_id, pid).map(|live| live.owner_label())
+        let owner = if exit.is_ok() {
+            wait_app.try_state::<PtyHost>().and_then(|host| {
+                host.remove_if_child(&wait_id, &child).map(|live| {
+                    live.output.set_enabled(false);
+                    live.set_output_visible(&wait_app, &wait_id, true);
+                    live.owner_label()
+                })
+            })
         } else {
             None
         };
@@ -1528,54 +1562,18 @@ fn login_args(shell: &str) -> &'static [&'static str] {
     }
 }
 
-/// The hangup a closing shell expects, without `terminate`'s escalation.
-#[cfg(unix)]
-fn hangup(pid: u32) {
-    if pid == 0 || pid == 1 {
-        return;
-    }
-    let ipid = pid as i32;
-    unsafe {
-        libc::kill(ipid, libc::SIGHUP);
-        libc::kill(-ipid, libc::SIGHUP);
-    }
-}
-
+#[cfg(windows)]
 fn terminate(pid: u32) {
     if pid == 0 || pid == 1 {
         return;
     }
-    #[cfg(unix)]
-    {
-        let ipid = pid as i32;
-        unsafe {
-            libc::kill(ipid, libc::SIGHUP);
-            libc::kill(-ipid, libc::SIGHUP);
-            libc::kill(ipid, libc::SIGTERM);
-            libc::kill(-ipid, libc::SIGTERM);
-        }
-        thread::spawn(move || {
-            thread::sleep(KILL_ESCALATE);
-            unsafe {
-                libc::kill(ipid, libc::SIGKILL);
-                libc::kill(-ipid, libc::SIGKILL);
-            }
-        });
-    }
-    #[cfg(windows)]
-    {
-        let mut cmd = std::process::Command::new("taskkill");
-        crate::hide_window_console(&mut cmd);
-        let _ = cmd
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
-    }
+    let mut cmd = std::process::Command::new("taskkill");
+    crate::hide_window_console(&mut cmd);
+    let _ = cmd
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 #[cfg(unix)]
@@ -2242,6 +2240,7 @@ mod tests {
             completion_shell: None,
             writer: Mutex::new(Box::new(std::io::sink())),
             master_fd: std::fs::File::open("/dev/null").unwrap(),
+            child: None,
             pid,
             owner: Arc::new(Mutex::new(owner.to_string())),
             output: Arc::default(),

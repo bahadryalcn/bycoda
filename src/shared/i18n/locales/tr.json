@@ -1048,6 +1048,7 @@
   "Couldn’t reach {p0}. Trying again…": "{p0}'a ulaşılamadı. Tekrar deniyorum…",
   "Couldn’t load sessions": "Oturumlar yüklenemedi",
   "Retry": "Tekrar dene",
+  "Retry briefing": "Brifingi yeniden dene",
   "No matching sessions": "Eşleşen oturum yok",
   "No sessions match these filters": "Bu filtrelerle eşleşen oturum yok",
   "Clear filters (": "Filtreleri temizle (",

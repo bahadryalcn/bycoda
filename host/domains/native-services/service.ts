@@ -114,6 +114,9 @@ export function createNativeServicesService() {
     } else if (method === "native.services.desktop.status") {
       if (!owner.desktopStatus) throw new Error("Native desktop status is unavailable.");
       result = await owner.desktopStatus();
+    } else if (method === "native.services.desktop.status.wait") {
+      if (!owner.waitDesktopStatus) throw new Error("Native desktop status wait is unavailable.");
+      result = await owner.waitDesktopStatus(String(params.afterRevision), Number(params.timeoutMs), context.signal);
     } else if (method === "native.services.desktop.stop") {
       if (!owner.stopDesktop) throw new Error("Native desktop Stop is unavailable.");
       result = await owner.stopDesktop();

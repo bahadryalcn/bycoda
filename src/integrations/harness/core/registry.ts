@@ -48,7 +48,7 @@ import { drainRetirementsForWriter, retireProviderOwner } from "./providerRetire
 import { beginHandoffPhase } from "./handoffPhase";
 import { formatDuration } from "../../../shared/i18n/format";
 import { TurnNotReadyError } from "./types";
-import { retireProviderEpoch } from "./providerEpoch";
+import { retireProviderEpoch, retireProviderOwnerAndCommands } from "./providerEpoch";
 import { releaseOwnedOpenCodeForCapability } from "../providers/opencode/opencodeService";
 
 async function operationSkillPolicy(cwd: string, provider: string) {
@@ -1257,9 +1257,7 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
       : undefined;
   const endPhase = beginHandoffPhase(harness, "stopping");
   try {
-    if (context) await adapter.forgetSession(sessionId, context);
-    else await adapter.forgetSession(sessionId);
-    await retireProviderOwner(sessionId);
+    await retireProviderOwnerAndCommands(sessionId, () => adapter.forgetSession(sessionId, context));
     if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
     retireProviderEpoch(
       cancellationEpoch,

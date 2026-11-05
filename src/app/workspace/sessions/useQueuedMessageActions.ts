@@ -305,7 +305,22 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
               if (error instanceof QueueNotReadyError) {
                 // Nothing was sent. The queue stays as it is and the head is
                 // offered again once the host or the other computer settles.
-                scheduleRetry(session.id);
+                const attempt = scheduleRetry(session.id);
+                if (error instanceof QueueDeferredError && attempt >= MAX_REFUSED_DRAINS) {
+                  retryAfter.current.delete(session.id);
+                  setSessions((entries) => entries.map((entry) =>
+                    entry.id === session.id && entry.queuedMessages?.[0]?.id === head.id
+                      && entry.queueStatus !== "paused" && entry.queueStatus !== "resuming"
+                      && entry.queueStatus !== "restored"
+                      ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "reject") }
+                      : entry,
+                  ));
+                  enqueueHarnessEvent(session.id, {
+                    type: "status",
+                    text: t("The queued message is still waiting. The queue is paused; resume it to try again.") + ` ${error.message}`,
+                  });
+                  flushHarnessEvents();
+                }
                 return;
               }
               // The provider refused the head, or its delivery is unconfirmed:

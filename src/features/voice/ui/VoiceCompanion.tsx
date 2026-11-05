@@ -168,8 +168,7 @@ import {
   subscribeGroupLock,
   getGroupLockView,
 } from "../../group-lock/model/groupLock";
-import { previewVoice } from "../model/voicePreview";
-import { mayDeliverVoiceBriefing } from "../model/voiceBriefing";
+import { useVoiceBriefing } from "./useVoiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -276,6 +275,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   if (!toolActivity.current) toolActivity.current = new VoiceToolActivity(setToolActivities);
   const speakerMutedRef = useRef(false);
   const briefingAbort = useRef<AbortController | null>(null);
+  const generation = useRef(0);
   const pushToTalkHeld = useRef(false);
   const [hearingInput, setHearingInput] = useState(false);
   useEffect(() => {
@@ -896,9 +896,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   useLayoutEffect(() => {
     playbackRef.current = playback;
   }, [playback]);
-  const briefingDeliveries = useRef(
-    new Map<string, "playing" | "delivered" | "interrupted" | "unknown">(),
-  );
   useEffect(() => {
     if (lastAdmittedSpeechAt === null) return;
     const remaining = lastAdmittedSpeechAt + settings.idleSleepMinutes * 60_000 - Date.now();
@@ -921,112 +918,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   );
   const presenceRef = useRef(capturePresence);
   presenceRef.current = capturePresence;
-  useEffect(() => {
-    const profile = assistantSnapshot?.profile;
-    const briefing = assistantSnapshot?.briefing;
-    const receipt = briefing?.voiceReceipt;
-    if (
-      !profile ||
-      !briefing ||
-      !receipt ||
-      !mayDeliverVoiceBriefing({
-        profile,
-        presence,
-        status,
-        hold: settings.holdAnnouncements === true || muted || speakerMuted,
-        hour: new Date().getHours(),
-        now: Date.now(),
-        briefing,
-        reason: receipt.reason,
-        returnAt: receipt.returnAt,
-        returnBriefingId: briefing.id,
-        meaningful: receipt.meaningful,
-        important: receipt.important,
-        conversationBusy:
-          playbackRef.current ||
-          phase !== "listening" ||
-          !!pendingChoice.current ||
-          !!pendingJobs.current,
-        delivery: briefingDeliveries.current.get(briefing.id) ?? "pending",
-      })
-    )
-      return;
-    if (
-      assistantSnapshot.memory.some(
-        (entry) =>
-          entry.active &&
-          entry.kind === "rule" &&
-          entry.forbiddenTerms.some((term) =>
-            briefing.text.toLocaleLowerCase().includes(term.toLocaleLowerCase()),
-          ),
-      )
-    )
-      return;
-    const key = "bycoda.voice.last-briefing";
-    const attemptKey = "bycoda.voice.last-briefing-attempt";
-    try {
-      if (
-        localStorage.getItem(key) === briefing.id ||
-        localStorage.getItem(attemptKey) === briefing.id
-      )
-        return;
-      // An interrupted/uncertain announcement is not replayed after a remount.
-      localStorage.setItem(attemptKey, briefing.id);
-    } catch {
-      /* Dedupe still applies in this mounted lifecycle. */
-    }
-    const abort = new AbortController();
-    briefingAbort.current = abort;
-    briefingDeliveries.current.set(briefing.id, "playing");
-    if (briefingDeliveries.current.size > 64)
-      briefingDeliveries.current.delete(briefingDeliveries.current.keys().next().value!);
-    const invitation = t("Press Talk when you want to answer.");
-    void previewVoice(
-      loadVoiceSettings(),
-      profile.language,
-      profile.name,
-      abort.signal,
-      () => setMessage(`${briefing.text}\n${invitation}`),
-      `${briefing.text}\n${invitation}`,
-      (active) => {
-        if (!abort.signal.aborted) setPlayback(active);
-      },
-      { complete: true, languageHint: assistantSnapshot.lastSpokenLanguage ?? undefined },
-    )
-      .then(() => {
-        if (abort.signal.aborted) return;
-        briefingDeliveries.current.set(briefing.id, "delivered");
-        try {
-          localStorage.setItem(key, briefing.id);
-        } catch {
-          /* Mounted dedupe remains. */
-        }
-      })
-      .catch((cause) => {
-        briefingDeliveries.current.set(briefing.id, "unknown");
-        if (!abort.signal.aborted) setError(voiceError(cause, "Voice could not connect."));
-      });
-    return () => {
-      if (briefingDeliveries.current.get(briefing.id) === "playing")
-        briefingDeliveries.current.set(briefing.id, "interrupted");
-      abort.abort();
-      if (briefingAbort.current === abort) briefingAbort.current = null;
-      setPlayback(false);
-    };
-  }, [
-    assistantSnapshot?.briefing?.id,
-    assistantSnapshot?.lastSpokenLanguage,
-    assistantSnapshot?.profile.proactiveSpeech,
-    assistantSnapshot?.profile.quietStart,
-    assistantSnapshot?.profile.quietEnd,
-    ownerKey,
-    presence,
-    status,
-    phase,
-    muted,
-    speakerMuted,
-    settings.holdAnnouncements,
-  ]);
+  const briefingRetry = useVoiceBriefing({ snapshot: assistantSnapshot, owner: ownerKey,
+    session: JSON.stringify([props.activeId, props.assistantSession?.id]), presence, status, phase, muted, speakerMuted,
+    hold: settings.holdAnnouncements === true, playback: playbackRef, pendingChoice, pendingJobs,
+    abort: briefingAbort, generation, setPlayback, setMessage, setError,
+    formatError: (cause) => voiceError(cause, "Voice could not connect.") });
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1155,7 +1051,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     for (const turn of recentTurns.current) turn.text = turn.text.slice(-4000);
   }
   const realtime = settings.mode === "local" ? undefined : REALTIME[settings.mode];
-  const generation = useRef(0);
   useEffect(() => {
     setNarrationGeneration(undefined);
     const runtime = client.current;
@@ -3375,12 +3270,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           </Button>
         )}
       </header>
-      {compact && (
-        <LiveText
-          className={styles.srOnly}
-          text={`${shownError || statusText}${target?.busy ? ` | ${sessionStatusText}` : ""}`}
-        />
-      )}
+      <LiveText
+        className={styles.srOnly}
+        text={compact ? `${shownError || statusText}${target?.busy ? ` | ${sessionStatusText}` : ""}` : jobReview && !detached && !jobReviewVisible ? t("The selected project is no longer visible.") : shownMessage}
+      />
       <div className={styles.body} hidden={compact}>
         {bodyVisible && (
           <VoiceToolActivityPanel
@@ -3435,7 +3328,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             />
           ) : (
             <div>
-              <p role="status">{t("The selected project is no longer visible.")}</p>
+              <p>{t("The selected project is no longer visible.")}</p>
               <Button disabled={jobReview.busy} onClick={cancelJobReview}>
                 {t("Cancel review")}
               </Button>
@@ -3510,7 +3403,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           </div>
         )}
         {shownMessage && (
-          <div className={styles.turn} role="status">
+          <div className={styles.turn}>
             <span className="sr-only">{t("Reply")}: </span>
             <p className={styles.message}>{shownMessage}</p>
           </div>
@@ -3527,17 +3420,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               </details>
             </>
           ))}
+        {briefingRetry.retryable && <Button disabled={!briefingRetry.canRetry} onClick={briefingRetry.retry}>{t("Retry briefing")}</Button>}
         {shownError ? <MicrophoneRecoveryAction message={shownError} /> : null}
-        {historyNotice && historyNotice !== shownError && (
-          <p role="status" className={styles.caption}>
-            {historyNotice}
-          </p>
-        )}
-        {ruleNotice && (
-          <p role="status" className={styles.caption}>
-            {ruleNotice}
-          </p>
-        )}
+        <LiveText className={styles.caption} text={historyNotice !== shownError ? historyNotice : ""} />
+        <LiveText className={styles.caption} text={ruleNotice} />
         {ownerRuleWrites.current.hasPending && (
           <Button loading={savingRule} onClick={() => void saveOwnerRule()}>
             {t("Retry rule save")}

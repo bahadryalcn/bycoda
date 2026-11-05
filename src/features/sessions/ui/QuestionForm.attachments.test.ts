@@ -24,7 +24,10 @@ vi.mock("../model/attachments", async (original) => ({
   pickAttachments: mocks.pick,
   attachmentsFromFiles: mocks.fromFiles,
 }));
-vi.mock("../model/questionAttachments", () => ({ prepareQuestionAttachments: mocks.prepare }));
+vi.mock("../model/questionAttachments", async (original) => ({
+  ...(await original<typeof import("../model/questionAttachments")>()),
+  prepareQuestionAttachments: mocks.prepare,
+}));
 vi.mock("./useComposerFileDrop", () => ({
   useComposerFileDrop: (options: NonNullable<typeof mocks.drop>) => {
     mocks.drop = options;
@@ -149,7 +152,7 @@ describe("question attachments", () => {
     Object.defineProperty(event, "clipboardData", { value: { files: [image], items: [] } });
     await act(async () => node.querySelector("textarea")!.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
-    expect(mocks.fromFiles).toHaveBeenCalledWith([image]);
+    expect(mocks.fromFiles).toHaveBeenCalledWith([image], { persistBlobs: false });
     expect(node.textContent).toContain(file.name);
   });
 

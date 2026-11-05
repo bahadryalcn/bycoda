@@ -1,5 +1,25 @@
-import type { UserQuestionReply } from "../../src/shared/model/userQuestion";
-import { parseRemoteAttachments } from "../attachments/attachments";
+import type { UserQuestion, UserQuestionReply } from "../../src/shared/model/userQuestion";
+import type { HostStore } from "../store";
+import { parseRemoteAttachments, resolveQuestionAttachments } from "../attachments/attachments";
+
+export async function resolveAuthorizedQuestionAttachments(
+  store: HostStore,
+  questions: UserQuestion[],
+  refs: NonNullable<Extract<UserQuestionReply, { kind: "answered" }>["attachments"]>,
+  authorize?: () => Promise<void>,
+) {
+  const populated = Object.values(refs).some((files) => files.length);
+  if (populated && !authorize) throw new Error("Question attachment identity is unavailable");
+  if (populated) await authorize!();
+  const resolved = Object.fromEntries(await Promise.all(Object.entries(refs).map(async ([id, files]) => {
+    const question = questions.find((item) => item.id === id);
+    if (!question?.allowCustom || question.preserveCustomWhitespace)
+      throw new Error("This question cannot accept attachments");
+    return [id, await resolveQuestionAttachments(store, parseRemoteAttachments(files))] as const;
+  })));
+  if (populated) await authorize!();
+  return resolved;
+}
 
 /** Validate untrusted question answer payload before dispatch to a provider. */
 export function parseQuestionReply(value: unknown): UserQuestionReply {

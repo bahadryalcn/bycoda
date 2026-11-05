@@ -25,3 +25,12 @@ it("forgets only the requested session and notifies its subscribers", () => {
   releaseOther();
   forgetSessionCommands("retained");
 });
+
+it("does not erase replacement discovery when an older retirement completes", () => {
+  reportSessionCommands("reused", [{ name: "old", kind: "command" }]);
+  const old = getReportedCommands("reused");
+  reportSessionCommands("reused", [{ name: "new", kind: "command" }]);
+  forgetSessionCommands("reused", old);
+  expect(getReportedCommands("reused")).toEqual([{ name: "new", kind: "command" }]);
+  forgetSessionCommands("reused");
+});

@@ -158,6 +158,10 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
       assistantName: z.string().optional(),
     }),
   },
+  "native.services.desktop.status.wait": {
+    params: z.strictObject({ afterRevision: z.string().max(100), timeoutMs: z.number().int().min(1).max(25000) }),
+    result: z.strictObject({ revision: z.string().max(100) }),
+  },
   "native.services.desktop.stop": {
     params: empty,
     result: z.strictObject({ stopped: z.literal(true) }),
@@ -296,6 +300,7 @@ export const NATIVE_SERVICE_METHODS = Object.freeze(
 );
 export function nativeServiceReadOnly(method: NativeServiceMethod): boolean {
   return (
+    method === "native.services.desktop.status.wait" ||
     method === "native.services.assistant.presence.get" ||
     method === "native.services.assistant.visibility.epoch" ||
     method === "native.services.assistant.notification.authorize" ||

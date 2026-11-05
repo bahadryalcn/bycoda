@@ -1,6 +1,5 @@
 import { forEachAsync, mapAsync } from "../async-collections";
 import { assertExpectedConfiguration } from "../configurationConflict";
-import { isDeepStrictEqual } from "node:util";
 
 import {
   canEditTask,
@@ -145,15 +144,21 @@ export async function move(
   id: string,
   to: unknown,
   reviewed?: HostTask,
+  expectedGeneration?: number,
 ): Promise<HostTask> {
   await context.ready;
 
   if (context.delivering.has(id)) throw new Error("This task is being merged.");
-  const task = await context.find(id);
+  const { task, generation } = await context.transaction(async () => ({
+    task: await context.find(id),
+    generation: Number((await context.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0),
+  }));
   if (!task) throw new Error("Task not found.");
+  if (expectedGeneration !== undefined && generation !== expectedGeneration)
+    throw new Error("Task changed before starting. Refresh and try again.");
   if (reviewed) {
     assertExpectedConfiguration({ expectedConfiguration: reviewed }, task, parseHostTask);
-    if (reviewed.updatedAt !== task.updatedAt || reviewed.status !== task.status)
+    if (reviewed.status !== task.status)
       throw new Error("Task changed after review. Read it again.");
     if (to !== "queued") throw new Error("Reviewed task admission only queues work.");
   }
@@ -181,7 +186,7 @@ export async function move(
   if (to === "queued" && !task.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
   if (to === "queued") await context.resolveAssistantRecoveryForOwner(task);
   if (to === "queued" && canTakeOverBlockedTask(task))
-    return await context.queueTakeover(task, now, reviewed ? task : undefined);
+    return await context.queueTakeover(task, now, task, generation);
   if (to === "queued" && taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
   if (to === "todo" && task.status === "queued") {
     // Only a task nothing has run for can be pulled back.
@@ -244,7 +249,8 @@ export async function move(
           updatedAt: now,
         },
         undefined,
-        reviewed ? task : undefined,
+        task,
+        generation,
       );
     const {
       branch,
@@ -279,7 +285,8 @@ export async function move(
     return await context.write(
       { ...fresh, status: to, updatedAt: now },
       undefined,
-      reviewed ? task : undefined,
+      task,
+      generation,
     );
   }
   if (to === "blocked") {
@@ -344,7 +351,7 @@ export async function startTask(
     );
   if (reviewed) {
     assertExpectedConfiguration({ expectedConfiguration: reviewed }, task, parseHostTask);
-    if (reviewed.updatedAt !== task.updatedAt || reviewed.status !== task.status)
+    if (reviewed.status !== task.status)
       throw new Error("Task changed after review. Read it again.");
   }
   if (task.status === "queued") await context.resolveAssistantRecoveryForOwner(task);
@@ -355,19 +362,21 @@ export async function startTask(
       throw new Error("This goal was cancelled. Create a new task to continue its retained work.");
   }
   if (task.status !== "queued") {
-    task = await context.move(id, "queued", reviewed);
+    task = await context.move(id, "queued", reviewed ?? task, generation);
     const moved = task;
     generation = await context.transaction(async () => {
       const current = await context.find(id);
-      if (!current || !isDeepStrictEqual(current, JSON.parse(JSON.stringify(moved))))
-        throw new Error("Task changed before starting. Refresh and try again.");
-      return Number(
+      const currentGeneration = Number(
         (
           await context.store.db
             .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
             .get(id)
         )?.generation ?? 0,
       );
+      if (!current || current.status !== "queued" || currentGeneration !== generation + 1)
+        throw new Error("Task changed before starting. Refresh and try again.");
+      assertExpectedConfiguration({ expectedConfiguration: moved }, current, parseHostTask);
+      return currentGeneration;
     });
   }
   const accepted = await context.transaction(async () => {

@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State};
+mod events;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -332,7 +333,20 @@ pub(crate) fn start_prepared(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn start_for_owner(
+    state: &SshForwards, owner: &ForwardOwner, id: String, connection_id: String,
+    local_port: u16, target_host: String, target_port: u16, args: Vec<String>,
+    identity_args: Option<Vec<String>>,
+    jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+    http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+) -> Result<ForwardStatus, String> {
+    start_for_owner_notifying(state, owner, id, connection_id, local_port, target_host,
+        target_port, args, identity_args, jump_config, http_proxy, &|_| {})
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_for_owner_notifying(
     state: &SshForwards,
     owner: &ForwardOwner,
     id: String,
@@ -344,6 +358,7 @@ fn start_for_owner(
     identity_args: Option<Vec<String>>,
     jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
     http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+    on_created: &dyn Fn(uuid::Uuid),
 ) -> Result<ForwardStatus, String> {
     if id.is_empty() || id.len() > 200 || id.chars().any(char::is_control) {
         return Err("Invalid forwarding identifier".into());
@@ -456,6 +471,7 @@ fn start_for_owner(
     if let Some(status) = existing {
         return Ok(status);
     }
+    on_created(generation);
     let deadline = Instant::now() + Duration::from_secs(18);
     let mut listener_since = None;
     while Instant::now() < deadline {
@@ -539,11 +555,12 @@ pub fn ssh_forward_start(
         kind.as_deref().unwrap_or("local"),
     )?;
     let identity_args = crate::ssh_security::stable_args(&endpoint, &args);
-    start_for_owner(
+    let created = std::cell::Cell::new(None);
+    let result = start_for_owner_notifying(
         &state,
         &owner,
-        id,
-        connection_id,
+        id.clone(),
+        connection_id.clone(),
         local_port,
         target_host,
         target_port,
@@ -551,7 +568,18 @@ pub fn ssh_forward_start(
         Some(identity_args),
         endpoint.prepared_jump_config.clone(),
         crate::ssh_security::start_http_proxy_authorized(&endpoint, proxy_grant.as_ref())?,
-    )
+        &|generation| {
+            created.set(Some(generation));
+            events::publish(&app, window.label(), &connection_id, &id, generation, &owner);
+        },
+    );
+    let generation = created.get().or_else(|| state.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&id)
+        .filter(|live| live.owner_lease.same_generation(&owner)).map(|live| live.generation));
+    if let Some(generation) = generation {
+        events::publish(&app, window.label(), &connection_id, &id, generation, &owner);
+        if result.is_ok() { events::watch(app.clone(), window.label().into(), connection_id, id, generation, owner); }
+    }
+    result
 }
 #[tauri::command(async)]
 pub fn ssh_forward_stop(
@@ -559,7 +587,15 @@ pub fn ssh_forward_stop(
     state: State<'_, SshForwards>,
     id: String,
 ) -> Result<(), String> {
-    stop_owned(&state, window.label(), &id)
+    let owner = state.owner(window.label())?;
+    let original = state.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&id)
+        .filter(|live| live.owner_lease.same_generation(&owner))
+        .map(|live| (live.status.connection_id.clone(), live.generation));
+    let result = stop_owned(&state, window.label(), &id);
+    if let Some((connection_id, generation)) = original {
+        events::publish(window.app_handle(), window.label(), &connection_id, &id, generation, &owner);
+    }
+    result
 }
 pub(crate) fn stop_owned(state: &SshForwards, owner: &str, id: &str) -> Result<(), String> {
     stop_owned_with(state, owner, id, reap_child)
@@ -595,7 +631,16 @@ pub fn ssh_forward_list(
     window: tauri::Window,
     state: State<'_, SshForwards>,
 ) -> Result<Vec<ForwardStatus>, String> {
-    list_window(&state, window.label())
+    let result = list_window(&state, window.label())?;
+    let owner = state.owner(window.label())?;
+    for status in result.iter().filter(|status| status.state == "stopping") {
+        let generation = state.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&status.id)
+            .filter(|live| live.owner_lease.same_generation(&owner) && live.status.state == "failed").map(|live| live.generation);
+        if let Some(generation) = generation {
+            events::publish(window.app_handle(), window.label(), &status.connection_id, &status.id, generation, &owner);
+        }
+    }
+    Ok(result)
 }
 fn list_window(state: &SshForwards, label: &str) -> Result<Vec<ForwardStatus>, String> {
     let owner = state.owner(label)?;

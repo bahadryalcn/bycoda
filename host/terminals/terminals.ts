@@ -9,6 +9,7 @@ import { listShellProfiles, type ShellProfiles } from "../execution/shellProfile
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
 import { startTerminalProcess, type OwnedTerminalProcess } from "../terminal-process";
 import { RetiredRequestFence } from "../storage/request-fence";
+import { TerminalWorkspaceIndex } from "./workspace-index";
 
 export const TERMINAL_OUTPUT_LIMIT = 256 * 1024;
 const MAX_TERMINALS = 32;
@@ -38,6 +39,7 @@ type Creation = {
 /** In-memory ownership only: persisted PIDs never authorize reads or process signals. */
 export class HostTerminals {
   private entries = new Map<string, TerminalEntry>();
+  private readonly workspaceIndex = new TerminalWorkspaceIndex();
   private creations = new Map<string, Creation>();
   private readonly retired = new RetiredRequestFence();
   private closed = false;
@@ -86,6 +88,13 @@ export class HostTerminals {
       writable: true,
       profiles: this.profiles().profiles.map(({ id, name }) => ({ id, name })),
     };
+  }
+
+  runningInWorkspace(root: string): HostTerminal[] {
+    return this.workspaceIndex.ids(root).flatMap((id) => {
+      const entry = this.entries.get(id);
+      return entry?.value.state === "running" ? [{ ...entry.value }] : [];
+    });
   }
 
   create(
@@ -200,10 +209,12 @@ export class HostTerminals {
       },
     };
     this.entries.set(entry.value.id, entry);
+    this.workspaceIndex.add(entry.value.id, cwd);
     try {
       entry.releaseActivity = await this.activityGate?.(cwd, entry.value.id);
     } catch (error) {
       this.entries.delete(entry.value.id);
+      this.workspaceIndex.delete(entry.value.id, cwd);
       throw error;
     }
     try {
@@ -211,6 +222,7 @@ export class HostTerminals {
       if (this.closed) throw new Error("Host terminals are stopping");
     } catch (error) {
       entry.value.state = "exited";
+      this.workspaceIndex.delete(entry.value.id, cwd);
       // No launch was attempted, so cleanup can be retried without stop proof.
       entry.exitedAt = this.now();
       try {
@@ -233,6 +245,7 @@ export class HostTerminals {
         },
         (code) => {
           entry.value.state = "exited";
+          this.workspaceIndex.delete(entry.value.id, cwd);
           entry.value.exitCode = code;
           entry.exitedAt = this.now();
           void this.releaseActivity(entry)

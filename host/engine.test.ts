@@ -5759,7 +5759,7 @@ describe("headless session ownership", () => {
               ],
             },
           },
-        }),
+        }, async () => {}),
       ).rejects.toThrow("This question cannot accept attachments");
       expect(provider.answer).not.toHaveBeenCalled();
     },
@@ -5800,7 +5800,7 @@ describe("headless session ownership", () => {
         answers: {},
         attachments: { q1: [{ ...file, path: "C:\\wrong-machine\\report.txt" }] },
       },
-    });
+    }, async () => {});
     await vi.waitFor(() => expect(provider.answer).toHaveBeenCalledTimes(1));
     const sent = vi.mocked(provider.answer).mock.calls.at(-1)![2];
     expect(sent.kind).toBe("answered");

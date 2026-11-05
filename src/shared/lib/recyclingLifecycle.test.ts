@@ -35,7 +35,7 @@ it("bekleyen epoch değişirse startup yayınlamaz, rejection sonraki sırayı z
       }),
     ],
   ]);
-  const epochs = new Map<string, number>();
+  const epochs = new Map<string, object>();
   const start = vi.fn(async () => ({ cwd: "/repo", stale: false }));
   const lifecycle = createRecyclingLifecycle({
     epochs,
@@ -47,7 +47,7 @@ it("bekleyen epoch değişirse startup yayınlamaz, rejection sonraki sırayı z
     supersededMessage: "retired",
   });
   const pending = lifecycle.ensure({ sessionId: "s", cwd: "/repo" }, true);
-  epochs.set("s", 1);
+  epochs.set("s", {});
   release();
   await expect(pending).rejects.toThrow("retired");
   expect(start).not.toHaveBeenCalled();
@@ -82,7 +82,7 @@ it("prepared admission failure leaves A and its resume untouched", async () => {
 });
 
 it("prepared B is retired after cancellation while original A is held and only explicit fresh C starts", async () => {
-  const epochs = new Map<string, number>();
+  const epochs = new Map<string, object>();
   const live = new Map([["s", { cwd: "/a", stale: false }]]);
   let enter!: () => void, release!: () => void;
   const entered = new Promise<void>((resolve) => {
@@ -124,7 +124,7 @@ it("prepared B is retired after cancellation while original A is held and only e
   const outcome = b.catch((error: unknown) => error);
   await entered;
   expect(order).toEqual(["reserve:/b", "retire-a"]);
-  epochs.set("s", 1);
+  epochs.set("s", {});
   release();
   expect(String(await outcome)).toContain("prepared cancelled");
   expect(order).toEqual(["reserve:/b", "retire-a", "cleanup:/b"]);
@@ -173,4 +173,23 @@ it("prepared B cleanup is joined when original A teardown rejects", async () => 
   expect(start).not.toHaveBeenCalled();
   release();
   expect(await outcome).toBe(original);
+});
+
+it("does not revive an old lifecycle when its retired session id is reused", async () => {
+  let release!: () => void;
+  const epochs = new Map<string, object>();
+  const queue = new Map([["s", new Promise<void>((resolve) => { release = resolve; })]]);
+  const start = vi.fn(async () => ({ cwd: "/repo", stale: false }));
+  const lifecycle = createRecyclingLifecycle({
+    epochs, queue, live: new Map(), resume: new Map(), start,
+    teardown: async () => {}, supersededMessage: "retired",
+  });
+  const old = lifecycle.ensure({ sessionId: "s", cwd: "/repo" }, true);
+  epochs.set("s", {});
+  epochs.delete("s");
+  epochs.set("s", {});
+  release();
+  await expect(old).rejects.toThrow("retired");
+  await lifecycle.ensure({ sessionId: "s", cwd: "/repo" }, true);
+  expect(start).toHaveBeenCalledOnce();
 });

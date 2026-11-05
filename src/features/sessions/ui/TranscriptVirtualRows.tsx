@@ -1,3 +1,4 @@
+import { stableCodeDisclosureIdentity } from "./stableCodeDisclosureIdentity";
 import { flushSync } from "react-dom";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -333,19 +334,19 @@ function MeasuredRow({
   useLayoutEffect(() => {
     const node = element.current;
     const saved = owner?.codeFolds.get(key);
-    const restored = new Set<number>();
+    const restored = new Set<string>();
     const restore = () => {
       if (!node || !saved) return;
-      ownCodeShells(node).forEach((shell, index) => {
-        if (restored.has(index) || typeof saved[index] !== "boolean") return;
-        restored.add(index);
-        if (saved[index] !== (shell.dataset.collapsed === "true"))
+      stableCodeDisclosureIdentity(ownCodeShells(node)).forEach((identity, shell) => {
+        if (restored.has(identity) || typeof saved[identity] !== "boolean") return;
+        restored.add(identity);
+        if (saved[identity] !== (shell.dataset.collapsed === "true"))
           shell.querySelector<HTMLButtonElement>(".markdown-code-toggle")?.click();
       });
     };
     restore();
     const observer =
-      node && saved?.length && typeof MutationObserver !== "undefined"
+      node && saved && typeof MutationObserver !== "undefined"
         ? new MutationObserver(restore)
         : null;
     if (node) observer?.observe(node, { childList: true, subtree: true });
@@ -355,7 +356,7 @@ function MeasuredRow({
       if (shells.length)
         owner?.codeFolds.set(
           key,
-          shells.map((shell) => shell.dataset.collapsed === "true"),
+          Object.fromEntries([...stableCodeDisclosureIdentity(shells)].map(([shell, identity]) => [identity, shell.dataset.collapsed === "true"])),
         );
     };
   }, [owner, key]);

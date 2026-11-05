@@ -2916,7 +2916,7 @@ fn harness_spawn_blocking(
             })
     });
 
-    crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
+    let mut scratch = crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
     configure_optional_tool_grants(&app, &session_id, &mut cmd, (epoch, kill_all));
 
     // Hold this child's redaction values through its final output drain, even
@@ -2945,6 +2945,7 @@ fn harness_spawn_blocking(
     })?;
     // Registration happens before the pending start is settled, including the
     // interval before the physical child is installed in the live map.
+    if let Some(scratch) = scratch.as_mut() { scratch.started(); }
     let _ = page_start.attach(managed_exit.clone());
     let pid = child.id();
     if let Some(activity) = workspace_activity.as_mut() {
@@ -3029,7 +3030,9 @@ fn harness_spawn_blocking(
             } else {
                 Err("Provider wait failed; admission retained".into())
             };
-            managed_exit.finish(result.and(finished));
+            let settlement = result.and(finished);
+            if settlement.is_ok() && child.retirement().require_verified().is_ok() { if let Some(scratch) = scratch.as_mut() { scratch.settled(); } }
+            managed_exit.finish(settlement);
         });
         return Err(SPAWN_CANCELLED.to_string());
     }
@@ -3144,6 +3147,7 @@ fn harness_spawn_blocking(
         output.terminal_delivery(terminal_sent);
         // Final native callback belongs to this same original owner too.
         let confirmed = settlement.is_ok();
+        if confirmed && writers.is_ok() && child.retirement().require_verified().is_ok() { if let Some(scratch) = scratch.as_mut() { scratch.settled(); } }
         managed_exit.finish(settlement);
         if confirmed {
             if let Some(lifetime) = window_lifetime {
@@ -3494,30 +3498,16 @@ fn link_dir(source: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(source, link)
 }
 
+#[cfg(windows)]
+mod junction;
+
 /// Directory symlinks need Developer Mode on Windows; a junction does not.
 #[cfg(windows)]
 fn link_dir(source: &Path, link: &Path) -> std::io::Result<()> {
     if std::os::windows::fs::symlink_dir(source, link).is_ok() {
         return Ok(());
     }
-    let mut cmd = Command::new("cmd");
-    cmd.arg("/C")
-        .arg("mklink")
-        .arg("/J")
-        .arg(link)
-        .arg(source)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    crate::hide_window_console(&mut cmd);
-    let status = cmd.status()?;
-    if status.success() && link.is_dir() {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!(
-            "mklink /J exited with {status}"
-        )))
-    }
+    junction::create(source, link)
 }
 
 #[cfg(test)]
@@ -7387,7 +7377,7 @@ fn login_shell_path() -> Option<String> {
 fn login_shell_env(name: &str) -> Option<String> {
     let mut cache = LOGIN_SHELL_ENV.lock().ok()?;
     if cache.is_none() {
-        *cache = Some(load_login_shell_env());
+        *cache = Some(load_login_shell_env()).filter(|env| !env.is_empty());
     }
     cache
         .as_ref()
@@ -7436,7 +7426,7 @@ fn load_unix_login_shell_env() -> HashMap<String, String> {
     };
     let rx = output_wait(child);
     let output = match rx.recv_timeout(LOGIN_SHELL_TIMEOUT) {
-        Ok(Ok(output)) => output,
+        Ok(Ok(output)) if output.status.success() => output,
         _ => {
             rx.stop_and_drain();
             return HashMap::new();

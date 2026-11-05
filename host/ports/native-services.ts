@@ -55,7 +55,7 @@ export interface NativeServicesAdapters {
   runtimeLogs: RuntimeLogAccess;
   terminalLogs: RuntimeTerminalLogs;
   desktop: ConversationDesktopRelay;
-  desktopControl?: Pick<HostDesktopControl, "request" | "indicatorStatus">;
+  desktopControl?: Pick<HostDesktopControl, "request" | "indicatorStatus"> & Partial<Pick<HostDesktopControl, "statusChanges">>;
   assistantName?(): Promise<string>;
   assistantPresence?(): Promise<NativeAssistantPresence>;
   setAssistantPresence?(state: "present" | "away" | "dnd"): Promise<void>;
@@ -206,6 +206,13 @@ export function bindNativeServicesOwner(
           ...(assistantName ? { assistantName } : {}),
         };
       }),
+    waitDesktopStatus: async (afterRevision, timeoutMs, signal) => {
+      const changes = adapters.desktopControl?.statusChanges;
+      if (!changes || !(await authorized())) throw new HostDomainAuthorizationError();
+      const revision = await changes.wait(afterRevision, timeoutMs, signal);
+      if (signal?.aborted || !(await authorized())) throw new HostDomainAuthorizationError();
+      return { revision };
+    },
     stopDesktop: () =>
       guarded(async () => {
         if (!adapters.desktopControl) throw new Error("Native desktop Stop is unavailable.");

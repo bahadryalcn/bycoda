@@ -832,6 +832,7 @@
   "Couldn’t reach {p0}. Trying again…": "{p0} konnte nicht erreicht werden. Versuche es noch einmal…",
   "Couldn’t load sessions": "Sitzungen konnten nicht geladen werden",
   "Retry": "Wiederholen",
+  "Retry briefing": "Briefing erneut versuchen",
   "No matching sessions": "Keine passenden Sitzungen",
   "No sessions match these filters": "Keine Sitzungen entsprechen diesen Filtern",
   "Clear filters (": "Filter löschen (",

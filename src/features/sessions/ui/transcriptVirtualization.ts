@@ -26,7 +26,7 @@ export class TranscriptVirtualization {
   private scrolls = new Map<HTMLElement, { references: number; anchor: ScrollAnchor }>();
   private turnUsers = new Map<HTMLElement, number>();
   readonly disclosures = new Map<string, boolean | null>();
-  readonly codeFolds = new Map<string, boolean[]>();
+  readonly codeFolds = new Map<string, Record<string, boolean>>();
   readonly measurements = new Map<string, Map<string, { width: number; height: number }>>();
   readonly rowScroll = new WeakMap<HTMLElement, HTMLElement>();
   adjusted?: (element: HTMLElement) => void;

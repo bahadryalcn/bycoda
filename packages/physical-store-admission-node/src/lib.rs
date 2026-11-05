@@ -2,6 +2,7 @@
 //! Neither creates application permission or complete writer enrollment.
 //! Live guards belong to a pinned process-native registry, not JavaScript GC.
 mod image_pin;
+mod rename_no_replace;
 mod sqlite_extension;
 
 pub use sqlite_extension::{

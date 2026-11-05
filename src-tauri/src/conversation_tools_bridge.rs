@@ -79,105 +79,11 @@ pub(crate) fn device_finish_payload(
         .or_else(|error| source.project(|_| Ok(json!({"id": id, "error": error}))))
 }
 
-/// Poll cadence: answers stay quick while agents are using desktop tools,
-/// idle polling slows down in steps to 15 s (the caller keeps 2 s while a
-/// provider session holds a conversation grant), and an unreachable or
-/// unpaired host backs off to 30 s.
-fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::time::Duration {
-    use std::time::Duration;
-    if failures > 0 {
-        return Duration::from_secs(1u64 << failures.min(5)).min(Duration::from_secs(30));
-    }
-    if since_request < Duration::from_secs(60) {
-        Duration::from_secs(1)
-    } else if since_request < Duration::from_secs(300) {
-        Duration::from_secs(2)
-    } else if since_request < Duration::from_secs(1800) {
-        Duration::from_secs(5)
-    } else {
-        Duration::from_secs(15)
-    }
-}
-
-pub fn start_desktop_relay(app: AppHandle) {
-    let mut failures = 0u32;
-    let mut last_request = std::time::Instant::now();
-    std::thread::spawn(move || {
-        let mut channel: Option<Arc<crate::remote::NativeServiceChannel>> = None;
-        let mut last_observations = std::time::Instant::now();
-        loop {
-            if channel
-                .as_ref()
-                .is_some_and(|channel| !channel.is_current())
-            {
-                channel = None;
-            }
-            let selected = match channel.as_ref() {
-                Some(channel) => Ok(channel.clone()),
-                None => crate::remote::NativeServiceChannel::connect(&app).inspect(|selected| {
-                    channel = Some(selected.clone());
-                }),
-            };
-            let taken = selected.and_then(|issuer| {
-                let reply = Arc::new(issuer.request("conversation.desktop.take", json!({}))?);
-                let requests = reply.project(|requests| {
-                    Ok(requests
-                        .as_array()
-                        .map(|requests| requests.to_vec())
-                        .unwrap_or_default())
-                })?;
-                Ok((issuer, reply, requests))
-            });
-            failures = if taken.is_ok() {
-                0
-            } else {
-                failures.saturating_add(1)
-            };
-            if let Ok((issuer, taken, requests)) = taken {
-                if requests.is_empty() && last_observations.elapsed() >= std::time::Duration::from_secs(30) {
-                    last_observations = std::time::Instant::now();
-                    let publishing_app = app.clone();
-                    let publishing_channel = issuer.clone();
-                    std::thread::spawn(move || {
-                        // Deferred or uncertain batches remain in the original durable outbox.
-                        let _ = assistant_observation_publisher::publish_from_primary_window(&publishing_app, &publishing_channel);
-                    });
-                }
-                if !requests.is_empty() {
-                    last_request = std::time::Instant::now();
-                }
-                for request in requests {
-                    let app = app.clone();
-                    let issuer = issuer.clone();
-                    let taken = taken.clone();
-                    std::thread::spawn(move || {
-                        let result = execute_desktop_request(&app, &request, &issuer, &taken);
-                        let reply = match &result {
-                            Ok(outcome) => outcome.finish_payload(&request["id"], &taken),
-                            Err(error) => {
-                                taken.project(|_| Ok(json!({"id": request["id"], "error": error})))
-                            }
-                        };
-                        // A completed job is returned only to its original issuer.
-                        // Preparation admits this bounded original forwarding;
-                        // all original replies remain owned through settlement.
-                        if let Ok(reply) = reply {
-                            let _ =
-                                issuer.project("conversation.desktop.finish", reply, |_| Ok(()));
-                        }
-                        drop(result);
-                    });
-                }
-            }
-            let session_active = grants().lock().map(|map| !map.is_empty()).unwrap_or(true);
-            let mut delay = next_poll_delay(failures, last_request.elapsed());
-            if failures == 0 && session_active {
-                delay = delay.min(std::time::Duration::from_secs(2));
-            }
-            std::thread::sleep(delay);
-        }
-    });
-}
+#[path = "conversation_tools_bridge/relay.rs"]
+mod relay;
+pub(crate) use relay::start_desktop_relay;
+#[cfg(test)]
+use relay::next_poll_delay;
 
 fn execute_desktop_request(
     app: &AppHandle,

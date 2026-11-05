@@ -168,6 +168,7 @@ export async function handleNativeRpc(
     case "native.services.assistant.presence.set":
 
     case "native.services.desktop.status":
+    case "native.services.desktop.status.wait":
 
     case "native.services.runtimeLogs.bridge.describe":
 

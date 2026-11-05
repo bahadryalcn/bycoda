@@ -832,6 +832,7 @@
   "Couldn’t reach {p0}. Trying again…": "No se pudo comunicar con {p0}. Intentando de nuevo…",
   "Couldn’t load sessions": "No se pudieron cargar las sesiones",
   "Retry": "Reintentar",
+  "Retry briefing": "Reintentar informe",
   "No matching sessions": "No hay sesiones coincidentes",
   "No sessions match these filters": "Ninguna sesión coincide con estos filtros",
   "Clear filters (": "Borrar filtros (",

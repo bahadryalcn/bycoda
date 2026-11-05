@@ -21,7 +21,8 @@ export function reportSessionCommands(sessionId: string, commands: ReportedComma
 }
 
 /** Forget provider-owned discovery when its session is deleted or switched. */
-export function forgetSessionCommands(sessionId: string): void {
+export function forgetSessionCommands(sessionId: string, expected?: readonly ReportedCommand[]): void {
+  if (expected && reported.get(sessionId) !== expected) return;
   if (!reported.delete(sessionId)) return;
   for (const listener of listeners.get(sessionId) ?? []) listener();
 }

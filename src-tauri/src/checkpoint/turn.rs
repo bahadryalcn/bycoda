@@ -3,6 +3,8 @@ use super::*;
 use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
 pub(super) mod leases;
+#[path = "turn_paths.rs"]
+mod turn_paths;
 
 /// File metadata is still checked for legacy/mixed-version peers that do not
 /// publish a lease. Only changed payloads need reopening and JSON parsing.
@@ -957,16 +959,11 @@ impl CheckpointStore {
             let paths = changed
                 .split(|b| *b == 0)
                 .filter(|p| !p.is_empty())
+                // Compare raw Git path bytes before decoding: unrelated Unix names
+                // need not be UTF-8 and must never alias a captured name.
+                .filter(|path| turn_paths::includes(path, &turn.captured, ambiguous))
                 .map(|p| String::from_utf8(p.to_vec()).map_err(|e| e.to_string()))
                 .collect::<Result<Vec<_>, _>>()?;
-            // A checkout-wide diff cannot attribute simultaneous shell edits.
-            // Only this session's explicit tool completions prove membership.
-            let paths: Vec<_> = paths
-                .into_iter()
-                .filter(|path| {
-                    (!ambiguous && turn.captured.is_empty()) || turn.captured.contains(path)
-                })
-                .collect();
             if paths.len() > MAX_SNAPSHOT_FILES {
                 return Err("Too many changed files for workspace checkpoint".into());
             }

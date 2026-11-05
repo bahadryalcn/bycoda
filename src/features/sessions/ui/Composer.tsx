@@ -210,7 +210,7 @@ import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
-import { QuestionForm } from "./QuestionForm";
+import { ComposerQuestionForm } from "./ComposerQuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
 import { SkillPicker } from "../../skills/ui/SkillPicker";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
@@ -3461,19 +3461,17 @@ export const Composer = memo(function Composer({
       onMouseDown={disabled ? undefined : onFocus}
       onKeyDownCapture={disabled ? undefined : onComposerKeyDown}
     >
-      {question && onQuestionReply ? (
-        <QuestionForm
-          prompt={question}
-          parentSessionId={logicalParentSessionId}
-          draftScope={questionDraftScope ?? sessionId}
-          onReply={onQuestionReply}
-          onInteraction={onQuestionInteraction}
-          attachmentsSupported={
-            attachmentsSupported && (!remote || !!remoteFeatures?.questionAttachments)
-          }
-          remote={remote}
-        />
-      ) : null}
+      <ComposerQuestionForm
+        question={question}
+        sessionId={sessionId}
+        parentSessionId={logicalParentSessionId}
+        draftScope={questionDraftScope}
+        onReply={onQuestionReply}
+        onInteraction={onQuestionInteraction}
+        attachmentsSupported={attachmentsSupported}
+        remoteFeatures={remoteFeatures}
+        remote={remote}
+      />
       {parentClosed ? (
         <p role="status" className="px-3 text-ui-micro text-(--ui-text-secondary)">
           {t("Preparing session checkpoint. Your draft is kept.")}

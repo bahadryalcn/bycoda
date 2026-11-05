@@ -235,7 +235,7 @@ export function codexMcpForm(params: unknown): CodexMcpForm | null {
     if (
       type === "array" &&
       typeof field.minItems === "number" &&
-      field.minItems > (asRecord(field.items)?.enum as unknown[]).length
+      field.minItems > (Array.isArray(asRecord(field.items)?.enum) ? (asRecord(field.items)!.enum as unknown[]).length : 0)
     )
       return null;
     if (type === "array" && (field.minItems === undefined || field.minItems === 0))

@@ -459,8 +459,8 @@ export class HostTasks {
 
   /** Moving a reviewed task to done merges its branch; that can fail, and the
    * task then stays in review. */
-  move(id: string, to: unknown, reviewed?: HostTask): Promise<HostTask> {
-    return taskActions.move(this.context, id, to, reviewed);
+  move(id: string, to: unknown, reviewed?: HostTask, generation?: number): Promise<HostTask> {
+    return taskActions.move(this.context, id, to, reviewed, generation);
   }
 
   /** Owner start requests retain scheduler limits and dependency gates. */
@@ -588,8 +588,8 @@ export class HostTasks {
     return recovery.takeoverGoalActive(this.context, task);
   }
 
-  protected queueTakeover(task: HostTask, now: number, reviewed?: HostTask): Promise<HostTask> {
-    return recovery.queueTakeover(this.context, task, now, reviewed);
+  protected queueTakeover(task: HostTask, now: number, reviewed?: HostTask, generation?: number): Promise<HostTask> {
+    return recovery.queueTakeover(this.context, task, now, reviewed, generation);
   }
 
   /** Backfill the available legacy review once; runtime/missing-verdict
@@ -602,8 +602,9 @@ export class HostTasks {
     task: HostTask,
     persisted?: Map<string, string>,
     reviewed?: HostTask,
+    generation?: number,
   ): Promise<HostTask> {
-    return storage.write(this.context, task, persisted, reviewed);
+    return storage.write(this.context, task, persisted, reviewed, generation);
   }
 
   protected block(
@@ -743,8 +744,8 @@ export class HostTasks {
   /** What the task branch changes since it left the project's branch. */
   /** Covers the repository snapshot plus explicit local deliverables, including ignored outputs.
    * External URLs and prose descriptions remain the reviewer's evidence, not a filesystem check. */
-  protected acceptanceFingerprint(task: HostTask): Promise<string | undefined> {
-    return fingerprint.acceptanceFingerprint(this.context, task);
+  protected acceptanceFingerprint(task: HostTask, knownWorkspace?: string): Promise<string | undefined> {
+    return fingerprint.acceptanceFingerprint(this.context, task, knownWorkspace);
   }
 
   /** Content evidence for retry progress. Prefer Git's tracked tree and diff;

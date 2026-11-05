@@ -1291,24 +1291,8 @@ fn clear_run(id: u32) {
     }
 }
 
-/// Persist already happened in JS. Show windows so window-state doesn't save hidden.
-pub fn confirm_quit(app: AppHandle) {
-    *QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()) = None;
-    ALLOW_EXIT.store(true, Ordering::SeqCst);
-    for window in workspace_windows(&app) {
-        let _ = window.show();
-    }
-    // Belt and braces. `RunEvent::Exit` reaps too, and it also runs before the
-    // process is gone, but a macOS terminate that skips the run loop would not
-    // reach it — and `kill_all`'s SIGKILL wait only works while we're alive.
-    if let Some(host) = app.try_state::<crate::harness::HarnessHost>() {
-        host.kill_all();
-    }
-    if let Some(host) = app.try_state::<crate::pty::PtyHost>() {
-        host.kill_all();
-    }
-    app.exit(0);
-}
+mod quit_finalization;
+pub use quit_finalization::confirm_quit;
 
 #[cfg(test)]
 mod tests {

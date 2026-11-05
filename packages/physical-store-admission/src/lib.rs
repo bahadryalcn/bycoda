@@ -13,6 +13,8 @@
 //! use. Unsupported platforms and detected namespace changes fail explicitly.
 
 mod os;
+mod rename_no_replace;
+pub use rename_no_replace::rename_no_replace;
 
 use std::{
     error, fmt,

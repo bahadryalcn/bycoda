@@ -832,6 +832,7 @@
   "Couldn’t reach {p0}. Trying again…": "无法到达 {p0}。再试一次……",
   "Couldn’t load sessions": "无法加载会话",
   "Retry": "重试",
+  "Retry briefing": "重试简报",
   "No matching sessions": "没有匹配的会话",
   "No sessions match these filters": "没有会话与这些过滤器匹配",
   "Clear filters (": "清除过滤器（",

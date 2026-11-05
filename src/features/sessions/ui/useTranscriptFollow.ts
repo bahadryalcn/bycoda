@@ -118,9 +118,10 @@ export function useTranscriptFollow({
     (el: HTMLElement) => {
       publishReading(el);
       if (stickToBottom.current) {
-        const tops = followedTops.current;
+        const now = performance.now();
+        const tops = followedTops.current = followedTops.current.filter((entry) => now - entry.at < 30_000);
         if (tops[tops.length - 1]?.top !== el.scrollTop) {
-          tops.push({ top: el.scrollTop, at: performance.now() });
+          tops.push({ top: el.scrollTop, at: now });
           if (tops.length > 8) tops.shift();
         }
       }
@@ -178,11 +179,11 @@ export function useTranscriptFollow({
         previous.el === el &&
         (previous.height !== el.scrollHeight || previous.viewport !== el.clientHeight);
       const now = performance.now();
+      followedTops.current = followedTops.current.filter((entry) => now - entry.at < 30_000);
       const latestFollow = followedTops.current[followedTops.current.length - 1];
       // WebKit can replay an older offset from the range the transcript just
       // followed through, after newer pins and with no reader input behind it.
       // That is not the reader leaving; a jump further up still is.
-      // Freshness belongs to the latest pin, not the old offset it replays.
       const staleFollowOffset =
         stickToBottom.current &&
         scrolledUp &&

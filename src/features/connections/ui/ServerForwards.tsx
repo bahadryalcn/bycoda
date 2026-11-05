@@ -1,5 +1,6 @@
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useForwardStatuses } from "./useForwardStatuses";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t } from "../../../shared/i18n";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
@@ -14,11 +15,9 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 import {
   forwardRuntimeId,
-  listSshForwards,
   startSshForward,
   stopSshForward,
   validateForwardRule,
-  type ForwardStatus,
 } from "../model/sshForwards";
 
 /** Saved rules belong to canonical records. Mounting/restoring never starts SSH. */
@@ -33,7 +32,8 @@ export function ServerForwards({
 }) {
   const proxy = useSshHttpProxyApproval();
   const locked = useRef(false);
-  const statusSequence = useRef(0);
+  const currentSource = useRef(server.id);
+  currentSource.current = server.id;
   const [draft, setDraft] = useRetainedState(`servers:forward-draft:${server.id}`, {
     name: "",
     kind: "local" as "local" | "dynamic",
@@ -41,10 +41,11 @@ export function ServerForwards({
     targetHost: "127.0.0.1",
     targetPort: "",
   });
-  const [statuses, setStatuses] = useState<ForwardStatus[]>([]);
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  const [statusError, setStatusError] = useState("");
+  const { statuses, statusError, refresh } = useForwardStatuses(server.id, active);
+  const [busyState, setBusyState] = useState({ source: server.id, value: "" });
+  const [errorState, setErrorState] = useState({ source: server.id, value: "" });
+  const busy = busyState.source === server.id ? busyState.value : "";
+  const error = errorState.source === server.id ? errorState.value : "";
   const rules = server.metadata.forwards ?? [];
   const [search, setSearch] = useState("");
   const matchingRules = rules.filter((rule) =>
@@ -54,57 +55,20 @@ export function ServerForwards({
   );
   const Container = expanded ? "section" : "details";
   const Heading = expanded ? "h3" : "summary";
-  useEffect(() => {
-    if (!active) return;
-    let disposed = false;
-    let pending = false;
-    const refresh = async () => {
-      if (pending || document.hidden) return;
-      pending = true;
-      const sequence = ++statusSequence.current;
-      try {
-        const result = await listSshForwards();
-        if (!disposed && sequence === statusSequence.current) {
-          const next = result.filter((item) => item.connectionId === server.id);
-          setStatuses((previous) =>
-            JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
-          );
-          setStatusError("");
-        }
-      } catch {
-        if (!disposed && sequence === statusSequence.current)
-          setStatusError(t("Couldn’t read forwarding status."));
-      } finally {
-        pending = false;
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 1500);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [server.id, active]);
   const run = async (id: string, action: () => Promise<unknown>) => {
     if (locked.current) return;
     locked.current = true;
-    ++statusSequence.current;
-    setBusy(id);
-    setError("");
+    refresh(server.id);
+    setBusyState({ source: server.id, value: id });
+    setErrorState({ source: server.id, value: "" });
     try {
       await action();
-      const sequence = ++statusSequence.current;
-      const result = await listSshForwards();
-      if (sequence === statusSequence.current)
-        setStatuses(result.filter((item) => item.connectionId === server.id));
-      setStatusError("");
     } catch (cause) {
-      setError(String(cause));
+      if (currentSource.current === server.id) setErrorState({ source: server.id, value: String(cause) });
     } finally {
+      refresh(server.id);
       locked.current = false;
-      setBusy("");
+      if (currentSource.current === server.id) setBusyState({ source: server.id, value: "" });
     }
   };
   return (
@@ -325,7 +289,7 @@ export function ServerForwards({
               </div>
             </form>
           </details>
-          {error || statusError ? <InlineError>{error || statusError}</InlineError> : null}
+          {error || statusError ? <InlineError retry={!error && statusError ? { onRetry: () => refresh(server.id) } : undefined}>{error || statusError}</InlineError> : null}
         </div>
       </Container>
       {proxy.dialog}

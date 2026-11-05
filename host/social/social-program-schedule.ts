@@ -1,3 +1,4 @@
+import { addCivilDays, ownerDay } from "../../src/shared/lib/time/ownerDay";
 import { createHash } from "node:crypto";
 import type { ProgramSchedule } from "../../src/features/social/model/socialProgram";
 
@@ -19,7 +20,8 @@ function parts(zone: string, at: number) {
     cache.set(zone, fmt);
   }
   const p = Object.fromEntries(fmt.formatToParts(at).map((x) => [x.type, x.value]));
-  const day = `${p.year}-${p.month}-${p.day}`;
+  const day = ownerDay(at, zone);
+  if (!day) throw new Error("Invalid schedule date or timezone.");
   return {
     day,
     clock: Number(p.hour) * 60 + Number(p.minute),
@@ -131,12 +133,13 @@ export function programDay(s: ProgramSchedule, at: number) {
 /** Resolve a wall-clock slot once. Gaps advance to the first valid local minute;
  * a fold chooses its first UTC occurrence. Only a bounded date window is scanned. */
 function slots(s: ProgramSchedule, from: number): number[] {
-  const base = new Date(`${parts(s.timeZone, from).day}T00:00:00Z`).getTime();
+  const base = parts(s.timeZone, from).day;
   const result: number[] = [];
   // Overnight frequency slots retain the weekday of their window's start.
   const firstDate = s.mode === "frequency" && clock(s.startTime) > clock(s.endTime) ? -1 : 0;
   for (let dateIndex = firstDate; dateIndex < 9; dateIndex++) {
-    const localDate = new Date(base + dateIndex * 86400000).toISOString().slice(0, 10);
+    const localDate = addCivilDays(base, dateIndex);
+    if (!localDate) continue;
     const weekday = new Date(`${localDate}T12:00:00Z`).getUTCDay() || 7;
     if (!s.days.includes(weekday)) continue;
     const start = clock(s.startTime),
@@ -155,8 +158,9 @@ function slots(s: ProgramSchedule, from: number): number[] {
     }
     for (const minute of requested) {
       const dayOffset = Math.floor(minute / 1440),
-        targetDay = new Date(base + (dateIndex + dayOffset) * 86400000).toISOString().slice(0, 10),
+        targetDay = addCivilDays(base, dateIndex + dayOffset),
         targetClock = minute % 1440;
+      if (!targetDay) continue;
       const found = wallMinute(s.timeZone, targetDay, targetClock);
       if (found !== undefined && found >= from) result.push(found);
     }

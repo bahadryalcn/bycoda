@@ -3,6 +3,7 @@ import type { HostSession } from "../../src/features/connections/model/protocol"
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
 import type { SocialCredentialStore } from "./social-credentials";
 import type { SocialService } from "./social";
+import { SocialPeerUnavailable } from "./social-peer-errors";
 
 type Peer = {
   environmentId: string;
@@ -127,10 +128,11 @@ export class SocialPeers {
         method,
         params,
       }),
-    });
+    }).catch(() => { throw new SocialPeerUnavailable(); });
+    if ([502, 503, 504].includes(response.status)) throw new SocialPeerUnavailable();
     const result = (await response.json()) as { result?: T; error?: string };
     if (!response.ok || result.error || result.result === undefined)
-      throw new Error("Social authority session verification failed. Reconnect the trusted peer.");
+      throw new Error("Trusted source session unavailable or verification denied. Reconnect the trusted peer.");
     return result.result;
   }
   async register(input: Record<string, unknown>, deviceHash: string) {
@@ -272,7 +274,7 @@ export class SocialPeers {
     if (!peer || (await this.get("authority"))) {
       throw new Error("Social peer was removed or is no longer an authority.");
     }
-    try {
+    {
       const credential = await this.vault.get(`social-peer:${peerId}`);
       if (!credential || (await this.authenticated(credential.accessToken)) !== peerId)
         throw new Error("Peer owner device was revoked.");
@@ -283,6 +285,12 @@ export class SocialPeers {
       if (identity.sessionId !== sessionId || !projectId || typeof identity.provider !== "string")
         throw new Error("Source session/project identity changed.");
       await this.service.store.project(projectId);
+      const saved = await this.service.store.db.prepare("SELECT value FROM social_peer_identities WHERE id=?").get(id);
+      if (saved) {
+        const previous = JSON.parse(String(saved.value)) as HostSession;
+        if (previous.projectId !== projectId || previous.session.id !== id || previous.session.harness !== identity.provider)
+          throw new Error("Source session/project identity changed.");
+      }
       // Persist only the exact freshly verified mapping. Yielded verification may
       // not overwrite a removed/replaced peer's identity.
       const current = await this.get(peerId);
@@ -300,10 +308,6 @@ export class SocialPeers {
           "INSERT INTO social_peer_identities VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
         )
         .run(id, JSON.stringify({ projectId, session: { id, harness: identity.provider } }));
-    } catch {
-      throw new Error(
-        "Trusted source session is unavailable or unmapped. Social access is denied.",
-      );
     }
   }
   private async access(sessionId: string) {

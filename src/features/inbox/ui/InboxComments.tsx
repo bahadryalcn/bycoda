@@ -271,7 +271,7 @@ export function InboxCommentForm({
   useLocale();
   const localDraftId = useId();
   const draftIdentity = `inbox:comment:${draftKey ?? localDraftId}`;
-  const [draft, setDraft] = useRetainedState(draftIdentity, "");
+  const [draft, setDraft, retireDraft] = useRetainedState(draftIdentity, "");
   const pending = useSyncExternalStore(
     subscribePendingComments,
     () => pendingCommentDrafts.has(draftIdentity),
@@ -301,7 +301,7 @@ export function InboxCommentForm({
     setCommentPending(draftIdentity, true);
     try {
       await onSubmit(body);
-      setDraft("");
+      retireDraft(draft, "");
     } catch {
       // Parent keeps the error next to the button.
     } finally {

@@ -5,7 +5,7 @@ import {
   recordDeferredAssistantTurn,
 } from "./assistant/core/assistant-turn-policy";
 import { hostQuestionToken } from "./sessions/question-source";
-import { parseQuestionReply } from "./sessions/question-reply";
+import { parseQuestionReply, resolveAuthorizedQuestionAttachments } from "./sessions/question-reply";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { executionUserIndex } from "../src/features/sessions/model/executionTurn";
@@ -104,7 +104,6 @@ import { isSessionRunActivity } from "./sessions/session-run-activity";
 import {
   parseRemoteAttachments,
   resolveAttachments,
-  resolveQuestionAttachments,
 } from "./attachments/attachments";
 import { runHostShell } from "./execution/shell";
 import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
@@ -2392,7 +2391,7 @@ export class HostEngine {
     return early ? early.value : await this.prepareCreation(command);
   }
 
-  async command(raw: unknown): Promise<CommandReceipt> {
+  async command(raw: unknown, validateQuestionAttachments?: () => Promise<void>): Promise<CommandReceipt> {
     const admission = this.commandAdmissions.getStore();
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
@@ -3382,22 +3381,8 @@ export class HostEngine {
                 const resolvingToken = hostQuestionToken(value);
                 let answerReply = command.reply;
                 if (command.reply.kind === "answered" && command.reply.attachments) {
-                  const questions = value.session.pendingQuestion.questions;
-                  const attachments = Object.fromEntries(
-                    await Promise.all(
-                      Object.entries(command.reply.attachments).map(async ([id, files]) => {
-                        const question = questions.find((item) => item.id === id);
-                        if (!question?.allowCustom || question.preserveCustomWhitespace)
-                          throw new Error("This question cannot accept attachments");
-                        return [
-                          id,
-                          await resolveQuestionAttachments(
-                            this.store,
-                            parseRemoteAttachments(files),
-                          ),
-                        ] as const;
-                      }),
-                    ),
+                  const attachments = await resolveAuthorizedQuestionAttachments(
+                    this.store, value.session.pendingQuestion.questions, command.reply.attachments, validateQuestionAttachments,
                   );
                   answerReply = { ...command.reply, attachments };
                   if (

@@ -78,7 +78,7 @@ export interface CommandServicePorts<View> {
     ): Promise<void>;
     attachmentRefs(raw: unknown): readonly { id: string; size: number }[];
     previewContextual(command: Contextual, view: View): Promise<{ digest: string }>;
-    command(command: SessionCommand): Promise<CommandReceipt>;
+    command(command: SessionCommand, context?: HostDomainContext): Promise<CommandReceipt>;
     clearConversation(command: Extract<SessionCommand, { type: "send" }>): Promise<CommandReceipt>;
     rewind(command: Extract<SessionCommand, { type: "rewind" }>): Promise<CommandReceipt>;
     assertHostMayRun(sessionId: string): Promise<void>;
@@ -169,7 +169,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       if (command.type === "contextual") {
         if (await accepted()) {
           await assertDomainAuthority(context);
-          const receipt = await ports.execution.command(command);
+          const receipt = await ports.execution.command(command, context);
           await assertDomainAuthority(context);
           return receipt;
         }
@@ -261,7 +261,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           // A move to desktop execution cannot bypass the original Host receipt's
           // exact command signature or enqueue the same identity as a new effect.
           await assertDomainAuthority(context);
-          const receipt = await ports.execution.command(command);
+          const receipt = await ports.execution.command(command, context);
           await assertDomainAuthority(context);
           return receipt;
         }
@@ -307,7 +307,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         // The engine can control its verified current run without claiming a
         // durable receipt. Do not prevent it with adoption or an outer SQL write.
         await assertDomainAuthority(context);
-        return ports.execution.command(command);
+        return ports.execution.command(command, context);
       }
       if (["send", "compact", "contextual"].includes(command.type) && !(await accepted())) {
         await assertDomainAuthority(context);
@@ -340,14 +340,14 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       // across that wait. The engine atomically records its title and receipt.
       if (command.type === "regenerateTitle") {
         await assertDomainAuthority(context);
-        const receipt = await ports.execution.command(command);
+        const receipt = await ports.execution.command(command, context);
         await assertDomainAuthority(context);
         return receipt;
       }
       const dispatch = () =>
         ports.repository.transaction(async () => {
           await assertDomainAuthority(context);
-          const receipt = await ports.execution.command(command);
+          const receipt = await ports.execution.command(command, context);
           // These are one admission unit with the receipt; cancellation must not
           // strand a consumed message or skip its accepted owner directive.
           if (

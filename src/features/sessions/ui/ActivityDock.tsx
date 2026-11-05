@@ -34,8 +34,17 @@ import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
 import "./chat-controls.css";
 
-/** Expanded or not, per session, for as long as the app is open. */
 const expandedBySession = new Map<string, boolean>();
+const activeSessions = new Map<string, number>();
+function trimExpandedSessions() {
+  let retired = [...expandedBySession.keys()].filter((key) => !activeSessions.has(key)).length;
+  for (const key of expandedBySession.keys()) {
+    if (retired <= 256) break;
+    if (activeSessions.has(key)) continue;
+    expandedBySession.delete(key);
+    retired--;
+  }
+}
 
 type Props = {
   sessionId: string;
@@ -209,11 +218,21 @@ function DockBody({
 }) {
   const t = useT();
   const [expanded, setExpandedState] = useState(() => expandedBySession.get(sessionId) ?? false);
-  const lockList = useLockOverscroll<HTMLDivElement>();
+  useEffect(() => {
+    activeSessions.set(sessionId, (activeSessions.get(sessionId) ?? 0) + 1);
+    return () => {
+      const remaining = (activeSessions.get(sessionId) ?? 1) - 1;
+      if (remaining) activeSessions.set(sessionId, remaining);
+      else activeSessions.delete(sessionId);
+      trimExpandedSessions();
+    };
+  }, [sessionId]);
   const setExpanded = (next: boolean) => {
+    expandedBySession.delete(sessionId);
     expandedBySession.set(sessionId, next);
     setExpandedState(next);
   };
+  const lockList = useLockOverscroll<HTMLDivElement>();
   const hasAgents = dock.agents.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;

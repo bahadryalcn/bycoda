@@ -1,3 +1,4 @@
+import { renameWithRetry } from "../storage/rename-retry";
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import {
   gitMutationScope,
@@ -891,7 +892,7 @@ export class WorkspaceCommands {
         await handle.writeFile(content, "utf8");
         if (previous) await handle.chmod(previous.mode);
         await handle.close();
-        await rename(temporary, path);
+        await renameWithRetry(temporary, path);
       } catch (reason) {
         await handle.close().catch(() => {});
         await rm(temporary, { force: true });

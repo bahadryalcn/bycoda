@@ -97,18 +97,18 @@ const SIDE_ITEMS: { id: DockSide; label: string }[] = [
 ];
 
 function sideIcon(side: DockSide) {
-  if (side === "top") return PanelTop;
-  if (side === "left") return PanelLeft;
-  if (side === "right") return PanelRight;
-  return PanelBottom;
+  if (side === "top") return <PanelTop className="icon-sm" />;
+  if (side === "left") return <PanelLeft className="icon-sm" />;
+  if (side === "right") return <PanelRight className="icon-sm" />;
+  return <PanelBottom className="icon-sm" />;
 }
 
 /** Collapse-panel glyphs: distinct from X (close) and the profile menu's chevron. */
 function hideIcon(side: DockSide) {
-  if (side === "top") return PanelTopClose;
-  if (side === "left") return PanelLeftClose;
-  if (side === "right") return PanelRightClose;
-  return PanelBottomClose;
+  if (side === "top") return <PanelTopClose className="icon-sm" strokeWidth={1.75} />;
+  if (side === "left") return <PanelLeftClose className="icon-sm" strokeWidth={1.75} />;
+  if (side === "right") return <PanelRightClose className="icon-sm" strokeWidth={1.75} />;
+  return <PanelBottomClose className="icon-sm" strokeWidth={1.75} />;
 }
 
 function ProjectTerminalDockComponent({
@@ -170,8 +170,6 @@ function ProjectTerminalDockComponent({
   sizeRef.current = dock.size;
   const pending = useRef(dock.size);
   const frame = useRef<number | null>(null);
-  const SideIcon = sideIcon(dock.side);
-  const HideIcon = hideIcon(dock.side);
   const visibleIds = dockTerminalGroup(dock, dock.pane.activeFileId);
   const splitTerminal = (id: string) => {
     onSplitTerminal?.(id);
@@ -315,7 +313,7 @@ function ProjectTerminalDockComponent({
             {/* Hide keeps every shell running; X closes the active terminal and asks
                 first when work is running or it is the last one. */}
             <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
-              <HideIcon className="icon-sm" strokeWidth={1.75} />
+              {hideIcon(dock.side)}
             </IconButton>
             <IconButton
               label={t("Close Active Terminal")}
@@ -605,7 +603,7 @@ function ProjectTerminalDockComponent({
               kind: "item",
               id: "move",
               label: t("Move Terminal"),
-              icon: <SideIcon className="icon-sm" />,
+              icon: sideIcon(dock.side),
               submenu: SIDE_ITEMS.map((item) => ({
                 kind: "item" as const,
                 id: item.id,
@@ -630,7 +628,7 @@ function ProjectTerminalDockComponent({
               kind: "item",
               id: "hide",
               label: t("Hide Terminal ({p0}J)", { p0: MOD }),
-              icon: <HideIcon className="icon-sm" />,
+              icon: hideIcon(dock.side),
             },
           ]}
           onPick={(id) => {

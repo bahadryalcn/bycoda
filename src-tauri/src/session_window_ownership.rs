@@ -171,6 +171,21 @@ pub(crate) fn verify_session_window_owner(
     })
 }
 
+/// Keep the captured page and exact session ownership live through a local effect.
+pub(crate) fn with_session_window_owner<T>(
+    issuer: &Arc<WindowIssuer>,
+    session_id: &str,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    issuer.with_live(|| {
+        let registry = registry().lock().map_err(|_| "Conversation ownership unavailable".to_string())?;
+        if !registry.claims.get(session_id).is_some_and(|claim| Arc::ptr_eq(&claim.issuer, issuer)) {
+            return Err("Conversation ownership changed".into());
+        }
+        work()
+    })
+}
+
 #[tauri::command]
 pub(crate) fn release_session_windows(
     window: WebviewWindow,
