@@ -1,5 +1,5 @@
-import { rename } from "node:fs/promises";
 import { loadBundledGuardedMove } from "../host-notes-admission";
+import { renameWithRetry } from "../storage/rename-retry";
 
 /** The native worker owns quarantine, publication and recovery receipt. */
 export async function crossVolumeMove(source: string, destination: string) {
@@ -15,7 +15,8 @@ export async function moveWithRecovery(
 ) {
   if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
   try {
-    await rename(source, destination);
+    // Transient Windows EPERM/EBUSY retry here; EXDEV is not retryable and still reaches the copy path.
+    await renameWithRetry(source, destination);
     return undefined;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;

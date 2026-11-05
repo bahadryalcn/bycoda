@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
@@ -832,8 +833,7 @@ export function InboxView({
       ) : null}
       {sourceError && visibleItems.length > 0 ? (
         <Alert
-          tone="warning"
-          role="alert"
+          tone="danger"
           action={
             <Button
               loading={refreshAction === "retry"}
@@ -955,12 +955,11 @@ export function InboxView({
       </div>
       {noSourcesConnected || visibleItems.length === 0 ? null : (
         <div
-          role="status"
           data-inbox-list-status
           className="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-ui-micro tabular-nums text-(--ui-text-secondary)"
         >
           <span title={t("{p0} loaded", { p0: visibleItems.length })}>
-            {t("{p0} loaded", { p0: visibleItems.length })}
+            <LiveText text={t("{p0} loaded", { p0: visibleItems.length })} />
             {sourceLimited ? (
               <span
                 data-inbox-list-limit
@@ -1121,7 +1120,6 @@ export function InboxView({
             {selectedOutsideFilters ? (
               <Alert
                 tone="info"
-                role="status"
                 action={
                   <Button
                     onClick={() => {
@@ -1291,7 +1289,7 @@ export function LinkedWorkItemPanel({
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
             <CircleX className="icon-lg text-(--ui-tone-danger-fg)" strokeWidth={1.75} />
-            <Alert tone="info" role="alert" className="max-w-sm">
+            <Alert tone="danger" className="max-w-sm">
               {error}
             </Alert>
             {openError ? <InlineError>{openError}</InlineError> : null}

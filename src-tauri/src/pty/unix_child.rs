@@ -41,7 +41,12 @@ impl UnixChild {
                 libc::kill(self.pid as libc::pid_t, signal);
                 libc::kill(-(self.pid as libc::pid_t), signal);
             },
-            Ok(Some(_)) => self.exited.store(true, Ordering::Release),
+            Ok(Some(_)) => {
+                self.exited.store(true, Ordering::Release);
+                // The shell was reaped, but its background members still hold
+                // the group id (setsid makes the shell's pid its pgid).
+                signal_populated_group(self.pid, signal);
+            }
             Err(_) => {} // Unknown ownership never authorizes a signal.
         }
     }
@@ -78,9 +83,25 @@ impl UnixChild {
     }
 }
 
+/// After the shell exits, background jobs may keep the PTY open. The reader
+/// keeps going while they write; this bounds how long a silent PTY is kept.
+const EXIT_IDLE: Duration = Duration::from_secs(30);
+
+/// Signals a process group whose leader was already reaped. Its id cannot be
+/// reused while members remain, so the probe only signals a populated group;
+/// an empty group is never signalled.
+fn signal_populated_group(pid: u32, signal: libc::c_int) {
+    let group = -(pid as libc::pid_t);
+    unsafe {
+        if libc::kill(group, 0) == 0 {
+            libc::kill(group, signal);
+        }
+    }
+}
+
 pub(super) fn reader_ready(fd: i32, child: &UnixChild, deadline: &mut Option<Instant>, timeout: Duration) -> bool {
     if child.exited.load(Ordering::Acquire) && deadline.is_none() {
-        *deadline = Some(Instant::now() + Duration::from_secs(2));
+        *deadline = Some(Instant::now() + EXIT_IDLE);
     }
     let timeout = match deadline {
         Some(end) => {
@@ -91,6 +112,14 @@ pub(super) fn reader_ready(fd: i32, child: &UnixChild, deadline: &mut Option<Ins
         None => timeout,
     };
     super::wait_readable(fd, timeout)
+}
+
+/// Bytes read after the shell exited renew the idle bound. Readiness alone does
+/// not: a hung-up PTY stays readable until its EOF is read.
+pub(super) fn output_read(deadline: &mut Option<Instant>) {
+    if let Some(end) = deadline {
+        *end = Instant::now() + EXIT_IDLE;
+    }
 }
 
 #[cfg(test)]

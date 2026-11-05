@@ -3,7 +3,11 @@ import { assertExpectedConfiguration } from "../configurationConflict";
 import { parseHostTask, type HostTask } from "../../src/features/tasks/model/hostTasks";
 
 /** Apply only the prepared transition, preserving unrelated concurrent updates. */
-export function mergeQueueAdmission(prepared: HostTask, original: HostTask, current?: HostTask): HostTask {
+export function mergeQueueAdmission(
+  prepared: HostTask,
+  original: HostTask,
+  current?: HostTask,
+): HostTask {
   if (!current || current.status !== original.status)
     throw new Error("Task changed before queue admission. Read it again.");
   try {
@@ -15,9 +19,21 @@ export function mergeQueueAdmission(prepared: HostTask, original: HostTask, curr
   const after = JSON.parse(JSON.stringify(prepared)) as Record<string, unknown>;
   const latest = JSON.parse(JSON.stringify(current)) as Record<string, unknown>;
   for (const key of [
-    "sessionId", "runId", "branch", "worktreeCwd", "workspaceId", "workspaceGenerationId",
-    "artifactDeliveryPending", "artifactDeliveryActivityId", "merged", "crewRunId", "needsInput",
-    "repairStop", "blockedTakeover", "awaitingOwnerRestart", "deliveryRequested",
+    "sessionId",
+    "runId",
+    "branch",
+    "worktreeCwd",
+    "workspaceId",
+    "workspaceGenerationId",
+    "artifactDeliveryPending",
+    "artifactDeliveryActivityId",
+    "merged",
+    "crewRunId",
+    "needsInput",
+    "repairStop",
+    "blockedTakeover",
+    "awaitingOwnerRestart",
+    "deliveryRequested",
   ]) {
     if (!isDeepStrictEqual(before[key], latest[key]))
       throw new Error("Task changed before queue admission. Read it again.");

@@ -22,6 +22,7 @@ import {
   rewindRef,
 } from "../git/turn-git-history";
 import { withHostGitMutation } from "../git/git-mutations";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 
 /** Both HostStore and native SQLite must implement this boundary atomically. No provider file revert. */
 export interface ConversationRewindAdapter {
@@ -344,7 +345,7 @@ export class GitSessionRewindService implements SessionRewindService {
             request.sessionId,
             request.expectedRevision,
           );
-          const operationId = randomUUID();
+          const operationId = newRequestId();
           await this.assertAuthority(request);
           const reservation = await this.options.activity.reserve({
             workspaceId: workspace.id,

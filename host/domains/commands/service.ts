@@ -4,7 +4,12 @@ import {
   type CommandReceipt,
   type SessionCommand,
 } from "../../../src/shared/model/host-contracts/session-commands";
-import { assertDomainAuthority, type HostDomainContext } from "../context";
+import {
+  assertDomainAuthority,
+  HostDomainRefusalError,
+  refuseHost,
+  type HostDomainContext,
+} from "../context";
 import { isApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
 
 export type DesktopCommandAcceptance = {
@@ -51,7 +56,10 @@ export interface CommandQueueSnapshot {
 }
 export interface CommandServicePorts<View> {
   repository: {
-    receiptStatus(commandId: string): Promise<CommandReceipt | null | undefined>;
+    receiptStatus(
+      commandId: string,
+      options?: { admit?: boolean },
+    ): Promise<CommandReceipt | null | undefined>;
     desktopCommandStatus(
       commandId: string,
       principalId: string | undefined,
@@ -150,7 +158,10 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       // invalid noteCard attached to rewind), before using the typed projection.
       ports.execution.validateCommand(raw);
       if (command.type === "approve" && !isApprovalOccurrenceId(command.approvalOccurrenceId))
-        throw new Error(
+        throw new HostDomainRefusalError(
+          "COMMAND_INVALID",
+          "validation",
+          false,
           "Approval request identity is missing or invalid. Refresh this request before responding.",
         );
       const sessionId = command.sessionId ?? "";
@@ -164,7 +175,8 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         await assertDomainAuthority(context);
         return desktopReceipt;
       }
-      const accepted = () => ports.repository.receiptStatus(command.commandId);
+      // Admission: an expired id with no receipt is refused before the command runs.
+      const accepted = () => ports.repository.receiptStatus(command.commandId, { admit: true });
 
       if (command.type === "contextual") {
         if (await accepted()) {
@@ -178,7 +190,12 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           await ports.repository.readView(sessionId),
         );
         if (reviewed.digest !== command.previewDigest)
-          throw new Error("The reviewed context changed. Review it again before continuing.");
+          throw new HostDomainRefusalError(
+            "CONTEXT_CHANGED",
+            "conflict",
+            false,
+            "The reviewed context changed. Review it again before continuing.",
+          );
       }
 
       if (
@@ -186,15 +203,25 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         (await ports.queue.reapStale(sessionId)).claim &&
         !(await accepted())
       )
-        throw ports.queue.leaseHeld(
-          String((await ports.queue.get(sessionId)).claim?.clientId ?? "desktop"),
-          "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
+        throw refuseHost(
+          ports.queue.leaseHeld(
+            String((await ports.queue.get(sessionId)).claim?.clientId ?? "desktop"),
+            "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
+          ),
+          "LEASE_HELD",
+          "conflict",
+          true,
         );
 
       const queued = "queued" in command ? command.queued : undefined;
       if (queued && !(await accepted())) {
         if (command.type !== "send" && command.type !== "steer" && command.type !== "compact")
-          throw new Error("Invalid queued command");
+          throw new HostDomainRefusalError(
+            "COMMAND_INVALID",
+            "validation",
+            false,
+            "Invalid queued command",
+          );
         await assertDomainAuthority(context);
         await ports.execution.assertHostMayRun(sessionId);
         const aware = queued.leaseAware === true;
@@ -212,14 +239,24 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         );
         const row = queue.messages.find((entry) => entry.id === queued.id);
         if (row && row.authorityGeneration !== command.authorityGeneration)
-          throw new Error("Queued message authority changed. Review it before sending.");
+          throw new HostDomainRefusalError(
+            "QUEUE_ROW_CHANGED",
+            "validation",
+            false,
+            "Queued message authority changed. Review it before sending.",
+          );
         if (
           !row ||
           (command.type === "compact"
             ? row.text.trim().toLowerCase() !== "/compact"
             : command.text !== row.text)
         )
-          throw new Error("Queued message content changed.");
+          throw new HostDomainRefusalError(
+            "QUEUE_ROW_CHANGED",
+            "validation",
+            false,
+            "Queued message content changed.",
+          );
         if (
           row.modelTarget &&
           !ports.queue.sameModelTarget(
@@ -227,7 +264,12 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
             await ports.repository.modelTarget(sessionId),
           )
         )
-          throw new Error("Queued message model settings changed.");
+          throw new HostDomainRefusalError(
+            "QUEUE_ROW_CHANGED",
+            "validation",
+            false,
+            "Queued message model settings changed.",
+          );
         const rawAttachments =
           typeof raw === "object" && raw !== null && "attachments" in raw
             ? raw.attachments
@@ -241,20 +283,33 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
             JSON.stringify(row.attachments.map((file) => [file.id, file.size])) ||
           (command.type !== "compact" && (rawIntent ?? "default") !== intent)
         )
-          throw new Error("Queued message attachments or intent changed.");
+          throw new HostDomainRefusalError(
+            "QUEUE_ROW_CHANGED",
+            "validation",
+            false,
+            "Queued message attachments or intent changed.",
+          );
       }
 
       if (
         (command.type === "steer" || command.type === "rewind") &&
         (await ports.nativeProjection.watch(sessionId))?.running
       )
-        throw new Error(
+        throw new HostDomainRefusalError(
+          "COMMAND_BUSY",
+          "conflict",
+          true,
           command.type === "rewind"
             ? "This desktop-owned turn must finish before its conversation can be rewound."
             : "This desktop-owned turn cannot be redirected through the host. Queue the message or stop it first.",
         );
       if (command.type === "rewind" && (await ports.queue.get(sessionId)).messages.length)
-        throw new Error("Clear the queued messages before rewinding the conversation.");
+        throw new HostDomainRefusalError(
+          "COMMAND_BUSY",
+          "conflict",
+          false,
+          "Clear the queued messages before rewinding the conversation.",
+        );
 
       if (command.type === "cancel" || command.type === "approve" || command.type === "answer") {
         if (command.type === "approve" && (await accepted())) {
@@ -322,7 +377,10 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           (await ports.nativeProjection.watch(sessionId))?.running ||
           (await ports.queue.get(sessionId)).messages.length
         )
-          throw new Error(
+          throw new HostDomainRefusalError(
+            "COMMAND_BUSY",
+            "conflict",
+            false,
             "Stop the current turn and clear queued messages before clearing the conversation.",
           );
         await assertDomainAuthority(context);

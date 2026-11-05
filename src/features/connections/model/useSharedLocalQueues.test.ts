@@ -24,6 +24,7 @@ import {
   heldSharedQueueLeases,
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
+  requeueSharedLocalHead,
   submitSharedLocalQueue,
   useSharedLocalQueues,
   useLocalSharedQueueClient,
@@ -329,7 +330,10 @@ it("reserves a local queued send until acceptance and prevents a second sender",
     for (let i = 0; i < 20; i++) await flushTurn();
   });
   expect(send).toHaveBeenCalledOnce();
-  expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(false);
+  // A second sender waits on the first: a deferral, so the row is not refused.
+  await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+    QueueDeferredError,
+  );
   expect(sharedLocalQueueReady("chat")).toBe(false);
   accept(true);
   expect(await first).toBe(true);
@@ -340,7 +344,10 @@ it("holds the queue when Stop invalidates preparation instead of launching anoth
   await mount();
   const send = vi.fn(() => true);
   sessionsRef.current = [{ ...sessionsRef.current[0], queueStatus: "paused" }];
-  expect(await submitSharedLocalQueue("chat", "a", true, send, () => false)).toBe(false);
+  // The selected message's turn changed: a temporary hold, never a refusal that pauses.
+  await expect(submitSharedLocalQueue("chat", "a", true, send, () => false)).rejects.toBeInstanceOf(
+    QueueDeferredError,
+  );
   expect(send).not.toHaveBeenCalled();
   await tick();
   expect(queue.messages).toEqual([row("a")]);
@@ -505,16 +512,15 @@ it("does not pause the queue when Send now is refused because another computer r
     sessionsRef.current = [{ ...sessionsRef.current[0], continuingElsewhere: true }];
     return false;
   });
-  expect(await submitSharedLocalQueue("chat", "a", true, send)).toBe(false);
+  // The coordination wait is reported to the caller, not as a refusal of the message.
+  await expect(submitSharedLocalQueue("chat", "a", true, send)).rejects.toMatchObject({
+    message: expect.stringMatching(/Another computer is running this conversation/),
+  });
   await tick();
   expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
   expect((await host.queues.get("chat")).claim).toBeUndefined();
   expect(sessionsRef.current[0].queueStatus).toBe("active");
-  // The coordination failure is reported inline, not as a refusal of the message.
-  expect(readDeliveryProgress("chat")).toMatchObject({
-    stage: "rejected",
-    detail: expect.stringMatching(/Another computer is running this conversation/),
-  });
+  expect(readDeliveryProgress("chat")).toBeUndefined();
 });
 
 it("still pauses the queue when the running turn itself refuses a Send now", async () => {
@@ -709,11 +715,36 @@ it("does not pause the queue when the host starts running the conversation while
     sessionsRef.current = [{ ...sessionsRef.current[0], continuingElsewhere: true }];
     return false;
   });
-  expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(false);
+  // A busy conversation is a temporary hold: the row waits, the queue is not paused.
+  await expect(submitSharedLocalQueue("chat", "a", false, send)).rejects.toBeInstanceOf(
+    QueueDeferredError,
+  );
   await tick();
   expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
   expect((await host.queues.get("chat")).claim).toBeUndefined();
   expect(sessionsRef.current[0].queueStatus).toBe("active");
+});
+
+it("puts a deferred row back at the head of the host queue under a new id the Host still admits", async () => {
+  const host = useRealHostQueue();
+  await mount();
+  // The send was accepted and the row left the queue; the provider then refused it
+  // before any write. The Host drops a same-id re-add of a removed row, so it is restored
+  // under a new id.
+  expect(await submitSharedLocalQueue("chat", "a", false, () => true)).toBe(true);
+  await tick();
+  expect((await host.queues.get("chat")).messages).toEqual([]);
+  expect(requeueSharedLocalHead("chat", row("a"))).toBe(true);
+  await tick();
+  const messages = (await host.queues.get("chat")).messages;
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({ text: "a" });
+  expect(messages[0].id).not.toBe("a");
+  expect((await host.queues.get("chat")).status).toBe("active");
+});
+
+it("reports that no shared queue is kept for a conversation it does not own", () => {
+  expect(requeueSharedLocalHead("unknown-chat", row("a"))).toBe(false);
 });
 
 it("still pauses the queue when a refused send has no waiting state to explain it", async () => {

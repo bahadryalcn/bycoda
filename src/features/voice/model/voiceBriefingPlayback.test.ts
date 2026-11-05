@@ -16,9 +16,19 @@ it("splits long briefings without losing or reordering text", () => {
 it("stops before the next chunk when playback is cancelled", async () => {
   const controller = new AbortController();
   const speak = vi.mocked(previewVoice);
-  speak.mockReset().mockImplementation(async () => { controller.abort(); });
-  await previewBriefing({} as VoiceSettings, "en", "", controller.signal, () => {},
-    "x".repeat(7000), () => {}, { complete: true });
+  speak.mockReset().mockImplementation(async () => {
+    controller.abort();
+  });
+  await previewBriefing(
+    {} as VoiceSettings,
+    "en",
+    "",
+    controller.signal,
+    () => {},
+    "x".repeat(7000),
+    () => {},
+    { complete: true },
+  );
   expect(speak).toHaveBeenCalledTimes(1);
   expect(speak.mock.calls[0][5]).toHaveLength(3000);
 });

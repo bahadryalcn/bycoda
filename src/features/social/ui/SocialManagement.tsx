@@ -346,7 +346,7 @@ export function Audience({
               <ContinuousList
                 items={contacts}
                 itemKey={(contact) => contact.id}
-                stateKey={`social-audience:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${accountFilter}:${segment}:${query}`}
+                stateKey={`social-audience:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${accountFilter}:${segment}`}
                 requiredKey={selectedId}
                 estimateSize={108}
                 renderItem={(contact) => (
@@ -1543,7 +1543,7 @@ export function Rules({
               <ContinuousList
                 items={visibleRules}
                 itemKey={(rule) => rule.id}
-                stateKey={`social-rules:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${ruleQuery}`}
+                stateKey={`social-rules:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}`}
                 requiredKey={selectedRule?.id}
                 estimateSize={92}
                 renderItem={(rule) => (
@@ -1705,7 +1705,7 @@ export function Rules({
             client={client}
             run={run}
             snapshot={snapshot}
-            scopeKey={`rules:${ruleQuery}`}
+            scopeKey="rules"
           />
           {!snapshot.drafts.length ? (
             <p className="social-muted">{t("No reply drafts to review.")}</p>

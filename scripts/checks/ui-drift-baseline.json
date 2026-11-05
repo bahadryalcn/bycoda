@@ -2,9 +2,6 @@
   "schemaVersion": 1,
   "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
   "counts": {
-    "src/app/App.tsx": {
-      "color-base-opacity": 1
-    },
     "src/app/shell/GlassBackdrop.tsx": {
       "radius-size": 1
     },
@@ -21,7 +18,7 @@
       "font-weight": 1
     },
     "src/app/shell/Sidebar.tsx": {
-      "alert-role-prop": 5,
+      "alert-role-prop": 4,
       "arbitrary-spacing": 1,
       "focus-outline-removed": 1,
       "font-weight": 2,
@@ -41,13 +38,7 @@
     "src/app/shell/useRailSections.tsx": {
       "focus-outline-removed": 1
     },
-    "src/app/workspace/layout/BufferReportRecoveryView.tsx": {
-      "alert-role-prop": 1
-    },
     "src/app/workspace/layout/EditorDraftRecoverySection.tsx": {
-      "alert-role-prop": 1
-    },
-    "src/app/workspace/layout/HostBufferRecoverySection.tsx": {
       "alert-role-prop": 1
     },
     "src/features/assistant/ui/AssistantBriefingCard.module.css": {
@@ -68,23 +59,11 @@
     "src/features/assistant/ui/AssistantSessions.module.css": {
       "font-weight": 2
     },
-    "src/features/assistant/ui/AssistantSessions.tsx": {
-      "role-alert-container": 1
-    },
     "src/features/assistant/ui/AssistantSettings.module.css": {
       "font-weight": 3
     },
-    "src/features/assistant/ui/AssistantSettings.tsx": {
-      "role-alert-container": 1
-    },
-    "src/features/assistant/ui/AssistantSetup.tsx": {
-      "role-alert-container": 1
-    },
     "src/features/assistant/ui/AssistantView.module.css": {
       "font-weight": 6
-    },
-    "src/features/assistant/ui/AssistantView.tsx": {
-      "role-alert-container": 4
     },
     "src/features/connections/ui/AddRemoteProjectDialog.tsx": {
       "alert-role-prop": 1
@@ -233,47 +212,17 @@
     "src/features/host-tools/runtime-logs.css": {
       "font-weight": 4
     },
-    "src/features/inbox/ui/CheckRepairForm.tsx": {
-      "alert-role-prop": 1
-    },
-    "src/features/inbox/ui/InboxComments.tsx": {
-      "alert-role-prop": 2
-    },
     "src/features/inbox/ui/InboxDetail.tsx": {
-      "alert-role-prop": 5,
       "arbitrary-spacing": 1
-    },
-    "src/features/inbox/ui/InboxDiscussionPanel.tsx": {
-      "alert-role-prop": 1
-    },
-    "src/features/inbox/ui/InboxFiltersMenu.tsx": {
-      "alert-role-prop": 1
     },
     "src/features/inbox/ui/InboxMedia.tsx": {
       "raw-anchor": 1
     },
-    "src/features/inbox/ui/InboxNotificationMenu.tsx": {
-      "alert-role-prop": 1
-    },
-    "src/features/inbox/ui/InboxPrActions.tsx": {
-      "alert-role-prop": 3
-    },
     "src/features/inbox/ui/InboxPrChecks.tsx": {
-      "alert-role-prop": 3,
       "focus-outline-removed": 1
     },
-    "src/features/inbox/ui/InboxPrOverview.tsx": {
-      "alert-role-prop": 1
-    },
-    "src/features/inbox/ui/InboxView.tsx": {
-      "alert-role-prop": 4
-    },
-    "src/features/inbox/ui/JiraBoardView.tsx": {
-      "alert-role-prop": 2,
-      "raw-aria-live": 1
-    },
     "src/features/notes/ui/NotesView.tsx": {
-      "raw-aria-live": 2
+      "raw-aria-live": 1
     },
     "src/features/notes/ui/SessionNotesPanel.tsx": {
       "raw-native-control": 1
@@ -394,10 +343,6 @@
       "font-weight": 3,
       "typography": 4
     },
-    "src/features/sessions/ui/DeliveryProgressNotice.tsx": {
-      "raw-aria-live": 2,
-      "role-alert-container": 1
-    },
     "src/features/sessions/ui/EmptySession.tsx": {
       "layer": 1
     },
@@ -435,9 +380,6 @@
       "alert-role-prop": 1
     },
     "src/features/sessions/ui/ProviderSignInPanel.tsx": {
-      "raw-aria-live": 1
-    },
-    "src/features/sessions/ui/QuestionForm.tsx": {
       "raw-aria-live": 1
     },
     "src/features/sessions/ui/QueuedMessageEditDialog.tsx": {
@@ -531,7 +473,7 @@
       "alert-role-prop": 1
     },
     "src/features/skills/ui/SkillsPage.tsx": {
-      "alert-role-prop": 7
+      "alert-role-prop": 6
     },
     "src/features/social/ui/ProgramTargetEditor.tsx": {
       "raw-anchor": 1,
@@ -668,9 +610,6 @@
     },
     "src/features/voice/ui/VoiceOverlayWindow.module.css": {
       "font-weight": 1
-    },
-    "src/features/voice/ui/VoiceOverlayWindow.tsx": {
-      "role-alert-container": 1
     },
     "src/features/voice/ui/VoiceVisualizer.module.css": {
       "radius-size": 1

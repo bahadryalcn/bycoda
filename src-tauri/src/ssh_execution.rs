@@ -24,6 +24,7 @@ const REVIEW_TTL: Duration = Duration::from_secs(120);
 const MAX_TARGETS: usize = 16;
 const MAX_REVIEWS: usize = 128;
 const MAX_ACTIVE_RUNS: usize = 16;
+const STOP_OBSERVATION_DEADLINE: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub(crate) struct RunbookSnapshot {
@@ -846,10 +847,22 @@ impl ProcessWork<'_> {
         // Failed wait/kill is never terminal proof. This is observation only,
         // not a new execution or a replay, and the original admission stays live.
         let mut observation_delay = Duration::from_millis(25);
+        let deadline = Instant::now() + STOP_OBSERVATION_DEADLINE;
+        let mut escalated = false;
         while !self.exited {
             match self.child.try_wait() {
                 Ok(Some(_)) => self.exited = true,
-                Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+                Ok(None) => {
+                    // Still alive past the deadline: kill again. Observation continues
+                    // because only local exit observation may release this admission.
+                    if !escalated && Instant::now() >= deadline {
+                        escalated = true;
+                        crate::harness::terminate_all(&[self.child.id()]);
+                        let _ = self.child.kill();
+                        self.batch.fail_observation();
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
                 Err(_) => {
                     self.batch.fail_observation();
                     std::thread::sleep(observation_delay);

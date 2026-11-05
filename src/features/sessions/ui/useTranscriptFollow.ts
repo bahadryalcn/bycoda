@@ -119,7 +119,9 @@ export function useTranscriptFollow({
       publishReading(el);
       if (stickToBottom.current) {
         const now = performance.now();
-        const tops = followedTops.current = followedTops.current.filter((entry) => now - entry.at < 30_000);
+        const tops = (followedTops.current = followedTops.current.filter(
+          (entry) => now - entry.at < 30_000,
+        ));
         if (tops[tops.length - 1]?.top !== el.scrollTop) {
           tops.push({ top: el.scrollTop, at: now });
           if (tops.length > 8) tops.shift();

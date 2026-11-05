@@ -433,7 +433,7 @@ export function JobHistory({
             <ContinuousList
               items={shown}
               itemKey={(job) => job.id}
-              stateKey={`social-history:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${status}:${accountId}:${kind}:${since}:${query}`}
+              stateKey={`social-history:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${status}:${accountId}:${kind}:${since}`}
               requiredKey={selected?.id}
               estimateSize={104}
               className="social-history-continuous-list"

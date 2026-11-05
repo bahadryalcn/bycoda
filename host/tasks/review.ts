@@ -31,6 +31,7 @@ import {
 import { reviewerVerdict } from "./review-outcomes";
 import { reviewerReply } from "./review-outcomes";
 import type { TaskContext } from "./context";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 export async function settleVerification(
   context: TaskContext,
   task: HostTask,
@@ -388,7 +389,7 @@ export async function resumeReviewer(
     const receipt = await context.taskMessage(task, "review-recovery", () =>
       context.engine.command({
         type: "send",
-        commandId: randomUUID(),
+        commandId: newRequestId(),
         sessionId,
         text:
           (interrupted

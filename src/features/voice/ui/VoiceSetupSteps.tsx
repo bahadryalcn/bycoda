@@ -19,6 +19,7 @@ import { LocalVoice } from "../model/localVoice";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceSettings } from "./VoiceSettings";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import styles from "./VoiceSetupSteps.module.css";
 
@@ -217,11 +218,10 @@ export function VoiceSetupSteps({
             <Button onClick={() => void check()} loading={busy}>
               {t("Check connection")}
             </Button>
-            {confirmed ? (
-              <span role="status" className={styles.confirmed}>
-                {t("Ready")}
-              </span>
-            ) : null}
+            <LiveText
+              className={confirmed ? styles.confirmed : "sr-only"}
+              text={confirmed ? t("Ready") : ""}
+            />
           </div>
           <details
             className={styles.details}
@@ -264,11 +264,10 @@ export function VoiceSetupSteps({
             >
               {t("Stop")}
             </Button>
-            {confirmed ? (
-              <span role="status" className={styles.confirmed}>
-                {t("Ready")}
-              </span>
-            ) : null}
+            <LiveText
+              className={confirmed ? styles.confirmed : "sr-only"}
+              text={confirmed ? t("Ready") : ""}
+            />
           </div>
         </>
       ) : null}
@@ -311,11 +310,10 @@ export function VoiceSetupSteps({
               aria-label={t("Microphone level")}
             />
           </div>
-          {transcript ? (
-            <p className={styles.transcript} role="status">
-              {transcript}
-            </p>
-          ) : null}
+          <LiveText
+            className={transcript ? styles.transcript : "sr-only"}
+            text={transcript ?? ""}
+          />
         </>
       ) : null}
       {error ? (

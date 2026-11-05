@@ -17,6 +17,7 @@ import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import type { SessionRenameDeps } from "./useSessionRename";
 import type { Session } from "../../../features/sessions/model/session";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 /** Publish only a persisted title; keep concurrent transcript and execution state. */
 export function useSessionTitleRegeneration({
@@ -60,7 +61,7 @@ export function useSessionTitleRegeneration({
         const key = JSON.stringify([cwd, target]);
         let request = requests.current.get(sessionId);
         if (!request || request.key !== key) {
-          request = { key, commandId: crypto.randomUUID(), session };
+          request = { key, commandId: newRequestId(), session };
           requests.current.set(sessionId, request);
         }
         const originalTitle = request.session.title;

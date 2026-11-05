@@ -2188,9 +2188,10 @@ function finishBackgroundTask(live: Live, taskId: string): void {
   if (live.turnResultSeen && live.activeTurn && !live.awaitingResume) {
     live.awaitingResume = scheduleNativeOutputCallback(() => {
       live.awaitingResume = null;
-      // No wire event proves that a background wakeup will never start after
-      // this grace period. Do not admit another query to this process.
-      live.queryFence.hold();
+      // The wait for a background wakeup has expired: stop waiting and clear
+      // the fence, so the next message is admitted (or queued by the typed
+      // refusal) instead of failing as still settling.
+      live.queryFence.settle();
       maybeFinishTurn(live);
       syncBackgroundWait(live);
     }, RESUME_GRACE_MS);
@@ -2449,6 +2450,8 @@ function maybeFinishTurn(live: Live): void {
   if (live.agentTasks.size > 0 || live.backgroundTasks.size > 0) return;
   if (live.awaitingResume) return;
   if (!live.activeTurn && !live.turnDone) return;
+  // Nothing is outstanding and the result arrived: the provider is idle.
+  live.queryFence.settle();
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 

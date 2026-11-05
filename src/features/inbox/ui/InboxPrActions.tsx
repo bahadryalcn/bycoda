@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -151,6 +152,7 @@ export function GithubPrActions({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const state = item.state.trim().toLowerCase();
   const selectedMerge =
     GITHUB_PR_MERGE_OPTIONS.find((option) => option.action === mergeAction) ??
@@ -160,6 +162,7 @@ export function GithubPrActions({
     setMergeMenuOpen(false);
     setActionError(null);
     setNotice(null);
+    setRefreshError(null);
     if (
       ["merge", "squash", "rebase"].includes(action) &&
       !/^[a-f0-9]{40}$/i.test(reviewedHeadOid ?? "")
@@ -196,12 +199,25 @@ export function GithubPrActions({
           ? "Merge queued or auto-merge enabled."
           : null,
       );
-      onChange?.({
-        ...item,
-        ...next,
-        projectPath: item.projectPath,
-        provider: "github",
-      });
+      setRefreshError(next.refreshError ?? null);
+      // A failed refresh returns only the new state; the row keeps its known fields.
+      onChange?.(
+        next.refreshError
+          ? {
+              ...item,
+              state: next.state,
+              stateReason: next.stateReason || item.stateReason,
+              draft: action === "draft" || action === "ready" ? next.draft : item.draft,
+              projectPath: item.projectPath,
+              provider: "github",
+            }
+          : {
+              ...item,
+              ...next,
+              projectPath: item.projectPath,
+              provider: "github",
+            },
+      );
     } catch (error: unknown) {
       setConfirmation(null);
       setActionError(error instanceof Error ? error.message : String(error));
@@ -316,15 +332,12 @@ export function GithubPrActions({
         </Button>
       ) : null}
       {notice ? (
-        <Alert tone="info" inline role="status" className="w-full">
+        <Alert tone="info" inline className="w-full">
           {notice}
         </Alert>
       ) : null}
-      {!confirmation && actionError ? (
-        <Alert tone="danger" role="alert">
-          {actionError}
-        </Alert>
-      ) : null}
+      {refreshError ? <InlineError>{refreshError}</InlineError> : null}
+      {!confirmation && actionError ? <Alert tone="danger">{actionError}</Alert> : null}
       {confirmation && confirmCopy ? (
         <Popover
           anchor={confirmation.anchor}
@@ -349,7 +362,7 @@ export function GithubPrActions({
             </p>
           </div>
           {actionError ? (
-            <Alert tone="danger" role="alert" className="mt-2">
+            <Alert tone="danger" className="mt-2">
               {actionError}
             </Alert>
           ) : null}

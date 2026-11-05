@@ -202,27 +202,58 @@ const TreeActionsCtx = createContext<TreeActions | null>(null);
  * The snapshot reader for one directory: it keeps returning the previous state object until
  * something its immediate rows read has changed. The memo is private to that directory.
  */
+function hasMember(members: ReadonlySet<string>, path: string | null): boolean {
+  return path !== null && members.has(path);
+}
+
+/** Whether a path set differs for any of this directory's immediate rows. */
+function membersChanged(
+  before: ReadonlySet<string>,
+  after: ReadonlySet<string>,
+  members: ReadonlySet<string>,
+): boolean {
+  if (before === after) return false;
+  if (members.size <= before.size + after.size) {
+    for (const path of members) if (before.has(path) !== after.has(path)) return true;
+    return false;
+  }
+  for (const path of before) if (!after.has(path) && members.has(path)) return true;
+  for (const path of after) if (!before.has(path) && members.has(path)) return true;
+  return false;
+}
+
+/**
+ * The snapshot reader for one directory: it keeps returning the previous state object until
+ * something its immediate rows read has changed. The memo is private to that directory. Scalar
+ * fields cost one lookup; a set or git map is scanned only when its identity changed.
+ */
 function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEntry[] | null) {
+  const rows = entries ?? [];
+  const members = new Set(rows.map((entry) => entry.path));
   let previous = store.getSnapshot();
   return () => {
     const next = store.getSnapshot();
+    if (next === previous) return previous;
     const changed =
       next.showExcludedFiles !== previous.showExcludedFiles ||
       (next.creating?.parent === parent ? next.creating : null) !==
         (previous.creating?.parent === parent ? previous.creating : null) ||
-      (entries ?? []).some(
-        ({ path, isDir }) =>
-          next.expanded.has(path) !== previous.expanded.has(path) ||
-          next.selectedPaths.has(path) !== previous.selectedPaths.has(path) ||
-          (next.renaming === path) !== (previous.renaming === path) ||
-          next.cutPaths.has(path) !== previous.cutPaths.has(path) ||
-          (next.dragOverPath === path) !== (previous.dragOverPath === path) ||
-          gitStatusForPath(isDir ? next.gitStatuses?.dirs : next.gitStatuses?.files, path) !==
+      (next.renaming !== previous.renaming &&
+        (hasMember(members, next.renaming) || hasMember(members, previous.renaming))) ||
+      (next.dragOverPath !== previous.dragOverPath &&
+        (hasMember(members, next.dragOverPath) || hasMember(members, previous.dragOverPath))) ||
+      membersChanged(previous.expanded, next.expanded, members) ||
+      membersChanged(previous.selectedPaths, next.selectedPaths, members) ||
+      membersChanged(previous.cutPaths, next.cutPaths, members) ||
+      (next.gitStatuses !== previous.gitStatuses &&
+        rows.some(
+          ({ path, isDir }) =>
+            gitStatusForPath(isDir ? next.gitStatuses?.dirs : next.gitStatuses?.files, path) !==
             gitStatusForPath(
               isDir ? previous.gitStatuses?.dirs : previous.gitStatuses?.files,
               path,
             ),
-      );
+        ));
     if (changed) previous = next;
     return previous;
   };

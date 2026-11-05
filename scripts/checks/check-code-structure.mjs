@@ -10,7 +10,7 @@
  *   node scripts/checks/check-code-structure.mjs --update-baseline  rewrite the baseline (review the diff)
  *   node scripts/checks/check-code-structure.mjs --files a.ts b.rs  only the given files (changed-file mode)
  */
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,12 +21,12 @@ export const baselineFile = "scripts/checks/code-structure-baseline.json";
 export const lineBudgets = [
   {
     rule: "rust-test-file",
-    test: (f) => /\.rs$/.test(f) && /(_tests?|\/tests)\.rs$/.test(f),
+    test: (f) => f.endsWith(".rs") && /(_tests?|\/tests)\.rs$/.test(f),
     limit: 3000,
   },
-  { rule: "rust-file", test: (f) => /\.rs$/.test(f), limit: 1500 },
+  { rule: "rust-file", test: (f) => f.endsWith(".rs"), limit: 1500 },
   { rule: "ts-test-file", test: (f) => /\.(test|spec)\.(ts|tsx|mts)$/.test(f), limit: 1500 },
-  { rule: "tsx-file", test: (f) => /\.tsx$/.test(f), limit: 600 },
+  { rule: "tsx-file", test: (f) => f.endsWith(".tsx"), limit: 600 },
   { rule: "ts-file", test: (f) => /\.(ts|mts|mjs)$/.test(f), limit: 800 },
 ];
 
@@ -131,7 +131,7 @@ const importPattern =
 export function scanImports(file, text, publicEntries = new Set()) {
   const findings = [];
   const layer = layerOf(file);
-  if (!layer || layer === "packages" || /\.rs$/.test(file)) return findings;
+  if (!layer || layer === "packages" || file.endsWith(".rs")) return findings;
   const feature = featureOf(file);
   for (const match of text.matchAll(importPattern)) {
     const specifier = match[1] ?? match[2] ?? match[3];

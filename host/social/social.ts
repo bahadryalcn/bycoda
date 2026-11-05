@@ -559,7 +559,7 @@ export class SocialService {
     imageAdapters?: SocialImageAdapters,
   ) {
     this.mediaCustody = new SocialMediaCustody(store, directory);
-    this.mediaQuarantine = new SocialMediaQuarantine(store, directory);
+    this.mediaQuarantine = new SocialMediaQuarantine(store, directory, this.mediaCustody);
     this.jobArchive = new SocialJobArchive(store);
     this.ready = (async () => {
       await store.ready;
@@ -5641,7 +5641,12 @@ export class SocialService {
     let generation: Promise<boolean> | undefined;
     try {
       // Archival never blocks delivery; failures retain hot rows for a later tick.
-      await this.jobArchive.compactIfDue().catch(() => {});
+      await this.jobArchive
+        .compactIfDue()
+        .catch((error) => console.error("Social job archival failed; retrying later:", error));
+      await this.mediaQuarantine
+        .sweepIfDue()
+        .catch((error) => console.error("Social media retention failed; retrying later:", error));
       if ((await this.setting("stopped")) === "true") return;
       // A host that never used social media has nothing to refresh, generate,
       // poll or send: skip the scans this 5 s tick would otherwise repeat.

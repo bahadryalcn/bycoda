@@ -85,7 +85,7 @@ it("shows an actual successful check and invalidates it when the chosen provider
   expect(container.querySelector('[role="status"]')?.textContent).toBe("Ready");
   expect(valid).toHaveBeenLastCalledWith(true);
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "openai" }));
-  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("");
   expect(valid).toHaveBeenLastCalledWith(false);
 });
 it("keeps a failed provider check retryable without opening the microphone", async () => {
@@ -111,7 +111,7 @@ it("does not retain a successful indication when an explicit recheck fails", asy
   await click("Check connection");
   expect(valid).toHaveBeenLastCalledWith(true);
   await click("Check connection");
-  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("");
   expect(valid).toHaveBeenLastCalledWith(false);
   expect(container.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
     "Fixture connection lost",

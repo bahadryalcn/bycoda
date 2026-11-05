@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { execChild, hasHeadlessChildBackend } from "../../core/child";
 import { runtimeProviderBinaryPath } from "../../../../features/providers/model/providerBinaryPaths";
 import type { NativeSessionCapability } from "../../core/controlTurn";
+import { newRequestId } from "../../../../shared/lib/id/requestId";
 
 export type NativeOwnedOpenCode = Readonly<{ serviceId: string; referenceId: string }>;
 
@@ -26,7 +27,7 @@ export function resolveOwnedOpenCodeCatalog(path: string, cwd: string): Promise<
   const key = JSON.stringify([path, cwd, binaryPath]);
   const existing = catalogSources.get(key);
   if (existing) return existing;
-  const operationId = crypto.randomUUID();
+  const operationId = newRequestId();
   const pending = (async () => {
     const pageToken = await invoke<string>("canonical_store_page_token");
     const command = Object.freeze({
@@ -85,7 +86,7 @@ export async function resolveOwnedOpenCodeUtility(
     pageToken,
     command,
   });
-  const operationId = crypto.randomUUID();
+  const operationId = newRequestId();
   const source = await invoke<{ serviceId: string; referenceId: string; endpoint: string }>(
     "owned_opencode_utility_acquire",
     {
@@ -213,7 +214,7 @@ export async function resolveOpenCodeV2Service(
     if (existing) return existing;
     // Keep the original promise on unknown outcomes; issuing another operation
     // ID could lose an accepted native reference.
-    const operationId = crypto.randomUUID();
+    const operationId = newRequestId();
     const pending = invoke<{ serviceId: string; referenceId: string; endpoint: string }>(
       "owned_opencode_acquire",
       {

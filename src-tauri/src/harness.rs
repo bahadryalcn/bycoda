@@ -3605,6 +3605,7 @@ fn reserve_authority_within(
 /// write runs on the blocking pool — never on an async worker or the IPC path,
 /// where it would starve `harness_kill` and make the wedged child unrecoverable.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn harness_write(
     app: AppHandle,
     window: tauri::Window,
@@ -4271,10 +4272,9 @@ pub async fn harness_http(
                         .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
                         .authority_execution_gate(),
                 };
-                let target = if native_session_capability.is_some() {
-                    native_session_capability.as_ref().unwrap().shell_id()
-                } else {
-                    source.as_ref().map_or(session_id, |output| output.target())
+                let target = match native_session_capability.as_ref() {
+                    Some(capability) => capability.shell_id(),
+                    None => source.as_ref().map_or(session_id, |output| output.target()),
                 };
                 gate.assert_provider_target(target, &url)?;
                 let scope = native_authority_scope(authority_environment_id, authority_generation)?;
@@ -4976,6 +4976,7 @@ fn default_binary_matches(provider: &str, command: &Path) -> bool {
 
 /// One-shot capture of stdout (used for `cursor-agent --list-models`).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn harness_exec(
     app: AppHandle,
     window: tauri::Window,
@@ -6036,7 +6037,11 @@ fn signal_tree(pid: u32, signal: TreeSignal) {
 
 #[cfg(not(windows))]
 fn tree_alive(pid: u32) -> bool {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
+    {
+        proc_group_running(pid as i32)
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         let ipid = pid as i32;
         unsafe { libc::kill(ipid, 0) == 0 || libc::kill(-ipid, 0) == 0 }
@@ -6046,6 +6051,33 @@ fn tree_alive(pid: u32) -> bool {
         let _ = pid;
         false
     }
+}
+
+/// Linux liveness from procfs. A zombie has exited and runs nothing, but
+/// `kill(2)` still reports it, so an orphan that an init which never reaps
+/// (common in containers) leaves behind would look like a live tree.
+#[cfg(target_os = "linux")]
+fn proc_group_running(pid: i32) -> bool {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return unsafe { libc::kill(pid, 0) == 0 || libc::kill(-pid, 0) == 0 };
+    };
+    entries.flatten().any(|entry| {
+        let Some(member) = entry.file_name().to_str().and_then(|name| name.parse::<i32>().ok())
+        else {
+            return false;
+        };
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            return false;
+        };
+        // Fields after the parenthesised command name: state, ppid, pgrp.
+        let Some((_, rest)) = stat.rsplit_once(')') else {
+            return false;
+        };
+        let mut fields = rest.split_whitespace();
+        let state = fields.next().unwrap_or("Z");
+        let group = fields.nth(1).and_then(|field| field.parse::<i32>().ok());
+        !matches!(state, "Z" | "X") && (member == pid || group == Some(pid))
+    })
 }
 
 #[cfg(unix)]
@@ -7529,9 +7561,8 @@ mod tests {
     fn wait_dead(pid: u32, child: &mut std::process::Child) -> bool {
         for _ in 0..40 {
             let _ = child.try_wait();
-            let leader_gone = unsafe { libc::kill(pid as i32, 0) != 0 };
-            let group_gone = unsafe { libc::kill(-(pid as i32), 0) != 0 };
-            if leader_gone && group_gone {
+            // Same liveness rule as `tree_alive`: exited zombies do not count.
+            if !tree_alive(pid) {
                 return true;
             }
             thread::sleep(Duration::from_millis(50));

@@ -44,6 +44,10 @@ it("certifies stopped only when no owner remains", async () => {
   release();
   release = undefined;
   await expect(verifyHostStopped(directory)).resolves.toBeUndefined();
+  // A damaged sentinel without a live legacy PID is repaired by the next owner, so it no
+  // longer blocks certification; one that names a live PID still does.
   writeFileSync(join(directory, "owner.lock"), "broken");
+  await expect(verifyHostStopped(directory)).resolves.toBeUndefined();
+  writeFileSync(join(directory, "owner.lock"), `{"pid":${process.pid}`);
   await expect(verifyHostStopped(directory)).rejects.toThrow("unknown");
 });

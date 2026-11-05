@@ -5,7 +5,10 @@ import {
   recordDeferredAssistantTurn,
 } from "./assistant/core/assistant-turn-policy";
 import { hostQuestionToken } from "./sessions/question-source";
-import { parseQuestionReply, resolveAuthorizedQuestionAttachments } from "./sessions/question-reply";
+import {
+  parseQuestionReply,
+  resolveAuthorizedQuestionAttachments,
+} from "./sessions/question-reply";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { executionUserIndex } from "../src/features/sessions/model/executionTurn";
@@ -62,6 +65,7 @@ import { isSessionErrorBlock } from "../src/features/sessions/model/sessionIssue
 import { adoptedTranscriptLead } from "../src/features/connections/model/adoptedSessions";
 import { transcriptDigests } from "../src/features/sync/model/conversationDigest";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
+import { refuseHost } from "./domains/context";
 import {
   atHead,
   chooseBase,
@@ -101,10 +105,7 @@ import {
 } from "./providers/provider-activity-retirement";
 import { HostStore } from "./store";
 import { isSessionRunActivity } from "./sessions/session-run-activity";
-import {
-  parseRemoteAttachments,
-  resolveAttachments,
-} from "./attachments/attachments";
+import { parseRemoteAttachments, resolveAttachments } from "./attachments/attachments";
 import { runHostShell } from "./execution/shell";
 import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
@@ -140,6 +141,7 @@ import {
   withShellContext,
   type ShellResult,
 } from "../src/features/sessions/model/shellRun";
+import { newRequestId } from "../src/shared/lib/id/requestId";
 
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
@@ -739,7 +741,8 @@ export class HostEngine {
     await this.ready;
     return this.operations.run(id, async () => {
       await admitted?.();
-      if (this.closing || this.hasActiveRun(id)) throw new LeaseHeldError("host");
+      if (this.closing || this.hasActiveRun(id))
+        throw refuseHost(new LeaseHeldError("host"), "LEASE_HELD", "conflict", true);
       const original = this.retainedWriterTurns.get(id);
       if (original) {
         if (!original.cleanup) {
@@ -1326,13 +1329,13 @@ export class HostEngine {
       if (managedOnly && !state.workspaceId) continue;
       // An idle managed conversation needs no provider until an explicit operation.
       // Its exact workspace and authority are validated when that operation loads it.
+      // Authority heads persist across restarts, so they must not force a parse here.
       if (
         this.managedTurns &&
         state.workspaceId &&
         state.status === "idle" &&
         state.hasDesktop &&
-        !state.shellRunning &&
-        !state.hasAuthority
+        !state.shellRunning
       ) {
         this.deferredManagedBindings.set(state.id, {
           projectId: state.projectId,
@@ -1687,7 +1690,8 @@ export class HostEngine {
             ...snapshot,
             session: { ...snapshot.session, cwd: managed.path, worktreeCwd: managed.path },
           };
-        if (snapshot.status === "running") throw new LeaseHeldError("desktop");
+        if (snapshot.status === "running")
+          throw refuseHost(new LeaseHeldError("desktop"), "LEASE_HELD", "conflict", true);
         const provider = this.provider(snapshot.session.harness);
         const saved = await this.store.transaction(async () => {
           try {
@@ -2391,7 +2395,10 @@ export class HostEngine {
     return early ? early.value : await this.prepareCreation(command);
   }
 
-  async command(raw: unknown, validateQuestionAttachments?: () => Promise<void>): Promise<CommandReceipt> {
+  async command(
+    raw: unknown,
+    validateQuestionAttachments?: () => Promise<void>,
+  ): Promise<CommandReceipt> {
     const admission = this.commandAdmissions.getStore();
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
@@ -2406,7 +2413,7 @@ export class HostEngine {
     const operationKey =
       typeof raw === "object" && raw !== null && "sessionId" in raw
         ? String(raw.sessionId)
-        : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : randomUUID()}`;
+        : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : newRequestId()}`;
     // Internal guarded work waits outside SQLite admission so an owner can
     // revoke its durable grant while an earlier session operation is pending.
     // Nested same-session calls remain reentrant inside their existing owner.
@@ -3382,7 +3389,10 @@ export class HostEngine {
                 let answerReply = command.reply;
                 if (command.reply.kind === "answered" && command.reply.attachments) {
                   const attachments = await resolveAuthorizedQuestionAttachments(
-                    this.store, value.session.pendingQuestion.questions, command.reply.attachments, validateQuestionAttachments,
+                    this.store,
+                    value.session.pendingQuestion.questions,
+                    command.reply.attachments,
+                    validateQuestionAttachments,
                   );
                   answerReply = { ...command.reply, attachments };
                   if (

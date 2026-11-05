@@ -402,7 +402,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
                 className="session-note-picker-list"
                 label={t("Switch note")}
                 items={pickerRows}
-                stateKey={`session-notes:${sessionId}:${project}:${query.trim()}`}
+                stateKey={`session-notes:${sessionId}:${project}`}
                 itemKey={(row) =>
                   row.kind === "heading" ? `heading:${row.id}` : `note:${row.group}:${row.note.id}`
                 }

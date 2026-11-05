@@ -588,7 +588,12 @@ export class HostTasks {
     return recovery.takeoverGoalActive(this.context, task);
   }
 
-  protected queueTakeover(task: HostTask, now: number, reviewed?: HostTask, generation?: number): Promise<HostTask> {
+  protected queueTakeover(
+    task: HostTask,
+    now: number,
+    reviewed?: HostTask,
+    generation?: number,
+  ): Promise<HostTask> {
     return recovery.queueTakeover(this.context, task, now, reviewed, generation);
   }
 
@@ -744,7 +749,10 @@ export class HostTasks {
   /** What the task branch changes since it left the project's branch. */
   /** Covers the repository snapshot plus explicit local deliverables, including ignored outputs.
    * External URLs and prose descriptions remain the reviewer's evidence, not a filesystem check. */
-  protected acceptanceFingerprint(task: HostTask, knownWorkspace?: string): Promise<string | undefined> {
+  protected acceptanceFingerprint(
+    task: HostTask,
+    knownWorkspace?: string,
+  ): Promise<string | undefined> {
     return fingerprint.acceptanceFingerprint(this.context, task, knownWorkspace);
   }
 

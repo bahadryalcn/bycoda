@@ -580,17 +580,11 @@ export function InboxDetail({
                 diffLoading && !prDiff ? (
                   <LoadingText className="justify-center py-10" />
                 ) : diffError && !prDiff ? (
-                  <Alert tone="info" role="alert">
-                    {diffError}
-                  </Alert>
+                  <Alert tone="danger">{diffError}</Alert>
                 ) : prDiff ? (
                   <>
                     {diffLoading ? <LoadingText /> : null}
-                    {diffError ? (
-                      <Alert tone="info" role="alert">
-                        {diffError}
-                      </Alert>
-                    ) : null}
+                    {diffError ? <Alert tone="danger">{diffError}</Alert> : null}
                     <InboxPrDiff
                       key={inboxItemKey(item)}
                       diff={prDiff}
@@ -656,16 +650,10 @@ export function InboxDetail({
               ) : loading && !details ? (
                 <LoadingText className="justify-center py-10" />
               ) : error && !details ? (
-                <Alert tone="info" role="alert">
-                  {error}
-                </Alert>
+                <Alert tone="danger">{error}</Alert>
               ) : (
                 <>
-                  {error ? (
-                    <Alert tone="info" role="alert">
-                      {error}
-                    </Alert>
-                  ) : null}
+                  {error ? <Alert tone="danger">{error}</Alert> : null}
                   {panel ? (
                     <InboxDescriptionSummary body={details?.body ?? ""} cwd={markdownCwd} />
                   ) : details?.body.trim() ? (
@@ -702,7 +690,6 @@ export function InboxDetail({
                   {postRefreshError ? (
                     <Alert
                       tone="warning"
-                      role="status"
                       action={
                         <Button
                           loading={threadRefreshing}

@@ -46,6 +46,7 @@ import {
   listSessionsByProject,
   loadWorkspaceSnapshot,
   isPrimaryWorkspaceWindow,
+  trackPrimaryWorkspaceWindow,
   replaceInFlightSessions,
   saveWorkspaceSnapshot,
   setSessionQueue,
@@ -465,6 +466,13 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
       }
       // Only the primary window restores the shared snapshot. An unavailable
       // native identity is not permission to recover another window's turns.
+      // Wait for the primary label first: a boot before the lookup settles would
+      // read the default "main" and could restore another window's turns.
+      try {
+        await trackPrimaryWorkspaceWindow();
+      } catch {
+        // Keep the default label; isPrimaryWorkspaceWindow() decides as before.
+      }
       if (!isPrimaryWorkspaceWindow()) {
         return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
       }

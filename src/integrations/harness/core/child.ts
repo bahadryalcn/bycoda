@@ -581,6 +581,24 @@ function routeProcessFrame(sessionId: string, frame: ProcessFrame): void {
     discardNativeOutputItems([frame.body.nativeItem], "child-construction-unmatched");
 }
 
+/** Delivers one replayed or SSE item on its own: a handler that throws must
+ * not drop the rest of the batch (see receiveProcessLines). */
+function deliverIsolatedItem(
+  source: string,
+  nativeItem: NativeOutputItem | undefined,
+  handler: () => void,
+): void {
+  try {
+    deliverNativeOutputItem(nativeItem, handler);
+  } catch (error) {
+    console.warn(`[bycoda] harness ${source} item handler failed`, {
+      rule: "one failed item never drops the rest of its batch",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (nativeItem) discardNativeOutputItems([nativeItem], "line-handler-failed");
+  }
+}
+
 function receiveProcessLines(
   sessionId: string,
   constructionId: unknown,
@@ -675,7 +693,7 @@ function deliverSse(sessionId: string, data: readonly string[], metadata?: unkno
   const handler = sseHandlers.get(sessionId);
   if (handler) {
     for (const [index, item] of data.entries())
-      deliverNativeOutputItem(nativeItems?.[index], () => handler(item));
+      deliverIsolatedItem("sse", nativeItems?.[index], () => handler(item));
     return;
   }
   if (ownedSse.has(sessionId))
@@ -868,7 +886,9 @@ export function watchChild(
   state.handlers = { line: onLine, exit: onExit, stderr: onStderr };
   if (queued)
     for (const [index, line] of queued.items.entries())
-      deliverNativeOutputItem(queued.nativeItems?.[index] ?? undefined, () => onLine(line));
+      deliverIsolatedItem("process-replay", queued.nativeItems?.[index] ?? undefined, () =>
+        onLine(line),
+      );
 }
 
 export function unwatchChild(handle: ChildProcessHandle) {
@@ -887,7 +907,9 @@ export function watchSse(sessionId: string, onData: SseHandler, onEnd?: SseEndHa
   if (onEnd) sseEndHandlers.set(sessionId, onEnd);
   if (queued)
     for (const [index, item] of queued.items.entries())
-      deliverNativeOutputItem(queued.nativeItems?.[index] ?? undefined, () => onData(item));
+      deliverIsolatedItem("sse-replay", queued.nativeItems?.[index] ?? undefined, () =>
+        onData(item),
+      );
 }
 
 export function unwatchSse(sessionId: string) {

@@ -773,11 +773,12 @@ fn apply_run_summary(automation: &mut Automation, run: &AutomationRun) {
 
 #[tauri::command(async)]
 pub fn automations_list(store: State<'_, SessionStore>) -> Result<Vec<Automation>, String> {
-    let conn = store.lock_conn()?;
-    Ok(list(&conn)?
-        .into_iter()
-        .filter(|automation| !is_ssh(automation))
-        .collect())
+    store.with_read_conn(|conn| {
+        Ok(list(conn)?
+            .into_iter()
+            .filter(|automation| !is_ssh(automation))
+            .collect())
+    })
 }
 
 #[tauri::command(async)]
@@ -896,14 +897,15 @@ pub fn automation_runs_list(
     automation_id: String,
 ) -> Result<Vec<AutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
-    let conn = store.lock_conn()?;
-    let mut runs = list_runs(&conn, &automation_id)?;
-    // Launch prompts can be large and are only needed by restart recovery, not
-    // by the run-history surface.
-    for run in &mut runs {
-        run.prompt = None;
-    }
-    Ok(runs)
+    store.with_read_conn(|conn| {
+        let mut runs = list_runs(conn, &automation_id)?;
+        // Launch prompts can be large and are only needed by restart recovery, not
+        // by the run-history surface.
+        for run in &mut runs {
+            run.prompt = None;
+        }
+        Ok(runs)
+    })
 }
 
 #[tauri::command(async)]

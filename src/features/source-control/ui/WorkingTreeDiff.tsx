@@ -176,6 +176,10 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
   );
   const diffsRef = useRef(diffs);
   diffsRef.current = diffs;
+  // Read by the loader, so a focus change reorders loads without reloading diffs.
+  const focusPathRef = useRef(focusPath);
+  focusPathRef.current = focusPath;
+  const reprioritizeRef = useRef<(() => void) | null>(null);
   // Sections that are expanded and near the viewport: their bodies are the
   // ones worth loading (or reloading after a change).
   const neededRef = useRef(new Set<string>());
@@ -240,6 +244,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
                     ? await runDiffWorker(
                         (remote) => remote.build(diff.original, diff.current),
                         () => buildUnifiedFileAsync(diff.original, diff.current),
+                        { size: diff.original.length + diff.current.length },
                       )
                     : null,
               };
@@ -294,6 +299,14 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       }
     };
     pumpRef.current = pump;
+    reprioritizeRef.current = () => {
+      latestEntries = prioritizeWorkingTreeDiffEntries(
+        latestEntries,
+        focusPathRef.current,
+        focusKind,
+      );
+      pump();
+    };
 
     const run = () => {
       const current = ++generation;
@@ -331,7 +344,11 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
             for (const id of existing.keys()) if (!kept.has(id)) existing.delete(id);
             return true;
           });
-          latestEntries = prioritizeWorkingTreeDiffEntries(entries, focusPath, focusKind);
+          latestEntries = prioritizeWorkingTreeDiffEntries(
+            entries,
+            focusPathRef.current,
+            focusKind,
+          );
           // A refresh retries what failed before.
           failedIds.clear();
           pump();
@@ -379,12 +396,19 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       disposed = true;
       refreshNow.current = null;
       pumpRef.current = null;
+      reprioritizeRef.current = null;
       window.clearTimeout(refreshTimer);
       unsub();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [cwd, focusPath, focusKind, retry]);
+  }, [cwd, focusKind, retry]);
+
+  // A focus change only reorders the loads that are still pending; the diffs
+  // already on screen stay loaded.
+  useEffect(() => {
+    reprioritizeRef.current?.();
+  }, [focusPath]);
 
   // A review opened from the Changes or Staged Changes section shows only that side.
   const entries = useMemo(() => workingTreeDiffEntries(files ?? [], focusKind), [files, focusKind]);

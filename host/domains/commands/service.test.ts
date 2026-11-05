@@ -6,6 +6,7 @@ import {
   type CommandQueueSnapshot,
 } from "./service";
 import { DesktopLive } from "../../desktop/desktopLive";
+import { refuseHost } from "../context";
 
 const send: SessionCommand = { type: "send", commandId: "c", sessionId: "s", text: "hello" };
 const contextual: SessionCommand = {
@@ -158,6 +159,8 @@ function queuedSetup() {
   };
 }
 
+type Row = CommandQueueSnapshot["messages"][number];
+
 describe("command domain admission", () => {
   it("rejects desktop control without a principal before preparing an offer", async () => {
     const { service, ports } = setup();
@@ -284,15 +287,79 @@ describe("command domain admission", () => {
     await expect(service.dispatch(contextual, auth)).rejects.toThrow("reviewed context changed");
     expect(ports.repository.adopt).not.toHaveBeenCalled();
   });
-  it("reaps stale claims then surfaces the current owning desktop as LEASE_HELD", async () => {
+  it("reaps stale claims then surfaces the current owning desktop as a not-sent LEASE_HELD", async () => {
     const { service, ports, queue, auth } = setup();
     queue.claim = { clientId: "owner" };
     await expect(service.dispatch(send, auth)).rejects.toMatchObject({
+      name: "HostDomainRefusalError",
       code: "LEASE_HELD",
-      holder: "owner",
+      category: "conflict",
+      retryable: true,
+      delivery: "not-sent",
+      message: "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
+      cause: { holder: "owner" },
     });
     expect(ports.queue.reapStale).toHaveBeenCalledWith("s");
     expect(ports.execution.command).not.toHaveBeenCalled();
+  });
+  it("refuses a run lease held elsewhere before execution with the message clients match", async () => {
+    const { service, ports, auth } = setup();
+    // The run-lease port raises the typed refusal itself; the service passes it through.
+    vi.mocked(ports.execution.assertHostMayRun).mockRejectedValue(
+      refuseHost(
+        new Error("LEASE_HELD: This session is running in bycoda on that computer."),
+        "LEASE_HELD",
+        "conflict",
+        true,
+      ),
+    );
+    const error = await service.dispatch(send, auth).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({
+      code: "LEASE_HELD",
+      category: "conflict",
+      retryable: true,
+      delivery: "not-sent",
+      message: "LEASE_HELD: This session is running in bycoda on that computer.",
+    });
+    expect(ports.execution.command).not.toHaveBeenCalled();
+  });
+  it.each([
+    {
+      name: "content",
+      change: (row: Row) => {
+        row.text = "edited elsewhere";
+      },
+      message: "Queued message content changed.",
+    },
+    {
+      name: "authority",
+      change: (row: Row) => {
+        row.authorityGeneration = 99;
+      },
+      message: "Queued message authority changed. Review it before sending.",
+    },
+  ])(
+    "refuses a changed queued $name as a validation refusal that was not sent",
+    async ({ change, message }) => {
+      const { service, ports, command, auth } = queuedSetup();
+      change((await ports.queue.get("s")).messages[0]);
+      const error = await service.dispatch(command, auth).catch((cause: unknown) => cause);
+      expect(error).toMatchObject({
+        code: "QUEUE_ROW_CHANGED",
+        category: "validation",
+        retryable: false,
+        delivery: "not-sent",
+        message,
+      });
+      expect(ports.execution.command).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps a failure after the command started as a plain, unknown-outcome error", async () => {
+    const { service, ports, auth } = setup();
+    vi.mocked(ports.execution.command).mockRejectedValue(new Error("provider failed mid-write"));
+    const error = await service.dispatch({ ...send, text: "go" }, auth).catch((cause) => cause);
+    expect(error).toEqual(new Error("provider failed mid-write"));
+    expect(error).not.toHaveProperty("delivery");
   });
   it("preserves selected-row and lease-aware epoch authority and consumes atomically", async () => {
     const { service, ports, command, auth, events } = queuedSetup();

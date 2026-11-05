@@ -66,8 +66,8 @@ pub(crate) fn publish_from_primary_window(
         }
         Ok(())
     };
-    let notes = publish_notes(app, channel, &guard)?;
-    let servers = publish_servers(app, channel, &guard)?;
+    let notes = publish_notes(app, channel, guard)?;
+    let servers = publish_servers(app, channel, guard)?;
     let snapshot = crate::control::privacy_scope_admission_pinned(app, &window, &owner)?;
     crate::privacy_projection::scope_projection_metadata(app, &owner, &snapshot)?;
     let cwds: Vec<String> = snapshot["visibleProjects"]
@@ -81,7 +81,7 @@ pub(crate) fn publish_from_primary_window(
         0
     } else {
         let index = SESSION_PROJECT.fetch_add(1, Ordering::Relaxed) % cwds.len();
-        publish_sessions(app, channel, &cwds[index], &guard)?
+        publish_sessions(app, channel, &cwds[index], guard)?
     };
     Ok(notes + servers + sessions)
 }

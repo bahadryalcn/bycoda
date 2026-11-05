@@ -92,7 +92,7 @@ export function createWorkspaceFeatureClaims(
       return store.transaction(async () => {
         const previous = await store.workspaceReceipt<
           Awaited<ReturnType<WorkspaceFeatureClaims["acquire"]>>
-        >(receiptScope, request.idempotencyKey, request);
+        >(receiptScope, request.idempotencyKey, request, { admit: true });
         if (previous) return previous;
         const value = await workspace(request);
         if (value.state === "merged" || value.state === "abandoned")
@@ -147,6 +147,7 @@ export function createWorkspaceFeatureClaims(
           receiptScope,
           request.idempotencyKey,
           request,
+          { admit: true },
         );
         if (previous) return previous;
         const value = await workspace(request);

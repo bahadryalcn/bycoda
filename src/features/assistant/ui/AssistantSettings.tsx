@@ -11,6 +11,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { AssistantProfileFields, type ProfileSection } from "./AssistantProfileFields";
 import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
@@ -208,25 +209,29 @@ export function AssistantSettings({
             {t("Run setup again")}
           </Button>
           {error && <InlineError>{error}</InlineError>}
-          {savedNotice && !profileDirty && (
-            <span role="status">{t("Profile settings saved.")}</span>
-          )}
+          {/* Always mounted so the saved notice is announced on each save. */}
+          <LiveText text={savedNotice && !profileDirty ? t("Profile settings saved.") : ""} />
           {leave && (
-            <div role="alert">
-              <span>{t("Discard unsaved changes in assistant settings?")}</span>{" "}
-              <Button onClick={() => setLeave(null)}>{t("Keep editing")}</Button>{" "}
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  const target = leave;
-                  setLeave(null);
-                  if (target === "close") onClose();
-                  else onSetup();
-                }}
-              >
-                {t("Discard changes")}
-              </Button>
-            </div>
+            <InlineError
+              action={
+                <>
+                  <Button onClick={() => setLeave(null)}>{t("Keep editing")}</Button>{" "}
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      const target = leave;
+                      setLeave(null);
+                      if (target === "close") onClose();
+                      else onSetup();
+                    }}
+                  >
+                    {t("Discard changes")}
+                  </Button>
+                </>
+              }
+            >
+              {t("Discard unsaved changes in assistant settings?")}
+            </InlineError>
           )}
         </>
       }
@@ -389,11 +394,14 @@ export function AssistantSettings({
               <p>
                 {t("Worker tokens")}: {snapshot.usage.workerTokens.toLocaleString()}
               </p>
-              {snapshot.usage.workerUsageIncomplete && (
-                <p role="status" className={styles.muted}>
-                  {t("Usage unavailable. No zero usage is assumed.")}
-                </p>
-              )}
+              <LiveText
+                className={styles.muted}
+                text={
+                  snapshot.usage.workerUsageIncomplete
+                    ? t("Usage unavailable. No zero usage is assumed.")
+                    : ""
+                }
+              />
               <div role="group" aria-label={t("Worker cache usage")}>
                 <h3>{t("Worker cache usage")}</h3>
                 {snapshot.usage.cacheUsage ? (

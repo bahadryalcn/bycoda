@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
 import { HostBulkTransfers } from "../http/bulk";
 import { HostDispatchError, createHostDispatcher } from "../dispatch";
-import { HostDomainOutcomeError } from "../../domains/context";
+import { HostDomainOutcomeError, HostDomainRefusalError } from "../../domains/context";
 import {
   HOST_SCHEMA_VERSION,
   RPC_ERROR_CODES,
@@ -223,6 +223,59 @@ describe("native WebSocket upgrade and negotiation", () => {
     const client = host.connect(input);
     await expect(client.opened).rejects.toThrow(/400/);
     expect(host.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("answers 503, not 401, when the credential verifier fails internally", async () => {
+    const host = await fixture({
+      authenticate: async () => {
+        throw new Error("store not ready");
+      },
+    });
+    await expect(host.connect().opened).rejects.toThrow(/503/);
+  });
+
+  it("answers 503 when grant re-verification throws, and 401 when it reports revoked", async () => {
+    const host = await fixture({
+      authenticate: async () => ({
+        id: "device-a",
+        authorized: async () => {
+          throw new Error("database busy");
+        },
+      }),
+    });
+    await expect(host.connect().opened).rejects.toThrow(/503/);
+    const revoked = await fixture({
+      authenticate: async () => ({ id: "device-a", authorized: async () => false }),
+    });
+    await expect(revoked.connect().opened).rejects.toThrow(/401/);
+  });
+
+  it("keeps invalid-params for a non-conflict dispatch refusal", async () => {
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw new HostDomainRefusalError(
+            "COMMAND_INVALID",
+            "validation",
+            false,
+            "Invalid queued command",
+          );
+        },
+      },
+    });
+    const host = await fixture({ methods: ["notes.delete"], dispatch: dispatcher.dispatch });
+    const client = await host.ready();
+    expect(
+      await client.request("invalid", "notes.delete", { id: "note", expectedUpdatedAt: 1 }),
+    ).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.invalidParams,
+        data: { category: "validation", delivery: "not-sent", code: "COMMAND_INVALID" },
+      },
+    });
   });
 
   it("rejects a revoked grant at upgrade", async () => {
@@ -1121,6 +1174,67 @@ describe("WS framing and orderly disposal", () => {
     finish.resolve([]);
     await finish.promise;
   });
+  it("answers a pre-execution refusal over WS with a conflict code, its message and not-sent delivery", async () => {
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw new HostDomainRefusalError(
+            "QUEUE_CHANGED",
+            "conflict",
+            false,
+            "The shared queue changed. Refresh it before sending.",
+            { cause: new Error("private queue revision 7") },
+          );
+        },
+      },
+    });
+    const host = await fixture({ methods: ["notes.delete"], dispatch: dispatcher.dispatch });
+    const client = await host.ready();
+    const response = await client.request("refused", "notes.delete", {
+      id: "note",
+      expectedUpdatedAt: 1,
+    });
+    expect(response).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.conflict,
+        message: "The shared queue changed. Refresh it before sending.",
+        data: {
+          category: "conflict",
+          retryable: false,
+          delivery: "not-sent",
+          code: "QUEUE_CHANGED",
+        },
+      },
+    });
+    expect(JSON.stringify(response)).not.toMatch(/private/);
+  });
+
+  it("keeps an error after a mutation started as an unknown outcome over WS", async () => {
+    let effects = 0;
+    const dispatcher = createHostDispatcher({
+      environmentId: ENVIRONMENT,
+      environment: { describe: async () => ({}) },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          effects++;
+          throw new Error("committed, then the reply path failed");
+        },
+      },
+    });
+    const host = await fixture({ methods: ["notes.delete"], dispatch: dispatcher.dispatch });
+    const client = await host.ready();
+    expect(
+      await client.request("after-effect", "notes.delete", { id: "note", expectedUpdatedAt: 1 }),
+    ).toMatchObject({
+      error: { data: { category: "unavailable", retryable: false, delivery: "unknown" } },
+    });
+    expect(effects).toBe(1);
+  });
+
   it.each(["not-sent", "unknown"] as const)(
     "preserves trusted actual device admission outcome %s",
     async (delivery) => {

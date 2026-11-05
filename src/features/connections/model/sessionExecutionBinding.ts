@@ -9,6 +9,7 @@ import {
   skipImportedNativeBindingLegacy,
   type StoredBindingEvidence,
 } from "./hostSessionBindingDatabase";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 export type HostSessionBinding = {
   kind: "local-host";
@@ -88,7 +89,7 @@ async function finishBindingEpoch(claim: {
   const result = await invoke<{ applied: boolean }>("canonical_store_transaction", {
     scope: MIGRATION_SCOPE,
     pageToken: claim.pageToken,
-    operationId: crypto.randomUUID(),
+    operationId: newRequestId(),
     checks: [{ key: MIGRATION_KEY, version: null }],
     writes: [{ key: MIGRATION_KEY, value: true }],
     legacy: [],
@@ -205,10 +206,20 @@ function drain(): Promise<void> {
   return saving;
 }
 
+/** True when the legacy key already holds `raw`; an unreadable store counts as different so the write still runs and reports its own error. */
+function sameLegacyRaw(key: string, raw: string): boolean {
+  try {
+    return localStorage.getItem(key) === raw;
+  } catch {
+    return false;
+  }
+}
+
 function publish(shellId: string, raw: string): void {
   if (isTauri() && !hydrated) throw new Error("Session owner storage is still loading.");
   // Keep the old routing fence until every admission reads native authority.
-  if (!canonicalEpoch) localStorage.setItem(PREFIX + shellId, raw);
+  if (!canonicalEpoch && !sameLegacyRaw(PREFIX + shellId, raw))
+    localStorage.setItem(PREFIX + shellId, raw);
   if (!hydrated) return;
   const previous = canonical.get(shellId);
   const next = { shellId, raw, legacyRaw: canonicalEpoch ? (previous?.legacyRaw ?? null) : raw };

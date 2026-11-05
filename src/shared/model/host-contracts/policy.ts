@@ -58,4 +58,6 @@ export const RPC_ERROR_CODES = Object.freeze({
   deadlineExceeded: -32005,
   cancelled: -32006,
   resyncRequired: -32007,
+  /** A pre-execution refusal (category "conflict", delivery "not-sent"). Retry once it clears. */
+  conflict: -32008,
 });

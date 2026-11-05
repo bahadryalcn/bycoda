@@ -6,6 +6,7 @@ import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
 import { remoteSessionActions } from "../../../../features/connections/model/remoteSessionActions";
 import { saveHostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
 import { newDefaultSession } from "../../../../features/sessions/model/session";
+import { setSessions } from "../../../../features/sessions/model/sessionsStore";
 
 const shared = vi.hoisted(() => ({ submit: vi.fn() }));
 vi.mock("../../../../features/connections/model/remoteProjects", () => ({
@@ -74,6 +75,36 @@ it.each([undefined, "steer", "queue"] as const)(
     expect(shared.submit).not.toHaveBeenCalled();
   },
 );
+
+it("says why a Host-owned send was not taken when its pane has moved on", () => {
+  const session = newDefaultSession("G:/local");
+  sessionsRef.current = [
+    saveHostSessionBinding(session, {
+      kind: "local-host",
+      machineId: "local",
+      environmentId: "home",
+      projectId: "project",
+      sessionId: session.id,
+      authorityGeneration: 1,
+      created: true,
+    }),
+  ];
+  vi.mocked(setSessions).mockClear();
+  vi.mocked(remoteSessionActions).mockReturnValue({ submit: vi.fn(() => undefined) } as never);
+  const ctx = {
+    refs: {
+      windowTransferPendingRef: { current: false },
+      movingSessionIds: { current: new Set() },
+      editedResends: { isActive: () => false },
+      retiringTurns: { current: new Set() },
+      turnGen: { current: new Map() },
+    },
+  } as unknown as SubmitDeps;
+  expect(routeSubmitSession(ctx, { sessionId: session.id, text: "keep me", attachments: [] })).toBe(
+    false,
+  );
+  expect(setSessions).toHaveBeenCalled();
+});
 
 it.each([
   ["another row changes", true],

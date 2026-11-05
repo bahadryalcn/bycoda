@@ -49,6 +49,7 @@ fn check_source(app: &AppHandle, window: &WebviewWindow, thread: &str, origin: &
     if !Arc::ptr_eq(expected, &current) { return Err("Assistant Room source changed".into()); }
     Ok(())
 }
+#[allow(clippy::too_many_arguments)] // Private delegation helper; each source binding stays an explicit check input.
 fn protected_request(app: &AppHandle, window: &WebviewWindow, thread: &str, origin: &str, issuer: &Arc<crate::control::receipts::WindowIssuer>, channel: &Arc<NativeServiceChannel>, action: &str, operation: Value) -> Result<NativeServiceReply, String> {
     let signer = native_signer(app)?;
     let identity = signer.identity();
@@ -67,6 +68,7 @@ fn protected_request(app: &AppHandle, window: &WebviewWindow, thread: &str, orig
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn room_delegation_issue(app: AppHandle, window: WebviewWindow, machine_id: String, thread_id: String, project_id: String, actions: Vec<String>, expires_at: u64, request_id: String) -> Result<Value, String> {
     crate::harness::run_blocking("room_delegation_issue", move || {
         let state = app.state::<RemoteConnections>();
@@ -111,35 +113,35 @@ fn call(app:&AppHandle, window:&WebviewWindow, grant_id:&str, action:&str, reque
         let grant = vault().lock().map_err(|_| "Delegation vault unavailable")?.get(grant_id).cloned().ok_or("Delegation is unavailable; reconnect explicitly")?;
         let now=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_|"Clock unavailable")?.as_millis() as u64;
         if !input.is_object() || !grant.actions.iter().any(|item| item == action) || grant.expires_at <= now { return Err("Delegated operation is unavailable or expired".into()); }
-        let issuer = source(&app, &window, &grant.thread, &grant.origin)?;
-        let origin = NativeServiceChannel::connect(&app)?;
+        let issuer = source(app, window, &grant.thread, &grant.origin)?;
+        let origin = NativeServiceChannel::connect(app)?;
         if origin.environment_id() != grant.origin { return Err("Original Host is unavailable".into()); }
-        let peer = NativeServiceChannel::peer(&app, &grant.machine, &grant.target)?;
+        let peer = NativeServiceChannel::peer(app, &grant.machine, &grant.target)?;
         let current_key = origin.project("assistant.delegation.publicKey", json!({}), |v| { if v["environmentId"] != grant.origin { return Err("Origin Host changed".into()); } text(v,"publicKey") })?;
         if current_key != grant.public_key { return Err("Origin Host key changed; reconnect explicitly".into()); }
         if matches!(action, "tasks.create" | "tasks.update") {
             let reviewed = serde_json::to_string_pretty(&input).map_err(|_| "Invalid operation")?;
             if reviewed.len() > 32768 { return Err("Delegated operation is too large to review".into()); }
             let message = format!("Approve this exact delegated operation?\n\nOrigin Host: {}\nRoom: {}\nTarget Host: {}\nProject: {}\nAction: {action}\nRequest: {request_id}\n\n{reviewed}", grant.origin, grant.thread, grant.target, grant.project);
-            if !app.dialog().message(message).title("bycoda — Delegated operation").parent(&window).buttons(MessageDialogButtons::OkCancelCustom("Approve exact operation".into(), "Cancel".into())).blocking_show() { return Err("Delegated operation cancelled".into()); }
-            check_source(&app, &window, &grant.thread, &grant.origin, &issuer)?;
+            if !app.dialog().message(message).title("bycoda — Delegated operation").parent(window).buttons(MessageDialogButtons::OkCancelCustom("Approve exact operation".into(), "Cancel".into())).blocking_show() { return Err("Delegated operation cancelled".into()); }
+            check_source(app, window, &grant.thread, &grant.origin, &issuer)?;
         }
         authorized()?;
-        let challenge = protected_request(&app, &window, &grant.thread, &grant.origin, &issuer, &peer, "assistant.delegation.challenge", json!({"grantId":grant_id,"token":grant.token,"action":action,"requestId":request_id,"input":input}))?;
+        let challenge = protected_request(app, window, &grant.thread, &grant.origin, &issuer, &peer, "assistant.delegation.challenge", json!({"grantId":grant_id,"token":grant.token,"action":action,"requestId":request_id,"input":input}))?;
         let (nonce, scope, expires) = challenge.project(|v| Ok((text(v,"nonce")?,text(v,"scopeHash")?,v["expiresAt"].as_u64().ok_or("Invalid challenge expiry")?)))?;
         let exact_payload = serde_json::to_vec(&json!([action, input])).map_err(|_| "Invalid reviewed operation")?;
         let expected_scope = format!("{:x}", Sha256::digest(exact_payload));
         if scope != expected_scope { return Err("Target challenge differs from reviewed operation".into()); }
-        check_source(&app, &window, &grant.thread, &grant.origin, &issuer)?;
+        check_source(app, window, &grant.thread, &grant.origin, &issuer)?;
         challenge.check()?;
         let attestation = json!({"version":1,"originEnvironmentId":grant.origin,"originNativeRevision":grant.origin_revision,"targetEnvironmentId":grant.target,"threadId":grant.thread,"projectId":grant.project,"grantId":grant_id,"action":action,"requestId":request_id,"scopeHash":scope,"nonce":nonce,"expiresAt":expires});
-        let signed = protected_request(&app, &window, &grant.thread, &grant.origin, &issuer, &origin, "assistant.delegation.attest", attestation.clone())?;
+        let signed = protected_request(app, window, &grant.thread, &grant.origin, &issuer, &origin, "assistant.delegation.attest", attestation.clone())?;
         let signature = signed.project(|v| text(v,"signature"))?;
-        check_source(&app, &window, &grant.thread, &grant.origin, &issuer)?;
+        check_source(app, window, &grant.thread, &grant.origin, &issuer)?;
         signed.check()?; challenge.check()?;
         authorized()?;
-        let reply = protected_request(&app, &window, &grant.thread, &grant.origin, &issuer, &peer, "assistant.delegation.call", json!({"grantId":grant_id,"token":grant.token,"originEnvironmentId":grant.origin,"threadId":grant.thread,"projectId":grant.project,"action":action,"requestId":request_id,"input":input,"attestation":attestation,"signature":signature}))?;
-        reply.project(|value| { check_source(&app, &window, &grant.thread, &grant.origin, &issuer)?; Ok(value.clone()) })
+        let reply = protected_request(app, window, &grant.thread, &grant.origin, &issuer, &peer, "assistant.delegation.call", json!({"grantId":grant_id,"token":grant.token,"originEnvironmentId":grant.origin,"threadId":grant.thread,"projectId":grant.project,"action":action,"requestId":request_id,"input":input,"attestation":attestation,"signature":signature}))?;
+        reply.project(|value| { check_source(app, window, &grant.thread, &grant.origin, &issuer)?; Ok(value.clone()) })
 }
 
 /// Private desktop relay, scoped to the actual originating Room and pending Host request.

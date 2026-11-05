@@ -345,7 +345,7 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
   };
   const run = async () => {
     // Lets the job be registered before it first asks whether it owns the task.
-    await null;
+    await Promise.resolve();
     if (
       controller.signal.aborted ||
       !(await current()) ||

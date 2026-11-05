@@ -1,4 +1,5 @@
 import { wrap, type Remote } from "comlink";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import type { DiffWorkerApi } from "./diffWorker.worker";
 
 /** Base deadline for one active request, before the per-input-size allowance. */
@@ -6,12 +7,15 @@ const BASE_TIMEOUT_MS = 10_000;
 /** Extra time granted per KiB of input; large files legitimately take longer. */
 const TIMEOUT_MS_PER_KIB = 20;
 const MAX_TIMEOUT_MS = 120_000;
-/** Consecutive failed requests before the worker is given up for the session. */
+/** Consecutive failed requests before the worker is given up for a while. */
 const FAILURE_BUDGET = 3;
+/** After giving up, the worker is tried again once this much time has passed. */
+const RETRY_AFTER_MS = 60_000;
 
 let worker: Worker | undefined;
 let api: Remote<DiffWorkerApi> | undefined;
-let unavailable = false;
+/** Monotonic time at which the worker was given up; undefined while it is usable. */
+let givenUpAt: number | undefined;
 let consecutiveFailures = 0;
 let failActive: ((reason: Error) => void) | undefined;
 /** Requests run one at a time so a deadline measures only the work being done. */
@@ -23,7 +27,16 @@ export function diffWorkerDeadline(size = 0): number {
   return Math.min(MAX_TIMEOUT_MS, BASE_TIMEOUT_MS + extra);
 }
 
-/** Drops the worker so the next request starts a fresh one; gives up after repeated failures. */
+/** Whether a request may use the worker now, re-arming it once the retry delay has passed. */
+function workerMayRun(): boolean {
+  if (givenUpAt === undefined) return true;
+  if (elapsedSince(givenUpAt) < RETRY_AFTER_MS) return false;
+  givenUpAt = undefined;
+  consecutiveFailures = 0;
+  return true;
+}
+
+/** Drops the worker so the next request starts a fresh one; the caller decides when to give up. */
 function recycle(failedWorker?: Worker) {
   if (failedWorker && failedWorker !== worker) return;
   worker?.terminate();
@@ -53,7 +66,7 @@ async function attempt<T>(
   invoke: (remote: Remote<DiffWorkerApi>) => Promise<T>,
   size: number,
 ): Promise<Attempt<T>> {
-  if (unavailable || typeof Worker === "undefined") return { ok: false };
+  if (typeof Worker === "undefined" || !workerMayRun()) return { ok: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const remote = ensureWorker();
@@ -70,9 +83,11 @@ async function attempt<T>(
     return { ok: true, value };
   } catch {
     // Only this request falls back; the worker is re-created for the ones behind it.
+    // A single timeout never disables the worker; only a run of failures does, and
+    // even then it is retried after RETRY_AFTER_MS.
     consecutiveFailures += 1;
     recycle();
-    if (consecutiveFailures >= FAILURE_BUDGET) unavailable = true;
+    if (consecutiveFailures >= FAILURE_BUDGET) givenUpAt = monotonicNow();
     return { ok: false };
   } finally {
     if (timer) clearTimeout(timer);

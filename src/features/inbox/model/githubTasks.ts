@@ -77,6 +77,11 @@ export type GithubWorkItem = {
   assignees: GithubAssignee[];
   draft: boolean;
   repo: string;
+  /**
+   * Set when a PR action succeeded but re-reading the PR failed. The Host then returns
+   * only the new state; the title, URL and other fields must come from the previous row.
+   */
+  refreshError?: string;
 };
 
 export type InboxProvider = "github" | "linear" | "jira" | "gitlab" | "azuredevops";
@@ -725,52 +730,110 @@ export async function githubPrAction(
   ensureItemScope(cwd, repo, "pr", number);
   const generation = inboxCacheGeneration;
   const owner = itemScopes.get(detailsCacheKey(repo, "pr", number));
-  const item = await invoke<GithubWorkItem>("git_github_pr_action", {
+  const reported = await invoke<GithubWorkItem>("git_github_pr_action", {
     cwd,
     repo,
     number,
     action,
     expectedHeadOid: expectedHeadOid ?? "",
   });
+  // Read before the cache is invalidated: the previous row is what a failed refresh keeps.
+  const previous = reported.refreshError ? cachedPrRow(repo, number) : undefined;
+  const item = reported.refreshError
+    ? keepPrRowAfterRefreshFailure(reported, action, previous)
+    : reported;
   if (
     generation !== inboxCacheGeneration ||
     itemScopes.get(detailsCacheKey(repo, "pr", number)) !== owner
   )
     return item;
   invalidateGithubWorkItem(repo, "pr", number);
-  const key = workItemLookupKey(repo, "pr", number);
-  remember(workItemByKey, key, item, "item");
-  for (const [cacheKey, inboxListCache] of inboxListCaches) {
-    inboxListCaches.set(cacheKey, {
-      ...inboxListCache,
-      items: inboxListCache.items.map((cached) =>
-        cached.provider === "github" &&
-        cached.kind === "pr" &&
-        cached.repo.toLowerCase() === repo.trim().toLowerCase() &&
-        cached.number === number
-          ? { ...cached, ...item }
-          : cached,
-      ),
-    });
-  }
-  for (const cache of inboxListCaches.values()) {
-    const sources = cache.githubSources;
-    if (!sources) continue;
-    for (const [sourceKey, source] of sources) {
-      sources.set(sourceKey, {
-        ...source,
-        items: source.items.map((cached) =>
+  // A placeholder without a previous row is not a row: nothing is cached from it.
+  const cacheable = !reported.refreshError || previous !== undefined;
+  // The cached rows never carry the one-off refresh error.
+  const row: GithubWorkItem = { ...item, refreshError: undefined };
+  if (cacheable) {
+    const key = workItemLookupKey(repo, "pr", number);
+    remember(workItemByKey, key, row, "item");
+    for (const [cacheKey, inboxListCache] of inboxListCaches) {
+      inboxListCaches.set(cacheKey, {
+        ...inboxListCache,
+        items: inboxListCache.items.map((cached) =>
+          cached.provider === "github" &&
           cached.kind === "pr" &&
           cached.repo.toLowerCase() === repo.trim().toLowerCase() &&
           cached.number === number
-            ? { ...cached, ...item }
+            ? { ...cached, ...row }
             : cached,
         ),
       });
     }
+    for (const cache of inboxListCaches.values()) {
+      const sources = cache.githubSources;
+      if (!sources) continue;
+      for (const [sourceKey, source] of sources) {
+        sources.set(sourceKey, {
+          ...source,
+          items: source.items.map((cached) =>
+            cached.kind === "pr" &&
+            cached.repo.toLowerCase() === repo.trim().toLowerCase() &&
+            cached.number === number
+              ? { ...cached, ...row }
+              : cached,
+          ),
+        });
+      }
+    }
   }
   recordInboxSelfActivity({ provider: "github", kind: "pr", repo, number });
   return item;
+}
+
+/** The descriptive fields of a pull request row, as the inbox and item caches hold them. */
+type PrRowFields = Pick<
+  GithubWorkItem,
+  "title" | "url" | "stateReason" | "createdAt" | "updatedAt" | "labels" | "assignees" | "draft"
+>;
+
+/** The last known row of a pull request, from the item cache or any inbox list. */
+function cachedPrRow(repo: string, number: number): PrRowFields | undefined {
+  const cached = workItemByKey.get(workItemLookupKey(repo, "pr", number));
+  if (cached) return cached;
+  const target = repo.trim().toLowerCase();
+  const matches = (row: { kind: string; repo: string; number: number }) =>
+    row.kind === "pr" && row.repo.toLowerCase() === target && row.number === number;
+  for (const cache of inboxListCaches.values()) {
+    const listed = cache.items.find(matches);
+    if (listed) return listed;
+    for (const source of cache.githubSources?.values() ?? []) {
+      const sourced = source.items.find(matches);
+      if (sourced) return sourced;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The action succeeded, so the new state comes from the placeholder; every other field
+ * keeps the previous row instead of being blanked by the empty placeholder fields.
+ */
+function keepPrRowAfterRefreshFailure(
+  reported: GithubWorkItem,
+  action: GithubPrAction,
+  previous: PrRowFields | undefined,
+): GithubWorkItem {
+  if (!previous) return reported;
+  return {
+    ...reported,
+    title: previous.title,
+    url: previous.url,
+    stateReason: reported.stateReason || previous.stateReason,
+    createdAt: previous.createdAt,
+    updatedAt: previous.updatedAt,
+    labels: previous.labels,
+    assignees: previous.assignees,
+    draft: action === "draft" || action === "ready" ? reported.draft : previous.draft,
+  };
 }
 
 export function githubReviewDecisionLabel(decision: string): string {

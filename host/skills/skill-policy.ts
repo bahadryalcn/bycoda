@@ -69,10 +69,15 @@ export function readSkillPolicy(home = homedir()): SkillPolicy {
   const file = join(home, ".bycoda-host", "skill-policy.json");
   // Corrupt/unreadable preferences must not silently re-enable every skill.
   try {
+    // Corrupt policy stays in place and still fails closed; a copy is kept as evidence.
     const result = readStateFileSync(file, (text) => parseSkillPolicy(JSON.parse(text)), {
-      quarantine: false,
+      quarantine: true,
     });
     if (result.status === "ok") return result.value;
+    if (result.status === "corrupt")
+      console.warn(
+        `Skill policy is unreadable; retained evidence at ${result.quarantined ?? "an unavailable path"}. Skill restrictions stay fail-closed until it is repaired.`,
+      );
     if (result.status === "missing" && !policyExists(file)) return { ...EMPTY_SKILL_POLICY };
   } catch {
     // Unreadable metadata or data is an unknown policy, not an empty one.

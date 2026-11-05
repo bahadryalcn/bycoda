@@ -20,6 +20,7 @@ import briefingStyles from "./AssistantBriefingCard.module.css";
 import { assistantJobVisible } from "../model/assistantJobs";
 import { captureAssistantHostRead, type AssistantHostRead } from "../model/assistantHostRead";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 
 export function AssistantBriefingCard({
   snapshot,
@@ -222,15 +223,19 @@ export function AssistantBriefingCard({
           {t("Go to approvals")}
         </Button>
       </div>
-      {speaking !== "idle" && (
-        <p role="status" className={styles.muted}>
-          {t(
-            speaking === "loading"
-              ? "Preparing audio..."
-              : "Reading the briefing. This does not open the microphone.",
-          )}
-        </p>
-      )}
+      {/* Always mounted so the status is announced when it first appears. */}
+      <LiveText
+        className={styles.muted}
+        text={
+          speaking === "idle"
+            ? ""
+            : t(
+                speaking === "loading"
+                  ? "Preparing audio..."
+                  : "Reading the briefing. This does not open the microphone.",
+              )
+        }
+      />
       {activeVoice && speaking === "idle" && (
         <p className={styles.muted}>
           {t("Finish the voice conversation before listening to the briefing.")}
@@ -245,11 +250,10 @@ export function AssistantBriefingCard({
         </div>
       )}
       {audioError && <InlineError className={styles.error}>{t(audioError)}</InlineError>}
-      {approvals?.length === 0 && unavailable === 0 && (
-        <p role="status" className={styles.muted}>
-          {t("No pending approvals found.")}
-        </p>
-      )}
+      <LiveText
+        className={styles.muted}
+        text={approvals?.length === 0 && unavailable === 0 ? t("No pending approvals found.") : ""}
+      />
       {unavailable > 0 && (
         <InlineError>{t("Some approval sources could not be checked. Try again.")}</InlineError>
       )}

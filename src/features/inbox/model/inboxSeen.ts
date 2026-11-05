@@ -13,6 +13,9 @@ const COLD_MARKER = "bycoda.inboxSeen.indexed.v1";
 const HOT_LIMIT = 1024;
 // Never evict a seen identity merely because a partial provider fetch omitted it.
 const MAX_SEEN_ITEMS = 50_000;
+// Seen records older than this are dropped. An item older than the window with no
+// record counts as seen, so pruning never resurfaces old activity as unread.
+const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 export type InboxSeenEntry = {
   key: string;
@@ -58,6 +61,23 @@ function coldRequired() {
 }
 function trimHot() {
   while (hot.size > HOT_LIMIT) hot.delete(hot.keys().next().value!);
+}
+function retentionCutoff(): number {
+  return Date.now() - RETENTION_MS;
+}
+function pruneSeenItems(items: SeenMap, cutoff: number): SeenMap {
+  const kept: SeenMap = {};
+  for (const [key, value] of Object.entries(items)) if (value >= cutoff) kept[key] = value;
+  return kept;
+}
+/** Whether an item is unseen given its seen record (`undefined` when it has none). */
+function unseenAgainst(entry: InboxSeenEntry, value: number | undefined): boolean {
+  // An unreadable timestamp cannot prove the item is old, so a new one stays unseen.
+  if (value == null) return !hasReadableTime(entry) || inboxUpdatedAt(entry) >= retentionCutoff();
+  return inboxUpdatedAt(entry) > value;
+}
+function hasReadableTime(item: { updatedAt: string }): boolean {
+  return Number.isFinite(Date.parse(item.updatedAt));
 }
 function legacySnapshot(raw: string | null): SeenStore {
   if (!raw) return { seeded: false, items: {} };
@@ -232,7 +252,12 @@ export function rememberInboxItems(entries: readonly (InboxSeenEntry & { project
     });
     changed = true;
   }
-  if (changed) notifyInboxSeen();
+  if (changed) {
+    const cutoff = retentionCutoff();
+    for (const [key, entry] of knownItems)
+      if (hasReadableTime(entry) && inboxUpdatedAt(entry) < cutoff) knownItems.delete(key);
+    notifyInboxSeen();
+  }
 }
 
 export function knownInboxEntries(projectPaths: readonly string[]): InboxSeenEntry[] {
@@ -299,8 +324,12 @@ function loadInboxSeenStore(): SeenStore {
   }
 }
 
-function saveInboxSeenStore(store: SeenStore): boolean {
+function saveInboxSeenStore(unpruned: SeenStore): boolean {
   try {
+    const store: SeenStore = {
+      ...unpruned,
+      items: pruneSeenItems(unpruned.items, retentionCutoff()),
+    };
     const existing = loadInboxSeenStore();
     if (
       Object.keys(store.items).length > MAX_SEEN_ITEMS &&
@@ -343,9 +372,7 @@ function mergeSeen(items: SeenMap, entry: InboxSeenEntry): SeenMap {
 
 function entryIsUnseen(entry: InboxSeenEntry, items: SeenMap): boolean {
   if (!entry.key) return false;
-  const was = items[entry.key];
-  if (was == null) return true;
-  return inboxUpdatedAt(entry) > was;
+  return unseenAgainst(entry, items[entry.key]);
 }
 
 export function inboxSeenIsSeeded(): boolean {
@@ -368,7 +395,7 @@ export function isInboxEntryUnseen(entry: InboxSeenEntry): boolean {
     const value = hot.get(entry.key);
     hot.delete(entry.key);
     hot.set(entry.key, value);
-    return value === undefined || inboxUpdatedAt(entry) > value;
+    return unseenAgainst(entry, value);
   }
   const store = loadInboxSeenStore();
   if (!store.seeded) return false;
@@ -385,7 +412,7 @@ export async function readInboxEntryUnseen(entry: InboxSeenEntry): Promise<boole
     await ensureCold();
     const result = await readInboxSeenStorage([entry.key]);
     const value = result.items.get(entry.key);
-    return !!entry.key && result.seeded && (value === undefined || inboxUpdatedAt(entry) > value);
+    return !!entry.key && result.seeded && unseenAgainst(entry, value);
   } catch (error) {
     coldState = "error";
     coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
@@ -469,13 +496,7 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
           const found = await readInboxSeenStorage(page.map((item) => item.key).filter(Boolean));
           if (
             found.seeded &&
-            page.some(
-              (item) =>
-                item.key &&
-                (!found.items.has(item.key) ||
-                  found.items.get(item.key) === undefined ||
-                  inboxUpdatedAt(item) > found.items.get(item.key)!),
-            )
+            page.some((item) => item.key && unseenAgainst(item, found.items.get(item.key)))
           ) {
             unseen = true;
             break;

@@ -52,6 +52,7 @@ import {
 import { steerAppliesModelSettings, type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
 import { isSendStarting } from "./submit/submitStarting";
+import { takeRequeuedHeadSignal } from "./submit/submitBusySteer";
 import { t } from "../../../shared/i18n";
 
 export interface QueuedMessageActionDeps {
@@ -141,6 +142,10 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
   const manualActions = useRef(new Set<string>());
   const retryAfter = useRef(new Map<string, number>());
   const retryAttempts = useRef(new Map<string, number>());
+  /** Queue length seen by the last drain; a shorter queue means a row was sent. */
+  const queueLengths = useRef(new Map<string, number>());
+  /** Consecutive real refusals of a queue's head; deferrals never count toward the pause. */
+  const refusedDrains = useRef(new Map<string, number>());
   const retryTimer = useRef<number>(undefined);
   // Since when a dispatchable queue waits for the Host; the value is -1 once explained.
   const hostWaitSince = useRef(new Map<string, number>());
@@ -165,6 +170,12 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     let waitingForCleanup = false;
     for (const session of sessions) {
       const queued = session.queuedMessages ?? [];
+      const previousLength = queueLengths.current.get(session.id);
+      queueLengths.current.set(session.id, queued.length);
+      // A row left the queue because it was sent: the next wait starts its backoff afresh.
+      // Acceptance alone must not reset it: a dispatch counts as accepted before a refusal puts the row back.
+      if (previousLength !== undefined && queued.length < previousLength)
+        retryAttempts.current.delete(session.id);
       if (
         windowTransferPending ||
         movingSessionIds.current.has(session.id) ||
@@ -176,8 +187,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       // A hold (the refusal itself paused the queue, e.g. a reached usage budget) waits
       // for an explicit resume, which must not meet the backoff of the refused attempt.
       if (session.queueStatus === "paused") {
+        refusedDrains.current.delete(session.id);
         retryAttempts.current.delete(session.id);
         retryAfter.current.delete(session.id);
+        // A paused queue waits for an explicit resume, not for a refusal's backoff.
+        takeRequeuedHeadSignal(session.id);
       }
 
       if (session.queueStatus === "resuming") {
@@ -238,6 +252,12 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
 
       const next = queued[0];
       if (!next) continue;
+      // The provider refused this head after it was accepted and put it back: it waits
+      // with the same capped backoff as a deferral before it is offered again.
+      if (takeRequeuedHeadSignal(session.id)) {
+        scheduleRetry(session.id);
+        continue;
+      }
       queueDispatchingRef.current.add(session.id);
       scheduled.add(session.id);
       timers.push(
@@ -261,13 +281,16 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           ) {
             return;
           }
-          void Promise.resolve(
-            onSubmit(session.id, head.text, head.attachments, {
-              queuedMessageId: head.id,
-              noteCard: head.noteCard,
-              handoffCard: head.handoffCard,
-              intent: head.intent,
-            }),
+          // A submit that throws synchronously becomes a rejection, not an escaped error.
+          void new Promise<boolean>((resolve) =>
+            resolve(
+              onSubmit(session.id, head.text, head.attachments, {
+                queuedMessageId: head.id,
+                noteCard: head.noteCard,
+                handoffCard: head.handoffCard,
+                intent: head.intent,
+              }),
+            ),
           )
             .then((accepted) => {
               if (accepted === false) {
@@ -278,8 +301,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                   sessionsRef.current.find((entry) => entry.id === session.id)?.queuedMessages?.[0]
                     ?.id === head.id;
                 if (!stillHead) return;
-                const refused = scheduleRetry(session.id);
+                scheduleRetry(session.id);
+                const refused = (refusedDrains.current.get(session.id) ?? 0) + 1;
+                refusedDrains.current.set(session.id, refused);
                 if (refused < MAX_REFUSED_DRAINS) return;
+                refusedDrains.current.delete(session.id);
                 retryAttempts.current.delete(session.id);
                 retryAfter.current.delete(session.id);
                 setSessions((sessions) =>
@@ -298,7 +324,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                 flushHarnessEvents();
                 return;
               }
-              retryAttempts.current.delete(session.id);
+              refusedDrains.current.delete(session.id);
               retryAfter.current.delete(session.id);
             })
             .catch((error) => {
@@ -306,18 +332,18 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
                 // Nothing was sent. The queue stays as it is and the head is
                 // offered again once the host or the other computer settles.
                 const attempt = scheduleRetry(session.id);
-                if (error instanceof QueueDeferredError && attempt >= MAX_REFUSED_DRAINS) {
-                  retryAfter.current.delete(session.id);
-                  setSessions((entries) => entries.map((entry) =>
-                    entry.id === session.id && entry.queuedMessages?.[0]?.id === head.id
-                      && entry.queueStatus !== "paused" && entry.queueStatus !== "resuming"
-                      && entry.queueStatus !== "restored"
-                      ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "reject") }
-                      : entry,
-                  ));
+                // A safe deferral is a wait, not a failure: the head keeps retrying
+                // with the capped backoff. The reason is shown on the first deferral
+                // and at every MAX_REFUSED_DRAINS-th one, without pausing the queue.
+                if (
+                  error instanceof QueueDeferredError &&
+                  (attempt === 1 || attempt % MAX_REFUSED_DRAINS === 0)
+                ) {
                   enqueueHarnessEvent(session.id, {
                     type: "status",
-                    text: t("The queued message is still waiting. The queue is paused; resume it to try again.") + ` ${error.message}`,
+                    text:
+                      t("The queued message is waiting and will be retried automatically.") +
+                      ` ${error.message}`,
                   });
                   flushHarnessEvents();
                 }

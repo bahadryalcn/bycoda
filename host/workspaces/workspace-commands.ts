@@ -19,18 +19,7 @@ import type {
 } from "./workspace-service-contracts";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  cp,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  stat,
-} from "node:fs/promises";
+import { cp, lstat, mkdir, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../../src/platform/tauri/fs";
 import { hostUnmerged, unmergedMessage } from "../git/git-conflicts";
@@ -990,7 +979,7 @@ export class WorkspaceCommands {
     await mkdir(dirname(to), { recursive: true });
     await this.verifyExpectedPath(root, input, from, expectedHash);
     if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
-    await rename(from, to);
+    await renameWithRetry(from, to);
     invalidateHostFilePaths(root);
     return target;
   }

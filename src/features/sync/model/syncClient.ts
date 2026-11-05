@@ -68,7 +68,7 @@ export function recordSyncStatus(
   patch: Partial<SyncStatus> & { state: SyncState },
 ): void {
   statuses.set(machineId, { ...getSyncStatus(machineId), ...patch });
-  for (const listener of [...statusListeners]) listener();
+  for (const listener of Array.from(statusListeners)) listener();
 }
 
 function pendingCount(machineId: string): number {
@@ -335,7 +335,7 @@ async function runSyncCycleInner(
       });
       await applyIncoming(machineId, toAdopt, current);
       requireCurrent(current);
-      if (overwrote) for (const listener of [...mergedListeners]) listener();
+      if (overwrote) for (const listener of Array.from(mergedListeners)) listener();
     }
     invalidOps += pushResult.invalid?.length ?? 0;
   }
@@ -639,7 +639,7 @@ export function startSyncLoop(
           slot.phase = "idle";
         }
       }
-      stoppedResult = Promise.all([...running]).then(() => !uncertain);
+      stoppedResult = Promise.all(running).then(() => !uncertain);
       return stoppedResult;
     },
     nudge: requestRun,

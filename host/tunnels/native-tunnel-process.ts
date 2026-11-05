@@ -17,6 +17,8 @@ export function startNativeTunnel(
 ): OwnedTunnelProcess {
   let stopping = false;
   let stopWork: Promise<void> | undefined;
+  // Set once the provider process exists; a setup failure before that runs nothing.
+  let started = false;
   const setup = (async (): Promise<OwnedTunnelProcess> => {
     const prepared = await prepareProviderGuardian(fileURLToPath(new URL("./", import.meta.url)), {
       allowLinuxOriginalChild: true,
@@ -30,6 +32,7 @@ export function startNativeTunnel(
         cwd: process.cwd(),
         env: tunnelEnvironment(command),
       });
+      started = true;
       const startup = setTimeout(() => {
         emit({ type: "error", issue: "startup-timeout" });
         void child.stop().catch(() => emit({ type: "error", issue: "stop-failed" }));
@@ -80,7 +83,12 @@ export function startNativeTunnel(
     stop() {
       stopping = true;
       stopWork ??= setup
-        .then((child) => child.stop())
+        .then(
+          (child) => child.stop(),
+          (error: unknown) => {
+            if (started) throw error;
+          },
+        )
         .catch(() => {
           stopWork = undefined;
           throw new TunnelError("stop-failed");

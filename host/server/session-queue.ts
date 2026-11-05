@@ -1,5 +1,6 @@
 import { type HostSession } from "../../src/features/connections/model/protocol";
 import { LeaseHeldError } from "../../src/features/sync/model/runLease";
+import { refuseHost } from "../domains/context";
 import { QueueDrainer, queueRowCommands } from "../sessions/queue-drainer";
 import type { ServerBindings } from "./bindings";
 import { WATCH_STAMP_MS } from "./support";
@@ -125,7 +126,8 @@ export async function createSessionQueueRuntime(
   /** The conversation may start a turn on this host, or `LEASE_HELD`: callers queue the message. */
   const assertHostMayRun = async (id: string) => {
     const holder = await desktopRunHolder(id);
-    if (holder) throw new LeaseHeldError(holder);
+    // Refused before any turn starts: a wait for the queue, never an unknown send.
+    if (holder) throw refuseHost(new LeaseHeldError(holder), "LEASE_HELD", "conflict", true);
   };
   /** Whether a conversation waits for the owner to answer a usage limit, read again only when it moved. */
   const usageLimits = new Map<string, { key: string; limited: boolean }>();

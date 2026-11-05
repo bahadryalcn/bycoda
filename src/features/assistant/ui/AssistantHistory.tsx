@@ -3,6 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { Button } from "../../../shared/ui/Button";
 import { ExternalLink } from "../../../shared/ui/icons";
+import { LiveText } from "../../../shared/ui/LiveText";
 import styles from "./AssistantHistory.module.css";
 
 const labels: Record<string, string> = {
@@ -45,11 +46,11 @@ export function AssistantHistory({
   }
   return (
     <div className={styles.history}>
-      {!entries.length && (
-        <p className={styles.empty} role="status">
-          {t(filtered ? "No results" : "No activity yet")}
-        </p>
-      )}
+      {/* Always mounted so the empty state is announced when it first appears. */}
+      <LiveText
+        className={styles.empty}
+        text={!entries.length ? t(filtered ? "No results" : "No activity yet") : ""}
+      />
       {[...groups].map(([key, events]) => (
         <section className={styles.day} key={key}>
           <h3>

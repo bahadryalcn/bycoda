@@ -2,6 +2,8 @@ import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./su
 import type { SubmitTurnEvents } from "./submitTurnEvents";
 import { requireRoomNativeOutput, startNativeOutputSession } from "./prepareNativeOutputSession";
 import { readableHarnessError } from "../../../../integrations/harness/core/readableError";
+import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
+import { queueSubmittedFollowUp, requeueQueuedRowHead } from "./submitBusySteer";
 
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { announceSessionFinished } from "../../../../features/notifications/model/notifications";
@@ -385,6 +387,27 @@ export async function runSubmitDispatch(
   } catch (error: unknown) {
     recoverEditedResend();
     if (turnGen.current.get(sessionId) !== gen) return;
+    // The provider refused before any write (its fence is still settling a previous
+    // query): park the message in the queue, as the steer path does, instead of failing it.
+    if (error instanceof TurnNotReadyError && !turn.providerFailureSeen) {
+      const userBlockId = [...(sessionsRef.current.find((s) => s.id === sessionId)?.blocks ?? [])]
+        .reverse()
+        .find((block) => block.role === "user" && !block.draft)?.id;
+      if (userBlockId)
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sessionId
+              ? { ...s, blocks: s.blocks.filter((block) => block.id !== userBlockId) }
+              : s,
+          ),
+        );
+      // A queue row goes back to the head with its id; a new message joins the tail.
+      if (options?.queuedMessageId) {
+        requeueQueuedRowHead(sessionId, input, pre);
+        return;
+      }
+      if (queueSubmittedFollowUp(ctx, input, pre)) return;
+    }
     if (turn.wrap) revealHandoff(turn.wrap.text);
     const message = readableHarnessError(
       error instanceof Error ? error.message : String(error) || `${current.harness} adapter failed`,

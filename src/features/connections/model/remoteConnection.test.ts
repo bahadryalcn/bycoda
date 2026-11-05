@@ -8,7 +8,9 @@ import {
   reduceConnection,
   sanitizeConnectionError,
   sendAfterReconnect,
+  BLOCKED_RETRY_LIMIT,
   shouldAutoRetry,
+  shouldRetryBlocked,
   type RemoteConnectionState,
 } from "./remoteConnection";
 
@@ -195,28 +197,69 @@ describe("automatic retry rule", () => {
   });
 });
 
+describe("shouldRetryBlocked", () => {
+  it("makes a few quiet attempts at a blocked machine, then waits for the user", () => {
+    expect(BLOCKED_RETRY_LIMIT).toBe(3);
+    expect([0, 1, 2, 3].map((attempts) => shouldRetryBlocked(attempts, undefined, 0))).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it("follows the automatic-reconnecting setting and the hidden window", () => {
+    expect(shouldRetryBlocked(0, undefined, 0, false)).toBe(false);
+    expect(shouldRetryBlocked(0, 0, 10 * 60_000)).toBe(true);
+    expect(shouldRetryBlocked(0, 0, 10 * 60_000 + 1)).toBe(false);
+  });
+});
+
 describe("sendAfterReconnect", () => {
   const base = () => ({
     reconnect: vi.fn(async () => ({ ok: true }) as const),
-    ready: vi.fn(async () => true),
     send: vi.fn(() => true),
+    wake: vi.fn(),
   });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   it("sends at once when the machine is not known to be down", async () => {
     const fakes = base();
     expect(await sendAfterReconnect({ status: "connected", ...fakes })).toEqual({ sent: true });
     expect(fakes.reconnect).not.toHaveBeenCalled();
+    expect(fakes.wake).not.toHaveBeenCalled();
   });
 
-  it("reconnects first, then sends", async () => {
-    const fakes = base();
+  it("saves and sends at once while the machine is down, without waiting for it", async () => {
+    let finish!: (value: { ok: boolean }) => void;
+    const fakes = {
+      ...base(),
+      reconnect: vi.fn(() => new Promise<never>((resolve) => (finish = resolve as never))),
+    };
     expect(await sendAfterReconnect({ status: "unreachable", ...fakes })).toEqual({ sent: true });
-    expect(fakes.reconnect.mock.invocationCallOrder[0]).toBeLessThan(
-      fakes.send.mock.invocationCallOrder[0],
-    );
+    expect(fakes.send).toHaveBeenCalledTimes(1);
+    expect(fakes.reconnect).toHaveBeenCalledTimes(1);
+    expect(fakes.wake).not.toHaveBeenCalled();
+    finish({ ok: true });
+    await settle();
+    expect(fakes.wake).toHaveBeenCalledTimes(1);
   });
 
-  it("sends nothing when the reconnect fails, and says why", async () => {
+  it("wakes the poll once a background reconnect answers, and not after a failure", async () => {
+    const fakes = base();
+    await sendAfterReconnect({ status: "connection-blocked", ...fakes });
+    await settle();
+    expect(fakes.wake).toHaveBeenCalledTimes(1);
+    const failed = {
+      ...base(),
+      reconnect: vi.fn(async () => ({ ok: false, error: "no" }) as const),
+    };
+    await sendAfterReconnect({ status: "unreachable", ...failed });
+    await settle();
+    expect(failed.wake).not.toHaveBeenCalled();
+  });
+
+  it("holds a message only when a sign-in is needed and the reconnect fails, and says why", async () => {
     const fakes = base();
     fakes.reconnect.mockResolvedValue({ ok: false, error: "no answer" } as never);
     expect(await sendAfterReconnect({ status: "needs-auth", ...fakes })).toEqual({
@@ -227,11 +270,30 @@ describe("sendAfterReconnect", () => {
     expect(fakes.send).not.toHaveBeenCalled();
   });
 
-  it("sends nothing when the view never catches up, or declines the message", async () => {
+  it("waits for a sign-in before sending, then wakes the poll", async () => {
     const fakes = base();
-    fakes.ready.mockResolvedValue(false);
-    expect((await sendAfterReconnect({ status: "connecting", ...fakes })).failure).toBe("offline");
+    expect(await sendAfterReconnect({ status: "host-key", ...fakes })).toEqual({ sent: true });
+    expect(fakes.reconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      fakes.send.mock.invocationCallOrder[0],
+    );
+    expect(fakes.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the view to be ready before sending, without a time limit", async () => {
+    let ready!: (value: boolean) => void;
+    const fakes = {
+      ...base(),
+      ready: vi.fn(() => new Promise<boolean>((resolve) => (ready = resolve))),
+    };
+    const pending = sendAfterReconnect({ status: "connected", ...fakes });
+    await settle();
     expect(fakes.send).not.toHaveBeenCalled();
+    ready(true);
+    expect(await pending).toEqual({ sent: true });
+    expect(fakes.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a declined message as not sent", async () => {
     const declined = { ...base(), send: vi.fn(() => false) };
     expect(await sendAfterReconnect({ status: "connected", ...declined })).toEqual({ sent: false });
   });

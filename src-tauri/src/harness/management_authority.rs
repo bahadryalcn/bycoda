@@ -75,6 +75,7 @@ pub(crate) fn harness_utility_cleanup_grant(window: tauri::Window, session_id: S
         Ok(ManagementGrant { token, route_id })
     })
 }
+#[allow(clippy::too_many_arguments)] // Each argument is a separately validated authority field of the consumed route.
 pub(super) fn consume(window: &tauri::Window, token: &str, route_id: &str, command: &str, args: &[String], cwd: Option<&str>, provider: Option<&str>, binary_path: Option<&str>) -> Result<(), String> {
     let page = super::page_incarnation(window)?;
     let webview = window.app_handle().get_webview_window(window.label()).ok_or("NATIVE_CONTROL_WINDOW_UNKNOWN")?;
@@ -187,6 +188,7 @@ pub(super) fn consume_spawn(window: &tauri::Window, token: &str, route_id: &str,
         Ok(policy)
     })
 }
+#[allow(clippy::too_many_arguments)] // Each argument is a separately validated authority field of the spawn request.
 pub(super) fn spawn_input_policy(window: &tauri::Window, token: Option<&str>, route: Option<&str>, purpose: Option<&str>, session_id: &str, command: &str, args: &[String], cwd: &str, account: Option<&super::HarnessAccount>, provider: Option<&str>, binary_path: Option<&str>) -> Result<Option<InputPolicy>, String> {
     match (token, route) {
         (Some(token), Some(route)) if route == session_id => consume_spawn(window, token, route, ManagementSpawn { purpose: purpose.ok_or("NATIVE_MANAGEMENT_GRANT_INVALID")?.to_owned(), command: command.into(), args: args.to_vec(), cwd: cwd.into(), account: account.cloned(), binary_provider: provider.map(str::to_owned), binary_path: binary_path.map(str::to_owned) }).map(Some),

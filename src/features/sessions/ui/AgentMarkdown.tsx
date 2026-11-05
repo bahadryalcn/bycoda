@@ -615,7 +615,15 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   );
 }
 
-function MarkdownCodeShell({ code, language, children }: { code: string; language: string; children: ReactNode }) {
+function MarkdownCodeShell({
+  code,
+  language,
+  children,
+}: {
+  code: string;
+  language: string;
+  children: ReactNode;
+}) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
@@ -634,7 +642,8 @@ function MarkdownCodeShell({ code, language, children }: { code: string; languag
   return (
     <div
       className="markdown-code-shell markdown-code-resizable"
-      data-collapsed={collapsed} data-code-identity={JSON.stringify([language, code])}
+      data-collapsed={collapsed}
+      data-code-identity={JSON.stringify([language, code])}
       dir="ltr"
       tabIndex={0}
       role="region"

@@ -5,6 +5,7 @@ import { isRemoteProvider, type HostCommand } from "./protocol";
 import { RUNTIME_MODES } from "../../sessions/public/session";
 import { t } from "../../../shared/i18n/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
+import { requestIssuedAt } from "../../../shared/lib/id/requestId";
 import {
   changeOutboxDatabase,
   readOutboxDatabasePage,
@@ -14,6 +15,7 @@ import {
   settleOutboxDatabase,
   quarantineOutboxDatabase,
   OversizedOutboxRecordError,
+  OutboxConflictError,
 } from "./remoteOutboxDatabase";
 
 type AttachmentCommand =
@@ -371,7 +373,7 @@ export async function durableRemoteOutboxIssues(
   do {
     const page = await readOutboxDatabasePage("entries", PREFIX, after);
     if (revision !== undefined && page.revision !== revision)
-      throw new Error("Pending requests changed; try again.");
+      throw new OutboxConflictError("Pending requests changed; try again.");
     revision = page.revision;
     if (page.oversized) {
       if (!oversizedOutsideScope(page.oversized, project, environment))
@@ -386,7 +388,7 @@ export async function durableRemoteOutboxIssues(
   do {
     const legacyPage = await readOutboxLegacyPage(legacyAfter, revision);
     if (legacyPage.revision !== undefined && legacyPage.revision !== revision)
-      throw new Error("Pending requests changed; try again.");
+      throw new OutboxConflictError("Pending requests changed; try again.");
     if (legacyPage.oversized) {
       if (!oversizedOutsideScope(legacyPage.oversized, project, environment))
         throw new OversizedOutboxRecordError(legacyPage.oversized);
@@ -403,14 +405,15 @@ export async function durableRemoteOutboxIssues(
         continue;
       const record = await readOutboxDatabaseRecord(key);
       if (record.revision !== revision || (await readOutboxLegacyValue(key)) !== raw)
-        throw new Error("Pending requests changed; try again.");
+        throw new OutboxConflictError("Pending requests changed; try again.");
       if (record.settlement === raw) continue;
       consider(key, raw, record.entry !== undefined && record.entry !== raw);
     }
     legacyAfter = legacyPage.next;
   } while (legacyAfter !== undefined);
   const check = await readOutboxDatabaseRecord(PREFIX);
-  if (check.revision !== revision) throw new Error("Pending requests changed; try again.");
+  if (check.revision !== revision)
+    throw new OutboxConflictError("Pending requests changed; try again.");
   return [...issues.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
@@ -682,7 +685,9 @@ export function savePendingRemoteCommand(
     pendingBytes += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2;
   }
   const pendingKey = `${pendingPrefix(project, environment)}${command.commandId}`;
-  if (pendingCount >= 100 || pendingBytes + (pendingKey.length + json.length) * 2 > 8 * 1024 * 1024)
+  // Budget the legacy store below the ~5 MB origin quota so a full outbox is refused here, with
+  // recovery guidance, instead of failing inside setItem.
+  if (pendingCount >= 100 || pendingBytes + (pendingKey.length + json.length) * 2 > 4 * 1024 * 1024)
     throw new Error(t("Remote outbox is full. Recover pending requests before sending more."));
   if (!readPendingEntry(json, command.commandId))
     throw new Error(t("Cannot save an invalid remote request."));
@@ -692,6 +697,25 @@ export function savePendingRemoteCommand(
     throw new Error(t("Cannot save your request locally. Free up app storage before sending."));
   }
   changed();
+}
+
+/**
+ * The Host refuses a request id older than its 30-day replay horizon, and deletes that
+ * fence a day later. A request this old is never retried automatically: its outcome is
+ * unknown until the Host confirms it, and only an explicit check may send it again.
+ */
+export const REMOTE_REQUEST_RETRY_LIMIT_MS = 29 * 24 * 60 * 60 * 1000;
+
+/** Legacy UUIDv4 ids carry no issue time, so they keep their existing retry behaviour. */
+export function remoteRequestPastRetryLimit(requestId: string, now = Date.now()): boolean {
+  const issuedAt = requestIssuedAt(requestId);
+  return issuedAt !== undefined && now - issuedAt > REMOTE_REQUEST_RETRY_LIMIT_MS;
+}
+
+export function remoteOutcomeUnknownMessage(): string {
+  return t(
+    "This request is older than 29 days, so it will not be sent automatically. Its outcome is unknown: check the conversation before sending it again.",
+  );
 }
 
 /** Legacy entries have no retry age; a missing receipt is not proof that their
@@ -705,7 +729,7 @@ export function remoteCommandNeedsVerification(
     localStorage.getItem(`${pendingPrefix(project, environment)}${commandId}`) ?? "",
     commandId,
   );
-  return !entry?.savedAt;
+  return !entry?.savedAt || remoteRequestPastRetryLimit(commandId);
 }
 /** Persist Stop until the accepted command's exact run can be reconciled. */
 export function markRemoteCommandStopped(
@@ -736,8 +760,54 @@ export function clearPendingRemoteCommand(project: string, environment: string, 
   changed();
 }
 
+/** Injected for tests, like `now` elsewhere in this file. Defaults use the real clock. */
+export type OutboxRetry = {
+  wait?: (ms: number) => Promise<void>;
+  random?: () => number;
+};
+const OUTBOX_RETRY_ATTEMPTS = 5;
+const OUTBOX_RETRY_BASE_MS = 20;
+const OUTBOX_RETRY_MAX_MS = 320;
+
+/**
+ * Re-run a whole read-then-write operation when another writer changed the outbox between
+ * its reads and its compare-and-set. Each attempt re-derives every decision from fresh
+ * state, so a real change to the same request still fails with its own plain error, and a
+ * write is only committed by a compare-and-set that matched the bytes it was derived from.
+ */
+async function retryOutboxConflict<T>(
+  operation: () => Promise<T>,
+  retry: OutboxRetry = {},
+): Promise<T> {
+  const wait =
+    retry.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const random = retry.random ?? Math.random;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof OutboxConflictError) || attempt >= OUTBOX_RETRY_ATTEMPTS) throw error;
+      const cap = Math.min(OUTBOX_RETRY_MAX_MS, OUTBOX_RETRY_BASE_MS * 2 ** (attempt - 1));
+      await wait(cap / 2 + random() * (cap / 2));
+    }
+  }
+}
+
 /** Read durable and legacy evidence against one IDB revision. Unknown data holds sending. */
-export async function readDurableRemoteCommand(
+export function readDurableRemoteCommand(
+  project: string,
+  environment: string,
+  sessionId?: string | null,
+  shellId?: string,
+  retry?: OutboxRetry,
+): Promise<{ command?: HostCommand; revision: number }> {
+  return retryOutboxConflict(
+    () => readDurableRemoteCommandOnce(project, environment, sessionId, shellId),
+    retry,
+  );
+}
+
+async function readDurableRemoteCommandOnce(
   project: string,
   environment: string,
   sessionId?: string | null,
@@ -771,7 +841,7 @@ export async function readDurableRemoteCommand(
   do {
     const page = await readOutboxDatabasePage("entries", PREFIX, after);
     if (revision !== undefined && page.revision !== revision)
-      throw new Error("Pending requests changed; try again.");
+      throw new OutboxConflictError("Pending requests changed; try again.");
     revision = page.revision;
     if (page.oversized) {
       if (!oversizedOutsideScope(page.oversized, project, environment))
@@ -786,7 +856,7 @@ export async function readDurableRemoteCommand(
   do {
     const legacyPage = await readOutboxLegacyPage(legacyAfter, revision);
     if (legacyPage.revision !== undefined && legacyPage.revision !== revision)
-      throw new Error("Pending requests changed; try again.");
+      throw new OutboxConflictError("Pending requests changed; try again.");
     if (legacyPage.oversized) {
       if (!oversizedOutsideScope(legacyPage.oversized, project, environment))
         throw new OversizedOutboxRecordError(legacyPage.oversized);
@@ -798,7 +868,7 @@ export async function readDurableRemoteCommand(
       if (scope && (scope.project !== project || scope.environment !== environment)) continue;
       const record = await readOutboxDatabaseRecord(key);
       if (record.revision !== revision || (await readOutboxLegacyValue(key)) !== raw)
-        throw new Error("Pending requests changed; try again.");
+        throw new OutboxConflictError("Pending requests changed; try again.");
       if (record.settlement === raw) continue;
       if (record.entry !== undefined && record.entry !== raw)
         throw new Error("A pending request has conflicting saved versions.");
@@ -807,12 +877,30 @@ export async function readDurableRemoteCommand(
     legacyAfter = legacyPage.next;
   } while (legacyAfter !== undefined);
   const check = await readOutboxDatabaseRecord(prefix);
-  if (check.revision !== revision) throw new Error("Pending requests changed; try again.");
+  if (check.revision !== revision)
+    throw new OutboxConflictError("Pending requests changed; try again.");
   return { command, revision: revision ?? 0 };
 }
 
-/** Persist the immutable command before any Host dispatch. */
-export async function admitDurableRemoteCommand(
+/**
+ * Persist the immutable command before any Host dispatch. A concurrent write to another
+ * request re-runs the admission; the same request's admitted bytes are reused, never duplicated.
+ */
+export function admitDurableRemoteCommand(
+  project: string,
+  environment: string,
+  command: HostCommand,
+  shellId?: string,
+  followup?: HostCommand,
+  retry?: OutboxRetry,
+): Promise<void> {
+  return retryOutboxConflict(
+    () => admitDurableRemoteCommandOnce(project, environment, command, shellId, followup),
+    retry,
+  );
+}
+
+async function admitDurableRemoteCommandOnce(
   project: string,
   environment: string,
   command: HostCommand,
@@ -820,7 +908,7 @@ export async function admitDurableRemoteCommand(
   followup?: HostCommand,
 ): Promise<void> {
   const sessionId = command.type === "create" ? null : command.sessionId;
-  const observed = await readDurableRemoteCommand(project, environment, sessionId, shellId);
+  const observed = await readDurableRemoteCommandOnce(project, environment, sessionId, shellId);
   if (observed.command && canonicalJson(observed.command) !== canonicalJson(command))
     throw new Error(
       "The pending request changed. Recover the original request before sending again.",
@@ -829,7 +917,7 @@ export async function admitDurableRemoteCommand(
   const record = await readOutboxDatabaseRecord(key);
   const legacy = await readOutboxLegacyValue(key);
   if (record.revision !== observed.revision)
-    throw new Error("Pending requests changed; try again.");
+    throw new OutboxConflictError("Pending requests changed; try again.");
   if (record.entry === undefined && record.resolved)
     throw new Error("This request identity has already been resolved.");
   const existingRaw = record.entry ?? (record.settlement === legacy ? null : legacy);
@@ -856,7 +944,7 @@ export async function admitDurableRemoteCommand(
   if (raw.length * 2 > 2 * 1024 * 1024 || !readPendingEntry(raw, command.commandId))
     throw new Error("Cannot save an invalid or oversized remote request.");
   if ((await readOutboxLegacyValue(key)) !== legacy)
-    throw new Error("Pending requests changed; try again.");
+    throw new OutboxConflictError("Pending requests changed; try again.");
   await changeOutboxDatabase(
     key,
     record.entry ?? null,
@@ -922,7 +1010,7 @@ export async function readDurableRemoteEntry(
   const entry = raw ? readPendingEntry(raw, commandId) : undefined;
   if (raw && !entry) throw new Error("An unreadable pending request requires recovery.");
   if ((await readOutboxLegacyValue(key)) !== legacy)
-    throw new Error("Pending requests changed; try again.");
+    throw new OutboxConflictError("Pending requests changed; try again.");
   return { key, record, legacy, entry };
 }
 
@@ -972,7 +1060,7 @@ export async function durableRemoteAttachmentIds(
   do {
     const page = await readOutboxDatabasePage("entries", PREFIX, after);
     if (revision !== undefined && page.revision !== revision)
-      throw new Error("Pending requests changed; try again.");
+      throw new OutboxConflictError("Pending requests changed; try again.");
     revision = page.revision;
     if (page.oversized) {
       if (!oversizedOutsideScope(page.oversized, project, environment))
@@ -987,7 +1075,7 @@ export async function durableRemoteAttachmentIds(
   do {
     const legacyPage = await readOutboxLegacyPage(legacyAfter, revision);
     if (legacyPage.revision !== undefined && legacyPage.revision !== revision)
-      throw new Error("Pending requests changed; try again.");
+      throw new OutboxConflictError("Pending requests changed; try again.");
     if (legacyPage.oversized) {
       if (!oversizedOutsideScope(legacyPage.oversized, project, environment))
         throw new OversizedOutboxRecordError(legacyPage.oversized);
@@ -1003,7 +1091,7 @@ export async function durableRemoteAttachmentIds(
         continue;
       const record = await readOutboxDatabaseRecord(key);
       if (record.revision !== revision || (await readOutboxLegacyValue(key)) !== raw)
-        throw new Error("Pending requests changed; try again.");
+        throw new OutboxConflictError("Pending requests changed; try again.");
       if (record.settlement === raw) continue;
       if (record.entry !== undefined && record.entry !== raw)
         throw new Error("A pending request has conflicting saved versions.");
@@ -1012,6 +1100,7 @@ export async function durableRemoteAttachmentIds(
     legacyAfter = legacyPage.next;
   } while (legacyAfter !== undefined);
   const check = await readOutboxDatabaseRecord(PREFIX);
-  if (check.revision !== revision) throw new Error("Pending requests changed; try again.");
+  if (check.revision !== revision)
+    throw new OutboxConflictError("Pending requests changed; try again.");
   return [...ids];
 }

@@ -13,6 +13,7 @@ fn request_id(action: &str, input: &Value) -> Result<String, String> {
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract; bundling them would change the call shape.
 pub fn control_room_browser_panel_request(app: AppHandle, window: WebviewWindow, environment_id: String, project_id: String, thread_id: String, project_cwd: String, action: String, input: Value) -> Result<Value, String> {
     if [&environment_id, &project_id, &thread_id].iter().any(|s| s.is_empty() || s.len() > 200 || s.contains('\0'))
         || project_cwd.is_empty() || project_cwd.len() > 4096 || project_cwd.contains('\0')

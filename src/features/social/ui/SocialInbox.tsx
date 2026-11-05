@@ -342,7 +342,7 @@ export function Inbox({
               <ContinuousList
                 items={threads}
                 itemKey={(item) => item.id}
-                stateKey={`social-inbox:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${accountFilter}:${kindFilter}:${query}`}
+                stateKey={`social-inbox:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${accountFilter}:${kindFilter}`}
                 requiredKey={selected}
                 estimateSize={104}
                 renderItem={(item) => (

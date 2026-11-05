@@ -80,7 +80,10 @@ const empty: DesktopControlConfiguration = {
 export class HostDesktopControl {
   readonly ready: Promise<void>;
   readonly statusChanges = new DesktopStatusChanges();
-  private statusChanged() { this.statusChanges.changed(); this.ports.onChange?.(); }
+  private statusChanged() {
+    this.statusChanges.changed();
+    this.ports.onChange?.();
+  }
   private tail: Promise<unknown> = Promise.resolve();
   private active?: AbortController;
   private currentAction?: { app: string; action: string };
@@ -420,7 +423,10 @@ export class HostDesktopControl {
         throw new Error("Desktop helper exit status contradicted its result.");
       return output;
     } finally {
-      if (this.active === controller) { this.active = undefined; this.statusChanged(); }
+      if (this.active === controller) {
+        this.active = undefined;
+        this.statusChanged();
+      }
     }
   }
   private requireData(envelope: Envelope) {

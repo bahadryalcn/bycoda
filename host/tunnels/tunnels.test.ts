@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExternalTunnels } from "./tunnels";
 import * as atomicWrite from "../storage/atomic-write";
+
+// Pass-through spy so one test can make a state read fail with a real I/O error code.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 import type { TunnelEvent } from "./tunnel-providers";
 import type { SocialCredential } from "../social/social-credentials";
 
@@ -197,30 +203,159 @@ describe("external tunnels host ownership", () => {
     await s.service.close();
   });
 
-  it("preserves an unreadable or foreign manifest and refuses to launch", async () => {
+  it("moves a foreign manifest aside untouched and starts an empty control lane", async () => {
     const s = await setup();
     const content = JSON.stringify({ version: 1, environmentId: "another-host", tunnels: [] });
     await writeFile(join(s.directory, "state.json"), content);
-    await expect(s.service.status()).rejects.toThrow("storage-unavailable");
-    await expect(s.service.start(dev)).rejects.toThrow("storage-unavailable");
+    expect((await s.service.status()).tunnels).toEqual([]);
+    expect(await readFile(join(s.directory, "state.foreign-another-host.json"), "utf8")).toBe(
+      content,
+    );
+    expect(JSON.parse(await readFile(join(s.directory, "state.json"), "utf8"))).toMatchObject({
+      environmentId: "host-a",
+      tunnels: [],
+    });
+    const record = await s.service.start(dev);
+    expect(record.state).toBe("starting");
+    expect(s.launch).toHaveBeenCalledTimes(1);
     await s.service.close();
-    expect(await readFile(join(s.directory, "state.json"), "utf8")).toBe(content);
-    expect(s.launch).not.toHaveBeenCalled();
   });
-  it("retries initialization after invalid or foreign state is repaired without forgetting it", async () => {
+
+  it("never overwrites an earlier foreign aside copy", async () => {
+    const s = await setup();
+    await writeFile(join(s.directory, "state.foreign-another-host.json"), "earlier-evidence");
+    await writeFile(
+      join(s.directory, "state.json"),
+      JSON.stringify({ version: 1, environmentId: "another-host", tunnels: [] }),
+    );
+    await s.service.status();
+    expect(await readFile(join(s.directory, "state.foreign-another-host.json"), "utf8")).toBe(
+      "earlier-evidence",
+    );
+    expect(
+      await readFile(join(s.directory, "state.foreign-another-host-1.json"), "utf8"),
+    ).toContain("another-host");
+  });
+
+  it("quarantines damaged state, starts from a usable manifest and keeps the original bytes", async () => {
     const s = await setup();
     const path = join(s.directory, "state.json");
-    for (const original of [
-      "",
-      "{",
-      JSON.stringify({ version: 1, environmentId: "foreign", tunnels: [] }),
-    ]) {
+    for (const original of ["", "{", "[]", JSON.stringify({ version: 2, tunnels: [] })]) {
       await writeFile(path, original);
-      await expect(s.service.status()).rejects.toThrow("storage-unavailable");
-      expect(await readFile(path, "utf8")).toBe(original);
+      // Each damaged file is repaired by a service instance's first load.
+      const service = new ExternalTunnels(
+        s.directory,
+        "host-a",
+        () => "http://127.0.0.1:3776",
+        s.dependencies,
+      );
+      expect(await service.status()).toMatchObject({
+        tunnels: [],
+        repair: { repaired: true, dropped: 0 },
+      });
+      expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
+        version: 1,
+        environmentId: "host-a",
+        tunnels: [],
+      });
     }
-    await writeFile(path, JSON.stringify({ version: 1, environmentId: "host-a", tunnels: [] }));
-    expect((await s.service.status()).tunnels).toEqual([]);
+    const copies = (await readdir(s.directory)).filter((name) =>
+      name.startsWith("state.json.corrupt-"),
+    );
+    expect(copies.length).toBeGreaterThan(0);
+    const retained = await Promise.all(
+      copies.map((name) => readFile(join(s.directory, name), "utf8")),
+    );
+    // The oldest copy (the empty file) is pruned; the three newest are retained.
+    expect(retained).toEqual(
+      expect.arrayContaining(["{", "[]", JSON.stringify({ version: 2, tunnels: [] })]),
+    );
+    expect(s.launch).not.toHaveBeenCalled();
+  });
+
+  it("salvages valid records from a damaged manifest as interrupted and drops invalid ones", async () => {
+    const s = await setup();
+    const valid = {
+      id: "0b5c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+      provider: "cloudflare",
+      target: "dev-server",
+      localUrl: "http://127.0.0.1:3000",
+      state: "ready",
+      publicUrl: "https://old.trycloudflare.com",
+      startedAt: 1,
+    };
+    const invalid = { ...valid, id: "not-a-uuid" };
+    const damaged = JSON.stringify({
+      version: 1,
+      environmentId: "host-a",
+      tunnels: [
+        valid,
+        invalid,
+        { ...valid, id: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", provider: "ftp" },
+      ],
+    });
+    await writeFile(join(s.directory, "state.json"), damaged);
+    const status = await s.service.status();
+    expect(status.repair).toEqual({ repaired: true, dropped: 2 });
+    expect(status.tunnels).toEqual([
+      {
+        id: valid.id,
+        provider: "cloudflare",
+        target: "dev-server",
+        localUrl: "http://127.0.0.1:3000",
+        state: "interrupted",
+        startedAt: 1,
+        issue: "host-restarted",
+        canStop: false,
+      },
+    ]);
+    expect(JSON.stringify(status)).not.toContain("old.trycloudflare.com");
+    const copies = (await readdir(s.directory)).filter((name) =>
+      name.startsWith("state.json.corrupt-"),
+    );
+    expect(copies).toHaveLength(1);
+    expect(await readFile(join(s.directory, copies[0]), "utf8")).toBe(damaged);
+    expect(s.launch).not.toHaveBeenCalled();
+  });
+
+  it("keeps at most three quarantined manifests", async () => {
+    const s = await setup();
+    for (let round = 0; round < 4; round++) {
+      await writeFile(join(s.directory, "state.json"), `damaged-${round}`);
+      await s.service.status();
+      // A fresh service instance performs the load on the next round.
+      s.service = new ExternalTunnels(
+        s.directory,
+        "host-a",
+        () => "http://127.0.0.1:3776",
+        s.dependencies,
+      );
+    }
+    const copies = (await readdir(s.directory)).filter((name) =>
+      name.startsWith("state.json.corrupt-"),
+    );
+    expect(copies).toHaveLength(3);
+    const retained = await Promise.all(
+      copies.map((name) => readFile(join(s.directory, name), "utf8")),
+    );
+    expect(retained.sort()).toEqual(["damaged-1", "damaged-2", "damaged-3"]);
+  });
+
+  it("reports storage-unavailable for a real read error instead of repairing", async () => {
+    const s = await setup();
+    const path = join(s.directory, "state.json");
+    const content = JSON.stringify({ version: 1, environmentId: "host-a", tunnels: [] });
+    await writeFile(path, content);
+    vi.mocked(readFile).mockRejectedValueOnce(
+      Object.assign(new Error("permission denied"), { code: "EACCES" }),
+    );
+    await expect(s.service.status()).rejects.toThrow("storage-unavailable");
+    expect(await readFile(path, "utf8")).toBe(content);
+    expect((await readdir(s.directory)).some((name) => name.includes(".corrupt-"))).toBe(false);
+    // The read was transient: the next call retries initialization and loads the intact state.
+    const retried = await s.service.status();
+    expect(retried.tunnels).toEqual([]);
+    expect(retried).not.toHaveProperty("repair");
     expect(s.launch).not.toHaveBeenCalled();
   });
   it("does not launch or retry a tunnel when its starting state write has uncertain publication", async () => {

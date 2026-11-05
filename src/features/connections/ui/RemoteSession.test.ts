@@ -1319,16 +1319,12 @@ it("keeps an existing unknown command when a second-window retry is stopped duri
     text: "Original",
   };
   await admitDurableRemoteCommand(projectKey, "env", original, "shell");
-  await render();
   let release!: () => void;
   outboxFixture.afterCommit = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const retry = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Retry",
-  );
-  expect(retry).toBeDefined();
-  await act(async () => retry!.click());
+  // The pending check retries the saved command by itself; its admission is held here.
+  await render();
   await vi.waitFor(() => expect(outboxFixture.afterCommit).toBeUndefined());
   await act(async () => transportProbe.current!.onStop!("shell"));
   await vi.waitFor(async () =>
@@ -2296,7 +2292,7 @@ it("explains a dropped connection above the session and reconnects from there", 
   expect(container.textContent).not.toContain("Can’t reach Home server");
 });
 
-it("puts the message back in the composer when Send cannot reconnect", async () => {
+it("keeps a message sent while disconnected in the outbox and sends it once the machine answers", async () => {
   dispatch({
     type: "create",
     commandId: "existing-session",
@@ -2321,12 +2317,22 @@ it("puts the message back in the composer when Send cannot reconnect", async () 
   await act(async () => byLabel("Send")!.click());
   await settle();
   await settle();
-  expect(container.querySelector("textarea")!.value).toBe("Fix the tests");
+  // The composer lets go of the message; the view has not loaded its snapshot, so the
+  // send waits for the machine instead of failing, and nothing is sent while down.
+  expect(container.querySelector("textarea")!.value).toBe("");
   expect(commands).toHaveLength(0);
-  expect(container.textContent).toContain("Can’t reach Home server");
+  machineDown = undefined;
+  await act(async () => notifyRemoteRecovered("env"));
+  await settle();
+  await settle();
+  expect(commands.map((command) => command.type)).toEqual(["send"]);
+  expect(commands[0]).toMatchObject({ text: "Fix the tests", sessionId: "host-session" });
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toBeUndefined();
 });
 
-it("transport: keeps a first message visible, with Try again, when Send cannot reconnect", async () => {
+it("transport: keeps a first message visible while disconnected, and sends it once the machine answers", async () => {
   machineDown = unreachable;
   await render();
   await type("Fix the tests");
@@ -2337,10 +2343,16 @@ it("transport: keeps a first message visible, with Try again, when Send cannot r
   expect(container.querySelector("ol[aria-label='Transcript']")?.textContent).toContain(
     "Fix the tests",
   );
-  expect(container.textContent).toContain("Couldn’t send the message on Home server");
+  // Waiting for the machine is not a failure: no failed bubble and no Try again.
+  expect(container.textContent).not.toContain("Couldn’t send the message on Home server");
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Try again"),
-  ).toBe(true);
+  ).toBe(false);
+  machineDown = undefined;
+  await act(async () => notifyRemoteRecovered("env"));
+  for (let i = 0; i < 4; i++) await settle();
+  expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
+  expect(transcriptItems("Fix the tests")).toHaveLength(1);
 });
 
 it("reports a failed conversation command to its machine's shared connection state", async () => {
@@ -2436,18 +2448,15 @@ it.each([false, true])(
     });
     await render();
     await sendTransport("Keep this first message");
-    expect(commands.map((command) => command.type)).toEqual(["create"]);
+    // The lost response is not the end: the pending check sends the same create again.
+    await settle();
+    expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
     if (remount) {
       await act(async () => root.unmount());
       root = createRoot(container);
       await render();
+      await settle();
     }
-    const retry = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Retry",
-    )!;
-    expect(retry).toBeTruthy();
-    await act(async () => retry.click());
-    await settle();
     expect(attempts).toHaveLength(2);
     expect(attempts[1]).toEqual(attempts[0]);
     expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
@@ -2458,6 +2467,58 @@ it.each([false, true])(
     expect(transcriptItems("Keep this first message")).toHaveLength(1);
   },
 );
+
+it("settles a send whose response was lost once the Host reports its receipt, without sending it again", async () => {
+  commandStatusSupported = true;
+  openExistingChat();
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  let lost = true;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const request = input as { method?: string; params?: HostCommand & { commandId?: string } };
+    if (request?.method === "commands.dispatch" && request.params?.type === "send" && lost) {
+      lost = false;
+      dispatch(request.params);
+      throw new Error(
+        "RPC_WS_INTERRUPTED: Host connection was interrupted while sending a request. The operation outcome is unknown; reconcile its command receipt before retrying.",
+      );
+    }
+    if (request?.method === "commands.status") {
+      statusRequests.push(request.params!.commandId as string);
+      const known = commands.find((entry) => entry.commandId === request.params!.commandId);
+      return known ? { commandId: known.commandId, sessionId: "host-session", revision: 1 } : null;
+    }
+    return original(command, input);
+  });
+  await render();
+  await sendTransport("Settle me once");
+  for (let i = 0; i < 4; i++) await settle();
+  expect(commands.filter((command) => command.type === "send")).toHaveLength(1);
+  expect(statusRequests.length).toBeGreaterThan(0);
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toBeUndefined();
+});
+
+it("never sends a request again past the replay horizon, and says its outcome is unknown", async () => {
+  commandStatusSupported = true;
+  openExistingChat();
+  const issuedAt = Date.now() - 31 * 24 * 60 * 60 * 1000;
+  const commandId =
+    `${issuedAt.toString(16).padStart(12, "0")}`.replace(/^(.{8})(.{4})/, "$1-$2") +
+    "-7000-8000-000000000000";
+  savePendingRemoteCommand(
+    projectKey,
+    "env",
+    { type: "send", commandId, sessionId: "host-session", text: "Too old" },
+    "shell",
+  );
+  await render();
+  await settle();
+  await settle();
+  expect(statusRequests).toEqual([commandId]);
+  expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
+  expect(container.textContent).toContain("will not be sent automatically");
+});
 
 it("transport: ignores a late create response after its tab has switched conversations", async () => {
   await render();
@@ -2631,7 +2692,9 @@ it("authority intent: checks the old pending ID once and keeps its old payload w
   expect(retry).toBeTruthy();
   await act(async () => retry.click());
   await settle();
-  expect(statusRequests).toEqual(["old-pending-id"]);
+  // The pending check and the Retry button each check this one ID; neither sends it.
+  expect(statusRequests.length).toBeGreaterThan(0);
+  expect(new Set(statusRequests)).toEqual(new Set(["old-pending-id"]));
   expect(commands).toEqual([]);
   expect(
     (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
@@ -3792,11 +3855,11 @@ slow(
         .filter(
           (request) => request?.method === "commands.dispatch" && request.params?.type === "shell",
         );
-    expect(attempts()).toHaveLength(1);
-    expect(attempts()[0].params?.commandId).toBe(held?.commandId);
+    expect(attempts().length).toBeGreaterThan(0);
+    expect(attempts().every((request) => request.params?.commandId === held?.commandId)).toBe(true);
     await act(async () => root.render(null));
     await render();
-    expect(attempts()).toHaveLength(1);
+    expect(attempts().every((request) => request.params?.commandId === held?.commandId)).toBe(true);
   },
 );
 
@@ -4412,11 +4475,11 @@ slow(
         .filter(
           (request) => request?.method === "commands.dispatch" && request.params?.type === "steer",
         );
-    expect(attempts()).toHaveLength(1);
-    expect(attempts()[0].params?.commandId).toBe(held?.commandId);
+    expect(attempts().length).toBeGreaterThan(0);
+    expect(attempts().every((request) => request.params?.commandId === held?.commandId)).toBe(true);
     await act(async () => root.render(null));
     await render();
-    expect(attempts()).toHaveLength(1);
+    expect(attempts().every((request) => request.params?.commandId === held?.commandId)).toBe(true);
   },
 );
 
@@ -5052,32 +5115,19 @@ it("local Host opt-in: lost atomic first-turn receipt survives restart and recon
   const session = await newLocalHostSession("/home/me/repo");
   await render(session);
   await sendTransport("Preserve exactly once");
-  const pending = (await readDurableRemoteCommand(session.cwd, "env", null, session.id)).command!;
-  expect(pending).toMatchObject({
-    type: "create",
-    commandId: session.id,
-    firstTurn: { text: "Preserve exactly once" },
-  });
-  await expect(
-    admitDurableRemoteCommand(
-      session.cwd,
-      "env",
-      { ...pending, model: "changed" } as HostCommand,
-      session.id,
-    ),
-  ).rejects.toThrow("changed");
+  // The receipt was lost, so the pending check asks the Host and settles the same ID.
+  await settle();
+  await settle();
+  expect(statusRequests).toContain(session.id);
+  expect(
+    (await readDurableRemoteCommand(session.cwd, "env", null, session.id)).command,
+  ).toBeUndefined();
   await act(async () => root.unmount());
   resetRemoteSessionCachesForTests();
   root = createRoot(container);
   const restored = restoreHostSessionShell(session.id)!;
   await render(restored);
-  const retry = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Retry",
-  )!;
-  expect(retry).toBeTruthy();
-  await act(async () => retry.click());
   await settle();
-  expect(statusRequests).toContain(session.id);
   expect(commands).toHaveLength(1);
   expect(hostSessionBinding(restored)).toMatchObject({ authorityGeneration: null, created: true });
   expect(

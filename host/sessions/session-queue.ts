@@ -9,10 +9,14 @@ import {
   type SharedQueue,
 } from "../../src/features/connections/model/sharedQueue";
 import { restoreQueuedMessages } from "../../src/features/sessions/model/queuePersistence";
+import { HostDomainRefusalError } from "../domains/context";
 /** The drain lease belongs to someone else, ended, or the epoch moved on. Nothing was sent. */
-export class QueueLeaseError extends Error {
-  constructor(message = "The queue drain lease changed. Refresh it before sending.") {
-    super(message);
+export class QueueLeaseError extends HostDomainRefusalError {
+  constructor(
+    message = "The queue drain lease changed. Refresh it before sending.",
+    code: "QUEUE_LEASE_CHANGED" | "QUEUE_DRAIN_HELD" = "QUEUE_LEASE_CHANGED",
+  ) {
+    super(code, "conflict", true, message);
     this.name = "QueueLeaseError";
   }
 }
@@ -216,12 +220,22 @@ export class SessionQueues {
       if (action === "get") queue = await this.get(id);
       else if (action === "lease") {
         if (!aware || !clientId.startsWith("desktop:"))
-          throw new Error("Only a desktop that knows drain leases can hold one.");
+          throw new HostDomainRefusalError(
+            "QUEUE_AUTHORITY",
+            "validation",
+            false,
+            "Only a desktop that knows drain leases can hold one.",
+          );
         queue = await this.acquire(id, clientId, params.takeover === true);
       } else if (action === "release") {
         // A closing window gives its lease back so nobody waits for it to run out.
         if (!aware || !clientId.startsWith("desktop:"))
-          throw new Error("Only a desktop that knows drain leases can hold one.");
+          throw new HostDomainRefusalError(
+            "QUEUE_AUTHORITY",
+            "validation",
+            false,
+            "Only a desktop that knows drain leases can hold one.",
+          );
         await this.release(id, clientId, epoch);
         queue = await this.get(id);
       } else if (action === "change") {
@@ -250,7 +264,12 @@ export class SessionQueues {
         }
       } else if (action === "claim") {
         if (!clientId.startsWith("desktop:"))
-          throw new Error("Only the owning desktop claims local sends.");
+          throw new HostDomainRefusalError(
+            "QUEUE_AUTHORITY",
+            "validation",
+            false,
+            "Only the owning desktop claims local sends.",
+          );
         queue = await this.claim(
           id,
           String(params.id ?? ""),
@@ -405,7 +424,10 @@ export class SessionQueues {
       const queue = await this.get(id);
       if (!queue.messages.length) return queue;
       if (this.live(queue) && queue.drain!.holder !== holder && !takeover)
-        throw new QueueLeaseError("Another window holds this queue's drain lease.");
+        throw new QueueLeaseError(
+          "Another window holds this queue's drain lease.",
+          "QUEUE_DRAIN_HELD",
+        );
       if (this.live(queue) && queue.drain!.holder === holder) {
         await this.renew(id, holder, queue.drain!.epoch);
         return await this.get(id);
@@ -486,7 +508,12 @@ export class SessionQueues {
       if ((current.settled as StoredSettled | undefined)?.prior && old.status !== incoming.status)
         next.settled = { ...next.settled!, prior: undefined } as StoredSettled;
       if (next.messages.length > 100 || Buffer.byteLength(JSON.stringify(next)) > 3 * 1024 * 1024)
-        throw new Error("Shared queue is full.");
+        throw new HostDomainRefusalError(
+          "QUEUE_FULL",
+          "validation",
+          false,
+          "Shared queue is full.",
+        );
       for (const row of current.messages)
         if (!next.messages.some((entry) => entry.id === row.id)) await this.removed(id, row.id);
       return sameQueueValue(current, next) ? current : await this.save(id, next);
@@ -547,7 +574,12 @@ export class SessionQueues {
         !queue.messages.some((row) => row.id === rowId && !row.deliveryUnknown) ||
         (!steer && queue.messages[0]?.id !== rowId)
       )
-        throw new Error("The shared queue changed. Refresh it before sending.");
+        throw new HostDomainRefusalError(
+          "QUEUE_CHANGED",
+          "conflict",
+          false,
+          "The shared queue changed. Refresh it before sending.",
+        );
       return queue;
     });
   }
@@ -607,7 +639,12 @@ export class SessionQueues {
         });
       }
       if (queue.claim?.token !== token)
-        throw new Error("Queued send no longer belongs to this client.");
+        throw new HostDomainRefusalError(
+          "QUEUE_LEASE_CHANGED",
+          "conflict",
+          true,
+          "Queued send no longer belongs to this client.",
+        );
       if (epoch !== undefined && queue.claim.epoch !== undefined && queue.claim.epoch !== epoch)
         throw new QueueLeaseError();
       const messages = accepted

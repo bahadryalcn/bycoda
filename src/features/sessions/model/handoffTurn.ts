@@ -6,7 +6,6 @@ import {
   sendHarnessTurn,
 } from "../../../integrations/harness/core/registry";
 import { beginHandoffPhase } from "../../../integrations/harness/core/handoffPhase";
-import { mergeStream } from "../../../integrations/harness/core/streamText";
 import type { HarnessId } from "./session";
 
 /** The deterministic packet is the fallback, so the recap gets a short, hard cap. */
@@ -34,8 +33,9 @@ export async function requestOutgoingHandoff(input: {
     runtimeMode: "supervised",
     text: buildOutgoingHandoffPrompt(input.userRequest),
     onEvent: (event) => {
+      // message.delta is an exact increment (HarnessEvent contract): append as-is.
       if (event.type === "message.delta") {
-        brief = mergeStream(brief, event.text);
+        brief += event.text;
       }
       if (event.type === "approval.requested") {
         respondHarnessApproval(

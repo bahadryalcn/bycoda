@@ -9,7 +9,7 @@ export default defineConfig({
     alias: [
       { find: /(?:.*\/)localVoiceClient$/, replacement: mock },
       { find: /(?:.*\/)localVoice$/, replacement: mock },
-      ...(voice.resolve?.alias as { find: RegExp; replacement: string }[]),
+      ...((voice.resolve?.alias ?? []) as { find: RegExp; replacement: string }[]),
     ],
   },
   build: {

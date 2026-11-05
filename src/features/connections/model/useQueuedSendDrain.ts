@@ -3,7 +3,12 @@ import { t } from "../../../shared/i18n";
 import { sameQueuedModelTarget } from "../../sessions/public/messageQueue";
 import type { Attachment, ComposerTurnOptions, QueuedMessage, RuntimeMode } from "../../sessions";
 import type { RemoteProvider } from "./protocol";
-import { remoteIntentAuthority, remoteIntentAuthorityMatches } from "./remoteOutbox";
+import {
+  remoteIntentAuthority,
+  remoteIntentAuthorityMatches,
+  remoteOutcomeUnknownMessage,
+  remoteRequestPastRetryLimit,
+} from "./remoteOutbox";
 
 /** The model/mode a queued head asks for before it can be sent. */
 export type QueuedConfigurationChange = {
@@ -68,6 +73,11 @@ export function useQueuedSendDrain(input: {
           "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
         ),
       );
+      return;
+    }
+    // An old queued request is never re-sent automatically: its outcome is unknown.
+    if (remoteRequestPastRetryLimit(next.id)) {
+      input.reportError(remoteOutcomeUnknownMessage());
       return;
     }
     const target = next.modelTarget;

@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 mod account_identity;
 #[path = "assistant/assistant_presence.rs"]
@@ -1089,6 +1089,7 @@ pub fn run() {
             open_host_tools_window,
             window::hide_window,
             window::destroy_window,
+            window::workspace_primary_label,
             window::quit_poll_reply,
             window::quit_decision,
             window::quit_commit_dialog,
@@ -1223,6 +1224,23 @@ pub fn run() {
             let other_window = window::workspace_windows(handle)
                 .iter()
                 .any(|window| window.label() != label);
+            // The primary role moves when the closed window could have held it: `main`
+            // always does, and without `main` the oldest window may have been closed.
+            // Send the current primary to each remaining window, as destroy_window does.
+            // The manager has already dropped this window, so the label excludes it.
+            // destroy_window's own destroy also reaches here: the repeated label is harmless.
+            let remaining = window::workspace_windows(handle);
+            if label == "main" || !remaining.iter().any(|window| window.label() == "main") {
+                if let Some(primary) = window::primary_workspace_label(handle) {
+                    for other in remaining.iter().filter(|window| window.label() != label) {
+                        let _ = handle.emit_to(
+                            other.label(),
+                            window::PRIMARY_WORKSPACE_CHANGED,
+                            primary.clone(),
+                        );
+                    }
+                }
+            }
             control::window_closed(handle, &label);
             if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
                 state.window_closed(&label);

@@ -108,8 +108,9 @@ export function buildQuestionReply(
       !question.preserveCustomWhitespace &&
       attachments[question.id]?.length
     )
-      nextAttachments[question.id] = (attachments[question.id] as (UserQuestionAttachment & { questionCustody?: unknown })[])
-        .map(({ questionCustody: _custody, ...file }) => file);
+      nextAttachments[question.id] = (
+        attachments[question.id] as (UserQuestionAttachment & { questionCustody?: unknown })[]
+      ).map(({ questionCustody: _custody, ...file }) => file);
   }
   return {
     kind: "answered",

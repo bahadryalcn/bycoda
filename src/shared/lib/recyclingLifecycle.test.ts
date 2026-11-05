@@ -178,11 +178,23 @@ it("prepared B cleanup is joined when original A teardown rejects", async () => 
 it("does not revive an old lifecycle when its retired session id is reused", async () => {
   let release!: () => void;
   const epochs = new Map<string, object>();
-  const queue = new Map([["s", new Promise<void>((resolve) => { release = resolve; })]]);
+  const queue = new Map([
+    [
+      "s",
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    ],
+  ]);
   const start = vi.fn(async () => ({ cwd: "/repo", stale: false }));
   const lifecycle = createRecyclingLifecycle({
-    epochs, queue, live: new Map(), resume: new Map(), start,
-    teardown: async () => {}, supersededMessage: "retired",
+    epochs,
+    queue,
+    live: new Map(),
+    resume: new Map(),
+    start,
+    teardown: async () => {},
+    supersededMessage: "retired",
   });
   const old = lifecycle.ensure({ sessionId: "s", cwd: "/repo" }, true);
   epochs.set("s", {});

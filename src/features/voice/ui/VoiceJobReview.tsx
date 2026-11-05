@@ -17,6 +17,7 @@ import { t } from "../../../shared/i18n";
 import type { VoiceJobDraft, VoiceJobReviewState } from "../model/voiceJobs";
 import styles from "./VoiceJobReview.module.css";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 
 /** The owner reviews editable requests before any job is created. */
 export function VoiceJobReview({
@@ -153,11 +154,16 @@ export function VoiceJobReview({
           )}
         </fieldset>
       ))}
-      {review.accepted.length ? (
-        <p role="status">
-          {t("{p0} jobs accepted. They continue independently.", { p0: review.accepted.length })}
-        </p>
-      ) : null}
+      <LiveText
+        className={review.accepted.length ? undefined : "sr-only"}
+        text={
+          review.accepted.length
+            ? t("{p0} jobs accepted. They continue independently.", {
+                p0: review.accepted.length,
+              })
+            : ""
+        }
+      />
       {review.error ? <InlineError>{review.error}</InlineError> : null}
       <div className={styles.actions}>
         <Button

@@ -1,6 +1,8 @@
 import type { HostStore } from "../store";
 import type { SocialJob } from "../../src/features/social/model/social";
 
+const LEGACY_JOB_WINDOW = 1000;
+
 /** Cold rows preserve the complete original payload and dedupe key; no evidence is discarded. */
 export class SocialJobArchive {
   private nextCompactionAt = performance.now() + 60_000;
@@ -17,18 +19,17 @@ export class SocialJobArchive {
     `);
   }
 
-  /** Never silently truncate legacy arrays: direct large callers to bounded reads. */
+  /**
+   * Legacy full-array readers get the newest 1000 matching jobs (hot + cold), oldest first.
+   * It never throws on large history: history beyond the window is read with jobPage.
+   */
   async legacyJobs(where: string, values: (string | number)[]): Promise<SocialJob[]> {
     const rows = await this.store.db
       .prepare(
-        `SELECT value FROM social_jobs_all WHERE ${where} ORDER BY scheduled_at,id LIMIT 1001`,
+        `SELECT value FROM social_jobs_all WHERE ${where} ORDER BY scheduled_at DESC,id DESC LIMIT ${LEGACY_JOB_WINDOW}`,
       )
       .all(...values);
-    if (rows.length > 1000)
-      throw new Error(
-        "Social job history exceeds the legacy response capacity. Use jobs.status or campaigns.status with page=true, or workspace.snapshot for the workspace.",
-      );
-    return rows.map((row) => JSON.parse(String(row.value)) as SocialJob);
+    return rows.reverse().map((row) => JSON.parse(String(row.value)) as SocialJob);
   }
   async jobPage(where: string, values: (string | number)[], input: Record<string, unknown>) {
     const offset = finite(input.offset ?? 0, "job offset", 0, Number.MAX_SAFE_INTEGER);

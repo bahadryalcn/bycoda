@@ -371,8 +371,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 <p className={styles.message}>{state.transcript}</p>
               </div>
             )}
+            {/* Always mounted so each reply is announced when it arrives. */}
+            <LiveText
+              className="sr-only"
+              text={state?.message ? `${t("Reply")}: ${state.message}` : ""}
+            />
             {state?.message && (
-              <div className={styles.turn} role="status">
+              <div className={styles.turn}>
                 <span className="sr-only">{t("Reply")}: </span>
                 <p className={styles.message}>{state.message}</p>
               </div>
@@ -389,11 +394,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   </details>
                 </>
               ))}
-            {state?.notice && (
-              <p role="status" className={styles.caption}>
-                {state.notice}
-              </p>
-            )}
+            <LiveText className={styles.caption} text={state?.notice ?? ""} />
           </div>
           <div className={styles.actions}>
             {status === "live" && (

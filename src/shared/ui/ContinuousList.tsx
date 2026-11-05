@@ -75,7 +75,11 @@ export type ContinuousListProps<T> = CollectionFooterProps & {
   items: readonly T[];
   itemKey: (item: T) => string;
   renderItem: (item: T, index: number) => ReactNode;
-  /** Include machine/account/project, query and filters; never use fetched result identity. */
+  /**
+   * Scopes remount and retained scroll: include machine/account/project and structural filters.
+   * Free-text search should filter `items` in place rather than change this key, because each
+   * key change remounts the list and mints a retained scroll entry; never use fetched result identity.
+   */
   stateKey: string;
   estimateSize?: number;
   className?: string;

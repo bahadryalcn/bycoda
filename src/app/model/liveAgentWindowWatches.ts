@@ -176,12 +176,13 @@ export class LiveAgentWindowWatches {
       failed = true;
     } finally {
       this.checking = false;
-      if (this.disposed) return;
-      if (failed || [...this.watches.values()].some((entry) => entry.retryPresence))
-        this.retryMissing();
-      if (this.rerun) {
-        this.rerun = false;
-        this.queue();
+      if (!this.disposed) {
+        if (failed || [...this.watches.values()].some((entry) => entry.retryPresence))
+          this.retryMissing();
+        if (this.rerun) {
+          this.rerun = false;
+          this.queue();
+        }
       }
     }
   }

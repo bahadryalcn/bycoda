@@ -16,6 +16,7 @@ import {
   type SessionOrganizationResult,
 } from "./sessionOrganizationStore";
 import { isRemoteProjectPath } from "../../projects/public/recents";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const SCOPE = "session-pin-saga.v1";
 type Entry = { key: string; version: number; value: unknown };
@@ -176,7 +177,7 @@ async function write(
   snapshot: Snapshot,
   saga: PinSaga,
 ): Promise<"applied" | "conflict" | "unknown"> {
-  const operationId = crypto.randomUUID();
+  const operationId = newRequestId();
   const args = {
     scope: SCOPE,
     pageToken: await token(),
@@ -374,7 +375,7 @@ export async function resumePinSaga(id: string): Promise<PinSagaResult> {
                   ...(item.attempts ?? []),
                   { operationId: item.operationId, receipt: receipt! },
                 ],
-                operationId: crypto.randomUUID(),
+                operationId: newRequestId(),
                 expectedVersion: receipt!.version,
                 state: "not-started" as const,
               }

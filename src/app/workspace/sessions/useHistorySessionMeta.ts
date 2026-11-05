@@ -38,6 +38,7 @@ import {
 import { NATIVE_SESSION_ORGANIZATION_ACTIVE } from "../../../features/sessions/model/sessionOrganizationStore";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
 import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 export interface HistorySessionMetaDeps {
   sessionsRef: MutableRefObject<Session[]>;
@@ -115,7 +116,7 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
                   viewCwd: cwd,
                   viewKind: "local",
                   target,
-                  operationId: crypto.randomUUID(),
+                  operationId: newRequestId(),
                   desiredPinned: pinned,
                   expectedVersion: state.version,
                   expectedAuthority: state.authority ?? null,

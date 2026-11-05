@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
 import { gateRunLease } from "./submitRunLease";
+import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
 import { gateProjectLocation } from "./submitProjectLocation";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 import { getSessions, resetSessionsStore } from "../../../../features/sessions/model/sessionsStore";
@@ -206,7 +207,10 @@ it("queues the message while another computer runs a turn: nothing started, noth
 it("leaves a queue row where it is and marks the conversation as running elsewhere", async () => {
   client.acquire.mockResolvedValue({ kind: "held", text: "busy elsewhere" });
   const start = vi.fn(() => true);
-  expect(await gateRunLease(ctx, input({ queuedMessageId: "row" }), pre, start)).toBe(false);
+  // A queue row waits as a deferral: it is never refused, so the queue is not paused.
+  await expect(
+    gateRunLease(ctx, input({ queuedMessageId: "row" }), pre, start),
+  ).rejects.toBeInstanceOf(QueueDeferredError);
   expect(start).not.toHaveBeenCalled();
   expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
   expect(getSessions()[0].continuingElsewhere).toBe(true);

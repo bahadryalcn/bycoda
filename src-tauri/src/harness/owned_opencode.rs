@@ -275,6 +275,7 @@ fn start_service(command: &str, cwd: &str, window: &tauri::Window, captured: &st
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub(crate) async fn owned_opencode_catalog_acquire(window: tauri::Window, command: String, binary_path: Option<String>, cwd: String, page_token: String, operation_id: String, management_token: String, management_route_id: String) -> Result<ServiceReference, String> {
     if operation_id.trim().is_empty() || operation_id.len() > 512 { return Err("OWNED_OPENCODE_OPERATION_INVALID".into()); }
     let captured = super::page_incarnation(&window)?;
@@ -343,6 +344,7 @@ pub(crate) async fn owned_opencode_utility_acquire(window: tauri::Window, handle
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub(crate) async fn owned_opencode_acquire(app: tauri::AppHandle, window: tauri::Window, command: String, binary_path: Option<String>, cwd: String, page_token: String, operation_id: String, capability: NativeSessionCapability) -> Result<ServiceReference, String> {
     if operation_id.trim().is_empty() || operation_id.len() > 512 { return Err("OWNED_OPENCODE_OPERATION_INVALID".into()); }
     let captured = super::page_incarnation(&window)?;

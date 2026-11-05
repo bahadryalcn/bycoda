@@ -529,9 +529,16 @@ export async function write(
   const persist = async () => {
     await context.store.db.checkAuthorization();
     if (reviewed) {
-      if (generation !== undefined && Number((await context.store.db.prepare(
-        "SELECT generation FROM task_admission_generation WHERE id=?",
-      ).get(task.id))?.generation ?? 0) !== generation)
+      if (
+        generation !== undefined &&
+        Number(
+          (
+            await context.store.db
+              .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
+              .get(task.id)
+          )?.generation ?? 0,
+        ) !== generation
+      )
         throw new Error("Task changed before queue admission. Read it again.");
       task = mergeQueueAdmission(task, reviewed, await context.find(task.id));
     }
@@ -584,5 +591,7 @@ export async function write(
     if (context.schedulerTasks) await context.hydrateDependencies(context.schedulerTasks, [task]);
     return task;
   };
-  return reviewed ? await context.store.transaction(persist) : await context.store.db.scope(persist);
+  return reviewed
+    ? await context.store.transaction(persist)
+    : await context.store.db.scope(persist);
 }

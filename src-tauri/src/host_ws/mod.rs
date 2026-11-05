@@ -1350,7 +1350,8 @@ impl HostWsBroker {
                 "Native operation deadline elapsed before admission",
             ));
         }
-        let admission = contracts.duration("defaultAdmissionTimeoutMs");
+        // Each generated method descriptor carries its own admission budget.
+        let admission = descriptor.admission;
         let deadline = options
             .absolute_deadline
             .map_or(now + admission + timeout, |deadline| {

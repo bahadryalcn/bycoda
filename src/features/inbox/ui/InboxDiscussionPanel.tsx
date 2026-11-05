@@ -121,7 +121,7 @@ export function InboxDiscussionPanel({
         }
       />
       {error ? (
-        <Alert tone="danger" role="alert">
+        <Alert tone="danger">
           <p>{error}</p>
           <Button variant="ghost" type="button" onClick={() => setRevision((value) => value + 1)}>
             {t("Retry")}

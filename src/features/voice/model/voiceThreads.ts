@@ -6,6 +6,7 @@ import type {
 } from "../../../shared/model/host-contracts/assistant";
 import type { VoiceRecentTurn } from "./voiceReconnect";
 import type { VoiceHistoryScope } from "./voiceHistoryPrivacy";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 type Request = (request: AssistantRequest) => Promise<AssistantResponse>;
 type Pending = Extract<AssistantRequest, { op: "threads.append" }>;
@@ -87,7 +88,7 @@ export class VoiceThreadTranscript {
           via: "voice",
           text: this.draft.text.slice(0, 16000),
           jobIds: [],
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: newRequestId(),
         },
       };
       this.pending.push(write);

@@ -87,7 +87,7 @@ fn durable<T>(db: &Connection, work: impl FnOnce() -> Result<T, String>) -> Resu
 fn read(db: &Connection, scope: &str, key: &str) -> Result<Option<Entry>, String> {
     let row: Option<(i64, Option<String>)> = db.query_row("SELECT version,value FROM canonical_values WHERE scope=?1 AND key=?2", params![scope,key], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e| e.to_string())?;
     row.map(|(version,value)| {
-        if version < 1 || version > MAX_SAFE_COUNTER { return Err("Canonical version is invalid".into()); }
+        if !(1..=MAX_SAFE_COUNTER).contains(&version) { return Err("Canonical version is invalid".into()); }
         Ok(Entry { key: key.to_owned(), version, value: value.map(|v| serde_json::from_str(&v).map_err(|e| e.to_string())).transpose()? })
     }).transpose()
 }
@@ -245,7 +245,11 @@ pub(crate) fn register_assistant_preparation(window: &tauri::Window, expected_pa
     })
 }
 
+/// Persisted assistant send route row: operation, machine, environment, fingerprint, generation, host instance, intent, intent version, proof.
+type SendRouteRow = (String, String, String, String, String, String, String, i64, Option<String>);
+
 /// Binds the already persisted intent to the native-selected route before I/O.
+#[allow(clippy::too_many_arguments)] // Crate-internal route binding; the nine inputs are the explicit identity contract.
 pub(crate) fn prepare_assistant_send(
     window: &tauri::Window, expected_page: &str, key: &str, operation_id: &str,
     expected_version: i64, machine_id: &str, environment_id: &str, fingerprint: &str, generation: &str, host_instance: &str,
@@ -296,7 +300,7 @@ pub(crate) fn assistant_send_route(window: &tauri::Window, key: &str) -> Result<
     validate(key)?;
     let store = window.app_handle().state::<SessionStore>();
     let db = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let row: Option<(String,String,String,String,String,String,String,i64,Option<String>)> = db.query_row(
+    let row: Option<SendRouteRow> = db.query_row(
         "SELECT r.operation_id,r.machine_id,r.environment_id,r.route_fingerprint,r.route_generation,r.host_instance,r.intent,r.intent_version,r.proof FROM assistant_native_send_routes r JOIN canonical_claims c ON c.scope=?1 AND c.key=r.key AND c.operation_id=r.operation_id WHERE r.key=?2",
         params![ASSISTANT_SEND_SCOPE,key], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?)),
     ).optional().map_err(|e| e.to_string())?;
@@ -543,7 +547,7 @@ pub async fn canonical_store_list(window: tauri::Window, scope: String, after: O
     let mut entries = Vec::new();
     for row in rows {
         let (key,version,raw) = row.map_err(|e| e.to_string())?;
-        if version < 1 || version > MAX_SAFE_COUNTER { return Err("Canonical version is invalid".into()); }
+        if !(1..=MAX_SAFE_COUNTER).contains(&version) { return Err("Canonical version is invalid".into()); }
         entries.push(Entry { key,version,value: raw.map(|v| serde_json::from_str(&v).map_err(|e| e.to_string())).transpose()? });
     }
     Ok(Page { entries, revision })
@@ -576,7 +580,7 @@ pub async fn canonical_store_list_bounded(window: tauri::Window, scope: String, 
             let key: String = row.get(0).map_err(|e| e.to_string())?;
             if !key.starts_with(&prefix) { break; }
             let version: i64 = row.get(1).map_err(|e| e.to_string())?;
-            if version < 1 || version > MAX_SAFE_COUNTER { return Err("Canonical version is invalid".into()); }
+            if !(1..=MAX_SAFE_COUNTER).contains(&version) { return Err("Canonical version is invalid".into()); }
             let bytes: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
             let size = key.len().checked_add(bytes.unwrap_or(0).try_into().map_err(|_| "Invalid canonical record size")?).and_then(|value| value.checked_add(128)).ok_or("Invalid canonical record size")?;
             if size > max_bytes && entries.is_empty() {
@@ -609,7 +613,7 @@ pub async fn outbox_export_oversize(window: tauri::Window, page_token: String, k
     use std::io::{Read, Write};
     use tauri_plugin_dialog::DialogExt;
     validate(&key)?;
-    if !(key.starts_with("entries:bycoda.remote-command.v1:") || key.starts_with("legacy:bycoda.remote-command.v1:")) || version < 1 || version > MAX_SAFE_COUNTER || expected_revision < 0 || expected_revision > MAX_SAFE_COUNTER {
+    if !(key.starts_with("entries:bycoda.remote-command.v1:") || key.starts_with("legacy:bycoda.remote-command.v1:")) || !(1..=MAX_SAFE_COUNTER).contains(&version) || !(0..=MAX_SAFE_COUNTER).contains(&expected_revision) {
         return Err("Invalid saved request identity".into());
     }
     let admission = admit(&window, &page_token)?;
@@ -632,7 +636,7 @@ pub async fn outbox_export_oversize(window: tauri::Window, page_token: String, k
         let revision: i64 = tx.query_row("SELECT COALESCE((SELECT revision FROM canonical_revisions WHERE scope='remote-outbox.v2'),0)", [], |r| r.get(0)).map_err(|e| e.to_string())?;
         if revision != expected_revision { return Err("Saved requests changed. Review the request again before exporting".into()); }
         let (row_id, bytes): (i64,i64) = tx.query_row("SELECT rowid,octet_length(value) FROM canonical_values WHERE scope='remote-outbox.v2' AND key=?1 AND version=?2 AND value IS NOT NULL", params![key,version], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|_| "The saved request changed or is unavailable")?;
-        if bytes < 0 || bytes > 512 * 1024 * 1024 { return Err("The saved request exceeds the export limit; its original bytes remain preserved".into()); }
+        if !(0..=512 * 1024 * 1024).contains(&bytes) { return Err("The saved request exceeds the export limit; its original bytes remain preserved".into()); }
         let temporary = parent.join(format!(".bycoda-request-{}.tmp", uuid::Uuid::new_v4()));
         let result = (|| -> Result<serde_json::Value, String> {
             let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).map_err(|_| "Cannot create the selected export")?;
@@ -663,6 +667,7 @@ pub async fn outbox_export_oversize(window: tauri::Window, page_token: String, k
     }).await
 }
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn canonical_store_transaction(window: tauri::Window, page_token: String, scope: String, operation_id: String, checks: Vec<Check>, writes: Vec<Write>, legacy: Vec<Legacy>, claim: Option<ClaimRequest>, expected_revision: Option<i64>) -> Result<Outcome, String>  {
     let admission = admit(&window, &page_token)?;
     let captured_page = admission.page.clone();
@@ -732,7 +737,7 @@ pub async fn canonical_store_transaction(window: tauri::Window, page_token: Stri
             current.clear();
             for write in &writes {
                 let previous = read(&tx,&scope,&write.key)?;
-                let version = previous.map_or(1, |e| e.version.checked_add(1).unwrap_or(i64::MAX));
+                let version = previous.map_or(1, |e| e.version.saturating_add(1));
                 if version > MAX_SAFE_COUNTER { return Err("Canonical version exhausted".into()); }
                 let raw = write.value.as_ref().map(serde_json::to_string).transpose().map_err(|e| e.to_string())?;
                 tx.execute("INSERT INTO canonical_values(scope,key,version,value) VALUES(?1,?2,?3,?4) ON CONFLICT(scope,key) DO UPDATE SET version=excluded.version,value=excluded.value",params![scope,write.key,version,raw]).map_err(|e| e.to_string())?;

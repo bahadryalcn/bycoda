@@ -321,7 +321,7 @@ mod tests {
         release(&mut owned, &[upload.to_string_lossy().into_owned()]);
         assert!(upload.exists());
         let mut files = vec![attachment(&capture), attachment(&upload)];
-        persist_to(&mut owned, &mut files, &root.join("persistent")).unwrap();
+        persist_to(&owned, &mut files, &root.join("persistent")).unwrap();
         assert!(capture.exists());
         assert!(owned.contains(&capture));
         assert_eq!(std::fs::read(&files[0].path).unwrap(), b"test");
@@ -340,9 +340,9 @@ mod tests {
         std::fs::write(&capture, b"test").unwrap();
         let destination = root.join("not-a-directory");
         std::fs::write(&destination, b"x").unwrap();
-        let mut owned = HashSet::from([capture.clone()]);
+        let owned = HashSet::from([capture.clone()]);
         let mut files = vec![attachment(&capture)];
-        assert!(persist_to(&mut owned, &mut files, &destination).is_err());
+        assert!(persist_to(&owned, &mut files, &destination).is_err());
         assert!(owned.contains(&capture));
         assert!(capture.exists());
         std::fs::remove_dir_all(root).unwrap();

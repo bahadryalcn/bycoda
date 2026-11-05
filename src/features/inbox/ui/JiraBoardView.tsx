@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Badge } from "../../../shared/ui/Badge";
@@ -875,7 +876,7 @@ export function JiraBoardView({
           </p>
         ) : null}
         {group.error ? (
-          <Alert tone="danger" className="min-w-0 flex-1" role="alert">
+          <Alert tone="danger" className="min-w-0 flex-1">
             {group.error}
           </Alert>
         ) : null}
@@ -1010,16 +1011,20 @@ export function JiraBoardView({
           )}
         </p>
       ) : null}
-      <div className="jira-board-status" role="status" aria-live="polite">
-        {readingTransitions
-          ? t("Loading…")
-          : busy
-            ? t("Saving to Jira…")
-            : loading
-              ? t("Loading Jira board…")
-              : readingGroup
-                ? t("Loading issues…")
-                : notice || t("{p0} loaded", { p0: allIssues.length })}
+      <div className="jira-board-status">
+        <LiveText
+          text={
+            readingTransitions
+              ? t("Loading…")
+              : busy
+                ? t("Saving to Jira…")
+                : loading
+                  ? t("Loading Jira board…")
+                  : readingGroup
+                    ? t("Loading issues…")
+                    : notice || t("{p0} loaded", { p0: allIssues.length })
+          }
+        />
       </div>
       {!canRank && configuration?.rankFieldId != null ? (
         <p className="jira-board-hint">
@@ -1033,7 +1038,7 @@ export function JiraBoardView({
         </p>
       ) : null}
       {error ? (
-        <Alert tone="danger" className="jira-board-error" role="alert">
+        <Alert tone="danger" className="jira-board-error">
           {error}
         </Alert>
       ) : null}

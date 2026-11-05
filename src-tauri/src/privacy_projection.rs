@@ -344,6 +344,7 @@ pub fn control_privacy_projection_begin(
 /// Serialize a durable projection transition across all windows in this native
 /// process. Host admission stays closed on a failed/unknown write or reopen.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub fn control_privacy_projection_transition(
     app: AppHandle,
     window: WebviewWindow,

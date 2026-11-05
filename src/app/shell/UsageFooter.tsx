@@ -111,6 +111,8 @@ export function UsageFooter({
   const [refreshing, setRefreshing] = useState(false);
   const [, setAccountsVersion] = useState(0);
   const inflight = useRef<Promise<void> | null>(null);
+  // Set only by refresh; null for consume/reconnect operations, which refresh joins as before.
+  const inflightKey = useRef<string | null>(null);
   // A legacy thread without a pin runs on "default", not the current default.
   const preferredClaudeAccountId = useUsageDisplayAccount("claude");
   const preferredCodexAccountId = useUsageDisplayAccount("codex");
@@ -149,21 +151,28 @@ export function UsageFooter({
   useEffect(() => subscribeProviderAccounts(() => setAccountsVersion((value) => value + 1)), []);
 
   const refresh = useCallback(() => {
-    if (inflight.current) return inflight.current;
+    const targets: [RateLimitProvider, string][] = [];
+    if (wantClaude && claudeAccountAvailable) targets.push(["claude", claudeAccountId]);
+    if (wantCodex && codexAccountAvailable) targets.push(["codex", codexAccountId]);
+    if (wantOpencode) targets.push(["opencode", "default"]);
+    // A refresh for another account or provider set must not join this one.
+    const key = JSON.stringify(targets);
+    if (inflight.current && (inflightKey.current === null || inflightKey.current === key))
+      return inflight.current;
     setRefreshing(true);
-    const jobs: Promise<unknown>[] = [];
-    if (wantClaude && claudeAccountAvailable)
-      jobs.push(loadRateLimits("claude", claudeAccountId, true));
-    if (wantCodex && codexAccountAvailable)
-      jobs.push(loadRateLimits("codex", codexAccountId, true));
-    if (wantOpencode) jobs.push(loadRateLimits("opencode", "default", true));
-    const run = Promise.allSettled(jobs)
+    const run = Promise.allSettled(
+      targets.map(([provider, accountId]) => loadRateLimits(provider, accountId, true)),
+    )
       .then(() => undefined)
       .finally(() => {
-        inflight.current = null;
+        if (inflight.current === run) {
+          inflight.current = null;
+          inflightKey.current = null;
+        }
         setRefreshing(false);
       });
     inflight.current = run;
+    inflightKey.current = key;
     return run;
   }, [
     claudeAccountAvailable,

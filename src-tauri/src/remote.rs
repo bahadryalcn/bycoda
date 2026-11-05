@@ -1026,8 +1026,8 @@ fn machine_rpc_for_consumer(
                     }
                     Ok(value)
                 }
-                // This flag is possible only before the request was dispatched.
-                Err(error) if error.unsupported => rpc(
+                // Compatibility fallbacks reuse the same params, so a durable commandId is unchanged.
+                Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
                     endpoint,
                     &machine.token,
                     Some(&machine.environment_id),
@@ -1076,16 +1076,33 @@ fn machine_rpc_for_consumer(
     })
 }
 
+/// Only a failure that proves the request never reached the Host may be sent again
+/// over HTTP. `uncertain` is set for a mutating request that may have been sent, so
+/// a clear flag on a mutating request means it was never dispatched. A read that
+/// was sent and then timed out is also clear here; re-running a read is harmless.
+/// `unsupported` is the separate pre-dispatch case that the WS path already reports.
+fn ws_failure_allows_http_fallback(error: &WsFailure) -> bool {
+    error.unsupported
+        || (!error.uncertain
+            && matches!(
+                error.code.as_str(),
+                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED"
+            ))
+}
+
+/// Formats a WS failure the way the HTTP path reports a Host refusal, so the
+/// caller can settle a definitive rejection instead of treating it as unknown.
 fn native_ws_failure(error: WsFailure) -> String {
-    format!(
-        "{}{}",
-        error,
-        if error.uncertain {
-            ". The operation outcome is unknown; reconcile its command receipt before retrying."
-        } else {
-            ""
-        }
-    )
+    if error.uncertain {
+        return format!(
+            "{}. The operation outcome is unknown; reconcile its command receipt before retrying.",
+            error
+        );
+    }
+    if error.code == "RPC_WS_REMOTE" {
+        return format!("Host rejected request: {}", error.message);
+    }
+    error.to_string()
 }
 
 /// A held reply proves dispatch already succeeded. Losing disclosure authority
@@ -5255,5 +5272,70 @@ mod tests {
         let value = serde_json::to_string(&stored.public()).unwrap();
         assert!(!value.contains("secret"));
         assert!(!value.contains("token"));
+    }
+
+    #[test]
+    fn host_refusal_over_ws_settles_like_the_http_refusal() {
+        let mut refusal = WsFailure::local("RPC_WS_REMOTE", "LEASE_HELD: busy");
+        refusal.uncertain = false;
+        assert_eq!(
+            super::native_ws_failure(refusal),
+            "Host rejected request: LEASE_HELD: busy"
+        );
+    }
+
+    #[test]
+    fn uncertain_host_error_over_ws_keeps_unknown_outcome_text() {
+        let mut unknown = WsFailure::local(
+            "RPC_WS_REMOTE",
+            "The Host operation could not be confirmed.",
+        );
+        unknown.uncertain = true;
+        let text = super::native_ws_failure(unknown);
+        assert!(text.starts_with("RPC_WS_REMOTE: "), "{text}");
+        assert!(text.contains("outcome is unknown"), "{text}");
+        assert!(!text.starts_with("Host rejected request:"), "{text}");
+    }
+
+    #[test]
+    fn non_refusal_ws_failures_keep_their_code_text() {
+        let interrupted = WsFailure::local("RPC_WS_INTERRUPTED", "Connection lost");
+        assert_eq!(
+            super::native_ws_failure(interrupted),
+            "RPC_WS_INTERRUPTED: Connection lost"
+        );
+    }
+
+    #[test]
+    fn http_fallback_is_allowed_only_when_the_request_was_not_sent() {
+        let not_sent = |code: &str| WsFailure::local(code, "fixture");
+        for code in ["RPC_WS_DEADLINE", "RPC_WS_UNAVAILABLE", "RPC_WS_BLOCKED"] {
+            assert!(
+                super::ws_failure_allows_http_fallback(&not_sent(code)),
+                "{code}"
+            );
+        }
+        assert!(super::ws_failure_allows_http_fallback(
+            &WsFailure::unsupported()
+        ));
+
+        // A possibly-sent mutating request is uncertain and must never be replayed.
+        for code in ["RPC_WS_DEADLINE", "RPC_WS_UNAVAILABLE", "RPC_WS_BLOCKED"] {
+            let mut sent = not_sent(code);
+            sent.uncertain = true;
+            assert!(!super::ws_failure_allows_http_fallback(&sent), "{code}");
+        }
+        // A definitive Host answer or a lost connection is not a transport miss.
+        for code in [
+            "RPC_WS_REMOTE",
+            "RPC_WS_INTERRUPTED",
+            "RPC_WS_SCHEMA",
+            "RPC_WS_OVERLOAD",
+        ] {
+            assert!(
+                !super::ws_failure_allows_http_fallback(&not_sent(code)),
+                "{code}"
+            );
+        }
     }
 }

@@ -2,6 +2,8 @@ import { SessionReadProcesses } from "./session-read-process";
 import {
   compactCommandReceipts,
   initializeCommandReceiptRetention,
+  assertWithinReplayHorizon,
+  deleteExpiredReceiptFences,
   readCommandReceipt,
   readWorkspaceReceipt,
 } from "./storage/command-receipt-retention";
@@ -62,7 +64,8 @@ import type { DesktopCommandAcceptance } from "./domains/commands/service";
 export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./sessions/block-revisions";
 const CACHED_SESSIONS = 32;
-// Original request signatures compact after a week; replay answers never expire.
+// Original request signatures compact after a week. Compact fences (the replay answer) are
+// deleted only after their request id leaves the replay horizon (see command-receipt-retention).
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
 const MAX_DESKTOP_COMMAND_RECEIPTS = 4096;
@@ -1129,11 +1132,17 @@ export class HostStore {
         });
     });
   }
-  /** Receipts deliberately have no age-based pruning: retries after retirement
-   * or restart must not repeat Git mutations. Scope is a host-selected namespace. */
-  async workspaceReceipt<T>(scope: string, key: string, request: unknown): Promise<T | null> {
+  /** Full receipts have no age-based pruning: retries after retirement or restart must not
+   * repeat Git mutations. Compact fences outlive the replay horizon of their key. Scope is a
+   * host-selected namespace. `admit` refuses an expired key that has no receipt. */
+  async workspaceReceipt<T>(
+    scope: string,
+    key: string,
+    request: unknown,
+    options: { admit?: boolean } = {},
+  ): Promise<T | null> {
     return this.db.storeScope(() =>
-      readWorkspaceReceipt<T>(this.db, scope, key, canonicalWorkspaceJson(request)),
+      readWorkspaceReceipt<T>(this.db, scope, key, canonicalWorkspaceJson(request), options),
     );
   }
   async saveWorkspaceReceipt(
@@ -2522,11 +2531,15 @@ export class HostStore {
       });
     });
   }
+  /** Admission lookup before a command runs: an expired id with no receipt is refused. */
   async receipt(id: string, signature: string): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(() => readCommandReceipt(this.db, id, signature));
+    return this.db.storeScope(() => readCommandReceipt(this.db, id, signature, { admit: true }));
   }
-  async receiptStatus(id: string): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(() => readCommandReceipt(this.db, id));
+  async receiptStatus(
+    id: string,
+    options: { admit?: boolean } = {},
+  ): Promise<CommandReceipt | undefined> {
+    return this.db.storeScope(() => readCommandReceipt(this.db, id, undefined, options));
   }
   async recordReceipt(signature: string, receipt: CommandReceipt): Promise<void> {
     return this.db.storeScope(() =>
@@ -2582,6 +2595,7 @@ export class HostStore {
           return JSON.parse(String(receipt.receipt)) as CommandReceipt;
         }
         if (receipt) throw new Error("Command ID already belongs to another command.");
+        assertWithinReplayHorizon(input.commandId);
         const count = await this.db
           .prepare("SELECT COUNT(*) AS count FROM desktop_command_delivery")
           .get();
@@ -2719,10 +2733,10 @@ export class HostStore {
   }
   async pruneReceipts(now = Date.now()): Promise<void> {
     return this.db.storeScope(() =>
-      this.transaction(
-        () => compactCommandReceipts(this.db, now - RECEIPT_RETENTION_MS),
-        "critical",
-      ),
+      this.transaction(async () => {
+        await compactCommandReceipts(this.db, now - RECEIPT_RETENTION_MS);
+        await deleteExpiredReceiptFences(this.db, now);
+      }, "critical"),
     );
   }
   async events(

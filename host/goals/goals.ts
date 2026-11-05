@@ -27,6 +27,7 @@ import {
 } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
 import type { HostTasks } from "../tasks/tasks";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
 type HostGoal = StoredHostGoal & { deliveryApprovalRequired?: boolean };
 import {
   NO_VERDICT,
@@ -1027,7 +1028,7 @@ export class HostGoals {
       const resume = () =>
         this.engine.command({
           type: "send",
-          commandId: randomUUID(),
+          commandId: newRequestId(),
           sessionId,
           text: [
             "Continue the existing read-only planning conversation. Reuse the projects and evidence already inspected; do not edit files, commit, start implementation, switch branches, ask for approval or enter plan mode.",
@@ -1740,7 +1741,7 @@ export class HostGoals {
       const resume = () =>
         this.engine.command({
           type: "send",
-          commandId: randomUUID(),
+          commandId: newRequestId(),
           sessionId: final.sessionId!,
           text: [
             "Continue the existing independent read-only final goal review. Preserve inspected evidence, inspect current delivered files, and verify the complete original objective. Do not edit files, launch implementation, commit, merge or publish.",

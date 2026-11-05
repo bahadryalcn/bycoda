@@ -51,6 +51,8 @@ import {
   readDurableRemoteCommand,
   admitDurableRemoteCommand,
   readDurableRemoteEntry,
+  remoteOutcomeUnknownMessage,
+  remoteRequestPastRetryLimit,
   markDurableRemoteCommandStopped,
   settleDurableRemoteCommand,
   subscribeOutbox,
@@ -161,6 +163,13 @@ import { useRemoteRecovery } from "../model/useRemoteRecovery";
 import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
+import {
+  classifyCommandFailure,
+  COMMAND_RETRY_AUTOMATIC_LIMIT,
+  createCommandRetryBackoff,
+  type CommandFailureClass,
+  type CommandRetryBackoff,
+} from "../model/remoteCommandRetry";
 import { RemoteConnectionBanner } from "./RemoteConnectionBanner";
 import {
   parseRemotePath,
@@ -187,6 +196,7 @@ import {
   type RemoteMachine,
   type RemoteProvider,
 } from "../model/protocol";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSession: boolean;
@@ -232,6 +242,8 @@ type OptimisticTurn = {
   acceptedRun?: { sessionId: string; runId: string; authorityGeneration?: number };
   onSendRejected?: () => boolean;
   restoredDraft?: boolean;
+  /** Its command is in the outbox, so a failed dispatch is retried, not shown as failed. */
+  saved?: boolean;
 };
 
 const noop = () => {};
@@ -672,6 +684,23 @@ function ConnectedRemoteSession({
   // A first message waits here while its session is created on the host.
   const [starting, setStarting] = useState<OptimisticTurn & { failed?: boolean }>();
   const [pending, setPending] = useState(initialDurablePending);
+  // Why the last Send was not taken; shown until the next one is.
+  const [refusal, setRefusal] = useState("");
+  const lastFailureClass = useRef<CommandFailureClass | undefined>(undefined);
+  // Ticks that re-run the pending check: the machine came back, the window
+  // gained focus, or a backoff timer fired.
+  const [recoveryTick, setRecoveryTick] = useState(0);
+  const [focusTick, setFocusTick] = useState(0);
+  const [retryTick, setRetryTick] = useState(0);
+  const commandRetry = useRef<
+    | {
+        commandId: string;
+        backoff: CommandRetryBackoff;
+        running: boolean;
+        stopped: boolean;
+      }
+    | undefined
+  >(undefined);
   const [draft, setDraft] = useState<Configuration>(() => ({
     harness: isRemoteProvider(shell.harness) ? shell.harness : "codex",
     model: shell.model,
@@ -1341,6 +1370,7 @@ function ConnectedRemoteSession({
         if (bindingGen.currentDeleted()) return;
         beginOwnerVerification();
         setRefresh((value) => value + 1);
+        setRecoveryTick((value) => value + 1);
         refreshCatalog();
       }),
     [machine.environmentId],
@@ -1471,7 +1501,7 @@ function ConnectedRemoteSession({
     planBlockId?: string,
   ): OptimisticTurn => ({
     ...remoteIntentAuthority(hostSession ? snapshot : undefined),
-    commandId: crypto.randomUUID(),
+    commandId: newRequestId(),
     text,
     attachments,
     intent,
@@ -1630,7 +1660,7 @@ function ConnectedRemoteSession({
           // accepted, never whichever run happens to be in the latest snapshot.
           await executionClient.dispatchCommand({
             type: "cancel",
-            commandId: crypto.randomUUID(),
+            commandId: newRequestId(),
             sessionId: receipt.sessionId,
             runId: receipt.runId,
             ...remoteIntentAuthority(receipt),
@@ -1786,6 +1816,11 @@ function ConnectedRemoteSession({
       reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
       const message = String(reason);
       lastRunFailure.current = message;
+      const failureClass = classifyCommandFailure(reason);
+      lastFailureClass.current = failureClass;
+      // Saved to the outbox: a failure to reach the Host is retried by the pending
+      // check, which says so in the notice instead of showing the raw error.
+      if (persisted && optimistic) optimistic.saved = true;
       const blockedRetry =
         priorPending &&
         requiresDesktopControlReceipts(command) &&
@@ -1824,7 +1859,8 @@ function ConnectedRemoteSession({
       }
       // Another computer runs a turn of this conversation: a wait, not an error.
       // The message goes to the queue and is sent when that turn is over.
-      if (!isLeaseHeld(message)) setError(message.replace(/^Error: /, ""));
+      if (!isLeaseHeld(message) && !(persisted && failureClass !== "definitive"))
+        setError(message.replace(/^Error: /, ""));
       return undefined;
     } finally {
       ownership?.finishJob(
@@ -1926,7 +1962,7 @@ function ConnectedRemoteSession({
     void run({
       type: "configure",
       ...remoteIntentAuthority(changes),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       sessionId: hostSession.id,
       ...(descriptor?.capabilities.includes("sessions.harnessSwitch")
         ? { harness: changes.harness }
@@ -2107,7 +2143,8 @@ function ConnectedRemoteSession({
       );
       if (version !== bindingGen.version || generation !== submissionGeneration.current) return;
       if (!receipt) {
-        if (alive.current) setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
+        if (alive.current && !turn.saved)
+          setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
         return;
       }
       if (version !== bindingGen.version) return;
@@ -2124,7 +2161,8 @@ function ConnectedRemoteSession({
         version === bindingGen.version &&
         generation === submissionGeneration.current
       )
-        if (!sent) setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
+        if (!sent && !turn.saved)
+          setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
     } catch (reason) {
       if (
         alive.current &&
@@ -2265,7 +2303,9 @@ function ConnectedRemoteSession({
             if (isLeaseHeld(lastRunFailure.current) && queueForLease(turn)) {
               setStarting(undefined);
               retryAfterLease();
-            } else setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
+            } else if (!turn.saved)
+              // A saved request is sent again by the pending check; it is not a failure.
+              setStarting(turn.restoredDraft ? undefined : { ...turn, failed: true });
           }
       })
       .catch((reason) => {
@@ -2297,34 +2337,29 @@ function ConnectedRemoteSession({
     onlineWaiters.current.forEach((wake) => wake());
     onlineWaiters.current.clear();
   }, [online]);
-  /** Resolves once the poll has reached the machine, or false after a while. */
-  const whenOnline = () =>
-    onlineRef.current
-      ? Promise.resolve(true)
-      : new Promise<boolean>((resolve) => {
-          const wake = () => {
-            clearTimeout(timer);
-            resolve(true);
-          };
-          const timer = setTimeout(() => {
-            onlineWaiters.current.delete(wake);
-            resolve(false);
-          }, 10_000);
-          onlineWaiters.current.add(wake);
-        });
-  // Send while the machine is out of reach: reconnect first, then send. The
-  // composer has let go of the message, so when that fails it goes back there
-  // (or stays here as a failed message with Try again); it is never dropped.
+  // Send while the machine is out of reach. The message is saved to the outbox at
+  // once; the pending check below sends it when the machine answers again, so it
+  // never waits here for a timeout. Only a refused start (nothing saved) goes back
+  // to the composer or stays as a failed message with Try again.
   const sendWhenConnected = async (
     turn: OptimisticTurn,
     options?: ComposerTurnOptions,
     generation = submissionGeneration.current,
   ) => {
     const version = bindingGen.version;
+    // A conversation whose machine descriptor or snapshot is not loaded yet cannot
+    // start a turn. That waits for the poll to reach the machine, with no time limit.
+    const viewReady = !!descriptor && (!sessionId || !!hostSession);
     const outcome = await sendAfterReconnect({
       status: connection.status,
       reconnect: () => connection.reconnect(),
-      ready: whenOnline,
+      wake: () => wake.current(),
+      ready: () =>
+        viewReady || onlineRef.current
+          ? true
+          : new Promise<boolean>((resolve) => {
+              onlineWaiters.current.add(() => resolve(true));
+            }),
       send: () =>
         alive.current &&
         version === bindingGen.version &&
@@ -2341,7 +2376,6 @@ function ConnectedRemoteSession({
     preparingRef.current = false;
     preparingTurn.current = undefined;
     // The connection banner already says why a reconnect failed.
-    if (outcome.failure === "offline") setError(outcome.error ?? "");
     if (options?.onSendRejected?.())
       setStarting((current) => (current?.commandId === turn.commandId ? undefined : current));
     else setStarting({ ...turn, failed: true });
@@ -2355,7 +2389,7 @@ function ConnectedRemoteSession({
     authorityGeneration?: number,
     optimistic?: OptimisticTurn,
   ) => {
-    const commandId = crypto.randomUUID();
+    const commandId = newRequestId();
     return run(
       {
         type: "shell",
@@ -2474,20 +2508,35 @@ function ConnectedRemoteSession({
     queuedId?: string,
     onAcceptance?: (accepted: boolean) => void,
   ): boolean => {
-    if (rewindOwner.current) return false;
+    // Every refusal below keeps the composer's text and says why, so Send is never silent.
+    const refused = (reason: string): false => {
+      setRefusal(reason);
+      return false;
+    };
+    if (rewindOwner.current) return refused(t("A rewind is in progress. Your message is kept."));
     // Repeated Send must keep its draft while the preceding send is preparing
     // or awaiting acknowledgement. Explicit Queue remains available.
     if (
       (preparingRef.current || sendingRef.current || pending) &&
       options?.followUpBehavior !== "queue"
     )
-      return false;
-    if (pageCacheOnly || remoteDeleted || snapshotRef.current?.historyLoading || queue.error)
-      return false;
+      return refused(t("The previous message is still being sent. Your message is kept."));
+    if (remoteDeleted)
+      return refused(t("This conversation was deleted on the machine. Your message is kept."));
+    if (pageCacheOnly)
+      return refused(
+        t("The latest messages have not loaded from the machine yet. Your message is kept."),
+      );
+    if (snapshotRef.current?.historyLoading)
+      return refused(t("This conversation is still loading. Send again in a moment."));
+    if (queue.error)
+      return refused(
+        t("Queued messages could not be read, so sending is held. Your message is kept."),
+      );
     const queuedRow = queuedId
       ? queue.current().messages.find((row) => row.id === queuedId)
       : undefined;
-    if (queuedId && !queuedRow) return false;
+    if (queuedId && !queuedRow) return refused(t("This queued message is no longer available."));
     const authority = remoteIntentAuthority(
       queuedId ? queuedRow : hostSession ? snapshot : undefined,
     );
@@ -2509,7 +2558,8 @@ function ConnectedRemoteSession({
       hostDraft?.followUpDelivery &&
       (hostDraft.followUpDelivery === "pending" || busy || pending || !online)
     )
-      return false;
+      return refused(t("This follow-up is already being delivered. Your message is kept."));
+    setRefusal("");
     beginSessionPerformanceTrace(shell.id);
     const shellCommand =
       asDraft || queuedId || attachments.length || options?.draftBlockId || planBlockId
@@ -2542,7 +2592,7 @@ function ConnectedRemoteSession({
       const runId = snapshot.runId;
       const unsent = {
         ...authority,
-        id: queuedId ?? crypto.randomUUID(),
+        id: queuedId ?? newRequestId(),
         text,
         attachments,
         intent: options?.intent,
@@ -2593,7 +2643,7 @@ function ConnectedRemoteSession({
       preparingRef.current = true;
       setFollowUpPreparing(true);
       void (async () => {
-        const commandId = crypto.randomUUID();
+        const commandId = newRequestId();
         let accepted = false;
         try {
           const files = await uploadRemoteAttachments(machine.id, attachments, {
@@ -2701,8 +2751,9 @@ function ConnectedRemoteSession({
       }
       return queue.enqueue(queued) !== false;
     }
-    if (sending || preparingRef.current || pending || busy || (!text.trim() && !attachments.length))
-      return false;
+    if (!text.trim() && !attachments.length) return false;
+    if (sending || preparingRef.current || pending || busy)
+      return refused(t("This conversation is busy. Your message is kept."));
     const intent =
       options?.intent === "plan" || options?.intent === "build" ? options.intent : "default";
     const turn = optimisticTurn(
@@ -2948,8 +2999,12 @@ function ConnectedRemoteSession({
   };
 
   const catalogProblem = catalog?.errors[configuration.harness] ?? catalogError;
-  const retryPending = async () => {
-    if (!pending || sendingRef.current) return;
+  /** Settles or sends again the pending command. The Host's receipt settles it; with
+   * no receipt the same command is sent again, except shell, cancel, approve and
+   * answer, which only a receipt can settle. `automatic` checks run from the pending
+   * effect below: a failed check is retried later and raises no error of its own. */
+  const retryPending = async (automatic = false): Promise<"settled" | "retry" | "stop"> => {
+    if (!pending || sendingRef.current) return "retry";
     const risky =
       pending.type === "shell" ||
       pending.type === "cancel" ||
@@ -2967,13 +3022,18 @@ function ConnectedRemoteSession({
       try {
         recovered = await executionClient.commandStatus(pending.commandId);
       } catch (reason) {
-        setError(
-          t("Couldn’t check whether the host accepted this request: {p0}", {
-            p0: String(reason).replace(/^Error: /, ""),
-          }),
-        );
-        return;
+        if (!automatic)
+          setError(
+            t("Couldn’t check whether the host accepted this request: {p0}", {
+              p0: String(reason).replace(/^Error: /, ""),
+            }),
+          );
+        return "retry";
       }
+    }
+    if (!recovered && remoteRequestPastRetryLimit(pending.commandId)) {
+      setError(remoteOutcomeUnknownMessage());
+      return "stop";
     }
     if (!recovered && hostSession && !remoteIntentAuthorityMatches(pending, snapshot)) {
       setError(
@@ -2981,7 +3041,7 @@ function ConnectedRemoteSession({
           "This pending request belongs to an earlier session authority. It was kept for recovery; review it before creating a new request.",
         ),
       );
-      return;
+      return "stop";
     }
     if (
       (recovered === null || recovered === undefined) &&
@@ -2992,13 +3052,15 @@ function ConnectedRemoteSession({
           "The host cannot confirm whether this request ran. Check the host before clearing it; it was kept for recovery.",
         ),
       );
-      return;
+      return "stop";
     }
     const version = bindingGen.version;
     if (!stopped) setStarting((current) => (current ? { ...current, failed: false } : current));
+    lastFailureClass.current = undefined;
     const receipt = recovered
       ? await run(pending, undefined, undefined, recovered)
       : await run(pending);
+    if (!receipt) return lastFailureClass.current === "definitive" ? "stop" : "retry";
     if (receipt && pending.type === "shell")
       shellFollowUps.current.set(pending.commandId, remoteIntentAuthority(pending));
     if (receipt && pending.type === "create" && !stopped && version === bindingGen.version) {
@@ -3012,7 +3074,75 @@ function ConnectedRemoteSession({
       ).command;
       if (next) await run(next);
     }
+    return "settled";
   };
+
+  // A pending command is settled by the Host's receipt, or sent again with the same
+  // command ID. The check runs while the machine answers, on going online or
+  // recovering, on window focus, and on a backoff timer that starts at 2 s and stops
+  // at 30 s. It never runs while a send is in flight, and stops for good once the
+  // Host refuses the request or its ID is past the replay horizon.
+  const pendingId = pending?.commandId;
+  const pendingHostBlock = !!pendingId && hasHostBlock(pendingId);
+  useEffect(() => {
+    if (!pendingId || sending || sendingRef.current || pageCacheOnly || remoteDeleted) return;
+    if (!online && !pendingHostBlock) return;
+    let state = commandRetry.current;
+    if (state?.commandId !== pendingId) {
+      state = {
+        commandId: pendingId,
+        backoff: createCommandRetryBackoff(),
+        running: false,
+        stopped: false,
+      };
+      commandRetry.current = state;
+    }
+    if (state.running || state.stopped) return;
+    const wait = state.backoff.remainingMs();
+    if (wait > 0) {
+      const timer = setTimeout(() => setRetryTick((value) => value + 1), wait);
+      return () => clearTimeout(timer);
+    }
+    const current = state;
+    current.running = true;
+    void retryPending(true)
+      .then(
+        (outcome) => {
+          if (outcome === "settled") current.backoff.reset();
+          else if (
+            outcome === "stop" ||
+            current.backoff.failures + 1 >= COMMAND_RETRY_AUTOMATIC_LIMIT
+          )
+            current.stopped = true;
+          else current.backoff.failed();
+        },
+        () => {
+          current.backoff.failed();
+        },
+      )
+      .finally(() => {
+        current.running = false;
+        if (alive.current) setRetryTick((value) => value + 1);
+      });
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryPending reads this render's state; the ticks say when to look again.
+  }, [
+    pendingId,
+    pendingHostBlock,
+    sending,
+    online,
+    pageCacheOnly,
+    remoteDeleted,
+    connection.status,
+    recoveryTick,
+    focusTick,
+    retryTick,
+  ]);
+  useEffect(() => {
+    const focus = () => setFocusTick((value) => value + 1);
+    window.addEventListener("focus", focus);
+    return () => window.removeEventListener("focus", focus);
+  }, []);
   const notice = queue.error
     ? {
         text: t(
@@ -3028,7 +3158,10 @@ function ConnectedRemoteSession({
       }
     : pending && !sending
       ? {
-          text: t("Waiting for the host to confirm your request."),
+          // Saved and not yet confirmed: it goes out again by itself once the machine answers.
+          text: online
+            ? t("Waiting for the host to confirm your request.")
+            : t("Reconnecting — will send automatically."),
           detail: error,
           action: {
             get label() {
@@ -3084,28 +3217,38 @@ function ConnectedRemoteSession({
               },
             },
           }
-        : error
+        : refusal
           ? {
-              text: error,
+              text: refusal,
               action: {
                 get label() {
                   return t("Dismiss");
                 },
-                run: () => setError(""),
+                run: () => setRefusal(""),
               },
             }
-          : catalogProblem
+          : error
             ? {
-                text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
-                detail: catalogProblem,
+                text: error,
                 action: {
                   get label() {
-                    return t("Retry");
+                    return t("Dismiss");
                   },
-                  run: () => refreshCatalog(),
+                  run: () => setError(""),
                 },
               }
-            : undefined;
+            : catalogProblem
+              ? {
+                  text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
+                  detail: catalogProblem,
+                  action: {
+                    get label() {
+                      return t("Retry");
+                    },
+                    run: () => refreshCatalog(),
+                  },
+                }
+              : undefined;
 
   // A transport failure has one recovery owner above the conversation. Keep
   // independent queue/storage and command failures actionable in their own notice.
@@ -3188,7 +3331,7 @@ function ConnectedRemoteSession({
       // Stop must reach the host even while a follow-up is being acknowledged.
       const command = {
         type: "cancel",
-        commandId: crypto.randomUUID(),
+        commandId: newRequestId(),
         ...target,
       } as const;
       try {
@@ -3218,7 +3361,7 @@ function ConnectedRemoteSession({
     return run({
       type: "approve",
       ...remoteIntentAuthority(snapshot),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       sessionId: hostSession.id,
       runId: snapshot.runId,
       requestId,
@@ -3232,7 +3375,7 @@ function ConnectedRemoteSession({
     void run({
       type: "usageLimit",
       ...remoteIntentAuthority(snapshot),
-      commandId: crypto.randomUUID(),
+      commandId: newRequestId(),
       sessionId: hostSession.id,
       action,
     });
@@ -3244,7 +3387,7 @@ function ConnectedRemoteSession({
     if (!hostSession || !snapshot?.runId) return;
     const sessionId = hostSession.id;
     const runId = snapshot.runId;
-    const commandId = crypto.randomUUID();
+    const commandId = newRequestId();
     const updateDelivery = (delivery: UserQuestionDelivery, error?: string) => {
       const current = snapshotRef.current;
       if (
@@ -3504,7 +3647,7 @@ function ConnectedRemoteSession({
       const receipt = await executionClient.dispatchCommand({
         type: "rewind",
         ...remoteIntentAuthority(known),
-        commandId: crypto.randomUUID(),
+        commandId: newRequestId(),
         sessionId: targetSessionId,
         blockId,
         expectedRevision: known.revision,
@@ -3595,7 +3738,7 @@ function ConnectedRemoteSession({
       void run({
         type: "removeDraft",
         ...remoteIntentAuthority(snapshot),
-        commandId: crypto.randomUUID(),
+        commandId: newRequestId(),
         sessionId: hostSession.id,
         draftBlockId,
       }).then((receipt) => {

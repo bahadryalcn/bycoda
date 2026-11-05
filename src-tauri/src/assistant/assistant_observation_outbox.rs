@@ -125,6 +125,7 @@ fn personal_note_baseline_inner(
 
 /// Source data only; callers must bind all delivered pages to one unchanged
 /// snapshot before treating this as complete or advancing a recovery cursor.
+#[cfg(test)] // Only the outbox regression test reads baseline pages.
 pub(crate) fn baseline_page(
     conn: &Connection,
     cwd: &str,
@@ -259,6 +260,7 @@ pub(crate) fn complete_personal_notes_once(
 
 /// Oldest retained rows only. A caller must retain this exact page until the
 /// authenticated Host reports its original identities committed.
+#[cfg(test)] // Only the outbox regression test reads the oldest page.
 pub(crate) fn page(conn: &Connection, limit: usize) -> rusqlite::Result<Vec<NoteObservation>> {
     page_after(conn, 0, limit)
 }

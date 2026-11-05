@@ -19,6 +19,7 @@ import {
 } from "../../../integrations/harness/core/child";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { JsonRpcClient } from "../../../integrations/harness/core/jsonRpc";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const USAGE_CHILD_ID = "bycoda-codex-usage";
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -161,7 +162,7 @@ export async function consumeCodexRateLimitResetCredit(
     cwd,
     "account/rateLimitResetCredit/consume",
     {
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey: newRequestId(),
       ...(creditId ? { creditId } : {}),
     },
     accountId,

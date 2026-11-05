@@ -64,7 +64,8 @@ export function ServerForwards({
     try {
       await action();
     } catch (cause) {
-      if (currentSource.current === server.id) setErrorState({ source: server.id, value: String(cause) });
+      if (currentSource.current === server.id)
+        setErrorState({ source: server.id, value: String(cause) });
     } finally {
       refresh(server.id);
       locked.current = false;
@@ -289,7 +290,13 @@ export function ServerForwards({
               </div>
             </form>
           </details>
-          {error || statusError ? <InlineError retry={!error && statusError ? { onRetry: () => refresh(server.id) } : undefined}>{error || statusError}</InlineError> : null}
+          {error || statusError ? (
+            <InlineError
+              retry={!error && statusError ? { onRetry: () => refresh(server.id) } : undefined}
+            >
+              {error || statusError}
+            </InlineError>
+          ) : null}
         </div>
       </Container>
       {proxy.dialog}

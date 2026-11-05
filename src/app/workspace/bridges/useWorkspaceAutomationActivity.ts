@@ -26,9 +26,18 @@ export function useWorkspaceAutomationActivity({
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     let taskStates: Map<string, string> | undefined;
+    let running = false;
     const pending = new Map<string, WorkspaceAutomationEvent>();
     const recoveryToken = crypto.randomUUID();
+    // A hidden window reads no event sources; visibility resumes the poll at once.
+    const resume = () => {
+      if (document.hidden || disposed) return;
+      clearTimeout(timer);
+      void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
+    };
     const poll = async () => {
+      if (running || disposed || document.hidden) return;
+      running = true;
       try {
         if (!(await isLeadWindow()) || disposed) return;
         const automations = (await listAutomations()).filter((automation) => automation.enabled);
@@ -96,12 +105,15 @@ export function useWorkspaceAutomationActivity({
       } catch (error) {
         console.warn("Workspace automation activity failed", error);
       } finally {
-        if (!disposed) timer = setTimeout(poll, 30_000);
+        running = false;
+        if (!disposed && !document.hidden) timer = setTimeout(poll, 30_000);
       }
     };
-    void poll();
+    document.addEventListener("visibilitychange", resume);
+    void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", resume);
       clearTimeout(timer);
     };
   }, [ensureAutomationRecovery, launchAutomation]);

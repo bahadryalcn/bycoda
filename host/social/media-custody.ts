@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, realpath } from "node:fs/promises";
+import { mkdir, open, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { HostStore } from "../store";
 
@@ -7,12 +7,35 @@ import type { HostStore } from "../store";
 export type MediaCustodyScope = Readonly<{ accountId: string }>;
 export type MediaClaim = Readonly<{ ownerKind: string; ownerId: string; claimId: string }>;
 
+/** Bump when the trigger definitions change; a matching marker skips the trigger DDL at start. */
+const MEDIA_TRIGGER_VERSION = "2";
+const MEDIA_TABLES = [
+  ["social_records", "'record:' || NEW.kind"],
+  ["social_jobs", "'job'"],
+  ["social_jobs_cold", "'job-cold'"],
+  ["social_programs", "'program'"],
+  ["social_occurrences", "'occurrence'"],
+] as const;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+/** Rows per reconciliation batch; each batch is one short transaction. */
+const RECONCILE_BATCH = 200;
+
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 export class SocialMediaCustody {
+  private reconciliation?: Promise<void>;
+
+  /** `pause` runs between reconciliation batches; tests inject a controllable one. */
   constructor(
     private readonly store: HostStore,
     private readonly directory: string,
+    private readonly pause: () => Promise<void> = yieldToEventLoop,
   ) {}
 
+  /**
+   * Startup only runs the versioned trigger DDL. The durable reference rebuild runs in the
+   * background (see `reconciled`), so a large media history never blocks the Host.
+   */
   async initialize(): Promise<void> {
     await this.store.db.exec(`
       CREATE TABLE IF NOT EXISTS social_media_files (
@@ -28,63 +51,148 @@ export class SocialMediaCustody {
       CREATE INDEX IF NOT EXISTS social_media_claims_live ON social_media_claims(media_id,state);
       CREATE TABLE IF NOT EXISTS social_media_operations (scope TEXT NOT NULL,request_id TEXT NOT NULL,signature TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(scope,request_id));
     `);
-    // Database triggers cover every writer, including program generation and recovery.
-    for (const [table, kind] of [
-      ["social_records", "'record:' || NEW.kind"],
-      ["social_jobs", "'job'"],
-      ["social_jobs_cold", "'job-cold'"],
-      ["social_programs", "'program'"],
-      ["social_occurrences", "'occurrence'"],
-    ] as const) {
-      const oldKind = kind.replaceAll("NEW.", "OLD.");
+    await this.store.db.exec(
+      "CREATE TABLE IF NOT EXISTS social_media_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    );
+    // Trigger definitions are versioned: once the marker matches, a Host start skips the
+    // trigger DDL. Triggers exist before reconciliation starts, so any write made while the
+    // rebuild runs is claimed by the trigger itself.
+    const marker = await this.store.db
+      .prepare("SELECT value FROM social_media_meta WHERE key='triggers'")
+      .get();
+    const triggersCurrent = Boolean(marker && String(marker.value) === MEDIA_TRIGGER_VERSION);
+    if (!triggersCurrent)
+      await this.store.transaction(async () => {
+        await this.installTriggers();
+      });
+    // Not awaited: startup continues. Every destructive media step awaits `reconciled()`.
+    this.reconciliation = this.reconcileReferences();
+    this.reconciliation.catch((error) =>
+      console.error("Social media reference reconciliation failed:", error),
+    );
+  }
+
+  /** Resolves when the durable reference rebuild for the current start has completed. */
+  reconciled(): Promise<void> {
+    return this.reconciliation ?? Promise.reject(new Error("Media custody is not initialized."));
+  }
+
+  /** Rebuilds missing durable claims, table by table, in rowid batches. Idempotent. */
+  private async reconcileReferences(): Promise<void> {
+    for (const [table, kind] of MEDIA_TABLES) {
       const existingKind = kind.replaceAll("NEW.", "r.");
-      await this.store.db
-        .exec(`INSERT OR IGNORE INTO social_media_claims(media_id,owner_kind,owner_id,claim_id,state)
+      let after = 0;
+      for (;;) {
+        const rows = (await this.store.db
+          .prepare(`SELECT rowid AS position FROM ${table} WHERE rowid>? ORDER BY rowid LIMIT ?`)
+          .all(after, RECONCILE_BATCH)) as Array<{ position: number }>;
+        if (!rows.length) break;
+        const upper = Number(rows[rows.length - 1]!.position);
+        await this.store.transaction(async () => {
+          await this.store.db
+            .prepare(`INSERT OR IGNORE INTO social_media_claims(media_id,owner_kind,owner_id,claim_id,state)
         SELECT DISTINCT f.id,${existingKind},r.id,'durable','active'
         FROM ${table} r, json_tree(r.value) j JOIN social_media_files f ON f.id=j.value
-        WHERE j.key='uploadId';`);
-      for (const event of ["INSERT", "UPDATE"] as const) {
-        await this.store.db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_media_${event.toLowerCase()}
-          BEFORE ${event} ON ${table} BEGIN
-            SELECT CASE WHEN EXISTS (
-              SELECT 1 FROM json_tree(NEW.value) j JOIN social_media_files f ON f.id=j.value
-              WHERE j.key='uploadId' AND f.state!='active'
-            ) THEN RAISE(ABORT, 'Referenced managed media is not active') END;
-          END;`);
-        const remove =
-          event === "UPDATE"
-            ? `DELETE FROM social_media_claims WHERE owner_kind=${oldKind} AND owner_id=OLD.id AND claim_id='durable';`
-            : "";
-        await this.store.db
-          .exec(`CREATE TRIGGER IF NOT EXISTS ${table}_media_after_${event.toLowerCase()}
-          AFTER ${event} ON ${table} BEGIN
-            ${remove}
-            INSERT OR REPLACE INTO social_media_claims(media_id,owner_kind,owner_id,claim_id,state)
-              SELECT DISTINCT f.id,${kind},NEW.id,'durable','active'
-              FROM json_tree(NEW.value) j JOIN social_media_files f ON f.id=j.value
-              WHERE j.key='uploadId' AND f.state='active';
-            UPDATE social_media_files SET revision=revision+1 WHERE id IN (
-              SELECT value FROM json_tree(NEW.value) WHERE key='uploadId'
-              ${event === "UPDATE" ? "UNION SELECT value FROM json_tree(OLD.value) WHERE key='uploadId'" : ""}
-            );
-          END;`);
+        WHERE r.rowid>? AND r.rowid<=? AND instr(r.value,'uploadId')>0 AND j.key='uploadId'`)
+            .run(after, upper);
+        });
+        after = upper;
+        await this.pause();
       }
-      await this.store.db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_media_after_delete
-        AFTER DELETE ON ${table} BEGIN
-          DELETE FROM social_media_claims WHERE owner_kind=${oldKind} AND owner_id=OLD.id AND claim_id='durable';
-          UPDATE social_media_files SET revision=revision+1 WHERE id IN (
-            SELECT value FROM json_tree(OLD.value) WHERE key='uploadId'
-          );
-        END;`);
     }
   }
 
+  private async installTriggers(): Promise<void> {
+    // Database triggers cover every writer, including program generation and recovery.
+    for (const [table] of MEDIA_TABLES)
+      for (const suffix of [
+        "media_insert",
+        "media_update",
+        "media_after_insert",
+        "media_after_update",
+        "media_after_delete",
+      ])
+        await this.store.db.exec(`DROP TRIGGER IF EXISTS ${table}_${suffix};`);
+    for (const [table, kind] of MEDIA_TABLES) {
+      const oldKind = kind.replaceAll("NEW.", "OLD.");
+      // Archival moves an already accepted row to the cold table: it is never refused by media state.
+      if (table !== "social_jobs_cold") {
+        await this.store.db.exec(`CREATE TRIGGER ${table}_media_insert BEFORE INSERT ON ${table}
+            WHEN instr(NEW.value,'uploadId')>0 BEGIN
+              SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM json_tree(NEW.value) j JOIN social_media_files f ON f.id=j.value
+                WHERE j.key='uploadId' AND f.state!='active'
+              ) THEN RAISE(ABORT, 'Referenced managed media is not active') END;
+            END;`);
+        // Only a newly added reference is refused; unrelated updates of a settled job still succeed.
+        await this.store.db.exec(`CREATE TRIGGER ${table}_media_update BEFORE UPDATE ON ${table}
+            WHEN instr(NEW.value,'uploadId')>0 BEGIN
+              SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM json_tree(NEW.value) j JOIN social_media_files f ON f.id=j.value
+                WHERE j.key='uploadId' AND f.state!='active'
+                  AND NOT EXISTS (SELECT 1 FROM json_tree(OLD.value) o WHERE o.key='uploadId' AND o.value=j.value)
+              ) THEN RAISE(ABORT, 'Referenced managed media is not active') END;
+            END;`);
+      }
+      const claimRows = `INSERT OR REPLACE INTO social_media_claims(media_id,owner_kind,owner_id,claim_id,state)
+              SELECT DISTINCT f.id,${kind},NEW.id,'durable','active'
+              FROM json_tree(NEW.value) j JOIN social_media_files f ON f.id=j.value
+              WHERE j.key='uploadId' AND f.state='active';`;
+      // The revision moves only when a reference is added or removed (a claim-set change).
+      // Archival writes the cold row before deleting the hot one: that move changes no claim.
+      const insertBump =
+        table === "social_jobs_cold"
+          ? " AND NOT EXISTS (SELECT 1 FROM social_jobs WHERE id=NEW.id)"
+          : "";
+      const deleteBump =
+        table === "social_jobs"
+          ? " AND NOT EXISTS (SELECT 1 FROM social_jobs_cold WHERE id=OLD.id)"
+          : "";
+      await this.store.db.exec(`CREATE TRIGGER ${table}_media_after_insert AFTER INSERT ON ${table}
+          WHEN instr(NEW.value,'uploadId')>0 BEGIN
+            ${claimRows}
+            UPDATE social_media_files SET revision=revision+1 WHERE id IN (
+              SELECT value FROM json_tree(NEW.value) WHERE key='uploadId'
+            )${insertBump};
+          END;`);
+      await this.store.db.exec(`CREATE TRIGGER ${table}_media_after_update AFTER UPDATE ON ${table}
+          WHEN instr(NEW.value,'uploadId')>0 OR instr(OLD.value,'uploadId')>0 BEGIN
+            DELETE FROM social_media_claims WHERE owner_kind=${oldKind} AND owner_id=OLD.id AND claim_id='durable';
+            ${claimRows}
+            UPDATE social_media_files SET revision=revision+1 WHERE id IN (
+              SELECT value FROM json_tree(NEW.value) WHERE key='uploadId'
+              UNION SELECT value FROM json_tree(OLD.value) WHERE key='uploadId'
+            ) AND (
+              id NOT IN (SELECT value FROM json_tree(NEW.value) WHERE key='uploadId')
+              OR id NOT IN (SELECT value FROM json_tree(OLD.value) WHERE key='uploadId')
+            );
+          END;`);
+      await this.store.db.exec(`CREATE TRIGGER ${table}_media_after_delete AFTER DELETE ON ${table}
+          WHEN instr(OLD.value,'uploadId')>0 BEGIN
+            DELETE FROM social_media_claims WHERE owner_kind=${oldKind} AND owner_id=OLD.id AND claim_id='durable';
+            UPDATE social_media_files SET revision=revision+1 WHERE id IN (
+              SELECT value FROM json_tree(OLD.value) WHERE key='uploadId'
+            )${deleteBump};
+          END;`);
+    }
+    await this.store.db
+      .prepare("INSERT OR REPLACE INTO social_media_meta(key,value) VALUES ('triggers',?)")
+      .run(MEDIA_TRIGGER_VERSION);
+  }
+
   async upload(scope: MediaCustodyScope, base64: string, format: "image" | "document") {
+    // Reject oversized text before decoding it: 4 base64 characters carry 3 bytes.
+    if (base64.length > Math.ceil(MAX_UPLOAD_BYTES / 3) * 4)
+      throw new Error(
+        format === "document"
+          ? "Upload a complete PDF document up to 5 MiB."
+          : "Upload a JPEG/PNG image up to 5 MiB.",
+      );
     const bytes = Buffer.from(base64, "base64");
     if (
       format === "document" &&
       (!bytes.length ||
-        bytes.length > 5 * 1024 * 1024 ||
+        bytes.length > MAX_UPLOAD_BYTES ||
         !/^%PDF-(?:1\.[0-7]|2\.0)(?:\r|\n)/.test(bytes.subarray(0, 10).toString("ascii")) ||
         !/%%EOF\s*$/.test(bytes.subarray(-1024).toString("ascii")))
     )
@@ -92,7 +200,7 @@ export class SocialMediaCustody {
     if (
       format === "image" &&
       (!bytes.length ||
-        bytes.length > 5 * 1024 * 1024 ||
+        bytes.length > MAX_UPLOAD_BYTES ||
         !(
           (bytes[0] === 0xff && bytes[1] === 0xd8) ||
           bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
@@ -116,7 +224,9 @@ export class SocialMediaCustody {
     await mkdir(rootPath, { recursive: true, mode: 0o700 });
     const root = await realpath(rootPath);
     const path = join(root, id);
+    // "wx" proves this call created the file, so a failed registration may remove it.
     const file = await open(path, "wx+", 0o600);
+    let registered = false;
     try {
       await file.writeFile(bytes);
       await file.sync();
@@ -158,8 +268,13 @@ export class SocialMediaCustody {
           .prepare("INSERT INTO social_media_claims VALUES (?,?,?,?,?)")
           .run(id, "upload", scope.accountId, id, "active");
       });
+      registered = true;
     } finally {
       await file.close();
+      if (!registered)
+        await rm(path, { force: true }).catch((error) =>
+          console.error("Social media orphan cleanup failed:", error),
+        );
     }
   }
 

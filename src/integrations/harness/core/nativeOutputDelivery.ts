@@ -241,6 +241,27 @@ function ownerKnown(value: Source): boolean {
     (value.streamKind === "sse" || value.processId !== null)
   );
 }
+/** A sealed stream that is either fully delivered or already unavailable (and
+ * so will deliver nothing more), with no causal work in flight, can no longer
+ * change what is delivered. Evicting one keeps the stream cap bounded by live
+ * work instead of by the process lifetime. Session-level retention stays
+ * recorded in unavailableSessions and construction invalidations. A late
+ * duplicate for an evicted key is re-recorded and fails closed for that stream. */
+function evictSettledStream(): boolean {
+  for (const [id, stream] of runtime.streams) {
+    if (
+      stream.terminal?.state !== "sealed" ||
+      stream.causalPending > 0 ||
+      (!stream.unavailable &&
+        (stream.pending.size > 0 || stream.deliveredThrough !== stream.observedThrough))
+    )
+      continue;
+    runtime.streams.delete(id);
+    runtime.outcomesByStream.delete(stream);
+    return true;
+  }
+  return false;
+}
 function record(value: Source): Stream | null {
   const id = key(value);
   const previous = runtime.streams.get(id);
@@ -250,7 +271,7 @@ function record(value: Source): Stream | null {
     if (invalidation) unavailable(previous, invalidation);
     return previous;
   }
-  if (runtime.streams.size >= MAX_STREAMS) {
+  if (runtime.streams.size >= MAX_STREAMS && !evictSettledStream()) {
     runtime.overflow = true;
     return null;
   }

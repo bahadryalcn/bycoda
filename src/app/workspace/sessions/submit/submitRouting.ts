@@ -16,7 +16,10 @@ import { parseShellCommand } from "../../../../features/sessions/model/shellRun"
 import { isClearSessionCommand } from "../../../../features/sessions/model/newSessionCommand";
 import { submitClearConversation } from "./submitClearConversation";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
-import { sameQueueValue } from "../../../../features/connections/model/sharedQueue";
+import {
+  QueueDeferredError,
+  sameQueueValue,
+} from "../../../../features/connections/model/sharedQueue";
 import { ADOPTED_RUNNING_REASON } from "../../../../features/connections/model/adoptedSessions";
 import { adoptedFollowUpPending } from "../../../../features/connections/model/adoptedSessionCommands";
 
@@ -86,10 +89,21 @@ export function routeSubmitSession(
       return refuse(
         t("The computer that runs this conversation is not connected. Your message is kept."),
       );
-    return !!actions.submit(text, attachments, options);
+    const accepted = actions.submit(text, attachments, options);
+    // The pane's binding changed while the send was handed over: the text stays
+    // in the composer, and the reason is said rather than dropped silently.
+    if (accepted === undefined)
+      return refuse(
+        t("The conversation changed before this message was sent. Your message is kept."),
+      );
+    return !!accepted;
   }
-  if (sharedLocalQueueClaiming(sessionId) && !options?.sharedQueueClaimed)
+  if (sharedLocalQueueClaiming(sessionId) && !options?.sharedQueueClaimed) {
+    // A queued row waits for the claim in progress: a temporary hold, not a refusal.
+    if (options?.queuedMessageId)
+      throw new QueueDeferredError(t("A queued message is being sent. Send again in a moment."));
     return refuse(t("A queued message is being sent. Send again in a moment."));
+  }
   if (options?.queuedMessageId && !options.sharedQueueClaimed && !remote?.continuingElsewhere) {
     const queuedGeneration = turnGen.current.get(sessionId);
     const selected = remote?.queuedMessages?.find(

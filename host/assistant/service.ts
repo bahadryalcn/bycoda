@@ -106,6 +106,7 @@ import {
 import type { AssistantOwnerQuestion } from "../../src/shared/model/assistantOwnerQuestions";
 import { replaceControlCharacters } from "../../src/shared/lib/controlCharacters";
 import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
+import { isoTimestamp, type TimestampInput } from "../../src/shared/lib/time/timestamps";
 import {
   runRoomManagementTurn,
   type RoomManagementCall,
@@ -114,6 +115,10 @@ import {
   type RoomManagementTurnResult,
   type RoomManagementTurnState,
 } from "./management/assistant-management-turn";
+import { newRequestId } from "../../src/shared/lib/id/requestId";
+
+/** UTC calendar day (YYYY-MM-DD) of a timestamp; empty when it cannot be parsed. */
+const utcDay = (at: TimestampInput): string => isoTimestamp(at)?.slice(0, 10) ?? "";
 
 export type AssistantPrincipal = "owner" | "assistant" | "chief";
 export type AssistantUsageTurn = {
@@ -2713,7 +2718,7 @@ export class HostAssistant {
         if (activity)
           await this.appendDailyNote(await this.profile(), [activity], {
             strict: true,
-            day: new Date(event.at).toISOString().slice(0, 10),
+            day: utcDay(event.at),
           });
         await this.store.transaction(
           () => this.setRuntime(key, { ...recorded!, noteDelivered: true }),
@@ -5087,7 +5092,7 @@ export class HostAssistant {
         if (
           !/^\d{4}-\d{2}-\d{2}$/.test(input.day) ||
           !Number.isFinite(Date.parse(input.day)) ||
-          new Date(input.day).toISOString().slice(0, 10) !== input.day ||
+          utcDay(input.day) !== input.day ||
           Math.abs(Date.parse(input.day) - this.now()) > 2 * DAY
         )
           throw new Error("Daily briefing requires a current local calendar date.");
@@ -5483,7 +5488,7 @@ export class HostAssistant {
     }, "critical");
   }
   private async usage(profile: AssistantProfile, includeCache = false): Promise<AssistantUsage> {
-    const day = new Date(this.now()).toISOString().slice(0, 10);
+    const day = utcDay(this.now());
     const old = await this.runtime<AssistantUsage>(`usage:${day}`, {
       day,
       chiefTokens: 0,
@@ -5691,7 +5696,7 @@ export class HostAssistant {
         cacheTimeKnown?: boolean;
       } | null>(key, null);
       const timestamp = turn.at === undefined ? this.now() : turn.at;
-      const day = previous?.day ?? new Date(timestamp).toISOString().slice(0, 10);
+      const day = previous?.day ?? utcDay(timestamp);
       const observed = Math.max(previous?.tokens ?? 0, turn.tokens);
       const delta = observed - (previous?.tokens ?? 0);
       const cacheMetrics = assistantCacheMeasurement(turn.cacheMetrics) ?? previous?.cacheMetrics;
@@ -5701,7 +5706,7 @@ export class HostAssistant {
           Number.isSafeInteger(turn.at) &&
           turn.at >= 0 &&
           turn.at <= this.now() &&
-          new Date(turn.at).toISOString().slice(0, 10) === day);
+          utcDay(turn.at) === day);
       if (
         previous &&
         delta === 0 &&
@@ -5945,7 +5950,7 @@ export class HostAssistant {
         );
         if (wakes >= assistantPolicy(profile).chiefWakeLimit || tokenCap < 1000) return;
         intent = {
-          operationId: randomUUID(),
+          operationId: newRequestId(),
           day: usage.day,
           tokenCap,
           eventIds: events.map((event) => event.id),
@@ -6786,7 +6791,7 @@ export class HostAssistant {
       if (options.strict) throw new Error("Global assistant notes are unavailable on this Host.");
       return;
     }
-    const title = `${profile.name || "Computer use"} · ${options.day ?? new Date(this.now()).toISOString().slice(0, 10)}`;
+    const title = `${profile.name || "Computer use"} · ${options.day ?? utcDay(this.now())}`;
     if (await this.runtime(`notebookSuppressed:${title}`, false)) return;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -6797,7 +6802,7 @@ export class HostAssistant {
           .filter((event) => !note?.body.includes(`<!-- assistant-event:${event.id} -->`))
           .map(
             (event) =>
-              `- ${new Date(event.createdAt).toISOString().slice(11, 16)} UTC · ${event.summary} <!-- assistant-event:${event.id} -->`,
+              `- ${isoTimestamp(event.createdAt)?.slice(11, 16) ?? "--:--"} UTC · ${event.summary} <!-- assistant-event:${event.id} -->`,
           );
         if (!additions.length) return;
         const body = [note?.body ?? "", ...additions].filter(Boolean).join("\n");

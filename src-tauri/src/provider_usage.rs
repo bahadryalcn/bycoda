@@ -187,9 +187,6 @@ fn fnv1a(text: &str) -> u64 {
 
 /// Bumped whenever the parsers or this layout change what a file yields.
 const CACHE_VERSION: u32 = 2;
-/// How often a changed cache is written back. Between writes it lives in memory,
-/// so a growing log costs one write per interval, not one per scan. A crash only
-/// loses incremental progress, which the next scan reads again.
 
 /// One request in the cache: key, time, model and project (indexes into the
 /// file's strings), then the five token counts.
@@ -329,11 +326,9 @@ fn keep_cache(path: &Path, cache: ScanCache, saved_at: Option<Instant>, unsaved:
     let mut unsaved = unsaved;
     // Persist each changed scan: a final scan may be followed immediately by
     // process exit, with no later call available to flush the cache.
-    if unsaved {
-        if save_cache(path, &cache) {
-            saved_at = Some(Instant::now());
-            unsaved = false;
-        }
+    if unsaved && save_cache(path, &cache) {
+        saved_at = Some(Instant::now());
+        unsaved = false;
     }
     let mut held = CACHES.lock().unwrap_or_else(|error| error.into_inner());
     let caches = held.get_or_insert_with(HashMap::new);

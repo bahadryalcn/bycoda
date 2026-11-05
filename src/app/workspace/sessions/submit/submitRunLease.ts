@@ -16,6 +16,8 @@ import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { queueSubmittedFollowUp } from "./submitBusySteer";
 import { beginSendStarting, claimStartingGeneration } from "./submitStarting";
 import { showSubmitNotice } from "./submitNotice";
+import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
+import { t } from "../../../../shared/i18n";
 
 /** Conversations whose send is waiting for its lease, by the generation that owns the wait. */
 const starting = new Map<string, number>();
@@ -44,6 +46,12 @@ async function settleWithin(work: Promise<unknown> | undefined, ms: number): Pro
     clearTimeout(timer);
   }
 }
+
+/** A queued row whose turn changed while it waited: it stays queued for a later look. */
+const turnChangedDeferral = () =>
+  new QueueDeferredError(
+    t("The conversation changed while this queued message was waiting. It remains queued."),
+  );
 
 /**
  * Takes the conversation's run lease from the home host just before a turn
@@ -132,6 +140,8 @@ export function gateRunLease(
       // reads this as a wait, not as a refused send.
       if (!isCurrent()) {
         recoverUnstarted();
+        // A queue row stays queued: the turn changed, which is a wait, not a refusal.
+        if (options?.queuedMessageId) throw turnChangedDeferral();
         return false;
       }
       sending.release(true);
@@ -166,6 +176,7 @@ export function gateRunLease(
         await settleWithin(preparation, PREPARATION_WAIT_MS);
         if (!isCurrent()) {
           recoverUnstarted();
+          if (options?.queuedMessageId) throw turnChangedDeferral();
           return false;
         }
         // The turn adds the message next, so the starting row goes now; `busy`

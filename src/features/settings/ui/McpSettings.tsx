@@ -743,7 +743,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             className={styles.list}
             items={visible}
             itemKey={serverRowKey}
-            stateKey={`${stateKey}:${effectiveFilter}:${scopeFilter}:${query}`}
+            stateKey={`${stateKey}:${effectiveFilter}:${scopeFilter}`}
             estimateSize={88}
             renderItem={(server) => {
               // Until Claude reports health, a configured Claude row is unknown, not signed out.

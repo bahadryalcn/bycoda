@@ -193,6 +193,38 @@ type JobDraft = Omit<AssistantJobDraft, "idempotencyKey" | "projectIds"> & {
   key: string;
 };
 
+const jobIntentsKey = "bycoda.assistant.job-intents";
+/** Null when storage cannot be read; callers then fall back to the in-memory map. */
+function readJobIntents(): Record<string, string> | null {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(jobIntentsKey) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  } catch {
+    return null;
+  }
+}
+/**
+ * Read-modify-write of the shared job-intent map: other windows may have added or removed
+ * keys since this window last read them, so the mutation applies to the stored map, not to a
+ * stale whole-map copy.
+ */
+function commitJobIntents(
+  memory: { current: Record<string, string> },
+  mutate: (intents: Record<string, string>) => void,
+) {
+  const intents = readJobIntents() ?? { ...memory.current };
+  mutate(intents);
+  memory.current = intents;
+  try {
+    localStorage.setItem(jobIntentsKey, JSON.stringify(intents));
+  } catch {
+    /* Keep the current intent in memory. */
+  }
+  return intents;
+}
+
 function draftText(key: string) {
   try {
     return localStorage.getItem(key) ?? "";
@@ -382,24 +414,23 @@ export function AssistantView(props: AssistantViewProps) {
         /* Save validates durable intent before dispatch. */
       }
   }, [jobReview, jobText, jobReviewFrozen]);
-  const jobIntents = useRef<Record<string, string>>(
-    (() => {
-      try {
-        return JSON.parse(localStorage.getItem("bycoda.assistant.job-intents") ?? "{}");
-      } catch {
-        return {};
-      }
-    })(),
-  );
+  const jobIntents = useRef<Record<string, string>>(readJobIntents() ?? {});
+  useEffect(() => {
+    // Another window wrote the map: refresh the in-memory copy so new keys are reused here.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== jobIntentsKey) return;
+      jobIntents.current = readJobIntents() ?? jobIntents.current;
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   function jobKey(title: string, projectId: string, projectIds: readonly string[] = [projectId]) {
     const source = assistantJobDraftIdentity(title, projectId, projectIds);
-    const key = jobIntents.current[source] ?? operationId();
-    jobIntents.current[source] = key;
-    try {
-      localStorage.setItem("bycoda.assistant.job-intents", JSON.stringify(jobIntents.current));
-    } catch {
-      /* Keep the current intent in memory. */
-    }
+    let key = "";
+    commitJobIntents(jobIntents, (intents) => {
+      key = intents[source] ?? operationId();
+      intents[source] = key;
+    });
     return key;
   }
   function reviewIntent(draft: JobDraft) {
@@ -415,28 +446,23 @@ export function AssistantView(props: AssistantViewProps) {
     assistantJobDraftVisible(reviewedDraft(draft), canSeeProject);
   function updateJobDraft(id: string, patch: Partial<JobDraft>) {
     if (jobReviewFrozen || pending) return;
+    const row = jobReview?.find((candidate) => candidate.id === id);
+    if (!row) return;
+    const next = { ...row, ...patch };
+    if (next.kind === "quick" && next.quickAction?.kind === "automation") {
+      next.projectId = next.quickAction.projectId;
+      next.projectIds = next.projectId ? [next.projectId] : [];
+    }
+    // The intent key is resolved here, outside the state updater, so the updater stays pure.
+    const source = reviewIntent(next);
+    let key = "";
+    commitJobIntents(jobIntents, (intents) => {
+      key = intents[source] ?? operationId();
+      intents[source] = key;
+    });
+    next.key = key;
     setJobReview(
-      (current) =>
-        current?.map((row) => {
-          if (row.id !== id) return row;
-          const next = { ...row, ...patch };
-          if (next.kind === "quick" && next.quickAction?.kind === "automation") {
-            next.projectId = next.quickAction.projectId;
-            next.projectIds = next.projectId ? [next.projectId] : [];
-          }
-          const source = reviewIntent(next);
-          next.key = jobIntents.current[source] ?? operationId();
-          jobIntents.current[source] = next.key;
-          try {
-            localStorage.setItem(
-              "bycoda.assistant.job-intents",
-              JSON.stringify(jobIntents.current),
-            );
-          } catch {
-            /* Retain current identity. */
-          }
-          return next;
-        }) ?? null,
+      (current) => current?.map((candidate) => (candidate.id === id ? next : candidate)) ?? null,
     );
   }
 
@@ -775,12 +801,9 @@ export function AssistantView(props: AssistantViewProps) {
     });
     if (result) {
       localStorage.removeItem("bycoda.assistant.job-review");
-      for (const draft of jobReview) delete jobIntents.current[reviewIntent(draft)];
-      try {
-        localStorage.setItem("bycoda.assistant.job-intents", JSON.stringify(jobIntents.current));
-      } catch {
-        /* Keep current accepted receipts. */
-      }
+      commitJobIntents(jobIntents, (intents) => {
+        for (const draft of jobReview) delete intents[reviewIntent(draft)];
+      });
       jobBatch.current = null;
       jobReviewEnvironment.current = undefined;
       setJobReviewFrozen(false);
@@ -856,8 +879,23 @@ export function AssistantView(props: AssistantViewProps) {
 
   return (
     <main className={styles.room} aria-label={identity.room}>
-      <LiveText className="sr-only" mode="assertive" text={error?.text || readError || projectReadError || ""} />
-      <LiveText className="sr-only" text={pending?.label || returnMessage || (undo ? `${t("Deleted")}: ${undo.label}` : deletedNoteWithoutReceipt ? `${t("Deleted")}: ${deletedNoteWithoutReceipt}` : "")} />
+      <LiveText
+        className="sr-only"
+        mode="assertive"
+        text={error?.text || readError || projectReadError || ""}
+      />
+      <LiveText
+        className="sr-only"
+        text={
+          pending?.label ||
+          returnMessage ||
+          (undo
+            ? `${t("Deleted")}: ${undo.label}`
+            : deletedNoteWithoutReceipt
+              ? `${t("Deleted")}: ${deletedNoteWithoutReceipt}`
+              : "")
+        }
+      />
       <header className={styles.header}>
         <div className={styles.heading}>
           <h1>{identity.name || identity.title}</h1>
@@ -1097,11 +1135,7 @@ export function AssistantView(props: AssistantViewProps) {
           )}
           {errorFor("presence")}
           {errorFor("presence.return")}
-          {returnMessage && (
-            <p className={styles.muted}>
-              {returnMessage}
-            </p>
-          )}
+          {returnMessage && <p className={styles.muted}>{returnMessage}</p>}
           {errorFor("pauseAll")}
           {snapshot.chiefReview?.blocked && (
             <div className={styles.feedback}>
@@ -1446,9 +1480,7 @@ export function AssistantView(props: AssistantViewProps) {
                   </div>
                 </div>
                 {!jobDraftVisible && (
-                  <p className={styles.muted}>
-                    {t("The selected project is no longer visible.")}
-                  </p>
+                  <p className={styles.muted}>{t("The selected project is no longer visible.")}</p>
                 )}
                 {!snapshot.capabilities.jobs && (
                   <p className={styles.muted}>{t("Job execution is unavailable on this Host.")}</p>
@@ -1603,9 +1635,7 @@ export function AssistantView(props: AssistantViewProps) {
                     </div>
                   )}
                 {!snapshot.capabilities.notes && (
-                  <p className={styles.muted}>
-                    {t("Global notes are unavailable on this Host.")}
-                  </p>
+                  <p className={styles.muted}>{t("Global notes are unavailable on this Host.")}</p>
                 )}
                 <div className={noteStyles.collection}>
                   {snapshot.notes
@@ -2514,9 +2544,16 @@ function JobOwnerEditDialog({
             }
           />
         )}
-        <LiveText className={styles.muted} text={draft.intent ? t(
-          "This request is retained on its original computer. Check its status before taking another action.",
-        ) : ""} />
+        <LiveText
+          className={styles.muted}
+          text={
+            draft.intent
+              ? t(
+                  "This request is retained on its original computer. Check its status before taking another action.",
+                )
+              : ""
+          }
+        />
         {error && <InlineError className={styles.error}>{error}</InlineError>}
         {draftStorageError && (
           <InlineError className={styles.error}>
@@ -3989,12 +4026,24 @@ function ConversationPanel({
           )}
           {messageElements}
           <LiveText className="sr-only" mode="assertive" text={error} />
-          <LiveText className="sr-only" text={searching ? t("Loading...") : summaryRefreshing ? t("Updating conversation summary") : summaryLabel || ""} />
-          {error && <InlineError className={styles.feedback} live="off">{error}{" "}
-            <Button disabled={pending || clearing} onClick={() => void checkConversation()}>
-              {t("Check conversation")}
-            </Button>
-          </InlineError>}
+          <LiveText
+            className="sr-only"
+            text={
+              searching
+                ? t("Loading...")
+                : summaryRefreshing
+                  ? t("Updating conversation summary")
+                  : summaryLabel || ""
+            }
+          />
+          {error && (
+            <InlineError className={styles.feedback} live="off">
+              {error}{" "}
+              <Button disabled={pending || clearing} onClick={() => void checkConversation()}>
+                {t("Check conversation")}
+              </Button>
+            </InlineError>
+          )}
         </div>
         {draftSaveError && (
           <InlineError className={`${styles.error} shrink-0 px-5 py-2`}>
@@ -4297,8 +4346,14 @@ function NoteEditor({
             setDraft(controller.value);
           }}
         />
-        <LiveText className={styles.muted} text={draft.intent && !pending
-          ? t("Note save is pending. Retry to verify the original note.") : ""} />
+        <LiveText
+          className={styles.muted}
+          text={
+            draft.intent && !pending
+              ? t("Note save is pending. Retry to verify the original note.")
+              : ""
+          }
+        />
       </form>
     </Modal>
   );

@@ -121,7 +121,11 @@ export function useComposerFileDrop({
       if (Date.now() - nativeDropAt < 250) return;
       const files = filesFromClipboard(data);
       if (files.length === 0) return;
-      readDroppedAttachments(() => persistBlobs === undefined ? attachmentsFromFiles(files) : attachmentsFromFiles(files, { persistBlobs }));
+      readDroppedAttachments(() =>
+        persistBlobs === undefined
+          ? attachmentsFromFiles(files)
+          : attachmentsFromFiles(files, { persistBlobs }),
+      );
     };
 
     const onExplorerFilePointerDrag = (event: Event) => {

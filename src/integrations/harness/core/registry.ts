@@ -1257,7 +1257,9 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
       : undefined;
   const endPhase = beginHandoffPhase(harness, "stopping");
   try {
-    await retireProviderOwnerAndCommands(sessionId, () => adapter.forgetSession(sessionId, context));
+    await retireProviderOwnerAndCommands(sessionId, () =>
+      adapter.forgetSession(sessionId, context),
+    );
     if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
     retireProviderEpoch(
       cancellationEpoch,

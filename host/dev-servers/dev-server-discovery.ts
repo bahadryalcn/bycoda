@@ -498,10 +498,12 @@ export class DevServerDiscovery implements ProcessDiscovery {
         throw new Error(
           "Process identity changed or Windows birth identity is invalid; refresh before stopping it",
         );
+      // A PID that no longer exists has already exited: GetProcessById throws
+      // ArgumentException, which is treated as a completed stop (matches Linux).
       // Opening Handle pins the process object. Kill() uses that cached handle,
       // so PID reuse between validation and the actual signal cannot target a new process.
       await this.powershell(
-        `$ErrorActionPreference='Stop';$target=[System.Diagnostics.Process]::GetProcessById(${identity.pid});try{$null=$target.Handle;$birth=$target.StartTime.ToUniversalTime().Ticks.ToString();if($birth -cne '${identity.startedAt}'){throw 'Process identity changed'};${force ? "$target.Kill()" : "$null=$target.CloseMainWindow()"}}finally{$target.Dispose()}`,
+        `$ErrorActionPreference='Stop';$target=$null;try{$target=[System.Diagnostics.Process]::GetProcessById(${identity.pid})}catch [System.ArgumentException]{};if($null -ne $target){try{$null=$target.Handle;$birth=$target.StartTime.ToUniversalTime().Ticks.ToString();if($birth -cne '${identity.startedAt}'){throw 'Process identity changed'};${force ? "$target.Kill()" : "$null=$target.CloseMainWindow()"}}finally{$target.Dispose()}}`,
       );
     } else if (this.platform === "linux") {
       // Re-read boot ID and /proc start ticks in the same helper immediately before kill.

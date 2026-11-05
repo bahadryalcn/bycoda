@@ -752,9 +752,8 @@ mod tests {
             release_tx.send(()).unwrap();
             let result = worker.join().unwrap();
             checker.join().unwrap();
-            assert_eq!(
+            assert!(
                 unlocked.unwrap(),
-                true,
                 "cleanup held the shared lifecycle lock"
             );
             assert_eq!(result.is_ok(), reused);

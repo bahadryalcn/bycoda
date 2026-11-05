@@ -5,7 +5,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
-import { Annotation, Compartment, Prec } from "@codemirror/state";
+import { Annotation, Compartment, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -62,6 +62,18 @@ export function runMarkdownCommand(view: EditorView, command: MarkdownCommand) {
   });
   view.focus();
   return true;
+}
+
+// CodeMirror documents are immutable, so one string per document version serves the
+// input-retention check and the change listener of the same transaction.
+const documentTexts = new WeakMap<Text, string>();
+function documentText(doc: Text): string {
+  let text = documentTexts.get(doc);
+  if (text === undefined) {
+    text = doc.toString();
+    documentTexts.set(doc, text);
+  }
+  return text;
 }
 
 // The owning pane scrolls, so the editor grows with its text.
@@ -217,7 +229,7 @@ export function NoteMarkdownEditor({
           drop: (event) => [...(event.dataTransfer?.types ?? [])].includes("Files"),
         }),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) documentValue.current = update.state.doc.toString();
+          if (update.docChanged) documentValue.current = documentText(update.state.doc);
           if (update.docChanged || update.startState.readOnly !== update.state.readOnly)
             inputRef.current?.changed();
           if (!update.docChanged) return;
@@ -269,7 +281,7 @@ export function NoteMarkdownEditor({
       if (
         next &&
         transactions.some((transaction) => transaction.docChanged) &&
-        !canRetainNoteInputText(inputObserver, next.toString())
+        !canRetainNoteInputText(inputObserver, documentText(next))
       )
         return;
       update.call(view, transactions);

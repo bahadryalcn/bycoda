@@ -33,6 +33,7 @@ export async function handleSessionsRpc(
     | "desktopDelete"
     | "invalidateSessionCopies"
     | "sessionQueues"
+    | "handoffHistory"
     | "commandService"
     | "withinBeat"
     | "desktopCommandDelivery"
@@ -438,6 +439,9 @@ export async function handleSessionsRpc(
               }
               dependencies.invalidateSessionCopies(sessionId, project.id);
               await dependencies.sessionQueues.delete(sessionId);
+              await dependencies.handoffHistory
+                .retireSession(sessionId)
+                .catch((error) => console.warn("Deleted session handoff history retained:", error));
               await dependencies.engine.checkpoints
                 .retireDeletedSessionHistory(sessionId, historyCwd)
                 .then((result) => {
@@ -458,6 +462,9 @@ export async function handleSessionsRpc(
             });
             dependencies.invalidateSessionCopies(sessionId, current.projectId);
             await dependencies.sessionQueues.delete(sessionId);
+            await dependencies.handoffHistory
+              .retireSession(sessionId)
+              .catch((error) => console.warn("Deleted session handoff history retained:", error));
             await dependencies.engine.checkpoints
               .retireDeletedSessionHistory(sessionId, current.session.cwd)
               .then((result) => {

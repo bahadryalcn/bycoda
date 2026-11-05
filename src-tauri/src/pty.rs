@@ -1,7 +1,5 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-#[cfg(unix)]
-use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -342,6 +340,8 @@ impl PtyHost {
         Some(source.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
+    // The Windows exit path retires a terminal by pid; tests exercise it on every platform.
+    #[cfg(any(windows, test))]
     fn remove_if_pid(&self, id: &str, pid: u32) -> Option<Arc<LivePty>> {
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if sessions.get(id).map(|live| live.pid) != Some(pid) {
@@ -962,6 +962,7 @@ pub fn pty_status(
 }
 
 /// A hidden terminal that exits still delivers what it held before the exit notice.
+#[cfg(windows)]
 fn release_held_output(host: &PtyHost, app: &AppHandle, id: &str, pid: u32) {
     if let Some(live) = host.get(id).filter(|live| live.pid == pid) {
         live.output.set_enabled(false);
@@ -1197,6 +1198,7 @@ fn spawn_unix(
                     }
                     Ok(n) => {
                         acc.extend_from_slice(&buf[..n]);
+                        unix_child::output_read(&mut exit_deadline);
                         last_emit = Instant::now();
                     }
                     Err(error) => {
@@ -1228,7 +1230,10 @@ fn spawn_unix(
                         complete = true;
                         break;
                     }
-                    Ok(n) => acc.extend_from_slice(&buf[..n]),
+                    Ok(n) => {
+                        acc.extend_from_slice(&buf[..n]);
+                        unix_child::output_read(&mut exit_deadline);
+                    }
                     Err(error) => {
                         complete =
                             cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
@@ -2568,6 +2573,8 @@ mod queued_writer_tests {
             writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
             #[cfg(unix)]
             master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2646,6 +2653,8 @@ mod queued_writer_tests {
             })),
             #[cfg(unix)]
             master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2716,6 +2725,8 @@ mod queued_writer_tests {
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]
                 master_fd: std::fs::File::open("/dev/null").unwrap(),
+                #[cfg(unix)]
+                child: None,
                 #[cfg(windows)]
                 master: Mutex::new(pair.master),
                 pid: 0,

@@ -98,9 +98,9 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
     if (previous.status === "queued" && !input.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
     await context.store.project(previous.projectId);
     const {
-      verifyCommand,
-      autoMerge,
-      continueUntilDone,
+      verifyCommand: _verifyCommand,
+      autoMerge: _autoMerge,
+      continueUntilDone: _continueUntilDone,
       crewDefinitionId: _crewDefinitionId,
       workspace: _workspace,
       ...kept
@@ -151,7 +151,13 @@ export async function move(
   if (context.delivering.has(id)) throw new Error("This task is being merged.");
   const { task, generation } = await context.transaction(async () => ({
     task: await context.find(id),
-    generation: Number((await context.store.db.prepare("SELECT generation FROM task_admission_generation WHERE id=?").get(id))?.generation ?? 0),
+    generation: Number(
+      (
+        await context.store.db
+          .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
+          .get(id)
+      )?.generation ?? 0,
+    ),
   }));
   if (!task) throw new Error("Task not found.");
   if (expectedGeneration !== undefined && generation !== expectedGeneration)
@@ -213,22 +219,22 @@ export async function move(
     // stays on its branch, and the next run continues there. A task put
     // back to to-do is cleared the same way.
     const {
-      sessionId,
-      runId,
-      error,
-      needsInput,
-      startedAt,
-      completedAt,
-      verification,
-      reviewOnly,
-      awaitingOwnerRestart,
-      reviewer,
+      sessionId: _sessionId,
+      runId: _runId,
+      error: _error,
+      needsInput: _needsInput,
+      startedAt: _startedAt,
+      completedAt: _completedAt,
+      verification: _verification,
+      reviewOnly: _reviewOnly,
+      awaitingOwnerRestart: _awaitingOwnerRestart,
+      reviewer: _reviewer,
       crewExecutionId: _crewExecutionId,
-      diffStat,
-      mergeError,
-      mergeRetry,
-      autoMerged,
-      mergedAt,
+      diffStat: _diffStat,
+      mergeError: _mergeError,
+      mergeRetry: _mergeRetry,
+      autoMerged: _autoMerged,
+      mergedAt: _mergedAt,
       deliveredCommit: _deliveredCommit,
       ownerNotices: _ownerNotices,
       completedWithFindings,
@@ -253,8 +259,8 @@ export async function move(
         generation,
       );
     const {
-      branch,
-      worktreeCwd,
+      branch: _branch,
+      worktreeCwd: _worktreeCwd,
       workspaceId: _workspaceId,
       workspaceGenerationId: _workspaceGenerationId,
       workspaceActivityId: _workspaceActivityId,
@@ -264,22 +270,22 @@ export async function move(
       artifactDeliveryPending: _artifactDeliveryPending,
       artifactDeliveryActivityId: _artifactDeliveryActivityId,
       finalization: _finalization,
-      baseBranch,
-      baseCommit,
+      baseBranch: _baseBranch,
+      baseCommit: _baseCommit,
       deliveryCwd: _deliveryCwd,
-      merged,
-      retryFeedback,
-      repairAttempts,
-      repairNote,
-      repairStop,
-      attemptHistory,
-      mergeRepair,
-      cleanupError,
-      cleanupRetryAfter,
-      dependencyArtifactsPrepared,
-      artifactPaths,
-      artifactHashes,
-      deliveryRequested,
+      merged: _merged,
+      retryFeedback: _retryFeedback,
+      repairAttempts: _repairAttempts,
+      repairNote: _repairNote,
+      repairStop: _repairStop,
+      attemptHistory: _attemptHistory,
+      mergeRepair: _mergeRepair,
+      cleanupError: _cleanupError,
+      cleanupRetryAfter: _cleanupRetryAfter,
+      dependencyArtifactsPrepared: _dependencyArtifactsPrepared,
+      artifactPaths: _artifactPaths,
+      artifactHashes: _artifactHashes,
+      deliveryRequested: _deliveryRequested,
       ...fresh
     } = rest;
     return await context.write(

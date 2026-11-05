@@ -48,8 +48,10 @@ fn path_key(path: &str) -> String {
     if cfg!(windows) { value.to_lowercase() } else { value.to_owned() }
 }
 
+type CurrentRow = (String, i64, i64, Option<String>, Option<i64>, Option<String>, Option<i64>);
+
 fn current(conn: &Connection, id: &str, cwd: &str) -> Result<PinOutcome, String> {
-    let row: Option<(String, i64, i64, Option<String>, Option<i64>, Option<String>, Option<i64>)> = conn.query_row(
+    let row: Option<CurrentRow> = conn.query_row(
         "SELECT s.cwd,s.pinned,COALESCE((SELECT version FROM session_pin_versions WHERE session_id=s.id),0),f.environment_id,f.generation,f.phase,f.min_writer_protocol FROM sessions s LEFT JOIN native_authority_floor f ON f.session_id=s.id WHERE s.id=?1",
         [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?)),
     ).optional().map_err(|e| e.to_string())?;
@@ -106,6 +108,7 @@ pub async fn session_pin_receipt(app: tauri::AppHandle, window: tauri::Window, o
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn session_pin_apply(app: tauri::AppHandle, window: tauri::Window, operation_id: String,
     session_id: String, cwd: String, desired_pinned: bool, expected_version: i64, expected_authority: Option<NativePinAuthority>) -> Result<PinOutcome, String> {
     validate(&operation_id)?; validate(&session_id)?; validate(&cwd)?;
@@ -131,8 +134,7 @@ pub async fn session_pin_apply(app: tauri::AppHandle, window: tauri::Window, ope
                 }
                 let before = current(&tx, &session_id, &cwd)?;
                 let outcome = if before.pinned.is_none() || before.state == "refused" { before }
-                  else if before.authority != expected_authority { PinOutcome { state: "superseded".into(), ..before } }
-                  else if before.version != expected_version { PinOutcome { state: "superseded".into(), ..before } }
+                  else if before.authority != expected_authority || before.version != expected_version { PinOutcome { state: "superseded".into(), ..before } }
                   else {
                     let nonce = uuid::Uuid::new_v4().to_string();
                     if let Some(authority) = &before.authority {

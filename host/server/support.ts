@@ -107,8 +107,11 @@ export let rejectionGuards = 0;
 
 export let hostDegradedSince: number | undefined;
 
+export let unhandledRejectionCount = 0;
+
 export function logUnhandledRejection(reason: unknown) {
   hostDegradedSince ??= Date.now();
+  unhandledRejectionCount++;
   // Messages and absolute paths may contain prompts or credentials. Retain only
   // bounded frame locations, never arbitrary exception text or function names.
   const frames =
@@ -117,7 +120,7 @@ export function logUnhandledRejection(reason: unknown) {
           .split("\n")
           .slice(1, 17)
           .flatMap((line) => {
-            const match = /(?:^|[\\/])([\w.-]+\.[cm]?js):(\d+):(\d+)\)?\s*$/.exec(line);
+            const match = /(?:^|[\\/])([\w.-]+\.(?:[cm]?[jt]s|tsx)):(\d+):(\d+)\)?\s*$/.exec(line);
             return match ? [`${match[1]}:${match[2]}:${match[3]}`] : [];
           })
       : [];
@@ -126,7 +129,7 @@ export function logUnhandledRejection(reason: unknown) {
       ? reason.name
       : "UnknownError";
   console.warn(
-    `Host state may be degraded after an unhandled rejection (${name}).${frames.length ? ` Frames: ${frames.join(", ")}` : ""}`,
+    `Host state may be degraded after unhandled rejection #${unhandledRejectionCount} (${name}).${frames.length ? ` Frames: ${frames.join(", ")}` : ""}`,
   );
 }
 

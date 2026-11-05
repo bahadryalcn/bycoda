@@ -93,6 +93,46 @@ describe("automatic recovery", () => {
     unsubscribe();
   });
 
+  it("gives a blocked machine three quiet fresh attempts, then waits for Reconnect", async () => {
+    const blocked = Object.assign(new Error("RPC_WS_BLOCKED: Host authentication was refused"), {
+      code: "RPC_WS_BLOCKED",
+    });
+    request.mockRejectedValue(blocked);
+    recordRemoteConnection("env", blocked);
+    expect(readRemoteConnection("env").status).toBe("connection-blocked");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    // Focus and the network return do not add attempts beyond the quiet limit.
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request.mock.calls.every((call) => call[3] === true)).toBe(true);
+    expect(readRemoteConnection("env").status).toBe("connection-blocked");
+  });
+
+  it("starts the blocked attempts afresh once the machine has answered", async () => {
+    const blocked = Object.assign(new Error("RPC_WS_BLOCKED: Host authentication was refused"), {
+      code: "RPC_WS_BLOCKED",
+    });
+    request.mockRejectedValue(blocked);
+    recordRemoteConnection("env", blocked);
+    await vi.advanceTimersByTimeAsync(2_000 + 5_000 + 15_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    // The user's own Reconnect answers; a later block gets its quiet attempts again.
+    request.mockResolvedValue({ capabilities: [] });
+    await expect(reconnectRemoteMachine("env")).resolves.toEqual({ ok: true });
+    expect(readRemoteConnection("env").status).toBe("connected");
+    request.mockRejectedValue(blocked);
+    recordRemoteConnection("env", blocked);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(5);
+  });
+
   it("does not retry, or prompt, when SSH needs a password", async () => {
     recordRemoteConnection("env", denied);
     expect(readRemoteConnection("env").status).toBe("needs-auth");

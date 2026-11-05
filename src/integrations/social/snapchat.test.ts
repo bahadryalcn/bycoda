@@ -141,7 +141,11 @@ describe("Snapchat Public Profile API Spotlight", () => {
     const iv = Uint8Array.from(atob(metadata.iv), (character) => character.charCodeAt(0));
     const key = await crypto.subtle.importKey("raw", keyBytes, "AES-CBC", false, ["decrypt"]);
     const file = f.parts[0].get("file") as Blob;
-    expect(new Uint8Array(await crypto.subtle.decrypt({ name: "AES-CBC", iv }, key, await file.arrayBuffer()))).toEqual(bytes);
+    expect(
+      new Uint8Array(
+        await crypto.subtle.decrypt({ name: "AES-CBC", iv }, key, await file.arrayBuffer()),
+      ),
+    ).toEqual(bytes);
   });
   it("encrypts owner bytes with AES-256-CBC, uploads/finalizes and confirms the exact LIVE Spotlight under its actor", async () => {
     const f = fixture();

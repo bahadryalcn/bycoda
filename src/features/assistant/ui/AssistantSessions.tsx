@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Progress } from "../../../shared/ui/Progress";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
 import {
   workerContextAction,
@@ -161,12 +162,12 @@ function ManagedSessionRow({
           </span>
         )}
         {error && (
-          <div role="alert" className={styles.feedback}>
-            <span>{t(error)}</span>
-            <Button loading={loading} onClick={() => void refresh()}>
-              {t("Retry")}
-            </Button>
-          </div>
+          <InlineError
+            className={styles.feedback}
+            retry={{ onRetry: () => void refresh(), pending: loading }}
+          >
+            {t(error)}
+          </InlineError>
         )}
       </div>
       <AssistantManagedBadge management={current?.session.managedBy} compact />

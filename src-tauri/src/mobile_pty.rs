@@ -250,7 +250,7 @@ impl Registry {
             .entries
             .iter()
             .filter_map(|(id, entry)| {
-                if entry.input_unknown || entry.gap {
+                if entry.input_unknown {
                     return None;
                 }
                 if self
@@ -295,7 +295,6 @@ impl Registry {
         for (id, entry) in &self.entries {
             if entry.settled_at.is_some()
                 && !entry.input_unknown
-                && !entry.gap
                 && !self
                     .requests
                     .values()
@@ -317,20 +316,23 @@ impl Entry {
         self.code = code;
         self.mark_settled(now);
     }
+    /// The reader has stopped: `complete` is false when it gave up before EOF.
+    /// Either way no more output arrives, so the entry may settle.
     fn record_drain(&mut self, complete: bool, now: Instant) {
-        self.drained = complete;
+        self.drained = true;
         if !complete {
             self.gap = true;
+            // A pending input settles as an error here and is never resent: its
+            // sequence stays spent, since no fingerprint matches it any more.
+            if self.input_unknown {
+                self.input_unknown = false;
+                self.input_fingerprint.clear();
+            }
         }
         self.mark_settled(now);
     }
     fn mark_settled(&mut self, now: Instant) {
-        if self.physical_exit
-            && self.drained
-            && !self.input_unknown
-            && !self.gap
-            && self.settled_at.is_none()
-        {
+        if self.physical_exit && self.drained && !self.input_unknown && self.settled_at.is_none() {
             self.settled_at = Some(now);
         }
     }
@@ -622,16 +624,18 @@ pub async fn mobile_pty_call(
                 .entries
                 .get_mut(&id)
                 .ok_or("Mobile PTY creation interrupted")?;
-            let pending = result.is_err();
             let reply = match result {
                 Ok(()) => value.lease_dto(),
                 Err(_) => {
-                    value.exited = true;
-                    value.detached = true;
+                    // A failed spawn leaves no child or reader to report exit or
+                    // drain, so the entry retires now and its receipt settles.
+                    let now = Instant::now();
+                    value.record_exit(None, now);
+                    value.record_drain(true, now);
                     json!({"state":"unknown","message":"Mobile PTY creation outcome is unknown; never replay"})
                 }
             };
-            registry.requests.insert(key, Receipt { fingerprint: signature, result: reply.clone(), terminal_id: id, pending, close: false });
+            registry.requests.insert(key, Receipt { fingerprint: signature, result: reply.clone(), terminal_id: id, pending: false, close: false });
             return Ok(reply);
         }
         let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -972,13 +976,17 @@ mod tests {
             );
         }
         registry.prune(now + SETTLED_TTL * 100);
-        assert_eq!(registry.capacity(), (2, 0));
-        assert_eq!(registry.entries.len(), 2);
-        assert_eq!(registry.requests.len(), 2);
-        assert_eq!(registry.expired.set_bits, 0);
+        // An unknown input still blocks expiry; a gap alone no longer does (74b9b117).
+        assert_eq!(registry.capacity(), (1, 0));
+        assert_eq!(registry.entries.len(), 1);
+        assert!(registry.entries.contains_key("unknown-input"));
+        assert_eq!(registry.requests.len(), 1);
+        // The expired gap receipt stays fenced, so a retry cannot be admitted again.
+        assert!(registry.expired.contains("gap"));
+        assert!(!registry.expired.contains("unknown-input"));
     }
     #[test]
-    fn close_and_drain_do_not_prove_exit_and_failed_drain_blocks_retirement() {
+    fn close_and_drain_do_not_prove_exit_and_failed_drain_settles_without_replay() {
         let now = Instant::now();
         let mut value = test_entry("id", now);
         value.closed = true;
@@ -992,7 +1000,17 @@ mod tests {
         failed.record_exit(None, now);
         failed.record_drain(false, now);
         assert!(failed.gap);
-        assert!(failed.settled_at.is_none());
+        assert_eq!(failed.settled_at, Some(now));
+        // A failed drain with a pending input settles it as an error: the same
+        // sequence is never resent, and a stale sequence is refused.
+        let mut pending = test_entry("pending", now);
+        pending.record_exit(None, now);
+        assert!(pending.reserve_input(1, "bytes").unwrap());
+        pending.record_drain(false, now);
+        assert!(!pending.input_unknown);
+        assert!(pending.settled_at.is_some());
+        assert!(pending.reserve_input(1, "bytes").is_err());
+        assert!(pending.reserve_input(1, "bytes").is_err());
     }
     #[test]
     fn native_generation_rejects_replacement_and_stale_callbacks() {

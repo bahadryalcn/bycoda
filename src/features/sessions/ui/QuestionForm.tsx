@@ -109,9 +109,23 @@ function QuestionFormContent({
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [readingAttachments, setReadingAttachments] = useState(false);
   const attachmentFlight = useRef(false);
-  const recovery = useQuestionAttachmentRecovery(draft, readingAttachments, updateDraft, setAttachmentError, sessionId, questionDraftKey(draftScope, prompt), prompt, setReadingAttachments);
+  const recovery = useQuestionAttachmentRecovery(
+    draft,
+    readingAttachments,
+    updateDraft,
+    setAttachmentError,
+    sessionId,
+    questionDraftKey(draftScope, prompt),
+    prompt,
+    setReadingAttachments,
+  );
   const sending = submitting || prompt.delivery === "sending";
-  const transportHeld = questionTransportHeld(parentClosed, sending, localUnknown || draft.delivery === "unknown", prompt.delivery);
+  const transportHeld = questionTransportHeld(
+    parentClosed,
+    sending,
+    localUnknown || draft.delivery === "unknown",
+    prompt.delivery,
+  );
   const held = transportHeld || !reserved || readingAttachments || recovery.blocked;
 
   useEffect(() => {
@@ -157,18 +171,32 @@ function QuestionFormContent({
         if (!sessionId && incoming.some((file) => !file.path?.trim()))
           throw new Error(t("Question attachment session identity is unavailable"));
         const pending = sessionId
-          ? incoming.map((file) => pendingQuestionAttachment(file, questionDraftKey(draftScope, prompt), sessionId, questionAttachmentIdentity(prompt, question.id)))
+          ? incoming.map((file) =>
+              pendingQuestionAttachment(
+                file,
+                questionDraftKey(draftScope, prompt),
+                sessionId,
+                questionAttachmentIdentity(prompt, question.id),
+              ),
+            )
           : [];
         let staged = !sessionId;
-        if (sessionId) admission.apply(() => {
-          staged = updateDraft((current) => ({
-            ...current,
-            attachments: { ...current.attachments, [question.id]: [...(current.attachments?.[question.id] ?? []), ...pending] },
-          }));
-        });
+        if (sessionId)
+          admission.apply(() => {
+            staged = updateDraft((current) => ({
+              ...current,
+              attachments: {
+                ...current.attachments,
+                [question.id]: [...(current.attachments?.[question.id] ?? []), ...pending],
+              },
+            }));
+          });
         if (!staged) return;
         const prepared = sessionId
-          ? await prepareOwnedQuestionAttachments(incoming, pending, (error) => { if (mounted.current) setAttachmentError(String(error instanceof Error ? error.message : error)); })
+          ? await prepareOwnedQuestionAttachments(incoming, pending, (error) => {
+              if (mounted.current)
+                setAttachmentError(String(error instanceof Error ? error.message : error));
+            })
           : await prepareQuestionAttachments(incoming);
         admission.apply(() => {
           if (!mounted.current || !reservation.current?.current()) return;
@@ -177,7 +205,9 @@ function QuestionFormContent({
             attachments: {
               ...current.attachments,
               [question.id]: sessionId
-                ? (current.attachments?.[question.id] ?? []).map((file) => prepared.find((item) => item.id === file.id) ?? file)
+                ? (current.attachments?.[question.id] ?? []).map(
+                    (file) => prepared.find((item) => item.id === file.id) ?? file,
+                  )
                 : [...(current.attachments?.[question.id] ?? []), ...prepared],
             },
           }));
@@ -211,7 +241,10 @@ function QuestionFormContent({
   });
   const last = index >= total - 1;
   const ready = question
-    ? !Object.values(draft.attachments ?? {}).flat().some((file) => file.missing) && (questionIsComplete(question, answers, custom) || (canAttach && files.length > 0))
+    ? !Object.values(draft.attachments ?? {})
+        .flat()
+        .some((file) => file.missing) &&
+      (questionIsComplete(question, answers, custom) || (canAttach && files.length > 0))
     : false;
 
   const sendNow = (
@@ -257,7 +290,14 @@ function QuestionFormContent({
   const send = (reply: UserQuestionReply, action: QuestionDraft["pendingAction"] = "answer") => {
     const all = Object.values(draftRef.current.attachments ?? {}).flat();
     if (held || (reply.kind === "answered" && all.some((file) => file.missing))) return;
-    runQuestionAttachmentEffect(all, reply.kind === "answered" ? "retain" : "release", () => sendNow(reply, action), setReadingAttachments, setAttachmentError, attachmentFlight);
+    runQuestionAttachmentEffect(
+      all,
+      reply.kind === "answered" ? "retain" : "release",
+      () => sendNow(reply, action),
+      setReadingAttachments,
+      setAttachmentError,
+      attachmentFlight,
+    );
   };
   const finish = (
     nextAnswers = answers,
@@ -322,8 +362,22 @@ function QuestionFormContent({
 
   const skipCurrent = () => {
     if (held || submitted.current) return;
-    if (dismissEntirePrompt || prompt.dismissAction === "cancel" || prompt.dismissAction === "decline") { skipNow(); return; }
-    runQuestionAttachmentEffect(files, "release", skipNow, setReadingAttachments, setAttachmentError, attachmentFlight);
+    if (
+      dismissEntirePrompt ||
+      prompt.dismissAction === "cancel" ||
+      prompt.dismissAction === "decline"
+    ) {
+      skipNow();
+      return;
+    }
+    runQuestionAttachmentEffect(
+      files,
+      "release",
+      skipNow,
+      setReadingAttachments,
+      setAttachmentError,
+      attachmentFlight,
+    );
   };
   const continueCurrent = () => {
     if (!question || !ready || held || submitted.current) return;
@@ -341,7 +395,11 @@ function QuestionFormContent({
   const title = heading && heading !== question.prompt.trim() ? heading : undefined;
   const queued = prompt.delivery === "queued";
   const uncertain =
-    !queued && (prompt.delivery === "unknown" || localUnknown || draft.delivery === "unknown" || capacityIssue === "pending");
+    !queued &&
+    (prompt.delivery === "unknown" ||
+      localUnknown ||
+      draft.delivery === "unknown" ||
+      capacityIssue === "pending");
   const capacityMessage =
     capacityIssue === "capacity"
       ? t(
@@ -509,12 +567,24 @@ function QuestionFormContent({
               </Button>
               {files.length ? (
                 <div className="flex flex-wrap gap-2" aria-label={t("Attachments")}>
-                  <QuestionAttachmentList files={files} held={held} questionId={question.id} update={updateDraft} busy={setReadingAttachments} error={setAttachmentError} flight={attachmentFlight} />
+                  <QuestionAttachmentList
+                    files={files}
+                    held={held}
+                    questionId={question.id}
+                    update={updateDraft}
+                    busy={setReadingAttachments}
+                    error={setAttachmentError}
+                    flight={attachmentFlight}
+                  />
                 </div>
               ) : null}
             </div>
           ) : null}
-          <QuestionAttachmentError message={attachmentError} blocked={recovery.blocked} retry={recovery.retry} />
+          <QuestionAttachmentError
+            message={attachmentError}
+            blocked={recovery.blocked}
+            retry={recovery.retry}
+          />
         </fieldset>
         <div className={styles.footer}>
           <div className={styles.feedback}>
