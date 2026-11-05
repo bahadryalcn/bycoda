@@ -67,7 +67,11 @@ impl RetryState {
     }
 
     fn remaining(&self, now: u64) -> Option<Duration> {
-        (self.next_attempt > now).then(|| Duration::from_secs(self.next_attempt - now))
+        // A deadline beyond the maximum back-off can only come from a clock that
+        // moved backwards. Clamp it so a failed install is never blocked for good.
+        (self.next_attempt > now).then(|| {
+            Duration::from_secs((self.next_attempt - now).min(MAX_RETRY_INTERVAL.as_secs()))
+        })
     }
 }
 /// Another window's or a crashed run's lock is ignored after this long.
@@ -390,33 +394,13 @@ fn host_busy(base: &Path) -> Result<bool, ()> {
         .map_err(|_| ())
 }
 
-// Existing installations have no durable stop-intent or complete process-tree
-// idle proof. The explicit installer remains available to the owner; automatic
-// maintenance only admits a genuinely fresh profile.
+// Automatic maintenance may replace an existing install only when no owner
+// holds the profile and no session or shell is running. The owner's exclusive
+// transaction and the host activity read are the gates; the installed files,
+// the lock and the retry state are not evidence of activity themselves.
 fn automatic_activity(base: &Path) -> Result<bool, ()> {
     if !owner_verified_stopped(base) {
         return Err(());
-    }
-    let entries = std::fs::read_dir(base).map_err(|_| ())?;
-    for entry in entries {
-        let entry = entry.map_err(|_| ())?;
-        if entry.file_name() != "app-install.lock" {
-            return Err(());
-        }
-    }
-    for name in [
-        "runtime-path",
-        "running.json",
-        "service.ps1",
-        "host.db",
-        "owner.db",
-        "owner.lock",
-    ] {
-        match std::fs::metadata(base.join(name)) {
-            Ok(_) => return Err(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(()),
-        }
     }
     host_busy(base)
 }
@@ -468,21 +452,87 @@ fn archive_name() -> Option<&'static str> {
 
 struct InstallLock(PathBuf);
 
+/// A lock older than this was left by a crashed or killed app. The installer
+/// itself is bounded by `SCRIPT_TIMEOUT`, plus its tree-kill attempt.
+const STALE_INSTALL_LOCK: Duration = Duration::from_secs(30 * 60);
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> bool {
+    let Ok(pid) = i32::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    // Signal 0 only probes. EPERM means the process exists under another user.
+    if unsafe { libc::kill(pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
+#[cfg(not(unix))]
+fn process_alive(_pid: u32) -> bool {
+    // No portable liveness probe here; the age limit decides for these locks.
+    true
+}
+
+/// Whether an installer lock on disk still belongs to a running installer.
+/// A lock is stale when it is older than `STALE_INSTALL_LOCK` or its recorded
+/// owner process is gone. Unknown states count as held, never as reclaimable.
+fn install_lock_held(path: &Path) -> bool {
+    let modified = match std::fs::metadata(path) {
+        Ok(meta) => meta.modified().ok(),
+        Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
+    };
+    let fresh = modified.map_or(true, |time| match SystemTime::now().duration_since(time) {
+        Ok(age) => age < STALE_INSTALL_LOCK,
+        Err(_) => true,
+    });
+    if !fresh {
+        return false;
+    }
+    match std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok())
+    {
+        Some(pid) => process_alive(pid),
+        // Empty or legacy locks carry no owner; only their age can clear them.
+        None => true,
+    }
+}
+
 /// Whether this app's own host installer holds its lock right now.
 pub(crate) fn install_running(base: &Path) -> bool {
-    match std::fs::metadata(base.join("app-install.lock")) {
-        Ok(_) => true,
-        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
-    }
+    install_lock_held(&base.join("app-install.lock"))
 }
 
 impl InstallLock {
     fn acquire(base: &Path) -> Option<Self> {
         std::fs::create_dir_all(base).ok()?;
         let path = base.join("app-install.lock");
-        // Age alone cannot prove that a slow or orphaned installer retired.
-        std::fs::OpenOptions::new().write(true).create_new(true).open(&path).ok()?;
-        Some(Self(path))
+        // One reclaim of a stale lock; a lock that is still held fails closed.
+        for _ in 0..2 {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    let _ = write!(file, "{}", std::process::id());
+                    return Some(Self(path));
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::AlreadyExists
+                        && !install_lock_held(&path) =>
+                {
+                    std::fs::remove_file(&path).ok()?;
+                }
+                Err(_) => return None,
+            }
+        }
+        None
     }
 }
 
@@ -493,7 +543,13 @@ impl Drop for InstallLock {
 }
 
 /// Runs the bootstrap script against the bundled archive.
-fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool, lock: std::sync::Arc<InstallLock>) -> Result<(), String> {
+fn run_installer(
+    base: &Path,
+    archive: &Path,
+    upgrade: bool,
+    repair: bool,
+    lock: std::sync::Arc<InstallLock>,
+) -> Result<(), String> {
     let windows = cfg!(windows);
     let platform = if windows {
         HostPlatform::Windows
@@ -549,10 +605,18 @@ fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool, lock:
     run_with_timeout(command, SCRIPT_TIMEOUT, lock, script)
 }
 
-fn run_with_timeout(mut command: Command, timeout: Duration, lock: std::sync::Arc<InstallLock>, script: std::path::PathBuf) -> Result<(), String> {
+fn run_with_timeout(
+    mut command: Command,
+    timeout: Duration,
+    lock: std::sync::Arc<InstallLock>,
+    script: std::path::PathBuf,
+) -> Result<(), String> {
     let mut child = match command.spawn() {
         Ok(child) => child,
-        Err(error) => { let _ = std::fs::remove_file(&script); return Err(format!("Could not start the host installer: {error}")); }
+        Err(error) => {
+            let _ = std::fs::remove_file(&script);
+            return Err(format!("Could not start the host installer: {error}"));
+        }
     };
     let mut stderr = child.stderr.take();
     let reader = std::thread::spawn(move || {
@@ -582,14 +646,16 @@ fn run_with_timeout(mut command: Command, timeout: Duration, lock: std::sync::Ar
                     let _lock = lock;
                     crate::harness::terminate_all(&[child.id()]);
                     let _ = child.kill();
-                    // Keep the lock and script until actual process and pipe retirement.
-                    if child.wait().is_ok() {
-                        let _ = reader.join();
-                        let _ = std::fs::remove_file(&script);
+                    // A reaped child releases the lock normally. If its exit cannot be
+                    // confirmed, keep the lock until its owner process is gone or it ages out.
+                    match child.wait() {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(&script);
+                            drop(_lock);
+                            let _ = reader.join();
+                        }
+                        Err(_) => std::mem::forget(_lock),
                     }
-                    // Parent exit and closed stderr do not prove every descendant
-                    // retired after a bounded tree-kill attempt.
-                    std::mem::forget(_lock);
                 });
                 return Err("The host installer did not finish in time.".into());
             }
@@ -599,11 +665,14 @@ fn run_with_timeout(mut command: Command, timeout: Duration, lock: std::sync::Ar
                     let _lock = lock;
                     crate::harness::terminate_all(&[child.id()]);
                     let _ = child.kill();
-                    if child.wait().is_ok() {
-                        let _ = reader.join();
-                        let _ = std::fs::remove_file(&script);
+                    match child.wait() {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(&script);
+                            drop(_lock);
+                            let _ = reader.join();
+                        }
+                        Err(_) => std::mem::forget(_lock),
                     }
-                    std::mem::forget(_lock);
                 });
                 return Err(error.to_string());
             }
