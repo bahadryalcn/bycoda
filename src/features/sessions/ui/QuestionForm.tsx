@@ -1,6 +1,8 @@
 import { QuestionFields, updateCustomAnswer, nextSelection } from "./QuestionFields";
 import { useQuestionFormDraft } from "./useQuestionFormDraft";
 import { useQuestionAttachmentRecovery } from "./useQuestionAttachmentRecovery";
+import { useQuestionAttachmentReader } from "./useQuestionAttachmentReader";
+import { questionFormPresentation } from "./questionFormPresentation";
 import { QuestionAttachmentError } from "./QuestionAttachmentError";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
@@ -14,34 +16,12 @@ import {
   filesFromClipboard,
   pickAttachments,
   MAX_ATTACHMENTS,
-  revokeAttachment,
 } from "../model/attachments";
-import {
-  pendingQuestionAttachment,
-  prepareOwnedQuestionAttachments,
-  prepareQuestionAttachments,
-  questionAttachmentIdentity,
-  questionTransportHeld,
-  runQuestionAttachmentEffect,
-} from "../model/questionAttachments";
-import type { Attachment } from "../model/session";
+import { questionTransportHeld, runQuestionAttachmentEffect } from "../model/questionAttachments";
 import { useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
 import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
-import {
-  ArrowUp,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  CircleX,
-  Clock,
-  CornerDownRight,
-  MessageSquare,
-  Play,
-  FilePlus,
-  RefreshCw,
-  X,
-} from "../../../shared/ui/icons";
+import { ChevronLeft, FilePlus, MessageSquare } from "../../../shared/ui/icons";
 import { questionDraftKey, type QuestionDraft } from "../model/questionDrafts";
 import {
   buildQuestionReply,
@@ -151,78 +131,24 @@ function QuestionFormContent({
   useLayoutEffect(() => {
     filesRef.current = files;
   }, [files]);
-  const readAttachments = (read: () => Promise<Attachment[]>) => {
-    if (!canAttach || held || attachmentFlight.current || !parentChanged.canMutate()) return;
-    const admission = parentChanged.admit();
-    if (!admission) return;
-    interact();
-    attachmentFlight.current = true;
-    setReadingAttachments(true);
-    setAttachmentError(null);
-    void (async () => {
-      let incoming: Attachment[] = [];
-      try {
-        incoming = await read();
-        if (
-          Object.values(draftRef.current.attachments ?? {}).flat().length + incoming.length >
-          MAX_ATTACHMENTS
-        )
-          throw new Error(t("A message carries up to {p0} attachments.", { p0: MAX_ATTACHMENTS }));
-        if (!sessionId && incoming.some((file) => !file.path?.trim()))
-          throw new Error(t("Question attachment session identity is unavailable"));
-        const pending = sessionId
-          ? incoming.map((file) =>
-              pendingQuestionAttachment(
-                file,
-                questionDraftKey(draftScope, prompt),
-                sessionId,
-                questionAttachmentIdentity(prompt, question.id),
-              ),
-            )
-          : [];
-        let staged = !sessionId;
-        if (sessionId)
-          admission.apply(() => {
-            staged = updateDraft((current) => ({
-              ...current,
-              attachments: {
-                ...current.attachments,
-                [question.id]: [...(current.attachments?.[question.id] ?? []), ...pending],
-              },
-            }));
-          });
-        if (!staged) return;
-        const prepared = sessionId
-          ? await prepareOwnedQuestionAttachments(incoming, pending, (error) => {
-              if (mounted.current)
-                setAttachmentError(String(error instanceof Error ? error.message : error));
-            })
-          : await prepareQuestionAttachments(incoming);
-        admission.apply(() => {
-          if (!mounted.current || !reservation.current?.current()) return;
-          updateDraft((current) => ({
-            ...current,
-            attachments: {
-              ...current.attachments,
-              [question.id]: sessionId
-                ? (current.attachments?.[question.id] ?? []).map(
-                    (file) => prepared.find((item) => item.id === file.id) ?? file,
-                  )
-                : [...(current.attachments?.[question.id] ?? []), ...prepared],
-            },
-          }));
-        });
-      } catch (error) {
-        if (mounted.current)
-          setAttachmentError(String(error instanceof Error ? error.message : error));
-      } finally {
-        incoming.forEach(revokeAttachment);
-        attachmentFlight.current = false;
-        if (mounted.current) setReadingAttachments(false);
-        admission.finish();
-      }
-    })();
-  };
+  const readAttachments = useQuestionAttachmentReader({
+    canAttach,
+    held,
+    interact,
+    attachmentFlight,
+    setReadingAttachments,
+    setAttachmentError,
+    parentChanged,
+    draftRef,
+    mounted,
+    reservation,
+    updateDraft,
+    sessionId,
+    draftScope,
+    prompt,
+    question,
+    t,
+  });
   const sink = useAttachmentSink({
     attachmentsSupported: canAttach,
     remote,
@@ -393,84 +319,27 @@ function QuestionFormContent({
   const heading = question.header?.trim() || prompt.title?.trim();
   // Providers may repeat the entire question as their header.
   const title = heading && heading !== question.prompt.trim() ? heading : undefined;
-  const queued = prompt.delivery === "queued";
-  const uncertain =
-    !queued &&
-    (prompt.delivery === "unknown" ||
-      localUnknown ||
-      draft.delivery === "unknown" ||
-      capacityIssue === "pending");
-  const capacityMessage =
-    capacityIssue === "capacity"
-      ? t(
-          "Question capacity is full. Your saved answers are kept. Resolve or discard another question to continue.",
-        )
-      : capacityIssue === "size"
-        ? t("This question or answer is too large to keep locally. Your previous answer is kept.")
-        : capacityIssue && capacityIssue !== "pending" && capacityIssue !== "closed"
-          ? t("Question state changed. Your saved answer is kept.")
-          : undefined;
-  const failed = !sending && prompt.delivery === "failed";
-  const dismissing = sending && draft.pendingAction === "dismiss";
-  const pendingLabel = dismissing
-    ? prompt.dismissAction === "cancel"
-      ? t("Cancelling…")
-      : t("Sending…")
-    : t("Sending answer…");
-  const status =
-    prompt.delivery === "queued"
-      ? t("Answer saved · waiting to continue")
-      : uncertain
-        ? prompt.error
-          ? t(prompt.error)
-          : t(
-              "Answer delivery could not be confirmed. Wait for the connection to recover before sending again.",
-            )
-        : sending
-          ? pendingLabel
-          : failed
-            ? prompt.error
-              ? t(prompt.error)
-              : t("Answer was not sent. Your answer is kept; try again.")
-            : prompt.behavior === "blocking"
-              ? t("Waiting for your answer")
-              : prompt.behavior === "nonBlocking"
-                ? t("Work may continue while this question is open")
-                : t("Question open");
-  const StatusIcon =
-    uncertain || failed
-      ? CircleAlert
-      : sending || queued || prompt.behavior === "blocking"
-        ? Clock
-        : prompt.behavior === "nonBlocking"
-          ? Play
-          : MessageSquare;
-  const DismissIcon =
-    prompt.dismissAction === "cancel"
-      ? X
-      : prompt.dismissAction === "decline"
-        ? CircleX
-        : CornerDownRight;
-  const SubmitIcon = uncertain
-    ? CircleAlert
-    : queued
-      ? Clock
-      : !last
-        ? ChevronRight
-        : failed
-          ? RefreshCw
-          : ArrowUp;
-  const submitLabel = queued
-    ? t("Waiting")
-    : uncertain
-      ? t("Connection issue")
-      : sending && !dismissing
-        ? pendingLabel
-        : !last
-          ? t("Next")
-          : failed
-            ? t("Send again")
-            : t("Send answer");
+  const {
+    uncertain,
+    capacityMessage,
+    failed,
+    dismissing,
+    pendingLabel,
+    status,
+    StatusIcon,
+    DismissIcon,
+    SubmitIcon,
+    submitLabel,
+  } = questionFormPresentation({
+    t,
+    prompt,
+    sending,
+    localUnknown,
+    draftDelivery: draft.delivery,
+    pendingAction: draft.pendingAction,
+    capacityIssue,
+    last,
+  });
 
   return (
     <div

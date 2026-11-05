@@ -37,33 +37,10 @@ import {
   type JiraBoardConfiguration,
   type JiraBoardIssue,
   type JiraColumn,
-  type JiraIssueScope,
-  type JiraMove,
-  type JiraTransition,
 } from "../model/jiraBoard";
 import "./jira-board.css";
+import type { Group, TransitionPick } from "./jiraBoardTypes";
 import { JIRA_CHANGE_EVENT, readHiddenJiraProjectIds } from "../model/jira";
-type Group = {
-  id: string;
-  name: string;
-  scope: JiraIssueScope;
-  issues: JiraBoardIssue[];
-  token: string | null;
-  goal?: string;
-  state?: string;
-  loaded: boolean;
-  pages: number;
-  error?: string;
-  stale?: boolean;
-  autoPaused?: boolean;
-  cursors?: string[];
-};
-type TransitionPick = {
-  issue: JiraBoardIssue;
-  choices: JiraTransition[];
-  anchor: Pick<JiraMove, "beforeKey" | "afterKey">;
-};
-
 export function JiraBoardView({
   revision,
   onSelect,

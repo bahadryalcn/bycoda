@@ -5,7 +5,6 @@ import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../share
 import { ChevronLeft, ChevronRight } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import {
   bucketStart,
   effectiveResolution,
@@ -533,70 +532,5 @@ export function TimeDistribution({
         )}
       </div>
     </div>
-  );
-}
-
-export function UsageDataNotes({
-  unpriced,
-  pricedCoverage,
-  pricesUnavailable,
-  sessionDurationUnavailable,
-  timedTurns,
-  turns,
-  truncated,
-}: {
-  unpriced: string[];
-  pricedCoverage: string;
-  pricesUnavailable: boolean;
-  sessionDurationUnavailable: boolean;
-  timedTurns: number;
-  turns: number;
-  truncated: boolean;
-}) {
-  return (
-    <details className="usage-data-notes">
-      <summary>
-        {t("Data sources and coverage")}
-        {unpriced.length ? ` · ${unpriced.length} ${t("Models without prices")}` : ""}
-      </summary>
-      <p>
-        {t("API-equivalent estimates from local session logs, not what a subscription plan bills.")}{" "}
-        {t("Priced token coverage")}: {pricedCoverage}.
-      </p>
-      {unpriced.length > 0 && (
-        <>
-          <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0">{t("Models without prices")}:</span>
-            <BadgeList
-              label={t("Models without prices")}
-              size="xs"
-              className="min-w-0 flex-1"
-              items={unpriced.map((model, index) => ({
-                id: `${index}:${model}`,
-                label: model,
-              }))}
-            />
-          </div>
-          <p>{t("Their tokens are included; their cost is unavailable.")}</p>
-        </>
-      )}
-      {pricesUnavailable && (
-        <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
-      )}
-      {sessionDurationUnavailable ? (
-        <p>{t("Session duration data is unavailable on this app version or could not be read.")}</p>
-      ) : (
-        <p>
-          {t(
-            "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
-          )}{" "}
-          {timedTurns}/{turns} {t("turns with duration")}.
-        </p>
-      )}
-      {truncated && (
-        <p>{t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}</p>
-      )}
-      <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
-    </details>
   );
 }

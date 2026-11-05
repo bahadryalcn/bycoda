@@ -8,16 +8,7 @@ import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  lazy,
-  Suspense,
-} from "react";
+import { useDeferredValue, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GitBranch, Maximize2, Search, RefreshCw } from "../../../shared/ui/icons";
 import {
@@ -25,7 +16,6 @@ import {
   gitCherryPick,
   gitCreateBranchAt,
   gitCreateTag,
-  gitHistory,
   gitCommitMessage,
   gitRemotes,
   gitReset,
@@ -34,9 +24,7 @@ import {
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
-import { isRemoteProjectPath } from "../../projects/public/recents";
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
-import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
 import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
 import { commitMenuItems, filterHistory, githubCommitUrl } from "../model/commitActions";
 import { layoutGitGraph } from "../model/gitGraph";
@@ -44,7 +32,7 @@ import { GitGraphDialog } from "./GitGraphDialog";
 import { GitGraphList, type GraphListItem } from "./GitGraphList";
 import { GraphSearchInput } from "./GitGraphParts";
 import { RefNameDialog } from "./RefNameDialog";
-import { useGitResource } from "../hooks/useGitResource";
+import { useGitHistory } from "../hooks/useGitHistory";
 import { GitFeedback, GitLoading } from "./GitFeedback";
 import { confirmGitAction } from "../model/gitConfirmation";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -550,43 +538,6 @@ export function GitHistoryGraph({
       ) : null}
     </div>
   );
-}
-
-function useGitHistory(cwd: string, enabled: boolean, all: boolean, limit: number) {
-  const failure = useRemoteLoadFailure(cwd, "graph");
-  const remote = isRemoteProjectPath(cwd);
-  const read = useCallback(
-    async () => (await gitHistory(cwd, limit, all)).commits,
-    [cwd, limit, all],
-  );
-  const resource = useGitResource(
-    cwd,
-    `history:${cwd}:${all}:${limit}`,
-    enabled && !!cwd && cwd !== "~",
-    read,
-  );
-  // Paging changes the cache key, but keeps the previous page visible while
-  // the longer history is loading. Never carry it across a checkout or scope.
-  const retained = useRef<{
-    cwd: string;
-    all: boolean;
-    commits: GitHistoryCommit[];
-  } | null>(null);
-  if (resource.data) retained.current = { cwd, all, commits: resource.data };
-  const commits =
-    resource.data ??
-    (retained.current?.cwd === cwd && retained.current.all === all ? retained.current.commits : []);
-  useEffect(() => {
-    if (enabled && remote && !resource.loading)
-      reportRemoteLoad(cwd, "graph", resource.error ?? undefined);
-  }, [cwd, enabled, remote, resource.loading, resource.error]);
-  return {
-    commits,
-    loading: resource.loading,
-    error: resource.error,
-    failure,
-    refresh: resource.refresh,
-  };
 }
 
 export const GRAPH_PANEL_MIN = 120;

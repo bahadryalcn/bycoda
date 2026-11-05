@@ -23,10 +23,10 @@ import {
   FolderPlus,
   FolderOpen,
   FoldVertical,
-  RefreshCw,
   Search,
   MoreHorizontal,
   ListFilter,
+  RefreshCw,
 } from "../../../shared/ui/icons";
 import {
   createContext,
@@ -44,6 +44,7 @@ import {
   type ReactNode,
 } from "react";
 import { leafName, validateFileName, type NameIssue } from "../model/fileName";
+import { hasMember, membersChanged } from "../model/treeMembership";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -199,31 +200,6 @@ function createTreeStore(initial: TreeStateValue) {
 }
 const TreeStateCtx = createContext<TreeStore | null>(null);
 const TreeActionsCtx = createContext<TreeActions | null>(null);
-
-/**
- * The snapshot reader for one directory: it keeps returning the previous state object until
- * something its immediate rows read has changed. The memo is private to that directory.
- */
-function hasMember(members: ReadonlySet<string>, path: string | null): boolean {
-  return path !== null && members.has(path);
-}
-
-/** Whether a path set differs for any of this directory's immediate rows. */
-function membersChanged(
-  before: ReadonlySet<string>,
-  after: ReadonlySet<string>,
-  members: ReadonlySet<string>,
-): boolean {
-  if (before === after) return false;
-  if (members.size <= before.size + after.size) {
-    for (const path of members) if (before.has(path) !== after.has(path)) return true;
-    return false;
-  }
-  for (const path of before) if (!after.has(path) && members.has(path)) return true;
-  for (const path of after) if (!before.has(path) && members.has(path)) return true;
-  return false;
-}
-
 /**
  * The snapshot reader for one directory: it keeps returning the previous state object until
  * something its immediate rows read has changed. The memo is private to that directory. Scalar
@@ -344,8 +320,8 @@ function FileTreeInner({
   // An inline create/rename that has been submitted and is waiting on the filesystem.
   const [editPending, setEditPending] = useState(false);
   const [copyNotice, setCopyNotice] = useState<CopyNotice | null>(null);
-  const [copyFailedText, setCopyFailedText] = useState<string | null>(null),
-    copyFeedback = useCopyFeedback({ resetKeys: [cwd] });
+  const [copyFailedText, setCopyFailedText] = useState<string | null>(null);
+  const copyFeedback = useCopyFeedback({ resetKeys: [cwd] });
   const [headerMenu, setHeaderMenu] = useState(false);
   const headerMenuRef = useRef<HTMLButtonElement>(null);
   // The tree is keyed by cwd, so its root never changes for this instance.

@@ -11,7 +11,6 @@ import {
   listLinearTeams,
   readHiddenLinearTeamIds,
   requireHiddenLinearTeamIds,
-  type LinearIssue,
 } from "./linear";
 import {
   clearJiraCache,
@@ -21,7 +20,6 @@ import {
   listJiraProjects,
   readHiddenJiraProjectIds,
   requireHiddenJiraProjectIds,
-  type JiraIssue,
 } from "./jira";
 import {
   clearGitlabCache,
@@ -29,7 +27,6 @@ import {
   gitlabRepo,
   listGitlabTodos,
   listGitlabWorkItems,
-  type GitlabWorkItem,
 } from "./gitlab";
 import {
   azureDevOpsConnected,
@@ -37,7 +34,6 @@ import {
   clearAzureDevOpsCache,
   listAzureDevOpsTodos,
   listAzureDevOpsWorkItems,
-  type AzureDevOpsWorkItem,
 } from "./azureDevOps";
 import {
   collectRailProjects,
@@ -46,6 +42,12 @@ import {
   type RecentProject,
 } from "../../projects/model/recents";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
+import {
+  azureDevOpsWorkItemToInboxItem,
+  gitlabWorkItemToInboxItem,
+  jiraIssueToInboxItem,
+  linearIssueToInboxItem,
+} from "./inboxItemMappers";
 
 export { formatRelativeTime };
 
@@ -1338,30 +1340,6 @@ async function fetchLinearInboxItems(query: InboxQuery): Promise<InboxItem[]> {
     .map(linearIssueToInboxItem);
 }
 
-function linearIssueToInboxItem(issue: LinearIssue): InboxItem {
-  return {
-    provider: "linear",
-    kind: "linear",
-    id: issue.id,
-    identifier: issue.identifier,
-    number: issue.number,
-    title: issue.title,
-    url: issue.url,
-    state: issue.state,
-    stateType: issue.stateType,
-    updatedAt: issue.updatedAt,
-    labels: issue.labels,
-    assignees: issue.assignees,
-    draft: false,
-    repo: issue.repo,
-    teamId: issue.teamId,
-    teamName: issue.teamName,
-    projectId: issue.projectId || "",
-    projectName: issue.projectName || "",
-    projectPath: issue.projectPath || "",
-  };
-}
-
 async function fetchJiraInboxItems(
   query: InboxQuery,
 ): Promise<{ items: InboxItem[]; limited?: boolean }> {
@@ -1383,54 +1361,6 @@ async function fetchJiraInboxItems(
       .filter((issue) => hidden.size === 0 || !hidden.has(issue.teamId))
       .map(jiraIssueToInboxItem),
     ...(inboxReadReachedLimit(issues.length, query) ? { limited: true } : {}),
-  };
-}
-
-function jiraIssueToInboxItem(issue: JiraIssue): InboxItem {
-  return {
-    provider: "jira",
-    kind: "jira",
-    id: issue.id,
-    identifier: issue.identifier,
-    number: issue.number,
-    title: issue.title,
-    url: issue.url,
-    state: issue.state,
-    stateType: issue.stateType,
-    updatedAt: issue.updatedAt,
-    labels: issue.labels,
-    assignees: issue.assignees,
-    draft: false,
-    repo: issue.repo,
-    teamId: issue.teamId,
-    teamName: issue.teamName,
-    projectPath: issue.projectPath || "",
-  };
-}
-
-function gitlabWorkItemToInboxItem(
-  item: GitlabWorkItem,
-  projectPath: string,
-  repo: string,
-): InboxItem {
-  return {
-    ...item,
-    provider: "gitlab",
-    repo: item.repo || repo,
-    projectPath,
-  };
-}
-
-function azureDevOpsWorkItemToInboxItem(
-  item: AzureDevOpsWorkItem,
-  projectPath: string,
-  repo: string,
-): InboxItem {
-  return {
-    ...item,
-    provider: "azuredevops",
-    repo: item.repo || repo,
-    projectPath,
   };
 }
 

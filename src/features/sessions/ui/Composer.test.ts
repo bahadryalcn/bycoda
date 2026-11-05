@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mcpInvoke = vi.hoisted(() => vi.fn());
@@ -55,7 +54,7 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
   }),
 }));
 
-import { Composer, ComposerAction } from "./Composer";
+import { Composer } from "./Composer";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { invalidateSkills } from "../../skills/model/skills";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
@@ -86,39 +85,6 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   });
   return text;
 }
-
-function renderAction(busy: boolean, hasValue: boolean, allowBusySubmit = true) {
-  return renderToStaticMarkup(
-    createElement(ComposerAction, {
-      busy,
-      hasValue,
-      allowBusySubmit,
-      onSend: vi.fn(),
-      onStop: vi.fn(),
-    }),
-  );
-}
-
-describe("ComposerAction", () => {
-  it("keeps Stop alongside Send when typing during a running turn", () => {
-    const empty = renderAction(true, false);
-    expect(empty).toContain('aria-label="Stop"');
-    expect(empty).not.toContain('aria-label="Send"');
-
-    const typed = renderAction(true, true);
-    expect(typed).toContain('aria-label="Send"');
-    expect(typed).toContain('data-button-variant="primary"');
-    expect(typed).toContain('aria-label="Stop"');
-    // Send/Stop hints (with their key caps) ride in the shared tooltip, never a native title.
-    expect(typed).not.toContain(" title=");
-  });
-
-  it("keeps Stop while busy when submitting follow-up text is disabled", () => {
-    const typed = renderAction(true, true, false);
-    expect(typed).toContain('aria-label="Stop"');
-    expect(typed).not.toContain('aria-label="Send"');
-  });
-});
 
 describe("Composer question focus", () => {
   let container: HTMLDivElement;

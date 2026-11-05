@@ -34,6 +34,8 @@ import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { formatDate, t, useLocale, useT } from "../../shared/i18n";
+import { formatInteger } from "../../shared/lib/numbers";
+import { formatGitLabel } from "./sessionGitLabel";
 import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { prefetchGithubWorkItem } from "../../features/inbox/model/githubTasks";
@@ -116,7 +118,6 @@ import {
   SESSION_SIDEBAR_WIDTH_MIN,
   type SidebarTabId,
 } from "../../features/settings/model/appearance";
-import { formatInteger } from "../../shared/lib/numbers";
 import { type GitFileDiffKind, type GitHistoryCommit } from "../../platform/tauri/fs";
 import { MOD } from "../../platform/tauri/platform";
 import { copyText } from "../../platform/tauri/clipboard";
@@ -6871,9 +6872,4 @@ function TightDiffNumber({ value }: { value: number }) {
       ))}
     </>
   );
-}
-
-function formatGitLabel(repo?: string, branch?: string): string {
-  if (repo && branch) return `${repo}/${branch}`;
-  return branch || repo || "";
 }
